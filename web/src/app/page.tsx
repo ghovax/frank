@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, Flex } from "@chakra-ui/react";
-import { SessionsSidebar, type SessionEntry, type SessionSort, type SessionStatus } from "@/components/sessions-sidebar";
+import { SessionsSidebar, type SessionEntry, type SessionSort, type SessionActivity } from "@/components/sessions-sidebar";
 import { AnimatePresence, motion } from "motion/react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 
@@ -31,11 +31,11 @@ function writeLastProject(projectId: string): void {
 }
 
 
-// A session that is actually working, as opposed to one whose process is merely up. A
-// session outlives its turns — created empty, messaged, idle again — so the process
-// lifecycle alone would report every live session as busy forever.
+// A session that is actually working. The daemon derives this for us now: `activity` is
+// "working" only while a turn is in flight, where the old process-lifecycle field reported
+// every live session as busy forever, because a session outlives its turns.
 function isSessionBusy(session: SessionEntry): boolean {
-  return session.status === "starting" || session.busy;
+  return session.activity === "working";
 }
 
 function ProjectWorkspace() {
@@ -213,8 +213,9 @@ function ProjectWorkspace() {
       title: session.title,
       createdAt: session.created_at,
       workingDirectory: session.working_directory ?? "",
-      status: (session.status || "starting") as SessionStatus,
-      busy: session.busy ?? false,
+      activity: (session.activity || "idle") as SessionActivity,
+      ended: session.lifecycle === "ended",
+      failed: session.outcome === "failed",
       awaitingInput: session.awaiting_input ?? false,
       exitReason: session.exit_reason ?? "",
       permissionMode: session.permission_mode ?? "default",
@@ -278,7 +279,7 @@ function ProjectWorkspace() {
       .filter((session) => {
         const previous = previousById.get(session.sessionId);
         const wasBusy = !!previous && isSessionBusy(previous);
-        return wasBusy && !isSessionBusy(session) && session.sessionId !== activeId && !session.awaitingInput && session.status !== "failed";
+        return wasBusy && !isSessionBusy(session) && session.sessionId !== activeId && !session.awaitingInput && !session.failed;
       })
       .map((session) => session.sessionId);
     if (finishedUnviewed.length > 0) {

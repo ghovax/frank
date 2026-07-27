@@ -36,7 +36,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from daisy.base.permission_mode import PermissionMode
 from daisy.daemon import state
-from daisy.daemon.registry import RUNNING, SessionRecord
+from daisy.daemon.registry import SessionRecord
 from daisy.base.serialization import compact
 
 logger = logging.getLogger(__name__)
@@ -111,17 +111,14 @@ def _assert_agent_exists(agent: str, working_directory: str) -> None:
 
 
 def _public(record: SessionRecord) -> dict:
-    """A session as a client sees it: what the registry knows plus what it is doing.
+    """A session as a client sees it.
 
-    The registry tracks the *process* — a session is "running" from the moment its worker
-    binds until it is reaped, including the long stretches where it sits idle between
-    messages. Whether a turn is actually in flight is something only the session can report,
-    and it does, over ingest. Merging the two here is what lets a client tell a session that
-    is working from one that is merely alive; keeping them separate fields is what stops a
-    listing from claiming a reaped session is busy."""
-    payload = record.public()
-    payload["busy"] = record.id in state._running_contexts
-    return payload
+    `busy` is set from the sessions actually mid-turn — only a session can know that, and it
+    reports it over ingest — before `activity` is derived, so a listing distinguishes working
+    from merely alive without any of it being written down. The record itself carries only
+    what is durable: whether the session exists, not what it is doing."""
+    record.busy = record.id in state._running_contexts
+    return record.public()
 
 
 def _resolve_sandbox(agent: str, working_directory: str, parent) -> dict:
@@ -288,45 +285,45 @@ async def _session_send(params: dict) -> dict:
     queued behind the whole turn, which is what makes a peer's question reach a working
     session instead of waiting for it to finish."""
     record = _session(_require(params, "id"))
-    if record.status != RUNNING:
+    if not record.is_live:
         raise RpcError(
-            f"Session {record.id} is {record.status}, so it cannot accept messages.",
+            f"Session {record.id} has ended, so it cannot accept messages.",
             status_code=409,
             code="session_not_running",
         )
-    return await state.relay_to_session(record, "message/send", params)
+    return await state.wake_then_relay(record, "message/send", params)
 
 
 async def _turn_cancel(params: dict) -> dict:
     record = _session(_require(params, "id"))
-    return await state.relay_to_session(record, "tasks/cancel", params)
+    return await state.wake_then_relay(record, "tasks/cancel", params)
 
 
 async def _session_respond(params: dict) -> dict:
     """Answer a session's pending human-in-the-loop gate."""
     record = _session(_require(params, "id"))
     _require(params, "request_id")
-    return await state.relay_to_session(record, "input/respond", params)
+    return await state.wake_then_relay(record, "input/respond", params)
 
 
 async def _session_compact(params: dict) -> dict:
     """Ask a session to compact its own conversation."""
     record = _session(_require(params, "id"))
-    return await state.relay_to_session(record, "session/compact", params)
+    return await state.wake_then_relay(record, "session/compact", params)
 
 
 async def _jobs_list(params: dict) -> dict:
     """What background work a session has in flight. Read from the session rather than the
     store: a background job lives in the process running it."""
     record = _session(_require(params, "id"))
-    return await state.relay_to_session(record, "jobs/list", params)
+    return await state.wake_then_relay(record, "jobs/list", params)
 
 
 async def _jobs_detach(params: dict) -> dict:
     """Detach a still-blocking command so the session's turn can continue without it."""
     record = _session(_require(params, "id"))
     _require(params, "tool_call_id")
-    return await state.relay_to_session(record, "jobs/detach", params)
+    return await state.wake_then_relay(record, "jobs/detach", params)
 
 
 async def _session_history(params: dict) -> dict:
@@ -488,14 +485,16 @@ async def _daemon_restart(_params: dict) -> dict:
     killing the daemon it owned and relaunching itself. It no longer owns one, so the daemon has
     to be able to do it on request.
 
-    **Every live session ends.** Workers are this process's children and shutdown reaps them;
-    there is no version of this that keeps them. The count is returned so a caller can say so
-    before asking, and `daisy daemon restart` and the settings dialog both do.
+    **Sessions survive it.** They used to not: the registry lived in memory, so a restart took
+    every session with it and this method's job included warning about that. The registry is
+    durable now, so a restart ends every session's *process* and no session at all — each live
+    one comes back asleep and the next message to it forks a worker. `sessions_slept` is
+    returned so a caller can say what actually happens, which is much less than it was.
 
     The re-exec is scheduled rather than immediate so this response reaches the client first —
     otherwise the caller sees a dropped connection and cannot tell success from a crash."""
     assert state.registry is not None
-    live = len(state.registry.live())
+    running = len(state.registry.running())
 
     async def replace() -> None:
         # `execv` rather than spawn-and-exit, for two reasons. It keeps the pid, so the lock
@@ -510,12 +509,15 @@ async def _daemon_restart(_params: dict) -> dict:
         # nobody is left wondering.
         await asyncio.sleep(0.5)
         if state.lifecycle is not None:
+            # Sleep them rather than reap them. Their records are durable, so stopping the
+            # processes is the whole of what a restart has to do — and the successor picks
+            # every one of them back up as an asleep session.
             with contextlib.suppress(Exception):
-                await state.lifecycle.aclose()
+                await state.lifecycle.sleep_all()
         os.execv(sys.executable, [sys.executable, *_daemon_argv()])
 
     asyncio.get_running_loop().create_task(replace())
-    return {"restarting": True, "sessions_ended": live}
+    return {"restarting": True, "sessions_slept": running}
 
 
 def _daemon_argv() -> list[str]:

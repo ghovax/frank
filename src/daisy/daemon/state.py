@@ -96,6 +96,7 @@ class SessionEventBus:
 # The singletons.
 
 registry: Any = None            # SessionRegistry
+session_store: Any = None       # SqliteSessionStore — the registry's durable half
 prototype: Any = None           # PrototypeClient
 lifecycle: Any = None           # SessionLifecycle
 turn_store: Any = None          # AppendOnlyTaskStore
@@ -169,12 +170,63 @@ async def reset_live_session_runtimes() -> None:
     )
 
 
+async def wake_then_relay(record, method: str, params: dict) -> dict:
+    """Forward a command to a session, forking it a worker first if it has none.
+
+    **This is the whole of "a session is a record, not a process", and it is one function.**
+    Every command that needs a live session already funnels through the relay — `session.send`,
+    `respond`, `compact`, `jobs.*`, `turn.cancel` — so putting the wake in front of it is what
+    makes sleeping safe everywhere at once, rather than in each caller.
+
+    Reads deliberately do not come through here. `get`, `list`, `tree`, `history` and `attach`
+    are answered from the registry and the turn store, so looking at a sleeping session does
+    not wake it — which is what makes sleeping worth doing at all.
+
+    The wake is serialised per session by a lock, because two clients messaging a sleeping
+    session at the same moment must produce one worker, not two. That is not a nicety: two
+    workers on one session id would both bind the same socket path and both believe they own
+    the conversation.
+    """
+    if record.asleep:
+        await _wake(record)
+    return await relay_to_session(record, method, params)
+
+
+_wake_locks: dict[str, asyncio.Lock] = {}
+
+
+async def _wake(record) -> None:
+    """Give a sleeping session a worker again.
+
+    The record already holds everything the assignment needs — agent, directories, permission
+    mode, sandbox, parent — because all of it was fixed when the session was created and none
+    of it has been re-derived since. That is what makes waking a replay rather than a
+    reconstruction: the woken worker is handed exactly what the original was handed, including
+    the same capability token, which is derivable precisely so that this works.
+    """
+    lock = _wake_locks.setdefault(record.id, asyncio.Lock())
+    async with lock:
+        # Re-checked inside the lock: the client that waited on it may have been the second of
+        # two, and the first has already done this.
+        if not record.asleep:
+            return
+        if lifecycle is None:
+            raise RuntimeError(f"Session {record.id} is asleep and there is nothing to wake it.")
+        if not await lifecycle.start(record):
+            raise RuntimeError(
+                f"Session {record.id} is asleep and could not be woken; see the daemon log."
+            )
+
+
 async def relay_to_session(record, method: str, params: dict) -> dict:
     """Forward a client's command to the session that owns it.
 
     Only clients come through here — a session addressing a peer opens that peer's socket
-    itself. The session's capability token is attached from the registry, so a client that has
-    already proved itself to the daemon does not need to hold every session's token as well.
+    itself. The session's capability token is derived from its id, so a client that has already
+    proved itself to the daemon does not need to hold every session's token as well.
+
+    Prefer :func:`wake_then_relay` for anything that needs the session to *act*. This is the
+    bare relay, for the one caller that already knows a worker is there.
     """
     transport = httpx.AsyncHTTPTransport(uds=str(record.socket_path))
     payload = {"method": method, "params": {key: value for key, value in params.items() if key != "id"}}

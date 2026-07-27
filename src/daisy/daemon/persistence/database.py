@@ -18,13 +18,43 @@ class Base(DeclarativeBase):
 
 
 class SessionRecord(Base):
-    """A chat session — one A2A context. Tasks live in the A2A task store; this
-    table only indexes sessions for the sidebar."""
+    """A chat session — one A2A context, and the durable half of what the registry knows.
+
+    There used to be two classes with this name: this one, which indexed sessions for the
+    sidebar, and a dataclass in `daemon/registry.py` that held identity, parentage, the
+    capability token and the process. Neither was complete — `daisy ps` read one and the
+    browser listed from the other — and they could disagree.
+
+    They are one table now, because a session that outlives its process has to be *written
+    down*, and once it is written down there is nothing left for a second record to hold. The
+    volatile half (the process id, whether a turn is in flight, whether it is parked on a
+    person) is deliberately absent: it describes a process, and a stored "working" survives the
+    kill that made it false.
+
+    The capability token is absent for a different reason — it is derived from the session id
+    (`registry.token_for`), so a database read discloses no capability and a woken session gets
+    the same token its creator was handed.
+    """
 
     __tablename__ = "sessions"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)  # == A2A contextId
     agent: Mapped[str] = mapped_column(String, nullable=False)
+    # The session that created this one, empty when a person did. What a subtree reap walks.
+    parent: Mapped[str] = mapped_column(String, default="")
+    # Does this session still exist? `live` or `ended` — never what it is *doing*.
+    lifecycle: Mapped[str] = mapped_column(String, default="live")
+    # How it finished, and why, for the record that outlives it.
+    outcome: Mapped[str] = mapped_column(String, default="")
+    exit_reason: Mapped[str] = mapped_column(Text, default="")
+    # What its tool children may touch, resolved and clamped once at creation. JSON, because it
+    # is a whole profile and nothing queries inside it.
+    sandbox: Mapped[str] = mapped_column(Text, default="")
+    # The one-time work-habits acknowledgement. Durable rather than in-memory because a worker
+    # is now per *activation* rather than per session: a slept-and-woken session would
+    # otherwise show it again every time it woke.
+    work_habits_acknowledged_at: Mapped[str] = mapped_column(String, default="")
+    updated_at: Mapped[str] = mapped_column(String, default="")
     # The project this session belongs to; the agent may address any of the project's
     # locations per tool call.
     project_id: Mapped[str] = mapped_column(String, default="")
@@ -50,21 +80,8 @@ class SessionRecord(Base):
     __table_args__ = (
         Index("idx_sessions_created_at", "created_at"),
         Index("idx_sessions_project", "project_id"),
+        Index("idx_sessions_lifecycle", "lifecycle"),
     )
-
-
-class SessionLifecycleRecord(Base):
-    """Durable lifecycle facts for one chat session.
-
-    This row is intentionally independent of ``SessionRecord`` because lifecycle events can
-    occur before workspace preparation creates the sidebar record. Live execution machinery
-    stays in memory; only facts that must survive runtime reconstruction belong here.
-    """
-
-    __tablename__ = "session_lifecycle"
-
-    session_id: Mapped[str] = mapped_column(String, primary_key=True)
-    work_habits_acknowledged_at: Mapped[str] = mapped_column(String, default="")
 
 
 class ProjectRecord(Base):

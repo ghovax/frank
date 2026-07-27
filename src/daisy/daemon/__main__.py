@@ -276,6 +276,7 @@ async def _serve() -> int:
     from daisy.daemon.lifecycle import SessionLifecycle
     from daisy.daemon.peer_identity import unix_peer_protocol
     from daisy.daemon.prototype import PrototypeClient
+    from daisy.daemon.persistence.sessions import SqliteSessionStore
     from daisy.daemon.registry import SessionRegistry
 
     if _acquire_singleton_lock() is None:
@@ -309,7 +310,15 @@ async def _serve() -> int:
     if orphans:
         logger.info("Reaped %d orphaned process group(s) from a previous run", orphans)
 
-    state.registry = SessionRegistry()
+    # The registry is durable now: a daemon restart ends every session's *process*, not every
+    # session. Live records come back asleep, and the first message to one forks it a worker.
+    state.session_store = SqliteSessionStore(state.session_factory)
+    state.registry = SessionRegistry(store=state.session_store)
+    restored = await asyncio.to_thread(state.session_store.load_all)
+    state.registry.restore(restored)
+    live = [record for record in restored if record.is_live]
+    if live:
+        logger.info("Restored %d session(s), %d of them still live and asleep", len(restored), len(live))
     # The prototype and the lifecycle know about each other in both directions: the lifecycle
     # asks the prototype to fork, and the prototype reports every death back to the lifecycle.
     # Wired here rather than by either of them, because a composition root is exactly the place

@@ -746,11 +746,12 @@ export async function openAccessibilitySettings(): Promise<void> {
 // Restart the daemon so it picks up a new Accessibility grant, then reload the window against
 // it. Two steps, because they are two processes: macOS caches the trust check per process, and
 // the daemon is no longer the app's child, so restarting the window alone would change nothing.
-// The daemon replaces itself and every live session ends with it — `sessions_ended` says how
+// The daemon replaces itself. Sessions survive it — the registry is durable, so each live
+// session simply loses its process and comes back asleep — and `sessions_slept` says how
 // many, so a caller can warn before asking.
-export async function restartDaemon(): Promise<{ sessions_ended: number }> {
-  const result = await rpc<{ restarting: boolean; sessions_ended: number }>("daemon.restart", {});
-  return { sessions_ended: result?.sessions_ended ?? 0 };
+export async function restartDaemon(): Promise<{ sessions_slept: number }> {
+  const result = await rpc<{ restarting: boolean; sessions_slept: number }>("daemon.restart", {});
+  return { sessions_slept: result?.sessions_slept ?? 0 };
 }
 
 // Quit and relaunch the desktop app (Tauri command), so the webview reconnects to whatever
@@ -1032,11 +1033,15 @@ export interface SessionSummary {
   id: string;
   agent: string;
   parent: string;
-  // starting | running | exited — the process's own lifecycle, not the turn's.
-  status: string;
-  // Whether a turn is actually in flight. A session's process stays alive between
-  // messages, so `status: "running"` means "there is a process", not "it is working".
-  busy: boolean;
+  // Does this session still exist? `live` or `ended`. Durable — it survives a daemon
+  // restart, because a session is a record and only its process was ever transient.
+  lifecycle: "live" | "ended";
+  // What it is doing right now, derived by the daemon and never stored: `working` (a turn
+  // is in flight), `waiting` (parked on a decision only a person can make), `idle` (has a
+  // process, doing nothing), `asleep` (no process — the next message forks one), or `ended`.
+  activity: "working" | "waiting" | "idle" | "asleep" | "ended";
+  // How an ended session finished: `exited` or `failed`. Empty while it is live.
+  outcome: string;
   awaiting_input: boolean;
   title: string;
   working_directory: string;

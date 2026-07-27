@@ -69,13 +69,15 @@ daisy wait <session>         # block until idle, then print the result
 daisy history <session> [-n N]
 ```
 
-`ps` prints the session records as a JSON array. Three fields between them say what a session is doing, and they are separate because they answer different questions:
+`ps` prints the session records as a JSON array. Three fields between them say what a session is, and they are separate because they answer genuinely different questions:
 
 | Field | Meaning |
 |-------|---------|
-| `status` | The *process*: `starting` while its socket is not yet accepting connections, `running` once it is, `exited` or `failed` when it is over. `--all` includes the terminal ones; `exit_reason` says why. |
-| `busy` | Whether a turn is actually in flight. A session's process outlives its turns, so `running` alone cannot tell a working session from an idle one. |
+| `lifecycle` | Does it still exist? `live` or `ended`. **Durable** — it survives a daemon restart, because a session is a record and only its process was ever transient. `--all` includes the ended ones; `outcome` (`exited`/`failed`) and `exit_reason` say how and why. |
+| `activity` | What it is doing *now*: `working` (a turn is in flight), `waiting` (parked on a decision only you can make), `idle` (has a process, doing nothing), `asleep` (**no process** — the next message forks one in about 60 ms), or `ended`. Derived on every read and never stored, because a stored "working" outlives the kill that made it false. |
 | `awaiting_input` | Parked on a permission request or a question. It needs *you*. |
+
+A session with no process is the normal resting state, not an error: an idle session is put to sleep immediately, and waking it is a fork. Reads never wake anything — `get`, `ps`, `tree`, `history` and `attach` are answered from the record and the turn store — so looking at a sleeping session leaves it asleep.
 
 ```sh
 daisy ps | jq -r '.[] | select(.awaiting_input) | .id'
@@ -167,7 +169,7 @@ daisy daemon restart                    # stop, wait for the process to go, star
 daisy daemon endpoint                   # the loopback port and capability token
 ```
 
-`restart` **ends every live session**: workers are the daemon's children and shutdown reaps them. It exists because macOS caches the Accessibility trust check per process, so a daemon that was already running when you granted the permission never sees it — and its workers are re-execs of it, so neither do they. The desktop app asks for the same thing over the control plane (`daemon.restart`), which is what makes the grant flow one click now that restarting the window no longer restarts the harness.
+`restart` **keeps your sessions**. Each one loses its process and comes back asleep, picking up where it left off on the next message; `sessions_slept` says how many that was. It exists because macOS caches the Accessibility trust check per process, so a daemon that was already running when you granted the permission never sees it — and the prototype it forks sessions from is a re-exec of it, so neither do they. The desktop app asks for the same thing over the control plane (`daemon.restart`), which is what makes the grant flow one click now that restarting the window no longer restarts the harness.
 
 `stop` and `restart` signal the process group rather than calling the API, because a daemon wedged badly enough to need stopping may not be answering its own socket.
 

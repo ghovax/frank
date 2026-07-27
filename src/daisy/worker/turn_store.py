@@ -90,6 +90,14 @@ class DaemonTurnStore(TaskStore):
         raw = await self._call("turn.list_for_session", session_id=session_id) or []
         return [Task.model_validate(entry) for entry in raw]
 
+    async def claim_work_habits(self, session_id: str) -> bool:
+        """Claim the once-per-session work-habits acknowledgement, through the daemon.
+
+        Durable because a worker is per activation: a session that slept between turns must not
+        re-acknowledge every time it wakes."""
+        result = await self._call("session.claim_work_habits", session_id=session_id)
+        return bool((result or {}).get("claimed"))
+
     async def publish_event(self, event: dict) -> None:
         """Hand a live turn event to the daemon so whoever is attached sees it now, rather
         than after the turn's next persistence point."""

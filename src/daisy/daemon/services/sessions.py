@@ -14,62 +14,24 @@ from typing import Any
 from typing import cast
 import logging
 from daisy.daemon import state
-from daisy.daemon.persistence.database import SessionLifecycleRecord, SessionRecord
+from daisy.daemon.persistence.database import SessionRecord
 from daisy.daemon.services.broadcast import _publish_broadcast
 
 
-def _claim_work_habits_acknowledgement(session_id: str) -> bool:
-    """Atomically claim the one-time work-habits acknowledgement for a session."""
-    if state.session_factory is None or not session_id:
+def claim_work_habits_acknowledgement(session_id: str) -> bool:
+    """Claim the one-time work-habits acknowledgement for a session.
+
+    Durable, and it has to be: a worker is per activation now, so a session that slept and woke
+    would show the acknowledgement again on every wake if the flag lived in the worker."""
+    if state.session_store is None:
         return False
-    with sqlite_write_lock():
-        database_session = state.session_factory()
-        try:
-            record = database_session.get(SessionLifecycleRecord, session_id)
-            if record is not None and record.work_habits_acknowledged_at:
-                return False
-            acknowledged_at = datetime.now(timezone.utc).isoformat()
-            if record is None:
-                database_session.add(
-                    SessionLifecycleRecord(
-                        session_id=session_id,
-                        work_habits_acknowledged_at=acknowledged_at,
-                    ),
-                )
-            else:
-                record.work_habits_acknowledged_at = acknowledged_at
-            database_session.commit()
-            return True
-        except Exception:
-            database_session.rollback()
-            logging.getLogger("daisy.daemon").exception(
-                "failed to claim work-habits acknowledgement for %s",
-                session_id,
-            )
-            return False
-        finally:
-            database_session.close()
+    return state.session_store.claim_work_habits_acknowledgement(session_id)
 
 
 def _reset_work_habits_acknowledgements() -> None:
     """Allow one fresh acknowledgement after the work-habits setting changes."""
-    if state.session_factory is None:
-        return
-    with sqlite_write_lock():
-        database_session = state.session_factory()
-        try:
-            database_session.query(SessionLifecycleRecord).update(
-                {SessionLifecycleRecord.work_habits_acknowledged_at: ""},
-                synchronize_session=False,
-            )
-            database_session.commit()
-        except Exception:
-            database_session.rollback()
-            logging.getLogger("daisy.daemon").exception(
-                "failed to reset persisted work-habits acknowledgements",
-            )
-        finally:
-            database_session.close()
+    if state.session_store is not None:
+        state.session_store.reset_work_habits_acknowledgements()
 
 
 def _session_agent_for(session_id: str) -> str:
@@ -124,7 +86,7 @@ async def _resolve_pending_input(
     else:
         payload["decision"] = decision or "deny"
     try:
-        result = await state.relay_to_session(record, "input/respond", payload)
+        result = await state.wake_then_relay(record, "input/respond", payload)
     except Exception:  # noqa: BLE001 — an unreachable session is a "no", not a 500
         return False
     return bool(result.get("resolved"))
@@ -132,12 +94,16 @@ async def _resolve_pending_input(
 
 async def _abort_pending_input(session_id: str) -> bool:
     """Deny every gate a session is parked on, so its turn resumes and records the denials
-    rather than leaving a checkpoint no later turn could build on."""
+    rather than leaving a checkpoint no later turn could build on.
+
+    Wakes the session to do it. A session parked on a permission prompt is exactly the case
+    that sleeps — its whole state is on disk and it was holding an interpreter to wait — so the
+    gate it is parked on almost always belongs to a session with no process."""
     record = state.registry.get(session_id) if state.registry is not None else None
     if record is None:
         return False
     try:
-        result = await state.relay_to_session(record, "input/abort", {})
+        result = await state.wake_then_relay(record, "input/abort", {})
     except Exception:  # noqa: BLE001
         return False
     return bool(result.get("aborted"))

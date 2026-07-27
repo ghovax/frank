@@ -41,7 +41,11 @@ flowchart LR
 
 ## Sessions
 
-A **session** is one OS process running one agent. It is created empty and then driven by messages over its life — creation and work are separate steps, so the same session can be sent a second task, attached to, and inspected between them.
+A **session** is a durable record, with an OS process only while it is working. It is created empty and then driven by messages over its life — creation and work are separate steps, so the same session can be sent a second task, attached to, and inspected between them.
+
+The process is an activity, not the session. An idle session is put to sleep immediately: its worker is stopped, its record and its conversation stay, and the next message forks it a new worker from the prototype in about 60 ms. There is deliberately no linger window — at that price, keeping a 12 MB interpreter alive on the chance that a message arrives is paying continuously to avoid paying occasionally. The clearest case is a session parked on a permission prompt: the suspension is already fully on disk, and holding an interpreter to wait for a person who may take hours bought nothing.
+
+Two consequences follow. A daemon restart ends every session's *process* and no session at all. And the capability token is derived from the session id rather than stored, because a woken session has to be handed the same token its creator was given.
 
 Each session serves [A2A](https://github.com/google/A2A) (JSON-RPC) on **its own unix socket** in the runtime directory, and the daemon is what talks to it. Every client — the terminal, the desktop app, another session — reaches the daemon and the daemon relays, so there is one place where a caller is identified, scoped to its own subtree, and recorded. A session's socket being real and addressable is what makes that relay a thin hop rather than a reimplementation, but nothing bypasses it today.
 

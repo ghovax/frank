@@ -19,6 +19,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from a2a.types import Task
 
+from daisy.base.background_tasks import spawn_background_task
 from daisy.daemon import state
 
 logger = logging.getLogger(__name__)
@@ -68,8 +69,8 @@ async def _turn_list_for_session(params: dict) -> Any:
     return [task.model_dump(by_alias=True, exclude_none=True, mode="json") for task in tasks]
 
 
-def _set_turn_state(session_id: str, running: bool) -> None:
-    """Count the turns a session has in flight, and broadcast only on the idle/busy edge.
+def _set_turn_state(session_id: str, running: bool, retains: bool = False) -> None:
+    """Count the turns a session has in flight, and act on the idle/busy edge.
 
     A count rather than a flag because a session can have more than one turn open at once —
     a compaction or an autonomous wake alongside the user's — and the sidebar must not go
@@ -90,6 +91,44 @@ def _set_turn_state(session_id: str, running: bool) -> None:
         state.event_bus.publish(
             session_id, {"seq": _SEQUENCE[session_id], "turn": {"running": bool(updated)}}
         )
+        if not updated and not retains:
+            _sleep_when_idle(session_id)
+
+
+def _sleep_when_idle(session_id: str) -> None:
+    """Stop an idle session's process, keeping the session itself.
+
+    **Immediately, with no linger window.** A window would be a cache with a timeout nobody can
+    set correctly, and it would be caching against a cost that no longer exists: waking is a
+    fork, which is about 60 ms. Keeping a 12 MB interpreter alive on the chance that a message
+    arrives is paying continuously to avoid paying occasionally.
+
+    `retains` is the one thing that stops this, and it comes from the worker because only the
+    worker can know it: a background job is an in-process `asyncio.Task` and sleeping would
+    kill it.
+
+    A session parked on a permission prompt is the clearest case for this and takes a
+    different path — it never had a running turn to end — so it is handled where the
+    suspension is reported rather than here.
+    """
+    if state.lifecycle is None:
+        return
+    record = state.registry.get(session_id) if state.registry is not None else None
+    if record is None or not record.is_live or not record.pid:
+        return
+    spawn_background_task(state.lifecycle.sleep(session_id))
+
+
+async def _session_claim_work_habits(params: dict) -> dict:
+    """The once-per-session work-habits acknowledgement, claimed atomically.
+
+    Here rather than in the worker because a worker is per activation now, and "once per
+    session" has to outlive one."""
+    from daisy.daemon.services.sessions import claim_work_habits_acknowledgement
+
+    session_id = str(params.get("session_id") or "")
+    claimed = await asyncio.to_thread(claim_work_habits_acknowledgement, session_id)
+    return {"claimed": claimed}
 
 
 async def _session_event(params: dict) -> dict:
@@ -99,13 +138,20 @@ async def _session_event(params: dict) -> dict:
     if "running" in event:
         # Whether a turn is in flight, which the registry cannot infer: a session's process
         # is alive for its whole life, including while it sits idle between messages.
-        _set_turn_state(session_id, bool(event.get("running")))
+        _set_turn_state(session_id, bool(event.get("running")), bool(event.get("retains")))
         return {"noted": True}
     if "awaiting_input" in event:
         awaiting = bool(event.get("awaiting_input"))
         if state.registry is not None:
             state.registry.mark(session_id, awaiting_input=awaiting)
         state.broadcaster.publish({"type": "sessions_changed"})
+        if awaiting:
+            # The best case for sleeping, and the one that motivated it. `input-required` is
+            # already a durable suspension — the whole turn is checkpointed on disk — and the
+            # worker was holding an entire interpreter to wait for a person who may take
+            # hours. Answering it wakes a fresh worker and rebuilds the turn from that
+            # checkpoint, which is a path that already existed for surviving a restart.
+            _sleep_when_idle(session_id)
         return {"noted": True}
     part = event.get("part")
     if part is not None:
@@ -143,6 +189,7 @@ _METHODS = {
     "turn.get": _turn_get,
     "turn.delete": _turn_delete,
     "turn.save_state": _turn_save_state,
+    "session.claim_work_habits": _session_claim_work_habits,
     "turn.load_checkpoint": _turn_load_checkpoint,
     "turn.load_session_state": _turn_load_session_state,
     "turn.list_for_session": _turn_list_for_session,

@@ -28,7 +28,7 @@ from typing import Callable, Optional
 from daisy.base.paths import session_socket_path
 from daisy.daemon.peer_identity import session_process_groups
 from daisy.daemon.prototype import PrototypeClient, PrototypeUnavailable, SessionExit
-from daisy.daemon.registry import EXITED, FAILED, RUNNING, SessionRecord, SessionRegistry
+from daisy.daemon.registry import EXITED, FAILED, SessionRecord, SessionRegistry
 from daisy.daemon.state import relay_to_session
 from daisy.protocol.metadata import Metadata
 from daisy.base.tuning import Tunable, active_tuning
@@ -76,6 +76,11 @@ class SessionLifecycle:
         # session id -> a future settled when that session's exit is reported, so a reap can
         # wait for the process to actually be gone rather than for a timeout to elapse.
         self._departures: dict[str, asyncio.Future] = {}
+        # Sessions whose process this file is deliberately stopping in order to *sleep* them.
+        # Without it a sleep is indistinguishable from a crash: the exit report arrives the
+        # same way for both, finds a record that is still live, and ends the session — which
+        # is the opposite of what sleeping means.
+        self._sleeping: set[str] = set()
 
     def _changed(self) -> None:
         if self._on_change is not None:
@@ -113,12 +118,12 @@ class SessionLifecycle:
             pid = await self._prototype.fork_session(assignment)
         except PrototypeUnavailable as error:
             logger.error("Could not start session %s: %s", record.id, error)
-            self._registry.mark(record.id, status=FAILED, updated_at=_now(), exit_reason=str(error))
+            self._registry.end(record.id, outcome=FAILED, reason=str(error), updated_at=_now())
             self._changed()
             return False
 
         self._processes[record.id] = pid
-        self._registry.mark(record.id, status=RUNNING, updated_at=_now(), pid=pid)
+        self._registry.mark(record.id, pid=pid, updated_at=_now())
         self._changed()
         return True
 
@@ -141,13 +146,17 @@ class SessionLifecycle:
         departure = self._departures.pop(session_id, None)
         if departure is not None and not departure.done():
             departure.set_result(None)
+        if session_id in self._sleeping:
+            # A death this file caused on purpose. The session keeps its record and its
+            # subscribers; only the process is gone.
+            return
         record = self._registry.get(session_id)
         if record is not None and record.is_live:
-            self._registry.mark(
+            self._registry.end(
                 session_id,
-                status=EXITED if report.clean else FAILED,
+                outcome=EXITED if report.clean else FAILED,
+                reason="" if report.clean else report.describe(),
                 updated_at=_now(),
-                exit_reason="" if report.clean else report.describe(),
             )
             # A dead parent takes its children with it, exactly as an explicit kill would.
             await self.reap(session_id, reason="parent session ended", skip_self=True)
@@ -173,9 +182,9 @@ class SessionLifecycle:
         effort, and quiet on failure: a parent that has itself gone is the common reason this
         does not land, and it is not an error."""
         parent = self._registry.get(record.parent) if record.parent else None
-        if parent is None or not parent.is_live or parent.status != RUNNING:
+        if parent is None or not parent.is_live:
             return
-        outcome = record.exit_reason or ("finished" if record.status == EXITED else record.status)
+        outcome = record.exit_reason or ("finished" if record.outcome == EXITED else record.outcome)
         text = (
             f"Session {record.id} ({record.agent}), which you created, has ended without "
             f"reporting back: {outcome}."
@@ -199,16 +208,16 @@ class SessionLifecycle:
             return 0
         descendants = [record for record in self._registry.descendants_of(session_id) if record.is_live]
         for descendant in descendants:
-            self._registry.mark(
-                descendant.id, status=EXITED, updated_at=_now(),
-                exit_reason=reason or "parent session was reaped",
+            self._registry.end(
+                descendant.id, outcome=EXITED, updated_at=_now(),
+                reason=reason or "parent session was reaped",
             )
         # Stopped together rather than one at a time: each carries its own grace period, and a
         # wide tree would otherwise take that period multiplied by its size to come down.
         await asyncio.gather(*(self._stop(record.id) for record in descendants), return_exceptions=True)
         reaped = len(descendants)
         if not skip_self and record.is_live:
-            self._registry.mark(session_id, status=EXITED, updated_at=_now(), exit_reason=reason)
+            self._registry.end(session_id, outcome=EXITED, reason=reason, updated_at=_now())
             await self._stop(session_id)
             reaped += 1
         self._changed()
@@ -218,6 +227,40 @@ class SessionLifecycle:
         if not skip_self:
             await self._tell_parent(self._registry.get(session_id) or record)
         return reaped
+
+    async def sleep(self, session_id: str) -> bool:
+        """Take a live session's process away, leaving the session itself intact.
+
+        The difference from :meth:`reap` is the whole of Part III: reaping ends the session,
+        this ends only its process. The record stays `live`, its activity becomes `asleep`, and
+        the next command routed through `wake_then_relay` forks it a new worker from the
+        prototype — a fresh copy, never a reused one, so the isolation invariant is untouched.
+
+        Everything the woken worker needs is already on the record, because all of it was fixed
+        at `create` and none of it is re-derived; the conversation itself comes back from the
+        turn store's checkpoint, which is the same path a restart already used.
+        """
+        record = self._registry.get(session_id)
+        if record is None or not record.is_live:
+            return False
+        pid = self._processes.pop(session_id, None)
+        if pid is None:
+            return False
+        logger.info("Sleeping session %s (pid %d)", session_id, pid)
+        self._sleeping.add(session_id)
+        try:
+            await self._terminate(session_id, pid)
+        finally:
+            self._sleeping.discard(session_id)
+        self._departures.pop(session_id, None)
+        self._registry.sleep(session_id, updated_at=_now())
+        # Deliberately not closing subscribers and not unlinking the socket the way `_stop`
+        # does. An `attach` on a sleeping session stays open — the session has not ended, and a
+        # watcher should see the next turn when it wakes rather than having to reconnect.
+        with contextlib.suppress(OSError):
+            session_socket_path(session_id).unlink(missing_ok=True)
+        self._changed()
+        return True
 
     async def _stop(self, session_id: str) -> None:
         pid = self._processes.pop(session_id, None)
@@ -288,10 +331,22 @@ class SessionLifecycle:
         with contextlib.suppress(OSError):
             session_socket_path(session_id).unlink(missing_ok=True)
 
-    async def aclose(self) -> None:
-        """Reap every live session. Called when the daemon itself is going down, so no session
-        outlives the thing that was supervising it."""
+    async def sleep_all(self) -> int:
+        """Stop every session's process, keeping every session.
+
+        What a daemon shutdown actually needs to do now that the registry is durable. A worker
+        cannot outlive its supervisor — it persists through the daemon, so an orphan would
+        silently lose work — but the *session* has no reason to end with it."""
+        running = self._registry.running()
         await asyncio.gather(
-            *(self.reap(record.id, reason="daemon shutting down") for record in self._registry.live()),
-            return_exceptions=True,
+            *(self.sleep(record.id) for record in running), return_exceptions=True,
         )
+        return len(running)
+
+    async def aclose(self) -> None:
+        """Put every running session to sleep. Called when the daemon itself is going down.
+
+        Deliberately sleeping rather than reaping. A session used to end here because its
+        record lived in this process and would not survive; the record is durable now, so
+        ending it would be discarding something the next daemon can pick straight back up."""
+        await self.sleep_all()

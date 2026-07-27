@@ -145,7 +145,6 @@ class SessionExecutor(AgentExecutor):
         # persona switch continued the same dialogue; a session is one agent for life now, so
         # the map has exactly one entry and exists only because the turn machinery indexes it.
         self._conversations: dict[str, list] = {}
-        self._claim_persisted_work_habits_acknowledgement = None
         self._startup_resume_tasks: set[asyncio.Task] = set()
         self._compaction_tasks: set[asyncio.Task] = set()
         self._work_habits_acknowledged = False
@@ -164,11 +163,33 @@ class SessionExecutor(AgentExecutor):
         spawn_background_task(self._turn_store.publish_event({"session_id": session_id, "part": payload}))
 
     def _notify_turn_state(self, session_id: str, running: bool) -> None:
-        """Tell the daemon whether a turn is in flight, so `ps` and the sidebar can show
-        working rather than merely alive — a session's process outlives its turns."""
-        spawn_background_task(
-            self._turn_store.publish_event({"session_id": session_id, "running": running})
-        )
+        """Tell the daemon whether a turn is in flight, and whether anything still holds this
+        process.
+
+        `running` drives what `ps` and the sidebar show — working rather than merely alive.
+        `retains` is what decides whether the worker may be put to sleep when the turn ends,
+        and it has to be answered here because only this process knows: a background job is an
+        in-process `asyncio.Task`, and sleeping the worker would kill it. Sent with the same
+        event rather than asked for afterwards, so the daemon never has to round-trip to a
+        session it is about to stop."""
+        spawn_background_task(self._turn_store.publish_event({
+            "session_id": session_id,
+            "running": running,
+            "retains": self._has_live_background_work(),
+        }))
+
+    def _has_live_background_work(self) -> bool:
+        """Whether any runtime in this worker still has background work in flight.
+
+        Deliberately includes results that finished but have not reached the model: sleeping
+        then would drop the autonomous wake that was about to deliver them."""
+        for context in self._contexts.values():
+            runtime = getattr(context, "runtime", None)
+            if runtime is None:
+                continue
+            if runtime.has_pending_jobs() or runtime.has_completed_undelivered_jobs():
+                return True
+        return False
 
     def _notify_permission_state(self, session_id: str, awaiting: bool) -> None:
         """Tell the daemon this session is parked on a human, so `ps` can show it as waiting
@@ -305,14 +326,18 @@ class SessionExecutor(AgentExecutor):
     async def _claim_work_habits_acknowledgement(self, session_id: str, **_flags) -> bool:
         """Whether this turn should emit the once-per-session work-habits acknowledgement.
 
-        A worker is created fresh per session and the acknowledgement is a user-facing nicety,
-        so there is nothing durable to claim: the first turn shows it, later turns do not."""
+        Claimed through the daemon rather than remembered here, and that is not fussiness: a
+        worker is created fresh per *activation* now, not per session, so a session that slept
+        between turns and woke again would show the acknowledgement every time it woke. The
+        in-memory flag is kept in front of it purely to save a round trip within one activation.
+        """
         if not self._global_configuration.user_context.enabled:
             return False
         if self._work_habits_acknowledged:
             return False
+        claimed = await self._turn_store.claim_work_habits(session_id)
         self._work_habits_acknowledged = True
-        return True
+        return claimed
 
 
     def _record_pending_answer(self, task, payload: dict) -> Optional[tuple[dict, dict]]:
