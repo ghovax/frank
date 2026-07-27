@@ -112,7 +112,11 @@ export function CursorAuthControl({
         {translation("title")}
       </Text>
       {signedIn ? (
-        <Button colorPalette="red" onClick={handleSignOut} loading={busy}>
+        <Button
+          colorPalette="red"
+          onClick={handleSignOut}
+          loading={busy}
+        >
           <LuLogOut size={14} />
           {translation("signOut")}
         </Button>
@@ -142,9 +146,7 @@ export function CursorAuthControl({
           <Alert.Indicator />
           <Alert.Content>
             <Alert.Description fontSize="xs" truncate>
-              {status?.account
-                ? translation("signedInAs", { account: status.account })
-                : translation("signedIn")}
+              {status?.account ? translation("signedInAs", { account: status.account }) : translation("signedIn")}
             </Alert.Description>
           </Alert.Content>
         </Alert.Root>
@@ -152,7 +154,9 @@ export function CursorAuthControl({
         <Alert.Root status="info" size="sm" borderRadius="md" mt={3} alignItems="center">
           <Alert.Indicator />
           <Alert.Content>
-            <Alert.Description fontSize="xs">{translation("planNotice")}</Alert.Description>
+            <Alert.Description fontSize="xs">
+              {translation("planNotice")}
+            </Alert.Description>
           </Alert.Content>
         </Alert.Root>
       )}

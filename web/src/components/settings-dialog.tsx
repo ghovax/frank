@@ -566,11 +566,7 @@ export function SettingsDialog({
             secretRow(translation("proxyServer"), "http://user:pass@host:port", webFetchProxyUrl, setWebFetchProxyUrl, translation("proxyServerHint")),
           ],
         },
-        // The two subscription sign-ins, stacked: neither takes an API key, so neither
-        // belongs in the rows above, and they are independent of each other.
-        { title: translation("modelProviders"), rows: [], block: (
-          <Flex direction="column" gap={5} maxW="520px"><ChatGPTAuthControl /><CursorAuthControl /></Flex>
-        ) },
+        { title: translation("modelProviders"), rows: [], block: <Flex direction="column" gap={5} maxW="520px"><ChatGPTAuthControl /><CursorAuthControl /></Flex> },
       ],
     },
     ...(projectId ? [{
