@@ -105,10 +105,18 @@ APPEND_URL = f"{API_BASE_URL}/aiserver.v1.BidiService/BidiAppend"
 USABLE_MODELS_URL = f"{API_BASE_URL}/agent.v1.AgentService/GetUsableModels"
 AVAILABLE_MODELS_URL = f"{API_BASE_URL}/aiserver.v1.AiService/AvailableModels"
 
-# Cursor gates features on the client version it is told about. This tracks a released
-# Cursor CLI build; like the Codex client's version floor, it is a value to keep current
-# rather than a decoration — an unrecognised one can cost models or capabilities.
-CLIENT_VERSION = "cli-2026.07.14-8f4c1a2"
+# A real Cursor CLI build, and specifically the newest one that any working client is known
+# to send: `cli-2026.01.09-231024f` appears in three files across the two OpenCode plugins
+# that drive this service. It is not invented and not derived from today's date — an
+# authentic-looking version nobody has exercised is worse than an obviously old one, because
+# it invites trust it has not earned.
+#
+# Unlike the Codex client, where `client_version` is a documented floor that hides models
+# below it, nothing in Cursor's descriptor gates anything on this. What is known is only that
+# the service wants the header: one plugin ships `cli-unknown` as its fallback and works, so
+# the value appears to be far less load-bearing than its Codex counterpart. Treat it as a
+# value to keep roughly current, not as a floor to clear.
+CLIENT_VERSION = "cli-2026.01.09-231024f"
 CLIENT_TYPE = "cli"
 
 # gRPC status codes worth naming. 8 is RESOURCE_EXHAUSTED, which on this service means
@@ -298,6 +306,13 @@ class ChatCursorModel(BaseChatModel):
 
     @staticmethod
     def _headers(tokens: CursorTokens, request_id: str) -> dict[str, str]:
+        """The header set the ``RunSSE`` + ``BidiAppend`` transport was tested with.
+
+        Which headers to send is not a free choice, because the two transports through this
+        service were exercised with different sets. The plugins that hold an HTTP/2 stream open
+        for ``Run`` send no checksum, no timezone and no streaming hint; the one that uses this
+        transport sends all three. Matching that one is deliberate — a header set assembled by
+        taking the union of two tested combinations is a third combination nobody has tried."""
         return {
             "Authorization": f"Bearer {tokens.access_token}",
             # Not Connect's own content type: this service answers 415 to

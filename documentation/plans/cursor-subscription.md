@@ -1,6 +1,6 @@
 ---
 created: 2026-07-26T23:52:40Z
-updated: 2026-07-27T01:34:00Z
+updated: 2026-07-27T01:52:00Z
 commit: 98560a9
 ---
 
@@ -63,6 +63,20 @@ There is a third design, and Cursor built it in. Every completed turn ends with 
 What it costs is real but bounded. Cursor bills the token accounting a subscription's credit pool is denominated in, and cache reads run at roughly a fifth of input rate. If resending the transcript defeats caching, input tokens — the dominant term in an agentic loop — cost about five times what they would. Whether it *does* defeat caching is not known from here: the prompt this sends is append-only, with a stable system prompt and a transcript that only grows at the end, so ordinary prefix caching should still hit most of it; but a cache scoped per conversation id would miss entirely, since every turn mints a fresh one. Nothing short of a metered account answers that.
 
 So the position is: keep the fresh run, because it is the only design in which the transcript Daisy owns is the only transcript, and because checkpoint resume brings a blob store, an eviction policy, interrupt sanitisation and a "blob not found" failure mode along with it — all of which the maintained plugin has, and all of which exist to serve a live stream this does not have. But the checkpoint is the upgrade path if measurement says caching is being missed, and it is a much smaller step than the earlier framing implied.
+
+One thing worth stating because it is easy to assume otherwise: **no client does anything about caching**, and there is nothing for a client to do. The service descriptor has no cache field of any kind — no `cache_control`, no ephemeral marker, nothing to mark a prefix as reusable — and none of the plugins sends anything of the sort. The one place "cache" appears in any of them is a per-model price table used to report cost, and a client-side memo of the system prompt's blob id. So caching here is entirely the server's business, and the only lever a client has over it is whether the conversation is resent or referred to. There is no cache discipline being respected elsewhere that this fails to respect.
+
+## Where this stands against the clients that have been run
+
+Two things were checked against them rather than assumed, and both changed the code.
+
+The run request now matches the simpler plugin's field for field: `conversation_state`, `action`, `model_details` with the id in all three name fields, and `conversation_id`. `RequestedModel` is not sent, and that is a choice with evidence behind it — the maintained fork adds it to select a model *variant* by parameter, while the simpler plugin omits it entirely and works, and this provider addresses variants by their effort-suffixed id, which is how `GetUsableModels` already shapes them.
+
+There is one place where following the simpler plugin would have been a mistake, and reading both is what caught it. It builds structured turns into `conversation_state.turns`, each carrying a serialized `UserMessage`. The maintained fork tore that out with a comment explaining why: the server reads `AgentConversationTurnStructure.user_message` as a blob *reference*, so turns referring to blobs a fresh conversation never stored fail with "blob not found". Its replacement is history embedded as text in the user message — which is what this does. Following the newer code here rather than the simpler code is the difference between working and not.
+
+The client version is `cli-2026.01.09-231024f` because that is the newest string any working client actually sends, not because of what today's date is. The header set is the one paired with *this* transport rather than the union of every set seen: the plugins holding an HTTP/2 stream open for `Run` send no checksum, timezone or streaming hint, the one using `RunSSE` sends all three, and assembling a superset would invent a fourth combination nobody has run.
+
+The gap that remains is the checkpoint, which both plugins keep per conversation behind a thirty-minute TTL and this does not keep at all. That is the subject of the section above.
 
 ## The system prompt does not travel inline
 

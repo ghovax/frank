@@ -344,8 +344,13 @@ def conversation_state(root_prompt_blob_ids: list[bytes]) -> bytes:
 
 
 def model_details(model_id: str) -> bytes:
-    """agent.v1.ModelDetails — which model answers."""
-    return text(1, model_id) + text(3, model_id)
+    """agent.v1.ModelDetails — which model answers.
+
+    All three name fields carry the id, which is what the plugin whose run request this
+    otherwise matches does. ``RequestedModel`` is deliberately not sent: it exists to select a
+    model *variant* by parameter, and this provider addresses variants by their effort-suffixed
+    id instead, which is how the ids ``GetUsableModels`` returns are already shaped."""
+    return text(1, model_id) + text(3, model_id) + text(4, model_id)
 
 
 def mcp_file_system_options(workspace: str, instructions: str) -> bytes:
