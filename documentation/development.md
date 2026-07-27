@@ -114,7 +114,19 @@ The symlink is what puts `daisy` and `daisyd` on your `PATH`, both entering the 
 
 ## Tests
 
-The repository ships **no committed test suite** — changes are verified ad hoc (lint with `uv run ruff check`, run `scripts/check_layers.py`, and drive the affected path through the CLI directly). `pyproject.toml` is already set up for `pytest` (`testpaths = ["tests"]`, `asyncio_mode = "auto"`), so if you add a `tests/` directory `uv run pytest` will pick it up.
+The repository ships **no unit-test suite**, but it does ship a **verification battery** — the specific, falsifiable claims the architecture rests on, each checked by doing it:
+
+```sh
+uv run python -m scripts.verify              # everything, in dependency order
+uv run python -m scripts.verify prototype    # one stage
+uv run python -m scripts.verify --list
+```
+
+Each stage gets its own temporary XDG roots and its own daemon and cleans up after itself, so a run touches nothing of yours. Exit status is the number of failures.
+
+Two stages need a real machine and are skipped elsewhere, which is the reason to run this locally at least once. `macos-fork` answers the three questions only macOS can — whether a forked child may initialise CoreFoundation, whether the Accessibility grant follows a fork, whether `sandbox-exec` still works from a child — and counts threads with mach, which is the only way to see the ones that make a fork illegal. And confinement is only genuinely exercised where the kernel can enforce it: without Landlock (or a working `sandbox-exec`) the battery runs with `sandbox.enforce: preferred` and the sandbox is never applied.
+
+Beyond the battery: lint with `uv run ruff check`, and drive the affected path through the CLI directly. `pyproject.toml` is already set up for `pytest` (`testpaths = ["tests"]`, `asyncio_mode = "auto"`), so if you add a `tests/` directory `uv run pytest` will pick it up.
 
 ## Project layout
 

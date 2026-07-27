@@ -35,6 +35,25 @@ Every figure is from `daisy.worker.session` — the actual parked-worker import 
 | Twelve-session fan-out | **406 MB** by fork vs **3,433 MB** modelled by spawn — **88.2 %** |
 | Marginal cost of one more session | **264 MB → ≈ 12 MB**, and **≈ 5 s → ≈ 60 ms** |
 
+Those last two are from the synthetic probe, where the forked child built an `AgentRuntime` and
+stopped. Running the same measurement against **real session workers** — uvicorn, the A2A app,
+a `SessionExecutor`, the MCP manager — gives a larger marginal figure and the same conclusion:
+
+| Measured on real workers (`scripts/verify` → `fan-out`) | Result |
+|---|---|
+| One worker alone, PSS | **227.8 MB** |
+| Twelve sessions plus the prototype, PSS | **744.9 MB** |
+| The same thirteen modelled as cold starts | **2,960.8 MB** |
+| Saving | **74.8 %** |
+| Marginal per session | **≈ 58 MB** — four times the probe's figure, because a real worker is more than a runtime |
+| Time per session | **≈ 0.75 s** including the daemon round trip |
+
+The probe's ≈ 12 MB is not wrong, it is narrower: it measured the fork, not a session. The
+honest headline is that a fleet costs about a quarter of what spawning it would, and that is
+what the verification battery asserts on — the marginal number is reported rather than gated,
+because an idle worker and one mid-turn are legitimately different and a threshold on it would
+be a threshold on the test's own timing.
+
 Fork was verified against the hazards that actually apply, not the folklore ones. A child that makes its own event loop, calls `setsid`, binds a unix socket, spawns a subprocess and logs: all pass. A child that reuses the parent's `ThreadPoolExecutor`, or touches a lock another thread held at fork time: both fail, exactly as they should. Those two failures are the entire risk.
 
 On Linux the import graph creates neither, and the only thread in the process is the one `worker/__main__.py:37` starts itself. **On macOS that was not true, and the difference is not portable trivia — it is the invariant.** The section below is what it took to find that out, and it is the reason item 8 exists.
@@ -347,22 +366,48 @@ The precedent is Jinja2's `Loader` — `FileSystemLoader`, `PackageLoader`, `Dic
 
 ## Verification
 
-There is no test suite — `pyproject.toml` sets `testpaths = ["tests"]` and `tests/` contains no test files — so verification is built here rather than inherited, as it was for `xeac-migration.md`. The order matters: each stage depends on the one before it being true.
+There is no test suite — `pyproject.toml` sets `testpaths = ["tests"]` and `tests/` contains no test files — so verification is built here rather than inherited. It is **executable**, in `scripts/verify`, not a table of intentions:
 
-| Stage | What it proves | How |
+```sh
+uv run python -m scripts.verify              # everything, in dependency order
+uv run python -m scripts.verify prototype    # one stage
+uv run python -m scripts.verify --list
+```
+
+Each stage gets its own temporary XDG roots and its own daemon, and takes them away afterwards, so a run touches nothing of the developer's. Exit status is the number of failures.
+
+| Stage | The claim it checks | Status |
 |---|---|---|
-| **Structure** | The layering held and nothing was dropped | `scripts/check_layers.py`, with the two new rules from #7 and #34. A symbol-inventory diff against the pre-change tree, where every removed public symbol appears on the deletion list |
-| **The invariant** | The prototype is single-threaded and forkable | `scripts/probe_fork_macos.py`, unmodified, exit 0. **This gates Part II**, and it is the one check that must run on macOS rather than in CI |
-| **Re-entrancy** | Part I actually removed the shared state | Two `AgentRuntime` instances in one process, with different sandbox profiles, each running a `bash` call — the second must not observe the first's confinement. This is the regression that `dispatch.py:565` can reintroduce |
-| **A turn** | The harness still works end to end | Create a session, send a message, watch it complete over `attach`. The path most likely to be broken by Part I, because every tool client moved |
-| **Sleep and wake** | Part III is real | Send a message, wait for idle, assert no worker process exists, send a second message, assert the reply arrives and the conversation continued. Then the same across a daemon restart |
-| **A permission gate survives sleeping** | The best case of Part III | Drive a turn to `input-required`, assert the worker is gone, answer it, assert the turn resumes |
-| **Fan-out** | The economics claimed here | Create twelve peers; assert the fleet's total footprint is closer to one prototype than to twelve workers |
-| **Reaping** | Supervision still works without `waitpid` | Kill a session's process directly; assert the prototype reports it and the daemon marks the session failed. Kill the prototype; assert live sessions are unaffected and a new session still starts |
-| **The wipe** | Part V took the right things | `grep -ri artifact` over `src/` and `web/src/` returns only `turn_artifacts`, `task.artifacts` and `add_artifact`. `bun run build`, `bun run check:events` and `scripts/check_translations.py` pass |
-| **The seams** | Part VII made them replaceable rather than merely named | For each port, drive a turn with a caller-supplied implementation and assert it was used: a stub `BaseChatModel`, a list-appending `Observer`, an auto-allowing `Approvals`, a dict `Checkpoints` a second `Session` resumes from. Then assert the negative that motivated it — a library session that runs a background job creates **no** file under the caller's XDG directories |
+| `structure` | Layering holds, every module imports alone, both message catalogues agree and have no orphans | **Passing** |
+| `reentrancy` | Two contexts in one process keep their own confinement — the `dispatch.py` regression | **Passing** |
+| `artifact-wipe` | Every deleted symbol and file is gone, and the A2A deliverable that shares the name is not | **Passing** |
+| `library` | Every seam is replaceable (caller's model answers the turn, caller's observer records, caller's approver decides, a second `Session` resumes from the caller's store), an incomplete port is rejected by name, and **nothing is written to the caller's XDG directories** | **Passing** |
+| `prototype` | Single-threaded by mach `task_threads`, heap frozen, forks, child reports ready and its exit, still single-threaded afterwards | **Passing** |
+| `daemon` | The daemon boots, brings the prototype up, and reports both invariants through `daemon.status` | **Passing** |
+| `session` | A session survives a daemon restart, comes back `live`/`asleep`, its derived token still authorises it, reads do not wake it, a message does | **Passing** |
+| `reaping` | `SIGKILL` a session's process; the prototype reports it and the daemon marks the session failed — which is the whole point of reporting, since the daemon cannot `waitpid` it | **Passing** |
+| `prototype-death` | Kill the prototype; live sessions are untouched, it restarts, and a new session still starts | **Passing** |
+| `fan-out` | The economics, against **PSS** rather than RSS | **Passing — 74.8 %** |
 
-These are throwaway tests in the sense `xeac-migration.md` used the term — written to prove this change, not to become a suite. A real suite is separate work with a separate goal.
+### What a container cannot check, and only a real machine can
+
+Two claims are genuinely unverifiable here, and they are the reason to run this locally at least once:
+
+| Claim | Why it needs a real machine |
+|---|---|
+| **The fork is safe on macOS** | The failure mode is an abort inside the Objective-C runtime, and the thread count that predicts it is invisible to `threading.enumerate()`. Linux passing tells you nothing about it — the invariant has already been broken once by an import-time HTTP call, and on Linux that broke nothing at all |
+| **Confinement is enforced** | This container has no Landlock, so every run here uses `sandbox.enforce: preferred` and the sandbox is never actually applied. Whether `sandbox-exec` still works from a forked child is a question only macOS answers |
+
+Everything else in the battery is platform-independent and has been run.
+
+### What the battery found
+
+Written to confirm the work and it did not: it found two real defects, which is the argument for having it.
+
+| Found | What it was |
+|---|---|
+| **Sleeping was indistinguishable from crashing** | The prototype reports a child's exit identically whether the daemon asked for it or not, so the first working sleep marked every slept session `failed`. Fixed by tracking the sessions being deliberately stopped |
+| **`gc.unfreeze()` in the forked child** | Added on the reasoning that the child should collect its own garbage normally. It is the exact opposite: the permanent generation holds the parent's import graph, and putting it back under the collector means the child's first full collection writes a mark bit into every page and un-shares the whole image — the decay `gc.freeze()` exists to prevent, now paid per child |
 
 ## Data on disk
 
@@ -417,7 +462,7 @@ A session's capability token becomes recomputable from a master key rather than 
 
 | Hazard | Why it is real | Detection |
 |---|---|---|
-| **The single-threaded invariant breaks again** | It broke once already, silently, and the failure presented as the CoreFoundation verdict rather than as itself. Any dependency that touches the network or a framework at import time re-breaks it, and Python-level introspection will not show you | The prototype asserts `task_threads() == 1` before forking and refuses otherwise (#9). `scripts/probe_fork_macos.py` counts with mach and attributes any change to the exact module import that caused it |
+| **The single-threaded invariant breaks again** | It broke once already, silently, and the failure presented as the CoreFoundation verdict rather than as itself. Any dependency that touches the network or a framework at import time re-breaks it, and Python-level introspection will not show you | The prototype asserts `task_threads() == 1` before forking and refuses otherwise (#9). `scripts/verify` → `macos-fork` counts with mach and attributes any change to the exact module import that caused it |
 | **A dependency initialises the Objective-C runtime at import** | The `computer`-is-lazy invariant covers Daisy's own code; it cannot cover a third-party package that reaches for a framework on darwin | The probe blocks on PyObjC **bridge** modules in `sys.modules`. Note what does *not* work: a name census for CoreFoundation, which is linked into the bare interpreter and therefore always present — the probe lists loaded dyld images for information only |
 | **`gc.freeze()` is forgotten or reverted** | Without it the saving drops from 88 % to roughly a third of that, silently — nothing breaks, memory just grows | The prototype records its frozen count in `daemon.status`; a zero is visible |
 | **Sleeping a session with background work** | A background job is an in-process `asyncio.Task`; sleeping its worker kills it | The idle test includes `has_pending_jobs()`. `background_store` already models the loss if it is ever wrong |

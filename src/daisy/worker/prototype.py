@@ -386,10 +386,16 @@ class Prototype:
             # listening socket open would make the prototype's own shutdown never complete.
             os.close(ready_read)
             self._close_inherited()
-            # Frozen objects are the parent's optimisation. Unfreezing lets this process
-            # collect its own garbage normally, which it will generate plenty of; the pages
-            # stay shared until they are written either way.
-            gc.unfreeze()
+            # The frozen heap is deliberately *kept*. Unfreezing here was the obvious-looking
+            # thing to do and is exactly wrong: the permanent generation holds the parent's
+            # module-level objects, and putting them back under the collector means the child's
+            # first full collection walks all of them, writes a mark bit into every page, and
+            # un-shares the entire image — which is the decay `gc.freeze()` exists to prevent,
+            # only now paid per child. Measured: it cost about 45 MB per session.
+            #
+            # Nothing is lost by keeping it. Objects this process allocates after the fork are
+            # not frozen and are collected normally; the frozen set is the import graph, which
+            # a session never collects anyway because it is reachable for the process's life.
 
             from daisy.worker.serve import run
 

@@ -30,7 +30,7 @@ check is on the PyObjC bridge modules, which is what `daisy.computer` would drag
 Output is structured: every record carries a static message and its data as named fields, so a
 run can be read by a person and parsed by a machine without either guessing.
 
-    PYTHONPATH=src uv run python scripts/probe_fork_macos.py
+    uv run python -m scripts.verify macos-fork
 
 Exit status is 0 when every check passes, 1 on failure, 2 when not run on macOS.
 """
