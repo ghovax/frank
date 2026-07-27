@@ -51,6 +51,7 @@ is a library you cannot embed.
 | `approvals` | `daisy.Approvals` | None (gates suspend) | Who answers a gated tool call when there is no human |
 | `peers` | `SessionAccess` | None (composition tools absent) | How this session reaches other sessions |
 | `sandbox` | `daisy.base.confinement.Profile` | Unconfined profile | What a tool's children may do |
+| `catalogue` | `daisy.Catalogue` | The working directory's `.agents` plus the packaged base layer — **and nothing of `$HOME`** | Where agents, skills, memories, instructions and prompt templates come from |
 | `configuration` | `GlobalConfiguration` | Read from XDG, **without creating it** | Providers, tuning, agent directories |
 
 Two of these are interfaces we did not write. `BaseChatModel` is LangChain's, and the a2a
@@ -85,6 +86,31 @@ TypeError: checkpoints: RedisCheckpoints does not satisfy Checkpoints: it is mis
 
 Structural typing gives no compile-time guarantee, so the check happens once per session
 rather than surfacing as an `AttributeError` deep inside a turn.
+
+### The catalogue
+
+Everything the prompt is assembled from — the agent profile, the skills, the memories, the project's instructions, the prompt templates themselves — comes from one interface, because those differ in how they are *parsed*, not in how they are *found*.
+
+The default matters more here than anywhere else. Before this seam existed, finding that material meant walking hardcoded paths, and the instruction loader read `~/.config/opencode/AGENTS.md` and `~/.claude/CLAUDE.md` — two *other products'* configuration files — out of the user's home directory unconditionally. So a library session's default catalogue reads the working directory and the packaged agents, and nothing of `$HOME`. `daisyd` and the CLI use `machine_catalogue`, which does read all of it, because there the person running it is the person those files describe.
+
+Build one entirely in code when you want the prompt fully under your control:
+
+```python
+from daisy.base.catalogue import DictCatalogue
+from daisy.base.configuration import AgentConfiguration
+from daisy.base.skills import Skill
+
+catalogue = DictCatalogue(
+    agent_configurations={"reviewer": AgentConfiguration(identifier="reviewer", ...)},
+    skill_list=[Skill(name="house-style", description="our conventions", body=STYLE)],
+    instruction_text='[{"path": "in-memory", "content": "always cite line numbers"}]',
+)
+session = Session("reviewer", catalogue=catalogue)
+```
+
+Unlisted prompt templates fall back to the packaged ones, so replacing the system prompt is something you opt into rather than something you have to reproduce to get started. And `agent=` accepts an `AgentConfiguration` directly as well as a name, which is the shortest path of all when you have one in hand.
+
+`FileCatalogue` is the other shipped implementation — it is what the harness has always done, with the roots as an argument instead of derived.
 
 ### Approvals
 

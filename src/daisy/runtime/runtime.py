@@ -18,7 +18,6 @@ from daisy.base.configuration import (
     AgentConfiguration,
     GlobalConfiguration,
     PermissionEvaluator,
-    PromptLoader,
 )
 from langchain_core.language_models.chat_models import BaseChatModel
 from daisy.runtime.models.litellm import ChatLiteLLMModel
@@ -94,6 +93,21 @@ from daisy.runtime.internals import (
 
 
 logger = logging.getLogger(__name__)
+
+
+class _CataloguePrompts:
+    """A `PromptLoader`-shaped view of a catalogue.
+
+    An adapter rather than a rewrite: `load(name, variables)` is the call every prompt site in
+    the turn loop already makes, and the catalogue answers it. Keeping the shape means the
+    template seam cost one class instead of a change at every render site.
+    """
+
+    def __init__(self, catalogue: Any) -> None:
+        self._catalogue = catalogue
+
+    def load(self, template_name: str, variables: dict[str, str]) -> str:
+        return self._catalogue.prompt(template_name, variables)
 
 
 async def _drain_observation(pending) -> None:
@@ -427,6 +441,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         jobs: Any = None,
         observer: Any = None,
         approvals: Any = None,
+        catalogue: Any = None,
     ):
         self._session_id = session_id
         # The session that created this one, empty when a person did. Reaches the model in the
@@ -533,8 +548,16 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
             "model_calls": 0,
         }
 
-        prompts_directory = Path(__file__).parent / "prompts"
-        self._prompt_loader = PromptLoader(prompts_directory)
+        # Where the prompt's material comes from: agent profiles, skills, memories, the
+        # project's instructions, and the templates themselves. Supplied rather than derived,
+        # because finding it means walking hardcoded paths — including, before this, two other
+        # products' configuration files out of the user's home directory.
+        if catalogue is None:
+            from daisy.base.catalogue import machine_catalogue
+
+            catalogue = machine_catalogue(global_configuration, self._project_directory)
+        self._catalogue = catalogue
+        self._prompt_loader = _CataloguePrompts(catalogue)
         self._cached_system_prompt: str | None = None
         self._task_manager = TaskManager()
         self._active_goal: str = ""

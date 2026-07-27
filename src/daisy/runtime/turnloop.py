@@ -21,13 +21,10 @@ from daisy.runtime.internals import _stream_next
 from daisy.runtime.prompt.environment import probe_local_environment
 from daisy.runtime.prompt.environment import probe_user_context
 from daisy.protocol.events import TurnContext
-from daisy.runtime.prompt.instructions import load_instructions
-from daisy.runtime.prompt.memories import load_memories
-from daisy.runtime.prompt.memories import memories_payload
+from daisy.base.memories import memories_payload
 from daisy.base.message_content import message_content_deltas
 from daisy.base.message_content import message_text
 from daisy.base.skills import enabled_skills
-from daisy.base.skills import load_skills
 from daisy.base.skills import skills_for_agent
 from daisy.base.skills import skills_payload
 from daisy.runtime.turn_events import Checkpoint
@@ -90,9 +87,9 @@ class _TurnLoopMixin:
         was never asked to involve. A caller that wants a peer names the profile.
         """
         if self._cached_system_prompt is None:
-            all_skills = enabled_skills(load_skills(self._global_configuration.skill_directories_for(self._project_directory)))
+            all_skills = enabled_skills(list(self._catalogue.skills()))
             agent_skills = skills_for_agent(all_skills, self._agent_configuration.skills)
-            memories = load_memories(self._global_configuration.memory_directories_for(self._project_directory))
+            memories = list(self._catalogue.memories())
             workspace_root, is_git_repo = _detect_workspace(self._working_directory)
             context_json = compact({
                 "session": self._session_id,
@@ -133,7 +130,7 @@ class _TurnLoopMixin:
                 "context": context_json,
                 "system_environment": probe_local_environment(),
                 "user_environment": user_environment,
-                "instructions": load_instructions(self._project_directory),
+                "instructions": self._catalogue.instructions(),
                 "skills": compact(skills_payload(agent_skills)),
                 "memories": compact(memories_payload(memories)),
                 "agent_context": agent_context,

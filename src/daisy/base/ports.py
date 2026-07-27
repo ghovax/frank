@@ -317,6 +317,59 @@ class MemoryJobStore:
         })
 
 
+# Where the prompt's material comes from.
+
+
+@runtime_checkable
+class Catalogue(Protocol):
+    """The source of everything the prompt is assembled from.
+
+    Five kinds of material — an agent profile, a skill, a memory, an instruction file, a prompt
+    template — and they are one port rather than five because they differ in how they are
+    *parsed*, not in how they are *found*. Each is named text in a namespace. Six interfaces
+    for one concept would be a taxonomy of our filing system rather than a seam.
+
+    The precedent is Jinja2's `Loader`: `FileSystemLoader`, `PackageLoader`, `DictLoader` and
+    `FunctionLoader` all behind one `get_source`, which is the most-copied loader design in
+    Python and is exactly this problem. Parsing stays ours — a `Skill` is still a `Skill` — so
+    an implementation supplies material without having to learn our formats.
+
+    This is a seam because the default is not defensible for a library. Finding this material
+    means walking hardcoded paths, and the instruction loader in particular reads
+    `~/.config/opencode/AGENTS.md` and `~/.claude/CLAUDE.md` — two *other products'*
+    configuration files — out of the user's home directory. That is right for `daisyd`, where
+    the person running it is the person those files belong to, and indefensible for a harness
+    embedded in someone else's program.
+
+    `skills()` and `memories()` are consulted every turn. An implementation therefore decides
+    its own reload behaviour by being lazy or not, where the file-backed one re-reads and a
+    dictionary-backed one does not — which is the harness getting out of the way of a decision
+    that was never its to make.
+    """
+
+    def agent(self, name: str) -> Any:
+        """The named agent profile, or ``None`` if this catalogue has no such agent."""
+        ...
+
+    def agents(self) -> Sequence[str]:
+        """Every agent name this catalogue can supply, for listing and for error messages."""
+        ...
+
+    def skills(self) -> Sequence[Any]:
+        ...
+
+    def memories(self) -> Sequence[Any]:
+        ...
+
+    def instructions(self) -> str:
+        """The project's own conventions, as the JSON array the prompt template expects."""
+        ...
+
+    def prompt(self, name: str, variables: Mapping[str, str]) -> str:
+        """One rendered prompt template, or ``""`` when this catalogue has no such template."""
+        ...
+
+
 def describe_unmet(port: type, candidate: Any) -> str:
     """Which of a port's methods `candidate` is missing, as a sentence, or ``""`` if none.
 
@@ -340,6 +393,7 @@ def describe_unmet(port: type, candidate: Any) -> str:
 __all__ = [
     "Approval",
     "Approvals",
+    "Catalogue",
     "Checkpoints",
     "JobStore",
     "MemoryCheckpoints",

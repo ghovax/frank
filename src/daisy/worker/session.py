@@ -25,7 +25,8 @@ from a2a.types import DataPart, Message, MessageSendParams, Part, Role, Task, Ta
 from langchain_core.messages import messages_from_dict
 
 from daisy.base.background_tasks import spawn_background_task
-from daisy.base.configuration import GlobalConfiguration, load_agent_configuration
+from daisy.base.catalogue import machine_catalogue
+from daisy.base.configuration import GlobalConfiguration
 from daisy.base.background_store import get_background_job_store
 from daisy.base.ports import JobStore
 from daisy.base.workspaces import SessionWorkspace
@@ -512,11 +513,19 @@ class SessionExecutor(AgentExecutor):
         conversation: Optional[list] = None,
         locations: Optional[list[dict]] = None,
     ) -> AgentRuntime:
-        configuration = load_agent_configuration(
-            self._agent_name, self._global_configuration.agent_directories_for(project_directory)
-        )
+        # A worker serves a person's machine, so it gets the machine's catalogue: `~/.agents`,
+        # the project's own, the packaged base layer, and the well-known instruction files. A
+        # library session gets a narrower one, which is the whole reason this is an argument.
+        catalogue = machine_catalogue(self._global_configuration, project_directory)
+        configuration = catalogue.agent(self._agent_name)
+        if configuration is None:
+            available = ", ".join(catalogue.agents()) or "none"
+            raise FileNotFoundError(
+                f"Agent configuration not found: {self._agent_name} (available: {available})"
+            )
         runtime = AgentRuntime(
             agent_configuration=configuration,
+            catalogue=catalogue,
             global_configuration=self._global_configuration,
             session_id=session_id,
             conversation=conversation,
@@ -817,10 +826,11 @@ class SessionExecutor(AgentExecutor):
         from daisy.runtime.runtime import build_chat_model
 
         try:
-            configuration = load_agent_configuration(
-                self._agent_name,
-                self._global_configuration.agent_directories_for(self._working_directory),
-            )
+            configuration = machine_catalogue(
+                self._global_configuration, self._working_directory
+            ).agent(self._agent_name)
+            if configuration is None:
+                return
             model_identifier = configuration.model_identifier
             if not model_identifier or not model_is_authorized(model_identifier, self._global_configuration):
                 return
@@ -943,16 +953,14 @@ class SessionExecutor(AgentExecutor):
             }
 
     def _build_card_payload(self) -> dict:
-        from daisy.base.skills import load_skills, skills_for_agent
+        from daisy.base.skills import skills_for_agent
         from daisy.protocol.card import build_agent_card
 
-        configuration = load_agent_configuration(
-            self._agent_name, self._global_configuration.agent_directories_for(self._working_directory)
-        )
-        skills = skills_for_agent(
-            load_skills(self._global_configuration.skill_directories_for(self._working_directory)),
-            configuration.skills,
-        )
+        catalogue = machine_catalogue(self._global_configuration, self._working_directory)
+        configuration = catalogue.agent(self._agent_name)
+        if configuration is None:
+            raise FileNotFoundError(f"Agent configuration not found: {self._agent_name}")
+        skills = skills_for_agent(list(catalogue.skills()), configuration.skills)
         card = build_agent_card(configuration, skills, f"unix:{self._session_id}")
         return card.model_dump(by_alias=True, exclude_none=True, mode="json")
 

@@ -243,6 +243,36 @@ def _bypassed_ports(tree: ast.AST) -> list[tuple[str, int]]:
     return found
 
 
+# Other products' configuration files, and the instruction filenames the harness looks for.
+# The defect this guards against was specific and is worth naming rather than generalising:
+# `runtime/prompt/instructions.py` read `~/.config/opencode/AGENTS.md` and `~/.claude/CLAUDE.md`
+# out of the user's home directory, unconditionally, so importing Daisy meant acquiring two
+# other tools' instructions.
+#
+# A broader rule — no `Path.home()` anywhere — was tried and is wrong: a file browser showing
+# the user's home, a terminal starting there and an environment probe reporting it are all
+# legitimate, and thirty-odd of them would have had to be exempted one at a time. Where prompt
+# *material* comes from is what needed a seam, and this is what stepping around that seam
+# looks like.
+_FOREIGN_CONFIGURATION = (".claude", "opencode/AGENTS.md", "CLAUDE.md", "CONTEXT.md", "AGENTS.md")
+
+# The one module allowed to name them: the catalogue, which reads them only when a caller has
+# explicitly asked for the machine's full set.
+_MATERIAL_RESOLVERS = {"daisy/base/catalogue.py"}
+
+
+def _foreign_configuration(source: str) -> list[tuple[str, int]]:
+    """String literals naming another product's configuration, or an instruction filename."""
+    found: list[tuple[str, int]] = []
+    for number, line in enumerate(source.splitlines(), 1):
+        if line.lstrip().startswith("#"):
+            continue
+        for name in _FOREIGN_CONFIGURATION:
+            if f'"{name}"' in line or f"'{name}'" in line:
+                found.append((f"`{name}` is named here", number))
+    return found
+
+
 # Clients whose synchronous request methods block the import that calls them. Matched on the
 # module alias rather than the object, because that is what is knowable statically.
 _NETWORK_MODULES = {"httpx", "requests", "urllib", "socket"}
@@ -333,6 +363,14 @@ def main() -> int:
             for description, line in _bypassed_ports(tree):
                 violations.append(
                     f"{path.relative_to(ROOT)}:{line}: {description}"
+                )
+
+        # Where the prompt's material comes from is the catalogue's business.
+        if str(path.relative_to(ROOT / "src")) not in _MATERIAL_RESOLVERS:
+            for description, line in _foreign_configuration(path.read_text(encoding="utf-8")):
+                violations.append(
+                    f"{path.relative_to(ROOT)}:{line}: {description} — instruction files are "
+                    "the `Catalogue`'s to find, so an embedder is not made to inherit them"
                 )
 
         # Nothing reaches the network while it is being imported — not even a composition

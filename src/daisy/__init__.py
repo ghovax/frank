@@ -55,6 +55,7 @@ from typing import Any, AsyncIterator, Optional
 from daisy.base.ports import (
     Approval,
     Approvals,
+    Catalogue,
     Checkpoints,
     JobStore,
     MemoryCheckpoints,
@@ -68,6 +69,7 @@ from daisy.base.ports import (
 __all__ = [
     "Approval",
     "Approvals",
+    "Catalogue",
     "Checkpoints",
     "JobStore",
     "MemoryCheckpoints",
@@ -112,7 +114,7 @@ class Session:
 
     def __init__(
         self,
-        agent: str,
+        agent: str | Any,
         *,
         directory: str | Path = ".",
         session_id: str = "",
@@ -122,6 +124,7 @@ class Session:
         # The seams. Each defaults to the least surprising thing for a program that is not a
         # daemon, which for anything durable means "in memory", not "somewhere under $HOME".
         model: Any = None,
+        catalogue: Optional[Catalogue] = None,
         checkpoints: Optional[Checkpoints] = None,
         jobs: Optional[JobStore] = None,
         observer: Optional[Observer] = None,
@@ -144,6 +147,7 @@ class Session:
         # Daisy needs something to edit; a program that imported us did not ask for that.
         self._configuration = configuration or GlobalConfiguration.load(seed=False)
         self._model = model
+        self._catalogue = _require(Catalogue, catalogue, "catalogue")
         self._checkpoints = _require(Checkpoints, checkpoints, "checkpoints") or MemoryCheckpoints()
         self._jobs = _require(JobStore, jobs, "jobs") or MemoryJobStore()
         self._observer = _require(Observer, observer, "observer")
@@ -163,7 +167,6 @@ class Session:
         Exposed because a library that hides its own core forces every non-obvious use into a
         fork. Everything below is a convenience over it."""
         if self._runtime is None:
-            from daisy.base.configuration import load_agent_configuration
             from daisy.base.confinement import Profile
             from daisy.base.tuning import set_tuning, tuning_from_policy
             from daisy.runtime.runtime import AgentRuntime
@@ -171,9 +174,25 @@ class Session:
             # The tuning policy is bound per task, so binding it here scopes it to the caller
             # rather than to the interpreter.
             set_tuning(tuning_from_policy(self._configuration.tuning))
-            agent_configuration = load_agent_configuration(
-                self._agent, self._configuration.agent_directories_for(self._directory)
+            # The working directory's own `.agents` plus the packaged base layer, and
+            # deliberately nothing of `$HOME`. A program that imported Daisy did not ask to
+            # inherit the machine's agents, its memories, or — as the instruction loader did —
+            # another product's configuration file. `daisyd` and the CLI pass a catalogue that
+            # does read those, because there the person and the home directory are the same
+            # person.
+            catalogue = self._catalogue
+            if catalogue is None:
+                from daisy.base.catalogue import project_catalogue
+
+                catalogue = project_catalogue(self._configuration, self._directory)
+            agent_configuration = (
+                self._agent if not isinstance(self._agent, str) else catalogue.agent(self._agent)
             )
+            if agent_configuration is None:
+                available = ", ".join(catalogue.agents()) or "none"
+                raise LookupError(
+                    f"No agent profile named {self._agent!r}. This catalogue offers: {available}."
+                )
             self._runtime = AgentRuntime(
                 agent_configuration=agent_configuration,
                 global_configuration=self._configuration,
@@ -184,6 +203,7 @@ class Session:
                 sandbox=self._sandbox if self._sandbox is not None else Profile(),
                 session_access=self._peers,
                 mcp_manager=self._mcp_manager,
+                catalogue=catalogue,
                 model=self._model,
                 jobs=self._jobs,
                 observer=self._observer,

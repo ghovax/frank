@@ -494,6 +494,88 @@ def library_ports() -> Outcome:
         discard(roots)
 
 
+def catalogue() -> Outcome:
+    """A session can be built entirely in code, and reads nothing of the user's home.
+
+    Two claims. The first is that `DictCatalogue` works at all — an agent, a skill and an
+    instruction supplied as values, with no `.agents` directory anywhere. The second is the one
+    that motivated the seam: a library session must not acquire `~/.agents`, and must not read
+    `~/.claude/CLAUDE.md` or `~/.config/opencode/AGENTS.md`, which the instruction loader did
+    unconditionally.
+
+    The second is checked by planting those files in a fake home and asserting they do not
+    appear in the assembled prompt material.
+    """
+    roots = make_roots()
+    home = Path(tempfile.mkdtemp(prefix="daisy-verify-home-"))
+    project = Path(tempfile.mkdtemp(prefix="daisy-verify-project-"))
+    os.environ.update(roots)
+    sys.path.insert(0, str(SOURCE_ROOT))
+
+    # A home that would poison an embedded session if anything still read it.
+    (home / ".claude").mkdir(parents=True, exist_ok=True)
+    (home / ".claude" / "CLAUDE.md").write_text("POISON-FROM-CLAUDE-CODE")
+    (home / ".config" / "opencode").mkdir(parents=True, exist_ok=True)
+    (home / ".config" / "opencode" / "AGENTS.md").write_text("POISON-FROM-OPENCODE")
+    (home / "AGENTS.md").write_text("POISON-FROM-HOME")
+    (home / ".agents" / "memories").mkdir(parents=True, exist_ok=True)
+    (home / ".agents" / "memories" / "leak.md").write_text("---\nname: leak\n---\nPOISON-MEMORY")
+
+    original_home = os.environ.get("HOME", "")
+    os.environ["HOME"] = str(home)
+    try:
+        from daisy.base.catalogue import DictCatalogue, machine_catalogue, project_catalogue
+        from daisy.base.configuration import GlobalConfiguration
+
+        configuration = GlobalConfiguration()
+
+        # The library's catalogue: the project, and nothing of $HOME.
+        library = project_catalogue(configuration, str(project))
+        library_instructions = library.instructions()
+        library_memories = [getattr(memory, "name", "") for memory in library.memories()]
+
+        # The machine's catalogue: it *should* read them, because there the person running the
+        # daemon is the person those files belong to.
+        machine = machine_catalogue(configuration, str(project))
+        machine_instructions = machine.instructions()
+
+        # A catalogue built entirely in code.
+        from daisy.base.configuration import AgentConfiguration
+        from daisy.base.skills import Skill
+
+        built = DictCatalogue(
+            agent_configurations={"invented": AgentConfiguration(identifier="invented")},
+            skill_list=[Skill(name="invented-skill", description="supplied in code", body="hello")],
+            instruction_text='[{"path": "in-memory", "content": "supplied in code"}]',
+        )
+        observations = {
+            "library_leaks_home": any(
+                token in library_instructions for token in ("POISON-FROM-CLAUDE-CODE", "POISON-FROM-OPENCODE", "POISON-FROM-HOME")
+            ),
+            "library_leaks_home_memories": "leak" in library_memories,
+            "machine_reads_home": "POISON-FROM-CLAUDE-CODE" in machine_instructions,
+            "dict_agent": built.agent("invented") is not None,
+            "dict_agents": list(built.agents()),
+            "dict_skills": [skill.name for skill in built.skills()],
+            "dict_instructions": built.instructions(),
+            "dict_prompt_falls_back": bool(built.prompt("harness_note", {"content": "x"})),
+        }
+        passed = (
+            not observations["library_leaks_home"]
+            and not observations["library_leaks_home_memories"]
+            and observations["machine_reads_home"]
+            and observations["dict_agent"]
+            and observations["dict_skills"] == ["invented-skill"]
+            and observations["dict_prompt_falls_back"]
+        )
+        return Outcome("catalogue", passed, observations=observations)
+    finally:
+        if original_home:
+            os.environ["HOME"] = original_home
+        discard(roots)
+        subprocess.run(["rm", "-rf", str(home), str(project)], check=False)
+
+
 def fan_out() -> Outcome:
     """Twelve sessions cost closer to one prototype than to twelve workers.
 
@@ -695,6 +777,7 @@ STAGES = {
     "reentrancy": reentrancy,
     "artifact-wipe": artifact_wipe,
     "library": library_ports,
+    "catalogue": catalogue,
     "prototype": prototype,
     "macos-fork": macos_fork,
     "daemon": daemon_boot,

@@ -1267,6 +1267,15 @@ class PromptLoader:
         content = path.read_text()
         return self._replace_variables(content, variables, template_name)
 
+    @classmethod
+    def render(cls, template: str, variables: dict[str, str], template_name: str = "") -> str:
+        """Render a template that is already in hand rather than one on disk.
+
+        For a catalogue that carries its prompts in memory. The substitution and its strictness
+        are identical — it is the *source* of the text that differs, which is the whole point of
+        the catalogue seam."""
+        return cls._replace_variables(template, variables, template_name)
+
     @staticmethod
     def _replace_variables(template: str, variables: dict[str, str], template_name: str = "") -> str:
         """Substitute ``{{ name }}`` placeholders (spaced or not) from ``variables``.
