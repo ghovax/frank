@@ -236,6 +236,16 @@ class Tunable(Enum):
         "How long a browser sign-in is waited for before it is abandoned — a person's whole trip "
         "through a consent screen, not a network round trip.",
     )
+    subscription_resume_ttl_seconds = Default(
+        1_800.0, Scaling.TIME,
+        "How long a subscription provider's server-side conversation state stays worth resuming "
+        "from before the whole conversation is resent instead.",
+    )
+    model_silence_give_up_seconds = Default(
+        180.0, Scaling.TIME,
+        "How long a model may hold a stream open saying nothing at all before the turn is ended. "
+        "Long, because a model weighing a hard problem is silent and still working.",
+    )
     file_url_ttl_seconds = Default(600.0, Scaling.TIME, "How long a signed file URL stays valid.")
     mcp_connect_seconds = Default(20.0, Scaling.TIME, "How long connecting to one MCP server waits.")
     card_resolve_seconds = Default(20.0, Scaling.TIME, "How long fetching a remote agent's card waits.")

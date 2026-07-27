@@ -12,26 +12,25 @@ So the work here is not translation but reduction: taking a protocol built to dr
 agent and using it to answer one question, which is what every other model in Daisy
 answers — given these messages and these tools, what does the model say next.
 
-## Two shapes that do not match, and which one gives way
+## Two shapes that do not match, and how they are reconciled
 
-Cursor's turn is stateful. A conversation is a server-side identity, tool results are
-pushed into a stream that stays open across them, and the model continues inside that
-same stream. Daisy's turn is stateless: the harness owns the transcript, resends all of
-it every time, and expects one assistant reply per call — the same contract that made
-``store: false`` the right choice for the Codex client.
+Cursor's turn is stateful. A conversation is a server-side identity, and the model expects to
+continue inside a stream that stays open across tool calls. Daisy's turn is stateless: the
+harness owns the transcript, and expects one assistant reply per call — the same contract that
+made ``store: false`` the right choice for the Codex client.
 
-Daisy's shape wins, and it wins for a reason rather than for convenience. The harness
-compacts history, rewrites it, and replays sessions across process restarts; a
-conversation whose real state lived on Cursor's side would drift from the transcript
-Daisy believes in, and the transcript is the thing users read and sessions resume from.
-So every call here opens a fresh run: the whole conversation is rendered into the turn's
-user message, the tools are re-declared, and when the model calls one, this stream ends
-and the tool call is handed back. Daisy runs the tool, appends the result, and calls
-again — where the next run sees it as history.
+The reconciliation is that Daisy's transcript stays the only source of truth, while Cursor's
+own idea of the conversation is treated as a *cache* of it. Every turn is a fresh HTTP run. When
+Cursor has recently described this conversation — it publishes a checkpoint of its whole state as
+each turn ends — that description is handed back and only the messages it has not seen are sent.
+When it has not, or when the transcript no longer begins with the messages the checkpoint was made
+from, the entire conversation is rendered into the turn instead.
 
-The cost is real and worth naming: no server-side prompt caching, and history the model
-reads as a rendered transcript rather than as structured turns. What it buys is that
-there is exactly one place a conversation lives.
+That fallback is what makes the cache safe rather than merely fast. A compaction, an edit, a fresh
+process or an expired entry all fail the prefix test, and failing it means resending everything,
+which is exactly the behaviour that existed before any of this. Cursor can therefore never be
+resumed into a conversation that differs from the one Daisy believes in, because a difference is
+what a cache miss *is*.
 
 ## The stream, and why it takes two requests
 
@@ -40,17 +39,22 @@ there is exactly one place a conversation lives.
 through unary ``BidiAppend`` calls addressed to that same request id — which is also how
 tool results, blob answers and rejections go up while the stream is running. So a turn is
 one long-lived download plus a series of short uploads, and the download has to be
-opened first or the uploads have nowhere to land.
+opened first or the uploads have nowhere to land. :class:`_Channel` owns the upload half.
 
-## What the agent asks for that Daisy will not do
+## What the agent asks for, and where it is answered
 
-Cursor's agent has built-in tools — shell, read, write, grep — and it reaches for them
-regardless of what the client offered, because its toolset is decided server-side. Daisy
-declines every one, using the protocol's own rejection variants (see
-:data:`~daisy.runtime.models.cursor_wire.REJECTABLE_EXECS`). Running them would execute
-commands and edit files from inside a model client, outside the permission mode, the
-confinement, and the session the harness attributes work to. A model client is not a
-place from which to touch the machine.
+Cursor's agent has built-in tools — shell, read, write, ls, grep, delete — and it reaches for
+them regardless of what the client offered, because its toolset is decided server-side. Every
+other client executes them itself, inside the plugin, outside its host's permission model.
+
+This does neither of those things. A built-in with a counterpart among the harness's own tools is
+*translated* into a call on that tool and handed to the harness — Cursor's ``read`` becomes
+``read_file``, its ``shell`` becomes ``bash`` — so the agent gets what it asked for and it happens
+under a permission mode, inside a confinement boundary, recorded against a session. One with no
+counterpart, or whose counterpart the running agent was not given, is declined using the
+protocol's own rejection variants (see
+:data:`~daisy.runtime.models.cursor_wire.BUILTIN_EXECS`). Declining explicitly matters as much as
+declining: the agent waits on an exec it asked for.
 
 See :mod:`daisy.base.cursor_credentials` for the OAuth side and
 :mod:`daisy.runtime.models.cursor_wire` for the protocol itself.
@@ -66,8 +70,10 @@ import json
 import os
 import platform
 import re
+import shlex
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any, AsyncIterator, Callable, Optional, Sequence, cast
 
 import httpx
@@ -98,8 +104,14 @@ from daisy.base.serialization import compact
 from daisy.base.tuning import Tunable, active_tuning
 from daisy.runtime.models import cursor_wire as wire
 
-RUN_URL = f"{API_BASE_URL}/agent.v1.AgentService/RunSSE"
-APPEND_URL = f"{API_BASE_URL}/aiserver.v1.BidiService/BidiAppend"
+RUN_PATH = "/agent.v1.AgentService/RunSSE"
+APPEND_PATH = "/aiserver.v1.BidiService/BidiAppend"
+# Cursor moves this service between backends. api2 is where it answers today; the two agent
+# hosts are where the plugins have seen it move to, one for privacy mode and one without. They
+# are tried in order and only when a run fails before producing anything.
+AGENT_PRIVACY_URL = "https://agent.api5.cursor.sh"
+AGENT_OPEN_URL = "https://agentn.api5.cursor.sh"
+_RUN_HOSTS = (API_BASE_URL, AGENT_PRIVACY_URL, AGENT_OPEN_URL)
 # The two model endpoints, on different services and knowing different halves of the answer:
 # which models a plan serves, and how large a window each has.
 USABLE_MODELS_URL = f"{API_BASE_URL}/agent.v1.AgentService/GetUsableModels"
@@ -127,13 +139,104 @@ _STATUS_UNAUTHENTICATED = 16
 # What the model is told about the tools it has been handed. Cursor puts this in
 # ``McpInstructions``, alongside the tool definitions themselves.
 _TOOL_INSTRUCTIONS = (
-    "These are the tools of the Daisy harness you are answering inside. Use them for "
-    "everything you need to do: they are the only ones whose results reach you."
+    "These are the tools of the Daisy harness you are answering inside. Prefer them for "
+    "everything you do. Your own built-in tools are handled by the harness where an equivalent "
+    "exists and refused where none does, so reaching for one is at best a detour."
 )
 _BUILTIN_REFUSAL = (
     "Daisy declines this built-in tool. Use the tools provided to you under the "
     "\"daisy\" server instead — they are the only ones this client can run."
 )
+# Daisy's file and shell tools take a required, user-facing reason. A translated built-in has no
+# reason of its own to offer, so it says what it truthfully is.
+_BUILTIN_JUSTIFICATION = "Requested by the Cursor agent while working on this turn."
+
+
+def _shell_arguments(values: list[str]) -> Optional[dict[str, Any]]:
+    """``ShellArgs{command, working_directory}`` → ``bash``. The directory becomes the location
+    only when the agent named one, so the tool's own default stands otherwise."""
+    command, directory = (values + ["", ""])[:2]
+    if not command:
+        return None
+    return {"command": command, **({"location": directory} if directory else {})}
+
+
+def _read_arguments(values: list[str]) -> Optional[dict[str, Any]]:
+    """``ReadArgs{path}`` → ``read_file``."""
+    return {"file_path": values[0]} if values and values[0] else None
+
+
+def _write_arguments(values: list[str]) -> Optional[dict[str, Any]]:
+    """``WriteArgs{path, file_text}`` → ``write_file``. An empty body is a real write, so only a
+    missing path disqualifies it."""
+    path, content = (values + ["", ""])[:2]
+    return {"file_path": path, "content": content} if path else None
+
+
+def _list_arguments(values: list[str]) -> Optional[dict[str, Any]]:
+    """``LsArgs{path}`` → ``bash``, because listing a directory is a command and the harness has
+    no separate tool for it. The command is fixed and read-only; the only thing taken from the
+    agent is which directory."""
+    path = values[0] if values else ""
+    return {"command": f"ls -la {shlex.quote(path)}", "read_only": True} if path else None
+
+
+# Cursor's built-in tools, and the harness tool each becomes. Absent from this table, and so
+# declined rather than translated: `delete`, because turning a delete request into a synthesized
+# `rm` means this code decided to remove a file; `diagnostics`, which has no counterpart; and
+# `grep`, whose arguments (output modes, context lines, type filters, multiline) do not survive
+# being flattened into one command line, and whose nearest harness tool searches by meaning
+# rather than by pattern.
+_BUILTIN_TRANSLATIONS: dict[str, tuple[str, Callable[[list[str]], Optional[dict[str, Any]]]]] = {
+    "shell": ("bash", _shell_arguments),
+    "read": ("read_file", _read_arguments),
+    "write": ("write_file", _write_arguments),
+    "ls": ("bash", _list_arguments),
+}
+
+
+class _HostUnavailable(RuntimeError):
+    """This backend did not serve the request, and another one might.
+
+    Distinct from every other failure because it is the only one worth retrying elsewhere. A
+    rejected token is rejected everywhere, and a spent usage allowance is spent everywhere; both
+    are reported as themselves so trying two more hosts cannot turn a clear answer into a slow
+    one."""
+
+
+class _Channel:
+    """The upload half of a run.
+
+    ``RunSSE`` only carries messages down. Everything going up — the turn itself, tool results,
+    blob answers, refusals — is a separate unary ``BidiAppend`` addressed to the same request id
+    and numbered in order. This owns that number, because a sequence shared between five call
+    sites is a sequence that eventually skips."""
+
+    def __init__(
+        self,
+        client: httpx.AsyncClient,
+        tokens: CursorTokens,
+        request_id: str,
+        append_url: str,
+        headers: Callable[[CursorTokens, str], dict[str, str]],
+    ) -> None:
+        self._client = client
+        self._tokens = tokens
+        self._request_id = request_id
+        self._append_url = append_url
+        self._headers = headers
+        self._sequence = 0
+
+    async def push(self, payload: bytes) -> None:
+        """Send one ``AgentClientMessage`` up."""
+        response = await self._client.post(
+            self._append_url,
+            content=wire.frame(wire.bidi_append_request(self._request_id, self._sequence, payload)),
+            headers=self._headers(self._tokens, self._request_id),
+        )
+        self._sequence += 1
+        if response.status_code >= 400:
+            raise ChatCursorModel._auth_error(response.status_code, response.text)
 
 
 class ChatCursorModel(BaseChatModel):
@@ -254,15 +357,64 @@ class ChatCursorModel(BaseChatModel):
             time_zone=_time_zone(),
         )
 
+    @staticmethod
+    def _conversation_key(messages: Sequence[BaseMessage]) -> str:
+        """Which conversation this is, for the resume cache.
+
+        The first non-system exchange, which is stable for a conversation's whole life and
+        different between conversations. Keying on the *whole* transcript instead would mint a new
+        key every turn and never hit."""
+        conversation = [m for m in messages if not isinstance(m, SystemMessage)]
+        return _digest_messages(conversation[:1])
+
+    def _resumption_for(self, messages: Sequence[BaseMessage]) -> Optional[_Resumption]:
+        """A checkpoint worth resuming from, or ``None`` to send the whole conversation.
+
+        The test is that the transcript still begins with exactly the messages the checkpoint was
+        made from. Anything else — a first turn, a compaction, an edited history, a fresh process,
+        an expired entry — is a miss, and a miss is not a failure but the original design."""
+        _prune_resumptions()
+        entry = _resumptions.get(self._conversation_key(messages))
+        if entry is None or entry.prefix_length >= len(messages):
+            return None
+        if _digest_messages(messages[:entry.prefix_length]) != entry.prefix_digest:
+            return None  # history was rewritten under us; the checkpoint describes something else
+        return entry
+
+    def _remember_resumption(
+        self,
+        messages: Sequence[BaseMessage],
+        checkpoint: bytes,
+        blobs: dict[bytes, bytes],
+        conversation_id: str,
+    ) -> None:
+        if not checkpoint:
+            return
+        _resumptions[self._conversation_key(messages)] = _Resumption(
+            prefix_length=len(messages),
+            prefix_digest=_digest_messages(messages),
+            checkpoint=checkpoint,
+            blobs=dict(blobs),
+            conversation_id=conversation_id,
+            touched_at=time.monotonic(),
+        )
+
     def _build_turn(
         self, messages: Sequence[BaseMessage], tools: list[dict[str, Any]]
-    ) -> tuple[bytes, dict[bytes, bytes]]:
-        """One serialized ``AgentClientMessage``, plus the blobs it refers to.
+    ) -> tuple[bytes, dict[bytes, bytes], str]:
+        """One serialized ``AgentClientMessage``, the blobs it refers to, and its conversation id.
 
-        The system prompt does not travel inline. Cursor's conversation state names its
-        root prompt by blob id and then *asks* for the blob over the KV channel while the
-        turn runs, so it is hashed here and handed over when requested."""
-        blobs: dict[bytes, bytes] = {}
+        Two shapes, one code path. When Cursor already holds this conversation's state, the state
+        goes back and only the messages it has not seen are rendered — which is the whole point of
+        resuming, and what lets the server treat the shared prefix as something it has already
+        read. When it does not, the conversation state is empty apart from the system prompt and
+        the entire transcript is rendered into the turn.
+
+        The system prompt never travels inline either way. Cursor's conversation state names its
+        root prompt by blob id and then *asks* for the blob over the KV channel while the turn
+        runs, so it is hashed here and handed over when requested."""
+        resumption = self._resumption_for(messages)
+        blobs: dict[bytes, bytes] = dict(resumption.blobs) if resumption else {}
         root_prompt_ids: list[bytes] = []
         if system_prompt := self._system_prompt(messages):
             payload = json.dumps({"role": "system", "content": system_prompt}).encode("utf-8")
@@ -270,13 +422,21 @@ class ChatCursorModel(BaseChatModel):
             blobs[blob_id] = payload
             root_prompt_ids.append(blob_id)
 
-        message_body = wire.user_message(self._render(messages), str(uuid.uuid4()))
+        if resumption is not None:
+            state = wire.resumed_conversation_state(resumption.checkpoint)
+            body = self._render(messages[resumption.prefix_length:])
+            conversation_id = resumption.conversation_id
+        else:
+            state = wire.conversation_state(root_prompt_ids)
+            body = self._render(messages)
+            conversation_id = str(uuid.uuid4())
+
+        message_body = wire.user_message(body, str(uuid.uuid4()))
         # Cursor keys a user message's blob by its own serialized bytes rather than a
         # hash of them, so a request for it can be answered from the same store.
         blobs[message_body] = message_body
 
         workspace = self.workspace or os.getcwd()
-        environment = self._environment()
         tool_definitions = [
             wire.mcp_tool_definition(
                 name=(function := tool.get("function", tool)).get("name", ""),
@@ -288,19 +448,35 @@ class ChatCursorModel(BaseChatModel):
         action = wire.blob(
             1,  # ConversationAction.user_message_action
             wire.blob(1, message_body)
-            + wire.blob(2, wire.request_context(environment, tool_definitions, _TOOL_INSTRUCTIONS)),
+            + wire.blob(2, wire.request_context(self._environment(), tool_definitions, _TOOL_INSTRUCTIONS)),
         )
         run_request = wire.agent_run_request(
-            state=wire.conversation_state(root_prompt_ids),
+            state=state,
             action=action,
             model=wire.model_details(self.model),
+            variant=self._variant(),
             tools=tool_definitions,
-            conversation_id=str(uuid.uuid4()),
+            conversation_id=conversation_id,
             file_system_options=(
                 wire.mcp_file_system_options(workspace, _TOOL_INSTRUCTIONS) if tool_definitions else b""
             ),
         )
-        return wire.client_message_run(run_request), blobs
+        return wire.client_message_run(run_request), blobs, conversation_id
+
+    def _variant(self) -> bytes:
+        """``RequestedModel`` for this model, when discovery learned which variant it is.
+
+        A model whose parameters are unknown — one only ``GetUsableModels`` named, or one picked
+        before any catalog was fetched — sends nothing here and reaches the default variant, which
+        is how this provider behaved before variants were understood at all."""
+        variant = cached_subscription_models().get(self.model, {}).get("variant")
+        if not variant:
+            return b""
+        return wire.requested_model(
+            model_id=variant["server_model"],
+            maximum_mode=bool(variant["maximum_mode"]),
+            parameters=[(key, value) for key, value in variant["parameters"]],
+        )
 
     # Transport.
 
@@ -332,12 +508,15 @@ class ChatCursorModel(BaseChatModel):
 
     @staticmethod
     def _auth_error(status: int, detail: str) -> Exception:
+        """The exception an HTTP failure becomes, chosen so the caller can tell whether trying
+        another backend could possibly help."""
         if status in (401, 403):
+            # Definitive: the token is the problem and every host will say the same.
             return CursorAuthError(
                 "Cursor rejected the subscription token (expired, revoked, or the plan "
                 f"lacks access). Sign in again. Detail: {detail[:300]}"
             )
-        return RuntimeError(f"Cursor agent service returned {status}: {detail[:500]}")
+        return _HostUnavailable(f"Cursor agent service returned {status}: {detail[:500]}")
 
     @staticmethod
     def _stream_error(status: int, message: str) -> Exception:
@@ -346,19 +525,6 @@ class ChatCursorModel(BaseChatModel):
         if status == _STATUS_UNAUTHENTICATED:
             return CursorAuthError("Cursor rejected the subscription token. Sign in again.")
         return RuntimeError(f"Cursor agent stream failed (grpc-status {status}): {message or 'no detail'}")
-
-    async def _append(
-        self, client: httpx.AsyncClient, tokens: CursorTokens, request_id: str,
-        sequence: int, payload: bytes,
-    ) -> None:
-        """Push one ``AgentClientMessage`` into the open run."""
-        response = await client.post(
-            APPEND_URL,
-            content=wire.frame(wire.bidi_append_request(request_id, sequence, payload)),
-            headers=self._headers(tokens, request_id),
-        )
-        if response.status_code >= 400:
-            raise self._auth_error(response.status_code, response.text)
 
     # Streaming generation (the path the harness actually uses).
 
@@ -370,23 +536,59 @@ class ChatCursorModel(BaseChatModel):
         **kwargs: Any,
     ) -> AsyncIterator[ChatGenerationChunk]:
         tokens = await valid_tokens()
+        turn, blobs, conversation_id = self._build_turn(messages, kwargs.get("tools") or [])
+        tool_names = {
+            (tool.get("function", tool)).get("name", "") for tool in (kwargs.get("tools") or [])
+        }
+        # Cursor moves this service between backends, so a run that fails before producing
+        # anything is retried against the agent hosts before the failure is reported. A run that
+        # has already said something is never retried: replaying it would duplicate its output.
+        errors: list[Exception] = []
+        for host in _RUN_HOSTS:
+            try:
+                produced = False
+                async for chunk in self._run_once(
+                    host, tokens, turn, blobs, conversation_id, messages, tool_names,
+                ):
+                    produced = True
+                    yield chunk
+                return
+            except (httpx.HTTPError, _HostUnavailable) as error:
+                # A run that already emitted something is never retried: replaying it would
+                # duplicate its output. Anything not listed here — a rejected token, a spent
+                # allowance — is definitive and propagates from the first host.
+                if produced:
+                    raise
+                errors.append(error)
+        raise errors[0]
+
+    async def _run_once(
+        self,
+        host: str,
+        tokens: CursorTokens,
+        turn: bytes,
+        blobs: dict[bytes, bytes],
+        conversation_id: str,
+        messages: Sequence[BaseMessage],
+        tool_names: set[str],
+    ) -> AsyncIterator[ChatGenerationChunk]:
         request_id = str(uuid.uuid4())
-        turn, blobs = self._build_turn(messages, kwargs.get("tools") or [])
         headers = self._headers(tokens, request_id)
+        run_url = f"{host}{RUN_PATH}"
+        append_url = f"{host}{APPEND_PATH}"
 
         async with httpx.AsyncClient(timeout=self.timeout, http2=False) as client:
             request = client.build_request(
-                "POST", RUN_URL, content=wire.frame(wire.bidi_request_id(request_id)), headers=headers,
+                "POST", run_url, content=wire.frame(wire.bidi_request_id(request_id)), headers=headers,
             )
             # The run has to be opened before the turn is pushed into it, but awaiting the
             # response headers first would deadlock against a server that has nothing to
             # send until the turn arrives. So the open is started, the turn is pushed, and
             # only then are the headers awaited.
             opening = asyncio.create_task(client.send(request, stream=True))
-            sequence = 0
+            channel = _Channel(client, tokens, request_id, append_url, self._headers)
             try:
-                await self._append(client, tokens, request_id, sequence, turn)
-                sequence += 1
+                await channel.push(turn)
             except BaseException:
                 # The turn never made it up, so the run it would have driven is dead;
                 # close it rather than leaving an open stream behind the raised error.
@@ -399,25 +601,29 @@ class ChatCursorModel(BaseChatModel):
                 if response.status_code >= 400:
                     detail = (await response.aread()).decode("utf-8", "replace")
                     raise self._auth_error(response.status_code, detail)
-                async for chunk in self._read(client, tokens, request_id, sequence, response, blobs):
+                async for chunk in self._read(
+                    channel, response, blobs, conversation_id, messages, tool_names,
+                ):
                     yield chunk
             finally:
                 await response.aclose()
 
     async def _read(
         self,
-        client: httpx.AsyncClient,
-        tokens: CursorTokens,
-        request_id: str,
-        sequence: int,
+        channel: _Channel,
         response: httpx.Response,
         blobs: dict[bytes, bytes],
+        conversation_id: str,
+        messages: Sequence[BaseMessage],
+        tool_names: set[str],
     ) -> AsyncIterator[ChatGenerationChunk]:
         """Read the run to its end, answering what the server asks along the way.
 
-        Ends on the first tool call the model makes (handed back for Daisy to run), on
-        ``turn_ended``, or on a non-zero trailer status. Anything the server asks for in
-        between — a blob, a built-in tool — is answered inline so the turn keeps moving."""
+        Ends on the first tool call the model makes — its own or one of Cursor's, both of which
+        are handed to the harness — on ``turn_ended``, on a non-zero trailer status, or when the
+        model has said nothing for longer than a model thinking hard would. Blobs are served
+        inline so the run keeps moving, and the last checkpoint is kept so the next turn can
+        resume from it instead of resending the conversation."""
         deframer = wire.Deframer()
         # The two counts come from different places and mean different things. Generated tokens
         # arrive as deltas and are summed; the prompt size is the conversation's context fill,
@@ -432,6 +638,13 @@ class ChatCursorModel(BaseChatModel):
         # dropping it would lose the model's move silently, and a turn that says nothing
         # is indistinguishable from a turn that failed.
         announced: Optional[wire.ToolCall] = None
+        run_identifier = str(uuid.uuid4())
+        # Cursor holds a run open with heartbeats while the model thinks silently, so silence is
+        # not death and cannot simply time out the connection. What can be measured is silence
+        # *since the last thing that happened*, which is what this bounds.
+        silence_limit = active_tuning().duration(Tunable.model_silence_give_up_seconds)
+        progressed_at = time.monotonic()
+        went_quiet = False
         async for data in response.aiter_bytes():
             for flags, payload in deframer.feed(data):
                 if flags & wire.TRAILER_FLAG:
@@ -444,29 +657,41 @@ class ChatCursorModel(BaseChatModel):
                 if (details := message.token_details) is not None:
                     input_tokens = max(input_tokens, details.used_tokens)
                     _record_context_window(self.model, details.maximum_tokens)
+                if message.checkpoint:
+                    # Kept, not resumed from yet: a checkpoint mid-turn is the newest description
+                    # of this conversation, and the next turn is what gets to use it.
+                    self._remember_resumption(messages, message.checkpoint, blobs, conversation_id)
                 announced = message.tool_call or announced
+                if message.heartbeat and time.monotonic() - progressed_at > silence_limit:
+                    went_quiet = True
+                    break
+                if not message.heartbeat:
+                    progressed_at = time.monotonic()
                 if message.text_delta:
-                    yield _chunk(content_block=_text_block(message.text_delta, request_id))
+                    yield _chunk(content_block=_text_block(message.text_delta, run_identifier))
                 if message.thinking_delta:
-                    yield _chunk(content_block=_reasoning_block(message.thinking_delta, request_id))
+                    yield _chunk(content_block=_reasoning_block(message.thinking_delta, run_identifier))
                 if message.blob_request is not None:
-                    sequence = await self._answer_blob(
-                        client, tokens, request_id, sequence, message.blob_request, blobs,
-                    )
+                    await self._answer_blob(channel, message.blob_request, blobs)
                 if (request := message.exec_request) is not None:
-                    if request.tool_call is not None:
-                        # The model called one of Daisy's tools. The harness runs it, so
-                        # this run is over: hand the call back and stop reading.
-                        yield _tool_call_chunk(request.tool_call)
+                    call = self._tool_call_for(request, tool_names)
+                    if call is not None:
+                        # A tool call, whether the model reached for one of the harness's tools or
+                        # one of Cursor's own. Either way the harness runs it, so this run is over:
+                        # hand the call back and stop reading.
+                        yield _tool_call_chunk(call)
                         yield _final_chunk("tool_calls", input_tokens, output_tokens)
                         return
-                    sequence = await self._decline(client, tokens, request_id, sequence, request)
+                    await self._decline(channel, request)
                 if message.turn_ended:
                     async for chunk in self._close_turn(announced, input_tokens, output_tokens):
                         yield chunk
                     return
-        # The stream closed without a turn_ended, which happens on a clean server-side
-        # end as readily as on a truncation. Report what arrived rather than raising.
+            if went_quiet:
+                break
+        # Reached when the stream closes without a turn_ended — a clean server-side end as
+        # readily as a truncation — or when the model went quiet for too long. Either way,
+        # report what arrived rather than raising.
         async for chunk in self._close_turn(announced, input_tokens, output_tokens):
             yield chunk
 
@@ -481,65 +706,79 @@ class ChatCursorModel(BaseChatModel):
             return
         yield _final_chunk("stop", input_tokens, output_tokens)
 
+    @staticmethod
+    def _tool_call_for(request: wire.ExecRequest, tool_names: set[str]) -> Optional[wire.ToolCall]:
+        """The harness tool call this exec request becomes, if any.
+
+        Two kinds arrive here and both can end up as one call. An ``mcp_args`` exec is the model
+        using a tool the harness offered, and needs no translation. A built-in exec is the model
+        reaching for one of Cursor's own tools, and the interesting question is what to do about it.
+
+        Every other client executes those built-ins itself. That is not available here, and
+        declining outright is not the only alternative: the harness has tools that do the same
+        work, under a permission mode, inside a confinement boundary, recorded against a session.
+        So a built-in is *translated* — Cursor's `read` becomes Daisy's `read_file`, its `shell`
+        becomes `bash` — and handed to the harness like any other call. The agent gets what it
+        asked for, and it happens where the harness can see and govern it, which is better than
+        both the plugins that run it blind and the earlier version of this that just said no.
+
+        Returns ``None`` when there is nothing to translate to: a built-in with no counterpart, or
+        one whose counterpart the current agent has not been given. Those are declined."""
+        if request.tool_call is not None:
+            return request.tool_call
+        if request.builtin is None:
+            return None
+        translation = _BUILTIN_TRANSLATIONS.get(request.builtin.label)
+        if translation is None:
+            return None
+        name, build = translation
+        if name not in tool_names:
+            return None  # this agent does not have the tool; refuse rather than invent one
+        arguments = build(request.arguments)
+        if arguments is None:
+            return None
+        return wire.ToolCall(call_id=f"cursor-{request.exec_id_number}", tool_name=name,
+                             arguments={**arguments, "justification": _BUILTIN_JUSTIFICATION})
+
+    @staticmethod
     async def _answer_blob(
-        self,
-        client: httpx.AsyncClient,
-        tokens: CursorTokens,
-        request_id: str,
-        sequence: int,
-        request: wire.BlobRequest,
-        blobs: dict[bytes, bytes],
-    ) -> int:
+        channel: _Channel, request: wire.BlobRequest, blobs: dict[bytes, bytes]
+    ) -> None:
         """Serve the conversation's blob store: hand over a blob, or take one to hold.
 
-        A read we cannot satisfy is answered empty rather than left hanging — an
-        unanswered KV request stalls the whole run."""
+        A read this cannot satisfy is answered empty rather than left hanging — an unanswered KV
+        request stalls the whole run."""
         if request.is_read:
             body = blobs.get(request.blob_id, b"")
-            await self._append(
-                client, tokens, request_id, sequence,
-                wire.client_message_kv(request.kv_id, 2, wire.blob(1, body)),  # get_blob_result
-            )
+            await channel.push(wire.client_message_kv(request.kv_id, 2, wire.blob(1, body)))
         else:
             blobs[request.blob_id] = request.blob_data or b""
-            await self._append(
-                client, tokens, request_id, sequence,
-                wire.client_message_kv(request.kv_id, 3, b""),  # set_blob_result, no error
-            )
-        return sequence + 1
+            await channel.push(wire.client_message_kv(request.kv_id, 3, b""))  # no error
 
-    async def _decline(
-        self,
-        client: httpx.AsyncClient,
-        tokens: CursorTokens,
-        request_id: str,
-        sequence: int,
-        request: wire.ExecRequest,
-    ) -> int:
-        """Refuse a built-in tool in the protocol's own terms, then close its channel.
+    async def _decline(self, channel: _Channel, request: wire.ExecRequest) -> None:
+        """Refuse an exec in the protocol's own terms, then close its channel.
 
-        Refusing explicitly matters: the agent waits on an exec it asked for, so silence
-        would stall the turn rather than move the model on to a tool it does have."""
-        if request.args_field in wire.REJECTABLE_EXECS:
-            _label, result_field, rejected_field, _leading = wire.REJECTABLE_EXECS[request.args_field]
-            result = wire.rejected_result(rejected_field, request.identifying_strings, _BUILTIN_REFUSAL)
-        elif request.args_field == 5:  # grep_args has no rejection variant, only an error
-            result_field, result = 5, wire.grep_error_result(_BUILTIN_REFUSAL)
+        Only reached for execs that could not be translated into a harness tool call. Refusing
+        explicitly matters as much as refusing: the agent waits on an exec it asked for, so
+        silence would stall the turn rather than move the model on to a tool it does have."""
+        builtin = request.builtin
+        if builtin is not None and builtin.rejected_field:
+            leading = request.arguments[:builtin.rejected_leading]
+            result_field = builtin.result_field
+            result = wire.rejected_result(builtin.rejected_field, leading, _BUILTIN_REFUSAL)
+        elif builtin is not None:
+            # grep has no rejection variant in its result, only an error.
+            result_field, result = builtin.result_field, wire.grep_error_result(_BUILTIN_REFUSAL)
         elif request.args_field == 10:  # request_context_args — answerable, and harmless
             result_field = 10
             # RequestContextResult.success → RequestContextSuccess.request_context
             result = wire.blob(1, wire.blob(1, wire.request_context(self._environment(), [], "")))
         else:
-            return sequence  # an exec kind with no reply we can shape; let it lapse
-        await self._append(
-            client, tokens, request_id, sequence,
-            wire.client_message_exec_result(request.exec_id_number, request.exec_id, result_field, result),
-        )
-        await self._append(
-            client, tokens, request_id, sequence + 1,
-            wire.client_message_stream_close(request.exec_id_number),
-        )
-        return sequence + 2
+            return  # an exec kind with no reply this can shape; let it lapse
+        await channel.push(wire.client_message_exec_result(
+            request.exec_id_number, request.exec_id, result_field, result,
+        ))
+        await channel.push(wire.client_message_stream_close(request.exec_id_number))
 
     # Aggregation.
 
@@ -717,6 +956,62 @@ def _record_context_window(model_id: str, maximum_tokens: int) -> None:
         _observed_context_windows[model_id] = maximum_tokens
 
 
+@dataclass
+class _Resumption:
+    """A conversation Cursor already knows, and what it knew when it last said so.
+
+    ``prefix_digest`` is the fingerprint of the exact message list this checkpoint was produced
+    from. That is what makes the cache safe rather than merely fast: a resume only happens when
+    the transcript still *starts* with those messages, so a compaction, an edit, or any other
+    rewrite changes the digest, misses, and falls back to sending everything. The checkpoint can
+    never describe a conversation that differs from the one Daisy believes in, because a
+    difference is exactly what a miss is."""
+
+    prefix_length: int
+    prefix_digest: str
+    checkpoint: bytes
+    blobs: dict[bytes, bytes]
+    conversation_id: str
+    touched_at: float
+
+
+# Keyed by conversation identity — the digest of the first exchange, which is stable for the life
+# of a conversation and distinct between conversations. Process-local and evicted by age, because
+# this is a cache: losing it costs a full replay, which is the behaviour that existed before it.
+_resumptions: dict[str, _Resumption] = {}
+
+
+def _digest_messages(messages: Sequence[BaseMessage]) -> str:
+    """A fingerprint of a message list: role and text, in order, and nothing else.
+
+    Tool-call arguments are folded in because a turn that called a tool differs from one that did
+    not even when its text is identical. Ids are left out because they are minted per call and
+    would make every digest unique."""
+    hasher = hashlib.sha256()
+    for message in messages:
+        hasher.update(message.__class__.__name__.encode())
+        hasher.update(b"\x00")
+        hasher.update(message_text(message).encode())
+        for call in getattr(message, "tool_calls", None) or []:
+            arguments = call.get("args")
+            hasher.update(str(call.get("name")).encode())
+            hasher.update((arguments if isinstance(arguments, str) else compact(arguments)).encode())
+        hasher.update(b"\x1e")
+    return hasher.hexdigest()
+
+
+def _prune_resumptions() -> None:
+    horizon = time.monotonic() - active_tuning().duration(Tunable.subscription_resume_ttl_seconds)
+    for key in [key for key, entry in _resumptions.items() if entry.touched_at < horizon]:
+        del _resumptions[key]
+
+
+def clear_resumptions() -> None:
+    """Forget every resumable conversation. Called on sign-out, because the state belongs to the
+    account that produced it."""
+    _resumptions.clear()
+
+
 # The model ids Cursor serves are not plain model names: the reasoning effort is part of
 # the id (``claude-4.6-opus-high``, ``gpt-5.4-medium``). That is also why this provider
 # ignores Daisy's reasoning_effort setting — picking the model already said it.
@@ -768,16 +1063,28 @@ async def _connect_json(url: str, body: dict, tokens: CursorTokens) -> dict:
     return payload if isinstance(payload, dict) else {}
 
 
-async def _fetch_context_windows(tokens: CursorTokens) -> dict[str, int]:
-    """Context windows per model, from ``AvailableModels``.
+@dataclass
+class _Variant:
+    """How the backend routes one model variant: its server-side name, its max-mode flag, and the
+    parameter values that pick it out from the others sharing that name."""
 
-    This is the only endpoint that states them. It answers with base models rather than the
-    effort-suffixed ids a run request takes, each carrying variants whose parameters include
-    the window, so the result is keyed two ways: by a variant's own ``legacySlug``, which
-    matches a run id exactly when it is present, and by the base name, which matches by
-    prefix. Where a base name's variants disagree — a model offered at both its normal window
-    and an extended one — the smallest is kept, because a window that reads too large
-    overruns the model while one that reads too small only compacts early.
+    server_model: str
+    maximum_mode: bool
+    parameters: tuple[tuple[str, str], ...]
+    context: int
+
+
+async def _fetch_variants(tokens: CursorTokens) -> dict[str, _Variant]:
+    """Every model variant the account can reach, from ``AvailableModels``.
+
+    This is the only endpoint that states a context window, and the only one that describes how a
+    variant is *selected* — both live in the same place, so they are read together. It answers with
+    base models rather than the effort-suffixed ids a run request takes, each carrying variants
+    whose ``parameterValues`` hold the window and the reasoning effort, so the result is keyed both
+    by a variant's own ``legacySlug`` (an exact match for a run id) and by the base name (a prefix
+    match). Where variants of one base name disagree about the window, the smallest is kept: a
+    window that reads too large overruns the model, while one that reads too small only compacts
+    early.
 
     Nothing is requested by name. ``additionalModelNames`` exists to make the service mention
     models it would otherwise omit, and reaching for it would mean hardcoding model names to
@@ -788,38 +1095,47 @@ async def _fetch_context_windows(tokens: CursorTokens) -> dict[str, int]:
          "useModelParameters": True, "useReactModelPicker": True},
         tokens,
     )
-    windows: dict[str, int] = {}
+    variants: dict[str, _Variant] = {}
 
-    def remember(key: str, window: int) -> None:
-        if not key or window <= 0:
+    def remember(key: str, variant: _Variant) -> None:
+        if not key:
             return
-        existing = windows.get(key)
-        windows[key] = window if existing is None else min(existing, window)
+        existing = variants.get(key)
+        if existing is None:
+            variants[key] = variant
+        elif variant.context and existing.context and variant.context < existing.context:
+            variants[key] = variant
 
     for entry in payload.get("models") or []:
         if not isinstance(entry, dict) or not (base_name := entry.get("name")):
             continue
-        for variant in entry.get("variants") or []:
-            if not isinstance(variant, dict):
+        server_model = str(entry.get("serverModelName") or base_name)
+        for raw_variant in entry.get("variants") or []:
+            if not isinstance(raw_variant, dict):
                 continue
             values = {
-                parameter.get("id"): parameter.get("value")
-                for parameter in variant.get("parameterValues") or []
-                if isinstance(parameter, dict)
+                str(parameter.get("id")): str(parameter.get("value"))
+                for parameter in raw_variant.get("parameterValues") or []
+                if isinstance(parameter, dict) and parameter.get("id") is not None
             }
-            window = _token_limit(values.get("context"))
-            remember(str(variant.get("legacySlug") or ""), window)
-            remember(str(base_name), window)
-    return windows
+            variant = _Variant(
+                server_model=server_model,
+                maximum_mode=raw_variant.get("isMaxMode") is True,
+                parameters=tuple(sorted(values.items())),
+                context=_token_limit(values.get("context")),
+            )
+            remember(str(raw_variant.get("legacySlug") or ""), variant)
+            remember(str(base_name), variant)
+    return variants
 
 
-def _window_for(model_id: str, windows: dict[str, int]) -> int:
-    """The window for a run id: an exact match on a variant slug, else the longest base name
-    the id starts with — ``claude-4.6-opus-high`` resolving through ``claude-4.6-opus``."""
-    if exact := windows.get(model_id):
+def _variant_for(model_id: str, variants: dict[str, _Variant]) -> Optional[_Variant]:
+    """The variant for a run id: an exact match on a slug, else the longest base name the id
+    starts with — ``claude-4.6-opus-high`` resolving through ``claude-4.6-opus``."""
+    if (exact := variants.get(model_id)) is not None:
         return exact
-    candidates = [name for name in windows if model_id.startswith(name)]
-    return windows[max(candidates, key=len)] if candidates else 0
+    candidates = [name for name in variants if model_id.startswith(name)]
+    return variants[max(candidates, key=len)] if candidates else None
 
 
 async def fetch_subscription_models() -> dict[str, dict[str, Any]]:
@@ -845,18 +1161,24 @@ async def fetch_subscription_models() -> dict[str, dict[str, Any]]:
             tokens = await valid_tokens()
             listing = await _connect_json(USABLE_MODELS_URL, {}, tokens)
             try:
-                windows = await _fetch_context_windows(tokens)
+                variants = await _fetch_variants(tokens)
             except (httpx.HTTPError, ValueError, TypeError):
-                windows = {}  # a listing without windows still beats no listing
+                variants = {}  # a listing without windows or routing still beats no listing
             for entry in listing.get("models") or []:
                 if not isinstance(entry, dict):
                     continue
                 model_id = entry.get("modelId") or entry.get("displayModelId")
                 if not model_id:
                     continue
+                variant = _variant_for(model_id, variants)
                 result[model_id] = {
                     "name": _display_name(entry, model_id),
-                    "context": _window_for(model_id, windows),
+                    "context": variant.context if variant else 0,
+                    "variant": None if variant is None else {
+                        "server_model": variant.server_model,
+                        "maximum_mode": variant.maximum_mode,
+                        "parameters": variant.parameters,
+                    },
                 }
         except (CursorAuthError, httpx.HTTPError, ValueError, KeyError, TypeError):
             result = {}

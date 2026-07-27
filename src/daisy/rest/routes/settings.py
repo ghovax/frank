@@ -326,6 +326,8 @@ async def cursor_auth_signout():
         state.cursor_login_flow = None
     await asyncio.to_thread(cursor_clear_tokens)
     _cursor_models().clear_subscription_models_cache()
+    # Resumable conversation state belongs to the account that produced it, so it goes too.
+    _cursor_models().clear_resumptions()
     await _reset_all_runtimes()
     _publish_broadcast({"type": "settings_changed"})
     return {"ok": True}

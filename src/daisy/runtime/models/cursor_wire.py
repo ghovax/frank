@@ -344,13 +344,22 @@ def conversation_state(root_prompt_blob_ids: list[bytes]) -> bytes:
 
 
 def model_details(model_id: str) -> bytes:
-    """agent.v1.ModelDetails — which model answers.
-
-    All three name fields carry the id, which is what the plugin whose run request this
-    otherwise matches does. ``RequestedModel`` is deliberately not sent: it exists to select a
-    model *variant* by parameter, and this provider addresses variants by their effort-suffixed
-    id instead, which is how the ids ``GetUsableModels`` returns are already shaped."""
+    """agent.v1.ModelDetails — which model answers, by its public id."""
     return text(1, model_id) + text(3, model_id) + text(4, model_id)
+
+
+def requested_model(model_id: str, maximum_mode: bool, parameters: list[tuple[str, str]]) -> bytes:
+    """agent.v1.RequestedModel — which model answers, by its *server* id and parameters.
+
+    The companion to ``model_details`` rather than a replacement: that one names the model the
+    way a picker does, this one names the variant the way the backend routes it. A model
+    discovered through ``AvailableModels`` has a distinct ``serverModelName`` and a set of
+    parameter values (reasoning effort, context size, Fast) that select one variant among
+    several sharing that name, and max mode is a flag rather than a parameter. Sending only
+    ``model_details`` reaches the default variant; sending this reaches the one asked for."""
+    parts = [text(1, model_id), boolean(2, maximum_mode)]
+    parts.extend(blob(3, text(1, key) + text(2, value)) for key, value in parameters)
+    return b"".join(parts)
 
 
 def mcp_file_system_options(workspace: str, instructions: str) -> bytes:
@@ -369,6 +378,7 @@ def agent_run_request(
     state: bytes,
     action: bytes,
     model: bytes,
+    variant: bytes,
     tools: list[bytes],
     conversation_id: str,
     file_system_options: bytes,
@@ -380,7 +390,50 @@ def agent_run_request(
     parts.append(text(5, conversation_id))
     if file_system_options:
         parts.append(blob(6, file_system_options))
+    if variant:
+        parts.append(blob(9, variant))  # requested_model
     return b"".join(parts)
+
+
+def drop_field(message: bytes, number: int) -> bytes:
+    """A serialized message with one field number removed, byte-for-byte otherwise.
+
+    Splices rather than re-encodes. Round-tripping through :func:`parse` would be shorter and
+    wrong: this walks messages written by somebody else's server, and re-serializing means
+    re-deciding every encoding choice in them — a fixed-width field, a non-minimal varint, a
+    field this version does not know — where the only correct answer is to copy the bytes."""
+    kept: list[bytes] = []
+    offset = 0
+    while offset < len(message):
+        start = offset
+        tag, offset = _read_varint(message, offset)
+        field_number, wire_type = tag >> 3, tag & 0x7
+        if wire_type == _LENGTH_DELIMITED:
+            length, offset = _read_varint(message, offset)
+            offset += length
+        elif wire_type == _VARINT:
+            _value, offset = _read_varint(message, offset)
+        elif wire_type in (_FIXED64, _FIXED32):
+            offset += 8 if wire_type == _FIXED64 else 4
+        else:
+            kept.append(message[start:])  # unskippable: keep the remainder verbatim
+            break
+        if field_number != number:
+            kept.append(message[start:offset])
+    return b"".join(kept)
+
+
+# ConversationStateStructure.pending_tool_calls. Dropped from a checkpoint before it is sent
+# back: a checkpoint is captured mid-turn, and this client ends its run the moment the model
+# calls a tool, so the state it captured can name a call that was never answered. Resuming with
+# that still listed invites the server to wait for a result nobody is going to send. The
+# maintained plugin strips the same field for the same reason after a user interrupt.
+PENDING_TOOL_CALLS_FIELD = 4
+
+
+def resumed_conversation_state(checkpoint: bytes) -> bytes:
+    """A checkpoint made safe to resume from."""
+    return drop_field(checkpoint, PENDING_TOOL_CALLS_FIELD)
 
 
 def client_message_run(run_request: bytes) -> bytes:
@@ -428,25 +481,48 @@ def mcp_rejected_result(reason: str) -> bytes:
     return blob(3, text(1, reason))
 
 
-# Where each built-in tool's rejection lives: the field number of the tool's result
-# inside ``ExecClientMessage``, the field number of the "rejected" variant inside that
-# result, and how many string fields the rejected message takes before its reason.
-#
-# The agent has its own built-in tools — shell, read, write, grep — and it will reach
-# for them regardless of what we offered, because its toolset is decided server-side.
-# Daisy cannot run them: doing so would execute commands and touch files outside the
-# harness's permission model, from inside a model client, with no session to attribute
-# them to. So each one is declined, by name, using the protocol's own rejection variant
-# rather than a silence the agent would wait out.
-REJECTABLE_EXECS: dict[int, tuple[str, int, int, int]] = {
-    # args field in ExecServerMessage: (label, result field, rejected field, leading strings)
-    2: ("shell", 2, 4, 2),   # ShellResult.rejected → ShellRejected{command, working_directory, reason}
-    14: ("shell", 2, 4, 2),  # shell_stream_args answers on shell_result too
-    3: ("write", 3, 6, 1),   # WriteResult.rejected → WriteRejected{path, reason}
-    4: ("delete", 4, 6, 1),  # DeleteResult.rejected → DeleteRejected{path, reason}
-    7: ("read", 7, 3, 1),    # ReadResult.rejected → ReadRejected{path, reason}
-    8: ("ls", 8, 3, 1),      # LsResult.rejected → LsRejected{path, reason}
-    9: ("diagnostics", 9, 3, 1),  # DiagnosticsResult.rejected → DiagnosticsRejected{path, reason}
+@dataclass(frozen=True)
+class BuiltinExec:
+    """One of Cursor's own agent tools, and how this client answers a request to run it.
+
+    The agent reaches for these regardless of what the client offered, because its toolset is
+    decided server-side. Every field here exists to answer one of two questions: how to hand the
+    request to the harness so it runs under the harness's rules, and how to decline it in the
+    protocol's own terms when it cannot be handed over at all.
+
+    ``result_field`` and ``rejected_field`` locate the refusal — the result's field number inside
+    ``ExecClientMessage``, and the "rejected" variant's number inside that result.
+    ``rejected_leading`` is how many identifying strings the rejected message carries before its
+    reason (the command and directory, or a path), which are echoed back so the agent's own
+    transcript names what it was refused."""
+
+    label: str
+    result_field: int
+    rejected_field: int
+    rejected_leading: int
+    # The field numbers, within this exec's args message, of the strings worth reading — in the
+    # order the rejected message wants them, so one list serves both answering and refusing.
+    argument_fields: tuple[int, ...] = ()
+
+
+# Keyed by the args field number in ``ExecServerMessage``.
+BUILTIN_EXECS: dict[int, BuiltinExec] = {
+    # ShellResult.rejected → ShellRejected{command, working_directory, reason}
+    2: BuiltinExec("shell", 2, 4, 2, (1, 2)),
+    # shell_stream_args answers on shell_result too
+    14: BuiltinExec("shell", 2, 4, 2, (1, 2)),
+    # WriteResult.rejected → WriteRejected{path, reason}; args are {path, file_text}
+    3: BuiltinExec("write", 3, 6, 1, (1, 2)),
+    # DeleteResult.rejected → DeleteRejected{path, reason}
+    4: BuiltinExec("delete", 4, 6, 1, (1,)),
+    # GrepResult has no rejection variant, only an error — hence rejected_field 0
+    5: BuiltinExec("grep", 5, 0, 0, (1, 2, 3)),
+    # ReadResult.rejected → ReadRejected{path, reason}
+    7: BuiltinExec("read", 7, 3, 1, (1,)),
+    # LsResult.rejected → LsRejected{path, reason}
+    8: BuiltinExec("ls", 8, 3, 1, (1,)),
+    # DiagnosticsResult.rejected → DiagnosticsRejected{path, reason}
+    9: BuiltinExec("diagnostics", 9, 3, 1, (1,)),
 }
 
 
@@ -478,14 +554,18 @@ class ToolCall:
 
 @dataclass
 class ExecRequest:
-    """The server asking the client to run something. ``mcp`` carries a tool call the
-    model made; every other kind is one of the agent's built-ins."""
+    """The server asking the client to run something.
+
+    ``tool_call`` is set when the model called one of the harness's own tools. ``builtin`` is set
+    when it reached for one of Cursor's, in which case ``arguments`` holds that exec's strings in
+    the order :attr:`BuiltinExec.argument_fields` names them."""
 
     exec_id_number: int
     exec_id: str
     args_field: int
     tool_call: Optional[ToolCall] = None
-    identifying_strings: list[str] = dataclass_field(default_factory=list)
+    builtin: Optional[BuiltinExec] = None
+    arguments: list[str] = dataclass_field(default_factory=list)
 
 
 @dataclass
@@ -533,6 +613,10 @@ class ServerMessage:
     # and has to be summed across a turn.
     output_token_delta: int = 0
     token_details: Optional[TokenDetails] = None
+    # The whole conversation state the server just published, verbatim. Opaque to this client
+    # and kept that way: its only use is being handed back to resume, so it is bytes to carry
+    # rather than a structure to understand.
+    checkpoint: bytes = b""
 
 
 def _parse_mcp_args(data: bytes) -> ToolCall:
@@ -613,19 +697,17 @@ def _parse_exec_server_message(data: bytes) -> Optional[ExecRequest]:
     for entry in fields:
         if not entry.is_message:
             continue
-        if entry.number == 11:  # mcp_args — one of Daisy's tools
+        if entry.number == 11:  # mcp_args — one of the harness's own tools
             request.args_field = 11
             request.tool_call = _parse_mcp_args(entry.data)
             return request
-        if entry.number in REJECTABLE_EXECS:
-            _label, _result_field, _rejected_field, leading = REJECTABLE_EXECS[entry.number]
+        if (builtin := BUILTIN_EXECS.get(entry.number)) is not None:
             inner = parse(entry.data)
             request.args_field = entry.number
-            # ShellArgs leads with command + working_directory; every other rejectable
-            # exec leads with a path. Both are just the message's first strings.
-            request.identifying_strings = [string_at(inner, index + 1) for index in range(leading)]
+            request.builtin = builtin
+            request.arguments = [string_at(inner, number) for number in builtin.argument_fields]
             return request
-        if entry.number in (5, 10):  # grep_args, request_context_args
+        if entry.number == 10:  # request_context_args — answerable, and not a tool at all
             request.args_field = entry.number
             return request
     return None
@@ -678,6 +760,7 @@ def parse_server_message(payload: bytes) -> ServerMessage:
         elif entry.number == 2:  # exec_server_message
             message.exec_request = _parse_exec_server_message(entry.data)
         elif entry.number == 3:  # conversation_checkpoint_update
+            message.checkpoint = entry.data
             message.token_details = _parse_token_details(entry.data)
         elif entry.number == 4:  # kv_server_message
             message.blob_request = _parse_kv_server_message(entry.data)
