@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
@@ -19,6 +19,18 @@ ICON_COMPOSER_TOOL = Path(
 )
 MACOS_CANVAS_SIZE = 1024
 MACOS_ICON_SIZES = (16, 32, 64, 128, 256, 512, 1024)
+
+# The two surfaces `cargo tauri icon` does not know about, and which therefore kept the old
+# artwork through a rename until someone noticed by eye. Derived here so they cannot drift.
+MONO_ARTWORK = COMPOSER_DOCUMENT / "Assets" / "face-mono.png"
+TRAY_ICON = WEB_ROOT / "src-tauri" / "icons" / "tray-icon.png"
+TRAY_ICON_SIZE = 88
+WEB_ICONS = (
+    (WEB_ROOT / "src" / "app" / "icon.png", 512),
+    (WEB_ROOT / "src" / "app" / "apple-icon.png", 512),
+    (WEB_ROOT / "src" / "app" / "favicon.ico", 256),
+)
+WEB_CORNER_RADIUS_RATIO = 0.22
 
 
 def export_composer_document(output_path: Path) -> None:
@@ -135,6 +147,49 @@ def create_macos_icon() -> None:
     )
 
 
+def create_tray_icon() -> None:
+    """Write the menu-bar icon: the mark in black, at the size the tray expects.
+
+    A template image, not a picture — macOS asks for pure black plus alpha and tints it
+    itself, so that one icon reads on a light menu bar, a dark one, and a coloured
+    wallpaper behind a translucent bar. Taking the alpha from the mono artwork and
+    discarding its colour is what makes it a template rather than something that merely
+    happens to be dark today."""
+    with Image.open(MONO_ARTWORK) as artwork_image:
+        alpha_channel = artwork_image.convert("RGBA").getchannel("A")
+    tray_icon = Image.new("RGBA", alpha_channel.size, (0, 0, 0, 0))
+    tray_icon.putalpha(alpha_channel)
+    tray_icon.resize((TRAY_ICON_SIZE, TRAY_ICON_SIZE), Image.Resampling.LANCZOS).save(
+        TRAY_ICON, optimize=True
+    )
+
+
+def _rounded_mask(size: int) -> Image.Image:
+    """A squircle-ish corner mask. Approximated with a rounded rectangle, because the
+    browser surfaces this serves show it at 32 pixels or less, where the difference
+    between Apple's continuous curvature and a plain radius is below one pixel."""
+    mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        (0, 0, size - 1, size - 1), radius=round(size * WEB_CORNER_RADIUS_RATIO), fill=255
+    )
+    return mask
+
+
+def create_web_icons() -> None:
+    """Write the browser favicons from the same artwork as everything else.
+
+    These were the last place the old mark survived a rename, because nothing regenerated
+    them: they are Next.js file-convention assets picked up by filename, so no import ever
+    breaks to say they are stale. Deriving them here means the interface cannot disagree
+    with the app about what the product looks like."""
+    source_image = render_legacy_macos_icon()
+    for destination, size in WEB_ICONS:
+        resized = source_image.resize((size, size), Image.Resampling.LANCZOS)
+        resized.putalpha(_rounded_mask(size))
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        resized.save(destination)
+
+
 def generate_tauri_icons() -> None:
     subprocess.run(
         [
@@ -167,6 +222,8 @@ def main() -> None:
         create_macos_icon()
         print(f"Generated {MACOS_ICON} from {COMPOSER_DOCUMENT}")
         return
+    if not MONO_ARTWORK.is_file():
+        raise FileNotFoundError(f"Monochrome artwork not found: {MONO_ARTWORK}")
     if not ICON_COMPOSER_TOOL.is_file():
         raise FileNotFoundError(f"Icon Composer tool not found: {ICON_COMPOSER_TOOL}")
 
@@ -177,7 +234,12 @@ def main() -> None:
 
     generate_tauri_icons()
     create_macos_icon()
-    print(f"Exported {COMPOSER_DOCUMENT} to {TAURI_MASTER} and Tauri icon assets")
+    create_tray_icon()
+    create_web_icons()
+    print(
+        f"Exported {COMPOSER_DOCUMENT} to {TAURI_MASTER}, the Tauri icon assets, "
+        f"{TRAY_ICON.name} and the browser favicons"
+    )
 
 
 if __name__ == "__main__":
