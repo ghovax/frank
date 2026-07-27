@@ -229,7 +229,7 @@ def run(arguments) -> int:
         return 1
 
     # A browser with no daemon behind it is a blank screen with a spinner, so start one for the
-    # same reason `daisy open` does: the command line owns the daemon, and this is the command
+    # same reason `daisy app` does: the command line owns the daemon, and this is the command
     # line. `--no-daemon` opts out for pointing at something already running.
     if not arguments.no_daemon:
         ensure_daemon()
@@ -238,12 +238,54 @@ def run(arguments) -> int:
         port = int(daemon_port_path().read_text().strip())
         token = daemon_token_path().read_text().strip()
     except (OSError, ValueError):
-        _note("daisy: daisyd is not running (start it with `daisy daemon start`)")
+        _note("daisy: daisyd is not running (start it with `daisy serve`)")
         return 1
 
     application = build_application(f"http://127.0.0.1:{port}", token, directory)
     address = f"http://{arguments.host}:{arguments.port}"
     _note(f"daisy: serving the interface at {address} (daemon on :{port})")
     _note("daisy: this address carries full control of the daemon — do not expose it beyond loopback.")
+
+    # Opening the browser is what makes this `web` rather than a second `serve`. `serve` is the
+    # API alone; this is the API plus the thing that looks at it, and a command that serves an
+    # interface and then leaves you to find it is doing half a job. `--no-open` is for a
+    # headless box, where there is no browser to open and the printed address is the point.
+    if not arguments.no_open:
+        _open_when_listening(address)
+
     uvicorn.run(application, host=arguments.host, port=arguments.port, log_level="warning")
     return 0
+
+
+def _open_when_listening(address: str) -> None:
+    """Open the browser once the server is actually accepting connections.
+
+    Not before: `uvicorn.run` blocks, so opening first races the bind and lands the browser on
+    a connection error often enough to matter. A thread that waits for the socket and then
+    opens is the smallest thing that is not a race — and it is a daemon thread, so a server
+    that never binds does not leave the process unable to exit."""
+    import socket
+    import threading
+    import time
+    import urllib.parse
+    import webbrowser
+
+    parsed = urllib.parse.urlparse(address)
+    host, port = parsed.hostname or "127.0.0.1", parsed.port or 80
+
+    def wait_and_open() -> None:
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            with socket.socket() as probe:
+                probe.settimeout(0.25)
+                if probe.connect_ex((host, port)) == 0:
+                    break
+            time.sleep(0.1)
+        else:
+            return
+        try:
+            webbrowser.open(address)
+        except Exception:  # noqa: BLE001 — no browser is not an error, the address is printed
+            pass
+
+    threading.Thread(target=wait_and_open, name="daisy-web-open", daemon=True).start()

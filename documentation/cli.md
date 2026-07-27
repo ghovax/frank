@@ -6,7 +6,7 @@ This command is for people. A session composes with its peers through [tools](to
 
 That is enforced rather than merely advised. The daemon takes the identity of a caller on its unix socket from the kernel, and every command a session runs inherits that session's process session, so `daisy` run from inside one is attributed to it and scoped the way its own tools are: it can create, message, inspect and end sessions in its own subtree, and nothing else. A machine-wide `daisy ps` from inside a session comes back `403 forbidden` — `daisy tree` on itself is the question it is allowed to ask. From your own terminal, nothing is scoped.
 
-The daemon starts itself on your first command. There is no separate "start the service" step.
+The daemon starts itself on your first command, so there is no mandatory "start the service" step — `daisy serve` is for when you want it up on its own. And `daisy run` skips it entirely: one turn, in your terminal, no control plane at all.
 
 ## The shape of it
 
@@ -151,27 +151,42 @@ Needs the interface to have been built (`cd web && bun run build` in a checkout)
 ## The desktop app
 
 ```
-daisy open                              # start the daemon if needed, then launch the app
-daisy open --no-daemon                  # just the window
+daisy app                               # start the daemon if needed, then launch the app
+daisy app --no-daemon                   # just the window
 ```
 
 The app is a **client**. It does not contain a daemon and does not start one — it finds one, reading the port and token `daisyd` publishes, and is powerless when there is none, exactly as it is when a remote host does not answer. So the convenience runs this way round: the command line, which owns the daemon, brings it up and then launches the window.
 
 The app is addressed by bundle identifier rather than by name, so renaming or moving it does not break this. If it is not installed, the command says so rather than half-working. macOS only.
 
-## The daemon
+## Serving, and the daemon
 
 ```
+daisy serve                             # start the control plane and detach
+daisy serve --foreground                # run it here instead, for a log or a supervisor
 daisy daemon status                     # what it is running, and where
-daisy daemon start                      # start one if none is running
-daisy daemon stop                       # stop it, and its sessions with it
-daisy daemon restart                    # stop, wait for the process to go, start again
+daisy daemon stop                       # stop it, and its sessions' processes with it
+daisy daemon restart                    # replace it; your sessions survive
 daisy daemon endpoint                   # the loopback port and capability token
 ```
+
+`serve` starts it; `daemon` inspects one that is already there. They are separate verbs because they are separate acts — starting the API is not a kind of introspection, and grouping them under one noun made `daemon start` read like a subcommand of looking at it. Any other command also starts a daemon if none is running, so `serve` is for wanting it up on its own.
 
 `restart` **keeps your sessions**. Each one loses its process and comes back asleep, picking up where it left off on the next message; `sessions_slept` says how many that was. It exists because macOS caches the Accessibility trust check per process, so a daemon that was already running when you granted the permission never sees it — and the prototype it forks sessions from is a re-exec of it, so neither do they. The desktop app asks for the same thing over the control plane (`daemon.restart`), which is what makes the grant flow one click now that restarting the window no longer restarts the harness.
 
 `stop` and `restart` signal the process group rather than calling the API, because a daemon wedged badly enough to need stopping may not be answering its own socket.
+
+### Inspecting it
+
+`daisy daemon status` reports whether it is up, how many sessions it knows about, and the prototype's health — including its native thread count and frozen-object count, which are the two invariants that fail silently.
+
+`status` never starts anything — a status check that silently launched the service could never report the absence it was asked about. Pass `--start` if you want that.
+
+`endpoint` prints a secret, which is why it is a verb you ask for rather than something `status` volunteers. It is what you need to point a desktop client at a daemon over SSH:
+
+```sh
+ssh workstation daisy daemon endpoint
+```
 
 ## Configuration
 
@@ -192,23 +207,6 @@ Values are interpreted the way the file holds them: `true`, `8` and `[]` land as
 A name the schema does not define, or a value it would reject, is refused with the reason, and the file is left as it was. The daemon reads this file at startup, so an invalid value would not fail the command that set it — it would fail every command after, including the one that would put it back. A name that is merely *unknown* is worse still: it would be written, listed back, and quietly do nothing.
 
 Changes apply to what starts **next**. See the [Configuration guide](configuration.md) for what each setting means.
-
-## The daemon
-
-```
-daisy daemon status      # is it up, how many sessions, and the prototype's health
-daisy daemon start       # start it explicitly (any other command also will)
-daisy daemon stop        # stop it; its sessions are reaped with it
-daisy daemon endpoint    # the loopback port and capability token
-```
-
-`status` never starts anything — a status check that silently launched the service could never report the absence it was asked about. Pass `--start` if you want that.
-
-`endpoint` prints a secret, which is why it is a verb you ask for rather than something `status` volunteers. It is what you need to point a desktop client at a daemon over SSH:
-
-```sh
-ssh workstation daisy daemon endpoint
-```
 
 ## Output, exit codes, and pipes
 
@@ -243,6 +241,32 @@ The CLI is the ergonomic face of the control plane, and it is allowed to be idio
 | `kill` | `session.end` |
 | `remote` | `remote.list` / `remote.send` |
 | `daemon status` | `daemon.status` |
+| `serve` | starts `daisyd` — no method, it *is* the thing being started |
+| `run` | none: it drives `daisy.Session` in this process, with no daemon at all |
+| `auth` | none: it writes the credential file the harness reads |
+
+## One turn, without a daemon
+
+```sh
+daisy run "what does this project do?"
+daisy run -C ~/code/project --agent reviewer "what changed and is it safe?"
+echo "summarise this" | daisy run -
+daisy run --allow "run the tests and tell me what failed"
+```
+
+`run` is the whole harness with none of the control plane. It drives `daisy.Session` in this process — the same library surface an embedder uses — prints the agent's prose as it arrives, and exits. No session record, no address, no crash isolation: reach for `create` and `send` when you want any of those. This is for a question with an answer.
+
+`--allow` answers every permission gate with yes. Without it, a turn that needs a decision stops and says so, because nobody is watching. `--json` prints the turn events instead of the prose, which is the same vocabulary `attach` streams.
+
+## Signing in
+
+```sh
+daisy auth login                        # open the browser, sign in to ChatGPT
+daisy auth status                       # who is signed in, if anyone
+daisy auth logout
+```
+
+Only ChatGPT works this way — every other provider takes an API key through `daisy configure`. It is a verb rather than a setting because the credential is not something you can type: it is an OAuth exchange that lands on a loopback callback. Before this it existed only inside the browser interface, which meant a headless install could not reach the one provider that needs no key.
 
 ## Talking to a session directly
 

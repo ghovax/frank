@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from daisy.base.sqlite_lock import sqlite_write_lock
 from daisy.daemon.persistence.database import SessionRecord as SessionRow

@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
-import hashlib
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -61,19 +60,6 @@ from daisy.runtime.background import (
 
 from daisy.base.permission_mode import PermissionMode
 
-logger = logging.getLogger(__name__)
-
-
-async def _drain_observation(pending) -> None:
-    """Await an observer's awaitable, swallowing whatever it does.
-
-    Separate from `_observe` because a task's exception is only ever seen when the task is
-    awaited, and nothing awaits this one — without the guard a failing async observer would
-    surface as an "exception was never retrieved" warning at an unrelated moment."""
-    try:
-        await pending
-    except Exception:  # noqa: BLE001 — an audit sink must never fail a turn
-        logger.debug("An asynchronous observer raised", exc_info=True)
 from daisy.runtime.locations import CallExecutionPolicy, ResolvedLocation, ToolLocationError
 from daisy.runtime.turn_events import (
     ToolResult,
@@ -96,8 +82,6 @@ from daisy.runtime.permissions import (
 from daisy.runtime.compaction import (
     _CompactionMixin,
 )
-
-
 from daisy.base.serialization import compact
 from daisy.runtime.internals import (
     _cap_model_result_payload,
@@ -107,6 +91,22 @@ from daisy.runtime.internals import (
     _tool_timing_metadata,
     _utc_timestamp,
 )
+
+
+logger = logging.getLogger(__name__)
+
+
+async def _drain_observation(pending) -> None:
+    """Await an observer's awaitable, swallowing whatever it does.
+
+    Separate from `_observe` because a task's exception is only ever seen when the task is
+    awaited, and nothing awaits this one — without the guard a failing async observer would
+    surface as an "exception was never retrieved" warning at an unrelated moment."""
+    try:
+        await pending
+    except Exception:  # noqa: BLE001 — an audit sink must never fail a turn
+        logger.debug("An asynchronous observer raised", exc_info=True)
+
 
 
 def build_chat_model(

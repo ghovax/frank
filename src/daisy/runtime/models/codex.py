@@ -19,8 +19,6 @@ works; this mirrors that with ``originator: daisy``.) See
 from __future__ import annotations
 
 import json
-import time
-from importlib.metadata import PackageNotFoundError, version as _package_version
 from typing import Any, AsyncIterator, Callable, Optional, Sequence, cast
 
 import httpx
@@ -53,7 +51,6 @@ from daisy.base.subscription import (
     capture_usage_headers,
     request_headers,
 )
-from daisy.base.tuning import Tunable, active_tuning
 
 class ChatCodexModel(BaseChatModel):
     """A ``BaseChatModel`` backed by the ChatGPT-subscription Codex endpoint.
@@ -197,7 +194,11 @@ class ChatCodexModel(BaseChatModel):
         return payload
 
     @staticmethod
-    async def _headers(self) -> dict[str, str]:
+    async def _headers() -> dict[str, str]:
+        """The request headers, with a freshly-valid access token.
+
+        Static because it needs nothing from the instance: the token store is per-account and
+        per-machine, not per-model."""
         return request_headers(await valid_tokens())
 
     @staticmethod

@@ -219,7 +219,7 @@ def _command_daemon(arguments: argparse.Namespace) -> int:
         # status check that silently launches a service is a status check that can never
         # report the absence it was asked about. `--start` opts into the other behaviour.
         if not daemon_is_up() and not arguments.start:
-            _note("daisyd is not running (start it with `daisy daemon start`)")
+            _note("daisyd is not running (start it with `daisy serve`)")
             return 1
         _emit(call("daemon.status"))
         return 0
@@ -237,10 +237,6 @@ def _command_daemon(arguments: argparse.Namespace) -> int:
             _note("daisyd does not appear to be running")
             return 1
         _emit({"port": int(port), "token": token})
-        return 0
-    if arguments.action == "start":
-        ensure_daemon()
-        _emit({"running": True})
         return 0
     if arguments.action == "stop":
         # A signal rather than an API call: a daemon wedged badly enough to need stopping may
@@ -324,6 +320,150 @@ def _command_web(arguments: argparse.Namespace) -> int:
     from daisy.cli.commands import web
 
     return web.run(arguments)
+
+
+def _command_serve(arguments: argparse.Namespace) -> int:
+    """Start the control plane.
+
+    Named `serve` rather than `daemon start` because starting the API is not "inspecting the
+    daemon", which is what the rest of that noun group does — and because `serve` is the name
+    every comparable tool uses for exactly this. `daemon` keeps `status`, `stop`, `restart` and
+    `endpoint`, which are all genuinely about a daemon that is already there.
+
+    Detached by default, since a control plane whose lifetime is a terminal window is not much
+    of a control plane. `--foreground` runs it here, which is what you want when you are
+    watching its log or running it under a supervisor that expects to own the process.
+    """
+    if arguments.foreground:
+        from daisy.daemon.__main__ import main as daemon_main
+
+        return daemon_main([])
+    ensure_daemon()
+    _emit({"running": True})
+    return 0
+
+
+def _command_run(arguments: argparse.Namespace) -> int:
+    """One turn, in this process, with no daemon at all.
+
+    The shortest possible use of the harness, and the first consumer of the library surface:
+    everything below is `daisy.Session`. That is the point of it being here — a library nothing
+    uses is a library nobody can trust, and this is the same code path an embedder takes.
+
+    No daemon means no session record, no address and no crash isolation. Reach for `create`
+    and `send` when you want any of those; this is for a question with an answer.
+    """
+    import asyncio
+
+    prompt = arguments.prompt
+    if prompt == "-" or prompt is None:
+        prompt = sys.stdin.read()
+    prompt = (prompt or "").strip()
+    if not prompt:
+        _note("daisy: nothing to run (pass a prompt, or - to read stdin)")
+        return 1
+
+    async def drive() -> int:
+        from daisy import Approval, Session
+
+        class AllowEverything:
+            """Answers every gate with yes. Only reachable through `--allow`, which is a
+            deliberate act: unattended means nobody is watching what it agrees to."""
+
+            async def decide(self, _gate):
+                return Approval(allow=True, reason="--allow was passed")
+
+        session = Session(
+            arguments.agent,
+            directory=arguments.directory,
+            permission_mode=arguments.permission_mode,
+            approvals=AllowEverything() if arguments.allow else None,
+        )
+        try:
+            from daisy.runtime.turn_events import Done, Suspended, TextChunk
+
+            answer = ""
+            async for event in session.stream(prompt):
+                if arguments.json:
+                    _emit(event.to_dict() if hasattr(event, "to_dict") else {"event": type(event).__name__})
+                    continue
+                if isinstance(event, TextChunk):
+                    sys.stdout.write(event.text)
+                    sys.stdout.flush()
+                elif isinstance(event, Suspended):
+                    _note(
+                        "\ndaisy: this turn needs a decision and nothing is watching. "
+                        "Re-run with --allow, or with a permission mode that does not gate it."
+                    )
+                    return 2
+                elif isinstance(event, Done):
+                    answer = event.text or answer
+            if not arguments.json and not answer.endswith("\n"):
+                sys.stdout.write("\n")
+            return 0
+        except Exception as error:  # noqa: BLE001 — a person gets a sentence, not a traceback
+            # The common cases are a provider with no credential and a model the account
+            # cannot serve, and neither is a bug to be reported with a stack. The detail is
+            # kept because it is usually the whole answer.
+            _note(f"\ndaisy: the turn failed — {type(error).__name__}: {error}")
+            return 1
+        finally:
+            await session.aclose()
+
+    return asyncio.run(drive())
+
+
+def _command_auth(arguments: argparse.Namespace) -> int:
+    """Sign in to a provider that uses an account rather than an API key.
+
+    Only ChatGPT works this way today. It existed only in the browser interface, which meant a
+    headless install could not reach the one provider that needs no key — so this is a gap
+    being closed rather than a second way to do something.
+    """
+    import asyncio
+
+    from daisy.base.credentials import ChatGPTAuthError, ChatGPTLoginFlow, clear_tokens, load_tokens
+
+    if arguments.action == "status":
+        tokens = load_tokens()
+        if tokens is None:
+            _emit({"signed_in": False})
+            return 1
+        _emit({"signed_in": True, "account_id": tokens.account_id, "expires_at": tokens.expires_at})
+        return 0
+
+    if arguments.action == "logout":
+        clear_tokens()
+        _emit({"signed_in": False})
+        return 0
+
+    async def login() -> int:
+        flow = ChatGPTLoginFlow()
+        try:
+            await flow.start()
+        except OSError as error:
+            # Port 1455 is the redirect target OpenAI's consent screen sends the browser to,
+            # so it cannot be chosen: another sign-in already holding it is the whole message.
+            _note(f"daisy: could not listen for the sign-in callback ({error}). "
+                  "Another Daisy or Codex sign-in may be in progress.")
+            return 1
+        _note("daisy: open this in a browser to sign in:")
+        print(flow.authorize_url)
+        # Best effort. On a headless box there is nothing to open and the printed URL is the
+        # whole point of this command, so a failure here is not a failure.
+        with contextlib.suppress(Exception):
+            import webbrowser
+
+            webbrowser.open(flow.authorize_url)
+        try:
+            tokens = await flow.wait()
+        except ChatGPTAuthError as error:
+            _note(f"daisy: sign-in failed ({error})")
+            return 1
+        _emit({"signed_in": True, "account_id": tokens.account_id})
+        return 0
+
+    return asyncio.run(login())
 
 
 def _command_open(arguments: argparse.Namespace) -> int:
@@ -450,18 +590,48 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-daemon", action="store_true",
         help="serve without starting a daemon first",
     )
+    web.add_argument(
+        "--no-open", action="store_true",
+        help="do not open a browser; print the address and serve (for a headless box)",
+    )
     web.set_defaults(handler=_command_web)
 
-    open_app = add("open", help="start the daemon and launch the desktop app")
+    open_app = add("app", help="start the daemon and launch the desktop app")
     open_app.add_argument(
         "--no-daemon", action="store_true",
         help="launch the app without starting a daemon first",
     )
     open_app.set_defaults(handler=_command_open)
 
-    daemon = add("daemon", help="inspect or start the daemon")
+    serve = add("serve", help="start the control plane and keep it running")
+    serve.add_argument(
+        "-f", "--foreground", action="store_true",
+        help="run the daemon in this terminal instead of detaching it",
+    )
+    serve.set_defaults(handler=_command_serve)
+
+    run = add("run", help="run one turn and print the answer, without a daemon")
+    run.add_argument("prompt", nargs="?", help="what to ask, or - to read stdin")
+    run.add_argument("-a", "--agent", default="general-assistant", help="which agent profile to run")
+    run.add_argument("-C", "--directory", default=".", help="where the agent works (default: here)")
+    run.add_argument(
+        "--permission-mode", default="",
+        help="the permission policy for this turn; the default gates risky tool calls",
+    )
+    run.add_argument(
+        "--allow", action="store_true",
+        help="answer every permission gate with yes, for unattended use",
+    )
+    run.add_argument("--json", action="store_true", help="print every turn event as JSON instead of prose")
+    run.set_defaults(handler=_command_run)
+
+    auth = add("auth", help="sign in to a model provider that uses an account rather than a key")
+    auth.add_argument("action", choices=["login", "logout", "status"], nargs="?", default="status")
+    auth.set_defaults(handler=_command_auth)
+
+    daemon = add("daemon", help="inspect a running daemon (start one with `daisy serve`)")
     daemon.add_argument(
-        "action", choices=["status", "start", "stop", "restart", "endpoint"],
+        "action", choices=["status", "stop", "restart", "endpoint"],
         nargs="?", default="status",
     )
     daemon.add_argument("-s", "--start", action="store_true", help="start the daemon if it is not running")

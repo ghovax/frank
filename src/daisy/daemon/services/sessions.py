@@ -12,7 +12,6 @@ from daisy.base.sqlite_lock import sqlite_write_lock
 from pathlib import Path
 from typing import Any
 from typing import cast
-import logging
 from daisy.daemon import state
 from daisy.daemon.persistence.database import SessionRecord
 from daisy.daemon.services.broadcast import _publish_broadcast

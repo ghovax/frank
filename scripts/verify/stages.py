@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -25,14 +26,12 @@ from typing import Any
 from scripts.verify.harness import (
     PERMISSIVE_CONFINEMENT,
     Outcome,
-    RpcError,
     SOURCE_ROOT,
     confinement_available,
     daemon,
     discard,
     environment_for,
     make_roots,
-    report,
     seed_configuration,
 )
 
@@ -46,18 +45,33 @@ def structure() -> Outcome:
 
     Cheapest and first, because everything else in the battery imports the tree it checks.
     """
-    checks = {
-        "layers": ["scripts/check_layers.py"],
-        "imports": ["scripts/check_imports.py"],
-        "translations": ["scripts/check_translations.py"],
+    root = SOURCE_ROOT.parent
+    environment = {**os.environ, "PYTHONPATH": str(SOURCE_ROOT)}
+    checks: dict[str, list[str]] = {
+        "layers": [sys.executable, "scripts/check_layers.py"],
+        "imports": [sys.executable, "scripts/check_imports.py"],
+        "translations": [sys.executable, "scripts/check_translations.py"],
     }
+
+    # Lint belongs in the battery because it catches a class the other checks cannot see: a
+    # `@staticmethod` that kept its `self` parameter imports fine, type-checks nowhere, and
+    # fails only when called — which is how the ChatGPT provider stayed broken across two
+    # commits. Ruff is a development tool rather than a runtime dependency, so it is looked for
+    # rather than assumed, and its absence is reported instead of failing the stage.
+    ruff = shutil.which("ruff")
+    uv = shutil.which("uv")
+    if ruff:
+        checks["lint"] = [ruff, "check", "src", "scripts"]
+    elif uv:
+        checks["lint"] = [uv, "run", "ruff", "check", "src", "scripts"]
+
     observations: dict[str, Any] = {}
+    if "lint" not in checks:
+        observations["lint"] = "ruff is not installed; skipped"
     passed = True
-    for name, arguments in checks.items():
+    for name, command in checks.items():
         result = subprocess.run(
-            [sys.executable, *arguments],
-            capture_output=True, text=True, cwd=str(SOURCE_ROOT.parent),
-            env={**os.environ, "PYTHONPATH": str(SOURCE_ROOT)},
+            command, capture_output=True, text=True, cwd=str(root), env=environment,
         )
         observations[name] = result.returncode == 0
         if result.returncode != 0:

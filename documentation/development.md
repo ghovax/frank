@@ -63,7 +63,7 @@ A new setting needs nothing beyond its `Field(description=...)` — no reference
 ## Running the desktop app in dev
 
 ```sh
-daisy daemon start      # the app connects to a daemon; it does not start one
+daisy serve             # the app connects to a daemon; it does not start one
 cd web
 bun run tauri:dev       # launches the Tauri window against the dev UI
 ```

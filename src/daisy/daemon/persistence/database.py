@@ -9,7 +9,7 @@ handlers.
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Index, Integer, String, Text, inspect, text
+from sqlalchemy import Index, String, Text, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 

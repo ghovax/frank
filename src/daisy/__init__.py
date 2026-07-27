@@ -80,7 +80,7 @@ __all__ = [
 ]
 
 try:  # pragma: no cover - a source checkout has no distribution metadata
-    from importlib.metadata import PackageNotFoundError, version as _package_version
+    from importlib.metadata import version as _package_version
 
     __version__ = _package_version("daisy")
 except Exception:  # noqa: BLE001 — a missing distribution must not break an import

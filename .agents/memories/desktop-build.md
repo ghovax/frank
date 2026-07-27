@@ -17,7 +17,7 @@ packaging/sign-app.sh "packaging/dist/Daisy Computer Use.app"
 packaging/sign-app.sh web/src-tauri/target/release/bundle/macos/Daisy.app
 ```
 
-`tauri.conf.json`'s `beforeBuildCommand` no longer invokes the freeze and `bundle.resources` no longer exists, so the app build is a Rust compile and a static export — nothing Python. Install the harness by `ditto`-ing it to `/Applications` and symlinking `Contents/MacOS/daisy` onto `PATH`; install the app the same way. `daisy open` then starts the daemon if needed and launches the window.
+`tauri.conf.json`'s `beforeBuildCommand` no longer invokes the freeze and `bundle.resources` no longer exists, so the app build is a Rust compile and a static export — nothing Python. Install the harness by `ditto`-ing it to `/Applications` and symlinking `Contents/MacOS/daisy` onto `PATH`; install the app the same way. `daisy app` then starts the daemon if needed and launches the window.
 
 ## Freezing the harness → a signed .app (the Accessibility identity trick)
 

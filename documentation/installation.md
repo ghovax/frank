@@ -49,8 +49,8 @@ You need [Nix](https://nixos.org) (the flake devshell pins everything else, `uv`
 | 9 | `ln -sf "/Applications/Daisy Computer Use.app/Contents/MacOS/daisy" /usr/local/bin/daisy` | Puts `daisy` and `daisyd` on your `PATH` | May need `sudo` | seconds |
 | 10 | `cd web && bun run tauri:build` | Rust compile plus a static export. **No Python in this step** | `Daisy.app` and a `.dmg` under `web/src-tauri/target/release/bundle/` | first time, ~10 min |
 | 11 | `packaging/sign-app.sh web/src-tauri/target/release/bundle/macos/Daisy.app` | Signs the app plainly — same identity, so both fold into one Accessibility row | `signed …` | seconds |
-| 12 | `ditto` that `Daisy.app` to `/Applications` | Installs the window. **Required** before `daisy open` can find it by identifier | | seconds |
-| 13 | `daisy open` | Starts the daemon, launches the app | `{"opened":"com.ghovax.daisy","daemon":true}`; first run seeds `~/.config/daisy/configuration.yaml` | seconds |
+| 12 | `ditto` that `Daisy.app` to `/Applications` | Installs the window. **Required** before `daisy app` can find it by identifier | | seconds |
+| 13 | `daisy app` | Starts the daemon, launches the app | `{"opened":"com.ghovax.daisy","daemon":true}`; first run seeds `~/.config/daisy/configuration.yaml` | seconds |
 | 14 | `daisy configure providers.anthropic.api_key <key>` | A model to run on | The key echoed back | |
 
 ### Things that will catch you
@@ -58,7 +58,7 @@ You need [Nix](https://nixos.org) (the flake devshell pins everything else, `uv`
 | Symptom | Cause | Fix |
 |---|---|---|
 | `daisy: nothing on this system claims com.ghovax.daisy` | You built `Daisy.app` but left it in the Tauri target directory. macOS resolves `-b` through LaunchServices, which does not know about it there | Step 12 — `ditto` it to `/Applications` |
-| The app opens but only ever shows the connection picker | No daemon is running. The app never starts one | `daisy daemon start`, or use `daisy open` |
+| The app opens but only ever shows the connection picker | No daemon is running. The app never starts one | `daisy serve`, or use `daisy app` |
 | Computer control keeps asking for Accessibility after every rebuild | The daemon serving you is the checkout's (`uv run daisy`), whose code identity is the Python interpreter, not the signed image | `daisy daemon status` reports `image.frozen`. If it is `false`, stop that daemon and start the installed one |
 | Two `daisy` on your `PATH` behave differently | The checkout's and the installed one share `~/.config/daisy/` and the runtime directory, so whichever daemon started first owns it | `which -a daisy`, and check `daisy daemon status` → `image.executable` |
 | `ln -sf … /usr/local/bin/daisy` is denied | `/usr/local/bin` is root-owned | `sudo ln -sf …`, or symlink into `~/.local/bin` and put that on `PATH` |
