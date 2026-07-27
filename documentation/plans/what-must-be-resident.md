@@ -428,7 +428,12 @@ Each stage gets its own temporary XDG roots and its own daemon, and takes them a
 | `reentrancy` | Two contexts in one process keep their own confinement — the `dispatch.py` regression | **Passing** |
 | `artifact-wipe` | Every deleted symbol and file is gone, and the A2A deliverable that shares the name is not | **Passing** |
 | `library` | Every seam is replaceable (caller's model answers the turn, caller's observer records, caller's approver decides, a second `Session` resumes from the caller's store), an incomplete port is rejected by name, and **nothing is written to the caller's XDG directories** | **Passing** |
+| `catalogue` | The prompt's material is a seam: a caller's agents, skills, memories and prompt templates are used, and a poisoned `$HOME` is **not read** | **Passing** |
+| `socket-paths` | Every unix socket the harness can construct is bindable on the strictest platform — the 104-byte macOS `sun_path` limit, under a modelled `/var/folders/…/T/` root. Checks the *class*, not an instance: a session socket was 117 bytes and **no session could bind on macOS at all** while every Linux run stayed green | **Passing** |
+| `extension` | A caller's own tool is offered, called with the right arguments and recorded in the caller's transcript; the caller's credential store and tracer are the ones used; a supplied tool cannot shadow a built-in | **Passing** |
+| `agent-component` | An `AgentConfiguration` built in code is honoured — prompt, tools, permission mode — with nothing read from the machine, and `tools.bash.enabled` is actually enforced | **Passing** |
 | `prototype` | Single-threaded by mach `task_threads`, heap frozen, forks, child reports ready and its exit, still single-threaded afterwards | **Passing** |
+| `macos-fork` | The three questions only macOS can answer: CoreFoundation initialises after the fork, the TCC grant follows it, and `sandbox-exec` still confines from a forked child. **Skips off macOS**, which is why it is the one stage a Linux run cannot claim | **macOS only** |
 | `daemon` | The daemon boots, brings the prototype up, and reports both invariants through `daemon.status` | **Passing** |
 | `session` | A session survives a daemon restart, comes back `live`/`asleep`, its derived token still authorises it, reads do not wake it, a message does | **Passing** |
 | `reaping` | `SIGKILL` a session's process; the prototype reports it and the daemon marks the session failed — which is the whole point of reporting, since the daemon cannot `waitpid` it | **Passing** |
