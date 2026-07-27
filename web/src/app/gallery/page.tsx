@@ -264,7 +264,7 @@ export default function GalleryPage() {
               icon={<Box color="pink.fg"><LuSparkles /></Box>}
               title={<DisclosureLabel>A skill card title</DisclosureLabel>}
             >
-              <InlineField label="Source">daisy/skills/example</InlineField>
+              <InlineField label="Source">frank/skills/example</InlineField>
               <InlineField label="Tools" mt={1}>bash, read_file</InlineField>
             </DisclosureRow>
           </Box>

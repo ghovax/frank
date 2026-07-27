@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Sign the two Daisy artifacts with the local self-signed identity
+# Sign the two Frank artifacts with the local self-signed identity
 # (packaging/create-signing-cert.sh), so the daemon has a STABLE code identity across rebuilds.
 #
 # There are two now, and only one of them matters for permissions. The daemon — not the desktop
 # app — is the process that calls the macOS Accessibility API, because a session worker is a
 # re-exec of it, and TCC lists whichever process exercises the permission. The daemon ships as
-# "Daisy Computer Use.app", whose Info.plist carries the *same* CFBundleName ("Daisy") and
-# identifier (com.ghovax.daisy) as the desktop app. Signed with the same persistent cert it
-# satisfies the same designated requirement, so it folds into a single "Daisy" entry in
-# Accessibility — no separate "daisy" row — and that grant survives rebuilds, where a fresh
+# "Frank Computer Use.app", whose Info.plist carries the *same* CFBundleName ("Frank") and
+# identifier (com.ghovax.frank) as the desktop app. Signed with the same persistent cert it
+# satisfies the same designated requirement, so it folds into a single "Frank" entry in
+# Accessibility — no separate "frank" row — and that grant survives rebuilds, where a fresh
 # ad-hoc hash every build would not. Full Disk Access and the properly-iconed entry persist
 # with it.
 #
@@ -19,10 +19,10 @@
 # that whole repair step is gone along with the coupling that made it necessary.
 set -euo pipefail
 
-IDENTITY="Daisy Local Codesign"
+IDENTITY="Frank Local Codesign"
 
 usage() {
-  echo "usage: sign-app.sh <path-to-Daisy.app | path-to-Daisy Computer Use.app> [...]" >&2
+  echo "usage: sign-app.sh <path-to-Frank.app | path-to-Frank Computer Use.app> [...]" >&2
   echo "  Sign either artifact, or both. The daemon takes --deep to catch its PyInstaller" >&2
   echo "  dylibs; the app has no nested code to descend into." >&2
   exit 1

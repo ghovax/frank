@@ -22,7 +22,7 @@ import { playAttentionSound, playTurnEndSound, primeSounds } from "@/lib/sounds"
 // The last project the user was in, remembered so a fresh launch reopens it (there is no
 // landing page to pick from). Best-effort localStorage — a cleared/absent value just falls
 // back to the first available project.
-const LAST_PROJECT_KEY = "daisy:lastProject";
+const LAST_PROJECT_KEY = "frank:lastProject";
 function readLastProject(): string | null {
   try { return localStorage.getItem(LAST_PROJECT_KEY); } catch { return null; }
 }
@@ -53,12 +53,12 @@ function ProjectWorkspace() {
   // the grant to the freshly-started server, so this runs on launch (not while the previous
   // instance was live) and only when the permission is actually present.
   useEffect(() => {
-    if (typeof window === "undefined" || localStorage.getItem("daisy:pendingComputerControlEnable") !== "1") return;
+    if (typeof window === "undefined" || localStorage.getItem("frank:pendingComputerControlEnable") !== "1") return;
     let cancelled = false;
     void fetchAccessibility().then(async (granted) => {
       if (cancelled || !granted) return;
       await updateComputerControlSetting(true);
-      localStorage.removeItem("daisy:pendingComputerControlEnable");
+      localStorage.removeItem("frank:pendingComputerControlEnable");
     });
     return () => { cancelled = true; };
   }, []);

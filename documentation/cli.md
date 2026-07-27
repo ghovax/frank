@@ -1,29 +1,29 @@
-# The `daisy` command
+# The `frank` command
 
-`daisy` is the primary way to drive Daisy. It adds nothing the control plane does not have — it is the ergonomic face of it — so anything you can do here you can also do from the desktop app or from another session.
+`frank` is the primary way to drive Frank. It adds nothing the control plane does not have — it is the ergonomic face of it — so anything you can do here you can also do from the desktop app or from another session.
 
 This command is for people. A session composes with its peers through [tools](tools.md#the-built-in-surface) over the same control plane, not by shelling out to this — a typed call can carry the caller's identity, which an argv string cannot, and a peer answers by messaging its parent rather than by being waited on.
 
-That is enforced rather than merely advised. The daemon takes the identity of a caller on its unix socket from the kernel, and every command a session runs inherits that session's process session, so `daisy` run from inside one is attributed to it and scoped the way its own tools are: it can create, message, inspect and end sessions in its own subtree, and nothing else. A machine-wide `daisy ps` from inside a session comes back `403 forbidden` — `daisy tree` on itself is the question it is allowed to ask. From your own terminal, nothing is scoped.
+That is enforced rather than merely advised. The daemon takes the identity of a caller on its unix socket from the kernel, and every command a session runs inherits that session's process session, so `frank` run from inside one is attributed to it and scoped the way its own tools are: it can create, message, inspect and end sessions in its own subtree, and nothing else. A machine-wide `frank ps` from inside a session comes back `403 forbidden` — `frank tree` on itself is the question it is allowed to ask. From your own terminal, nothing is scoped.
 
-The daemon starts itself on your first command, so there is no mandatory "start the service" step — `daisy serve` is for when you want it up on its own. And `daisy run` skips it entirely: one turn, in your terminal, no control plane at all.
+The daemon starts itself on your first command, so there is no mandatory "start the service" step — `frank serve` is for when you want it up on its own. And `frank run` skips it entirely: one turn, in your terminal, no control plane at all.
 
 ## The shape of it
 
 A **session** is one OS process running one agent. You create it empty, send it work, and read what it produced. Creating and working are separate steps on purpose: the same session takes a second task, can be attached to, and can be inspected in between.
 
 ```sh
-id=$(daisy create --agent general-assistant --directory ~/code/project)
-daisy send "$id" "what does this project do?" --wait
-daisy ps
+id=$(frank create --agent general-assistant --directory ~/code/project)
+frank send "$id" "what does this project do?" --wait
+frank ps
 ```
 
-`create` prints the bare session id on stdout, which is what makes `id=$(daisy create …)` work in a shell script.
+`create` prints the bare session id on stdout, which is what makes `id=$(frank create …)` work in a shell script.
 
 ## Creating a session
 
 ```
-daisy create [-a AGENT] [-C DIRECTORY] [-m MODE] [-p PROJECT] [-P PARENT] [-t TITLE]
+frank create [-a AGENT] [-C DIRECTORY] [-m MODE] [-p PROJECT] [-P PARENT] [-t TITLE]
 ```
 
 | Flag | What it does |
@@ -32,7 +32,7 @@ daisy create [-a AGENT] [-C DIRECTORY] [-m MODE] [-p PROJECT] [-P PARENT] [-t TI
 | `-C`, `--directory` | The working directory. Project-local agents, skills and MCP servers are resolved from here. |
 | `-m`, `--mode` | `default`, `auto`, or `read_only`. Fixed for the session's life. |
 | `-p`, `--project` | The project this session belongs to. |
-| `-P`, `--parent` | The session creating this one. The child is clamped to no looser a mode than its parent, and is reaped when the parent ends. Defaults to `$DAISY_SESSION_ID`, which every session exports — so this command run from inside a session creates a child of it rather than an orphan. |
+| `-P`, `--parent` | The session creating this one. The child is clamped to no looser a mode than its parent, and is reaped when the parent ends. Defaults to `$FRANK_SESSION_ID`, which every session exports — so this command run from inside a session creates a child of it rather than an orphan. |
 | `-t`, `--title` | A label for the session list. Left unset, the session names itself after its first message. |
 
 This is the **only** place a session's configuration is set. Its agent, its directory and its permission mode cannot be changed afterwards — that immutability is what makes a session's authority something you can reason about, rather than something a later call might widen.
@@ -42,13 +42,13 @@ A session created without a mode gets the configured default; a session created 
 ## Sending work
 
 ```
-daisy send <session> <message> [-w|--wait]
+frank send <session> <message> [-w|--wait]
 ```
 
 Pass `-` as the message to read it from stdin, which is how you send a file or a heredoc:
 
 ```sh
-daisy send "$id" - <<'EOF'
+frank send "$id" - <<'EOF'
 Review the diff on this branch. Report anything that changes behaviour
 without a test, and say what you would add.
 EOF
@@ -61,12 +61,12 @@ A message that arrives while the session is mid-turn is **injected into that tur
 ## Watching
 
 ```
-daisy ps [-a|--all]          # what exists; --all includes sessions that have ended
-daisy get <session>          # one session in detail
-daisy tree <session>         # a session and everything it created
-daisy attach <session>       # follow it live until you interrupt
-daisy wait <session>         # block until idle, then print the result
-daisy history <session> [-n N]
+frank ps [-a|--all]          # what exists; --all includes sessions that have ended
+frank get <session>          # one session in detail
+frank tree <session>         # a session and everything it created
+frank attach <session>       # follow it live until you interrupt
+frank wait <session>         # block until idle, then print the result
+frank history <session> [-n N]
 ```
 
 `ps` prints the session records as a JSON array. Three fields between them say what a session is, and they are separate because they answer genuinely different questions:
@@ -80,7 +80,7 @@ daisy history <session> [-n N]
 A session with no process is the normal resting state, not an error: an idle session is put to sleep immediately, and waking it is a fork. Reads never wake anything — `get`, `ps`, `tree`, `history` and `attach` are answered from the record and the turn store — so looking at a sleeping session leaves it asleep.
 
 ```sh
-daisy ps | jq -r '.[] | select(.awaiting_input) | .id'
+frank ps | jq -r '.[] | select(.awaiting_input) | .id'
 ```
 
 `attach` prints one JSON object per line as the session streams. Each carries a `kind`:
@@ -95,7 +95,7 @@ daisy ps | jq -r '.[] | select(.awaiting_input) | .id'
 It ends when the session does; interrupt it with Ctrl-C to stop watching without affecting the session. Because each frame is a complete line, `jq` and friends consume it incrementally:
 
 ```sh
-daisy attach "$id" | jq -r 'select(.kind == "live") | .message.text // empty'
+frank attach "$id" | jq -r 'select(.kind == "live") | .message.text // empty'
 ```
 
 ## Answering a session
@@ -103,7 +103,7 @@ daisy attach "$id" | jq -r 'select(.kind == "live") | .message.text // empty'
 When a session needs permission it parks, `awaiting_input` goes true, and `attach` emits a frame carrying the request and its id. Answer it with that id:
 
 ```
-daisy approve <session> <request> [-d|--deny]
+frank approve <session> <request> [-d|--deny]
 ```
 
 There is no "always allow" and no bypass mode: every decision is allow-once or deny. That is a deliberate constraint — an approval you grant once cannot silently widen into a standing grant.
@@ -111,7 +111,7 @@ There is no "always allow" and no bypass mode: every decision is allow-once or d
 ## Ending a session
 
 ```
-daisy kill <session>
+frank kill <session>
 ```
 
 Ends the session and everything under it, children first, so a child never observes a dead parent.
@@ -123,20 +123,20 @@ The one way to survive is for a process to call `setsid` and leave the session, 
 ## Agents on other hosts
 
 ```
-daisy remote                        # the registered remote agents, with their live health
-daisy remote <name> <message>       # hand one a message and print what it produced
+frank remote                        # the registered remote agents, with their live health
+frank remote <name> <message>       # hand one a message and print what it produced
 ```
 
 A remote agent is not a session: it runs on someone else's machine, at their cost, with no shared history and no access to this filesystem. That is a different bargain from a peer session, so it is a different verb — you should never be unsure which side of the wire your work went to.
 
-Registered in `~/.agents/remote-agents.json` by card URL, or from **Settings → Remote agents**. Their cards are resolved in the background, and a card that redirects to a private or loopback address is refused unless you opt in with `allow_private` — a remote agent's own card cannot be used to point Daisy at something inside your network.
+Registered in `~/.agents/remote-agents.json` by card URL, or from **Settings → Remote agents**. Their cards are resolved in the background, and a card that redirects to a private or loopback address is refused unless you opt in with `allow_private` — a remote agent's own card cannot be used to point Frank at something inside your network.
 
 ## The interface in a browser
 
 ```
-daisy web                               # http://127.0.0.1:8824
-daisy web --port 9000
-daisy web --no-daemon                   # serve without starting one
+frank web                               # http://127.0.0.1:8824
+frank web --port 9000
+frank web --no-daemon                   # serve without starting one
 ```
 
 Serves the same interface the desktop app embeds, so a browser is a client like any other — useful on a headless machine, over an SSH tunnel, or anywhere you would rather not install an application.
@@ -151,23 +151,23 @@ Needs the interface to have been built (`cd web && bun run build` in a checkout)
 ## The desktop app
 
 ```
-daisy app                               # start the daemon if needed, then launch the app
-daisy app --no-daemon                   # just the window
+frank app                               # start the daemon if needed, then launch the app
+frank app --no-daemon                   # just the window
 ```
 
-The app is a **client**. It does not contain a daemon and does not start one — it finds one, reading the port and token `daisyd` publishes, and is powerless when there is none, exactly as it is when a remote host does not answer. So the convenience runs this way round: the command line, which owns the daemon, brings it up and then launches the window.
+The app is a **client**. It does not contain a daemon and does not start one — it finds one, reading the port and token `frankd` publishes, and is powerless when there is none, exactly as it is when a remote host does not answer. So the convenience runs this way round: the command line, which owns the daemon, brings it up and then launches the window.
 
 The app is addressed by bundle identifier rather than by name, so renaming or moving it does not break this. If it is not installed, the command says so rather than half-working. macOS only.
 
 ## Serving, and the daemon
 
 ```
-daisy serve                             # start the control plane and detach
-daisy serve --foreground                # run it here instead, for a log or a supervisor
-daisy daemon status                     # what it is running, and where
-daisy daemon stop                       # stop it, and its sessions' processes with it
-daisy daemon restart                    # replace it; your sessions survive
-daisy daemon endpoint                   # the loopback port and capability token
+frank serve                             # start the control plane and detach
+frank serve --foreground                # run it here instead, for a log or a supervisor
+frank daemon status                     # what it is running, and where
+frank daemon stop                       # stop it, and its sessions' processes with it
+frank daemon restart                    # replace it; your sessions survive
+frank daemon endpoint                   # the loopback port and capability token
 ```
 
 `serve` starts it; `daemon` inspects one that is already there. They are separate verbs because they are separate acts — starting the API is not a kind of introspection, and grouping them under one noun made `daemon start` read like a subcommand of looking at it. Any other command also starts a daemon if none is running, so `serve` is for wanting it up on its own.
@@ -178,24 +178,24 @@ daisy daemon endpoint                   # the loopback port and capability token
 
 ### Inspecting it
 
-`daisy daemon status` reports whether it is up, how many sessions it knows about, and the prototype's health — including its native thread count and frozen-object count, which are the two invariants that fail silently.
+`frank daemon status` reports whether it is up, how many sessions it knows about, and the prototype's health — including its native thread count and frozen-object count, which are the two invariants that fail silently.
 
 `status` never starts anything — a status check that silently launched the service could never report the absence it was asked about. Pass `--start` if you want that.
 
 `endpoint` prints a secret, which is why it is a verb you ask for rather than something `status` volunteers. It is what you need to point a desktop client at a daemon over SSH:
 
 ```sh
-ssh workstation daisy daemon endpoint
+ssh workstation frank daemon endpoint
 ```
 
 ## Configuration
 
 ```
-daisy configure --all                    # every setting there is, with its default
-daisy configure                          # only what you have changed
-daisy configure agent.permission_mode    # read one
-daisy configure agent.permission_mode read_only
-daisy configure agent.permission_mode --unset
+frank configure --all                    # every setting there is, with its default
+frank configure                          # only what you have changed
+frank configure agent.permission_mode    # read one
+frank configure agent.permission_mode read_only
+frank configure agent.permission_mode --unset
 ```
 
 `--all` walks the **schema**, so it lists every setting that exists — not merely the ones somebody wrote down — as a JSON object of dotted path to `{about, default, current}`. That is usually what you want: reading the file can only show the part you already know about, and a setting left at its default was otherwise invisible.
@@ -210,11 +210,11 @@ Changes apply to what starts **next**. See the [Configuration guide](configurati
 
 ## Output, exit codes, and pipes
 
-**Everything on stdout is plumbing.** A read prints the control plane's payload as JSON; a stream prints one JSON object per line; a verb whose answer *is* a single value prints that value bare, which is what makes `id=$(daisy create …)` work. There is no formatting layer, no colour, and no `--json` flag to remember — there is nothing else it could have been. Anything that wants a table pipes to `jq`, and anything that parses this never has to guess which mode it is in.
+**Everything on stdout is plumbing.** A read prints the control plane's payload as JSON; a stream prints one JSON object per line; a verb whose answer *is* a single value prints that value bare, which is what makes `id=$(frank create …)` work. There is no formatting layer, no colour, and no `--json` flag to remember — there is nothing else it could have been. Anything that wants a table pipes to `jq`, and anything that parses this never has to guess which mode it is in.
 
 It is minified, and every JSON object is exactly one line — no indentation, and real UTF-8 rather than `\uXXXX` escapes. Agents drive these verbs constantly and pay for indentation by the token; pipe through `jq .` when you want it laid out for a person.
 
-Diagnostics go to stderr and outcomes go to the exit code, so neither can contaminate the data. `daisy configure some.setting` on a stderr-suppressed pipeline prints the value or nothing at all; it never prints an apology you would then have to parse around.
+Diagnostics go to stderr and outcomes go to the exit code, so neither can contaminate the data. `frank configure some.setting` on a stderr-suppressed pipeline prints the value or nothing at all; it never prints an apology you would then have to parse around.
 
 | Exit code | Meaning |
 |-----------|---------|
@@ -222,7 +222,7 @@ Diagnostics go to stderr and outcomes go to the exit code, so neither can contam
 | `1` | The call failed — no such session, the daemon is unreachable, an unknown setting. |
 | `2` | The arguments were wrong (argparse). |
 | `130` | Interrupted with Ctrl-C. |
-| `141` | A pipe closed under it (`daisy ps \| head`). |
+| `141` | A pipe closed under it (`frank ps \| head`). |
 
 ## What each verb calls
 
@@ -241,35 +241,35 @@ The CLI is the ergonomic face of the control plane, and it is allowed to be idio
 | `kill` | `session.end` |
 | `remote` | `remote.list` / `remote.send` |
 | `daemon status` | `daemon.status` |
-| `serve` | starts `daisyd` — no method, it *is* the thing being started |
-| `run` | none: it drives `daisy.Session` in this process, with no daemon at all |
+| `serve` | starts `frankd` — no method, it *is* the thing being started |
+| `run` | none: it drives `frank.Session` in this process, with no daemon at all |
 | `auth` | none: it writes the credential file the harness reads |
 
 ## One turn, without a daemon
 
 ```sh
-daisy run "what does this project do?"
-daisy run -C ~/code/project --agent reviewer "what changed and is it safe?"
-echo "summarise this" | daisy run -
-daisy run --allow "run the tests and tell me what failed"
+frank run "what does this project do?"
+frank run -C ~/code/project --agent reviewer "what changed and is it safe?"
+echo "summarise this" | frank run -
+frank run --allow "run the tests and tell me what failed"
 ```
 
-`run` is the whole harness with none of the control plane. It drives `daisy.Session` in this process — the same library surface an embedder uses — prints the agent's prose as it arrives, and exits. No session record, no address, no crash isolation: reach for `create` and `send` when you want any of those. This is for a question with an answer.
+`run` is the whole harness with none of the control plane. It drives `frank.Session` in this process — the same library surface an embedder uses — prints the agent's prose as it arrives, and exits. No session record, no address, no crash isolation: reach for `create` and `send` when you want any of those. This is for a question with an answer.
 
 `--allow` answers every permission gate with yes. Without it, a turn that needs a decision stops and says so, because nobody is watching. `--json` prints the turn events instead of the prose, which is the same vocabulary `attach` streams.
 
 ## Signing in
 
 ```sh
-daisy auth login                        # open the browser, sign in to ChatGPT
-daisy auth status                       # who is signed in, if anyone
-daisy auth logout
+frank auth login                        # open the browser, sign in to ChatGPT
+frank auth status                       # who is signed in, if anyone
+frank auth logout
 ```
 
-Only ChatGPT works this way — every other provider takes an API key through `daisy configure`. It is a verb rather than a setting because the credential is not something you can type: it is an OAuth exchange that lands on a loopback callback. Before this it existed only inside the browser interface, which meant a headless install could not reach the one provider that needs no key.
+Only ChatGPT works this way — every other provider takes an API key through `frank configure`. It is a verb rather than a setting because the credential is not something you can type: it is an OAuth exchange that lands on a loopback callback. Before this it existed only inside the browser interface, which meant a headless install could not reach the one provider that needs no key.
 
 ## Talking to a session directly
 
-`daisy` reaches the daemon over its unix socket and posts every command to it, `send` included; the daemon relays to the owning session. You can also address a session yourself, which is what makes the relay a hop rather than a wall: each one serves [A2A](https://github.com/google/A2A) on `$XDG_RUNTIME_DIR/daisy/sessions/<id>.sock`, and `create` returns the capability token that authorises driving it. Discovery is open — a session's card at `/.well-known/agent-card.json` says what it is — but every other call must present the token.
+`frank` reaches the daemon over its unix socket and posts every command to it, `send` included; the daemon relays to the owning session. You can also address a session yourself, which is what makes the relay a hop rather than a wall: each one serves [A2A](https://github.com/google/A2A) on `$XDG_RUNTIME_DIR/frank/sessions/<id>.sock`, and `create` returns the capability token that authorises driving it. Discovery is open — a session's card at `/.well-known/agent-card.json` says what it is — but every other call must present the token.
 
 That is the whole composition model. A peer is not a special kind of thing; it is a session, addressed the way you address any session.

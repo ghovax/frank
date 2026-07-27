@@ -11,7 +11,7 @@ import { Box, Button, Flex, IconButton, Image, Input, Kbd, Menu, Span, Text, VSt
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LuArrowDownUp, LuChevronDown, LuChevronRight, LuEllipsis, LuFolderOpen, LuFolderPlus, LuMessageSquare, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
-import daisyIcon from "@/app/icon.png";
+import frankIcon from "@/app/icon.png";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DropdownMenu, MenuOption } from "@/components/ui/menu";
 import { PanelBody, PanelCard } from "@/components/ui/panel";
@@ -477,8 +477,8 @@ export function SessionsSidebar({
   return (
     <PanelCard flex={1}>
       <Flex align="center" gap={2} px={3} pt={3} pb={2} flexShrink={0}>
-        <Image src={daisyIcon.src} alt="" boxSize="26px" borderRadius="md" flexShrink={0} />
-        <Text fontFamily="var(--font-display)" fontSize="2xl" lineHeight="1" fontWeight="bold" letterSpacing="tight">Daisy</Text>
+        <Image src={frankIcon.src} alt="" boxSize="26px" borderRadius="md" flexShrink={0} />
+        <Text fontFamily="var(--font-display)" fontSize="2xl" lineHeight="1" fontWeight="bold" letterSpacing="tight">Frank</Text>
       </Flex>
 
       {/* "New session" reads as the first row of the list, not a separate button — a

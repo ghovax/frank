@@ -507,7 +507,7 @@ export function SettingsDialog({
             <Alert.Description fontSize="xs">{translation("computerControlBody")}</Alert.Description>
           </Alert.Content>
           <Button colorPalette="orange" variant="solid" flexShrink={0} onClick={() => {
-            try { localStorage.setItem("daisy:pendingComputerControlEnable", "1"); } catch { /* private mode */ }
+            try { localStorage.setItem("frank:pendingComputerControlEnable", "1"); } catch { /* private mode */ }
             setAwaitingGrantReturn(true);
             void openAccessibilitySettings();
           }}>

@@ -31,7 +31,7 @@ import { toaster } from "@/components/ui/toaster";
 // Marks that the imminent reload is a deliberate connection switch (not a fresh
 // launch), so the reloaded gate auto-connects to the just-chosen backend instead of
 // showing the picker. A fresh launch has no flag and shows the picker on failure.
-export const RECONNECT_FLAG = "daisy.reconnect";
+export const RECONNECT_FLAG = "frank.reconnect";
 
 export function reloadIntoConnection(): void {
   try {

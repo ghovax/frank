@@ -1,11 +1,11 @@
-# Daisy — Documentation
+# Frank — Documentation
 
-Detailed guides for installing, configuring, understanding, and developing Daisy. For a high-level overview, start with the [project README](../README.md); for the day-to-day surface, the [`daisy` command](cli.md).
+Detailed guides for installing, configuring, understanding, and developing Frank. For a high-level overview, start with the [project README](../README.md); for the day-to-day surface, the [`frank` command](cli.md).
 
 | Guide | What's in it |
 |-------|--------------|
 | [Installation](installation.md) | Download and Gatekeeper, or building from source |
-| [The `daisy` command](cli.md) | Every verb, the session states, JSON and exit codes |
+| [The `frank` command](cli.md) | Every verb, the session states, JSON and exit codes |
 | [Configuration](configuration.md) | Providers, keys, permissions, MCP, and every config key |
 | [Architecture](architecture.md) | Sessions as processes, the daemon, the CLI, the app, and how they connect |
 | [Agents and skills](agents-and-skills.md) | Authoring agents, skills, memory, and MCP servers |
@@ -18,16 +18,16 @@ Design plans for larger changes — the sequential, commit-associated record of 
 ## The shape of the project
 
 ```
-daisy/
+frank/
 ├── packaging/entry.py                 # entry point for the frozen build (all three roles)
-├── src/daisy/
-│   ├── __init__.py           # the library surface: daisy.Session and its seams
-│   ├── __main__.py           # argv dispatch: daisy, daisyd, prototype
+├── src/frank/
+│   ├── __init__.py           # the library surface: frank.Session and its seams
+│   ├── __main__.py           # argv dispatch: frank, frankd, prototype
 │   ├── base/                 # configuration, XDG paths, skills, ports, the catalogue
 │   ├── protocol/             # A2A cards, DTOs, the wire contract
-│   ├── cli/                  # the `daisy` command and its renderers
+│   ├── cli/                  # the `frank` command and its renderers
 │   ├── workspace/            # projects, locations, settings, terminals — no supervision
-│   ├── daemon/               # daisyd: registry, lifecycle, prototype client, turn store
+│   ├── daemon/               # frankd: registry, lifecycle, prototype client, turn store
 │   ├── worker/               # a session process, and the prototype it is forked from
 │   ├── runtime/              # the agent loop, prompts, tools, models
 │   ├── computer/             # macOS screen-control bridges (native apps + Chrome)
@@ -46,4 +46,4 @@ The layering is `base` → `protocol` → `computer`/`locations` → `runtime` �
 
 **`rest` never imports `daemon`.** The browser surface reaches `workspace` — projects, locations, settings, agents, terminals — and none of that supervises anything. It used to live inside the daemon, which is the only reason a GUI surface had to import the process that supervises agents. Where a workspace change has a supervision consequence, the workspace calls a hook the composition root filled in.
 
-Runtime state never lives in the repository. Daisy follows the XDG convention: configuration in **`~/.config/daisy/`**, durable state (including `history.db`) in **`~/.local/share/daisy/`**, sockets in the runtime directory, logs in **`~/.local/state/daisy/`**, and caches in **`~/.cache/daisy/`**. The [Configuration guide](configuration.md) is the reference for it.
+Runtime state never lives in the repository. Frank follows the XDG convention: configuration in **`~/.config/frank/`**, durable state (including `history.db`) in **`~/.local/share/frank/`**, sockets in the runtime directory, logs in **`~/.local/state/frank/`**, and caches in **`~/.cache/frank/`**. The [Configuration guide](configuration.md) is the reference for it.

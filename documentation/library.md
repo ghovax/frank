@@ -1,12 +1,12 @@
-# Daisy as a library
+# Frank as a library
 
 The harness runs turns. The daemon makes those turns addressable, durable and crash-isolated.
-Those are separable, and this is the half without the daemon: `daisy.Session` drives an agent
+Those are separable, and this is the half without the daemon: `frank.Session` drives an agent
 in your own process.
 
 ```python
 import asyncio
-from daisy import Session
+from frank import Session
 
 async def main() -> None:
     async with Session("general-assistant", directory=".") as session:
@@ -20,12 +20,12 @@ with the browser one rather than reimplementing it, or to run a one-shot agent i
 
 ## What you give up
 
-A library session is an object, not a process. It has none of the three properties `daisyd`
+A library session is an object, not a process. It has none of the three properties `frankd`
 exists to provide:
 
 | Property | Library | Daemon |
 |---|---|---|
-| Addressable from outside | No | Yes — a socket, a token, `daisy send` |
+| Addressable from outside | No | Yes — a socket, a token, `frank send` |
 | Outlives the program that made it | No | Yes |
 | Crash-isolated | No — a tool that exhausts memory takes you with it | Yes — one process per session |
 | Peers (`create_session` and friends) | Only if you supply `peers` | Yes |
@@ -45,13 +45,13 @@ is a library you cannot embed.
 | Argument | Interface | Default | What it decides |
 |---|---|---|---|
 | `model` | LangChain [`BaseChatModel`](https://python.langchain.com/docs/concepts/chat_models/) | Built from configuration | Which model runs, and everything wrapped around it — tracing, rate limiting, a stub in tests |
-| `checkpoints` | `daisy.Checkpoints` | `MemoryCheckpoints` | Where the conversation is saved, and therefore whether a session can resume |
-| `jobs` | `daisy.JobStore` | `MemoryJobStore` | Where background jobs are recorded, and therefore whether one survives a restart |
-| `observer` | `daisy.Observer` | None (dropped) | Where the audit trail goes — auto-approvals, goal changes, messages |
-| `approvals` | `daisy.Approvals` | None (gates suspend) | Who answers a gated tool call when there is no human |
+| `checkpoints` | `frank.Checkpoints` | `MemoryCheckpoints` | Where the conversation is saved, and therefore whether a session can resume |
+| `jobs` | `frank.JobStore` | `MemoryJobStore` | Where background jobs are recorded, and therefore whether one survives a restart |
+| `observer` | `frank.Observer` | None (dropped) | Where the audit trail goes — auto-approvals, goal changes, messages |
+| `approvals` | `frank.Approvals` | None (gates suspend) | Who answers a gated tool call when there is no human |
 | `peers` | `SessionAccess` | None (composition tools absent) | How this session reaches other sessions |
-| `sandbox` | `daisy.base.confinement.Profile` | Unconfined profile | What a tool's children may do |
-| `catalogue` | `daisy.Catalogue` | The working directory's `.agents` plus the packaged base layer — **and nothing of `$HOME`** | Where agents, skills, memories, instructions and prompt templates come from |
+| `sandbox` | `frank.base.confinement.Profile` | Unconfined profile | What a tool's children may do |
+| `catalogue` | `frank.Catalogue` | The working directory's `.agents` plus the packaged base layer — **and nothing of `$HOME`** | Where agents, skills, memories, instructions and prompt templates come from |
 | `providers` | `{"anthropic": "sk-..."}` or `{"custom": {"api_key": ..., "base_url": ...}}` | Whatever the machine is configured with | Provider credentials, in code |
 | `model_identifier` | `"provider/model"` | The agent profile's own | Which model this session runs, overriding the profile |
 | `configuration` | `GlobalConfiguration` | Read from XDG, **without creating it** | Providers, tuning, agent directories |
@@ -59,8 +59,8 @@ is a library you cannot embed.
 | `tools` | LangChain [`BaseTool`](https://python.langchain.com/docs/concepts/tools/) | None | Tools the agent gains, on top of the harness's |
 | `permissions` | A `PermissionEvaluator`-shaped object | The built-in rule engine | Whether a call is gated at all |
 | `tool_risk` | `"none"`/`"low"`/`"medium"`/`"high"` | `"medium"` | What a supplied tool is gated at |
-| `transcript` | `daisy.Transcript` | `MemoryTranscript` | Where the record of completed turns goes |
-| `credentials` | `daisy.Credentials` | A `0600` file under XDG | Where account tokens live (bypassed entirely by `model=`) |
+| `transcript` | `frank.Transcript` | `MemoryTranscript` | Where the record of completed turns goes |
+| `credentials` | `frank.Credentials` | A `0600` file under XDG | Where account tokens live (bypassed entirely by `model=`) |
 | `locations` | `LocationExecutor` records | Local, at `directory` | Where tools may run — SSH, containers |
 | `workspace` | `SessionWorkspaceManager` | None — **opt in via `prepare_workspace()`** | A git worktree per session |
 | `tracer_provider` | OpenTelemetry `TracerProvider` | The process-wide one, if configured | Where spans go, per session |
@@ -71,7 +71,7 @@ interface, wrapping it would only add a second vocabulary for the same thing.
 
 The rest are `typing.Protocol`s, which is the part that matters for you: they are *structural*.
 Your object satisfies one by having the right methods. There is no base class to inherit, no
-registry to join, and no import of Daisy in your type.
+registry to join, and no import of Frank in your type.
 
 ```python
 class RedisCheckpoints:
@@ -79,10 +79,10 @@ class RedisCheckpoints:
         self._client = client
 
     async def save(self, session_id, state):
-        await self._client.set(f"daisy:{session_id}", json.dumps(state))
+        await self._client.set(f"frank:{session_id}", json.dumps(state))
 
     async def load(self, session_id):
-        raw = await self._client.get(f"daisy:{session_id}")
+        raw = await self._client.get(f"frank:{session_id}")
         return json.loads(raw) if raw else None
 
 session = Session("general-assistant", checkpoints=RedisCheckpoints(redis))
@@ -104,7 +104,7 @@ The one thing configuration cannot do is *extend*. `tools=` takes LangChain `Bas
 
 ```python
 from langchain_core.tools import tool
-from daisy import Session
+from frank import Session
 
 @tool
 def house_price(address: str) -> str:
@@ -127,8 +127,8 @@ A supplied tool goes through the *same* preamble every built-in does — permiss
 constructed one, nothing on the machine is consulted — the agent is a value your program owns:
 
 ```python
-from daisy import Session
-from daisy.base.configuration import AgentConfiguration, BashToolConfiguration, ToolsConfiguration
+from frank import Session
+from frank.base.configuration import AgentConfiguration, BashToolConfiguration, ToolsConfiguration
 
 reviewer = AgentConfiguration(
     name="reviewer",
@@ -151,7 +151,7 @@ Under-specify it and the error says what to do rather than failing obscurely:
 
 ```
 ValueError: Agent 'reviewer' names no model. Set `provider` and `model` in its profile, pass
-`model_identifier="provider/model"` to `daisy.Session`, or hand the runtime a `model=` of your own.
+`model_identifier="provider/model"` to `frank.Session`, or hand the runtime a `model=` of your own.
 ```
 
 **Narrowing the built-in tools** has two complementary forms. `tools_enabled` is an allow-list,
@@ -207,14 +207,14 @@ ours is consulted, because none is needed.
 
 Everything the prompt is assembled from — the agent profile, the skills, the memories, the project's instructions, the prompt templates themselves — comes from one interface, because those differ in how they are *parsed*, not in how they are *found*.
 
-The default matters more here than anywhere else. Before this seam existed, finding that material meant walking hardcoded paths, and the instruction loader read `~/.config/opencode/AGENTS.md` and `~/.claude/CLAUDE.md` — two *other products'* configuration files — out of the user's home directory unconditionally. So a library session's default catalogue reads the working directory and the packaged agents, and nothing of `$HOME`. `daisyd` and the CLI use `machine_catalogue`, which does read all of it, because there the person running it is the person those files describe.
+The default matters more here than anywhere else. Before this seam existed, finding that material meant walking hardcoded paths, and the instruction loader read `~/.config/opencode/AGENTS.md` and `~/.claude/CLAUDE.md` — two *other products'* configuration files — out of the user's home directory unconditionally. So a library session's default catalogue reads the working directory and the packaged agents, and nothing of `$HOME`. `frankd` and the CLI use `machine_catalogue`, which does read all of it, because there the person running it is the person those files describe.
 
 Build one entirely in code when you want the prompt fully under your control:
 
 ```python
-from daisy.base.catalogue import DictCatalogue
-from daisy.base.configuration import AgentConfiguration
-from daisy.base.skills import Skill
+from frank.base.catalogue import DictCatalogue
+from frank.base.configuration import AgentConfiguration
+from frank.base.skills import Skill
 
 catalogue = DictCatalogue(
     agent_configurations={"reviewer": AgentConfiguration(identifier="reviewer", ...)},
@@ -238,7 +238,7 @@ An approver decides gates in code. Answering `None` means *no opinion*, and that
 as before, so you can auto-approve what you understand and still escalate the rest:
 
 ```python
-from daisy import Approval, Session
+from frank import Approval, Session
 
 class AllowReads:
     async def decide(self, gate):
@@ -290,7 +290,7 @@ await session.ask("refactor the parser and run the tests")
 results, usage, suspensions, the same events a session sends a client over its socket:
 
 ```python
-from daisy.runtime.turn_events import TextChunk, ToolCall, Suspended
+from frank.runtime.turn_events import TextChunk, ToolCall, Suspended
 
 async for event in session.stream("refactor the parser"):
     match event:
@@ -321,7 +321,7 @@ its own core forces every non-obvious use into a fork.
 
 ## When to use the daemon instead
 
-Reach for `daisyd` when you want a session that outlives the terminal that started it, a
+Reach for `frankd` when you want a session that outlives the terminal that started it, a
 harness reachable from another machine, crash isolation between sessions, or peer composition.
 Those are what a control plane is *for*, and none of them can be had from an object in your
 process.

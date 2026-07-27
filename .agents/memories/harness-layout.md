@@ -1,23 +1,23 @@
 ---
 name: harness-layout
 title: Repository layout — packages, and the .agents protocol
-description: Where Daisy's code lives, what each package may import, and this repository's .agents layout for project-local agents, skills, memories, and MCP servers.
+description: Where Frank's code lives, what each package may import, and this repository's .agents layout for project-local agents, skills, memories, and MCP servers.
 importance: high
 tags: configuration, dotagents, mcp, layering
 ---
 
 ## The package tree
 
-One executable, three entry points, selected by the first argument in `src/daisy/__main__.py`: `daisy` (the CLI), `daisyd` (the daemon), and `prototype` (the process sessions are forked out of). There is no `worker` entry point — a session is a fork, never an exec. `packaging/entry.py` at the repository root is the same entry for the frozen build.
+One executable, three entry points, selected by the first argument in `src/frank/__main__.py`: `frank` (the CLI), `frankd` (the daemon), and `prototype` (the process sessions are forked out of). There is no `worker` entry point — a session is a fork, never an exec. `packaging/entry.py` at the repository root is the same entry for the frozen build.
 
 ```
-src/daisy/
-├── __init__.py  the library surface: daisy.Session and every seam it takes
+src/frank/
+├── __init__.py  the library surface: frank.Session and every seam it takes
 ├── base/        configuration, XDG paths, skills, ports, the catalogue, the MCP client
 ├── protocol/    A2A cards, DTOs, the wire contract
-├── cli/         the `daisy` command and its renderers
+├── cli/         the `frank` command and its renderers
 ├── workspace/   projects, locations, settings, agents, terminals — none of it supervision
-├── daemon/      daisyd: registry, lifecycle, prototype client, the turn store
+├── daemon/      frankd: registry, lifecycle, prototype client, the turn store
 ├── worker/      a session process (its socket server and executor), and the prototype
 ├── runtime/     the agent loop, prompts, tools, models
 ├── computer/    macOS screen-control bridges (native apps + Chrome)
@@ -51,4 +51,4 @@ Non-trivial local MCP examples live in `examples/mcp/<server-id>/` with a `packa
 
 ## Runtime state
 
-XDG, never the repository: configuration in `~/.config/daisy/`, `history.db` and uploads in `~/.local/share/daisy/`, logs in `~/.local/state/daisy/`, caches in `~/.cache/daisy/`, and the daemon's socket, port, token and per-session sockets in the runtime directory (`0700`, cleared by the OS on logout).
+XDG, never the repository: configuration in `~/.config/frank/`, `history.db` and uploads in `~/.local/share/frank/`, logs in `~/.local/state/frank/`, caches in `~/.cache/frank/`, and the daemon's socket, port, token and per-session sockets in the runtime directory (`0700`, cleared by the OS on logout).

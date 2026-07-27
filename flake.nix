@@ -9,7 +9,7 @@
       pkgs = import nixpkgs { inherit system; };
     in {
       devShells.${system}.default = pkgs.mkShell {
-        # The full toolchain to develop and build Daisy, pinned by flake.lock and
+        # The full toolchain to develop and build Frank, pinned by flake.lock and
         # isolated to this directory:
         #   - uv           the Python harness's environment, and the PyInstaller freeze
         #   - bun          the web UI (Next.js) package manager and bundler

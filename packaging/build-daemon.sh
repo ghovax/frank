@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Freeze the harness (packaging/entry.py) into "Daisy Computer Use.app" — the daemon, the CLI, and every
+# Freeze the harness (packaging/entry.py) into "Frank Computer Use.app" — the daemon, the CLI, and every
 # session worker as one self-contained image, entered by its first argument.
 #
 # This used to be a *sidecar*: the desktop app bundled the result as a resource and spawned it,
@@ -11,7 +11,7 @@
 # of the process that exercises it; the process calling the Accessibility API is a session worker,
 # which is a re-exec of the daemon, which is this image. Carrying the same CFBundleName and
 # identifier as the desktop app and signed with the same certificate, the whole fleet folds into
-# one stable "Daisy" row in Privacy > Accessibility that survives rebuilds. A bare binary would
+# one stable "Frank" row in Privacy > Accessibility that survives rebuilds. A bare binary would
 # show a raw filename, and a differently-signed one would prompt again.
 #
 # Run it directly. It is no longer wired into `tauri build`, because the app no longer contains
@@ -28,8 +28,8 @@ cd "$repo_root"
 # to exist, reporting "the frozen daemon exited before it was ready" over an `env: No such file
 # or directory`. The freeze was fine; the post-condition was wrong.
 case "$(uname -s)" in
-  Darwin) target="packaging/dist/Daisy Computer Use.app/Contents/MacOS/daisy" ;;
-  *)      target="packaging/dist/daisy/daisy" ;;
+  Darwin) target="packaging/dist/Frank Computer Use.app/Contents/MacOS/frank" ;;
+  *)      target="packaging/dist/frank/frank" ;;
 esac
 
 # Freshness guard: skip the freeze when the binary already exists and nothing that goes into it
@@ -41,8 +41,8 @@ esac
 # *running* the harness rewrote bytecode and forced a needless multi-minute re-freeze; the same
 # was true of a stray .DS_Store. Both are pruned here rather than left to the caller's habits.
 if [ -z "${FORCE:-}" ] && [ -x "$target" ]; then
-  newer_source="$(find packaging/entry.py packaging/daisy-daemon.spec pyproject.toml uv.lock \
-    src/daisy .agents/agents .agents/skills .agents/mcp.json web/out \
+  newer_source="$(find packaging/entry.py packaging/frank-daemon.spec pyproject.toml uv.lock \
+    src/frank .agents/agents .agents/skills .agents/mcp.json web/out \
     -type d -name __pycache__ -prune -o \
     -type f ! -name '.DS_Store' ! -name '*.pyc' -newer "$target" -print -quit 2>/dev/null || true)"
   if [ -z "$newer_source" ]; then
@@ -57,20 +57,20 @@ uv run pyinstaller \
   --clean --noconfirm \
   --distpath packaging/dist \
   --workpath packaging/build \
-  packaging/daisy-daemon.spec
+  packaging/frank-daemon.spec
 
 echo "smoke-testing the frozen daemon"
 # In a sandbox of its own, and this is the whole point rather than tidiness.
 #
 # A daemon started here with the caller's XDG directories finds the lock already held by
-# whatever daemon the developer is running, logs "Another daisyd already holds the runtime
+# whatever daemon the developer is running, logs "Another frankd already holds the runtime
 # directory; standing down", and exits **0**. The old probe then found the *existing* daemon's
 # socket answering and printed "ok" — a green smoke test for a binary it had never exercised,
 # and green precisely in the case that is most common now that the app expects you to have a
 # daemon running. Isolating every XDG root means this binary is the only thing that could
 # possibly answer, so the probe tests what it claims to. It also stops a build from seeding the
 # developer's real configuration or writing to their transcript store.
-smoke_root="$(mktemp -d "${TMPDIR:-/tmp}/daisy-smoke.XXXXXX")"
+smoke_root="$(mktemp -d "${TMPDIR:-/tmp}/frank-smoke.XXXXXX")"
 trap 'kill "${daemon_pid:-}" 2>/dev/null || true; rm -rf "$smoke_root"' EXIT
 smoke_log="$smoke_root/daemon.log"
 
@@ -85,14 +85,14 @@ env XDG_RUNTIME_DIR="$smoke_root/run" \
     XDG_DATA_HOME="$smoke_root/data" \
     XDG_STATE_HOME="$smoke_root/state" \
     XDG_CACHE_HOME="$smoke_root/cache" \
-  "$repo_root/$target" daisyd >"$smoke_log" 2>&1 &
+  "$repo_root/$target" frankd >"$smoke_log" 2>&1 &
 daemon_pid=$!
 
 # Readiness is this daemon publishing its handshake and answering on its socket — not a fixed
 # port, because the loopback port is chosen at startup. Poll rather than sleeping once: a frozen
 # binary's first boot unpacks itself and imports a heavy graph, which can take far longer than
 # any fixed wait.
-socket="$smoke_root/run/daisy/daisyd.sock"
+socket="$smoke_root/run/frank/frankd.sock"
 ready=""
 for _ in $(seq 1 60); do
   sleep 1
@@ -110,11 +110,11 @@ for _ in $(seq 1 60); do
   fi
 done
 if [ -z "$ready" ]; then
-  echo "failed: daisyd did not become ready" >&2
+  echo "failed: frankd did not become ready" >&2
   sed 's/^/  /' "$smoke_log" >&2 || true
   exit 1
 fi
-echo "ok: daisyd answers on its own socket"
+echo "ok: frankd answers on its own socket"
 kill "$daemon_pid" 2>/dev/null || true
 wait "$daemon_pid" 2>/dev/null || true
 daemon_pid=""
@@ -122,26 +122,26 @@ daemon_pid=""
 if [ "$(uname -s)" = "Darwin" ]; then
   cat <<'NEXT'
 
-built: packaging/dist/Daisy Computer Use.app
+built: packaging/dist/Frank Computer Use.app
 
 Next, for an Accessibility grant that survives rebuilds:
-  packaging/sign-app.sh "packaging/dist/Daisy Computer Use.app"
+  packaging/sign-app.sh "packaging/dist/Frank Computer Use.app"
 Then install it and put the command on your PATH:
-  ditto "packaging/dist/Daisy Computer Use.app" "/Applications/Daisy Computer Use.app"
-  ln -sf "/Applications/Daisy Computer Use.app/Contents/MacOS/daisy" /usr/local/bin/daisy
+  ditto "packaging/dist/Frank Computer Use.app" "/Applications/Frank Computer Use.app"
+  ln -sf "/Applications/Frank Computer Use.app/Contents/MacOS/frank" /usr/local/bin/frank
 NEXT
 else
   # No bundle, no signing, and no Accessibility to preserve — those are macOS concerns. What a
   # Linux build gets is the same three-entry-point image, which is all the CLI and daemon need.
   cat <<'NEXT'
 
-built: packaging/dist/daisy/daisy
+built: packaging/dist/frank/frank
 
 Put it on your PATH:
-  ln -sf "$PWD/packaging/dist/daisy/daisy" ~/.local/bin/daisy
+  ln -sf "$PWD/packaging/dist/frank/frank" ~/.local/bin/frank
 
 The .app wrapper and code signing are macOS-only: they exist for the Accessibility grant,
-which has no counterpart here. The desktop app is macOS-only too — `daisy web` is the
+which has no counterpart here. The desktop app is macOS-only too — `frank web` is the
 interface on this platform.
 NEXT
 fi
