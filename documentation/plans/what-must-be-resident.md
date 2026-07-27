@@ -1,6 +1,6 @@
 ---
 created: 2026-07-27T16:27:43Z
-updated: 2026-07-27T16:27:43Z
+updated: 2026-07-27T16:52:00Z
 commit: 98560a9
 ---
 
@@ -12,7 +12,9 @@ A session worker is not sandboxed. Its **tool children** are. `_apply_posix` is 
 
 Once that is clear, "do we need a server?" stops being one question and becomes two independent ones. **Who must be resident?** — nobody, the client that created the sessions, or a machine-wide daemon. **What does a session cost?** — an object, a copy-on-write fork, a cold process held for life, or a durable record with a process only while it works. Today is the most expensive cell on both axes at once: a machine-wide daemon *and* a cold 264 MB process held for a session's entire life, idle or not.
 
-This plan keeps the daemon, because two use cases earn it and nothing else can serve them — a session that outlives the terminal that started it, and a harness reached from another machine. It makes everything else cheaper: the runtime becomes re-entrant, workers become copies instead of cold starts, an idle session stops being a process, and the resident thing splits into the part that supervises processes and the part that serves a browser.
+This plan keeps the daemon, because two use cases earn it and nothing else can serve them — a session that outlives the terminal that started it, and a harness reached from another machine. It makes everything else cheaper: the runtime becomes re-entrant, workers become copies instead of cold starts, an idle session stops being a process the moment it goes idle, and the browser surface stops depending on the thing that supervises agents.
+
+That last one is deliberately a severing rather than a split. An earlier draft moved the REST surface into its own process; that would have obliged the desktop app to start and supervise a backend, which is precisely the coupling [`client-and-daemon.md`](./client-and-daemon.md) removed. The dependency was the problem, not the process. Cut it, and the app keeps finding one daemon and starting nothing, while splitting later becomes a deployment choice available for free.
 
 Measured, not assumed. The numbers below are from the real import graph on Python 3.13, and where they could not be measured on the target platform this document says so and ships the probe.
 
@@ -63,9 +65,11 @@ Everything below follows from separating three concerns that are currently one p
 |---|---|---|
 | **Supervision** | Registry, lifecycle, prototype, kernel caller attribution, ingest | Must be resident. This is what a session's existence depends on, and it should be small enough to read in one sitting |
 | **The turn record** | `history.db`: turn head, history, artifacts, checkpoints, session state | Genuinely single-writer — `_persisted_counts` is an in-memory, lock-guarded counter (`persistence/turn_store.py:296`) and the append-only design rests on it |
-| **Workspace state** | `workspace.db`: projects, locations, artifacts, terminals, model history, drafts, user messages | Multi-writer-safe under the `fcntl` locks that already exist. It has no supervision relationship to anything, and it is what the browser talks to |
+| **Workspace state** | `workspace.db`: projects, locations, terminals, model history, drafts, user messages | Multi-writer-safe under the `fcntl` locks that already exist. It has no supervision relationship to anything, and it is what the browser talks to |
 
 One database file forced one writer on both records. Two files put the boundary where the reason is.
+
+The boundaries are about *ownership*, not about process count. Supervision must be a process of its own, because that is what residency means. The other two need only be severed from it — which is why the browser surface stops depending on the daemon without moving out of it.
 
 ## Part I — The runtime becomes re-entrant
 
@@ -101,21 +105,22 @@ First, because Parts II, III and IV each depend on it, and because one of its it
 | 16 | Session tokens are **derived**, not stored: `HKDF(master_key, session_id)` | `daemon/registry.py:128` | A durable registry must hand a token to a *new* worker on wake, which means it must be recomputable. Deriving stores nothing at rest. The precedent is `FileUrlSigner(load_or_create_secret(...))` in `protocol/files.py` |
 | 17 | `status` splits: a durable `lifecycle` (`live`/`ended`) and a derived `activity` (`working`/`idle`/`asleep`) | `registry.py:26-31`, `api.py:113` | The registry already cannot answer "is it working" — `_public()` merges `busy` from `_running_contexts` for exactly this reason. Make the split explicit rather than patched |
 | 18 | `relay_to_session` becomes `wake_then_relay`: no worker, ask the prototype, replay the assignment, then relay | `daemon/state.py:172` | **This is the whole mechanism, and it is one function.** Every command already funnels through it — `session.send`, `respond`, `compact`, `jobs.*`, `turn.cancel`. Reads (`get`, `list`, `tree`, `history`, `attach`) already bypass it and must keep doing so |
-| 19 | Sleep an idle worker: no turn in flight, no pending background jobs, after a linger window | `daemon/lifecycle.py`, reading `state._running_contexts` | **A session parked on a permission prompt is the clearest case.** `input-required` is already a durable suspension (`worker/session.py:628`) — its entire state is on disk and it holds a whole interpreter to wait. Background jobs are the one real blocker: they are in-process `asyncio.Task`s |
+| 19 | Sleep an idle worker **immediately**: no turn in flight, no pending background jobs, no delay | `daemon/lifecycle.py`, reading `state._running_contexts` | **A session parked on a permission prompt is the clearest case.** `input-required` is already a durable suspension (`worker/session.py:628`) — its entire state is on disk and it holds a whole interpreter to wait. There is deliberately no linger window: at 60 ms a window would be caching against a cost that no longer exists, and a window is a tuning knob nobody can set correctly. Background jobs are the one real blocker, because they are in-process `asyncio.Task`s |
 | 20 | Sessions survive a daemon restart | `daemon/api.py:477` | `daemon.restart` exists solely for the macOS TCC cache and currently documents "Every live session ends". With a durable registry it stops being true, and the confirmation dialog goes with it |
 | 21 | The isolation invariant is restated, not weakened: **one worker, one session, one activation** | `daemon/prototype.py` docstring | Workers are never recycled. A slept session's next worker is a fresh copy of the prototype. Nothing in `xeac-migration.md:31` changes |
 
-## Part IV — The resident thing splits in two
+## Part IV — The browser surface stops depending on the daemon
 
 | # | Change | Where | Why |
 |---|---|---|---|
-| 22 | Split the database. `history.db`: turn head, history, artifacts, checkpoint, session state, registry. `workspace.db`: projects, locations, `artifact_*`, terminal states, model history, user messages, drafts | `base/paths.py`, `persistence/database.py`, `persistence/turn_store.py` | The sole-writer invariant is real for one and imaginary for the other. `base/background_store.py` already proves a worker can own a second database under the existing `fcntl` lock |
-| 23 | The browser backend becomes a **client of the daemon**, serving the 72 REST endpoints against `workspace.db` itself and proxying only the control plane, `attach` and `/events` | `rest/` moves under the `daisy web` process | `cli/commands/web.py` already built this shape and then pointed it at the daemon. A crash in the artifact previewer must not reap agents. `client-and-daemon.md` argued the app must not own *the harness*; a backend that owns no sessions and spawns no agents is not that |
-| 24 | The daemon shrinks to registry, lifecycle, prototype, `peer_identity`, `ingest`, `api`, `state` | `daemon/` ≈ 6,996 → ≈ 2,000 lines | This is the process every session's existence depends on |
-| 25 | **Rewire artifact capture into the worker**, writing `workspace.db` under the existing lock | `worker/session.py:133`, `persistence/artifacts.py` | `state.capture_queue` is never assigned and `_capture_worker` is never started, so `_enqueue_capture` returns at `artifacts.py:75` every time. 1,078 lines and 11 endpoints serve permanently empty tables. The worker already holds the filesystem the shadow-git operates on |
+| 22 | Split the database. `history.db`: turn head, history, artifacts, checkpoint, session state, registry. `workspace.db`: projects, locations, terminal states, model history, user messages, drafts | `base/paths.py`, `persistence/database.py`, `persistence/turn_store.py` | The sole-writer invariant is real for one and imaginary for the other. `base/background_store.py` already proves a worker can own a second database under the existing `fcntl` lock |
+| 23 | **`rest/` becomes process-agnostic**: it depends only on `workspace.db` and the control plane's **HTTP** API, never on `daemon` internals. The daemon still mounts it; `daisy web` may serve it in-process instead | `rest/`, `daemon/__main__.py:262`, `cli/commands/web.py` | The dependency is the problem, not the process. `rest/` currently reaches through `daemon/services/*`, which use `state.session_factory` 78 times. Severing that gets the layering, and it leaves the desktop app exactly where it is — one address, discovered as now, starting nothing. **Splitting into a separate process then becomes a deployment choice rather than an architectural one**, and can be taken later for free. Taking it *now* would mean the app has to start and supervise a backend, which is the coupling `client-and-daemon.md` removed |
+| 24 | The daemon shrinks to registry, lifecycle, prototype, `peer_identity`, `ingest`, `api`, `state`, plus mounting `rest` | `daemon/` ≈ 6,996 → ≈ 3,400 lines | What supervises processes should be readable in one sitting. `rest` being mounted is composition, not dependency — the `__main__.py` exemption already covers exactly this |
+| 25 | **Delete the artifact-versioning pipeline outright**, backend and frontend | `persistence/artifacts.py`, `persistence/versioning.py`, `rest/routes/artifacts.py` (8 of 11 routes), 4 ORM tables, `web/src/components/artifact-history.tsx`, `web/src/lib/artifact-annotations.ts` | `state.capture_queue` is never assigned and `_capture_worker` is never started, so `_enqueue_capture` returns at `artifacts.py:75` every time. It has never functioned in this architecture, so nothing regresses. `open_artifact` and the preview surface **survive**: `dispatch.py:1215` yields a `ToolResult` carrying the artifact's id, kind, title and source, so the client renders a preview from the transcript without any of this |
 | 26 | **Rewire file leases**: the manager moves to `base/` as a process-free façade over the `fcntl` locks it already uses | `base/file_leases.py:186`, `worker/session.py:129` | `_file_lease_manager` is `None` in every worker, so `_acquire_filesystem_lease` returns `""` and **no session has ever taken a lease**. `_lock_os_key` is already cross-process `flock`; the manager object was only ever the in-process fast path |
 | 27 | **Rewire location resolution**: locations travel in the assignment, resolved at `session.create` | `daemon/api.py:196`, `worker/session.py:132` | `_resolve_locations` is `None`, so every runtime synthesises one local location and multi-location projects are dead at the session level. Same treatment the sandbox and the workspace already get — resolved once, carried with the session (`confinement.md:48`) |
-| 28 | The layering table changes: `rest` no longer imports `daemon`; it reaches the control plane over HTTP like any other client | `scripts/check_layers.py` | The exemption that let `rest` import `runtime` for three ChatGPT endpoints also disappears — that surface moves with the browser backend |
+| 28 | Move the ChatGPT **subscription catalogue** — `fetch_subscription_models`, `get_usage_snapshot`, and the two cache-clearing calls — out of `runtime/models/codex.py` into `base/`, beside the token store that already lives there. `ChatCodexModel` keeps only the chat model | `runtime/models/codex.py`, `base/models.py`, `base/credentials.py`, `rest/routes/settings.py:36` | These four are catalogue and cache concerns, not model-call concerns. They are the *only* reason anything above the runtime imports it, and `base/credentials.py` already owns the ChatGPT tokens |
+| 29 | The layering table changes: `rest` may import only `base`, `protocol`, `locations` and `computer`. Both exemptions go — `daemon` (it now uses the HTTP API, #23) and `runtime` (nothing needs it after #28) | `scripts/check_layers.py:44-49` | `rest` sitting above everything and reaching down into two layers is what let the GUI surface grow inside the process that supervises agents. The checker is where that stops being a habit |
 
 ## Deleted
 
@@ -127,7 +132,9 @@ First, because Parts II, III and IV each depend on it, and because one of its it
 | `_on_new_context`, `_session_permission_mode_for`, `_ensure_mcp_servers`, `_ensure_session_workspace`, `_claim_persisted_work_habits_acknowledgement` | `worker/session.py:122-131` | Genuinely superseded: the mode is fixed at create, the workspace is resolved at create, MCP is per-session |
 | `services/sessions.py:_claim_work_habits_acknowledgement` and `SessionLifecycleRecord` | `daemon/services/sessions.py:21`, `persistence/database.py:56` | No caller; the worker keeps its own in-memory flag |
 | The duplicate `SessionRecord` | `daemon/registry.py:35` | Merged into the durable table |
-| `DaemonTurnStore`'s artifact path and the daemon's REST surface | `worker/turn_store.py`, `daemon/` | Moved to the boundary that owns them |
+| **The whole artifact-versioning pipeline** — capture, shadow-git store, file index, filmstrip, diff, restore, per-version annotations | `daemon/persistence/artifacts.py` (640), `versioning.py` (438), `rest/routes/artifacts.py` (8 of 11 routes), `state.capture_queue`, `runtime.py:762-798` (`set_artifact_capture`, `_capture_written_artifacts`, `_artifact_surface_id`) and its four call sites in `dispatch.py` | It has never run in this architecture. Deleting it removes ~1,340 lines of daemon and the last reason for the worker to hold an artifact hook |
+| `ArtifactVersionRecord`, `ArtifactFileRecord`, `ArtifactSurfaceRecord`, `ArtifactAnnotationRecord` | `daemon/persistence/database.py:119-216` | Four tables that have only ever been empty |
+| `artifact-history.tsx`, `artifact-annotations.ts`, the version/diff/restore/annotation calls in `api.ts`, and the filmstrip surfaces in `panel-tiles.tsx` and `chat-panel.tsx` | `web/src/` | The frontend half of the same wipe. **Not** `artifact-bridge.tsx`, `native-artifact.ts` or `native-webview.tsx` — those render `open_artifact`'s preview, which survives |
 
 ## What is deliberately not changing
 
@@ -147,9 +154,11 @@ Two invariants join them. Nothing under `runtime/` holds mutable module-level st
 
 ## Accepted costs
 
-There are three resident processes where there were one and a bit: the daemon, the prototype, and the browser backend when a browser is open. The prototype's 264 MB is paid whether or not a session is running — the same money the warm pool spends today on two parked workers, for one process instead of two, and with no ceiling on how many sessions it can serve.
+There are two resident processes where there was one: the daemon and the prototype. The prototype's 264 MB is paid whether or not a session is running — the same money the warm pool spends today on two parked workers, for one process instead of two, and with no ceiling on how many sessions it can serve. The daemon does not shrink as far as it might, because it keeps mounting the browser surface; what it gives up is depending on it.
 
-Waking a slept session pays an MCP reconnect, which for a stdio server spawned through `uvx` can be seconds. The linger window exists to make that rare rather than to make it fast.
+Waking a slept session pays an MCP reconnect, and for a stdio server spawned through `uvx` that can be seconds — far more than the 60 ms fork. There is deliberately no linger window to hide it. A window would be a cache with a timeout nobody can set correctly, tuned against a cost that only exists because MCP connections are expensive; if the wake becomes painful, the honest fix is to make those connections cheap, not to keep an interpreter alive so the user does not notice.
+
+**File-version history is gone**, and it is not coming back as part of this work. The filmstrip, the per-version diff, restore, and image annotations are deleted rather than repaired. Nothing regresses today — the pipeline has never had a producer — but the feature is genuinely lost as a *design*, and rebuilding it later means rebuilding it from the worker rather than the daemon.
 
 A session's capability token becomes recomputable from a master key rather than existing only in RAM. That is a real widening — anything that can read the master key can mint any session's token — bounded by the fact that the same reader could already read the daemon's own token from the same 0600 directory.
 
@@ -163,7 +172,10 @@ A session's capability token becomes recomputable from a master key rather than 
 | **A future dependency starts a thread at import** | The measurement holds for today's graph. A background thread in the prototype reintroduces the whole fork hazard class | The prototype asserts `threading.active_count() == 1` before it forks, and refuses rather than forking unsafely |
 | **`gc.freeze()` is forgotten or reverted** | Without it the saving drops from 88 % to roughly a third of that, silently — nothing breaks, memory just grows | The prototype records its frozen count in `daemon.status`; a zero is visible |
 | **Sleeping a session with background work** | A background job is an in-process `asyncio.Task`; sleeping its worker kills it | The idle test includes `has_pending_jobs()`. `background_store` already models the loss if it is ever wrong |
-| **Two writers to `workspace.db`** | The split makes the worker and the browser backend both writers | They already share `base/sqlite_lock.py`'s cross-process `flock`; `background.db` has worked this way all along |
+| **Sleeping immediately makes MCP-heavy sessions feel slow** | With no linger window, every message to an idle session respawns its stdio servers. The fork is 60 ms; a cold `uvx` is not | Measure wake latency split into fork and MCP-connect, reported in `daemon.status`. If the second dominates, the answer is connection reuse, not a window |
+| **Two writers to `workspace.db`** | The worker and whatever serves `rest` are both writers | They already share `base/sqlite_lock.py`'s cross-process `flock`; `background.db` has worked this way all along |
+| **`rest` drifts back into importing `daemon`** | It is the path of least resistance, and it is how the surface grew inside the daemon in the first place | The layering checker, with both exemptions removed (#29) |
+| **The artifact deletion cuts too deep** | *Artifact* names three things: the dead version history, the live `open_artifact` preview, and A2A task artifacts. Only the first goes | `open_artifact` must still yield a `ToolResult` that renders a preview tab from the transcript alone, with no surface row |
 | **A partially-migrated registry** | Two registries becoming one touches `ps`, the sidebar, the reaper and attribution together | They are merged in one change; there is no interval in which both exist |
 
 ## Left open
@@ -172,6 +184,6 @@ A session's capability token becomes recomputable from a master key rather than 
 
 **Background work still dies with its worker.** Part III makes that visible rather than solving it: the honest fix is a detached job that outlives the session and reports through the daemon, which is a subsystem, not a line. It is deliberately not in this plan.
 
-**Terminals remain the browser backend's,** which means a terminal dies when that backend restarts. It is the one piece of state that genuinely wants a resident host and does not obviously belong to either boundary.
+**Terminals stay in the daemon, and that is the weakest part of this plan.** `brokers/terminals.py:254` calls `pty.fork()` inside the daemon — which by then has a populated thread pool from seventy-three `asyncio.to_thread` call sites. It is safe today only because the child `execvpe`s immediately, and fork-then-exec is fine; it is nonetheless the one place the process that supervises every session forks itself. A terminal genuinely wants a resident host and belongs to no boundary here cleanly. If anything ever justifies making `rest` its own process, this is it — which is the second reason #23 severs the dependency rather than merely relocating the code.
 
 **The Linux measurements are the ones that exist.** Everything in this plan is proven on Linux against the real import graph and unproven on macOS, which is the platform Daisy targets. The probe is the gate, and it should be run before any of Part II is written.
