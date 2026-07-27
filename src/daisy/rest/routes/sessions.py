@@ -11,7 +11,6 @@ from daisy.protocol.dtos import (
 )
 from daisy.daemon import state
 from daisy.daemon.services.broadcast import _publish_broadcast
-from daisy.daemon.persistence.artifacts import _prune_session_artifacts
 from daisy.daemon.services.sessions import _abort_pending_input, _remove_upload_file, _session_draft, _sessions_payload, _update_session_draft
 
 router = APIRouter()
@@ -93,11 +92,8 @@ async def delete_session(session_id: str):
         for path_string in referenced_uploads:
             if not await state.turn_store.any_history_references(path_string):
                 await asyncio.to_thread(_remove_upload_file, path_string, uploads_root)
-    # Prune this session's artifact versions (shadow-git branches + index rows) before the
-    # session record goes, so its locations can still be resolved for the branch delete.
-    await asyncio.to_thread(_prune_session_artifacts, session_id)
-    # The retention pass above already removed persisted conversation/lifecycle state;
-    # finish by removing the sidebar record. teardown_context dropped the live copies.
+    # The retention pass above already removed persisted conversation and lifecycle state;
+    # finish by removing the sidebar record. `teardown_context` dropped the live copies.
     def _delete_record() -> bool:
         assert state.session_factory is not None
         database_session = state.session_factory()

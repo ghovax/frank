@@ -17,8 +17,8 @@ attached here and never leaves the process, and the ephemeral port is nobody's b
 this file's. It also sidesteps CORS entirely, because there is only one origin involved.
 
 What is proxied is everything that is not a file: ordinary requests, server-sent event streams
-(the session transcript), and websockets (the terminal, and the artifact preview's own socket
-relay). All three are the interface working rather than optional extras, so all three are here.
+(the session transcript), and the terminal's websocket. All three are the interface working
+rather than optional extras, so all three are here.
 """
 
 from __future__ import annotations
@@ -148,9 +148,9 @@ def build_application(daemon_url: str, token: str, directory: Path):
     async def proxy_websocket(websocket) -> None:
         """Relay a websocket both ways.
 
-        The terminal and the artifact preview are websockets, and a handshake cannot carry an
-        Authorization header — which is why the daemon also accepts the token as a query
-        parameter. That is the form used here, and it never leaves this process either."""
+        The terminal is a websocket, and a handshake cannot carry an Authorization header —
+        which is why the daemon also accepts the token as a query parameter. That is the form
+        used here, and it never leaves this process either."""
         import asyncio
 
         import websockets as websockets_client
@@ -205,9 +205,8 @@ def build_application(daemon_url: str, token: str, directory: Path):
     return Starlette(routes=[
         Route(RUNTIME_PATH, runtime),
         # Named explicitly rather than caught by the wildcard: an ASGI application dispatches
-        # websockets by route, so an HTTP catch-all would never see them.
+        # websockets by route, so an HTTP catch-all would never see it.
         WebSocketRoute("/terminal", proxy_websocket),
-        WebSocketRoute("/artifact-proxy-ws", proxy_websocket),
         Route(
             "/{path:path}", serve_or_proxy,
             methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],

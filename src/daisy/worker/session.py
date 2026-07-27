@@ -131,7 +131,6 @@ class SessionExecutor(AgentExecutor):
         self._ensure_session_workspace = None
         self._ensure_mcp_servers = None
         self._resolve_locations = None
-        self._capture_artifacts = None
 
         self._contexts: dict[str, _ContextState] = {}
         # Maps an in-flight A2A task to its runtime, purely so `cancel` can abort it.
@@ -511,8 +510,6 @@ class SessionExecutor(AgentExecutor):
                 Part(root=DataPart(data=event)),
             ))
         runtime.set_turn_reader(self._make_turn_reader())
-        if self._capture_artifacts is not None:
-            runtime.set_artifact_capture(self._capture_artifacts)
         return runtime
 
     def _make_turn_reader(self):
@@ -523,7 +520,7 @@ class SessionExecutor(AgentExecutor):
             # Exclude `history` for the same reason as the delegate's done payload:
             # read_turn feeds a sibling/agent task straight into the caller's
             # model context, and the full transcript (incl. raw web-search text)
-            # would overflow it. Only the status + deliverable artifact are needed.
+            # would overflow it. Only the status + deliverable are needed.
             return task.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"}) if task else None
         return read_turn
 

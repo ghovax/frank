@@ -34,7 +34,6 @@ There are no dedicated `find_files`/`search_content` tools; for literal file-nam
 | `update_goal` | Track an overarching goal. |
 | `read_turn` | Read a sibling turn handed to this session from outside. |
 | `load_skill` | Load a `SKILL.md` capability on demand. |
-| `open_artifact` | Render a produced file or output as an artifact in the UI. |
 | `ask_user` | Ask the user a question and wait for the answer. |
 | `wait_for` | Pause for a few seconds without a model round trip, to re-check something that was not ready. |
 

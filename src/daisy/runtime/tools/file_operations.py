@@ -658,24 +658,16 @@ def _edit_payload(
 ) -> str:
     """Build the tool result for write_file.
 
-    ``before``/``after`` carry the full old and new file content for the UI's
-    diff viewer; ``model_context`` is the lean summary the model actually sees
-    (the file contents are redundant in the model's context — it already read
-    the file and supplied the replacement — so they are stripped from the
-    model-facing payload to avoid bloating it).
+    ``before``/``after`` carry the full old and new file content for the UI's diff viewer.
     """
-    summary = {
-        "code": code,
-        "path": path,
-        "created": created,
-        "characters": len(after),
-    }
     return compact(
         {
-            **summary,
+            "code": code,
+            "path": path,
+            "created": created,
+            "characters": len(after),
             "before": before,
             "after": after,
-            "model_context": summary,
         }
     )
 

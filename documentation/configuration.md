@@ -87,7 +87,7 @@ When enabled, Composio is folded into the ordinary MCP set rather than being a s
 
 ```yaml
 sandbox:   { enforce: "required" }   # what a tool child may do — see below
-workspace: { strategy: "none", artifact_maximum_bytes: 134217728 }
+workspace: { strategy: "none" }
 agent:     { permission_mode: "default" }
 computer_control: { enabled: false } # macOS screen tools (control_screen); opt-in — see below
 user_context:     { enabled: false } # a snapshot of how you work, in the prompt; opt-in

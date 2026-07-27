@@ -110,3 +110,21 @@ async def reference_attachment(reference: AttachmentReference):
         # hash. The field stays present (empty) so the client's Attachment shape is uniform.
         "sha256": "",
     }
+
+
+@router.get("/files/{file_path:path}")
+async def serve_local_file(file_path: str):
+    """Serve a file from local disk for the interface to display.
+
+    This is what puts an image or a PDF the user attached in front of them: the composer
+    and the transcript point an `<img>` or a PDF view here. It is deliberately plain — the
+    bytes, their guessed media type, and nothing injected.
+
+    Served no-store because an attachment is a live file the agent may still be editing, so
+    a refresh should show the current bytes rather than a cached snapshot. Localhost-only,
+    like the rest of this surface.
+    """
+    path = Path("/" + file_path.lstrip("/")).resolve()
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="File not found.")
+    return FileResponse(path, headers={"Cache-Control": "no-store"})

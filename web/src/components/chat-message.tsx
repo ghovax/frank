@@ -5,10 +5,9 @@ import { useTranslations } from "next-intl";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { LuFoldVertical, LuMessagesSquare, LuRotateCw, LuTriangleAlert } from "react-icons/lu";
 import type { ChatMessage, MessageAttachment } from "@/lib/use-chat";
-import type { ArtifactAnnotationRecord } from "@/lib/artifact-annotations";
 import type { ToolEvent, ToolPermission, ToolQuestion } from "@/lib/tool-event";
 import { toolStatus } from "@/lib/tool-event";
-import { AttachmentChips, ArtifactAnnotationChips } from "./attachment-chips";
+import { AttachmentChips } from "./attachment-chips";
 import { MarkdownContent } from "./markdown-content";
 import { ToolCall } from "./tool-call";
 import { ToolGroup } from "./tool-group";
@@ -16,8 +15,6 @@ import { ActivityIcon, ActivitySpinner } from "./ui/activity-icon";
 
 interface ChatMessageProps {
   message: ChatMessage;
-  activeArtifactId?: string | null;
-  onActivateArtifact?: (id: string) => void;
   // Re-run the turn that produced a server error (resends the last user message).
   // Only wired for error rows.
   onRetry?: () => void;
@@ -121,7 +118,7 @@ function WarningMessageCard({ message }: { message: ChatMessage }) {
   );
 }
 
-function ToolMessageCard({ message, activeArtifactId, onActivateArtifact }: ChatMessageProps) {
+function ToolMessageCard({ message }: ChatMessageProps) {
   return (
     <ToolCall
       name={message.content}
@@ -131,8 +128,6 @@ function ToolMessageCard({ message, activeArtifactId, onActivateArtifact }: Chat
       permission={message.meta?.permission as ToolPermission | undefined}
       question={message.meta?.question as ToolQuestion | undefined}
       toolCallId={message.meta?.toolCallId as string | undefined}
-      activeArtifactId={activeArtifactId}
-      onActivateArtifact={onActivateArtifact}
     />
   );
 }
@@ -140,7 +135,6 @@ function ToolMessageCard({ message, activeArtifactId, onActivateArtifact }: Chat
 function UserMessageCard({ message }: { message: ChatMessage }) {
   const translation = useTranslations("ChatMessage");
   const attachments = (message.meta?.attachments as MessageAttachment[] | undefined) ?? [];
-  const artifactAnnotationRecords = (message.meta?.artifactAnnotationRecords as ArtifactAnnotationRecord[] | undefined) ?? [];
   const contentRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
   const [truncatable, setTruncatable] = useState(false);
@@ -155,7 +149,6 @@ function UserMessageCard({ message }: { message: ChatMessage }) {
   return (
     <Flex direction="column" alignSelf="flex-end" align="flex-end" gap={1.5} maxW="80%">
       {attachments.length > 0 && <AttachmentChips attachments={attachments} />}
-      {artifactAnnotationRecords.length > 0 && <ArtifactAnnotationChips records={artifactAnnotationRecords} />}
       {message.content.trim() && (
         <Box
           ref={contentRef}
@@ -241,7 +234,7 @@ function PeerMessageCard({ message }: { message: ChatMessage }) {
 }
 
 
-export const ChatMessageItem = memo(function ChatMessageItem({ message, activeArtifactId, onActivateArtifact, onRetry, streaming = false }: ChatMessageProps) {
+export const ChatMessageItem = memo(function ChatMessageItem({ message, onRetry, streaming = false }: ChatMessageProps) {
   const translation = useTranslations("ChatMessage");
   switch (message.role) {
     case "user": {
@@ -283,7 +276,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, activeAr
     case "tool_call": {
       return (
         <Box alignSelf="flex-start" w="100%">
-          <ToolMessageCard message={message} activeArtifactId={activeArtifactId} onActivateArtifact={onActivateArtifact} />
+          <ToolMessageCard message={message} />
         </Box>
       );
     }
@@ -342,12 +335,10 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, activeAr
 
 interface ChatToolGroupProps {
   messages: ChatMessage[];
-  activeArtifactId?: string | null;
-  onActivateArtifact?: (id: string) => void;
   keepOpen?: boolean;
 }
 
-export const ChatToolGroup = memo(function ChatToolGroup({ messages, activeArtifactId, onActivateArtifact, keepOpen }: ChatToolGroupProps) {
+export const ChatToolGroup = memo(function ChatToolGroup({ messages, keepOpen }: ChatToolGroupProps) {
   // Map the persisted tool-call messages to the ToolEvent shape the shared
   // ToolGroup renders.
   const tools: ToolEvent[] = messages.map((message) => ({
@@ -362,8 +353,6 @@ export const ChatToolGroup = memo(function ChatToolGroup({ messages, activeArtif
   return (
     <ToolGroup
       tools={tools}
-      activeArtifactId={activeArtifactId}
-      onActivateArtifact={onActivateArtifact}
       keepOpen={keepOpen}
     />
   );

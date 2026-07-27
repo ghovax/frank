@@ -350,7 +350,7 @@ async def call_mcp_tool(
 ) -> str:
     """Call a tool exposed by a configured MCP server.
 
-    Discover the exact ``tool_name`` and ``arguments`` schema with ``list_mcp_tools`` first. Treat safety exactly like ``bash``: set ``read_only=True`` explicitly only for inspection-only calls; omitted means potentially mutating. For state-changing calls, set an appropriate medium or high risk. MCP tools may return renderable artifacts, including HTML, images, iframes, and links.
+    Discover the exact ``tool_name`` and ``arguments`` schema with ``list_mcp_tools`` first. Treat safety exactly like ``bash``: set ``read_only=True`` explicitly only for inspection-only calls; omitted means potentially mutating. For state-changing calls, set an appropriate medium or high risk.
 
     Arguments:
         server: Configured MCP server name.
@@ -438,104 +438,6 @@ async def wait_for(
 
 
 
-
-# What counts as an image worth opening in the artifact panel rather than showing inline.
-_ARTIFACT_IMAGE_SUFFIXES = {".apng", ".avif", ".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"}
-
-
-def artifact_kind_for(path: str) -> str:
-    """The render kind of a local artifact by extension: ``image`` (versioned bytes),
-    ``html`` (served live so it can self-size/interact), ``iframe`` (a PDF, which the browser
-    renders in place), or a generic ``file`` — which has no visual preview. Only the first three
-    are things worth opening in the panel; ``file`` means "show this in the conversation instead."""
-    suffix = Path(path).suffix.lower()
-    if suffix in _ARTIFACT_IMAGE_SUFFIXES:
-        return "image"
-    if suffix in (".html", ".htm", ".xhtml"):
-        return "html"
-    if suffix == ".pdf":
-        return "iframe"
-    return "file"
-
-
-# Runtime fragments injected into rendered HTML live as self-contained assets and
-
-
-def build_open_artifact_result(
-    *,
-    artifact_id: str,
-    kind: str,
-    title: str,
-    source: str,
-    location_uri: str = "",
-    absolute_path: str = "",
-    url: str = "",
-    height: int = 0,
-) -> dict[str, Any]:
-    """Build the tool result for an ``open_artifact`` call. Capture (the version history)
-    happens in the background; this result just opens a tab in the artifacts panel and
-    tells it which artifact to hydrate. The stable ``artifact_id`` correlates the tab with
-    its surface + version history; ``kind`` selects the renderer (``image``/``file`` load
-    the versioned bytes, ``html`` serves the live local file, ``iframe`` renders an external
-    ``url``). Kept pure so it can be dispatched from the agent runtime."""
-    try:
-        requested_height = int(height)
-    except (TypeError, ValueError):
-        requested_height = 0
-    artifact_height = max(120, min(900, requested_height)) if requested_height > 0 else "auto"
-    artifact = {
-        "type": "artifact",
-        "kind": kind,  # image | html | iframe | file
-        "artifact_id": artifact_id,
-        "title": title,
-        "source": source,  # the path or URL shown to the user
-        "location": location_uri,
-        "absolute_path": absolute_path,  # live serving for a local html artifact
-        "file": absolute_path,  # the file the renderer serves live via /artifact-page (image/html)
-        "url": url,  # external iframe source
-        "height": artifact_height,
-    }
-    model_context = {
-        "code": "artifact_opened",
-        # Echo the id so the model can update this same artifact tab on a later call by
-        # passing the same ``artifact_id`` (each write becomes a new version underneath).
-        "artifact_id": artifact_id,
-        "artifacts": [{"artifact_id": artifact_id, "kind": kind, "title": title}],
-    }
-    return {"artifacts": [artifact], "model_context": model_context}
-
-
-@tool
-def open_artifact(
-    url: str,
-    height: int = 0,
-    artifact_id: str = "",
-) -> str:
-    """Open an artifact in the chat's side panel — a sandboxed iframe (or image view) pointed at a URL or a local file — rendered outside the tool card. This is where "show it on the side" / "as an artifact" content goes.
-
-    It is a **preview surface** for things that render — web pages, HTML, images, SVGs, PDFs — not a file viewer. A code or text file has no visual form; show it in the conversation instead of opening an empty panel. Previewing a page here is for viewing; to interact with a live site (sign in, click through) use the ``browser`` tool, which drives the user's real Chrome.
-
-    Rather than passing markup inline, you point it at something that already exists: an ``http(s)`` URL, or a path to a file you have written (``url="/abs/path/chart.html"``, or a path relative to the working directory). To show a visualization, **write a complete HTML document to a file first** (with ``bash``: a heredoc, or an editor) and open that file — then you can refine it by editing the file and re-opening, which is far faster and cheaper than re-emitting a whole document each time. Reach for an existing web library inside the page rather than hand-rolling: a CDN ``<script>``/``<link>`` (Plotly, D3, Mermaid, Leaflet, KaTeX, highlight.js, …) or just an ``<img>``. Think "which library already does this?" first.
-
-    A local **HTML file** gets the harness runtime injected automatically, so it sizes to its content (no need to pass ``height``), reports render errors back to you, and can be interactive. To make it interactive, post events back to the agent from inside the page — each becomes a structured ``artifact_event`` turn:
-
-        window.parent.postMessage(
-            {source: "artifact", event: "<name>", data: {/* ... */}},
-            "*"
-        );
-
-    Uncaught errors and rejected promises in a local page are reported back to you automatically as a ``render_error`` event, so you can see what broke, edit the file, and re-open. (External URLs render as-is — some sites refuse to load in a frame, and they cannot self-size or report errors.)
-
-    **Version history is automatic.** Every file you write is versioned in the background, so an artifact you open carries its full history — the user can step through prior versions, diff them, download any one, and restore. To refresh an artifact you already opened — a regenerated plot, an edited page — pass that same ``artifact_id`` back and the panel updates that one tab instead of opening a new one; the new render becomes a new version. Omitting ``artifact_id`` but writing to the same path is still recognized as the same artifact.
-
-    The artifact is labelled automatically from what it points at — the file name for a local file, the URL for a web page — so there is nothing to title.
-
-    Arguments:
-        url: An ``http(s)`` URL, or a local file path (absolute, or relative to the working directory) — for example one you just wrote.
-        height: Optional fixed height in pixels (120-900). Omit for automatic sizing (local HTML pages report their own height; the default).
-        artifact_id: The id returned by a previous ``open_artifact`` call. Pass it to update that artifact tab in place (a new render becomes a new version); omit it to open a new one (a new path is also treated as new).
-    """
-    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 @tool
 def read_turn(turn_id: str = "", justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:

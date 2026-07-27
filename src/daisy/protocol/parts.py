@@ -1,7 +1,7 @@
 """Turning messages into what the model reads, and runtime events into what the client renders.
 
 Two directions meet here. Inbound: an A2A message's parts are unpacked into the turn's
-inputs — prose, artifact interactions, structured attachments, and images inlined only when
+inputs — prose, structured attachments, and images inlined only when
 the model can actually see them. Outbound: every runtime event becomes a validated wire
 part, constructed as its Pydantic model at the emit site so a misnamed field is an error
 here rather than invisible drift the schema generation can never catch.
@@ -28,34 +28,11 @@ from daisy.protocol.events import (
 )
 from daisy.protocol.files import ingest_file_part
 from daisy.protocol.metadata import (
-    ARTIFACT_EVENT_KIND,
     INPUT_RESPONSE_KIND,
     PART_KIND,
     part_payload,
     wrap_part_payload,
 )
-
-
-def _artifact_event_payload(message) -> Optional[dict]:
-    """The incoming artifact-interaction DataPart, if this turn carries one. Returns
-    ``None`` when the message has no artifact event, so the caller falls back to the
-    plain text input."""
-    for part in (message.parts or []):
-        root = getattr(part, "root", part)
-        payload = part_payload(root.data) if isinstance(root, DataPart) else {}
-        if payload.get(PART_KIND) == ARTIFACT_EVENT_KIND:
-            return {
-                "artifact_id": payload.get("artifactId", ""),
-                "title": payload.get("title", ""),
-                "event": payload.get("event", ""),
-                "data": payload.get("data"),
-            }
-    return None
-
-
-# A message/send answering an input-required pause carries this DataPart kind, with the
-# request id and the decision/answers, so an external A2A client can resolve a permission
-# or question the spec-correct way rather than through the native REST side channel.
 
 
 def _input_response_payload(message) -> Optional[dict]:
@@ -83,14 +60,12 @@ async def _ingest_incoming_file_parts(message) -> list[dict]:
 
 
 def _structured_data_payloads(message) -> list[dict]:
-    """Return non-artifact DataPart payloads carried by the user turn."""
+    """Return the DataPart payloads carried by the user turn."""
     payloads: list[dict] = []
     for part in (message.parts or []):
         root = getattr(part, "root", part)
         if isinstance(root, DataPart):
             data = part_payload(root.data)
-            if data.get(PART_KIND) == ARTIFACT_EVENT_KIND:
-                continue
             payloads.append(dict(data))
     return payloads
 

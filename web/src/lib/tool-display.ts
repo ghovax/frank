@@ -4,7 +4,6 @@ import {
   LuTerminal,
   LuPuzzle,
   LuWrench,
-  LuLayoutDashboard,
   LuFileText,
   LuSearchCode,
   LuFilePen,
@@ -42,7 +41,6 @@ const KNOWN_TOOL_NAMES: ReadonlySet<string> = new Set([
   "edit_file", "write_file", "fetch_url", "ask_user", "load_skill",
   "set_tasks", "update_tasks", "update_goal",
   "work_habits",
-  "open_artifact",
   "call_mcp_tool", "list_mcp_tools", "list_mcp_resources", "read_mcp_resource",
 ]);
 
@@ -78,8 +76,6 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
       return { icon: LuListChecks, iconColor: "blue.fg" };
     case "update_goal":
       return { icon: LuTarget, iconColor: "orange.fg" };
-    case "open_artifact":
-      return { icon: LuLayoutDashboard, iconColor: "pink.fg" };
     case "work_habits":
       return { icon: LuUserSearch, iconColor: "blue.fg" };
     case "call_mcp_tool":
@@ -125,8 +121,6 @@ function fallbackLabel(name: string, args: Record<string, unknown> | undefined, 
       return t("updateTasks");
     case "update_goal":
       return t("updateGoal");
-    case "open_artifact":
-      return args?.title ? t("openArtifact", { title: String(args.title) }) : t("openArtifactBare");
     case "work_habits":
       return t("workHabits");
     case "call_mcp_tool":

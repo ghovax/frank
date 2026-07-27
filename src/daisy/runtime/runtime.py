@@ -33,7 +33,6 @@ from daisy.runtime.tools.registry import (
     set_tasks as set_tasks_tool,
     update_tasks as update_tasks_tool,
     update_goal as update_goal_tool,
-    open_artifact as open_artifact_tool,
     list_mcp_tools as list_mcp_tools_tool,
     call_mcp_tool as call_mcp_tool_tool,
     list_mcp_resources as list_mcp_resources_tool,
@@ -199,10 +198,8 @@ def _all_available_tools(
         update_goal_tool,
         read_turn_tool,
         # A session can always ask the user directly: the question parks the turn as a
-        # human-in-the-loop gate and resumes on the answer. Every session is first-class and
-        # attachable, so every session may drive the artifact surface too.
+        # human-in-the-loop gate and resumes on the answer.
         ask_user_tool,
-        open_artifact_tool,
     ]
     # Searching and controlling the live screen (the browser and native apps) drives the whole
     # machine, so it is opt-in: added only when the user has enabled it in Settings (which also
@@ -383,7 +380,6 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         "set_tasks": "_tool_set_tasks",
         "update_tasks": "_tool_update_tasks",
         "update_goal": "_tool_update_goal",
-        "open_artifact": "_tool_open_artifact",
         "search_web": "_tool_search_web",
         "read_turn": "_tool_read_turn",
         "control_screen": "_tool_control_screen",
@@ -531,10 +527,6 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         # Reads another A2A task (sibling/agent) by id from the shared store,
         # so context-aware agents can coordinate. Injected by the executor.
         self._turn_reader: Optional[Callable] = None
-        # Enqueues a shadow-git capture of what a write-ish tool call produced (called after
-        # edit/write/bash and on open_artifact). Injected by the executor; non-blocking and
-        # best-effort so the runtime never waits on git or touches the database directly.
-        self._artifact_capture: Optional[Callable] = None
         self._steering_messages: asyncio.Queue[str] = asyncio.Queue()
         self._steering_available = asyncio.Event()
         self._active_tool_tasks: dict[str, asyncio.Task] = {}
@@ -836,43 +828,6 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
     def set_turn_reader(self, task_reader: Callable) -> None:
         """Install the reader `read_turn` uses to fetch related turns from the store."""
         self._turn_reader = task_reader
-
-    def set_artifact_capture(self, artifact_capture: Callable) -> None:
-        """Install the callback that enqueues a shadow-git capture after a write-ish tool
-        call (edit/write/bash) and on open_artifact. Non-blocking and best-effort."""
-        self._artifact_capture = artifact_capture
-
-    def _capture_written_artifacts(
-        self, resolved_location: ResolvedLocation, *, changed_absolute_paths: list[str] | None,
-        tool_call_id: str, message: str, mode: str = "track",
-        original_contents: dict[str, str] | None = None, surface: dict | None = None,
-    ) -> None:
-        """Fire-and-forget a capture for what a tool call wrote. ``mode="track"`` versions
-        the named paths; ``mode="recheck"`` (after bash) restages only already-tracked files.
-        Swallows all errors — a versioning hiccup must never break the agent's turn."""
-        if self._artifact_capture is None:
-            return
-        try:
-            self._artifact_capture(
-                session_id=self._session_id,
-                location_uri=resolved_location.uri,
-                executor=resolved_location.executor,
-                base_directory=resolved_location.base_directory,
-                changed_absolute_paths=changed_absolute_paths,
-                mode=mode,
-                original_contents=original_contents,
-                tool_call_id=tool_call_id,
-                message=message,
-                surface=surface,
-            )
-        except Exception:
-            pass
-
-    def _artifact_surface_id(self, key: str) -> str:
-        """A stable surface id derived from the session + a key (a file path or URL), so
-        re-opening the same target reuses one tab without any database lookup."""
-        return "artifact-" + hashlib.sha256(f"{self._session_id}:{key}".encode("utf-8")).hexdigest()[:16]
-
 
     def session_snapshot(self) -> dict:
         """The context's durable non-conversation state — the active goal and the task

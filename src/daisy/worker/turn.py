@@ -35,7 +35,6 @@ from daisy.protocol.metadata import (
 )
 from daisy.protocol.parts import (
     _all_attachments,
-    _artifact_event_payload,
     _attachment_warning_event,
     _event_part,
     _image_attachments,
@@ -48,7 +47,6 @@ from daisy.protocol.parts import (
     _work_habits_acknowledgement_parts,
 )
 from daisy.protocol.turn_record import TurnKind, TurnRecord
-from daisy.runtime.annotation_stamping import annotation_image_blocks, normalize_annotation_payloads
 from daisy.runtime.runtime import AgentRuntime
 from daisy.runtime.turn_events import SuspensionGate
 from daisy.worker.sink import _TurnEventSink
@@ -111,7 +109,6 @@ class _Ingested:
     permission_mode: str
     requested_working_directory: str
     requested_workspace_strategy: str
-    artifact_payload: Optional[dict]
     structured_payloads: list
 
 
@@ -273,11 +270,7 @@ class _TurnRunner:
             raise ValueError("Request context message is required.")
         self._message = message
         self._user_text = self._request.get_user_input()
-        # An artifact interaction arrives as a structured DataPart. A normal interaction
-        # becomes the turn's JSON input; a render_error is reframed below (once the
-        # runtime's prompt loader exists) into a behind-the-scenes self-realization note
-        # the model repairs as its own output.
-        self._artifact_payload = _artifact_event_payload(message)
+        # Structured input arrives as DataParts beside the prose — today, attachments.
         self._structured_payloads = _structured_data_payloads(message)
         ingested_attachments = await _ingest_incoming_file_parts(message)
         if ingested_attachments:
@@ -301,7 +294,6 @@ class _TurnRunner:
             permission_mode=self._permission_mode,
             requested_working_directory=self._requested_working_directory,
             requested_workspace_strategy=self._requested_workspace_strategy,
-            artifact_payload=self._artifact_payload,
             structured_payloads=self._structured_payloads,
         )
 
@@ -492,12 +484,9 @@ class _TurnRunner:
 
     async def _compose_turn_input(self, prepared: _Prepared) -> _ComposedTurn:
         """Build the model-facing input for this segment from the turn's payloads: an
-        autonomous framing note, an artifact event, structured attachments (with vision
-        blocks when the model supports them), or plain user text."""
+        autonomous framing note, structured attachments (with vision blocks when the model
+        supports them), or plain user text."""
         runtime = prepared.runtime
-        # A render_error is injected as the model's own realization (a harness note
-        # delivered in a <systemReminder> block), never as user prose; every other
-        # artifact event is the turn's structured JSON input.
         self._as_system_note = self._autonomous or self._report_reminder
         if self._report_reminder:
             # Same delivery as a wake — a <systemReminder> harness note, never user prose —
@@ -510,26 +499,14 @@ class _TurnRunner:
             # AgentRuntime._harness_note_message) that never appears as user input in the
             # transcript.
             self._turn_input = _PROMPTS.load("background_resume_note", {})
-        elif self._artifact_payload is not None:
-            payload_json = compact({"artifact_event": self._artifact_payload})
-            if self._artifact_payload.get("event") == "render_error":
-                # The same JSON payload, wrapped in a self-realization note and injected as
-                # a harness note rather than user input.
-                self._turn_input = runtime.artifact_render_error_note(payload_json)
-                self._as_system_note = True
-            else:
-                self._turn_input = payload_json
         elif self._structured_payloads:
-            # The structured metadata (attachment file paths and any per-attachment
-            # annotations) always rides along as a text block so the model can act on the
-            # attachments with its tools. Images are inlined only when the agent model
-            # advertises vision support; otherwise the model gets metadata/path access and
-            # the UI receives a non-fatal warning. The model-facing copy of the data parts
-            # keeps annotation positions on the normalized 0-999 grid documented in the
-            # system prompt.
+            # The structured metadata — attachment file paths — always rides along as a
+            # text block so the model can act on the attachments with its tools. Images are
+            # inlined only when the agent model advertises vision support; otherwise the
+            # model gets path access and the interface receives a non-fatal warning.
             text_payload = compact({
                 "text": self._user_text,
-                "data_parts": normalize_annotation_payloads(self._structured_payloads),
+                "data_parts": self._structured_payloads,
             })
             image_attachments = _image_attachments(self._structured_payloads)
             model_identifier = runtime.effective_model_identifier if runtime is not None else ""
@@ -542,14 +519,6 @@ class _TurnRunner:
                 ]
             elif image_attachments:
                 await self._emit(_event_part(_attachment_warning_event(len(image_attachments), model_identifier)))
-            if _model_supports_vision(model_identifier):
-                # Artifact-image annotations: alongside the structured facts, a vision model
-                # also gets the image itself with numbered circle badges stamped at each
-                # annotation position (numbers match the payload's `sequence` values). Pure
-                # Pillow work — run off-loop.
-                image_blocks.extend(
-                    await asyncio.to_thread(annotation_image_blocks, self._structured_payloads)
-                )
             if image_blocks:
                 self._turn_input = [{"type": "text", "text": text_payload}, *image_blocks]
                 self._turn_has_images = True

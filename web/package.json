@@ -4,14 +4,15 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "bun run check:events && next build",
+    "build": "bun run check:events && bun run check:translations && next build",
     "start": "next start",
     "lint": "eslint",
     "build:events": "uv run --project .. python ../scripts/generate_event_schema.py && json2ts -i src/lib/generated/events.schema.json -o src/lib/generated/events.ts --unreachableDefinitions",
     "check:events": "uv run --project .. python ../scripts/generate_event_schema.py --check && json2ts -i src/lib/generated/events.schema.json -o \"${TMPDIR:-/tmp}/daisy-events.check.ts\" --unreachableDefinitions && diff -u src/lib/generated/events.ts \"${TMPDIR:-/tmp}/daisy-events.check.ts\"",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "check:translations": "uv run --project .. python ../scripts/check_translations.py"
   },
   "dependencies": {
     "@chakra-ui/react": "^3.36.0",

@@ -222,7 +222,7 @@ def build_app() -> FastAPI:
             return await call_next(request)
         header = request.headers.get("Authorization", "")
         # A WebSocket handshake and an <img>/<iframe> URL cannot carry a header, so the
-        # terminal and artifact surfaces pass the same token as a query parameter.
+        # terminal passes the same token as a query parameter.
         presented = (
             header[len("Bearer "):] if header.startswith("Bearer ")
             else request.query_params.get("token", "")

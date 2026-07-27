@@ -114,7 +114,6 @@ composio_servers: dict = {}
 # agent or skill files change. Distinct from the session registry: this is what could exist,
 # that is what does.
 agent_cards: dict = {}
-capture_queue: Any = None
 chatgpt_login_flow: Any = None
 proxy_client: Any = None
 main_loop: Any = None

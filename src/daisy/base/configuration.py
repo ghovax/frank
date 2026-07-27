@@ -354,13 +354,6 @@ class WorkspaceConfiguration(Section):
             "never tread on each other."
         ),
     )
-    artifact_maximum_bytes: int = Field(
-        128 * 1024 * 1024,
-        description=(
-            "Writes larger than this are recorded as a placeholder version rather than stored, "
-            "since artifact versioning keeps the files the agent writes."
-        ),
-    )
 
 
 class CompactionConfiguration(Section):

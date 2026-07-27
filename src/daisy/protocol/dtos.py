@@ -104,21 +104,6 @@ class DirectoryRevealRequest(BaseModel):
     path: str
 
 
-class ArtifactAnnotationSaveRequest(BaseModel):
-    surface_id: str
-    version_id: str  # the version's git commit sha
-    annotations: list[dict[str, Any]]
-    updated_at: str | None = None
-
-
-class ArtifactRestoreRequest(BaseModel):
-    location_uri: str = ""
-    git_directory: str
-    work_tree: str
-    relative_path: str
-    commit_sha: str
-
-
 class PermissionModeRequest(BaseModel):
     mode: Literal["default", "auto", "read_only"]
 

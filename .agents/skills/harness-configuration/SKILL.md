@@ -95,7 +95,7 @@ Runtime overrides live in a sibling **`configuration.json`** (not `config.json`)
 
 ## Skills
 
-A skill is `.agents/skills/<name>/SKILL.md` with frontmatter (`name`, `title`, `description`, `enabled`) and a Markdown body of instructions. `name` is the stable lowercase slug used for lookup and filtering. `title` is the UI-facing label and should be a descriptive action phrase, not a short category name: prefer a verb + object shape such as "Create and update OpenStreetMap map artifacts" or "Research current web sources". The `description` is what makes the agent decide to read it, so make it specific. An agent restricts which skills it sees via its `skills:` list (empty means all). Skills reload live.
+A skill is `.agents/skills/<name>/SKILL.md` with frontmatter (`name`, `title`, `description`, `enabled`) and a Markdown body of instructions. `name` is the stable lowercase slug used for lookup and filtering. `title` is the UI-facing label and should be a descriptive action phrase, not a short category name: prefer a verb + object shape such as "Create and update OpenStreetMap maps" or "Research current web sources". The `description` is what makes the agent decide to read it, so make it specific. An agent restricts which skills it sees via its `skills:` list (empty means all). Skills reload live.
 
 ## MCP servers
 
@@ -135,29 +135,6 @@ Remote (HTTP):
 ```
 
 `enabled: false` keeps an entry but turns it off; `"type"` is accepted as an alias for `"transport"`. Servers default to `stateful: true`: for `stdio` the subprocess stays alive across calls; for `streamable_http` the MCP session id is preserved and the server's GET SSE stream is listened to. MCP progress/notification events are forwarded into the active A2A stream. Set `stateful: false` only for servers that require one fresh session per operation. **`mcp.json` is watched and reloads live** — the daemon watches the `.agents` roots recursively, so adding or changing a server takes effect without restarting anything. Discovery and connection live in `src/daisy/base/mcp_client.py`. Note that the daemon keeps its own pool for the GUI's server browser while each session connects its own for its tool calls: connections are stateful, and a stdio server cannot be shared across processes.
-
-### MCP render artifacts
-
-MCP tools can return renderable artifacts in a top-level `artifacts` array. The harness renders `html`, `iframe`, `image`, and `link` artifacts. To refresh an existing artifact from a later call:
-
-```json
-{
-  "artifacts": [
-    {
-      "artifact_id": "map-rome",
-      "artifact_update_mode": "replace",
-      "artifact_target_id": "map-rome",
-      "type": "html",
-      "title": "Rome itinerary",
-      "html": "<!doctype html>..."
-    }
-  ]
-}
-```
-
-`artifact_update_mode` controls UI behavior: `append` renders a new artifact, `replace`/`update` refresh an existing one, `upsert` replaces when the target exists or appends otherwise. `artifact_target_id` names the existing artifact to refresh; omit it when the target is the returned `artifact_id`. The backend normalizes camelCase aliases (`artifactId`, `artifactTargetId`, `updateMode`, …).
-
-Note: in the chat UI only **one** live preview (iframe/html) is mounted at a time — the newest auto-activates and the rest collapse to click-to-open placeholders, so many previews never pile up live iframes.
 
 ## Composio (optional)
 

@@ -42,9 +42,7 @@ from daisy.runtime.turn_events import ToolCall
 from daisy.runtime.turn_events import ToolResult
 from daisy.runtime.turn_events import TurnEvent
 from daisy.runtime.tools import file_operations as file_tools
-from daisy.runtime.tools.registry import artifact_kind_for
 from daisy.runtime.tools.registry import bash as bash_tool
-from daisy.runtime.tools.registry import build_open_artifact_result
 from daisy.runtime.tools.registry import call_mcp_tool_with_events
 from daisy.runtime.tools.registry import list_mcp_resources as list_mcp_resources_tool
 from daisy.runtime.tools.registry import list_mcp_tools as list_mcp_tools_tool
@@ -609,14 +607,6 @@ class _ToolsMixin:
                 unbind_background_jobs(background_token)
             result_data = _maybe_json(result)
             yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
-            is_background_command = isinstance(result_data, dict) and result_data.get("code") == "bash_started"
-            if resolved_location is not None and not read_only and not is_background_command:
-                # A completed mutating command may have regenerated a file we already
-                # track — restage only the tracked set (cheap; never surveys the folder).
-                self._capture_written_artifacts(
-                    resolved_location, changed_absolute_paths=None, mode="recheck",
-                    tool_call_id=tool_call_identifier, message=f"bash: {raw_command[:80]}",
-                )
             if isinstance(result_data, dict) and result_data.get("code") == "bash_started":
                 job_id = result_data.get("job_id", "")
                 if job_id:
@@ -877,21 +867,7 @@ class _ToolsMixin:
                     # edit_failed_validation or other non-commit codes:
                     # discard stale hash so model must re-read before next edit
                     self._read_files.pop(file_key, None)
-                if result_code in ("edit_completed", "write_completed"):
-                    # Version exactly this file. For an edit of a pre-existing file, pass
-                    # its pre-edit bytes (the tool's "before") so the first version we
-                    # keep is the original — the file on disk is already the edited copy.
-                    original_contents = None
-                    before_content = result_data.get("before")
-                    if not result_data.get("created") and isinstance(before_content, str):
-                        original_contents = {resolved: before_content}
-                    self._capture_written_artifacts(
-                        resolved_location, changed_absolute_paths=[resolved],
-                        original_contents=original_contents,
-                        tool_call_id=tool_call_identifier, message=f"{tool_name} {Path(resolved).name}",
-                    )
-            yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data,
-            )
+            yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
         finally:
             self._release_filesystem_lease(lease_token)
 
@@ -1155,80 +1131,6 @@ class _ToolsMixin:
                 "status": ToolStatus.ERROR.value,
                 "message": "Status must be one of 'active', 'satisfied', or 'cleared'.",
             }
-        yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
-
-
-    async def _tool_open_artifact(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
-        resolved_location: ResolvedLocation | None,
-    ) -> AsyncIterator[TurnEvent]:
-        raw_target = str(tool_arguments.get("url", "")).strip()
-        if not raw_target:
-            yield Error(id=tool_call_identifier, tool=tool_name,
-                code="empty_artifact", message="A URL or file path is required to open an artifact.",
-            )
-            return
-        requested_artifact_id = str(tool_arguments.get("artifact_id", "")).strip()
-        requested_height = tool_arguments.get("height", 0)
-        lowered = raw_target.lower()
-
-        if lowered.startswith(("http://", "https://")):
-            # An external URL renders as a live iframe with no version history — only
-            # surface it (no capture). A stable id derived from the URL reuses one tab.
-            artifact_id = requested_artifact_id or self._artifact_surface_id(raw_target)
-            self._capture_written_artifacts(
-                self._resolve_location(None), changed_absolute_paths=[],
-                tool_call_id=tool_call_identifier, message="open_artifact",
-                surface={"surface_id": artifact_id, "kind": "iframe", "title": raw_target, "source": raw_target, "absolute_path": ""},
-            )
-            result = build_open_artifact_result(
-                artifact_id=artifact_id, kind="iframe", title=raw_target, source=raw_target,
-                url=raw_target, height=requested_height,
-            )
-            yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
-            return
-
-        # A local (or remote) file path, resolved against a location. Capture the file
-        # as a version and surface it as a tab; its history is served from the shadow repo.
-        location_value = tool_arguments.get("location", None) or None
-        try:
-            resolved_location = self._resolve_location(location_value)
-        except ToolLocationError as exception:
-            yield Error(id=tool_call_identifier, tool=tool_name, code="invalid_location", message=str(exception))
-            return
-        candidate = raw_target[len("file://"):] if lowered.startswith("file://") else raw_target
-        resolved_path = await asyncio.to_thread(resolved_location.executor.resolve, resolved_location.base_directory, candidate)
-        if not await asyncio.to_thread(resolved_location.executor.exists, resolved_path):
-            yield Error(id=tool_call_identifier, tool=tool_name,
-                code="artifact_file_not_found",
-                message=f"No file to open at {resolved_path}. Write the file first, then open it.",
-            )
-            return
-        kind = artifact_kind_for(resolved_path)
-        if kind == "file":
-            # A code or text file has no visual form, so opening it as an artifact would just
-            # show an empty panel. The artifacts panel is a preview surface; keep it for
-            # things that render.
-            yield Error(id=tool_call_identifier, tool=tool_name,
-                code="artifact_not_previewable",
-                message=self._prompt_loader.load(
-                    "artifact_not_previewable", {"file_name": Path(resolved_path).name},
-                ).strip(),
-            )
-            return
-        display_title = Path(resolved_path).name or resolved_path
-        artifact_id = requested_artifact_id or self._artifact_surface_id(f"{resolved_location.uri}:{resolved_path}")
-        self._capture_written_artifacts(
-            resolved_location, changed_absolute_paths=[resolved_path],
-            tool_call_id=tool_call_identifier, message=f"open_artifact {display_title}",
-            surface={"surface_id": artifact_id, "kind": kind, "title": display_title, "source": resolved_path, "absolute_path": resolved_path},
-        )
-        result = build_open_artifact_result(
-            artifact_id=artifact_id, kind=kind, title=display_title, source=resolved_path,
-            location_uri=resolved_location.uri, absolute_path=resolved_path,
-            height=requested_height,
-        )
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
 
 

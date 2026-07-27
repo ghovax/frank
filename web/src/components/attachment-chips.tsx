@@ -4,12 +4,10 @@ import { Box, Button, Dialog, Flex, IconButton, Image, Link, Portal, Span, Text 
 import { useTranslations } from "next-intl";
 import { useState, type ReactNode } from "react";
 import { LuExternalLink, LuMousePointerClick, LuX } from "react-icons/lu";
-import { artifactPageUrl } from "@/lib/api";
+import { localFileUrl } from "@/lib/api";
 import { iconForFilePath } from "@/lib/file-icons";
-import { imageIdentityForArtifact, type ArtifactAnnotationRecord, type ArtifactImageAnnotation } from "@/lib/artifact-annotations";
 import type { MessageAttachment } from "@/lib/use-chat";
 import { PdfDocumentView, PdfThumbnail } from "./pdf-view";
-import { ArtifactView } from "./tool-views";
 import { InlineField } from "./ui/display";
 import { Tooltip } from "./ui/tooltip";
 import { Frame } from "./ui/semantic";
@@ -43,61 +41,9 @@ function formatFileSize(bytes: number): string {
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unitIndex]}`;
 }
 
-// The user-facing label for an annotated artifact image: its real file name when known
-// (e.g. "plot.png"), falling back to the artifact title.
-function annotationRecordLabel(record: ArtifactAnnotationRecord): string {
-  return record.image.name || record.image.title;
-}
-
-// A numbered circle marking an image's version — the single, consistent way a version is
-// shown across the app. Just the number, no "v" prefix; filled when it marks the
-// active/selected version. `size="md"` is the prominent form used next to an artifact title.
-export function VersionBadge({ number, active = false, size = "sm" }: { number: number; active?: boolean; size?: "sm" | "md" }) {
-  // A circle for single digits, growing into a stadium/pill for 2+ digits so the number
-  // never looks cramped: minW keeps the round shape, px lets it widen, borderRadius="full"
-  // rounds either shape. Centering is content-flow (align/justify + cap-height trim) instead
-  // of an absolute layer, so the box actually tracks the glyph width.
-  const dimension = size === "md" ? 6 : 5;
-  return (
-    <Span
-      display="inline-flex"
-      alignItems="center"
-      justifyContent="center"
-      flexShrink={0}
-      h={dimension}
-      minW={dimension}
-      px={1.5}
-      borderRadius="full"
-      bg={active ? "blue.solid" : "bg.muted"}
-      color={active ? "white" : "fg.muted"}
-      border="1px solid"
-      borderColor={active ? "blue.solid" : "border"}
-      fontSize={size === "md" ? "xs" : "2xs"}
-      fontWeight="semibold"
-      lineHeight="1"
-      style={{ fontVariantNumeric: "tabular-nums", textBox: "trim-both cap alphabetic" }}
-    >
-      {number}
-    </Span>
-  );
-}
-
-// The pointer-affordance pill shown in an image lightbox header — either the current
-// annotation count or the "click to annotate" hint. One shared unit so all three
-// call sites (both lightboxes) read identically.
-function AnnotationStatusPill({ children }: { children: ReactNode }) {
-  return (
-    <Flex align="center" gap={1.5} px={2} py={1} borderRadius="full" color="fg.muted" fontSize="sm" fontWeight="medium" flexShrink={0} pointerEvents="none">
-      <LuMousePointerClick size={13} />
-      {children}
-    </Flex>
-  );
-}
-
-// A media chip rendered as a vertical card: an enlarged thumbnail fills the top, the
-// file name sits below on its own — no subtitle. Shared by uploaded-file chips and
-// annotated artifact-image chips so both read identically. The name keeps its tail
-// (extension) visible while the middle truncates. `onRemove` adds a corner remove control.
+// One attachment as a chip: a thumbnail (or a file-type icon), its name, and an
+// optional remove control. Shared by the composer and the transcript so a chip looks
+// identical whether it is about to be sent or was sent long ago.
 function MediaChipCard({
   thumbnail,
   filename,
@@ -170,64 +116,17 @@ function MediaChipCard({
   );
 }
 
-function imageArtifactForAnnotationRecord(record: ArtifactAnnotationRecord): Record<string, unknown> {
-  const artifact: Record<string, unknown> = {
-    type: "image",
-    title: record.image.title,
-    artifact_id: record.image.artifactId,
-    version_id: record.image.versionId,
-    name: record.image.name,
-    version_seq: record.image.versionSeq,
-  };
-  if (record.image.source.startsWith("data:image/")) {
-    artifact.data = record.image.source;
-  } else if (/^https?:\/\//i.test(record.image.source)) {
-    artifact.src = record.image.source;
-  } else {
-    artifact.file = record.image.source;
-  }
-  return artifact;
-}
-
-function imageSourceForAnnotationRecord(record: ArtifactAnnotationRecord): string {
-  if (record.image.source.startsWith("data:image/") || /^https?:\/\//i.test(record.image.source)) return record.image.source;
-  return artifactPageUrl(record.image.source);
-}
-
-// The full-size view opened on click. Images render as a contained picture;
-// everything else (PDF, HTML, text) is shown in an iframe pointed at the backend's
-// /artifact-page route — the same route open_artifact artifacts use. PDFs render in the
-// browser's native viewer; the /artifact-page route serves them inline (no attachment
-// disposition), so the iframe displays rather than downloads them.
 function AttachmentLightbox({
   attachment,
-  annotations,
-  onAnnotationsChange,
   onClose,
 }: {
   attachment: MessageAttachment;
-  annotations?: ArtifactImageAnnotation[];
-  onAnnotationsChange?: (annotations: ArtifactImageAnnotation[]) => void;
   onClose: () => void;
 }) {
   const translation = useTranslations("AttachmentChips");
-  const url = artifactPageUrl(attachment.path);
+  const url = localFileUrl(attachment.path);
   const image = isImageAttachment(attachment);
   const pdf = isPdfAttachment(attachment);
-  // Reuse the exact artifact renderer used for tool image artifacts, so an
-  // uploaded image is annotated with the same UI. `file` routes through the same
-  // /artifact-page source as tool artifacts; the derived identity keys the control.
-  const imageArtifact = { type: "image", file: attachment.path, title: attachment.filename, artifact_id: attachment.path };
-  const imageIdentity = image ? imageIdentityForArtifact(imageArtifact) : null;
-  const annotationCount = annotations?.length ?? 0;
-  const annotationsControl = imageIdentity
-    ? {
-        image: imageIdentity,
-        annotations: annotations ?? [],
-        onChange: onAnnotationsChange ?? (() => {}),
-        readOnly: !onAnnotationsChange,
-      }
-    : undefined;
   return (
     <Dialog.Root open onOpenChange={(event) => { if (!event.open) onClose(); }} placement="center" size="cover">
       <Portal>
@@ -236,12 +135,6 @@ function AttachmentLightbox({
           <Dialog.Content maxW="min(1100px, 92vw)" maxH="90vh" overflow="hidden">
             <Dialog.Header display="flex" alignItems="center" gap={2} position="relative">
               <Dialog.Title textStyle="panelTitle" truncate>{attachment.filename}</Dialog.Title>
-              {image && !onAnnotationsChange && annotationCount > 0 ? (
-                <AnnotationStatusPill>{translation("annotationStatus", { count: annotationCount })}</AnnotationStatusPill>
-              ) : null}
-              {image && onAnnotationsChange ? (
-                <AnnotationStatusPill>{translation("clickToAnnotate")}</AnnotationStatusPill>
-              ) : null}
               <Flex align="center" gap={2} ml="auto">
                 <Link href={url} target="_blank" rel="noreferrer" color="fg.muted" _hover={{ color: "fg" }} title={translation("openInNewTab")}>
                   <LuExternalLink size={14} />
@@ -251,9 +144,7 @@ function AttachmentLightbox({
             </Dialog.Header>
             <Dialog.Body p={0} display="flex" alignItems="center" justifyContent="center" bg="bg.subtle" minH="60vh">
               {image ? (
-                <Box w="100%" h="100%" display="flex" flexDirection="column">
-                  <ArtifactView artifact={imageArtifact} showHeader={false} fillContainer annotationsControl={annotationsControl} />
-                </Box>
+                <Image src={url} alt={attachment.filename} maxW="100%" maxH="90vh" objectFit="contain" />
               ) : pdf ? (
                 <Box w="100%" h="100%">
                   <PdfDocumentView url={url} />
@@ -276,129 +167,12 @@ function AttachmentLightbox({
   );
 }
 
-function ArtifactAnnotationLightbox({ record, onClose }: { record: ArtifactAnnotationRecord; onClose: () => void }) {
-  const translation = useTranslations("AttachmentChips");
-  const imageArtifact = imageArtifactForAnnotationRecord(record);
-  const imageIdentity = imageIdentityForArtifact(imageArtifact) ?? record.image;
-  const link = record.image.source.startsWith("data:image/") ? "" : imageSourceForAnnotationRecord(record);
-  return (
-    <Dialog.Root open onOpenChange={(event) => { if (!event.open) onClose(); }} placement="center" size="cover">
-      <Portal>
-        <Dialog.Backdrop />
-        <Dialog.Positioner>
-          <Dialog.Content maxW="min(1100px, 92vw)" maxH="90vh" overflow="hidden">
-            <Dialog.Header display="flex" alignItems="center" gap={2} position="relative">
-              <Dialog.Title textStyle="panelTitle" truncate>{annotationRecordLabel(record)}</Dialog.Title>
-              <AnnotationStatusPill>{translation("annotationStatus", { count: record.annotations.length })}</AnnotationStatusPill>
-              <Flex align="center" gap={2} ml="auto">
-                {link ? (
-                  <Link href={link} target="_blank" rel="noreferrer" color="fg.muted" _hover={{ color: "fg" }} title={translation("openInNewTab")}>
-                    <LuExternalLink size={14} />
-                  </Link>
-                ) : null}
-                <Dialog.CloseTrigger position="static" />
-              </Flex>
-            </Dialog.Header>
-            <Dialog.Body p={0} display="flex" alignItems="center" justifyContent="center" bg="bg.subtle" minH="60vh">
-              <Box w="100%" h="100%" display="flex" flexDirection="column">
-                <ArtifactView
-                  artifact={imageArtifact}
-                  showHeader={false}
-                  fillContainer
-                  annotationsControl={{
-                    image: imageIdentity,
-                    annotations: record.annotations,
-                    onChange: () => {},
-                    readOnly: true,
-                  }}
-                />
-              </Box>
-            </Dialog.Body>
-          </Dialog.Content>
-        </Dialog.Positioner>
-      </Portal>
-    </Dialog.Root>
-  );
-}
-
-function ArtifactAnnotationChip({ record }: { record: ArtifactAnnotationRecord }) {
-  const translation = useTranslations("AttachmentChips");
-  const [lightboxOpen, setLightboxOpen] = useState(false);
-  const versionNumber = record.image.versionSeq;
-  // The same key/value hover card the artifacts-panel version node uses, so an annotated
-  // image in the composer/transcript reads exactly like a version there.
-  const tooltip = (
-    <Box whiteSpace="nowrap">
-      <Text fontWeight="semibold" mb={1} color="fg" maxW={80} truncate>{annotationRecordLabel(record)}</Text>
-      <Flex direction="column" gap={1}>
-        {versionNumber > 0 && <InlineField label={translation("fieldVersion")}><Text>{versionNumber}</Text></InlineField>}
-        <InlineField label={translation("fieldAnnotations")}><Text>{record.annotations.length}</Text></InlineField>
-      </Flex>
-    </Box>
-  );
-  return (
-    <>
-      <Tooltip
-        content={tooltip}
-        rich
-        openDelay={300}
-        closeDelay={60}
-        positioning={{ placement: "top" }}
-      >
-        <Box flexShrink={0}>
-          <MediaChipCard
-            filename={annotationRecordLabel(record)}
-            onClick={() => setLightboxOpen(true)}
-            // The version this feedback was drawn on, badged next to the file name — the
-            // same numbered badge (and placement) the artifacts panel uses by its title.
-            badge={versionNumber > 0 ? <VersionBadge number={versionNumber} active /> : undefined}
-            thumbnail={
-              <Image
-                src={imageSourceForAnnotationRecord(record)}
-                alt={annotationRecordLabel(record)}
-                w="100%"
-                h="100%"
-                objectFit="cover"
-                objectPosition="top"
-              />
-            }
-          />
-        </Box>
-      </Tooltip>
-      {lightboxOpen ? <ArtifactAnnotationLightbox record={record} onClose={() => setLightboxOpen(false)} /> : null}
-    </>
-  );
-}
-
-export function ArtifactAnnotationChips({ records }: { records: ArtifactAnnotationRecord[] }) {
-  const visibleRecords = records.filter((record) => record.annotations.length > 0);
-  if (visibleRecords.length === 0) return null;
-  return (
-    <Flex gap={2} flexWrap="wrap" justify="flex-end">
-      {visibleRecords.map((record) => (
-        <ArtifactAnnotationChip key={record.image.key} record={record} />
-      ))}
-    </Flex>
-  );
-}
-
-// One attachment chip — the single shared unit rendered BOTH above a user message
-// (read-only) and in the composer's pending strip (removable). A thumbnail (images)
-// or file icon plus the name/size; hover pops the mini thumbnail, click opens the
-// lightbox. Passing `onRemove` adds the composer's remove button (its click never
-// opens the lightbox).
 export function AttachmentChip({
   attachment,
   onRemove,
-  annotations,
-  onAnnotationsChange,
 }: {
   attachment: MessageAttachment;
   onRemove?: () => void;
-  // Image annotations to display; passing `onAnnotationsChange` makes them editable in
-  // the lightbox (composer), omitting it shows them read-only (sent messages).
-  annotations?: ArtifactImageAnnotation[];
-  onAnnotationsChange?: (annotations: ArtifactImageAnnotation[]) => void;
 }) {
   const translation = useTranslations("AttachmentChips");
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -406,24 +180,22 @@ export function AttachmentChip({
   const pdf = isPdfAttachment(attachment);
   const { icon: Icon, iconColor } = iconForFilePath(attachment.filename);
   const thumbnail = image ? (
-    <Image src={artifactPageUrl(attachment.path)} alt={attachment.filename} w="100%" h="100%" objectFit="cover" objectPosition="top" />
+    <Image src={localFileUrl(attachment.path)} alt={attachment.filename} w="100%" h="100%" objectFit="cover" objectPosition="top" />
   ) : pdf ? (
-    <PdfThumbnail url={artifactPageUrl(attachment.path)} width={192} />
+    <PdfThumbnail url={localFileUrl(attachment.path)} width={192} />
   ) : (
     <Box color={iconColor} display="flex" alignItems="center" justifyContent="center">
       <Icon size={40} />
     </Box>
   );
-  const annotationCount = (annotations ?? attachment.annotations)?.length ?? 0;
-  // The same key/value hover card the annotated-image chips (and the git-status indicator)
-  // use — carrying whatever metadata the attachment has.
+  // The same key/value hover card the git-status indicator uses — carrying whatever
+  // metadata the attachment has.
   const tooltip = (
     <Box whiteSpace="nowrap">
       <Text fontWeight="semibold" mb={1} color="fg" maxW={80} truncate>{attachment.filename}</Text>
       <Flex direction="column" gap={1}>
         {attachment.mimeType && <InlineField label={translation("fieldType")}><Text truncate maxW={80}>{attachment.mimeType}</Text></InlineField>}
         {attachment.size > 0 && <InlineField label={translation("fieldSize")}><Text>{formatFileSize(attachment.size)}</Text></InlineField>}
-        {annotationCount > 0 && <InlineField label={translation("fieldAnnotations")}><Text>{annotationCount}</Text></InlineField>}
         {attachment.path && <InlineField label={translation("fieldPath")}><Text truncate maxW={80}>{attachment.path}</Text></InlineField>}
       </Flex>
     </Box>
@@ -447,12 +219,7 @@ export function AttachmentChip({
         </Box>
       </Tooltip>
       {lightboxOpen && (
-        <AttachmentLightbox
-          attachment={attachment}
-          annotations={annotations ?? attachment.annotations}
-          onAnnotationsChange={onAnnotationsChange}
-          onClose={() => setLightboxOpen(false)}
-        />
+        <AttachmentLightbox attachment={attachment} onClose={() => setLightboxOpen(false)} />
       )}
     </>
   );

@@ -22,8 +22,6 @@ import {
   type WorkspaceStrategy,
 } from "./api";
 import { isSameToolEvent, type QuestionAnswer, type QuestionItem, type ToolEvent, type ToolEventStatus, type ToolPermission, type ToolQuestion } from "./tool-event";
-import { artifactImageKey, type ArtifactAnnotationRecord, type ArtifactImageAnnotation } from "./artifact-annotations";
-import type { ArtifactEvent } from "@/components/artifact-bridge";
 import { toaster } from "@/components/ui/toaster";
 import { asArray, asRecord } from "@/lib/coerce";
 import type { WireEvent } from "@/lib/generated/events";
@@ -52,14 +50,13 @@ const TERMINAL_STATES: ReadonlySet<TaskState> = new Set([
 const HISTORY_PAGE_LIMIT = 500;
 
 // A file the user attached to a turn — the metadata needed to render a chip and
-// show it (name, on-disk path served by /artifact-page, mime, size). Carried on the
+// show it (name, on-disk path, mime, size). Carried on the
 // user message's `meta.attachments`, both on the live send and on replay.
 export interface MessageAttachment {
   filename: string;
   path: string;
   mimeType: string;
   size: number;
-  annotations?: ArtifactImageAnnotation[];
 }
 
 // The per-message side data the reducers attach and the views read. Every field is optional and
@@ -80,7 +77,6 @@ export interface MessageMeta {
   messagesBefore?: number;
   messagesAfter?: number;
   durationMs?: number;
-  artifactAnnotationRecords?: ArtifactAnnotationRecord[];
   attachments?: MessageAttachment[];
   // On a `peer` message: which session sent it. The transcript shows a report as coming
   // from somewhere, and "somewhere" has an id.
@@ -123,12 +119,9 @@ export interface TokenUsage {
   contextWindow: number;
 }
 
-// A turn's input: either typed text or a structured artifact interaction. Both
-// drive the same stream; an artifact event travels as a typed DataPart, never as
-// prose, so the agent receives it as structured JSON.
-export type ChatInput =
-  | { kind: "text"; text: string; dataParts?: Record<string, unknown>[] }
-  | { kind: "artifact"; event: ArtifactEvent };
+// A turn's input: typed prose plus any structured payloads, which travel as DataParts
+// so the agent receives them as JSON rather than as prose.
+export type ChatInput = { kind: "text"; text: string; dataParts?: Record<string, unknown>[] };
 
 export interface QueuedMessage {
   id: string;
@@ -229,7 +222,6 @@ function pushErrorMessage(state: ReduceState, error: FriendlyError, sourceId?: s
 
 function streamedMcpResult(data: Record<string, unknown>): Record<string, unknown> {
   const event = asRecord(data.event);
-  const artifacts = Array.isArray(event.artifacts) ? event.artifacts : [];
   return {
     server: data.server ?? event.server,
     tool: data.tool ?? event.tool,
@@ -238,124 +230,31 @@ function streamedMcpResult(data: Record<string, unknown>): Record<string, unknow
     progress: event.progress,
     total: event.total,
     message: event.message,
-    artifacts,
   };
 }
 
+// Each streamed notification is appended to `events` so the card shows the server's
+// progress as it arrives, while the latest values stay at the top level.
 function mergeMcpResult(existing: unknown, streamed: Record<string, unknown>): Record<string, unknown> {
   const current = asRecord(existing);
   const events = Array.isArray(current.events) ? current.events : [];
-  const currentArtifacts = Array.isArray(current.artifacts) ? current.artifacts : [];
-  const streamedArtifacts = Array.isArray(streamed.artifacts) ? streamed.artifacts : [];
   return {
     ...current,
     ...streamed,
     events: [...events, streamed],
-    artifacts: [...currentArtifacts, ...streamedArtifacts],
   };
 }
 
+// The tool's own return value replaces the streamed state, but keeps the notification
+// log that only the stream carried.
 function mergeMcpFinalResult(existing: unknown, finalResult: unknown): unknown {
   const current = asRecord(existing);
   const finalRecord = asRecord(finalResult);
   if (Object.keys(finalRecord).length === 0) return finalResult;
-  const currentArtifacts = Array.isArray(current.artifacts) ? current.artifacts : [];
-  if (currentArtifacts.length === 0 || Array.isArray(finalRecord.artifacts)) return finalResult;
-  return {
-    ...finalRecord,
-    events: current.events,
-    artifacts: currentArtifacts,
-  };
+  if (!Array.isArray(current.events)) return finalResult;
+  return { ...finalRecord, events: current.events };
 }
 
-
-function artifactIdentifier(value: unknown): string {
-  const artifact = asRecord(value);
-  return String(artifact.artifact_id ?? artifact.artifactId ?? artifact.id ?? "").trim();
-}
-
-function artifactTargetIdentifier(value: unknown): string {
-  const artifact = asRecord(value);
-  return String(
-    artifact.artifact_target_id
-      ?? artifact.artifactTargetId
-      ?? artifact.target_artifact_id
-      ?? artifact.targetArtifactId
-      ?? ""
-  ).trim();
-}
-
-function artifactUpdateMode(value: unknown): string {
-  const artifact = asRecord(value);
-  return String(
-    artifact.artifact_update_mode
-      ?? artifact.artifactUpdateMode
-      ?? artifact.update_mode
-      ?? artifact.updateMode
-      ?? "append"
-  ).toLowerCase().trim();
-}
-
-function resultArtifacts(value: unknown): unknown[] {
-  return asArray(asRecord(value).artifacts);
-}
-
-function withResultArtifacts(value: unknown, artifacts: unknown[]): unknown {
-  const record = asRecord(value);
-  if (Object.keys(record).length === 0) return value;
-  return { ...record, artifacts };
-}
-
-function replaceArtifactInResult(result: unknown, targetId: string, nextArtifact: unknown): { result: unknown; replaced: boolean } {
-  const artifacts = resultArtifacts(result);
-  if (artifacts.length === 0) return { result, replaced: false };
-  let replaced = false;
-  const nextArtifacts = artifacts.map((artifact) => {
-    if (artifactIdentifier(artifact) !== targetId) return artifact;
-    replaced = true;
-    return { ...asRecord(artifact), ...asRecord(nextArtifact), artifact_id: artifactIdentifier(nextArtifact) || targetId };
-  });
-  return { result: replaced ? withResultArtifacts(result, nextArtifacts) : result, replaced };
-}
-
-function applyArtifactUpdates(
-  messages: ChatMessage[],
-  result: unknown,
-  currentToolCallId: string
-): { messages: ChatMessage[]; result: unknown } {
-  const artifacts = resultArtifacts(result);
-  if (artifacts.length === 0) return { messages, result };
-
-  let nextMessages = messages;
-  const remainingArtifacts: unknown[] = [];
-
-  for (const artifact of artifacts) {
-    const mode = artifactUpdateMode(artifact);
-    const updateTargetId = artifactTargetIdentifier(artifact) || artifactIdentifier(artifact);
-    if (!updateTargetId || !["replace", "update", "upsert"].includes(mode)) {
-      remainingArtifacts.push(artifact);
-      continue;
-    }
-
-    let didReplace = false;
-    nextMessages = nextMessages.map((message) => {
-      if (didReplace || message.role !== "tool_call" || message.meta?.toolCallId === currentToolCallId) return message;
-      const replacement = replaceArtifactInResult(message.meta?.result, updateTargetId, artifact);
-      if (!replacement.replaced) return message;
-      didReplace = true;
-      return { ...message, meta: { ...message.meta, result: replacement.result } };
-    });
-
-    // No existing artifact matched this target. Whatever the mode, keep the
-    // artifact so it still renders fresh — dropping it (the old behavior for
-    // "replace"/"update") loses the artifact entirely on its first render.
-    if (!didReplace) {
-      remainingArtifacts.push(artifact);
-    }
-  }
-
-  return { messages: nextMessages, result: withResultArtifacts(result, remainingArtifacts) };
-}
 
 // A2A stream reduction — turn agent message parts into chat UI state. Shared by the
 // attach stream and the replay path so both render identically.
@@ -542,8 +441,7 @@ function pushAssistantText(state: ReduceState, text: string, blockIdentifier: st
 // Normalize the attachments carried by an `attachments` data payload into the lean
 // shape the UI renders. Shared by the live send path (the outgoing dataPart) and
 // replay (the persisted user-message data part), so a chip looks identical whether it
-// was just sent or reloaded from history. Any per-image annotations ride along too, so
-// a sent image can display its pins read-only.
+// was just sent or reloaded from history.
 function attachmentsFromData(data: Record<string, unknown> | undefined): MessageAttachment[] {
   if (!data || data.kind !== "attachments") return [];
   const raw = Array.isArray(data.attachments) ? data.attachments : [];
@@ -558,81 +456,17 @@ function attachmentsFromData(data: Record<string, unknown> | undefined): Message
       path,
       mimeType: String(record.mime_type ?? ""),
       size: Number(record.size ?? 0),
-      annotations: Array.isArray(record.annotations) ? (record.annotations as ArtifactImageAnnotation[]) : undefined,
     });
   }
   return attachments;
 }
 
-// The annotations ride along on the message as the model-facing `annotationsPayload`
-// shape (`position.x_ratio` / `image_size`), not the `ArtifactImageAnnotation` shape the
-// renderer positions markers from. Map them back so the pins land on the image instead of
-// collapsing at 0,0. Tolerates an already-mapped annotation too (reload/round-trip).
-function artifactImageAnnotationFromPayload(raw: unknown): ArtifactImageAnnotation {
-  const record = asRecord(raw);
-  const position = asRecord(record.position);
-  const size = asRecord(record.image_size);
-  const number = (value: unknown): number => (typeof value === "number" ? value : Number(value) || 0);
-  const xRatio = number(record.xRatio ?? position.x_ratio ?? number(position.x) / 999);
-  const yRatio = number(record.yRatio ?? position.y_ratio ?? number(position.y) / 999);
-  const imageWidth = number(record.imageWidth ?? size.width);
-  const imageHeight = number(record.imageHeight ?? size.height);
-  return {
-    id: String(record.id ?? ""),
-    sequence: number(record.sequence),
-    x: number(record.x ?? Math.round(xRatio * imageWidth)),
-    y: number(record.y ?? Math.round(yRatio * imageHeight)),
-    xRatio,
-    yRatio,
-    imageWidth,
-    imageHeight,
-    comment: String(record.comment ?? ""),
-    createdAt: String(record.createdAt ?? record.created_at ?? ""),
-    updatedAt: String(record.updatedAt ?? record.updated_at ?? ""),
-  };
-}
-
-function artifactAnnotationRecordFromData(data: Record<string, unknown> | undefined): ArtifactAnnotationRecord | null {
-  if (!data || data.kind !== "artifact_image_annotations") return null;
-  const image = asRecord(data.image);
-  const annotations = Array.isArray(data.annotations) ? data.annotations.map(artifactImageAnnotationFromPayload) : [];
-  const artifactId = String(image.artifact_id ?? image.artifactId ?? "");
-  const versionId = String(image.version_id ?? image.versionId ?? "");
-  if ((!artifactId || !versionId) || annotations.length === 0) return null;
-  const versionSeqRaw = image.version_seq ?? image.versionSeq;
-  return {
-    image: {
-      key: String(image.key ?? artifactImageKey(artifactId, versionId)),
-      artifactId,
-      versionId,
-      title: String(image.title ?? "Image"),
-      source: String(image.source ?? ""),
-      name: String(image.name ?? ""),
-      versionSeq: typeof versionSeqRaw === "number" ? versionSeqRaw : Number(versionSeqRaw) || 0,
-    },
-    annotations,
-    updatedAt: String(data.updatedAt ?? data.updated_at ?? new Date().toISOString()),
-  };
-}
-
-// The attachments carried on a whole message's parts (replay path — the persisted
-// user message keeps its attachments DataPart alongside the text part).
 function attachmentsFromMessage(message: A2AMessage): MessageAttachment[] {
   const attachments: MessageAttachment[] = [];
   for (const part of message.parts ?? []) {
     if (part.kind === "data") attachments.push(...attachmentsFromData(partPayload(part.data)));
   }
   return attachments;
-}
-
-function artifactAnnotationRecordsFromMessage(message: A2AMessage): ArtifactAnnotationRecord[] {
-  const records: ArtifactAnnotationRecord[] = [];
-  for (const part of message.parts ?? []) {
-    if (part.kind !== "data") continue;
-    const record = artifactAnnotationRecordFromData(partPayload(part.data));
-    if (record) records.push(record);
-  }
-  return records;
 }
 
 // A message a session received from outside itself: the user typed it, or another session
@@ -642,18 +476,15 @@ function artifactAnnotationRecordsFromMessage(message: A2AMessage): ArtifactAnno
 function reduceInboundMessage(state: ReduceState, message: A2AMessage, peerSender = ""): void {
   const text = (message.parts ?? []).filter((part) => part.kind === "text").map((part) => part.text ?? "").join("");
   const attachments = attachmentsFromMessage(message);
-  const artifactAnnotationRecords = artifactAnnotationRecordsFromMessage(message);
-  // A user-role message with no visible prose AND no attachments is a silent
-  // artifact interaction (the user clicked something in an artifact; the payload is a
-  // data part, not text). The live path renders nothing for these, so replay must
-  // match — never a blank bubble. (Autonomous background-resume wakes are
-  // agent-authored, not user messages, so they never reach this path at all.) A
-  // typed user turn always carries prose; an attachment-only turn carries chips.
-  if (!text.trim() && attachments.length === 0 && artifactAnnotationRecords.length === 0) return;
+  // A user-role message with no visible prose AND no attachments carries nothing to
+  // render. The live path renders nothing for these, so replay must match — never a
+  // blank bubble. (Autonomous background-resume wakes are agent-authored, not user
+  // messages, so they never reach this path at all.) A typed user turn always carries
+  // prose; an attachment-only turn carries chips.
+  if (!text.trim() && attachments.length === 0) return;
   state.lane = null;
   const meta = {
     ...(attachments.length > 0 ? { attachments } : {}),
-    ...(artifactAnnotationRecords.length > 0 ? { artifactAnnotationRecords } : {}),
     ...(peerSender ? { peerSender } : {}),
   };
   state.messages = [
@@ -825,16 +656,15 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       const toolCallId = event.tool_call_id;
       const currentMessage = state.messages.find((message) => messageMatchesToolEvent(message, toolName, toolCallId));
       const mergedResult = toolName === "call_mcp_tool" ? mergeMcpFinalResult(currentMessage?.meta?.result, event.display) : event.display;
-      const artifactUpdate = applyArtifactUpdates(state.messages, mergedResult, toolCallId);
       const resultStatus = statusFromWire(event.status);
       // set_tasks / update_tasks complete through this same universal path and carry
       // the authoritative task list for the side panel inside their result.
-      const resultTasks = asRecord(artifactUpdate.result).tasks;
+      const resultTasks = asRecord(mergedResult).tasks;
       if (Array.isArray(resultTasks)) state.tasks = mergeTasks(state.tasks, resultTasks);
       let matched = false;
-      state.messages = artifactUpdate.messages.map((message) =>
+      state.messages = state.messages.map((message) =>
         messageMatchesToolEvent(message, toolName, toolCallId)
-          ? (matched = true, { ...message, meta: { ...message.meta, status: resultStatus, result: artifactUpdate.result } })
+          ? (matched = true, { ...message, meta: { ...message.meta, status: resultStatus, result: mergedResult } })
           : message
       );
       if (!matched) {
@@ -845,7 +675,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
             role: "tool_call",
             content: toolName || "unknown",
             timestamp: new Date().toISOString(),
-            meta: { toolCallId, status: resultStatus, result: artifactUpdate.result },
+            meta: { toolCallId, status: resultStatus, result: mergedResult },
           },
         ];
       }
@@ -856,10 +686,9 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       const streamed = streamedMcpResult(data);
       const currentMessage = state.messages.find((message) => messageMatchesToolEvent(message, "call_mcp_tool", toolCallId));
       const mergedResult = mergeMcpResult(currentMessage?.meta?.result, streamed);
-      const artifactUpdate = applyArtifactUpdates(state.messages, mergedResult, toolCallId);
-      state.messages = artifactUpdate.messages.map((message) =>
+      state.messages = state.messages.map((message) =>
         messageMatchesToolEvent(message, "call_mcp_tool", toolCallId)
-          ? { ...message, meta: { ...message.meta, status: "running", result: artifactUpdate.result } }
+          ? { ...message, meta: { ...message.meta, status: "running", result: mergedResult } }
           : message
       );
       break;
@@ -1054,13 +883,6 @@ export function useChat(
   const hasOlderHistoryRef = useRef(false);
   const isOlderHistoryLoadingRef = useRef(false);
   const queuedMessagesRef = useRef<QueuedMessage[]>([]);
-  // Artifact interactions that arrived mid-turn wait here and drain after the
-  // current stream finishes. Kept separate from the user-visible text queue.
-  const queuedArtifactEventsRef = useRef<ArtifactEvent[]>([]);
-  // Render errors fire automatically when an artifact mounts, so a broken artifact
-  // (including on session replay) must not start the same turn twice. Tracked by
-  // artifact + message; user-driven events (clicks) are never deduped.
-  const seenRenderErrorsRef = useRef<Set<string>>(new Set());
   const isStreamingRef = useRef(false);
   // Set by a user Stop so the imminent stream-close does not auto-drain the queue
   // into a fresh turn — which read as "Stop didn't stop it". Queued messages are
@@ -1380,48 +1202,29 @@ export function useChat(
 
   const runStream = useCallback(
     (input: ChatInput) => {
-      // Optimistic input message + reset the open prose lane. Artifact events are
-      // delivered to the model but never shown as a chat entry (an error is the
-      // model's own realization; an interaction is silent), so only text appears.
+      // Optimistic input message + reset the open prose lane.
       stateRef.current.lane = null;
       const userMessageId = crypto.randomUUID();
-      if (input.kind === "text") {
-        const dataParts = input.dataParts ?? [];
-        const attachments = dataParts.flatMap((dataPart) => attachmentsFromData(dataPart));
-        const artifactAnnotationRecords = dataParts
-          .map((dataPart) => artifactAnnotationRecordFromData(dataPart))
-          .filter((record): record is ArtifactAnnotationRecord => Boolean(record));
-        const meta = {
-          ...(attachments.length > 0 ? { attachments } : {}),
-          ...(artifactAnnotationRecords.length > 0 ? { artifactAnnotationRecords } : {}),
-        };
-        stateRef.current.messages = [
-          ...stateRef.current.messages,
-          {
-            id: stableMessageId(stateRef.current, "user", userMessageId),
-            role: "user",
-            content: input.text,
-            timestamp: new Date().toISOString(),
-            ...(Object.keys(meta).length > 0 ? { meta } : {}),
-          },
-        ];
-        flush();
-      }
+      const dataParts = input.dataParts ?? [];
+      const attachments = dataParts.flatMap((dataPart) => attachmentsFromData(dataPart));
+      const meta = attachments.length > 0 ? { attachments } : {};
+      stateRef.current.messages = [
+        ...stateRef.current.messages,
+        {
+          id: stableMessageId(stateRef.current, "user", userMessageId),
+          role: "user",
+          content: input.text,
+          timestamp: new Date().toISOString(),
+          ...(Object.keys(meta).length > 0 ? { meta } : {}),
+        },
+      ];
+      flush();
 
       isStreamingRef.current = true;
       streamedLocallyRef.current = true;
       setIsStreaming(true);
 
-      const text = input.kind === "text" ? input.text : "";
-      const dataParts = input.kind === "artifact"
-        ? [{
-            kind: "artifact_event",
-            artifactId: input.event.artifactId,
-            title: input.event.title,
-            event: input.event.event,
-            data: input.event.data,
-          }]
-        : input.dataParts;
+      const text = input.text;
 
       const finishTurn = () => {
         stateRef.current.lane = null;
@@ -1440,7 +1243,6 @@ export function useChat(
         const pendingText = queuedMessagesRef.current.filter((message) => !message.steering);
         if (pendingText.length !== queuedMessagesRef.current.length) setQueue(pendingText);
         flush();
-        const pendingArtifact = queuedArtifactEventsRef.current;
         // A user Stop closes the stream; do not immediately relaunch a queued
         // message as a new turn — that is exactly the "Stop didn't stop" symptom.
         // Consume the one-shot flag and fall through to idle, leaving the queue for
@@ -1451,10 +1253,6 @@ export function useChat(
           const next = pendingText[0];
           setQueue(queuedMessagesRef.current.filter((message) => message.id !== next.id));
           runStreamRef.current({ kind: "text", text: next.text, dataParts: next.dataParts });
-        } else if (!abortedByUser && pendingArtifact.length > 0) {
-          const [next, ...rest] = pendingArtifact;
-          queuedArtifactEventsRef.current = rest;
-          runStreamRef.current({ kind: "artifact", event: next });
         } else {
           isStreamingRef.current = false;
           setIsStreaming(false);
@@ -1558,27 +1356,6 @@ export function useChat(
       return Promise.resolve();
     },
     [runStream, setQueue]
-  );
-
-  // A rendered artifact posted an interaction. Deliver it as a structured turn,
-  // queueing behind the active stream if one is running.
-  const sendArtifactEvent = useCallback(
-    (event: ArtifactEvent) => {
-      if (event.event === "render_error") {
-        const message = typeof (event.data as { message?: unknown })?.message === "string"
-          ? (event.data as { message: string }).message
-          : JSON.stringify(event.data);
-        const signature = `${event.artifactId}|${message}`;
-        if (seenRenderErrorsRef.current.has(signature)) return;
-        seenRenderErrorsRef.current.add(signature);
-      }
-      if (isStreamingRef.current) {
-        queuedArtifactEventsRef.current = [...queuedArtifactEventsRef.current, event];
-        return;
-      }
-      runStream({ kind: "artifact", event });
-    },
-    [runStream]
   );
 
   // Settle a stuck prompt card and tell the user when their decision/answer could
@@ -1823,7 +1600,6 @@ export function useChat(
     isOlderHistoryLoading,
     reloadHistory,
     send,
-    sendArtifactEvent,
     abort,
     abortTool,
     compact,

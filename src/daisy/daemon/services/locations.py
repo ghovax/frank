@@ -1,5 +1,5 @@
 """Location domain: the location/project serialization and session-location resolution
-primitives shared by the artifacts and projects services."""
+primitives shared by the projects service."""
 
 from __future__ import annotations
 

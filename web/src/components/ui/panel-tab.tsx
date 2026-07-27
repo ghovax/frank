@@ -14,9 +14,9 @@ export const PANEL_TAB_HEIGHT = "32px";
 // counter tooltip so every panel's tab tooltips read identically.
 const PANEL_TAB_TOOLTIP_PROPS = { p: 3, bg: "bg", color: "fg", borderRadius: "md", boxShadow: "lg", border: "1px solid", borderColor: "border" } as const;
 
-// A single selectable tab in a panel's top strip. One implementation shared by the
-// Artifacts panel and the terminal panel so they look and behave identically and can never
-// drift apart in height or styling. Pass `tooltip` for a rich hover card (built by the
+// A single selectable tab in a panel's top strip. One implementation shared by every
+// panel that has tabs, so they look and behave identically and can never drift apart in
+// height or styling. Pass `tooltip` for a rich hover card (built by the
 // caller, styled here) — the same affordance every panel's tabs get for free.
 export function PanelTab({
   icon,

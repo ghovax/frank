@@ -1,4 +1,3 @@
-import type { ArtifactAnnotationRecord, ArtifactImageAnnotation } from "./artifact-annotations";
 
 // Where the daemon lives, and what proves we may talk to it. The CLI and agents reach
 // `daisyd` over its unix socket, but a webview has no such transport, so the daemon also
@@ -292,42 +291,16 @@ export function invalidateDiscoveryCache(): void {
   discoveryCache.clear();
 }
 
-// The URL that serves a file (and its sibling assets) for an `open_artifact` artifact —
-// the backend `/artifact-page/<abs path>` route reads the file and, for HTML, injects the
-// artifact runtime. Each path segment is encoded but the slashes are kept, so relative
-// assets inside a rendered page still resolve.
-//
-// When the file lives on a REMOTE location, its session + location ride in a sentinel
-// first path segment (`@ctx=<base64url>`) so the backend reads through that location's
-// executor — and, crucially, so a page's relative assets (which drop a query string but
-// keep the path prefix) inherit the same remote context. Local files omit it.
-export function artifactPageUrl(path: string, context?: { location?: string; session?: string }): string {
-  const normalized = path.replace(/^\/+/, "");
-  if (!normalized) return "";
-  const encoded = normalized.split("/").map(encodeURIComponent).join("/");
-  const location = context?.location ?? "";
-  // Only a genuinely remote location needs executor-backed serving; a local file is read
-  // straight off disk (the fast FileResponse path, with range support for PDFs).
-  if (location.startsWith("ssh://")) {
-    const payload = JSON.stringify({ s: context?.session ?? "", l: location });
-    const token = btoa(payload).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    return withDaemonToken(`${API_BASE}/artifact-page/@ctx=${token}/${encoded}`);
-  }
-  return withDaemonToken(`${API_BASE}/artifact-page/${encoded}`);
+// The URL that serves a local file for display — an attached image's thumbnail, a PDF
+// preview. Each path segment is encoded but the slashes are kept, so the path survives
+// intact. Carries the daemon token like every other request from the interface.
+export function localFileUrl(path: string): string {
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
+  return withDaemonToken(`${API_BASE}/files/${encoded}`);
 }
 
-// The URL that renders an external page. It is fetched and re-served from the
-// backend `/artifact-proxy` route with anti-framing headers (X-Frame-Options /
-// CSP frame-ancestors) stripped — otherwise sites that refuse to be framed (the
-// BBC, most news sites) render as a blank, blocked frame.
-export function artifactProxyUrl(url: string): string {
-  if (!url) return "";
-  return withDaemonToken(`${API_BASE}/artifact-proxy?url=${encodeURIComponent(url)}`);
-}
-
-// A generic uploaded file. Feature-agnostic: the core knows only the stored file and
-// its metadata, plus any image annotations the user has drawn (carried along to the
-// model when the message is sent). Skills layer their own meaning on top separately.
+// A generic uploaded file. Feature-agnostic: the core knows only the stored file and its
+// metadata. Skills layer their own meaning on top separately.
 export interface Attachment {
   upload_id: string;
   title: string;
@@ -336,7 +309,6 @@ export interface Attachment {
   mime_type: string;
   size: number;
   sha256: string;
-  annotations?: ArtifactImageAnnotation[];
 }
 
 export async function uploadFile(file: File): Promise<Attachment> {
@@ -924,182 +896,6 @@ export async function signOutChatGPT(): Promise<void> {
   await apiFetch(`/auth/chatgpt`, { method: "DELETE" });
 }
 
-export async function fetchArtifactAnnotations(contextId: string): Promise<ArtifactAnnotationRecord[]> {
-  if (!contextId) return [];
-  const response = await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifact-annotations`);
-  if (!response.ok) return [];
-  const data = await response.json();
-  return Array.isArray(data.records) ? data.records as ArtifactAnnotationRecord[] : [];
-}
-
-export async function saveArtifactAnnotations(contextId: string, record: ArtifactAnnotationRecord): Promise<void> {
-  if (!contextId) return;
-  await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifact-annotations`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      surface_id: record.image.artifactId,
-      version_id: record.image.versionId,
-      annotations: record.annotations,
-      updated_at: record.updatedAt,
-    }),
-  });
-}
-
-export async function deleteArtifactAnnotations(contextId: string, surfaceId: string, versionId: string): Promise<void> {
-  if (!contextId || !surfaceId || !versionId) return;
-  const query = `surface_id=${encodeURIComponent(surfaceId)}&version_id=${encodeURIComponent(versionId)}`;
-  await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifact-annotations?${query}`, {
-    method: "DELETE",
-  });
-}
-
-// The change kind a version records against its predecessor: added, modified, or deleted.
-export type ArtifactChangeType = "A" | "M" | "D";
-
-// A version's byte source is a git blob (a file version) identified by
-// `(locationUri, gitDirectory, blobSha)`, streamed from the backend. `download`
-// sets an attachment Content-Disposition so the browser saves rather than renders.
-export function artifactBytesUrl(options: {
-  location: string;
-  gitDirectory: string;
-  sha: string;
-  session: string;
-  download?: string;
-}): string {
-  const params = new URLSearchParams();
-  params.set("location", options.location);
-  params.set("git_directory", options.gitDirectory);
-  params.set("sha", options.sha);
-  params.set("session", options.session);
-  if (options.download) params.set("download", options.download);
-  return withDaemonToken(`${API_BASE}/artifact-bytes?${params.toString()}`);
-}
-
-// The whole artifact catalog for a session: the file-history index (every changed
-// file, for History mode) plus the surfaces the agent explicitly opened as tabs.
-// `scope` = "session" limits to this session's writes; "full" spans all sessions.
-export interface ArtifactIndexEntry {
-  gitDirectory: string;
-  relativePath: string;
-  absolutePath: string;
-  locationUri: string;
-  workTree: string;
-  versionCount: number;
-  latestCommit: string;
-  latestBlob: string;
-  latestChange: ArtifactChangeType;
-  size: number;
-  isPlaceholder: boolean;
-  updatedAt: string;
-  surfaced: boolean;
-  kind: "image" | "html" | "file";
-  artifactId: string;
-  title: string;
-}
-
-export interface ArtifactSurface {
-  artifactId: string;
-  kind: "image" | "html" | "iframe" | "file";
-  title: string;
-  source: string;
-  gitDirectory: string;
-  workTree: string;
-  relativePath: string;
-  absolutePath: string;
-  locationUri: string;
-  latestCommit: string;
-  latestBlob: string;
-  toolCallId: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ArtifactVersion {
-  versionId: string;
-  commitSha: string;
-  blobSha: string;
-  sequence: number;
-  changeType: ArtifactChangeType;
-  size: number;
-  isPlaceholder: boolean;
-  createdAt: string;
-  message: string;
-  toolCallId: string;
-  gitDirectory: string;
-  relativePath: string;
-  locationUri: string;
-  workTree: string;
-  annotationCount: number;
-}
-
-export type ArtifactScope = "session" | "full";
-
-export async function fetchArtifacts(
-  contextId: string,
-  scope: ArtifactScope = "session",
-): Promise<{ artifacts: ArtifactIndexEntry[]; surfaces: ArtifactSurface[] }> {
-  if (!contextId) return { artifacts: [], surfaces: [] };
-  const response = await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifacts?scope=${scope}`);
-  if (!response.ok) return { artifacts: [], surfaces: [] };
-  const data = await response.json();
-  return {
-    artifacts: Array.isArray(data.artifacts) ? (data.artifacts as ArtifactIndexEntry[]) : [],
-    surfaces: Array.isArray(data.surfaces) ? (data.surfaces as ArtifactSurface[]) : [],
-  };
-}
-
-export async function fetchArtifactVersions(
-  contextId: string,
-  gitDirectory: string,
-  relativePath: string,
-  scope: ArtifactScope = "session",
-): Promise<ArtifactVersion[]> {
-  if (!contextId || !relativePath) return [];
-  const params = new URLSearchParams({ git_directory: gitDirectory, relative_path: relativePath, scope });
-  const response = await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifacts/versions?${params.toString()}`);
-  if (!response.ok) return [];
-  const data = await response.json();
-  return Array.isArray(data.versions) ? (data.versions as ArtifactVersion[]) : [];
-}
-
-export async function fetchArtifactDiff(
-  contextId: string,
-  options: { gitDirectory: string; relativePath: string; fromCommit: string; toCommit: string; location: string },
-): Promise<string> {
-  if (!contextId) return "";
-  const params = new URLSearchParams({
-    git_directory: options.gitDirectory,
-    relative_path: options.relativePath,
-    from_commit: options.fromCommit,
-    to_commit: options.toCommit,
-    location: options.location,
-  });
-  const response = await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifacts/diff?${params.toString()}`);
-  if (!response.ok) return "";
-  const data = await response.json();
-  return String(data.diff ?? "");
-}
-
-export async function restoreArtifact(
-  contextId: string,
-  options: { locationUri: string; gitDirectory: string; workTree: string; relativePath: string; commitSha: string },
-): Promise<boolean> {
-  if (!contextId) return false;
-  const response = await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifacts/restore`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      location_uri: options.locationUri,
-      git_directory: options.gitDirectory,
-      work_tree: options.workTree,
-      relative_path: options.relativePath,
-      commit_sha: options.commitSha,
-    }),
-  });
-  return response.ok;
-}
-
 export type SandboxEnforce = "required" | "preferred" | "off";
 
 export interface SandboxSettings {
@@ -1337,9 +1133,8 @@ export async function sessionSend(
   return data.task_id ?? "";
 }
 
-// The parts a turn carries: the typed prose plus any structured payloads (attachments,
-// artifact interactions, image annotations), which travel as DataParts so the agent
-// receives them as JSON rather than as prose.
+// The parts a turn carries: the typed prose plus any structured payloads (attachments),
+// which travel as DataParts so the agent receives them as JSON rather than as prose.
 export function messageParts(text: string, dataParts?: Record<string, unknown>[]): A2APart[] {
   const parts: A2APart[] = [];
   if (text) parts.push({ kind: "text", text });

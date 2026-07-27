@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 from fastapi import APIRouter
-from daisy.daemon.persistence.database import SessionRecord
 from fastapi import HTTPException
 from daisy.locations.executor import SshExecutor
 from daisy.locations.resolver import host_is_defined
 from pathlib import Path
-from typing import cast
 import asyncio
 from daisy.protocol.dtos import (
     LocationInput,
@@ -16,7 +14,6 @@ from daisy.protocol.dtos import (
 from daisy.daemon.services import projects as _projects
 from daisy.daemon import state
 from daisy.daemon.services.broadcast import _publish_broadcast
-from daisy.daemon.persistence.artifacts import _prune_session_artifacts
 from daisy.daemon.services.projects import _create_location, _create_project, _delete_location, _delete_project, _hosts_payload, _project_name, _project_payload, _projects_payload, _update_location
 
 router = APIRouter()
@@ -81,20 +78,6 @@ async def delete_project(project_id: str):
     # deleted — that would leave an empty state the redesigned app no longer has.
     if await asyncio.to_thread(_projects._project_count) <= 1:
         raise HTTPException(status_code=400, detail="Can't delete the only project.")
-    # Prune each session's artifact versions (shadow-git branches + index rows) while its
-    # locations are still resolvable, then delete the project and its rows.
-    def _session_ids() -> list[str]:
-        assert state.session_factory is not None
-        database_session = state.session_factory()
-        try:
-            return [
-                cast(str, row.id)
-                for row in database_session.query(SessionRecord.id).filter(SessionRecord.project_id == project_id)
-            ]
-        finally:
-            database_session.close()
-    for session_id in await asyncio.to_thread(_session_ids):
-        await asyncio.to_thread(_prune_session_artifacts, session_id)
     deleted = await asyncio.to_thread(_delete_project, project_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Project not found.")

@@ -16,10 +16,10 @@ import importlib
 from fastapi import FastAPI
 
 # Imported by name rather than bound into this module's namespace: several route modules
-# share a name with something else in scope (`artifacts`, `sessions`, `settings`), and a
-# plain `from .routes import settings` would shadow it.
+# share a name with something else in scope (`sessions`, `settings`), and a plain
+# `from .routes import settings` would shadow it.
 ROUTE_MODULES = (
-    "agents", "artifacts", "filesystem", "mcp",
+    "agents", "filesystem", "mcp",
     "projects", "remote_agents", "sessions", "settings", "terminals", "uploads",
 )
 

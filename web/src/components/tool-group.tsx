@@ -103,8 +103,6 @@ function extractFileChanges(tools: ToolEvent[]): FileChange[] {
 
 interface ToolGroupProps {
   tools: ToolEvent[];
-  activeArtifactId?: string | null;
-  onActivateArtifact?: (toolCallId: string) => void;
   // When true, the group stays expanded even after all calls complete — used by
   // the chat timeline to keep the latest group open until the assistant's text
   // response actually arrives, rather than collapsing the instant tools finish.
@@ -113,8 +111,6 @@ interface ToolGroupProps {
 
 export const ToolGroup = memo(function ToolGroup({
   tools,
-  activeArtifactId,
-  onActivateArtifact,
   keepOpen = false,
 }: ToolGroupProps) {
   const translation = useTranslations("ToolGroup");
@@ -291,8 +287,6 @@ export const ToolGroup = memo(function ToolGroup({
                 status={tool.status}
                 permission={tool.permission}
                 question={tool.question}
-                activeArtifactId={activeArtifactId}
-                onActivateArtifact={onActivateArtifact}
               />
             ))}
           </Flex>

@@ -219,12 +219,6 @@ class _TurnLoopMixin:
             "error": invalid.get("error") or "arguments could not be parsed",
         })
 
-    def artifact_render_error_note(self, payload: str) -> str:
-        """Frame an artifact render failure as a behind-the-scenes self-realization
-        note (injected as a harness note, not user input) the model repairs. The
-        raw error rides along as its JSON payload, intact."""
-        return self._prompt_loader.load("artifact_render_error", {"payload": payload})
-
     def _close_dangling_tool_calls(self) -> None:
         """If the conversation ends with a tool-call AIMessage that has no ToolMessages —
         a turn that suspended at input-required and was superseded by a new message rather
@@ -298,10 +292,10 @@ class _TurnLoopMixin:
             # multimodal content list (a text block plus one image_url block per
             # attached image) so a vision model actually sees the pixels. LangChain's
             # HumanMessage accepts either, and the model adapter passes the content
-            # straight through to the provider. A self-realization note (e.g. an artifact
-            # render error) enters as a <systemReminder> harness note so the model
-            # treats it as its own observation, not as something the user said — in a
-            # user-role message so the append stays cache-safe (_harness_note_message).
+            # straight through to the provider. A harness-initiated turn (an autonomous
+            # wake, a report reminder) enters as a <systemReminder> harness note so the
+            # model treats it as its own observation, not as something the user said — in
+            # a user-role message so the append stays cache-safe (_harness_note_message).
             turn_message = (
                 self._harness_note_message(user_message)
                 if as_system_note and isinstance(user_message, str)

@@ -296,8 +296,8 @@ export function BackgroundJobsPanel({
 
       <Box flex={1} minH={0} position="relative" overflow="hidden">
         <Flex position="absolute" inset={0} direction="column" visibility={activeView === "terminal" ? "visible" : "hidden"}>
-          {/* Terminal tabs — the shared PanelTab (identical to the Artifacts panel's tabs),
-              plus a "＋" to spawn a new terminal and the location switcher, all at one height. */}
+          {/* Terminal tabs — the shared PanelTab, plus a "＋" to spawn a new terminal and
+              the location switcher, all at one height. */}
           <Flex px={4} py={2} overflowX="auto" flexShrink={0}>
             <Flex gap={1.5} align="center">
               {terminals.map((key, index) => {

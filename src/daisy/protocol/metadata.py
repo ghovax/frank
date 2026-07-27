@@ -16,10 +16,6 @@ DAISY_METADATA_KEY = "urn:daisy:ext:turn:v1"
 # DataPart discriminator: every structured part declares its kind in `data.kind`.
 PART_KIND = "kind"
 
-# A user turn whose input is an artifact interaction carries it as a DataPart of this kind
-# rather than as prose, so the payload reaches the model intact.
-ARTIFACT_EVENT_KIND = "artifact_event"
-
 # Opens an on-demand compaction turn. It runs no model turn — it summarizes older history
 # and emits the compaction parts — so it is modelled like an autonomous wake.
 COMPACTION_KIND = "compaction_request"

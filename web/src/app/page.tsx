@@ -734,7 +734,7 @@ function ProjectWorkspace() {
   return (
     // Floating-panel shell: the chat is the base surface — plain white (bg) that fills the
     // whole window; only the SIDE panels are elevated cards. The sessions sidebar here — and
-    // the agents/artifacts/terminal panels inside ChatPanel — carry their own bg.panel +
+    // the agents/terminal panels inside ChatPanel — carry their own bg.panel +
     // border + shadow and inset themselves with a small margin so they read as floating above
     // the chat rather than being co-equal boxes. On white-on-white (light mode) it's the
     // shadow that makes the cards lift, so they use a soft md elevation. The top inset is the
