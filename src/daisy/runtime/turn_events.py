@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, ClassVar, Union
 
+from daisy.base.ports import SuspensionGate
 from daisy.protocol.events import ToolStatus, tool_status_from_result
 
 
@@ -138,26 +139,6 @@ class Done(TurnEvent):
     TYPE = EventType.DONE
     text: str = ""
     stop_reason: str = ""
-
-
-@dataclass(frozen=True)
-class SuspensionGate:
-    """One human decision a suspended turn is blocked on — a permission prompt or an
-    ``ask_user`` question. ``kind`` discriminates (``"permission"`` | ``"question"``); the
-    permission fields (``command``/``justification``/``risk``) and the question field
-    (``questions``) are populated per kind. A typed carrier so the executor reads
-    ``gate.kind`` rather than an untyped ``gate.get("kind")`` off a bare dict."""
-
-    request_id: str = ""
-    tool_call_id: str = ""
-    kind: str = "permission"
-    command: str = ""
-    justification: str = ""
-    risk: str = ""
-    questions: list[dict[str, Any]] = field(default_factory=list)
-    is_bash: bool = False
-    deny_message: str = ""
-    egress_agent: str = ""
 
 
 @dataclass(frozen=True)

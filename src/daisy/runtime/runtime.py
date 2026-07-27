@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
@@ -48,6 +49,7 @@ from daisy.runtime.tools.registry import (
     load_skill as load_skill_tool,
     wait_for as wait_for_tool,
 )
+from daisy.base.ports import Observation
 from daisy.runtime.tools.context import ToolContext
 from daisy.runtime.tools.sessions import remote_agent_tools, session_tools
 from daisy.runtime.background import (
@@ -58,6 +60,20 @@ from daisy.runtime.background import (
 
 
 from daisy.base.permission_mode import PermissionMode
+
+logger = logging.getLogger(__name__)
+
+
+async def _drain_observation(pending) -> None:
+    """Await an observer's awaitable, swallowing whatever it does.
+
+    Separate from `_observe` because a task's exception is only ever seen when the task is
+    awaited, and nothing awaits this one — without the guard a failing async observer would
+    surface as an "exception was never retrieved" warning at an unrelated moment."""
+    try:
+        await pending
+    except Exception:  # noqa: BLE001 — an audit sink must never fail a turn
+        logger.debug("An asynchronous observer raised", exc_info=True)
 from daisy.runtime.locations import CallExecutionPolicy, ResolvedLocation, ToolLocationError
 from daisy.runtime.turn_events import (
     ToolResult,
@@ -396,8 +412,6 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         self,
         agent_configuration: AgentConfiguration,
         global_configuration: GlobalConfiguration,
-        on_record_event: Optional[Callable[..., Any]] = None,
-        on_record_message: Optional[Callable[..., Any]] = None,
         session_id: str = "",
         conversation: Optional[list] = None,
         working_directory: str = "",
@@ -409,6 +423,10 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         sandbox=None,
         session_access: Any = None,
         mcp_manager: Any = None,
+        model: Any = None,
+        jobs: Any = None,
+        observer: Any = None,
+        approvals: Any = None,
     ):
         self._session_id = session_id
         # The session that created this one, empty when a person did. Reaches the model in the
@@ -422,8 +440,6 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         self._sandbox = sandbox if sandbox is not None else Profile()
         self._agent_configuration = agent_configuration
         self._global_configuration = global_configuration
-        self._on_record_event = on_record_event
-        self._on_record_message = on_record_message
         self._working_directory = working_directory or str(Path.home())
         self._project_directory = project_directory or self._working_directory
         # The project's locations the agent may address per tool call (keyed by URI, and
@@ -448,7 +464,11 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         # the work on a model nobody chose for it.
         self._effective_model_identifier = effective_model
 
-        self._llm = build_chat_model(
+        # A caller's own chat model wins over anything configuration would build. Every provider
+        # this harness routes to implements LangChain's `BaseChatModel`, and so does every mock,
+        # tracer and rate limiter in that ecosystem — so accepting one is the whole of the model
+        # seam, with no interface of ours in the middle.
+        self._llm = model if model is not None else build_chat_model(
             effective_model, global_configuration, agent_configuration
         )
 
@@ -483,7 +503,13 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         self._background = BackgroundJobs(
             session_id=session_id,
             agent_name=agent_configuration.identifier,
+            store=jobs,
         )
+        # Where the audit trail goes, and who answers a gate. Both absent by default, and both
+        # absences are the behaviour that was already there: the observations were computed and
+        # dropped, and a gate suspended and waited for a human.
+        self._observer = observer
+        self._approvals = approvals
         # Command patterns the user chose to "always allow" this session — matching
         # bash commands then skip the sandbox/approval prompts. Scoped to this
         # runtime (this context), populated on demand from an LLM-derived rule.
@@ -864,12 +890,40 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
     def _record_event(self, event_type: str, data: dict) -> None:
         record = {"type": event_type, "timestamp": _utc_timestamp(datetime.now(timezone.utc)), **data}
         self._execution_history.append(record)
-        if self._on_record_event:
-            self._on_record_event(event_type, data)
+        self._observe(event_type, data)
 
     def _record_message(self, role: str, content: str, tool_call_id: str = "") -> None:
-        if self._on_record_message:
-            self._on_record_message(role, content, tool_call_id)
+        self._observe("message", {"role": role, "content": content, "tool_call_id": tool_call_id})
+
+    def _observe(self, kind: str, data: dict) -> None:
+        """Hand one observation to the caller's observer, if there is one.
+
+        An observer that raises must not take the turn with it: this is a reporting channel,
+        and a turn that fails because its audit sink failed would be strictly worse than one
+        that is not audited. An implementation may answer with an awaitable — the tolerance
+        `MCPEventCallback` already uses here — which is scheduled rather than awaited, because
+        every caller of this is synchronous and deep inside a turn."""
+        if self._observer is None:
+            return
+        observation = Observation(
+            session_id=self._session_id,
+            kind=kind,
+            at=datetime.now(timezone.utc),
+            data=data,
+        )
+        try:
+            pending = self._observer.observe(observation)
+        except Exception:  # noqa: BLE001 — an audit sink must never fail a turn
+            logger.debug("The observer raised on %s", kind, exc_info=True)
+            return
+        if pending is None:
+            return
+        try:
+            asyncio.get_running_loop().create_task(_drain_observation(pending))
+        except RuntimeError:
+            # No loop: an observation recorded outside a turn. Nothing to schedule it on, and
+            # blocking to run it would be worse than dropping it.
+            logger.debug("Dropped an awaitable observation with no running loop")
 
     def _background_result_events(self) -> list[TurnEvent]:
         events: list[TurnEvent] = []

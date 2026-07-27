@@ -10,6 +10,7 @@ Detailed guides for installing, configuring, understanding, and developing Daisy
 | [Architecture](architecture.md) | Sessions as processes, the daemon, the CLI, the app, and how they connect |
 | [Agents and skills](agents-and-skills.md) | Authoring agents, skills, memory, and MCP servers |
 | [Tools](tools.md) | The full tool surface, including screen control (`control_screen`) |
+| [As a library](library.md) | Embedding the harness in your own program, and every seam you can replace |
 | [Development](development.md) | The dev environment, running the pieces, building the app |
 
 Design plans for larger changes — the sequential, commit-associated record of how the harness evolved — live in [Plans](plans/README.md). Those are proposals and design history, distinct from the current-state guides above.

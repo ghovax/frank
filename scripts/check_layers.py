@@ -203,6 +203,46 @@ def _process_wide_configuration(tree: ast.AST) -> list[tuple[str, int]]:
     return found
 
 
+# Concrete implementations that exist behind a port. Reaching for one directly is how the
+# singleton this replaced came about in the first place, and it is always easier than
+# threading an argument — which is exactly why it needs a rule rather than a convention.
+_BYPASSED_PORTS = {
+    "get_background_job_store": (
+        "the JobStore port — take it as an argument. Reaching for the concrete store is how a "
+        "library session came to write a SQLite database into the caller's data directory"
+    ),
+}
+
+# Modules allowed to name a concrete implementation: the ones that legitimately choose it.
+# A worker is a process restarts happen to, so it wants the durable store; the daemon reaps
+# what a previous run orphaned; and the module that defines it obviously names it.
+_PORT_CHOOSERS = {
+    "daisy/base/background_store.py",
+    "daisy/base/ports.py",
+    "daisy/worker/session.py",
+    "daisy/daemon/__main__.py",
+}
+
+
+def _bypassed_ports(tree: ast.AST) -> list[tuple[str, int]]:
+    """Uses of a concrete implementation where a port exists."""
+    found: list[tuple[str, int]] = []
+    for node in ast.walk(tree):
+        name = ""
+        if isinstance(node, ast.Name):
+            name = node.id
+        elif isinstance(node, ast.Attribute):
+            name = node.attr
+        elif isinstance(node, ast.alias):
+            name = node.name.split(".")[-1]
+        if name in _BYPASSED_PORTS:
+            found.append((
+                f"`{name}` goes behind {_BYPASSED_PORTS[name]}",
+                getattr(node, "lineno", 0),
+            ))
+    return found
+
+
 # Clients whose synchronous request methods block the import that calls them. Matched on the
 # module alias rather than the object, because that is what is knowable statically.
 _NETWORK_MODULES = {"httpx", "requests", "urllib", "socket"}
@@ -285,6 +325,14 @@ def main() -> int:
                 violations.append(
                     f"{path.relative_to(ROOT)}:{line}: {description} at import — "
                     "only a composition root may configure the process"
+                )
+
+        # A port exists so that the thing behind it can be replaced. Naming the concrete
+        # implementation anywhere but the place that chooses it takes that away.
+        if str(path.relative_to(ROOT / "src")) not in _PORT_CHOOSERS:
+            for description, line in _bypassed_ports(tree):
+                violations.append(
+                    f"{path.relative_to(ROOT)}:{line}: {description}"
                 )
 
         # Nothing reaches the network while it is being imported — not even a composition

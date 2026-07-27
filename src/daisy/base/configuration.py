@@ -762,11 +762,19 @@ class GlobalConfiguration(Section):
     )
 
     @classmethod
-    def load(cls) -> GlobalConfiguration:
-        """Load the configuration from the XDG configuration file, creating the
-        home directory and the file on first run from the packaged configuration."""
+    def load(cls, *, seed: bool = True) -> GlobalConfiguration:
+        """Load the configuration from the XDG configuration file.
+
+        Seeds the file from the packaged template on first run, because a person who has just
+        installed Daisy needs something to edit and something for `daisy configure` to teach
+        from. `seed=False` reads without creating: a library embedded in someone else's program
+        should not leave a configuration file in their home directory as a side effect of being
+        imported, and a program that supplies its own configuration never wanted ours anyway.
+        """
         path = configuration_file_path()
         if not path.exists():
+            if not seed:
+                return cls()
             path.write_text(packaged_configuration_yaml())
         return cls.from_yaml(path)
 

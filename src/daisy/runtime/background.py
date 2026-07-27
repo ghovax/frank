@@ -28,8 +28,6 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import logging
-import os
-import signal
 import weakref
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
@@ -39,11 +37,8 @@ from typing import Any
 
 from daisy.base.identifiers import new_id
 from daisy.base.serialization import compact
-from daisy.base.background_store import (
-    get_background_job_store,
-    STATUS_COMPLETED,
-    STATUS_DELIVERED,
-)
+from daisy.base.background_store import STATUS_COMPLETED, STATUS_DELIVERED
+from daisy.base.ports import JobStore, MemoryJobStore
 
 
 # Per-kind *presentation* — how a completed job is announced to the model and how
@@ -119,7 +114,12 @@ _active_job_runners: weakref.WeakSet[BackgroundJobs] = weakref.WeakSet()
 class BackgroundJobs:
     """One background-job runner, owned by a single agent runtime."""
 
-    def __init__(self, session_id: str = "", agent_name: str = "") -> None:
+    def __init__(
+        self,
+        session_id: str = "",
+        agent_name: str = "",
+        store: JobStore | None = None,
+    ) -> None:
         self._jobs: dict[str, _BackgroundJobRecord] = {}
         # Ids of jobs whose task has finished, pushed by the done-callback. This is
         # what makes completion event-driven instead of polled.
@@ -129,7 +129,18 @@ class BackgroundJobs:
         # recover it; without one (e.g. in a test) durability is simply skipped.
         self._session_id = session_id
         self._agent_name = agent_name
+        # Where durability goes, supplied rather than found. This used to be a module-level
+        # singleton over a fixed SQLite path, which meant a library session running one
+        # backgrounded command wrote a database into the caller's data directory with no way
+        # to say otherwise. In memory unless someone with a real one says so — and the daemon
+        # is the thing restarts happen to, so the daemon is what says so.
+        self._store: JobStore = store if store is not None else MemoryJobStore()
         _active_job_runners.add(self)
+
+    @property
+    def store(self) -> JobStore:
+        """The durable record behind this runner, for the tools that must write to it too."""
+        return self._store
 
     def spawn(
         self,
@@ -163,7 +174,7 @@ class BackgroundJobs:
             detached=detached,
         )
         if self._session_id:
-            get_background_job_store().record_started(
+            self._store.record_started(
                 job_id=identifier,
                 session_id=self._session_id,
                 agent_name=self._agent_name,
@@ -183,7 +194,7 @@ class BackgroundJobs:
         record = self._jobs.get(identifier)
         if record is not None and self._session_id:
             result = self._result_string(record)
-            get_background_job_store().record_finished(identifier, result, status=STATUS_COMPLETED)
+            self._store.record_finished(identifier, result, status=STATUS_COMPLETED)
         self._completed_identifiers.put_nowait(identifier)
 
     def bind_tool_call(self, identifier: str, tool_call_identifier: str) -> None:
@@ -323,7 +334,7 @@ class BackgroundJobs:
         # what makes `has_pending()`/`has_completed_undelivered()` forget the job, so
         # no resume pump wakes for it.
         if self._session_id:
-            get_background_job_store().mark_delivered(identifier)
+            self._store.mark_delivered(identifier)
         return self._build_completion(record)
 
     def drain_completed(self) -> list[BackgroundCompletion]:
@@ -338,7 +349,7 @@ class BackgroundJobs:
                 continue
             completions.append(self._build_completion(record))
             if self._session_id:
-                get_background_job_store().mark_delivered(identifier)
+                self._store.mark_delivered(identifier)
         return completions
 
     def cancel_all(self) -> None:
@@ -367,7 +378,7 @@ class BackgroundJobs:
             record.task.cancel()
             if self._session_id:
                 result = compact({"code": f"{record.kind}_cancelled", "job_id": record.identifier})
-                get_background_job_store().record_finished(identifier, result, status=STATUS_DELIVERED)
+                self._store.record_finished(identifier, result, status=STATUS_DELIVERED)
             self._jobs.pop(identifier, None)
 
     def cancel_by_tool_call(self, tool_call_identifier: str) -> bool:
@@ -385,7 +396,7 @@ class BackgroundJobs:
             record.task.cancel()
             if self._session_id:
                 result = compact({"code": f"{record.kind}_cancelled", "job_id": record.identifier})
-                get_background_job_store().record_finished(identifier, result, status=STATUS_DELIVERED)
+                self._store.record_finished(identifier, result, status=STATUS_DELIVERED)
             self._jobs.pop(identifier, None)
             return True
         return False
@@ -407,7 +418,7 @@ class BackgroundJobs:
         record.task.cancel()
         if self._session_id:
             result = compact({"code": f"{record.kind}_cancelled", "job_id": record.identifier})
-            get_background_job_store().record_finished(identifier, result, status=STATUS_DELIVERED)
+            self._store.record_finished(identifier, result, status=STATUS_DELIVERED)
         self._jobs.pop(identifier, None)
         return True
 
@@ -463,30 +474,6 @@ def cancel_all_background_jobs() -> None:
     via :meth:`BackgroundJobs.cancel_all`."""
     for runner in list(_active_job_runners):
         runner.cancel_all()
-
-
-def reap_orphaned_processes() -> int:
-    """Kill process groups left behind by a previous, unclean shutdown.
-
-    Catchable termination (SIGTERM/SIGINT/SIGHUP/normal exit) kills every tracked
-    process group directly. A SIGKILL or a hard crash cannot run any handler, so a
-    long background shell subtree (a dev server, a watcher) can survive as an
-    orphan. Each job records its process-group id durably when it starts; on the
-    next startup this kills any group still marked running, so orphans never
-    accumulate. Returns how many groups were signalled."""
-    killed = 0
-    for process_group in get_background_job_store().orphaned_process_groups():
-        try:
-            os.killpg(process_group, signal.SIGKILL)
-            killed += 1
-        except ProcessLookupError:
-            # Already gone — the common case (the child died with the crash).
-            continue
-        except OSError as error:
-            logging.getLogger(__name__).warning(
-                "Could not reap orphaned process group %s: %s", process_group, error
-            )
-    return killed
 
 
 # Ambient binding for background-producing tools: bind the current runner during dispatch.

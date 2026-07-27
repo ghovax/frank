@@ -27,6 +27,7 @@ from langchain_core.messages import messages_from_dict
 from daisy.base.background_tasks import spawn_background_task
 from daisy.base.configuration import GlobalConfiguration, load_agent_configuration
 from daisy.base.background_store import get_background_job_store
+from daisy.base.ports import JobStore
 from daisy.base.workspaces import SessionWorkspace
 from daisy.protocol.metadata import (
     AUTONOMOUS_RESUME_KIND,
@@ -68,9 +69,14 @@ class SessionExecutor(AgentExecutor):
         parent: str = "",
         token: str = "",
         daemon_token: str = "",
+        job_store: Optional[JobStore] = None,
     ):
         self._session_id = session_id
         self._agent_name = agent_name
+        # A worker is a process a restart happens to, so its background jobs want the durable
+        # store rather than the in-memory default a library session gets. Injectable all the
+        # same: this is the layer that decides, not the runtime and not a module global.
+        self._job_store: JobStore = job_store if job_store is not None else get_background_job_store()
         self._working_directory = working_directory
         # Where tools actually run. The daemon resolves this when the session is created —
         # a worktree workspace is not the project directory — and hands it over, so the
@@ -463,7 +469,7 @@ class SessionExecutor(AgentExecutor):
         state = self._contexts.get(session_id)
         runtime = state.runtime if state is not None else None
         has_live_result = runtime is not None and runtime.has_completed_undelivered_jobs()
-        has_stored_result = get_background_job_store().has_undelivered_jobs(session_id, self._agent_name)
+        has_stored_result = self._job_store.has_undelivered_jobs(session_id, self._agent_name)
         if not has_live_result and not has_stored_result:
             return
         # An agent-authored message (the agent resumed itself), carrying only the prose-less
@@ -575,7 +581,7 @@ class SessionExecutor(AgentExecutor):
         return runtime
 
     def _replay_stored_background_results(self, session_id: str, runtime: AgentRuntime) -> None:
-        store = get_background_job_store()
+        store = self._job_store
         for job in store.undelivered_jobs(session_id, self._agent_name):
             runtime.inject_stored_background_result(
                 kind=job["kind"],
@@ -590,7 +596,7 @@ class SessionExecutor(AgentExecutor):
         was still running cannot be resurrected as a live coroutine, so it is recorded
         as interrupted (the model is told to re-run it if the result is still needed);
         then every context that now has a deliverable result is woken autonomously."""
-        store = get_background_job_store()
+        store = self._job_store
         for job in store.running_jobs(self._agent_name):
             store.mark_abandoned(job["job_id"], compact({
                 "code": f"{job['kind']}_interrupted",

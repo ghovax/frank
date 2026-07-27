@@ -5,6 +5,7 @@ agent messaging, completion), and the tool batch — plus turn-message assembly,
 system prompt, steering drain, and turn recording."""
 from __future__ import annotations
 
+import logging
 from contextlib import suppress
 from datetime import datetime
 from datetime import timezone
@@ -58,6 +59,8 @@ from daisy.base.serialization import compact
 
 
 
+
+logger = logging.getLogger(__name__)
 
 class _TurnLoopMixin:
 
@@ -179,6 +182,35 @@ class _TurnLoopMixin:
         if self._steering_messages.empty():
             self._steering_available.clear()
         return events
+
+    async def _answer_gates(self, gates: list[SuspensionGate]) -> dict[str, Any]:
+        """Ask the caller's `Approvals` about each gate, in the shape a resume would carry.
+
+        Without one, nothing is answered and every gate suspends — which is what has always
+        happened, and is right when there is a person on the other end. With one, a script can
+        run unattended without hand-driving the suspend/resume dance through `stream`.
+
+        A `None` verdict means *no opinion*, and that gate suspends alone. So an approver can
+        auto-allow the cases it understands and still escalate the rest, instead of facing an
+        all-or-nothing choice. An approver that raises is treated the same way: the gate goes to
+        a human, because a broken policy must fail closed rather than open.
+        """
+        if self._approvals is None or not gates:
+            return {}
+        answers: dict[str, Any] = {}
+        for gate in gates:
+            try:
+                verdict = await self._approvals.decide(gate)
+            except Exception:  # noqa: BLE001 — a failing approver escalates, it does not allow
+                logger.warning("The approver raised on %s; escalating the gate", gate.kind, exc_info=True)
+                continue
+            if verdict is None:
+                continue
+            if gate.kind == "question":
+                answers[gate.request_id] = verdict.answers if verdict.allow else None
+            else:
+                answers[gate.request_id] = "allow" if verdict.allow else "deny"
+        return answers
 
     def _harness_note_message(self, content: str, image_blocks: list[dict] | None = None) -> HumanMessage:
         """Wrap a harness-injected note in a user-role message carrying a
@@ -579,20 +611,26 @@ class _TurnLoopMixin:
         outcomes: dict[str, dict] = {}
         if not self._abort_event.is_set():
             plans, pending = await self._preflight_permissions(tool_calls)
-            if pending:
+            gates = [SuspensionGate(**gate.to_dict()) for gate in pending]
+            answered = await self._answer_gates(gates)
+            if gates and len(answered) < len(gates):
                 # One suspend event for every turn: the session renders the prompt from it,
                 # and the pause is durable. The segment closes here as input-required and a
                 # later answer rebuilds the turn from its checkpoint, so a session waiting on
                 # a person survives a daemon restart rather than losing the work it had
                 # already done. There is no second, ephemeral continuation path any more —
                 # every turn belongs to a session, and every session is addressable.
-                yield Suspended(interactions=[SuspensionGate(**gate.to_dict()) for gate in pending],
+                #
+                # Any gate an `Approvals` did answer is folded into the plans, so a partial
+                # answer narrows what the human is asked rather than being discarded.
+                yield Suspended(
+                    interactions=[gate for gate in gates if gate.request_id not in answered],
                     plans={tool_call_id: plan.to_dict() for tool_call_id, plan in plans.items()},
                 )
                 step.directive = _STOP
                 return
             else:
-                decisions = self._resolve_tool_decisions(plans, {})
+                decisions = self._resolve_tool_decisions(plans, answered)
             async for event in self._drain_tools_concurrently(
                 tool_calls, turn_tool_calls_log, turn_tool_results_log, outcomes, decisions,
             ):

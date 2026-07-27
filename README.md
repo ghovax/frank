@@ -18,6 +18,8 @@ Three parts, kept apart:
 - **`daisy`** — the command. `create` a session, `send` it work, `ps` what is running, `attach` to watch, `tree` to see what created what, `approve` what it asks for, `configure` what the next one starts with, `open` the desktop app, `kill` to end a subtree. It adds nothing the control plane does not have; it is the ergonomic face of it — see the [CLI guide](documentation/cli.md).
 - **The app** — a native macOS client (Tauri + Next.js) over the same API. A *client*: it finds a daemon and talks to it, and contains no harness of its own. `daisy open` starts one and launches the window together.
 
+It is also importable. `daisy.Session` runs an agent in your own process — no daemon, no socket — and everything it would otherwise write to disk is a constructor argument with an interface behind it: bring your own model, checkpoint store, job store, approver or observer by passing an object with the right methods. See [As a library](documentation/library.md).
+
 Sessions compose the same way you do. A session that needs a peer calls `create_session`, which reaches the same control plane your terminal does — one API, whether the caller is a person, the desktop app, or an agent. The peer reports back by sending its parent a message, so an answer is a message rather than something reconstructed from a transcript. A child is a real session: it appears in `daisy ps`, you can attach to it, and it is reaped when its parent ends.
 
 ## Why own the harness

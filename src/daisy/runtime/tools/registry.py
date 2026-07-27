@@ -12,7 +12,6 @@ from pydantic import Field
 
 from daisy.base.identifiers import new_id
 from daisy.runtime.background import current_background_jobs, current_tool_call_id
-from daisy.base.background_store import get_background_job_store
 from daisy.base.tuning import Tunable, active_tuning, clip_to_tokens
 from daisy.base.serialization import compact
 from daisy.runtime.tools import context as tool_context
@@ -123,7 +122,7 @@ async def bash(
         # SIGKILL of the harness) is reaped on the next startup. No-op UPDATE when the job is
         # not durably tracked (no context).
         try:
-            get_background_job_store().record_process_group(job_id, os.getpgid(process_id))
+            current_background_jobs().store.record_process_group(job_id, os.getpgid(process_id))
         except (ProcessLookupError, OSError):
             pass
 

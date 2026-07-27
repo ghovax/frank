@@ -23,7 +23,6 @@ from a2a.utils import new_task
 from langchain_core.messages import messages_to_dict
 
 from daisy.base import telemetry as _telemetry
-from daisy.base.background_store import get_background_job_store
 from daisy.base.background_tasks import spawn_background_task
 from daisy.base.configuration import PromptLoader
 from daisy.protocol.errors import _safe_turn_error
@@ -425,7 +424,7 @@ class _TurnRunner:
             existing_state = self._ex._contexts.get(task.context_id)
             existing_runtime = existing_state.runtime if existing_state is not None else None
             has_live_result = existing_runtime is not None and existing_runtime.has_completed_undelivered_jobs()
-            has_stored_result = get_background_job_store().has_undelivered_jobs(task.context_id, self._ex._agent_name)
+            has_stored_result = self._ex._job_store.has_undelivered_jobs(task.context_id, self._ex._agent_name)
             if not has_live_result and not has_stored_result:
                 await self._updater.complete()
                 return self._DONE

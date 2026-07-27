@@ -1,7 +1,7 @@
 ---
 created: 2026-07-27T16:27:43Z
-updated: 2026-07-27T18:52:00Z
-commit: 4509f83
+updated: 2026-07-27T19:20:00Z
+commit: 03a190d
 ---
 
 # What Must Be Resident
@@ -274,6 +274,8 @@ No dependency is added. `typing.Protocol` is standard library, and the two adopt
 | 52 | `Session` takes every port as a keyword argument; `session_access` is renamed `peers` | `src/daisy/__init__.py` | Individual keywords rather than a bag, as `httpx.Client(transport=…, auth=…)` does: each is typed, discoverable and independently defaulted. The rename is the public name matching what the thing is |
 | 53 | The layering checker learns that `base/ports.py` may be imported by every layer, and that nothing may import a *concrete* store where a port exists | `scripts/check_layers.py` | Items 46–52 are a class, exactly as 1–5 were. Without a rule the next fixed path arrives the same way this one did |
 | 54 | Document the ports with a worked example per seam | new `documentation/library.md` (#41) | An interface nobody can find is a class nobody can replace. The guide is where "bring your own model / store / approver" stops being folklore |
+| 55 | `GlobalConfiguration.load(seed=False)`, and the library uses it | `base/configuration.py:765`, `src/daisy/__init__.py` | Found by measuring rather than reasoning: with every port in place the library still left one file behind, because `load()` seeds the configuration template on first run. Right for a person who has just installed Daisy and wrong for a program that imported us |
+| 56 | Move `reap_orphaned_processes` to `base/background_store.py` and give it a caller | `runtime/background.py`, `daemon/__main__.py` | It kills process groups a SIGKILL'd harness left holding ports, and **nothing has ever called it** — so the orphans it describes have been accumulating. Its caller has to start before any session and must not import the runtime, which is the daemon exactly |
 
 ### What this is deliberately not
 

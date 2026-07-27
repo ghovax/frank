@@ -269,6 +269,7 @@ async def _serve() -> int:
     import uvicorn
 
     from daisy.base import confinement
+    from daisy.base.background_store import reap_orphaned_process_groups
     from daisy.base.configuration import GlobalConfiguration
     from daisy.daemon import state
     from daisy.daemon.composition import close_shared_resources, open_shared_resources
@@ -299,6 +300,14 @@ async def _serve() -> int:
     state.daemon_port = _free_port()
 
     await _open_stores()
+
+    # Before any session exists. A background shell subtree survives a SIGKILL of the harness —
+    # a dev server holding a port is the usual case — and each job recorded its process group
+    # when it started, so this is the one moment those can be cleaned up without racing a
+    # session that legitimately owns one.
+    orphans = await asyncio.to_thread(reap_orphaned_process_groups)
+    if orphans:
+        logger.info("Reaped %d orphaned process group(s) from a previous run", orphans)
 
     state.registry = SessionRegistry()
     # The prototype and the lifecycle know about each other in both directions: the lifecycle

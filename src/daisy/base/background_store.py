@@ -21,12 +21,18 @@ authority only across a restart.
 from __future__ import annotations
 
 import json
+import logging
+import os
+import signal
 import sqlite3
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from daisy.base.paths import background_database_path as _background_database_path
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from daisy.base.ports import JobStore
 from daisy.base.sqlite_lock import background_sqlite_write_lock, configure_background_sqlite_lock
 
 
@@ -41,6 +47,35 @@ STATUS_ABANDONED = "abandoned"      # could not be recovered after a restart (e.
 
 def background_database_path() -> Path:
     return _background_database_path()
+
+
+def reap_orphaned_process_groups(store: "JobStore | None" = None) -> int:
+    """Kill process groups left behind by a previous, unclean shutdown.
+
+    Catchable termination (SIGTERM/SIGINT/SIGHUP/normal exit) kills every tracked process
+    group directly. A SIGKILL or a hard crash cannot run any handler, so a long background
+    shell subtree — a dev server, a watcher — can survive as an orphan holding a port. Each job
+    records its process-group id when it starts; this kills any group still marked running, so
+    orphans never accumulate across restarts. Answers with how many groups were signalled.
+
+    It lives here rather than in the runtime because the caller has to be a process that starts
+    *before* any session and does not import the runtime, which is the daemon exactly. It spent
+    its whole life in `runtime/background.py` with no caller at all, which is why the orphans it
+    describes have in fact been accumulating.
+    """
+    killed = 0
+    for process_group in (store or get_background_job_store()).orphaned_process_groups():
+        try:
+            os.killpg(process_group, signal.SIGKILL)
+            killed += 1
+        except ProcessLookupError:
+            # Already gone — the common case (the child died with the crash).
+            continue
+        except OSError as error:
+            logging.getLogger(__name__).warning(
+                "Could not reap orphaned process group %s: %s", process_group, error
+            )
+    return killed
 
 
 def _now() -> str:
