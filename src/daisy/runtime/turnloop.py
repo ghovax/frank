@@ -9,6 +9,7 @@ import logging
 from contextlib import suppress
 from datetime import datetime, timezone
 from daisy.base import telemetry as _telemetry
+from daisy.base.identifiers import new_id
 from daisy.runtime.internals import (
     _CONTINUE,
     _detect_workspace,
@@ -167,6 +168,40 @@ class _TurnLoopMixin:
                 "tool_result_count": len(tool_results),
             })
         self._record_message("ai", final_response)
+
+    async def _record_transcript_turn(
+        self, request: str, response: str, outcome: str, tool_calls: list, error: str = "",
+    ) -> None:
+        """Hand one completed turn to the caller's transcript, if there is one.
+
+        Separate from `_record_turn`, which feeds the `Observer` and is per *message*. This is
+        one entry per turn — what was asked, what came back, how it ended and what it cost —
+        which is the shape a program wants for auditing, billing and showing a history.
+
+        A transcript that raises must not fail the turn: the work happened whether or not it
+        was written down, and losing the answer because the record failed would be the worse
+        of the two outcomes."""
+        if self._transcript is None:
+            return
+        from daisy.base.ports import TurnSummary
+
+        usage = self._token_usage
+        try:
+            await self._transcript.record(TurnSummary(
+                session_id=self._session_id,
+                turn_id=new_id("turn"),
+                started_at=self._turn_started_at or datetime.now(timezone.utc),
+                ended_at=datetime.now(timezone.utc),
+                request=request,
+                response=response,
+                outcome=outcome,
+                tools_called=tuple(entry.get("name", "") for entry in tool_calls),
+                input_tokens=int(usage.get("input_tokens", 0)),
+                output_tokens=int(usage.get("output_tokens", 0)),
+                error=error,
+            ))
+        except Exception:  # noqa: BLE001 — a record that cannot be written must not lose the turn
+            logger.warning("The transcript raised while recording a turn", exc_info=True)
 
     async def _drain_steering_messages(self) -> list[TurnEvent]:
         events: list[TurnEvent] = []
@@ -331,6 +366,7 @@ class _TurnLoopMixin:
             self._conversation.append(turn_message)
             # The event-log recorder only wants prose from LangChain's standard blocks.
             recorded_user_message = message_text(turn_message)
+        self._turn_started_at = datetime.now(timezone.utc)
 
         while True:
             if self._abort_event.is_set():
@@ -585,6 +621,9 @@ class _TurnLoopMixin:
         self._record_turn(
             recorded_user_message, turn_tool_calls_log,
             turn_tool_results_log, final_text,
+        )
+        await self._record_transcript_turn(
+            recorded_user_message, final_text, "completed", turn_tool_calls_log,
         )
         yield Done(text=final_text, stop_reason="completed")
         step.directive = _STOP

@@ -13,15 +13,39 @@ so the local-first default stays quiet.
 
 from __future__ import annotations
 
+import contextvars
 import logging
 from contextlib import contextmanager
 from typing import Any, Iterator, Optional
 
 logger = logging.getLogger(__name__)
 
+# The process-wide exporter, installed by `configure()` — what `daisyd` sets up once at boot.
 _tracer: Any = None
 _token_counter: Any = None
 _call_counter: Any = None
+
+# A tracer bound for one task, which wins over the process-wide one where it is set. The
+# pattern `base/tuning.py` established and the last module global in this tree that still
+# needed it: two sessions in one interpreter may report to different places, and a caller
+# embedding the harness should not have to reconfigure the process to say so.
+_bound_tracer: contextvars.ContextVar[Any] = contextvars.ContextVar(
+    "daisy_tracer", default=None
+)
+
+
+def set_tracer(tracer: Any) -> contextvars.Token:
+    """Make `tracer` the one this task's spans go to. Pair with :func:`reset_tracer`."""
+    return _bound_tracer.set(tracer)
+
+
+def reset_tracer(token: contextvars.Token) -> None:
+    _bound_tracer.reset(token)
+
+
+def _active_tracer() -> Any:
+    """This task's tracer, else the process-wide one, else nothing."""
+    return _bound_tracer.get() or _tracer
 
 
 def _metrics_endpoint(traces_endpoint: str) -> str:
@@ -67,7 +91,7 @@ def configure(
 
 
 def is_enabled() -> bool:
-    return _tracer is not None
+    return _active_tracer() is not None
 
 
 def record_usage(model: str, input_tokens: int, output_tokens: int) -> None:
@@ -84,9 +108,10 @@ def start_span(name: str, attributes: Optional[dict[str, Any]] = None) -> Any:
     disabled). Unlike :func:`span`, it does not attach the span to the async context, so it
     is safe to open across an async generator's ``yield``s; the caller ends it via
     :func:`end_span`."""
-    if _tracer is None:
+    tracer = _active_tracer()
+    if tracer is None:
         return None
-    return _tracer.start_span(name, attributes=attributes or {})
+    return tracer.start_span(name, attributes=attributes or {})
 
 
 def end_span(active_span: Any, attributes: Optional[dict[str, Any]] = None) -> None:

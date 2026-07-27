@@ -1,7 +1,7 @@
 ---
 created: 2026-07-27T16:27:43Z
-updated: 2026-07-27T20:20:00Z
-commit: 69a8d82
+updated: 2026-07-27T20:40:00Z
+commit: 3f60298
 ---
 
 # What Must Be Resident
@@ -362,6 +362,31 @@ The precedent is Jinja2's `Loader` — `FileSystemLoader`, `PackageLoader`, `Dic
 | 66 | `daisy open` becomes **`daisy app`** | `cli/__main__.py` | `open` names no object. Codex uses `app` for exactly this, and it reads correctly next to `serve` and `web` |
 | 67 | Add **`daisy run <prompt>`** — one turn, no daemon, straight through `daisy.Session` | new `cli/commands/run.py` | The gap the survey makes obvious: every comparable tool has a one-shot mode and Daisy needs three commands to approximate one. It is a handful of lines *because* Part VII exists, and it is the best possible proof the library surface is real — the CLI becomes its first consumer |
 | 68 | Add **`daisy auth`** — `login`, `logout`, `status` for the ChatGPT subscription | new `cli/commands/auth.py` | `auth` is the near-universal spelling, and today signing in is possible **only through the browser interface**: a headless install cannot reach the one provider that needs no API key |
+
+
+## Part X — The library extends, not only configures
+
+Parts VII and VIII made everything the harness *writes* and *reads* replaceable. An audit of what was left found the distinction that matters: a caller could configure the harness thoroughly and could not **extend** it at all.
+
+| Gap | Why it was left | Why it is not defensible |
+|---|---|---|
+| **Custom tools** | `_all_available_tools` returns a hardcoded list of fifteen, and `tools_enabled` only *filters* it | The single biggest one. Anyone embedding a harness wants their agent to reach *their* systems, and turning our tools off is not that. Everything needed is already in place — tools are `BaseTool` instances for the schema and a name→handler map for execution |
+| **`locations=`** | `AgentRuntime` accepts it; `Session` does not pass it through | Not a design decision, an omission. The `LocationExecutor` Protocol and the resolution already work |
+| **Credentials** | `auth_file_path()` at four sites in `credentials.py` | Reached only when we build the model, so `model=` bypasses it — but "bypassed by another seam" is not the same as "seamed" |
+| **The turn record** | The library produces no A2A tasks, so there was nothing to store | `Checkpoints` answers "resume this conversation" and nothing answers "what turns has this session run". A program embedding an agent wants both |
+| **Telemetry** | `_tracer` is a module global set by `configure()` | The last module global of a shape eliminated twice already — `base/tuning.py` fixed exactly this with a `ContextVar` |
+| **Workspaces** | `SessionWorkspaceManager` reads `workspaces_directory()` | It already takes a `root_directory`; it is one argument from injectable |
+
+| # | Change | Where | Why |
+|---|---|---|---|
+| 69 | **`Session(tools=[...])`** — caller-supplied `BaseTool`s join the roster, and `dispatch` falls back to `ainvoke` for a name it does not own | `runtime/runtime.py:208`, `runtime/tools/dispatch.py:510` | LangChain's `BaseTool` is **adopted, not invented**, exactly as `BaseChatModel` was: every tool anyone has already written for that ecosystem works unchanged. The fallback goes where `Unknown tool` is raised today, so a custom tool takes the same permission, location and policy preamble every built-in takes |
+| 70 | A caller's tool is gated at a stated risk, defaulting to *ask* | `runtime/permissions.py` | The permission engine classifies by tool name, and it has never heard of this one. Defaulting to auto-approve would mean adding a tool silently widens what a session may do without being asked; defaulting to *ask* is the only safe direction, and `Session(tool_risk=...)` states otherwise deliberately |
+| 71 | **`Session(locations=[...])`** | `src/daisy/__init__.py` | The pass-through that was missing |
+| 72 | **`Credentials` port** — `daisy.base.credentials` reads through it; `model=` still bypasses it entirely | `base/ports.py`, `base/credentials.py` | The last fixed path on the library's model route |
+| 73 | **`Transcript` port** — one entry per completed turn: what was asked, what came back, how it ended, what it cost | `base/ports.py`, `runtime/turnloop.py` | Deliberately **not** a2a's `TaskStore`. The daemon speaks A2A and its record is rightly an a2a `TaskStore`; the library speaks no A2A, and handing it Tasks would add a protocol it does not use to solve a problem it does not have. Adopting an interface is right when the ecosystem has one *for the thing you are doing* |
+| 74 | Telemetry becomes per-session: `Session(tracer_provider=...)`, bound like tuning | `base/telemetry.py` | The `ContextVar` pattern this file already established, applied to the one module global that still has this shape |
+| 75 | **`Session(workspace=...)`** — opt-in, and absent by default | `base/workspaces.py`, `src/daisy/__init__.py` | A git worktree per session is a real feature for an embedder working over a repository, and it writes to disk — so it must be asked for. Defaulting it on would break the property Part VII established and the battery asserts |
+| 76 | The battery gains a stage for each: a caller's tool is called, a caller's transcript receives the turn, a caller's tracer sees the span, and the disk stays empty unless a workspace was asked for | `scripts/verify/stages.py` | Every other seam is checked by exercising it; these are not exceptions |
 
 
 ## Verification

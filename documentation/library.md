@@ -55,6 +55,13 @@ is a library you cannot embed.
 | `providers` | `{"anthropic": "sk-..."}` or `{"custom": {"api_key": ..., "base_url": ...}}` | Whatever the machine is configured with | Provider credentials, in code |
 | `model_identifier` | `"provider/model"` | The agent profile's own | Which model this session runs, overriding the profile |
 | `configuration` | `GlobalConfiguration` | Read from XDG, **without creating it** | Providers, tuning, agent directories |
+| `tools` | LangChain [`BaseTool`](https://python.langchain.com/docs/concepts/tools/) | None | Tools the agent gains, on top of the harness's |
+| `tool_risk` | `"none"`/`"low"`/`"medium"`/`"high"` | `"medium"` | What a supplied tool is gated at |
+| `transcript` | `daisy.Transcript` | `MemoryTranscript` | Where the record of completed turns goes |
+| `credentials` | `daisy.Credentials` | A `0600` file under XDG | Where account tokens live (bypassed entirely by `model=`) |
+| `locations` | `LocationExecutor` records | Local, at `directory` | Where tools may run — SSH, containers |
+| `workspace` | `SessionWorkspaceManager` | None — **opt in via `prepare_workspace()`** | A git worktree per session |
+| `tracer_provider` | OpenTelemetry `TracerProvider` | The process-wide one, if configured | Where spans go, per session |
 
 Two of these are interfaces we did not write. `BaseChatModel` is LangChain's, and the a2a
 `TaskStore` behind the daemon's turn record is a2a's. Where the ecosystem already has an
@@ -88,6 +95,43 @@ TypeError: checkpoints: RedisCheckpoints does not satisfy Checkpoints: it is mis
 
 Structural typing gives no compile-time guarantee, so the check happens once per session
 rather than surfacing as an `AttributeError` deep inside a turn.
+
+### Your own tools
+
+The one thing configuration cannot do is *extend*. `tools=` takes LangChain `BaseTool`s — adopted, not wrapped, so anything already written for that ecosystem works unchanged:
+
+```python
+from langchain_core.tools import tool
+from daisy import Session
+
+@tool
+def house_price(address: str) -> str:
+    """Look up what a house last sold for."""
+    return db.lookup(address)
+
+async with Session("general-assistant", tools=[house_price]) as session:
+    print(await session.ask("what did 12 Elm St sell for?"))
+```
+
+A supplied tool goes through the *same* preamble every built-in does — permission resolved, location resolved, policy applied — because the extension point is the handler, not the pipeline. Two consequences worth knowing:
+
+- **It is gated at `tool_risk`, which defaults to `"medium"`.** The permission engine classifies by tool name and has never heard of yours, so there is no honest way to infer what it does; defaulting to *ask* means adding a tool cannot silently widen what a session may do. `tool_risk="none"` says otherwise deliberately.
+- **It cannot shadow a built-in.** A tool named `bash` that is not this harness's `bash` would be a confinement surprise, not an extension point, so a name collision resolves to ours.
+- **The agent profile's `tools_enabled` list does not filter it.** That list narrows the *harness's* capabilities and was written before your program existed; a supplied tool would otherwise vanish for every agent that names an explicit list.
+
+### The transcript
+
+`Checkpoints` answers "resume this conversation". `Transcript` answers "what has this session done" — one entry per completed turn, with what was asked, what came back, how it ended and what it cost:
+
+```python
+async with Session("general-assistant", session_id="nightly") as session:
+    await session.ask("audit the dependency tree")
+
+for turn in await session.transcript.turns("nightly"):
+    print(turn.outcome, turn.tools_called, turn.input_tokens + turn.output_tokens)
+```
+
+Deliberately **not** a2a's `TaskStore`. The daemon speaks A2A and its record is rightly one; the library speaks no A2A, and handing it Tasks would add a protocol it does not use to solve a problem it does not have.
 
 ### Credentials and the model
 
@@ -182,6 +226,18 @@ session = Session("general-assistant", observer=LogObserver())
 implementation that appends to a list is the common case, and one that writes to a database
 should not have to block the turn. An observer that raises is logged and ignored: a turn must
 not fail because its audit sink did.
+
+### Telemetry and workspaces
+
+`tracer_provider=` binds a tracer for this session rather than reconfiguring the process, so two sessions in one program can report to different places. `credentials=` is bound the same way. Both unbind when the session closes.
+
+A git worktree per session is opt-in, because it writes to disk and every other default here is chosen so a library session leaves nothing behind:
+
+```python
+session = Session("general-assistant", directory="/path/to/repo")
+runtime_directory = await session.prepare_workspace()   # its own worktree
+await session.ask("refactor the parser and run the tests")
+```
 
 ## Driving a turn
 

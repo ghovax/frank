@@ -5,6 +5,8 @@ batch draining, argument validation, and the backgroundable-tool runner. Imports
 from the leaf ``agent_internals`` module and stable modules, so the graph stays a clean DAG."""
 from __future__ import annotations
 
+import logging
+
 from dataclasses import replace
 from datetime import datetime, timezone
 from daisy.base import telemetry as _telemetry
@@ -54,6 +56,8 @@ import asyncio
 import shlex
 import time
 from daisy.base.serialization import compact
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -509,6 +513,16 @@ class _ToolsMixin:
 
         handler_name = self._TOOL_HANDLERS.get(tool_name)
         if handler_name is None:
+            # Not one of ours. A caller-supplied tool arrives here, and it reaches this point
+            # having gone through the identical preamble every built-in does — permission
+            # resolved, location resolved, policy applied — because the extension point is the
+            # *handler*, not the pipeline.
+            if tool_name in self._extra_tools:
+                async for event in self._tool_supplied(
+                    tool_name, tool_arguments, tool_call_identifier,
+                ):
+                    yield event
+                return
             yield Error(id=tool_call_identifier,
                 message=f"Unknown tool '{tool_name}'", tool=tool_name,
             )
@@ -517,6 +531,34 @@ class _ToolsMixin:
             tool_name, tool_arguments, tool_call_identifier, decision, policy, resolved_location,
         ):
             yield event
+
+    async def _tool_supplied(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+    ):
+        """Run a tool the caller brought, through LangChain's own invocation.
+
+        `ainvoke` rather than an interface of ours: `BaseTool` already defines how a tool is
+        called, what it may raise, and how it reports, so every tool written for that ecosystem
+        works here unchanged. A tool that raises becomes a tool *error* rather than a turn
+        error — the model sees what went wrong and can adapt, which is what it does with every
+        built-in failure too."""
+        tool = self._extra_tools[tool_name]
+        try:
+            result = await tool.ainvoke(tool_arguments)
+        except Exception as error:  # noqa: BLE001 — a caller's tool failing is a tool result
+            logger.debug("Supplied tool %s raised", tool_name, exc_info=True)
+            yield Error(
+                id=tool_call_identifier,
+                message=f"{type(error).__name__}: {error}",
+                tool=tool_name,
+            )
+            return
+        yield ToolResult(
+            id=tool_call_identifier,
+            tool=tool_name,
+            display=result if isinstance(result, str) else compact(result),
+            status=ToolStatus.OK,
+        )
 
     async def _tool_bash(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,

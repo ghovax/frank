@@ -38,7 +38,8 @@ from dataclasses import asdict, dataclass
 from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import Optional
+import contextvars
+from typing import Any, Optional
 
 import httpx
 
@@ -87,28 +88,69 @@ def auth_file_path() -> Path:
     return data_directory() / AUTH_FILENAME
 
 
+class FileCredentials:
+    """Tokens in a `0600` file under the user's data directory — the default store.
+
+    Password-equivalent material, so the mode is not decoration. This is the right store for a
+    person's machine and the wrong one for a program that keeps its secrets elsewhere, which is
+    why it is now one implementation of :class:`~daisy.base.ports.Credentials` rather than the
+    only possibility."""
+
+    def load(self) -> Optional[ChatGPTTokens]:
+        path = auth_file_path()
+        if not path.exists():
+            return None
+        try:
+            return ChatGPTTokens(**json.loads(path.read_text()))
+        except (OSError, ValueError, TypeError):
+            return None
+
+    def save(self, tokens: ChatGPTTokens) -> None:
+        path = auth_file_path()
+        path.write_text(json.dumps(asdict(tokens), separators=(",", ":")))
+        os.chmod(path, 0o600)
+
+    def clear(self) -> None:
+        auth_file_path().unlink(missing_ok=True)
+
+
+# Which store the process uses. A `ContextVar` rather than a module global for the reason every
+# other per-session value in this tree is one: two sessions in one interpreter may legitimately
+# hold different credentials, and the last caller must not win.
+_store: contextvars.ContextVar[Any] = contextvars.ContextVar(
+    "daisy_credentials", default=None
+)
+
+
+def set_credentials(store: Any) -> contextvars.Token:
+    """Make `store` the credential store for this task. Pair with :func:`reset_credentials`."""
+    return _store.set(store)
+
+
+def reset_credentials(token: contextvars.Token) -> None:
+    _store.reset(token)
+
+
+def credentials() -> Any:
+    """The bound credential store, or the file-backed default."""
+    return _store.get() or _DEFAULT_STORE
+
+
+_DEFAULT_STORE = FileCredentials()
+
+
 def load_tokens() -> Optional[ChatGPTTokens]:
     """Load the stored tokens, or ``None`` when signed out. Synchronous file IO —
     call via ``asyncio.to_thread`` from the event loop."""
-    path = auth_file_path()
-    if not path.exists():
-        return None
-    try:
-        data = json.loads(path.read_text())
-        return ChatGPTTokens(**data)
-    except (OSError, ValueError, TypeError):
-        return None
+    return credentials().load()
 
 
 def save_tokens(tokens: ChatGPTTokens) -> None:
-    """Persist tokens with owner-only permissions (they are password-equivalent)."""
-    path = auth_file_path()
-    path.write_text(json.dumps(asdict(tokens), separators=(",", ":")))
-    os.chmod(path, 0o600)
+    credentials().save(tokens)
 
 
 def clear_tokens() -> None:
-    auth_file_path().unlink(missing_ok=True)
+    credentials().clear()
 
 
 def is_signed_in() -> bool:

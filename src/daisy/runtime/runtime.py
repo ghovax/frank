@@ -4,7 +4,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Sequence
 
 from langchain_core.messages import (
     AIMessage,
@@ -164,13 +164,22 @@ def _build_tools(
     working_directory: str = "",
     *,
     can_reach_peers: bool = False,
+    extra_tools: Sequence[BaseTool] = (),
 ) -> list[BaseTool]:
     tools = _all_available_tools(
         agent_configuration, global_configuration, working_directory,
-        can_reach_peers=can_reach_peers,
+        can_reach_peers=can_reach_peers, extra_tools=extra_tools,
     )
-    allowed = _live_allow_list(agent_configuration.tools_enabled, {tool.name for tool in tools})
-    return [tool for tool in tools if not allowed or tool.name in allowed]
+    # The agent profile's allow-list narrows *our* tools. It cannot narrow the caller's: a
+    # profile is a file describing which of the harness's capabilities an agent should have,
+    # written long before this program existed, so filtering a tool the caller passed in
+    # against it would mean a supplied tool silently vanishing for every agent that names an
+    # explicit list.
+    supplied = {tool.name for tool in extra_tools}
+    allowed = _live_allow_list(
+        agent_configuration.tools_enabled, {tool.name for tool in tools} - supplied,
+    )
+    return [tool for tool in tools if tool.name in supplied or not allowed or tool.name in allowed]
 
 
 def _live_allow_list(configured: list[str], existing: set[str]) -> set[str]:
@@ -211,6 +220,7 @@ def _all_available_tools(
     working_directory: str = "",
     *,
     can_reach_peers: bool = False,
+    extra_tools: Sequence[BaseTool] = (),
 ) -> list[BaseTool]:
     available = [
         bash_tool,
@@ -257,6 +267,11 @@ def _all_available_tools(
         # appear only when the user has actually registered one.
         if global_configuration.remote_agents.agents:
             available.extend(remote_agent_tools())
+    # The caller's own tools, last, so a name collision resolves to ours rather than silently
+    # replacing a built-in — a tool called `bash` that is not this harness's `bash` would be a
+    # confinement surprise, not an extension point.
+    known = {tool.name for tool in available}
+    available.extend(tool for tool in extra_tools if tool.name not in known)
     return available
 
 
@@ -442,6 +457,9 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         observer: Any = None,
         approvals: Any = None,
         catalogue: Any = None,
+        transcript: Any = None,
+        tools: Sequence[BaseTool] = (),
+        tool_risk: str = "medium",
     ):
         self._session_id = session_id
         # The session that created this one, empty when a person did. Reaches the model in the
@@ -490,9 +508,16 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         )
 
         self._file_lease_manager = file_lease_manager
+        # The caller's own tools, alongside the harness's. `BaseTool` is LangChain's, adopted
+        # rather than wrapped, so anything already written for that ecosystem works unchanged.
+        self._extra_tools = {tool.name: tool for tool in tools}
+        # What a caller's tool is gated at. The permission engine classifies by tool *name* and
+        # has never heard of this one, so there is no honest way to infer it; defaulting to a
+        # mode that asks means adding a tool cannot silently widen what a session may do.
+        self._tool_risk = tool_risk
         self._tools = _build_tools(
             agent_configuration, global_configuration, self._working_directory,
-            can_reach_peers=session_access is not None,
+            can_reach_peers=session_access is not None, extra_tools=tools,
         )
         # Concrete tools are bound natively — the provider sees each tool's real
         # JSON schema and can constrain argument decoding to it, and it emits
@@ -527,6 +552,9 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         # dropped, and a gate suspended and waited for a human.
         self._observer = observer
         self._approvals = approvals
+        self._transcript = transcript
+        # When the turn now running began, for the transcript entry it will produce.
+        self._turn_started_at = None
         # Command patterns the user chose to "always allow" this session — matching
         # bash commands then skip the sandbox/approval prompts. Scoped to this
         # runtime (this context), populated on demand from an LLM-derived rule.

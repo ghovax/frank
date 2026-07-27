@@ -571,4 +571,24 @@ class _PermissionsMixin:
                     ))
             return plan
 
+        if tool_name in self._extra_tools:
+            # A tool the caller supplied. The engine classifies by tool *name* and has never
+            # heard of this one, so there is no honest way to infer what it does — and the safe
+            # direction is the one where adding a tool cannot silently widen what a session may
+            # do. It is gated at the risk the caller stated (`tool_risk`, "medium" unless said
+            # otherwise), and `tool_risk="none"` is how a caller says a tool needs no gate at
+            # all, which is a deliberate sentence rather than a default.
+            if self._tool_risk == "none" or not self._permission_mode.is_interactive:
+                return plan
+            plan.gates.append(_PreflightGate(
+                request_id=self._new_permission_request_id(),
+                tool_call_id=tool_call_identifier,
+                kind="permission",
+                command=tool_name,
+                justification=f"{tool_name} was supplied by the program embedding this session.",
+                risk=self._tool_risk,
+                deny_message=f"{tool_name} was not approved by the user",
+            ))
+            return plan
+
         return plan

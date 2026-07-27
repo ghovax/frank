@@ -50,19 +50,23 @@ you are asking for the daemon.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, AsyncIterator, Mapping, Optional
+from typing import Any, AsyncIterator, Mapping, Optional, Sequence
 
 from daisy.base.ports import (
     Approval,
     Approvals,
     Catalogue,
     Checkpoints,
+    Credentials,
     JobStore,
     MemoryCheckpoints,
     MemoryJobStore,
+    MemoryTranscript,
     Observation,
     Observer,
     SuspensionGate,
+    Transcript,
+    TurnSummary,
     describe_unmet,
 )
 
@@ -71,13 +75,17 @@ __all__ = [
     "Approvals",
     "Catalogue",
     "Checkpoints",
+    "Credentials",
     "JobStore",
     "MemoryCheckpoints",
     "MemoryJobStore",
+    "MemoryTranscript",
     "Observation",
     "Observer",
     "Session",
     "SuspensionGate",
+    "Transcript",
+    "TurnSummary",
     "__version__",
 ]
 
@@ -156,8 +164,19 @@ class Session:
         jobs: Optional[JobStore] = None,
         observer: Optional[Observer] = None,
         approvals: Optional[Approvals] = None,
+        transcript: Optional[Transcript] = None,
+        credentials: Optional[Credentials] = None,
         peers: Any = None,
         mcp_manager: Any = None,
+        # Extension, as distinct from configuration: tools the agent gains, and where it may
+        # run them.
+        tools: Sequence[Any] = (),
+        tool_risk: str = "medium",
+        locations: Optional[list[dict]] = None,
+        # A git worktree per session. Off by default and deliberately: it writes to disk, and a
+        # library that does that unasked is the thing every other default here avoids.
+        workspace: Any = None,
+        tracer_provider: Any = None,
     ) -> None:
         from daisy.base.configuration import GlobalConfiguration
         from daisy.base.identifiers import new_id
@@ -182,6 +201,16 @@ class Session:
         self._jobs = _require(JobStore, jobs, "jobs") or MemoryJobStore()
         self._observer = _require(Observer, observer, "observer")
         self._approvals = _require(Approvals, approvals, "approvals")
+        self._transcript = _require(Transcript, transcript, "transcript") or MemoryTranscript()
+        self._credentials = _require(Credentials, credentials, "credentials")
+        self._tools = list(tools)
+        self._tool_risk = tool_risk
+        self._locations = locations
+        self._workspace = workspace
+        self._tracer_provider = tracer_provider
+        # Where tools actually run. Equal to `directory` unless a workspace repointed it.
+        self._runtime_directory = self._directory
+        self._bindings: list = []
         self._runtime: Any = None
         self._restored = False
 
@@ -204,6 +233,19 @@ class Session:
             # The tuning policy is bound per task, so binding it here scopes it to the caller
             # rather than to the interpreter.
             set_tuning(tuning_from_policy(self._configuration.tuning))
+            # Both are bound per task rather than installed on the process, so two sessions in
+            # one interpreter can hold different credentials and report to different places.
+            # The tokens are held so the bindings end with the session rather than leaking.
+            if self._credentials is not None:
+                from daisy.base.credentials import set_credentials
+
+                self._bindings.append(("credentials", set_credentials(self._credentials)))
+            if self._tracer_provider is not None:
+                from daisy.base.telemetry import set_tracer
+
+                self._bindings.append(
+                    ("tracer", set_tracer(self._tracer_provider.get_tracer("daisy")))
+                )
             # The working directory's own `.agents` plus the packaged base layer, and
             # deliberately nothing of `$HOME`. A program that imported Daisy did not ask to
             # inherit the machine's agents, its memories, or — as the instruction loader did —
@@ -242,7 +284,7 @@ class Session:
                 agent_configuration=agent_configuration,
                 global_configuration=self._configuration,
                 session_id=self._session_id,
-                working_directory=self._directory,
+                working_directory=self._runtime_directory,
                 project_directory=self._directory,
                 permission_mode=self._permission_mode,
                 sandbox=self._sandbox if self._sandbox is not None else Profile(),
@@ -253,8 +295,45 @@ class Session:
                 jobs=self._jobs,
                 observer=self._observer,
                 approvals=self._approvals,
+                transcript=self._transcript,
+                tools=self._tools,
+                tool_risk=self._tool_risk,
+                locations=self._resolved_locations(),
             )
         return self._runtime
+
+    def _resolved_locations(self) -> Optional[list[dict]]:
+        """Where this session's tools may run.
+
+        A caller's own locations win. `None` means the runtime synthesises a single local
+        location at the working directory, which is right for a session with no project."""
+        return self._locations
+
+    async def prepare_workspace(self, strategy: str = "worktree") -> str:
+        """Give this session its own git worktree, and run its tools there.
+
+        Opt-in, and it must be: it writes to disk, where every other default here is chosen so
+        that a library session leaves nothing behind. Worth having because an embedder running
+        an agent over a repository usually wants exactly this — the agent's edits isolated from
+        the working tree the program itself is using.
+
+        Answers with the directory the tools will run in, and repoints the session at it.
+        Call before the first turn; a session that has already built its runtime keeps the
+        directory it was built with.
+        """
+        manager = self._workspace
+        if manager is None:
+            from daisy.base.workspaces import SessionWorkspaceManager
+
+            manager = SessionWorkspaceManager()
+        prepared = await manager.prepare(self._session_id, self._directory, strategy)
+        self._runtime_directory = prepared.runtime_working_directory or self._directory
+        return self._runtime_directory
+
+    @property
+    def transcript(self) -> Transcript:
+        """The record of this session's turns."""
+        return self._transcript
 
     async def restore(self) -> bool:
         """Reload this session's conversation from its checkpoint store.
@@ -340,6 +419,19 @@ class Session:
         if self._runtime is not None:
             with contextlib.suppress(Exception):
                 self._runtime.abort()
+        # Unbind what the session bound, so a caller's credentials and tracer do not outlive
+        # the session that supplied them.
+        for kind, token in reversed(self._bindings):
+            with contextlib.suppress(Exception):
+                if kind == "credentials":
+                    from daisy.base.credentials import reset_credentials
+
+                    reset_credentials(token)
+                else:
+                    from daisy.base.telemetry import reset_tracer
+
+                    reset_tracer(token)
+        self._bindings.clear()
         from daisy.runtime.background import cancel_all_background_jobs
 
         with contextlib.suppress(Exception):

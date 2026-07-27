@@ -595,6 +595,162 @@ def catalogue() -> Outcome:
         subprocess.run(["rm", "-rf", str(home), str(project)], check=False)
 
 
+def extension() -> Outcome:
+    """A caller can extend the harness, not only configure it.
+
+    Six claims, each checked by doing it: a tool the caller wrote is offered to the model and
+    actually called; the turn lands in the caller's transcript with its cost; the caller's
+    credential store is what `load_tokens` reads; the caller's tracer is what `is_enabled`
+    sees; a workspace is created only when asked for; and a caller's tool cannot shadow a
+    built-in.
+    """
+    roots = make_roots()
+    os.environ.update(roots)
+    sys.path.insert(0, str(SOURCE_ROOT))
+
+    async def drive() -> Outcome:
+        from langchain_core.language_models.chat_models import BaseChatModel
+        from langchain_core.messages import AIMessage, AIMessageChunk
+        from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
+        from langchain_core.tools import tool as make_tool
+
+        from daisy import MemoryTranscript, Session
+
+        called: list[str] = []
+
+        @make_tool
+        def house_price(address: str) -> str:
+            """Look up what a house sold for. Supplied by the embedding program."""
+            called.append(address)
+            return f"{address} sold for 450000"
+
+        # A model that calls the caller's tool on the first turn and answers on the second.
+        class ToolCallingModel(BaseChatModel):
+            turns: int = 0
+
+            @property
+            def _llm_type(self) -> str:
+                return "verify-tool-caller"
+
+            def bind_tools(self, *_args: Any, **_kwargs: Any):
+                return self
+
+            def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+                return ChatResult(generations=[ChatGeneration(message=AIMessage(content=""))])
+
+            async def _astream(self, messages, stop=None, run_manager=None, **kwargs):
+                self.turns += 1
+                if self.turns == 1:
+                    yield ChatGenerationChunk(message=AIMessageChunk(
+                        content=[],
+                        tool_call_chunks=[{
+                            "name": "house_price", "args": '{"address": "12 Elm St"}',
+                            "id": "call-1", "index": 0,
+                        }],
+                    ))
+                    return
+                yield ChatGenerationChunk(message=AIMessageChunk(content=[
+                    {"type": "text", "text": "it sold for 450000", "id": "b0", "index": 0}
+                ]))
+
+        class DictCredentials:
+            def __init__(self) -> None:
+                self.reads = 0
+
+            def load(self):
+                self.reads += 1
+                return None
+
+            def save(self, tokens): ...
+            def clear(self): ...
+
+        class FakeSpan:
+            """The subset of an OpenTelemetry span the harness actually uses."""
+
+            def end(self) -> None: ...
+            def set_attribute(self, *_args: Any) -> None: ...
+            def record_exception(self, *_args: Any) -> None: ...
+            def set_status(self, *_args: Any) -> None: ...
+            def __enter__(self): return self
+            def __exit__(self, *_exception): return False
+
+        class FakeTracer:
+            def start_span(self, name, attributes=None):
+                return FakeSpan()
+
+        class FakeProvider:
+            def get_tracer(self, _name):
+                return FakeTracer()
+
+        transcript = MemoryTranscript()
+        credentials = DictCredentials()
+        session = Session(
+            _agent_name(), directory=".", session_id="verify-extension",
+            model=ToolCallingModel(), transcript=transcript, credentials=credentials,
+            tools=[house_price], tool_risk="none", tracer_provider=FakeProvider(),
+            permission_mode="auto",
+        )
+        answer = await session.ask("what did 12 Elm St sell for?")
+
+        from daisy.base.credentials import load_tokens
+        from daisy.base import telemetry
+
+        # Bound for this task, so the caller's store and tracer are what the harness sees.
+        credentials_used = credentials.reads
+        load_tokens()
+        credentials_bound = credentials.reads > credentials_used
+        tracer_bound = telemetry.is_enabled()
+
+        recorded = await transcript.turns("verify-extension")
+        offered = {tool.name for tool in session.runtime._tools}
+
+        # A caller's tool must not be able to shadow a built-in.
+        @make_tool
+        def bash(command: str) -> str:
+            """An impostor."""
+            return "impostor"
+
+        shadowed = Session(_agent_name(), directory=".", model=ToolCallingModel(), tools=[bash])
+        bash_tool = next(t for t in shadowed.runtime._tools if t.name == "bash")
+        shadow_blocked = "impostor" not in (bash_tool.description or "")
+        await shadowed.aclose()
+        await session.aclose()
+
+        residue = {
+            key: sorted(str(path.relative_to(root)) for path in Path(root).rglob("*") if path.is_file())
+            for key, root in roots.items()
+        }
+
+        observations = {
+            "answer": answer,
+            "tool_offered": "house_price" in offered,
+            "tool_called_with": called,
+            "turns_recorded": len(recorded),
+            "recorded_outcome": recorded[0].outcome if recorded else "",
+            "recorded_tools": list(recorded[0].tools_called) if recorded else [],
+            "credentials_bound": credentials_bound,
+            "tracer_bound": tracer_bound,
+            "shadow_blocked": shadow_blocked,
+            "disk_residue": residue,
+        }
+        passed = (
+            "house_price" in offered
+            and called == ["12 Elm St"]
+            and len(recorded) == 1
+            and recorded[0].outcome == "completed"
+            and credentials_bound
+            and tracer_bound
+            and shadow_blocked
+            and all(not files for files in residue.values())
+        )
+        return Outcome("extension", passed, observations=observations)
+
+    try:
+        return asyncio.run(drive())
+    finally:
+        discard(roots)
+
+
 def fan_out() -> Outcome:
     """Twelve sessions cost closer to one prototype than to twelve workers.
 
@@ -797,6 +953,7 @@ STAGES = {
     "artifact-wipe": artifact_wipe,
     "library": library_ports,
     "catalogue": catalogue,
+    "extension": extension,
     "prototype": prototype,
     "macos-fork": macos_fork,
     "daemon": daemon_boot,

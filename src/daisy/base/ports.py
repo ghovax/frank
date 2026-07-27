@@ -317,6 +317,95 @@ class MemoryJobStore:
         })
 
 
+# The record of what a session actually did.
+
+
+@dataclass(frozen=True)
+class TurnSummary:
+    """One completed turn: what was asked, what came back, and how it ended."""
+
+    session_id: str
+    turn_id: str
+    started_at: datetime
+    ended_at: datetime
+    request: str
+    response: str
+    # "completed" | "cancelled" | "failed" | "input_required" — the runtime's own stop reason.
+    outcome: str
+    tools_called: Sequence[str] = ()
+    input_tokens: int = 0
+    output_tokens: int = 0
+    error: str = ""
+
+
+@runtime_checkable
+class Transcript(Protocol):
+    """Where the record of a session's turns goes.
+
+    Deliberately **not** a2a's `TaskStore`, and the difference is the whole reason this exists
+    rather than reusing that. The daemon speaks A2A — it is an A2A server, its turns *are*
+    Tasks, and its record is rightly a `TaskStore`. The library speaks no A2A at all, so
+    handing it Tasks would mean adding a protocol it does not use in order to solve a problem
+    it does not have. Adopting an interface is right when the ecosystem has one for the thing
+    you are actually doing, and wrong when it merely has one nearby.
+
+    Distinct from :class:`Checkpoints`, which answers "resume this conversation" and holds the
+    model-facing messages. This answers "what has this session done", which a program embedding
+    an agent wants for auditing, for billing, and for showing a person a history.
+
+    Distinct from :class:`Observer` too: an observation is a decision the harness made
+    mid-turn, this is one entry per completed turn.
+    """
+
+    async def record(self, turn: TurnSummary) -> None:
+        ...
+
+    async def turns(self, session_id: str) -> Sequence[TurnSummary]:
+        """Every turn recorded for a session, oldest first."""
+        ...
+
+
+class MemoryTranscript:
+    """Turns in a list. The default, and the whole of it."""
+
+    def __init__(self) -> None:
+        self._turns: dict[str, list[TurnSummary]] = {}
+
+    async def record(self, turn: TurnSummary) -> None:
+        self._turns.setdefault(turn.session_id, []).append(turn)
+
+    async def turns(self, session_id: str) -> Sequence[TurnSummary]:
+        return list(self._turns.get(session_id, ()))
+
+
+# The account credentials a provider needs, when it uses an account rather than a key.
+
+
+@runtime_checkable
+class Credentials(Protocol):
+    """Where the OAuth tokens for an account-based provider are kept.
+
+    Only ChatGPT works this way; every other provider takes an API key, which is configuration
+    rather than a store. A seam because the alternative is a fixed path under the user's home
+    directory, and a program embedding the harness may well hold its tokens somewhere else —
+    a secret manager, an encrypted store, its own database.
+
+    Narrow on purpose. Supplying `model=` bypasses this entirely, because a caller who brings
+    their own chat model has already solved authentication; this is for a caller who wants
+    *our* ChatGPT client with *their* token storage.
+    """
+
+    def load(self) -> Any:
+        """The stored tokens, or ``None`` when nothing is signed in."""
+        ...
+
+    def save(self, tokens: Any) -> None:
+        ...
+
+    def clear(self) -> None:
+        ...
+
+
 # Where the prompt's material comes from.
 
 
@@ -395,11 +484,15 @@ __all__ = [
     "Approvals",
     "Catalogue",
     "Checkpoints",
+    "Credentials",
     "JobStore",
     "MemoryCheckpoints",
     "MemoryJobStore",
+    "MemoryTranscript",
     "Observation",
     "Observer",
     "SuspensionGate",
+    "Transcript",
+    "TurnSummary",
     "describe_unmet",
 ]
