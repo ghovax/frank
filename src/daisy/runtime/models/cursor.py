@@ -413,7 +413,7 @@ class ChatCursorModel(BaseChatModel):
                 output_tokens += message.output_token_delta
                 if (details := message.token_details) is not None:
                     input_tokens = max(input_tokens, details.used_tokens)
-                    _record_context_window(self.model, details.max_tokens)
+                    _record_context_window(self.model, details.maximum_tokens)
                 announced = message.tool_call or announced
                 if message.text_delta:
                     yield _chunk(content_block=_text_block(message.text_delta, request_id))
@@ -680,11 +680,11 @@ UNKNOWN_CONTEXT_WINDOW = 200_000
 _observed_context_windows: dict[str, int] = {}
 
 
-def _record_context_window(model_id: str, max_tokens: int) -> None:
+def _record_context_window(model_id: str, maximum_tokens: int) -> None:
     """Remember a window the server reported. Keeps the largest seen for a model: a turn that
     has not yet grown past a smaller budget can be told a smaller one."""
-    if max_tokens > _observed_context_windows.get(model_id, 0):
-        _observed_context_windows[model_id] = max_tokens
+    if maximum_tokens > _observed_context_windows.get(model_id, 0):
+        _observed_context_windows[model_id] = maximum_tokens
 
 
 # The model ids Cursor serves are not plain model names: the reasoning effort is part of

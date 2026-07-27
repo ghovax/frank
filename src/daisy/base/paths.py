@@ -113,37 +113,15 @@ def oauths_directory() -> Path:
     return path
 
 
-# A token file that predates the ``oauths`` directory, by the provider that wrote it. Only
-# the ChatGPT provider has an entry: it is the only one that shipped with tokens beside the
-# databases, and nothing else was ever written under the old layout.
-_LEGACY_OAUTH_FILENAMES = {"chatgpt": "chatgpt_auth.json"}
-
-
 def oauth_token_path(provider_identifier: str) -> Path:
     """One provider's OAuth tokens (``…/daisy/oauths/<provider>.json``).
 
-    Relocates a file from the flat pre-``oauths`` layout on first use. The move is here
-    rather than in either credentials module because this is where the layout is decided,
-    and it happens at all because the alternative is silently signing an upgrading user out
-    of a subscription they are paying for. Both paths are under the same directory, so the
-    rename is atomic and carries the file's 0600 mode with it."""
-    path = oauths_directory() / f"{provider_identifier}.json"
-    legacy_path = legacy_oauth_token_path(provider_identifier)
-    if legacy_path is not None and not path.exists() and legacy_path.exists():
-        legacy_path.replace(path)
-    return path
-
-
-def legacy_oauth_token_path(provider_identifier: str) -> Path | None:
-    """Where this provider's tokens lived before the ``oauths`` directory, or ``None`` for a
-    provider that never wrote one.
-
-    Exposed so signing out can delete it too. The relocation above fires on *every* read,
-    not just the first one after an upgrade, so a sign-out that removed only the new file
-    would leave a stale old one to be adopted on the next read — signing the account back
-    in, which is the one thing a sign-out must not do."""
-    legacy_name = _LEGACY_OAUTH_FILENAMES.get(provider_identifier, "")
-    return data_directory() / legacy_name if legacy_name else None
+    There is no reading of any older layout. A token file written where this used to put one
+    is simply not found, and the provider reports itself signed out until the user signs in
+    again — which costs one browser round trip and leaves exactly one place a token can be.
+    Carrying a relocation would mean this function had to know the shape of every layout it
+    ever had, forever, and a sign-out would have to delete files from all of them."""
+    return oauths_directory() / f"{provider_identifier}.json"
 
 
 def daemon_socket_path() -> Path:

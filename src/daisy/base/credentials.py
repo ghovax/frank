@@ -42,7 +42,7 @@ from typing import Optional
 
 import httpx
 
-from daisy.base.paths import legacy_oauth_token_path, oauth_token_path
+from daisy.base.paths import oauth_token_path
 from daisy.base.tuning import Tunable, active_tuning
 
 # Codex's public OAuth client and endpoints. The client id is not a secret — it is
@@ -109,11 +109,6 @@ def save_tokens(tokens: ChatGPTTokens) -> None:
 
 def clear_tokens() -> None:
     auth_file_path().unlink(missing_ok=True)
-    # The pre-``oauths`` file as well, when one is still on disk. This provider is the only
-    # one with an older layout to forget, and forgetting it is the point: the relocation in
-    # `oauth_token_path` would otherwise adopt it on the next read and undo the sign-out.
-    if (legacy_path := legacy_oauth_token_path(PROVIDER)) is not None:
-        legacy_path.unlink(missing_ok=True)
 
 
 def is_signed_in() -> bool:

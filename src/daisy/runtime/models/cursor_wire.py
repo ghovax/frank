@@ -501,12 +501,12 @@ class TokenDetails:
     """What a conversation currently costs, as the server accounts for it.
 
     ``used_tokens`` is the conversation's context fill — the prompt side, not a total — and
-    ``max_tokens`` is the window it is filling. The second is the only place the protocol
+    ``maximum_tokens`` is the window it is filling. The second is the only place the protocol
     states a model's context window at all: it is absent from the model list, so this is
     where a real number comes from rather than a guess about the model's family."""
 
     used_tokens: int = 0
-    max_tokens: int = 0
+    maximum_tokens: int = 0
 
 
 @dataclass
@@ -658,7 +658,7 @@ def _parse_token_details(state_structure: bytes) -> Optional[TokenDetails]:
     maximum = first(details, 2)
     return TokenDetails(
         used_tokens=used.number_value if used is not None else 0,
-        max_tokens=maximum.number_value if maximum is not None else 0,
+        maximum_tokens=maximum.number_value if maximum is not None else 0,
     )
 
 

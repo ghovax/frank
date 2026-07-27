@@ -98,7 +98,7 @@ def build_chat_model(
     model_identifier: str,
     global_configuration: GlobalConfiguration,
     agent_configuration: AgentConfiguration,
-    working_directory: str = "",
+    working_directory: str,
 ) -> BaseChatModel:
     """Build the chat model for a provider-qualified (``provider/model``) id.
 
@@ -110,8 +110,9 @@ def build_chat_model(
     Both read their OAuth token from a shared store rather than taking an api_key.
 
     ``working_directory`` is only consulted by the cursor provider, whose request context
-    wants to know where the client believes it is running. Every other route ignores it,
-    which is why it is optional rather than threaded through every call site."""
+    wants to know where the client believes it is running. It is required even so: a default
+    would exist only to spare a caller from passing what it already has, and the caller that
+    took the default would be the one silently telling Cursor it is running nowhere."""
     provider_identifier, model_suffix = model_identifier.split("/", 1)
     if provider_identifier == "chatgpt":
         catalog_entry = find_model(model_identifier)

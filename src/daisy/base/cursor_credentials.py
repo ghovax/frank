@@ -321,6 +321,7 @@ class CursorLoginFlow:
                     retry=retry_if_exception_type((_SignInPending, httpx.HTTPError)),
                     wait=wait_exponential(
                         multiplier=tuning.duration(Tunable.oauth_poll_interval_seconds),
+                        # `max` is tenacity's parameter name for the ceiling, not ours.
                         max=tuning.duration(Tunable.oauth_poll_ceiling_seconds),
                     ),
                     stop=stop_after_delay(tuning.duration(Tunable.oauth_poll_give_up_seconds)),
