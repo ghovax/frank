@@ -54,11 +54,6 @@ def state_directory() -> Path:
     return _xdg("XDG_STATE_HOME", Path.home() / ".local" / "state")
 
 
-def cache_directory() -> Path:
-    """Regenerable caches, safe to delete at any time (``~/.cache/daisy``)."""
-    return _xdg("XDG_CACHE_HOME", Path.home() / ".cache")
-
-
 def runtime_directory() -> Path:
     """Sockets and the daemon's handshake files.
 

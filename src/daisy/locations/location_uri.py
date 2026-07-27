@@ -85,10 +85,3 @@ def parse(uri: str) -> LocationTarget:
         )
     raise ValueError(f"Unrecognized location URI scheme in: {uri!r}")
 
-
-def is_location_uri(value: str) -> bool:
-    try:
-        parse(value)
-        return True
-    except ValueError:
-        return False

@@ -333,15 +333,6 @@ def _get_encoding():
     return _encoding
 
 
-def count_tokens(text: str) -> int:
-    """The token count of ``text`` under the reference tokenizer (a coarse character estimate when
-    the tokenizer is unavailable)."""
-    encoding = _get_encoding()
-    if encoding is None:
-        return -(-len(text) // _FALLBACK_CHARS_PER_TOKEN)  # ceil division
-    return len(encoding.encode(text, disallowed_special=()))
-
-
 def clip_to_tokens(text: str, budget: int) -> tuple[str, bool]:
     """Clip ``text`` to at most ``budget`` tokens, returning (clipped_text, was_truncated). The cut
     is placed on a real token boundary, so the budget means what it says regardless of the content's

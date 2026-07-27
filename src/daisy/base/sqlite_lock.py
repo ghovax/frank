@@ -27,7 +27,6 @@ from __future__ import annotations
 import asyncio
 import fcntl
 import threading
-from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TypeVar
@@ -113,11 +112,6 @@ def background_sqlite_write_lock():
         yield
     finally:
         _release_file_locks(_background_write_lock, lock_handle)
-
-
-def run_with_sqlite_write_lock(function: Callable[..., _Result], *args, **kwargs) -> _Result:
-    with sqlite_write_lock():
-        return function(*args, **kwargs)
 
 
 def _get_async_write_lock() -> asyncio.Lock:

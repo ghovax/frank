@@ -74,12 +74,6 @@ class CallExecutionPolicy:
 _LOCATION_TOOLS = frozenset({"bash", "read_file", "write_file", "edit_file", "search_code"})
 
 
-class BashAllowRule(BaseModel):
-    """Structured output for an 'always allow' rule: the command pattern(s) to
-    auto-allow for the rest of the session (e.g. ``["cat *", "ls *"]``)."""
-    patterns: list[str]
-
-
 class PermissionDecision(BaseModel):
     """Structured decision for automatic permission classification."""
 

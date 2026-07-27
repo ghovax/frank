@@ -596,19 +596,6 @@ def text_value(element: Any) -> Optional[str]:
     return value if isinstance(value, str) else None
 
 
-def selected_range(element: Any) -> Optional[tuple[int, int]]:
-    """The current selection as (location, length) in characters, or None when unavailable. A
-    zero-length range is the caret position."""
-    value = _single(element, SELECTED_TEXT_RANGE)
-    if value is None:
-        return None
-    ok, extracted = AS.AXValueGetValue(value, RANGE_TYPE, None)
-    if not ok or extracted is None:
-        return None
-    location, length = tuple(extracted)
-    return int(location), int(length)
-
-
 def set_selected_range(element: Any, location: int, length: int) -> bool:
     """Set the selection (or, with length 0, place the caret). Returns False when the element does
     not support a settable selection range, so the caller can fall back."""
@@ -620,12 +607,6 @@ def set_selected_range(element: Any, location: int, length: int) -> bool:
     return AS.AXUIElementSetAttributeValue(element, SELECTED_TEXT_RANGE, value) == 0
 
 
-def selected_text(element: Any) -> Optional[str]:
-    """The currently selected substring, or None when nothing is selected or unavailable."""
-    value = _single(element, SELECTED_TEXT)
-    return value if isinstance(value, str) else None
-
-
 def set_selected_text(element: Any, text: str) -> bool:
     """Replace the current selection with ``text`` (inserting at the caret when the selection is
     empty). Returns False when the element does not support it, so the caller can fall back."""
@@ -633,9 +614,3 @@ def set_selected_text(element: Any, text: str) -> bool:
         return False
     return AS.AXUIElementSetAttributeValue(element, SELECTED_TEXT, text) == 0
 
-
-def focused_element(pid: int) -> Optional[Any]:
-    """The app's currently focused UI element (the field the caret is in), or None."""
-    root = AS.AXUIElementCreateApplication(pid)
-    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.ax_messaging_seconds))
-    return _single(root, FOCUSED_ELEMENT)

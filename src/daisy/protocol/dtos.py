@@ -8,7 +8,7 @@ unresolved string annotations, crashing the routes that used them.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -82,32 +82,8 @@ class DirectoryValidationRequest(BaseModel):
     directory: str
 
 
-class PermissionRequest(BaseModel):
-    request_id: str
-    decision: str
-
-
-class QuestionRequest(BaseModel):
-    request_id: str
-    # One entry per question, in order: a list of selected labels (plus any
-    # custom text the user typed). A skipped question is an empty entry. The
-    # runtime returns this verbatim to the tool.
-    answers: list[Any]
-    # The user dismissed the whole prompt without answering. The tool reports the
-    # decline to the model and the turn stops rather than proceeding on a guess.
-    declined: bool = False
-
-
-class SteeringRequest(BaseModel):
-    message: str
-
-
 class DirectoryRevealRequest(BaseModel):
     path: str
-
-
-class PermissionModeRequest(BaseModel):
-    mode: Literal["default", "auto", "read_only"]
 
 
 class SessionDraftRequest(BaseModel):

@@ -140,17 +140,6 @@ def set_attributes(active_span: Any, attributes: dict[str, Any]) -> None:
             active_span.set_attribute(key, value)
 
 
-def current_traceparent() -> str:
-    """The current span's W3C ``traceparent`` for propagation, or ``""`` when disabled."""
-    if _tracer is None:
-        return ""
-    from opentelemetry.propagate import inject
-
-    carrier: dict[str, str] = {}
-    inject(carrier)
-    return carrier.get("traceparent", "")
-
-
 def context_from_traceparent(traceparent: str) -> Any:
     """A parent context extracted from a ``traceparent`` header, or ``None``."""
     if _tracer is None or not traceparent:

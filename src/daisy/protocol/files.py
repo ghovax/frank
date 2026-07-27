@@ -22,7 +22,7 @@ from urllib.parse import quote
 import httpx
 import jwt
 
-from a2a.types import FilePart, FileWithBytes, FileWithUri, Part
+from a2a.types import FilePart, FileWithBytes, FileWithUri
 
 from daisy.base.net_trust import UntrustedHostError, pin_to_ip, resolve_public_ips
 from daisy.base.tuning import Tunable, active_tuning
@@ -217,42 +217,6 @@ class FileUrlSigner:
                 return None
             self._redeemed[jti] = expiry
         return path
-
-
-def build_file_part(
-    attachment: dict[str, Any],
-    signer: FileUrlSigner,
-    *,
-    ttl_seconds: Optional[int] = None,
-    inline_maximum_bytes: int = DEFAULT_INLINE_MAXIMUM_BYTES,
-) -> Optional[Part]:
-    """Turn a stored attachment into a ``FilePart``, or ``None`` if the file has no readable
-    path. A small file is inlined as ``FileWithBytes``; a larger one is a ``FileWithUri``
-    with a signed URL the peer fetches on demand."""
-    path = str(attachment.get("path") or "")
-    if not path:
-        return None
-    file_path = Path(path)
-    try:
-        size = file_path.stat().st_size
-    except OSError:
-        return None
-    name = str(attachment.get("filename") or attachment.get("title") or file_path.name)
-    mime_type = str(attachment.get("mime_type") or "application/octet-stream")
-    if size <= inline_maximum_bytes:
-        try:
-            encoded = base64.b64encode(file_path.read_bytes()).decode("ascii")
-        except OSError:
-            return None
-        return Part(root=FilePart(file=FileWithBytes(bytes=encoded, name=name, mime_type=mime_type)))
-    # Larger files are served by signed URL — but only from the content-addressed upload
-    # store. A file outside it (an in-place-referenced local path) is not URL-served: the
-    # signer refuses it, so an arbitrary filesystem path can never be handed to a peer.
-    try:
-        uri = signer.sign(path, ttl_seconds=ttl_seconds)
-    except PathNotServableError:
-        return None
-    return Part(root=FilePart(file=FileWithUri(uri=uri, name=name, mime_type=mime_type)))
 
 
 def load_or_create_secret(home_directory: Path) -> bytes:
