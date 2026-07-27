@@ -189,8 +189,7 @@ class ChatCursorModel(BaseChatModel):
                               if isinstance(message, SystemMessage)) if text
         )
 
-    @staticmethod
-    def _render(messages: Sequence[BaseMessage]) -> str:
+    def _render(self, messages: Sequence[BaseMessage]) -> str:
         """The conversation as the single user message Cursor's turn accepts.
 
         A first turn is just its text — no scaffolding around a single question. Once
@@ -214,11 +213,27 @@ class ChatCursorModel(BaseChatModel):
                     blocks.append(f"## Assistant tool call: {call.get('name')}\n{rendered}")
                 continue
             blocks.append(f"## User\n{message_text(message)}")
-        preamble = (
-            "The conversation so far, oldest first. Continue it: answer the last message, "
-            "calling the tools provided when you need them."
-        )
-        return preamble + "\n\n" + "\n\n".join(blocks)
+        return self._preamble(any(isinstance(m, ToolMessage) for m in conversation)) + "\n\n" + "\n\n".join(blocks)
+
+    @staticmethod
+    def _preamble(carries_tool_results: bool) -> str:
+        """What to say about the transcript that follows.
+
+        The second sentence is not decoration. Cursor's agent is built to keep working, and a
+        transcript ending in a tool result reaches it as a *new* turn rather than as the
+        continuation of one — the protocol has no way to hand back a structured tool result
+        outside the stream that asked for it, so a completed call is only ever prose by the
+        time the model reads it. Without being told, an agent that reads "I ran `ls`, here is
+        the output" can reasonably decide to run `ls`. The maintained OpenCode plugin says the
+        same thing in its own recovery prompts, which is where the wording comes from."""
+        lines = ["The conversation so far, oldest first. Continue it: answer the last message, "
+                 "calling the tools provided when you need them."]
+        if carries_tool_results:
+            lines.append(
+                "Every tool call shown below has already run and its result is included. Do not "
+                "run those again unless something has changed — continue from what they returned."
+            )
+        return "\n".join(lines)
 
     def _environment(self) -> bytes:
         """The ``RequestContextEnv`` a turn describes itself with — where the client

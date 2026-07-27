@@ -1,6 +1,6 @@
 ---
 created: 2026-07-26T23:52:40Z
-updated: 2026-07-27T01:08:00Z
+updated: 2026-07-27T01:34:00Z
 commit: 98560a9
 ---
 
@@ -51,6 +51,18 @@ Daisy's shape wins. Not for convenience — the stateful route is genuinely bett
 So every call opens a fresh run. The whole conversation is rendered into the turn's user message, the tools are re-declared, and when the model calls one the stream ends and the call is handed back. Daisy runs the tool, appends the result, and calls again, where the next run sees it as history. This is the same decision `store: false` records for the Codex client, made for the same reason, and it is the one thing about this integration that is a choice rather than a constraint.
 
 A first turn is sent as bare text, with no scaffolding around a single question. Once there is history it is labelled — `## User`, `## Assistant`, `## Assistant tool call: bash`, `## Tool result: bash` — because a model has to be able to tell its own previous output and a tool's result apart from what the user said, and a flattened blob of alternating prose does not let it.
+
+One line of that scaffolding is load-bearing, and it was missing from the first version of this. When the transcript carries tool results, it says so explicitly: those calls have already run, do not run them again. The protocol has no way to hand a structured tool result back outside the stream that asked for it, so by the time the model reads a completed call it is prose — and Cursor's agent is built to keep working, so a transcript ending in "I ran `ls`, here is the output" reaches it as a new turn it could reasonably satisfy by running `ls`. The maintained OpenCode plugin carries the same instruction in both of its recovery prompts, which is where the wording came from and what makes this a known failure mode rather than a hypothetical one.
+
+## What the stateless choice actually costs
+
+The first draft of this plan asserted that going stateless loses server-side prompt caching, and offered a live bidirectional stream as the only alternative. Both halves of that deserve correcting, because the second one is wrong and the first is only half-known.
+
+There is a third design, and Cursor built it in. Every completed turn ends with a `conversationCheckpointUpdate` carrying the whole `ConversationStateStructure`, and `AgentRunRequest.conversation_state` takes one back — so a conversation resumes by *sending its state up with the request* rather than by holding a socket open. That is still stateless HTTP, and the state is opaque bytes a client stores wherever it likes, which means it does not put an invisible second copy of the conversation on Cursor's side. Presenting the sticky stream as the only alternative conflated two very different things and quietly buried the good one.
+
+What it costs is real but bounded. Cursor bills the token accounting a subscription's credit pool is denominated in, and cache reads run at roughly a fifth of input rate. If resending the transcript defeats caching, input tokens — the dominant term in an agentic loop — cost about five times what they would. Whether it *does* defeat caching is not known from here: the prompt this sends is append-only, with a stable system prompt and a transcript that only grows at the end, so ordinary prefix caching should still hit most of it; but a cache scoped per conversation id would miss entirely, since every turn mints a fresh one. Nothing short of a metered account answers that.
+
+So the position is: keep the fresh run, because it is the only design in which the transcript Daisy owns is the only transcript, and because checkpoint resume brings a blob store, an eviction policy, interrupt sanitisation and a "blob not found" failure mode along with it — all of which the maintained plugin has, and all of which exist to serve a live stream this does not have. But the checkpoint is the upgrade path if measurement says caching is being missed, and it is a much smaller step than the earlier framing implied.
 
 ## The system prompt does not travel inline
 
