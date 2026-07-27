@@ -130,11 +130,21 @@ class Daemon:
 
 
 def make_roots() -> dict[str, str]:
-    """A fresh set of XDG directories, so a stage touches nothing of the developer's."""
-    return {
+    """A fresh set of XDG directories, so a stage touches nothing of the developer's.
+
+    `XDG_RUNTIME_DIR` gets a deliberately short name while the rest keep descriptive ones.
+    Sockets are bound under it, and `sun_path` is 104 bytes on macOS — a chatty prefix plus
+    `mkdtemp`'s suffix plus the harness's own `daisy/sessions/` puts a real socket over the
+    limit, which would make the battery fail on a path length the product does not have. The
+    limit itself is exercised deliberately in the `socket-paths` stage rather than incidentally
+    here.
+    """
+    roots = {
         key: tempfile.mkdtemp(prefix=f"daisy-verify-{key.lower()}-")
-        for key in ("XDG_RUNTIME_DIR", "XDG_STATE_HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME")
+        for key in ("XDG_STATE_HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME")
     }
+    roots["XDG_RUNTIME_DIR"] = tempfile.mkdtemp(prefix="dv-")
+    return roots
 
 
 def seed_configuration(roots: dict[str, str], text: str) -> Path:

@@ -40,6 +40,17 @@ def _agent_name() -> str:
     return "general-assistant"
 
 
+def _runs(command: list[str]) -> bool:
+    """Whether a command can actually be executed, rather than merely being on `PATH`.
+
+    `shutil.which("uv")` says uv exists; it says nothing about whether `uv run ruff` resolves
+    to anything. The difference is the whole reason this exists."""
+    try:
+        return subprocess.run(command, capture_output=True, timeout=60, check=False).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def structure() -> Outcome:
     """The layering held, every module imports alone, and the catalogues are consistent.
 
@@ -58,12 +69,15 @@ def structure() -> Outcome:
     # fails only when called — which is how the ChatGPT provider stayed broken across two
     # commits. Ruff is a development tool rather than a runtime dependency, so it is looked for
     # rather than assumed, and its absence is reported instead of failing the stage.
+    # Reported-if-absent means *proved* present, not assumed reachable. The previous version
+    # fell back to `uv run ruff` whenever `uv` existed, which fails to spawn rather than
+    # reporting absence when ruff is not installed — so the stated policy was defeated by its
+    # own fallback, and the stage failed on a missing development tool instead of skipping it.
     ruff = shutil.which("ruff")
-    uv = shutil.which("uv")
-    if ruff:
+    if not ruff and shutil.which("uv") and _runs(["uv", "run", "ruff", "--version"]):
+        checks["lint"] = ["uv", "run", "ruff", "check", "src", "scripts"]
+    elif ruff:
         checks["lint"] = [ruff, "check", "src", "scripts"]
-    elif uv:
-        checks["lint"] = [uv, "run", "ruff", "check", "src", "scripts"]
 
     observations: dict[str, Any] = {}
     if "lint" not in checks:
@@ -595,6 +609,85 @@ def catalogue() -> Outcome:
         subprocess.run(["rm", "-rf", str(home), str(project)], check=False)
 
 
+def socket_paths() -> Outcome:
+    """Every unix socket the harness can construct fits in `sun_path`, on every platform.
+
+    This checks the *class*, not an instance. `sun_path` is 104 bytes on macOS and 108 on
+    Linux, so a path that is fine in development can be unbindable on the platform the product
+    actually ships to — which is exactly what happened: a session socket was 117 bytes on
+    macOS, and **no session could bind at all** while every Linux run stayed green.
+
+    The failure gave nothing to work with either. `bind` raises a bare `AF_UNIX path too long`
+    naming neither the path nor the limit, several frames below whatever built it, which is why
+    the guard being checked here reports at construction instead.
+    """
+    roots = make_roots()
+    os.environ.update(roots)
+    sys.path.insert(0, str(SOURCE_ROOT))
+    try:
+        from daisy.base.paths import (
+            SOCKET_PATH_MAXIMUM_BYTES,
+            SocketPathTooLong,
+            daemon_socket_path,
+            prototype_socket_path,
+            session_socket_path,
+        )
+
+        # A real session id: `session-` plus a full dashed UUID is the shape that broke.
+        session_id = "session-e9d285d4-efec-417a-8ec9-c98c033d306d"
+        measured = {
+            "daemon": len(str(daemon_socket_path()).encode()),
+            "prototype": len(str(prototype_socket_path()).encode()),
+            "session": len(str(session_socket_path(session_id)).encode()),
+        }
+
+        # The same paths under a macOS `$TMPDIR`, which is the deepest runtime root in the
+        # wild: /var/folders/xy/<22>/T/. Modelled rather than assumed, because Linux CI will
+        # never produce one.
+        macos_root = Path(tempfile.mkdtemp(prefix="dv-")) / "var-folders-xy-0123456789abcdefghijkl-T"
+        (macos_root / "daisy" / "sessions").mkdir(parents=True, exist_ok=True)
+        os.environ["XDG_RUNTIME_DIR"] = str(macos_root)
+        deep = {
+            "daemon": len(str(daemon_socket_path()).encode()),
+            "prototype": len(str(prototype_socket_path()).encode()),
+            "session": len(str(session_socket_path(session_id)).encode()),
+        }
+        os.environ["XDG_RUNTIME_DIR"] = roots["XDG_RUNTIME_DIR"]
+
+        # And a root that genuinely cannot work must be named, not left to fail at bind.
+        os.environ["XDG_RUNTIME_DIR"] = tempfile.mkdtemp(prefix="d" * 80)
+        try:
+            session_socket_path(session_id)
+            guard = ""
+        except SocketPathTooLong as error:
+            guard = str(error)
+        os.environ["XDG_RUNTIME_DIR"] = roots["XDG_RUNTIME_DIR"]
+
+        # The socket name must stay a pure function of the session id: `lifecycle` unlinks a
+        # dead session's socket by recomputing the path, and a random name would strand it.
+        stable = session_socket_path(session_id) == session_socket_path(session_id)
+        distinct = session_socket_path("session-a") != session_socket_path("session-b")
+
+        observations = {
+            "limit": SOCKET_PATH_MAXIMUM_BYTES,
+            "battery_roots": measured,
+            "macos_shaped_root": deep,
+            "guard_message": guard[:120],
+            "name_is_stable": stable,
+            "names_are_distinct": distinct,
+        }
+        passed = (
+            all(size <= SOCKET_PATH_MAXIMUM_BYTES for size in measured.values())
+            and all(size <= SOCKET_PATH_MAXIMUM_BYTES for size in deep.values())
+            and bool(guard)
+            and stable
+            and distinct
+        )
+        return Outcome("socket-paths", passed, observations=observations)
+    finally:
+        discard(roots)
+
+
 def extension() -> Outcome:
     """A caller can extend the harness, not only configure it.
 
@@ -1033,6 +1126,7 @@ STAGES = {
     "artifact-wipe": artifact_wipe,
     "library": library_ports,
     "catalogue": catalogue,
+    "socket-paths": socket_paths,
     "extension": extension,
     "agent-component": agent_component,
     "prototype": prototype,

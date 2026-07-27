@@ -24,6 +24,10 @@
         # fetches its own Python against .python-version, so no interpreter is pinned here.
         packages = with pkgs; [
           uv
+          # In the devshell as well as in the dev dependency group. It was in neither, so the
+          # verification battery's lint stage silently reported it missing on every machine
+          # that had not installed it by hand.
+          ruff
           bun
           rustc
           cargo

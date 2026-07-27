@@ -72,6 +72,7 @@ import os
 import selectors
 import signal
 import socket
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -131,6 +132,63 @@ def _mach_thread_count() -> int:
         return total
     except (OSError, AttributeError, ValueError):
         return 0
+
+
+_PROXY_VARIABLES = ("http_proxy", "https_proxy", "all_proxy", "no_proxy",
+                   "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY")
+
+
+def _settle_proxy_environment() -> dict[str, str]:
+    """Resolve the system proxy configuration once, out of process, and export the answer.
+
+    This exists because of a defect that is invisible in Python and fatal to the fork. On macOS
+    `urllib.request.getproxies()` is `getproxies_environment() or getproxies_macosx_sysconf()`,
+    and the second reaches SystemConfiguration through `_scproxy`, which leaves **two native
+    threads in the process permanently**. `litellm` builds a module-level `httpx.Client()` at
+    import, `httpx.Client()` calls `getproxies()`, and so importing the runtime took the
+    prototype from one thread to three. A multi-threaded process cannot legally `fork()`, and
+    the children aborted inside the Objective-C runtime with a message naming
+    `+[__NSPlaceholderSet initialize]` — which reads like the CoreFoundation verdict and is a
+    different thing entirely.
+
+    This is the second instance of the class the hazard register predicted, and the first that
+    came from a third-party package rather than our own code: `scripts/check_layers.py` forbids
+    network calls at import in `src/`, and it cannot see inside `litellm`.
+
+    The fix is to make `getproxies_environment()` truthy before anything imports `litellm`, so
+    the `or` short-circuits and `_scproxy` is never reached. Resolving the *real* configuration
+    in a throwaway subprocess and exporting it preserves proxy behaviour exactly — the threads
+    are created in a process that is about to exit. Where no proxy is configured, `no_proxy=*`
+    is both truthy and semantically correct, and verified not to invent a proxy: `httpx.Client()`
+    mounts nothing under it.
+
+    A no-op when the caller already set any of these, because then the short-circuit already
+    happens and their configuration is not ours to second-guess. Children inherit the result
+    through the environment, which matters — a forked session calls `getproxies()` too.
+    """
+    if any(os.environ.get(name) for name in _PROXY_VARIABLES):
+        return {}
+    resolved: dict[str, str] = {}
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-c",
+             "import json,urllib.request;print(json.dumps(urllib.request.getproxies()))"],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        if completed.returncode == 0:
+            resolved = json.loads(completed.stdout or "{}")
+    except (OSError, ValueError, subprocess.SubprocessError):
+        # A resolver that will not run tells us nothing about the system's proxies, and
+        # guessing would be worse than the honest default below.
+        resolved = {}
+
+    # `getproxies()` keys by scheme — `http`, `https`, `no` — and the environment spells each
+    # of those `<key>_proxy`, so the mapping is the same for the bypass list as for the rest.
+    exported = {f"{scheme}_proxy": address for scheme, address in resolved.items() if address}
+    if not exported:
+        exported["no_proxy"] = "*"
+    os.environ.update(exported)
+    return exported
 
 
 def _load_runtime() -> None:
@@ -495,6 +553,13 @@ def main() -> int:
     )
     from daisy.base.paths import prototype_socket_path
 
+    # Strictly before `_load_runtime`. Importing `litellm` is what calls `getproxies()`, and
+    # once SystemConfiguration has been touched the threads are permanent — settling the
+    # environment afterwards would be too late by one import.
+    exported = _settle_proxy_environment()
+    if exported:
+        logger.info("proxy environment settled out of process: %s", sorted(exported))
+
     _load_runtime()
 
     threads = native_thread_count()
@@ -504,8 +569,11 @@ def main() -> int:
         # a message about the Objective-C runtime an hour later.
         logger.error(
             "the runtime import left %d native threads; the prototype cannot fork safely. "
-            "Something imported at module scope is starting a thread — most likely a network "
-            "call. `scripts/check_layers.py` checks for exactly that.",
+            "Something imported at module scope started one — most likely a network call, or "
+            "on macOS a proxy lookup reaching SystemConfiguration through _scproxy. "
+            "`scripts/check_layers.py` catches the first inside src/; it cannot see inside a "
+            "third-party package, which is where this last came from. Run the `macos-fork` "
+            "verification stage: it attributes the change to the exact module import.",
             threads,
         )
         return 1
