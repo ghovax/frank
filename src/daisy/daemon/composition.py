@@ -1,6 +1,6 @@
 """What the daemon owns on behalf of everyone, and the watchers that keep it current.
 
-The registry, the worker pool and the stores are the daemon's *lifecycle* half, built in
+The registry, the prototype and the stores are the daemon's *lifecycle* half, built in
 :mod:`daisy.daemon.__main__`. This is the other half: what has to be singular — file leases
 that coordinate writes between sessions, workspaces, terminals, signed file URLs, push
 notifications, remote peers — plus the GUI surface that reads and edits them.

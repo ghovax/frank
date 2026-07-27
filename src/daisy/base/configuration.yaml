@@ -7,9 +7,9 @@
 # provider they use — and everything else stays where it can still move.
 #
 # To see what there is to change:   daisy configure --all
-# To change one:                    daisy configure daemon.warm_floor 4
-# To read one:                      daisy configure daemon.warm_floor
-# To put it back:                   daisy configure daemon.warm_floor --unset
+# To change one:                    daisy configure workspace.strategy worktree
+# To read one:                      daisy configure workspace.strategy
+# To put it back:                   daisy configure workspace.strategy --unset
 #
 # A name that is not in the schema is refused rather than written and ignored.
 

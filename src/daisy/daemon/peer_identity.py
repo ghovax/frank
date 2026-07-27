@@ -10,7 +10,7 @@ touch, and how loose a child may be.
 A secret a process can read is not an identity. The kernel already knows which process opened
 a socket, and it will not lie about it, so that is what identifies a caller here. `SO_PEERCRED`
 on Linux and `LOCAL_PEERPID` on macOS give the peer's pid at accept time; every worker is made
-a session leader when it is spawned (``start_new_session=True`` in :mod:`daisy.daemon.pool`),
+a session leader when it is forked (``os.setsid()`` in :mod:`daisy.worker.prototype`),
 so ``getsid`` on that pid names the worker that owns it — directly for the worker itself, and
 for every shell command, pipeline and `daisy` invocation underneath it, which all inherit the
 session id.

@@ -1,8 +1,10 @@
 # PyInstaller spec that freezes Daisy into one self-contained binary you install. It is a
 # single image with three entry points — `daisy` (the CLI), `daisyd` (the daemon) and
-# `worker` (a session) — selected by the first argument, because a worker must be a re-exec
-# of the *same signed binary* for macOS to treat it as the same code identity and keep one
-# Accessibility grant covering every session.
+# `prototype` (the process sessions are forked out of) — selected by the first argument,
+# because the prototype must be a re-exec of the *same signed binary* for macOS to treat it as
+# the same code identity and keep one Accessibility grant covering every session. Sessions
+# themselves are forks of the prototype, and a fork inherits the parent's signature, so the
+# whole fleet stays one TCC row without any session ever being exec'd.
 #
 # The desktop app used to bundle the result of this as a resource and spawn it. It no longer
 # does: the app is a client of a daemon it neither contains nor starts, so this produces the
@@ -212,7 +214,7 @@ collection = COLLECT(
     name="daisy",
 )
 
-# Wrap the frozen image as a background .app. A session worker — not the desktop app — is the
+# Wrap the frozen image as a background .app. A session process — not the desktop app — is the
 # process that calls the macOS Accessibility API for the computer-use tool, and TCC lists
 # whichever process actually exercises the permission. As a bare executable it would show only
 # its filename; as a bundle, macOS resolves it to this Info.plist. It carries the *same*

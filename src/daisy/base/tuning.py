@@ -199,10 +199,19 @@ class Tunable(Enum):
     )
 
     # The control plane and the processes it supervises.
-    worker_ready_seconds = Default(60.0, Scaling.TIME, "How long the daemon waits for a fresh worker to start.")
-    worker_assignment_seconds = Default(
+    prototype_start_seconds = Default(
+        120.0, Scaling.TIME,
+        "How long the daemon waits for the prototype to import the runtime and accept a "
+        "connection. Generous because this is the one cold start left in the system — every "
+        "session after it is a fork.",
+    )
+    prototype_restart_seconds = Default(
+        5.0, Scaling.TIME,
+        "How long the daemon waits before trying again after the prototype failed to restart.",
+    )
+    session_start_seconds = Default(
         60.0, Scaling.TIME,
-        "How long the daemon waits for a worker to accept its assignment and open its socket.",
+        "How long the daemon waits for a forked session to bind its socket and report ready.",
     )
     daemon_startup_seconds = Default(
         45.0, Scaling.TIME,

@@ -75,10 +75,6 @@ async def _reload_configuration_from_disk() -> None:
     configuration.user_context = fresh.user_context
     configuration.computer_control = fresh.computer_control
     configuration.tuning = fresh.tuning
-    # The pool reads its sizing when it is built, so a change here reaches the next daemon rather
-    # than this one — the value is carried so `daisy configure` reports what is stored, not so the
-    # running pool resizes underneath the sessions it is already serving.
-    configuration.daemon = fresh.daemon
     configuration.providers = fresh.providers
     configuration.agent = fresh.agent
     await _apply_live_credentials()

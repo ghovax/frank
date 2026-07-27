@@ -14,7 +14,7 @@ Everything in Daisy is a **session**: one OS process running one agent, created 
 
 Three parts, kept apart:
 
-- **`daisyd`** — a thin daemon. It keeps the registry of sessions, supervises their processes, owns the databases as the sole writer, brokers the shared resources, and parks a couple of warm workers so spawning a session is usually a socket write rather than a Python cold start. It runs no agents itself.
+- **`daisyd`** — a thin daemon. It keeps the registry of sessions, supervises their processes, owns the databases as the sole writer, and brokers the shared resources. It runs no agents itself, and it never imports the agent runtime — which is why it delegates starting a session to the **prototype**, a process that has imported the runtime once and forks a copy of itself for each session in about 60 milliseconds.
 - **`daisy`** — the command. `create` a session, `send` it work, `ps` what is running, `attach` to watch, `tree` to see what created what, `approve` what it asks for, `configure` what the next one starts with, `open` the desktop app, `kill` to end a subtree. It adds nothing the control plane does not have; it is the ergonomic face of it — see the [CLI guide](documentation/cli.md).
 - **The app** — a native macOS client (Tauri + Next.js) over the same API. A *client*: it finds a daemon and talks to it, and contains no harness of its own. `daisy open` starts one and launches the window together.
 

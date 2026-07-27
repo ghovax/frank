@@ -194,7 +194,7 @@ Changes apply to what starts **next**. See the [Configuration guide](configurati
 ## The daemon
 
 ```
-daisy daemon status      # is it up, how many sessions, how many warm workers
+daisy daemon status      # is it up, how many sessions, and the prototype's health
 daisy daemon start       # start it explicitly (any other command also will)
 daisy daemon stop        # stop it; its sessions are reaped with it
 daisy daemon endpoint    # the loopback port and capability token

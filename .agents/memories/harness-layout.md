@@ -8,22 +8,29 @@ tags: configuration, dotagents, mcp, layering
 
 ## The package tree
 
-One executable, three entry points, selected by the first argument in `src/daisy/__main__.py`: `daisy` (the CLI), `daisyd` (the daemon), and `worker` (a session). `packaging/entry.py` at the repository root is the same entry for the frozen build.
+One executable, three entry points, selected by the first argument in `src/daisy/__main__.py`: `daisy` (the CLI), `daisyd` (the daemon), and `prototype` (the process sessions are forked out of). There is no `worker` entry point — a session is a fork, never an exec. `packaging/entry.py` at the repository root is the same entry for the frozen build.
 
 ```
 src/daisy/
 ├── base/        configuration, XDG paths, skills, permission modes, MCP client, file leases
 ├── protocol/    A2A cards, DTOs, the wire contract
 ├── cli/         the `daisy` command and its renderers
-├── daemon/      daisyd: registry, lifecycle, worker pool, brokers, persistence
-├── worker/      a session process: its socket server and its executor
+├── daemon/      daisyd: registry, lifecycle, prototype client, brokers, persistence
+├── worker/      a session process (its socket server and executor), and the prototype
 ├── runtime/     the agent loop, prompts, tools, models
 ├── computer/    macOS screen-control bridges (native apps + Chrome)
 ├── locations/   where files live (local, SSH, containers)
 └── rest/        the REST surface the desktop app uses
 ```
 
-`scripts/check_layers.py` enforces the layering — `base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, with `rest` above the daemon — and two invariants: **the daemon never imports `runtime`** (that weight is what the pre-started worker exists to carry), and **`computer/` is never imported at module level** (it pulls in PyObjC, which a pre-warmed worker must not have loaded). A package's `__main__.py` is exempt from the layer table: it is the composition root, and assembling a program means reaching across layers.
+`scripts/check_layers.py` enforces the layering — `base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, with `rest` above the daemon — and four invariants:
+
+- **The daemon never imports `runtime`.** That weight is what the prototype carries, and it is why the prototype is a separate process the daemon talks to over a socket rather than something it calls.
+- **`computer/` is never imported at module level.** It pulls in PyObjC, which initialises CoreFoundation, which cannot survive a `fork()` on macOS.
+- **Nothing reaches the network at import.** A catalogue fetch at module scope left two native threads behind, and a multi-threaded process cannot fork; the child aborted with a message naming CoreFoundation, which was not the cause. `threading.enumerate()` cannot see native threads — the prototype counts with mach `task_threads` and refuses to fork unless the answer is 1.
+- **Nothing under `runtime/` parks a caller's argument in a module global**, installs a signal handler, or registers an exit hook. The runtime is a library, and one process may host more than one session.
+
+A package's `__main__.py` is exempt from the layer table: it is the composition root, and assembling a program means reaching across layers. It is *not* exempt from the network-at-import rule, because that cost lands on every importer.
 
 ## The .agents protocol layout
 

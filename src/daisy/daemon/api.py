@@ -456,13 +456,18 @@ def _remote_text_parts(event: Any) -> list[str]:
 async def _daemon_status(_params: dict) -> dict:
     assert state.registry is not None
     live = state.registry.live()
+    # The prototype's own numbers, asked for rather than remembered. `threads` and
+    # `frozen_objects` are here because both are invariants that fail silently: a prototype
+    # that has picked up a second thread cannot fork safely, and one whose heap was never
+    # frozen still works while costing most of the memory saving. Neither is visible anywhere
+    # else, so this is where they get reported.
+    prototype = await state.prototype.refresh_status() if state.prototype else {
+        "alive": False, "pid": 0, "threads": 0, "frozen_objects": 0, "sessions": 0,
+    }
     return {
         "ok": True,
         "sessions": {"live": len(live), "total": len(state.registry.all())},
-        "pool": {
-            "warm": state.pool.warm_count if state.pool else 0,
-            "assigned": state.pool.assigned_count if state.pool else 0,
-        },
+        "prototype": prototype,
         "socket": str(state.daemon_socket),
         "port": state.daemon_port,
         # Which image is actually serving. Once the daemon is installed there are two `daisy`
@@ -516,9 +521,10 @@ async def _daemon_restart(_params: dict) -> dict:
 def _daemon_argv() -> list[str]:
     """How to re-enter this program as the daemon.
 
-    Mirrors `pool.worker_command`: in the frozen application the executable *is* the image and
-    takes the entry point as its first argument, while from a checkout it is an interpreter that
-    needs `-m daisy` first. Getting this wrong would re-exec into the CLI, which exits."""
+    Mirrors `prototype.prototype_command`: in the frozen application the executable *is* the
+    image and takes the entry point as its first argument, while from a checkout it is an
+    interpreter that needs `-m daisy` first. Getting this wrong would re-exec into the CLI,
+    which exits."""
     if getattr(sys, "frozen", False):
         return ["daisyd"]
     return ["-m", "daisy", "daisyd"]

@@ -1,19 +1,24 @@
 """Starting sessions, watching them, and reaping them together.
 
-Three things live here because they are the same concern seen from different ends: handing a
-warm worker its assignment so it becomes a session, noticing when a session's process dies
-without telling anyone, and taking a session down along with everything it created.
+Three things live here because they are the same concern seen from different ends: asking the
+prototype to fork a session into being, noticing when a session's process dies without telling
+anyone, and taking a session down along with everything it created.
 
 Reaping is depth-first over the tree and always kills children before the parent, so a child
-is never briefly orphaned onto a dead parent. Each worker leads its own process group, so a
+is never briefly orphaned onto a dead parent. Each session leads its own process session, so a
 session that started a dev server takes that dev server with it.
+
+Noticing a death is the part that changed shape. The daemon used to `await process.wait()` on
+a worker it had spawned itself; it does not spawn them any more, and a process cannot be
+waited on by anything but its parent. The parent is the prototype, so deaths arrive here as
+reports rather than as returns — one handler for every session instead of one supervisor task
+each, which is the same information through a different door.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
 import os
 import signal
@@ -22,7 +27,7 @@ from typing import Callable, Optional
 
 from daisy.base.paths import session_socket_path
 from daisy.daemon.peer_identity import session_process_groups
-from daisy.daemon.pool import WarmWorker, WorkerPool
+from daisy.daemon.prototype import PrototypeClient, PrototypeUnavailable, SessionExit
 from daisy.daemon.registry import EXITED, FAILED, RUNNING, SessionRecord, SessionRegistry
 from daisy.daemon.state import relay_to_session
 from daisy.protocol.metadata import Metadata
@@ -54,20 +59,23 @@ def _close_subscribers(session_id: str) -> None:
 
 
 class SessionLifecycle:
-    """Owns the transition of a warm worker into a live session, and back out again."""
+    """Owns the transition of a fork into a live session, and back out again."""
 
     def __init__(
         self,
         registry: SessionRegistry,
-        pool: WorkerPool,
+        prototype: PrototypeClient,
         *,
         on_change: Optional[Callable[[], None]] = None,
     ) -> None:
         self._registry = registry
-        self._pool = pool
+        self._prototype = prototype
         self._on_change = on_change
-        self._processes: dict[str, WarmWorker] = {}
-        self._supervisors: dict[str, asyncio.Task] = {}
+        # session id -> the process id the prototype forked for it.
+        self._processes: dict[str, int] = {}
+        # session id -> a future settled when that session's exit is reported, so a reap can
+        # wait for the process to actually be gone rather than for a timeout to elapse.
+        self._departures: dict[str, asyncio.Future] = {}
 
     def _changed(self) -> None:
         if self._on_change is not None:
@@ -77,15 +85,9 @@ class SessionLifecycle:
     async def start(self, record: SessionRecord) -> bool:
         """Turn a minted record into a running session.
 
-        Claims a warm worker, writes it its assignment, and waits for it to report that its
-        socket is accepting connections. Waiting for that acknowledgement is what lets a
-        client `send` immediately after `create` without racing the worker's bind."""
-        worker = await self._pool.claim()
-        if worker is None:
-            self._registry.mark(record.id, status=FAILED, updated_at=_now(), exit_reason="no worker available")
-            self._changed()
-            return False
-
+        Asks the prototype to fork, and answers only once the child reports that its socket is
+        accepting connections. Waiting for that acknowledgement is what lets a client `send`
+        immediately after `create` without racing the bind."""
         assignment = {
             "session_id": record.id,
             "agent": record.agent,
@@ -95,82 +97,57 @@ class SessionLifecycle:
             # that when the session was created.
             "runtime_working_directory": record.runtime_working_directory or record.working_directory,
             "permission_mode": record.permission_mode,
-            # Already resolved and clamped by `session.create`. The worker applies it to every
-            # child it spawns and never widens it, so it travels with the session rather than
-            # being read again from a configuration file that may have changed since.
+            # Already resolved and clamped by `session.create`. The session applies it to
+            # every child it spawns and never widens it, so it travels with the session rather
+            # than being read again from a configuration file that may have changed since.
             "sandbox": record.sandbox,
             "project_id": record.project_id,
             "parent": record.parent,
             "token": record.token,
-            # The daemon's own token, so the worker can write to the ingest endpoint. Its
+            # The daemon's own token, so the session can write to the ingest endpoint. Its
             # session token authorises calls *to* it, which is the other direction entirely.
             "daemon_token": _daemon_token(),
             "socket": str(session_socket_path(record.id)),
         }
         try:
-            assert worker.process.stdin is not None
-            worker.process.stdin.write((json.dumps(assignment) + "\n").encode())
-            await worker.process.stdin.drain()
-        except (OSError, AssertionError) as error:
-            logger.error("Could not assign session %s to worker %d: %s", record.id, worker.pid, error)
-            self._registry.mark(record.id, status=FAILED, updated_at=_now(), exit_reason="worker refused assignment")
+            pid = await self._prototype.fork_session(assignment)
+        except PrototypeUnavailable as error:
+            logger.error("Could not start session %s: %s", record.id, error)
+            self._registry.mark(record.id, status=FAILED, updated_at=_now(), exit_reason=str(error))
             self._changed()
             return False
 
-        ready = await self._await_ready(worker)
-        if not ready:
-            self._registry.mark(record.id, status=FAILED, updated_at=_now(), exit_reason="worker did not become ready")
-            await self._terminate(worker)
-            self._pool.release()
-            self._changed()
-            return False
-
-        self._processes[record.id] = worker
-        self._registry.mark(record.id, status=RUNNING, updated_at=_now(), pid=worker.pid)
-        self._supervisors[record.id] = asyncio.get_running_loop().create_task(self._supervise(record.id, worker))
+        self._processes[record.id] = pid
+        self._registry.mark(record.id, status=RUNNING, updated_at=_now(), pid=pid)
         self._changed()
         return True
 
-    async def _await_ready(self, worker: WarmWorker) -> bool:
-        """Wait for the worker's one-line readiness acknowledgement."""
-        if worker.process.stdout is None:
-            return False
-        try:
-            line = await asyncio.wait_for(worker.process.stdout.readline(), timeout=active_tuning().duration(Tunable.worker_assignment_seconds))
-        except asyncio.TimeoutError:
-            logger.error("Worker %d did not report ready in time", worker.pid)
-            return False
-        if not line:
-            return False
-        try:
-            return bool(json.loads(line.decode()).get("ready"))
-        except (ValueError, UnicodeDecodeError):
-            return False
+    async def on_session_exit(self, report: SessionExit) -> None:
+        """A session's process has ended, however it ended.
 
-    async def _supervise(self, session_id: str, worker: WarmWorker) -> None:
-        """Notice a session's process ending, however it ends.
+        This is what the per-session supervisor task used to be. A session that exits on its
+        own — a crash, an unhandled error, an OOM kill — would otherwise leave a record
+        claiming to be running and a socket nothing is listening on, and the daemon cannot
+        watch for that itself: it did not fork the process, so it cannot wait on it. The
+        prototype did, and reports here.
 
-        A worker that exits on its own — a crash, an unhandled error, an OOM kill — would
-        otherwise leave a record claiming to be running and a socket nothing is listening on.
-        Watching the process is the only way to learn about the deaths nobody reports."""
-        try:
-            code = await worker.process.wait()
-        except asyncio.CancelledError:
-            raise
-        except Exception:  # noqa: BLE001 — a wait that fails must not take the daemon with it
-            code = -1
-        self._pool.release()
+        Reached for every death, including the ones this file caused. A reaped session was
+        already marked terminal before it was signalled, so the `is_live` check is what tells
+        the two apart."""
+        session_id = report.session_id
+        if not session_id:
+            return
         self._processes.pop(session_id, None)
+        departure = self._departures.pop(session_id, None)
+        if departure is not None and not departure.done():
+            departure.set_result(None)
         record = self._registry.get(session_id)
         if record is not None and record.is_live:
-            # Only an unprompted death lands here as a failure; a reaped session was already
-            # marked before its process was signalled.
-            reason = "worker exited" if code == 0 else f"worker exited with status {code}"
             self._registry.mark(
                 session_id,
-                status=EXITED if code == 0 else FAILED,
+                status=EXITED if report.clean else FAILED,
                 updated_at=_now(),
-                exit_reason="" if code == 0 else reason,
+                exit_reason="" if report.clean else report.describe(),
             )
             # A dead parent takes its children with it, exactly as an explicit kill would.
             await self.reap(session_id, reason="parent session ended", skip_self=True)
@@ -243,39 +220,45 @@ class SessionLifecycle:
         return reaped
 
     async def _stop(self, session_id: str) -> None:
-        supervisor = self._supervisors.pop(session_id, None)
-        if supervisor is not None and not supervisor.done():
-            supervisor.cancel()
-        worker = self._processes.pop(session_id, None)
-        if worker is not None:
-            await self._terminate(worker)
-            self._pool.release()
+        pid = self._processes.pop(session_id, None)
+        if pid is not None:
+            await self._terminate(session_id, pid)
+        self._departures.pop(session_id, None)
         _close_subscribers(session_id)
         self._unlink_socket(session_id)
 
-    async def _terminate(self, worker: WarmWorker) -> None:
-        """SIGTERM everything in the worker's process session, then SIGKILL what is left.
+    async def _terminate(self, session_id: str, pid: int) -> None:
+        """SIGTERM everything in the session's process session, then SIGKILL what is left.
 
-        The unit here has to be the process *session*, not the process group. A worker is spawned
-        as a session leader, and everything it runs inherits that session id — but the bash tool
-        puts each command in a group of its own, deliberately, so one job can be cancelled with its
-        whole subtree. Signalling only the worker's group therefore missed every command a session
-        ran: end a session that started a dev server and the port stayed held.
+        The unit here has to be the process *session*, not the process group. A session leads
+        its own — `setsid` in the forked child — and everything it runs inherits that session
+        id, but the bash tool puts each command in a group of its own, deliberately, so one job
+        can be cancelled with its whole subtree. Signalling only the session's own group
+        therefore missed every command it ran: end a session that started a dev server and the
+        port stayed held.
 
-        So the groups are enumerated by session membership and each is signalled. The enumeration
-        happens once, before anything is signalled, because a worker's children are reparented the
-        moment it dies — they keep the session id, so a later sweep would still find them, but
-        there is no reason to make correctness depend on that."""
-        if not worker.alive:
-            return
-        groups = await asyncio.to_thread(session_process_groups, worker.pid)
+        So the groups are enumerated by session membership and each is signalled. The
+        enumeration happens once, before anything is signalled, because a session's children
+        are reparented the moment it dies — they keep the session id, so a later sweep would
+        still find them, but there is no reason to make correctness depend on that.
+
+        Waiting for the death is a report from the prototype rather than a `waitpid`, because
+        the daemon is not the parent. Polling the pid would be the alternative and would be
+        wrong in a specific way: a reaped-but-not-yet-collected process still answers
+        `kill(pid, 0)`, so a poll would either race or need a timeout where this needs none."""
+        departure: asyncio.Future = asyncio.get_running_loop().create_future()
+        self._departures[session_id] = departure
+
+        groups = await asyncio.to_thread(session_process_groups, pid)
         if not groups:
             # No listing available (an unexpected platform, `ps` missing). Falling back to the
-            # worker's own group keeps the session's own death reliable, and says why it is less
-            # than it should be rather than silently reaping too little.
-            logger.warning("Could not enumerate the process session of worker %d; signalling its group only", worker.pid)
+            # session's own group keeps its death reliable, and says why it is less than it
+            # should be rather than silently reaping too little.
+            logger.warning(
+                "Could not enumerate the process session of %d; signalling its group only", pid
+            )
             with contextlib.suppress(OSError):
-                groups = [os.getpgid(worker.pid)]
+                groups = [os.getpgid(pid)]
 
         def signal_groups(number: int) -> None:
             for group in groups:
@@ -287,17 +270,18 @@ class SessionLifecycle:
         signal_groups(signal.SIGTERM)
         if not groups:
             with contextlib.suppress(ProcessLookupError):
-                worker.process.terminate()
+                os.kill(pid, signal.SIGTERM)
+        grace = active_tuning().duration(Tunable.sigterm_grace_seconds)
         try:
-            await asyncio.wait_for(worker.process.wait(), timeout=active_tuning().duration(Tunable.sigterm_grace_seconds))
+            await asyncio.wait_for(asyncio.shield(departure), timeout=grace)
             return
         except asyncio.TimeoutError:
             pass
         signal_groups(signal.SIGKILL)
         with contextlib.suppress(ProcessLookupError):
-            worker.process.kill()
-        with contextlib.suppress(asyncio.TimeoutError, ProcessLookupError):
-            await asyncio.wait_for(worker.process.wait(), timeout=active_tuning().duration(Tunable.sigterm_grace_seconds))
+            os.kill(pid, signal.SIGKILL)
+        with contextlib.suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(asyncio.shield(departure), timeout=grace)
 
     def _unlink_socket(self, session_id: str) -> None:
         """Remove a dead session's socket file so nothing connects to a corpse."""
@@ -305,7 +289,7 @@ class SessionLifecycle:
             session_socket_path(session_id).unlink(missing_ok=True)
 
     async def aclose(self) -> None:
-        """Reap every live session. Called when the daemon itself is going down, so no worker
+        """Reap every live session. Called when the daemon itself is going down, so no session
         outlives the thing that was supervising it."""
         await asyncio.gather(
             *(self.reap(record.id, reason="daemon shutting down") for record in self._registry.live()),

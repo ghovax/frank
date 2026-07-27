@@ -398,7 +398,7 @@ def _run_tk_folder_picker() -> subprocess.CompletedProcess[str] | None:
 def _accessibility_granted() -> bool:
     """Whether this process may read the accessibility tree and control other apps — the
     permission the screen tools need. Imported lazily: the module pulls in PyObjC, and loading
-    that eagerly anywhere would make a pre-forked worker unsafe."""
+    that eagerly anywhere would make the prototype unsafe to fork."""
     try:
         from daisy.computer import permissions
 

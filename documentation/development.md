@@ -31,7 +31,9 @@ The [`daisy` command](cli.md) is the full surface. To run the daemon in the fore
 uv run python -m daisy daisyd
 ```
 
-One image, three entry points, chosen by the first argument: `daisy` (the CLI), `daisyd` (the daemon), `worker` (a session). A bare launch lands in the CLI, which is why the daemon has to be asked for. `daisy daemon stop` takes down a foreground daemon and its sessions with it.
+One image, three entry points, chosen by the first argument: `daisy` (the CLI), `daisyd` (the daemon), `prototype` (the process sessions are forked out of). A bare launch lands in the CLI, which is why the daemon has to be asked for. `daisy daemon stop` takes down a foreground daemon and its sessions with it.
+
+There is deliberately no `worker` entry point. Nothing execs a session — each one is a `fork()` of the prototype — so an entry point for it would be a way of starting a process the architecture never starts.
 
 It listens on a unix socket in your runtime directory and on an ephemeral loopback port for GUI clients; `daisy daemon endpoint` reports the port and the capability token. State follows the XDG convention — configuration in `~/.config/daisy/`, durable state in `~/.local/share/daisy/`, logs in `~/.local/state/daisy/` — all created on first run. Add provider keys via `daisy configure`, the configuration file, or environment variables; see the [Configuration guide](configuration.md).
 
@@ -50,7 +52,11 @@ Useful scripts (in `web/`):
 - `bun run build` — production static export (to `web/out`).
 - `bun run build:events` — regenerate the TypeScript event schema from the Python models (`scripts/generate_event_schema.py`). Run this whenever the event contract changes.
 
-Outside `web/`, `scripts/check_layers.py` enforces the package layering (`base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, with the daemon never importing the runtime) and the invariant that `computer/` is never imported at module level — a parked worker that has loaded PyObjC is not safe to fork.
+Outside `web/`, `scripts/check_layers.py` enforces the package layering (`base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, with the daemon never importing the runtime) and three invariants that are all really one invariant about the prototype, the process every session is forked out of:
+
+- **`computer/` is never imported at module level.** It pulls in PyObjC, which initialises CoreFoundation, which genuinely cannot survive a `fork()` on macOS.
+- **Nothing reaches the network at import.** This is the half that actually bit. A catalogue fetch at module scope left two *native* threads in the process, and a multi-threaded process cannot legally fork — the child aborted inside the Objective-C runtime with a message naming CoreFoundation, which is not what was wrong. `threading.enumerate()` cannot see those threads; only the kernel's count can, which is why the prototype measures with mach `task_threads` and refuses to fork when the answer is not 1.
+- **Nothing under `runtime/` parks a caller's argument in a module global, installs a signal handler, or registers an exit hook.** The runtime is a library now, and one process may host more than one session.
 
 A new setting needs nothing beyond its `Field(description=...)` — no reference file to update, no listing to add it to. `daisy configure --all` walks the schema, so a setting is discoverable from the moment it exists. Write the description as the sentence you would want printed at a terminal, because that is exactly where it goes.
 
@@ -69,7 +75,7 @@ Start the daemon first, in either order but before you expect the window to work
 There are **two artifacts**, built independently, because the app is a client of the daemon rather than its container. Building one never rebuilds the other.
 
 ```sh
-# The daemon (and the CLI, and every worker — one image, three entry points).
+# The daemon (and the CLI, and the prototype — one image, three entry points).
 packaging/build-daemon.sh          # FORCE=1 to rebuild when the freshness guard says it is current
 
 # The desktop app: a Tauri shell, no Python in it at all.

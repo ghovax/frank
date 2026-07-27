@@ -187,16 +187,6 @@ computer_control:
 
 After an action, a surface is *polled* until it stops changing rather than slept on for a fixed guess: a fast page costs one interval and a slow one costs the ceiling. These two sit here rather than under `tuning` because settling is something a **surface** does, not a budget a tool spends.
 
-## The daemon
-
-```yaml
-daemon:
-  warm_floor: 2                     # blank workers parked, so creating a session is a socket write
-  warm_ceiling: 8                   # stop pre-warming once this many workers exist in total
-```
-
-`warm_ceiling` counts warm *and* assigned workers together and bounds pre-warming, not concurrency — a claim against an empty pool spawns on demand and never consults it, so a wide fan-out is always served; it just pays a cold start per child past the spares.
-
 ## MCP servers
 
 `mcp.servers` mirrors what `.agents/mcp.json` declares and is normally edited there — see [Agents and skills](agents-and-skills.md#mcp-servers). A folder's own servers are added to the shared pool when a session in that folder starts; the pool only ever grows, so no other session loses its servers.

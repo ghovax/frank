@@ -1,12 +1,14 @@
 """`daisyd`: the control plane.
 
-It owns the registry, the worker pool, the databases, and the shared brokers, and it serves
+It owns the registry, the prototype, the databases, and the shared brokers, and it serves
 one API two ways — a unix socket for the CLI and for sessions, and a loopback TCP port for
 the desktop client, which cannot open a socket. Both require the capability token written
 beside them in the runtime directory.
 
-The daemon runs no agents. Everything that executes a turn lives in a worker process, which
-is what keeps this side light enough to pre-fork workers from.
+The daemon runs no agents, and it never imports the runtime. That is what keeps this side
+small — and it is also why the *prototype* is a process rather than a function here: the thing
+that forks a session has to be the thing that has already paid for the runtime import, and the
+daemon must never be that.
 """
 
 from __future__ import annotations
@@ -89,7 +91,7 @@ def _acquire_singleton_lock() -> int | None:
     The socket alone cannot enforce this. Two `daisy` commands run at the same moment both find
     no daemon, both start one, and uvicorn unlinks an existing unix socket before binding — so
     the second daemon silently takes the socket from the first and the first becomes an orphan
-    holding a pool of workers nothing will ever reap. An advisory lock is decided by the kernel
+    supervising sessions nothing will ever reap. An advisory lock is decided by the kernel
     rather than by who checked first, which is what closes the window between looking and
     binding.
 
@@ -272,7 +274,7 @@ async def _serve() -> int:
     from daisy.daemon.composition import close_shared_resources, open_shared_resources
     from daisy.daemon.lifecycle import SessionLifecycle
     from daisy.daemon.peer_identity import unix_peer_protocol
-    from daisy.daemon.pool import WorkerPool
+    from daisy.daemon.prototype import PrototypeClient
     from daisy.daemon.registry import SessionRegistry
 
     if _acquire_singleton_lock() is None:
@@ -299,17 +301,25 @@ async def _serve() -> int:
     await _open_stores()
 
     state.registry = SessionRegistry()
-    state.pool = WorkerPool(
-        floor=state.global_configuration.daemon.warm_floor,
-        ceiling=state.global_configuration.daemon.warm_ceiling,
+    # The prototype and the lifecycle know about each other in both directions: the lifecycle
+    # asks the prototype to fork, and the prototype reports every death back to the lifecycle.
+    # Wired here rather than by either of them, because a composition root is exactly the place
+    # a cycle between two collaborators becomes two one-way dependencies.
+    state.prototype = PrototypeClient(
+        on_exit=lambda report: state.lifecycle.on_session_exit(report),
     )
     state.lifecycle = SessionLifecycle(
         state.registry,
-        state.pool,
+        state.prototype,
         on_change=lambda: state.broadcaster.publish({"type": "sessions_changed"}),
     )
-    await state.pool.start()
-    # Built after the stores and the pool, because the shared resources read from both, and
+    # Best effort: a machine that cannot start the prototype still serves the browser surface
+    # and every read, and says so in `daemon.status`, rather than refusing to boot.
+    try:
+        await state.prototype.start()
+    except Exception as error:  # noqa: BLE001 — a daemon without a prototype is degraded, not dead
+        logger.error("The prototype could not be started; new sessions will fail: %s", error)
+    # Built after the stores and the prototype, because the shared resources read from both, and
     # after the port is known, because the file-URL signer signs against this daemon's address.
     await open_shared_resources()
 
@@ -384,12 +394,12 @@ async def _serve() -> int:
         await serving
     finally:
         watcher.cancel()
-        # Sessions must not outlive their supervisor: a worker whose daemon is gone can no
+        # Sessions must not outlive their supervisor: a session whose daemon is gone can no
         # longer persist anything, so leaving it running would silently lose work.
         with contextlib.suppress(Exception):
             await state.lifecycle.aclose()
         with contextlib.suppress(Exception):
-            await state.pool.aclose()
+            await state.prototype.aclose()
         with contextlib.suppress(Exception):
             await close_shared_resources()
         _clear_handshake()

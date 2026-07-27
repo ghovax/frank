@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from daisy.base.credentials import ChatGPTLoginFlow
 from daisy.base.credentials import clear_tokens
 from daisy.base.credentials import load_tokens
-from daisy.base.models import MODELS
+from daisy.base.models import list_models
 from daisy.base.models import ModelDefinition
 from daisy.base.models import available_models
 from daisy.base.subscription import (
@@ -98,9 +98,9 @@ async def list_models_endpoint():
     # filter has not caught (real gpt-* only) are appended so nothing is missed.
     live_chatgpt = await fetch_subscription_models()
     live_slugs = set(live_chatgpt)
-    catalog = list(MODELS)
+    catalog = list_models()
     known_chatgpt_slugs = {
-        model.identifier.split("/", 1)[1] for model in MODELS if model.provider == "chatgpt"
+        model.identifier.split("/", 1)[1] for model in catalog if model.provider == "chatgpt"
     }
     for slug, meta in live_chatgpt.items():
         if slug in known_chatgpt_slugs or not slug.startswith("gpt-"):

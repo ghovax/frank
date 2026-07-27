@@ -1,68 +1,66 @@
-"""The worker process: park blank, take an assignment, become that session for life.
+"""Becoming a session: take an assignment, bind a socket, serve until told to stop.
 
-A worker starts before anyone knows which agent it will run. It imports the runtime — the
-expensive part, and the same for every session — then blocks on stdin waiting to be told what
-it is. That is what makes spawning a session feel like a socket write rather than a Python
-cold start.
+This is everything a worker process does after it knows what it is. It was the second half
+of the worker's entry point, when a worker was a process the daemon started and then told
+over stdin; a worker is now a fork of the prototype, which already has the assignment in
+memory, so there is nothing to read and no entry point to be.
 
-Once assigned it is that session until it dies. It never goes back to the pool and never
-serves a second session, so there is no path by which one session's state could reach
-another's; isolation is a property of the process, not of any cleanup code.
+Readiness is reported on a file descriptor rather than on stdout for the same reason. A
+forked child shares its parent's stdout, and the parent is the prototype, whose stdout is
+the daemon's log — a readiness line written there would be a log entry nobody reads instead
+of an answer somebody is waiting for. The descriptor is a pipe the prototype created for
+this one fork and is watching.
 
-Deliberately: the accessibility surfaces are imported lazily, inside the tools that use them,
-so a parked worker has never loaded PyObjC. A blank worker is therefore safe to fork.
+The acknowledgement is sent only once the socket is accepting connections, which is the
+property the whole thing exists for: a client that sends immediately after `create` must
+not race the bind.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
 import os
 import signal
 import sys
 from pathlib import Path
+
 from daisy.base.serialization import compact
 
 logger = logging.getLogger("daisy.worker")
 
 
-async def _read_assignment() -> dict | None:
-    """Block until the daemon says what this worker is.
+def _report(ready_fd: int, payload: dict) -> None:
+    """Answer the prototype on the pipe it is watching, once.
 
-    Reading stdin off the event loop keeps the process responsive to signals while it waits,
-    so a pool being torn down does not leave parked workers ignoring SIGTERM."""
-    loop = asyncio.get_running_loop()
-    line = await loop.run_in_executor(None, sys.stdin.readline)
-    if not line:
-        return None
-    try:
-        return json.loads(line)
-    except ValueError:
-        logger.error("Assignment was not valid JSON; exiting")
-        return None
+    Failures are swallowed deliberately: the prototype may already have given up and closed
+    its end, and a session that is otherwise healthy must not die because nobody was
+    listening for its acknowledgement."""
+    if ready_fd < 0:
+        return
+    with contextlib.suppress(OSError):
+        os.write(ready_fd, (compact(payload) + "\n").encode())
+    with contextlib.suppress(OSError):
+        os.close(ready_fd)
 
 
-async def run() -> int:
+async def serve(assignment: dict, ready_fd: int = -1) -> int:
+    """Run one session until its socket closes. Answers with the process exit status."""
     from daisy.base.configuration import GlobalConfiguration
     from daisy.worker.server import build_app
     from daisy.worker.session import SessionExecutor
-
-    assignment = await _read_assignment()
-    if assignment is None:
-        return 0
 
     session_id = str(assignment.get("session_id") or "")
     socket_path = Path(str(assignment.get("socket") or ""))
     agent_name = str(assignment.get("agent") or "")
     if not session_id or not str(socket_path):
-        logger.error("Assignment is missing a session id or socket path")
+        _report(ready_fd, {"ready": False, "reason": "assignment is missing a session id or socket path"})
         return 1
     if not agent_name:
         # There is no default to fall back to, and running an unnamed profile would mean a
         # session whose behaviour nobody chose. Refusing is the only honest answer.
-        logger.error("Assignment is missing the agent to run")
+        _report(ready_fd, {"ready": False, "reason": "assignment is missing the agent to run"})
         return 1
 
     # Every subprocess this session starts inherits its identity, so a session that reaches
@@ -137,23 +135,21 @@ async def run() -> int:
             loop.add_signal_handler(received, stopping.set)
     shutdown_watcher = asyncio.create_task(_shutdown_on_signal())
 
-    serve = asyncio.create_task(server.serve())
-    # Only once the socket is accepting connections is the session usable, so readiness is
-    # reported here rather than at assignment: a client that sends immediately after `create`
-    # must not race the bind. Waiting on the readiness event and on the serve task together
-    # means a worker that cannot bind is reported as failed instead of hanging its creator
-    # until the assignment times out.
+    serve_task = asyncio.create_task(server.serve())
+    # Waiting on the readiness event and on the serve task together means a worker that
+    # cannot bind is reported as failed instead of hanging its creator until the assignment
+    # times out.
     ready_wait = asyncio.create_task(server.ready.wait())
-    await asyncio.wait({ready_wait, serve}, return_when=asyncio.FIRST_COMPLETED)
-    if serve.done():
+    await asyncio.wait({ready_wait, serve_task}, return_when=asyncio.FIRST_COMPLETED)
+    if serve_task.done():
         ready_wait.cancel()
+        _report(ready_fd, {"ready": False, "reason": "the session could not bind its socket"})
         await session.aclose()
         return 1
-    sys.stdout.write(compact({"ready": True, "pid": os.getpid()}) + "\n")
-    sys.stdout.flush()
+    _report(ready_fd, {"ready": True, "pid": os.getpid()})
 
     try:
-        await serve
+        await serve_task
     finally:
         shutdown_watcher.cancel()
         await session.aclose()
@@ -162,13 +158,23 @@ async def run() -> int:
     return 0
 
 
-def main() -> int:
-    logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+def run(assignment: dict, ready_fd: int = -1) -> int:
+    """`serve` with its own event loop, for a process that has just been forked into being."""
+    logging.basicConfig(
+        level=logging.WARNING, format="%(asctime)s %(levelname)s %(name)s %(message)s"
+    )
     try:
-        return asyncio.run(run())
+        return asyncio.run(serve(assignment, ready_fd))
     except KeyboardInterrupt:
         return 0
+    except Exception:  # noqa: BLE001 — a child must report its failure, not vanish silently
+        logger.exception("Session process failed")
+        _report(ready_fd, {"ready": False, "reason": "the session process raised on startup"})
+        return 1
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+__all__ = ["run", "serve"]
+
+
+if __name__ == "__main__":  # pragma: no cover — not an entry point, kept out of argv routing
+    sys.exit(1)

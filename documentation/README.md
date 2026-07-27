@@ -24,7 +24,7 @@ daisy/
 │   ├── base/                 # configuration, XDG paths, skills, permission modes
 │   ├── protocol/             # A2A cards, DTOs, the wire contract
 │   ├── cli/                  # the `daisy` command and its renderers
-│   ├── daemon/               # daisyd: registry, lifecycle, worker pool, persistence
+│   ├── daemon/               # daisyd: registry, lifecycle, prototype client, persistence
 │   ├── worker/               # a session process: its socket server and executor
 │   ├── runtime/              # the agent loop, prompts, tools, models
 │   ├── computer/             # macOS screen-control bridges (native apps + Chrome)
@@ -37,6 +37,6 @@ daisy/
 └── examples/                 # example MCP servers
 ```
 
-The layering is enforced by `scripts/check_layers.py`: `base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, and the daemon never imports the runtime — that is what keeps it light enough to pre-fork workers from.
+The layering is enforced by `scripts/check_layers.py`: `base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, and the daemon never imports the runtime. That is what keeps the control plane small, and it is why the *prototype* — the process every session is forked out of — lives in `worker/` and is reached over a socket rather than being a function the daemon calls.
 
 Runtime state never lives in the repository. Daisy follows the XDG convention: configuration in **`~/.config/daisy/`**, durable state (including `history.db`) in **`~/.local/share/daisy/`**, sockets in the runtime directory, logs in **`~/.local/state/daisy/`**, and caches in **`~/.cache/daisy/`**. The [Configuration guide](configuration.md) is the reference for it.

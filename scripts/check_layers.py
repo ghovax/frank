@@ -1,13 +1,17 @@
 """Enforce the package layering, and the engineering invariants that ride on it.
 
-The architecture's spine is that the daemon never imports the runtime: `daisyd` spawns
-worker processes, and the workers carry the heavy runtime (LangChain, LiteLLM, model
-clients). Keeping the control plane free of those imports is what lets the warm pool
-pre-fork workers cheaply. The second invariant is that `computer` is only ever imported
-inside a function: it pulls in PyObjC and CoreFoundation, and a module-level import would
-make forking a pre-warmed worker unsafe on macOS.
+The architecture's spine is that the daemon never imports the runtime: `daisyd` spawns the
+prototype, and the prototype carries the heavy runtime (LangChain, LiteLLM, model clients)
+so that every session worker can be a fork of it rather than a five-second cold start.
+Keeping the control plane free of those imports is what makes the daemon small — and what
+forces the prototype to be a third process, since the thing that forks must be the thing
+that has already paid the import.
 
-Two more invariants join them. Nothing under `runtime` may take session state from a caller
+The second invariant is that `computer` is only ever imported inside a function: it pulls in
+PyObjC and CoreFoundation, and a module-level import would make forking the prototype unsafe
+on macOS.
+
+Three more invariants join them. Nothing under `runtime` may take session state from a caller
 and park it in a module global — the setter pattern — because the runtime is a library: an
 embedder imports it, and one process may host more than one session, so the last caller would
 win and everyone else would silently get their neighbour's configuration. That was not
@@ -17,9 +21,16 @@ process. Session state belongs on the runtime or in a context variable. Memoizat
 untouched by the rule: a cache written by the function that reads it, from something it
 computed, is shared harmlessly.
 
-And no module outside a composition root may install a signal handler or an exit hook at
-import. Importing a library must not seize the host program's signals, and the tool registry
-did exactly that — which also killed a forked child the instant it was signalled.
+No module outside a composition root may install a signal handler or an exit hook at import.
+Importing a library must not seize the host program's signals, and the tool registry did
+exactly that — which also killed a forked child the instant it was signalled.
+
+And nothing anywhere reaches the network at import. `base/models.py` fetched a catalogue over
+HTTP at module scope, which on macOS left two native threads in every process that imported
+it; a multi-threaded process cannot legally `fork()`, so the prototype's children aborted
+inside the Objective-C runtime with a message that named CoreFoundation and meant something
+else entirely. That one is exempt for nobody, composition roots included: the cost lands on
+every importer, not on whoever wired the program together.
 
 None of these invariants is visible in a diff, so all of them are checked mechanically here.
 
@@ -37,6 +48,7 @@ about whom.
 from __future__ import annotations
 
 import ast
+from typing import Iterator
 import sys
 from pathlib import Path
 
@@ -158,16 +170,67 @@ def _injected_module_state(tree: ast.AST) -> list[tuple[str, int]]:
     return found
 
 
+def _import_time_calls(node: ast.AST) -> Iterator[ast.Call]:
+    """Every call that actually runs when the module is imported.
+
+    `ast.walk` is the wrong tool here and quietly gives the wrong answer: it descends into
+    function bodies, so a perfectly correct call *inside* a function reads as an import-time
+    call. A class body is different — it executes on import — so this descends into those,
+    while stopping at every `def` and `lambda`. Decorators are the one part of a function
+    definition that does run, so they are visited.
+    """
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for decorator in child.decorator_list:
+                yield from _import_time_calls(decorator)
+                if isinstance(decorator, ast.Call):
+                    yield decorator
+            continue
+        if isinstance(child, ast.Lambda):
+            continue
+        if isinstance(child, ast.Call):
+            yield child
+        yield from _import_time_calls(child)
+
+
 def _process_wide_configuration(tree: ast.AST) -> list[tuple[str, int]]:
     """Import-time calls that configure the whole process."""
     found: list[tuple[str, int]] = []
-    for node in tree.body:
-        for inner in ast.walk(node):
-            if not isinstance(inner, ast.Call):
-                continue
-            parts = ast.unparse(inner.func).split(".")
-            if len(parts) == 2 and (parts[0], parts[1]) in _PROCESS_WIDE_CALLS:
-                found.append((_PROCESS_WIDE_CALLS[(parts[0], parts[1])], inner.lineno))
+    for call in _import_time_calls(tree):
+        parts = ast.unparse(call.func).split(".")
+        if len(parts) == 2 and (parts[0], parts[1]) in _PROCESS_WIDE_CALLS:
+            found.append((_PROCESS_WIDE_CALLS[(parts[0], parts[1])], call.lineno))
+    return found
+
+
+# Clients whose synchronous request methods block the import that calls them. Matched on the
+# module alias rather than the object, because that is what is knowable statically.
+_NETWORK_MODULES = {"httpx", "requests", "urllib", "socket"}
+_NETWORK_METHODS = {"get", "post", "put", "patch", "delete", "head", "request", "urlopen"}
+
+
+def _import_time_network(tree: ast.AST) -> list[tuple[str, int]]:
+    """Network calls made while the module is being imported.
+
+    This is the check that would have caught the defect the whole prototype design tripped
+    over. `base/models.py` fetched the models.dev catalogue at module scope, which cost a
+    second of every process's startup, made importing a module depend on a third-party host,
+    and silently produced an empty catalogue when offline — all of which merely *look* like
+    poor taste.
+
+    What made it fatal is invisible from Python: on macOS that fetch leaves two persistent
+    native threads behind, and a multi-threaded process cannot legally `fork()`. The child
+    aborted inside the Objective-C runtime with a message that reads like a CoreFoundation
+    problem and is not one, so the symptom pointed away from the cause. `threading.enumerate`
+    could not see the threads either, because CPython did not create them.
+
+    Only module-scope calls count. The same call inside a function is exactly the fix.
+    """
+    found: list[tuple[str, int]] = []
+    for call in _import_time_calls(tree):
+        parts = ast.unparse(call.func).split(".")
+        if len(parts) >= 2 and parts[0] in _NETWORK_MODULES and parts[-1] in _NETWORK_METHODS:
+            found.append((f"`{'.'.join(parts)}` reaches the network", call.lineno))
     return found
 
 
@@ -223,6 +286,15 @@ def main() -> int:
                     f"{path.relative_to(ROOT)}:{line}: {description} at import — "
                     "only a composition root may configure the process"
                 )
+
+        # Nothing reaches the network while it is being imported — not even a composition
+        # root, because the cost lands on every process that imports the module, and on macOS
+        # it silently makes the prototype unforkable.
+        for description, line in _import_time_network(tree):
+            violations.append(
+                f"{path.relative_to(ROOT)}:{line}: {description} at import — "
+                "move it behind a function so the caller decides when to pay for it"
+            )
 
     if violations:
         print(f"{len(violations)} layering violation(s):\n")

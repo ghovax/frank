@@ -13,9 +13,10 @@ flowchart LR
     subgraph Daemon["daisyd — the control plane"]
         Registry["Session registry"]
         Lifecycle["Lifecycle + reaper"]
-        Pool["Warm worker pool"]
         Stores["Sole writer:<br/>history.db"]
     end
+
+    Prototype["Prototype — the runtime,<br/>imported once and frozen"]
 
     subgraph Session["A session — one OS process"]
         Executor["Agent loop<br/>(LangChain)"]
@@ -28,8 +29,10 @@ flowchart LR
     Cli -->|unix socket| Daemon
     App -->|loopback TCP + token| Daemon
     Peer -->|unix socket| Daemon
-    Daemon --> Registry & Lifecycle & Pool & Stores
-    Lifecycle -->|assigns a worker| Session
+    Daemon --> Registry & Lifecycle & Stores
+    Lifecycle -->|asks it to fork| Prototype
+    Prototype -->|fork| Session
+    Prototype -->|reports each exit| Lifecycle
     Daemon -->|relays A2A to its socket| Session
     Session -->|writes through the daemon| Stores
     Executor --> Permissions --> Tools
@@ -44,17 +47,17 @@ Each session serves [A2A](https://github.com/google/A2A) (JSON-RPC) on **its own
 
 There is no in-process delegation — a session that needs a peer creates one through the same control plane a person's client calls, using its `create_session` tool, and the peer answers by messaging it back. A child appears in `daisy ps`, can be attached to, and is reaped when its parent ends.
 
-Isolation is a property of the process. A worker is assigned exactly once and becomes that session for the rest of its life; it is never returned to the pool and never serves a second session, so there is no path by which one session's state can reach another's.
+Isolation is a property of the process. A process becomes one session and stays that session for the rest of its life; it is never reused and never serves a second session, so there is no path by which one session's state can reach another's. That holds under forking too — a fork is a copy of the prototype, which has run no agent and holds no session state, never a copy of another session.
 
 ## The daemon
 
-`daisyd` is deliberately thin — it runs no agents, which is what keeps it light enough to pre-fork workers from. It owns:
+`daisyd` is deliberately thin — it runs no agents, and it never imports the runtime. It owns:
 
 - the **registry** of sessions (identity, parent, permission mode, capability token, status);
-- the **lifecycle**: starting workers, watching for crashes, and reaping a subtree parent-last so a child never outlives its parent;
+- the **lifecycle**: asking the prototype to fork a session, hearing about crashes, and reaping a subtree parent-last so a child never outlives its parent;
 - the **databases**, as the sole writer — workers persist by posting to the daemon's ingest surface, so there is exactly one process writing SQLite;
 - the shared **brokers**: events, terminals, file leases, workspaces, signed file URLs, push notifications, and remote agents — everything there can only sensibly be one of;
-- a **warm worker pool**, so spawning a session is usually a socket write rather than a Python cold start. It parks **two** blank workers and tops back up after each claim; a claim against an empty pool spawns a fresh worker rather than queueing, so a wide fan-out is never refused — it just pays a cold start per child past the spares. A second constant, **eight**, counts warm and assigned workers together and stops the daemon pre-warming beyond it, so a machine already running eight sessions spends its memory on them rather than on spares. Both are fixed in `daemon/pool.py`; neither is configurable today.
+- the **prototype**, which it starts, supervises and restarts. That is a separate process rather than a part of the daemon for a reason the layering makes unavoidable: whatever forks a session must already have imported the runtime, and the daemon must never import the runtime. If the prototype dies, live sessions are untouched — they are independent processes — and only new sessions wait, for as long as the restart takes.
 
 It serves one API two ways: a **unix socket** for the CLI and for sessions, and a **loopback TCP port** for the desktop client, which cannot open a unix socket from a webview. The port is ephemeral and chosen at boot; both listeners require the capability token the daemon writes `0600` into the runtime directory.
 

@@ -23,6 +23,7 @@ CONFIGURATION_FILENAME = "configuration.yaml"
 DATABASE_FILENAME = "history.db"
 BACKGROUND_DATABASE_FILENAME = "background.db"
 DAEMON_SOCKET_FILENAME = "daisyd.sock"
+PROTOTYPE_SOCKET_FILENAME = "prototype.sock"
 DAEMON_TOKEN_FILENAME = "token"
 DAEMON_PORT_FILENAME = "port"
 
@@ -108,6 +109,15 @@ def session_socket_path(session_id: str) -> Path:
     path = runtime_directory() / "sessions"
     path.mkdir(parents=True, exist_ok=True)
     return path / f"{session_id}.sock"
+
+
+def prototype_socket_path() -> Path:
+    """Where the daemon reaches the prototype.
+
+    Beside the daemon's own socket in the runtime directory, and 0600 like it: anything that
+    can speak this socket can make the prototype fork a process running arbitrary agent
+    configuration, so it is exactly as sensitive as the daemon's control socket."""
+    return runtime_directory() / PROTOTYPE_SOCKET_FILENAME
 
 
 def daemon_token_path() -> Path:

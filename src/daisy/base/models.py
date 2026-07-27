@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from dataclasses import dataclass
 
 import httpx
@@ -183,16 +184,51 @@ def _chatgpt_models(base: list[ModelDefinition]) -> list[ModelDefinition]:
     return chatgpt
 
 
-_BASE_MODELS = _catalog()
-MODELS: list[ModelDefinition] = _BASE_MODELS + _chatgpt_models(_BASE_MODELS)
+_catalogue_cache: list[ModelDefinition] | None = None
+_catalogue_lock = threading.Lock()
 
 
 def list_models() -> list[ModelDefinition]:
-    return list(MODELS)
+    """The model catalogue, fetched on first use and then cached for the process.
+
+    This is a function rather than a module-level list for a reason that is not style.
+    Building the catalogue performs a blocking HTTP GET to models.dev, and doing that at
+    *import* time made every process that imports this module — which is every process
+    that imports the runtime — pay a second of startup, depend on a reachable third-party
+    host, and silently end up with an empty catalogue when offline.
+
+    It also broke the invariant the prototype rests on. On macOS that fetch spawns two
+    persistent native network threads, and a multi-threaded parent cannot legally
+    ``fork()``: the child aborts inside the Objective-C runtime with a message that reads
+    like a CoreFoundation verdict and is not one. Deferring the fetch is what keeps the
+    prototype single-threaded up to the moment it forks, and the fetch then happens in the
+    child, where threads are nobody's problem.
+
+    Best-effort by design: an unreachable models.dev yields an empty catalogue rather than
+    an exception, and the result — empty or not — is cached, so a failed fetch does not
+    retry on every call. :func:`clear_catalogue_cache` is how a caller asks for another try.
+    """
+    global _catalogue_cache
+    if _catalogue_cache is not None:
+        return list(_catalogue_cache)
+    with _catalogue_lock:
+        if _catalogue_cache is None:
+            base = _catalog()
+            _catalogue_cache = base + _chatgpt_models(base)
+        return list(_catalogue_cache)
+
+
+def clear_catalogue_cache() -> None:
+    """Drop the cached catalogue so the next :func:`list_models` refetches.
+
+    For a process that started offline and now has a network, and for the settings surface
+    after a provider changes."""
+    global _catalogue_cache
+    _catalogue_cache = None
 
 
 def find_model(model_identifier: str) -> ModelDefinition | None:
-    for model in MODELS:
+    for model in list_models():
         if model.identifier == model_identifier:
             return model
     return None
@@ -220,7 +256,7 @@ def available_models(configured_keys: dict[str, str]) -> list[ModelDefinition]:
         # The custom provider has no key of its own; it is selectable on demand.
         or provider.identifier == "custom"
     }
-    return [model for model in MODELS if model.provider in unlocked_providers]
+    return [model for model in list_models() if model.provider in unlocked_providers]
 
 
 def resolve_litellm(

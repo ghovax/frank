@@ -1,7 +1,8 @@
 """The daemon's process-wide singletons, and the one place a command is relayed to a session.
 
-Everything the control plane touches hangs off this module: the session registry, the worker
-pool, the lifecycle, the sole-writer stores, and the two fan-out buses. It is a module of
+Everything the control plane touches hangs off this module: the session registry, the
+prototype the daemon forks sessions out of, the lifecycle, the sole-writer stores, and the two
+fan-out buses. It is a module of
 globals because there is exactly one daemon per user and these are its parts, not something
 that could sensibly exist twice.
 
@@ -95,7 +96,7 @@ class SessionEventBus:
 # The singletons.
 
 registry: Any = None            # SessionRegistry
-pool: Any = None                # WorkerPool
+prototype: Any = None           # PrototypeClient
 lifecycle: Any = None           # SessionLifecycle
 turn_store: Any = None          # AppendOnlyTaskStore
 global_configuration: Any = None

@@ -321,28 +321,6 @@ class SandboxConfiguration(Section):
         )
 
 
-class DaemonConfiguration(Section):
-    """How the daemon manages worker processes. Separate from `tuning` because this is process
-    management rather than how patient or how large a tool is."""
-
-    warm_floor: int = Field(
-        2,
-        description=(
-            "Blank workers kept parked, so creating a session is a socket write rather than a "
-            "Python cold start. Small because a warm worker costs real memory."
-        ),
-    )
-    warm_ceiling: int = Field(
-        8,
-        description=(
-            "The point past which the daemon stops pre-warming, counting warm and assigned "
-            "workers together. It bounds pre-warming rather than sessions: a claim against an "
-            "empty pool spawns on demand and never consults this, so a wide fan-out is always "
-            "served — it just pays a cold start per child past the spares."
-        ),
-    )
-
-
 class WorkspaceConfiguration(Section):
     """Where a session's tools actually run."""
 
@@ -736,9 +714,6 @@ class GlobalConfiguration(Section):
     sandbox: SandboxConfiguration = Field(
         default_factory=SandboxConfiguration,
         description="What a session's tool children may do, enforced by the operating system.",
-    )
-    daemon: DaemonConfiguration = Field(
-        default_factory=DaemonConfiguration, description="How the daemon manages worker processes."
     )
     workspace: WorkspaceConfiguration = Field(
         default_factory=WorkspaceConfiguration, description="Where a session's tools run."
