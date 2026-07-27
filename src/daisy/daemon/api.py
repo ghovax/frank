@@ -131,7 +131,7 @@ def _resolve_sandbox(agent: str, working_directory: str, parent) -> dict:
     the last moment it can be reported to whoever asked for the session rather than surfacing later
     as a tool that mysteriously fails."""
     from daisy.base import confinement
-    from daisy.daemon.services.agents import _agent_configuration_for_request
+    from daisy.workspace.services.agents import _agent_configuration_for_request
 
     configured = getattr(state.global_configuration, "sandbox", None)
     profile = configured.to_profile() if configured is not None else confinement.Profile()
@@ -207,7 +207,7 @@ async def _session_create(params: dict) -> dict:
     # its first turn: the workspace strategy can put a session in its own git worktree, and a
     # session whose tools do not yet know which directory they operate on is not a session
     # anyone can safely message. It is also the row the title and the draft later land on.
-    from daisy.daemon.services.sessions import _ensure_session_workspace
+    from daisy.workspace.services.sessions import _ensure_session_workspace
 
     try:
         workspace = await asyncio.to_thread(

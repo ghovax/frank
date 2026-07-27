@@ -12,9 +12,9 @@ from daisy.base.sqlite_lock import sqlite_write_lock
 from pathlib import Path
 from typing import Any
 from typing import cast
-from daisy.daemon import state
-from daisy.daemon.persistence.database import SessionRecord
-from daisy.daemon.services.broadcast import _publish_broadcast
+from daisy.workspace import state
+from daisy.workspace.database import SessionRecord
+from daisy.workspace.services.broadcast import _publish_broadcast
 
 
 def claim_work_habits_acknowledgement(session_id: str) -> bool:
@@ -62,50 +62,6 @@ def _session_working_directory_for(session_id: str) -> str:
     finally:
         database_session.close()
 
-
-
-async def _resolve_pending_input(
-    session_id: str, request_id: str, *,
-    decision: str = "", answers: list | None = None, declined: bool = False,
-) -> bool:
-    """Deliver a human's answer — a permission decision or a question's answers — to the
-    session waiting on it.
-
-    Relayed rather than resolved here: the parked turn lives in the session's process, and
-    only it can resume. This is the same call the CLI's `approve` makes and the same one an
-    `input_response` message carries, so all three land on one resume path."""
-    record = state.registry.get(session_id) if state.registry is not None else None
-    if record is None:
-        return False
-    payload: dict = {"request_id": request_id}
-    if declined:
-        payload["declined"] = True
-    elif answers is not None:
-        payload["answers"] = answers
-    else:
-        payload["decision"] = decision or "deny"
-    try:
-        result = await state.wake_then_relay(record, "input/respond", payload)
-    except Exception:  # noqa: BLE001 — an unreachable session is a "no", not a 500
-        return False
-    return bool(result.get("resolved"))
-
-
-async def _abort_pending_input(session_id: str) -> bool:
-    """Deny every gate a session is parked on, so its turn resumes and records the denials
-    rather than leaving a checkpoint no later turn could build on.
-
-    Wakes the session to do it. A session parked on a permission prompt is exactly the case
-    that sleeps — its whole state is on disk and it was holding an interpreter to wait — so the
-    gate it is parked on almost always belongs to a session with no process."""
-    record = state.registry.get(session_id) if state.registry is not None else None
-    if record is None:
-        return False
-    try:
-        result = await state.wake_then_relay(record, "input/abort", {})
-    except Exception:  # noqa: BLE001
-        return False
-    return bool(result.get("aborted"))
 
 
 def _normalize_permission_mode(mode: str) -> str:

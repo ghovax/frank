@@ -27,14 +27,14 @@ from daisy.protocol.dtos import (
     SettingsUpdateRequest,
     UserContextUpdateRequest,
 )
-from daisy.daemon.services import projects as _projects
+from daisy.workspace.services import projects as _projects
 from daisy.rest.services import filesystem as _system
-from daisy.daemon import state
-from daisy.daemon.services.broadcast import _publish_broadcast
-from daisy.daemon.services.sessions import _normalize_permission_mode, _reset_work_habits_acknowledgements
-from daisy.daemon.services.agents import _recent_models
-from daisy.daemon.services.settings import _apply_live_credentials, _persist_configuration
-from daisy.daemon.services.projects import _reset_all_runtimes
+from daisy.workspace import state
+from daisy.workspace.services.broadcast import _publish_broadcast
+from daisy.workspace.services.sessions import _normalize_permission_mode, _reset_work_habits_acknowledgements
+from daisy.workspace.services.agents import _recent_models
+from daisy.workspace.services.settings import _apply_live_credentials, _persist_configuration
+from daisy.workspace.services.projects import _reset_all_runtimes
 
 router = APIRouter()
 
@@ -281,7 +281,7 @@ async def update_settings(request: SettingsUpdateRequest):
         # profile the global default, and any agent's own setting a global setting.
         if request.permission_mode is not None:
             configuration.agent.permission_mode = _normalize_permission_mode(request.permission_mode)
-            await state.reset_live_session_runtimes()
+            await state.reset_runtimes()
         if request.exa_api_key is not None:
             configuration.exa.api_key = request.exa_api_key
         if request.composio_api_key is not None:
@@ -348,7 +348,7 @@ async def update_user_context(request: UserContextUpdateRequest):
         state.global_configuration.user_context.enabled = request.enabled
         if setting_changed:
             await asyncio.to_thread(_reset_work_habits_acknowledgements)
-            await state.reset_live_session_runtimes()
+            await state.reset_runtimes()
     _publish_broadcast({"type": "settings_changed"})
     return {"status": "saved", "user_context_enabled": state.global_configuration.user_context.enabled}
 
@@ -361,7 +361,7 @@ async def update_computer_control(request: ComputerControlUpdateRequest):
     async with state.configuration_lock:
         await _persist_configuration(computer_control_enabled=request.enabled)
         state.global_configuration.computer_control.enabled = request.enabled
-        await state.reset_live_session_runtimes()
+        await state.reset_runtimes()
     _publish_broadcast({"type": "settings_changed"})
     return {"status": "saved", "computer_control_enabled": state.global_configuration.computer_control.enabled}
 

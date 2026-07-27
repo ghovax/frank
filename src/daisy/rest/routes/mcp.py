@@ -7,8 +7,8 @@ from daisy.protocol.dtos import (
     MCPResourceReadRequest,
     MCPToolCallRequest,
 )
-from daisy.daemon import state
-from daisy.daemon.brokers.mcp_servers import _ensure_mcp_servers_for
+from daisy.workspace import state
+from daisy.workspace.brokers.mcp_servers import _ensure_mcp_servers_for
 
 router = APIRouter()
 

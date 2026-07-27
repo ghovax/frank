@@ -24,7 +24,7 @@ import logging
 from typing import Any
 
 from daisy.base.sqlite_lock import sqlite_write_lock
-from daisy.daemon.persistence.database import SessionRecord as SessionRow
+from daisy.workspace.database import SessionRecord as SessionRow
 from daisy.daemon.registry import LIVE, SessionRecord
 
 logger = logging.getLogger(__name__)

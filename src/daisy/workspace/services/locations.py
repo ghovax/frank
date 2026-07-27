@@ -13,8 +13,8 @@ from itertools import combinations
 from pathlib import Path
 from typing import Any
 import uuid
-from daisy.daemon import state
-from daisy.daemon.persistence.database import LocationRecord, ProjectRecord, SessionRecord
+from daisy.workspace import state
+from daisy.workspace.database import LocationRecord, ProjectRecord, SessionRecord
 
 
 def _iso_now() -> str:

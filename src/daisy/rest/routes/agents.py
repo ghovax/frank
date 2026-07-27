@@ -11,9 +11,9 @@ from daisy.protocol.dtos import (
     AgentInfo,
     AgentsList,
 )
-from daisy.daemon import state
-from daisy.daemon.services.broadcast import _publish_broadcast
-from daisy.daemon.services.agents import _agent_configuration_for_request, _agent_configuration_payload, _apply_agent_configuration_update, _card_for, _load_agent_sidecar, _path_scope, _record_model_selection, _reload_agent_cards, _save_agent_sidecar
+from daisy.workspace import state
+from daisy.workspace.services.broadcast import _publish_broadcast
+from daisy.workspace.services.agents import _agent_configuration_for_request, _agent_configuration_payload, _apply_agent_configuration_update, _card_for, _load_agent_sidecar, _path_scope, _record_model_selection, _reload_agent_cards, _save_agent_sidecar
 
 router = APIRouter()
 
@@ -63,7 +63,7 @@ async def update_agent_configuration(agent_name: str, request: AgentConfiguratio
         saved_configuration = _agent_configuration_payload(agent_name, working_directory)
         if saved_configuration.provider and saved_configuration.model:
             await asyncio.to_thread(_record_model_selection, f"{saved_configuration.provider}/{saved_configuration.model}")
-        await state.reset_live_session_runtimes()
+        await state.reset_runtimes()
         _reload_agent_cards()
         _publish_broadcast({"type": "agents_changed"})
         return saved_configuration

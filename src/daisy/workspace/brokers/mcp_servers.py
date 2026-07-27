@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from daisy.base.configuration import GlobalConfiguration
 from daisy.base.mcp_client import MCPClientManager
-from daisy.daemon import state
+from daisy.workspace import state
 
 
 async def _reload_mcp() -> None:
@@ -28,7 +28,7 @@ async def _reload_mcp() -> None:
                 await state.mcp_manager.start()
         else:
             await state.mcp_manager.reconcile(enabled)
-        await state.reset_live_session_runtimes()
+        await state.reset_runtimes()
 
 
 async def _ensure_mcp_servers_for(working_directory: str) -> None:
@@ -58,4 +58,4 @@ async def _ensure_mcp_servers_for(working_directory: str) -> None:
                 await state.mcp_manager.start()
         else:
             await state.mcp_manager.reconcile(enabled)
-        await state.reset_live_session_runtimes()
+        await state.reset_runtimes()

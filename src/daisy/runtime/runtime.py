@@ -470,7 +470,9 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         effective_model = agent_configuration.model_identifier
         if not effective_model:
             raise ValueError(
-                f"Agent '{agent_configuration.identifier}' must configure both provider and model."
+                f"Agent '{agent_configuration.identifier}' names no model. Set `provider` and "
+                "`model` in its profile, pass `model_identifier=\"provider/model\"` to "
+                "`daisy.Session`, or hand the runtime a `model=` of your own."
             )
         # A profile pinned to a provider the user never keyed fails on its first call, and
         # that is the honest outcome: there is nothing to fall back to. Borrowing another

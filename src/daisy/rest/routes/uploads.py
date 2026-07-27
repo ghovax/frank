@@ -16,7 +16,7 @@ from daisy.protocol.dtos import (
     AttachmentReference,
 )
 from fastapi.responses import FileResponse
-from daisy.daemon import state
+from daisy.workspace import state
 
 router = APIRouter()
 

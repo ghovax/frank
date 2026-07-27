@@ -396,7 +396,8 @@ class TuningConfiguration(Section):
         if unknown:
             raise ValueError(
                 f"unknown tuning default(s): {', '.join(unknown)}. "
-                "Run `daisy configure --all` to see the names that exist."
+                "The names that exist are the members of `daisy.base.tuning.Tunable`; "
+                "`daisy configure --all` lists them with their defaults."
             )
         return value
 

@@ -50,7 +50,7 @@ you are asking for the daemon.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Mapping, Optional
 
 from daisy.base.ports import (
     Approval,
@@ -89,6 +89,28 @@ except Exception:  # noqa: BLE001 — a missing distribution must not break an i
     __version__ = "0"
 
 
+def _apply_providers(configuration: Any, providers: Mapping[str, str | Mapping[str, str]]) -> None:
+    """Put caller-supplied provider credentials onto a configuration.
+
+    Accepts the short form — ``{"anthropic": "sk-..."}`` — because that is what an embedder
+    almost always has, and the long form ``{"custom": {"api_key": ..., "base_url": ...}}`` for
+    an OpenAI-compatible endpoint that needs an address too.
+
+    Merged onto the configuration rather than replacing it, so a program can supply one key and
+    still inherit the rest of what the machine is set up with, and so the conventional
+    environment variables keep the precedence they already have.
+    """
+    from daisy.base.configuration import ProviderCredential
+
+    for name, value in providers.items():
+        credential = configuration.providers.get(name) or ProviderCredential()
+        if isinstance(value, str):
+            credential = credential.model_copy(update={"api_key": value})
+        else:
+            credential = credential.model_copy(update=dict(value))
+        configuration.providers[name] = credential
+
+
 def _require(port: type, candidate: Any, argument: str) -> Any:
     """Reject an implementation that does not satisfy its port, naming what is missing.
 
@@ -121,6 +143,11 @@ class Session:
         permission_mode: str = "",
         sandbox: Any = None,
         configuration: Any = None,
+        # Provider credentials in code. A library whose only way to be given an API key is a
+        # YAML file in the user's home directory is not a library — and the environment
+        # variables still win, so a deployment that injects them keeps doing so.
+        providers: Optional[Mapping[str, str | Mapping[str, str]]] = None,
+        model_identifier: str = "",
         # The seams. Each defaults to the least surprising thing for a program that is not a
         # daemon, which for anything durable means "in memory", not "somewhere under $HOME".
         model: Any = None,
@@ -146,6 +173,9 @@ class Session:
         # directory. The CLI and the daemon seed it deliberately, because a person installing
         # Daisy needs something to edit; a program that imported us did not ask for that.
         self._configuration = configuration or GlobalConfiguration.load(seed=False)
+        if providers:
+            _apply_providers(self._configuration, providers)
+        self._model_identifier = model_identifier
         self._model = model
         self._catalogue = _require(Catalogue, catalogue, "catalogue")
         self._checkpoints = _require(Checkpoints, checkpoints, "checkpoints") or MemoryCheckpoints()
@@ -191,7 +221,22 @@ class Session:
             if agent_configuration is None:
                 available = ", ".join(catalogue.agents()) or "none"
                 raise LookupError(
-                    f"No agent profile named {self._agent!r}. This catalogue offers: {available}."
+                    f"No agent profile named {self._agent!r}. This catalogue offers: {available}. "
+                    "Pass `catalogue=` to supply your own agents, or `agent=` an "
+                    "AgentConfiguration directly."
+                )
+            # A model named at the call site beats the profile's. The common case for an
+            # embedder is one agent definition run against whichever model the program is
+            # configured for, and editing the profile to say so would be editing a file to
+            # express a runtime choice.
+            if self._model_identifier:
+                if "/" not in self._model_identifier:
+                    raise ValueError(
+                        f"model_identifier must be `provider/model`, not {self._model_identifier!r}."
+                    )
+                provider, model = self._model_identifier.split("/", 1)
+                agent_configuration = agent_configuration.model_copy(
+                    update={"provider": provider, "model": model}
                 )
             self._runtime = AgentRuntime(
                 agent_configuration=agent_configuration,

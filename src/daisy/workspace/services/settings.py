@@ -3,7 +3,7 @@ reloading the configuration file."""
 
 from __future__ import annotations
 
-from daisy.daemon.brokers.composio import composio_mcp_servers
+from daisy.workspace.brokers.composio import composio_mcp_servers
 from daisy.base.configuration import GlobalConfiguration
 from daisy.base.paths import configuration_file_path
 from daisy.base.configuration import save_api_keys
@@ -11,8 +11,8 @@ from daisy.base.mcp_client import MCPClientManager
 from typing import Optional
 import asyncio
 import hashlib
-from daisy.daemon import state
-from daisy.daemon.services.sessions import _reset_work_habits_acknowledgements
+from daisy.workspace import state
+from daisy.workspace.services.sessions import _reset_work_habits_acknowledgements
 
 
 async def _apply_live_credentials() -> None:

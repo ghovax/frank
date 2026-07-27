@@ -22,8 +22,8 @@ import pwd
 import signal
 import struct
 import termios
-from daisy.daemon import state
-from daisy.daemon.persistence.database import SessionRecord, TerminalStateRecord
+from daisy.workspace import state
+from daisy.workspace.database import SessionRecord, TerminalStateRecord
 
 
 def _terminal_directory(session_id: str, working_directory: str) -> Path:

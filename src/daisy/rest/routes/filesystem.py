@@ -13,7 +13,7 @@ from daisy.protocol.dtos import (
     DirectoryRevealRequest,
     DirectoryValidationRequest,
 )
-from daisy.daemon import state
+from daisy.workspace import state
 from daisy.rest.services.filesystem import _GIT_STATUS_WATCH_FILTER, _git_status_changes_relevant, _git_status_key, _git_status_watch_paths, _open_folder_picker, _validate_directory_payload
 from daisy.base.serialization import compact
 

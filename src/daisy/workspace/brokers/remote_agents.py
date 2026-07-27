@@ -8,8 +8,8 @@ from daisy.protocol.client import RemoteAgentAuth
 from daisy.protocol.client import RemoteAgentConfiguration
 from daisy.protocol.client import RemoteAgentManager
 import asyncio
-from daisy.daemon import state
-from daisy.daemon.services.broadcast import _publish_broadcast
+from daisy.workspace import state
+from daisy.workspace.services.broadcast import _publish_broadcast
 
 
 def _remote_agent_dataclasses() -> dict[str, RemoteAgentConfiguration]:
@@ -47,7 +47,7 @@ async def _reload_remote_agents() -> None:
             await state.remote_agent_manager.start()
         else:
             await state.remote_agent_manager.reconcile(configurations)
-        await state.reset_live_session_runtimes()
+        await state.reset_runtimes()
         state.broadcaster.publish({"type": "remote_agents_changed"})
 
 

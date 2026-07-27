@@ -14,9 +14,9 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from daisy.daemon import state
-from daisy.daemon.services.broadcast import _publish_broadcast
-from daisy.daemon.brokers.remote_agents import _reload_remote_agents
+from daisy.workspace import state
+from daisy.workspace.services.broadcast import _publish_broadcast
+from daisy.workspace.brokers.remote_agents import _reload_remote_agents
 
 router = APIRouter()
 

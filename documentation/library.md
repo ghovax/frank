@@ -52,6 +52,8 @@ is a library you cannot embed.
 | `peers` | `SessionAccess` | None (composition tools absent) | How this session reaches other sessions |
 | `sandbox` | `daisy.base.confinement.Profile` | Unconfined profile | What a tool's children may do |
 | `catalogue` | `daisy.Catalogue` | The working directory's `.agents` plus the packaged base layer — **and nothing of `$HOME`** | Where agents, skills, memories, instructions and prompt templates come from |
+| `providers` | `{"anthropic": "sk-..."}` or `{"custom": {"api_key": ..., "base_url": ...}}` | Whatever the machine is configured with | Provider credentials, in code |
+| `model_identifier` | `"provider/model"` | The agent profile's own | Which model this session runs, overriding the profile |
 | `configuration` | `GlobalConfiguration` | Read from XDG, **without creating it** | Providers, tuning, agent directories |
 
 Two of these are interfaces we did not write. `BaseChatModel` is LangChain's, and the a2a
@@ -86,6 +88,31 @@ TypeError: checkpoints: RedisCheckpoints does not satisfy Checkpoints: it is mis
 
 Structural typing gives no compile-time guarantee, so the check happens once per session
 rather than surfacing as an `AttributeError` deep inside a turn.
+
+### Credentials and the model
+
+A library whose only way to be given an API key is a YAML file in the user's home directory is
+not a library. Pass them in:
+
+```python
+session = Session(
+    "general-assistant",
+    providers={"anthropic": os.environ["MY_APP_ANTHROPIC_KEY"]},
+    model_identifier="anthropic/claude-sonnet-4",
+)
+```
+
+`providers` is merged onto whatever configuration is in play rather than replacing it, so a
+program can supply one key and inherit the rest — and the providers' conventional environment
+variables keep the precedence they already had, so a deployment that injects them keeps
+working. The long form takes a `base_url` too, for an OpenAI-compatible endpoint.
+
+`model_identifier` overrides the agent profile's own choice, because the common case for an
+embedder is one agent definition run against whichever model *their* program is configured for,
+and editing a profile file to express a runtime choice is the wrong shape.
+
+If you already hold a configured `BaseChatModel`, `model=` skips all of this — no credential of
+ours is consulted, because none is needed.
 
 ### The catalogue
 

@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Any
 import subprocess
 import uuid
-from daisy.daemon import state
-from daisy.daemon.persistence.database import LocationRecord, ProjectRecord, SessionRecord
-from daisy.daemon.services.locations import _add_location_row, _derive_location_name, _existing_location_entries, _iso_now, _locations_conflict_message, _serialize_location, _serialize_project
+from daisy.workspace import state
+from daisy.workspace.database import LocationRecord, ProjectRecord, SessionRecord
+from daisy.workspace.services.locations import _add_location_row, _derive_location_name, _existing_location_entries, _iso_now, _locations_conflict_message, _serialize_location, _serialize_project
 
 
 def _project_name(path: str) -> str:
@@ -253,4 +253,4 @@ async def _reset_all_runtimes() -> None:
     """Drop every live session's cached runtime so the next turn rebuilds its chat model.
     Used when the ChatGPT sign-in state changes, which lives in a token file rather than the
     configuration, so the config watcher never fires for it."""
-    await state.reset_live_session_runtimes()
+    await state.reset_runtimes()

@@ -8,7 +8,7 @@ learns what a session is doing the same way it learns everything else about it.
 
 from __future__ import annotations
 
-from daisy.daemon import state
+from daisy.workspace import state
 
 
 def _notify_filesystem_lease_state() -> None:

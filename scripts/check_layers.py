@@ -63,15 +63,22 @@ ALLOWED: dict[str, set[str]] = {
     "locations": {"base"},
     "runtime": {"base", "protocol", "computer", "locations"},
     "worker": {"base", "protocol", "runtime"},
+    # Projects, locations, settings, agent profiles, terminals, and the shared MCP and
+    # remote-agent connections. None of it supervises anything, which is the point: it used to
+    # live inside the daemon, and that is the only reason the browser surface had to import the
+    # process that supervises agents.
+    "workspace": {"base", "protocol", "locations", "computer"},
     # The daemon may reach the location value types — they are leaf dataclasses describing
-    # where work runs, not runtime machinery. What it must never reach is `runtime`: that is
-    # the import cost the pre-forked worker exists to carry.
-    "daemon": {"base", "protocol", "locations"},
+    # where work runs, not runtime machinery — and the workspace, which it composes and serves.
+    # What it must never reach is `runtime`: that weight is what the prototype carries, and it
+    # is why the prototype is a separate process rather than a function call.
+    "daemon": {"base", "protocol", "locations", "workspace"},
     "cli": {"base", "protocol"},
-    # `rest` is the browser edge and sits above everything. It does not reach `runtime`: the
-    # account state the settings surface needs — the subscription catalogue and the usage
-    # snapshot — lives in `base`, beside the credentials it describes.
-    "rest": {"base", "protocol", "daemon", "locations", "computer"},
+    # `rest` is the browser edge. It reaches the workspace, and **not the daemon**: a surface
+    # that can reach into the supervisor is a surface that grows inside it, which is exactly
+    # how it got there. Where a workspace change has a supervision consequence — deleting a
+    # session should stop it — the workspace calls a hook the composition root filled in.
+    "rest": {"base", "protocol", "workspace", "locations", "computer"},
 }
 
 

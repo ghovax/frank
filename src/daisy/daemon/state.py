@@ -16,38 +16,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
 logger = logging.getLogger(__name__)
-
-
-class Broadcaster:
-    """Daemon-wide pub/sub. Every subscriber receives every event, which is how a change made
-    by one client (a new session, an edited agent) reaches all the others."""
-
-    def __init__(self) -> None:
-        self._subscribers: set[asyncio.Queue] = set()
-
-    def subscribe(self) -> asyncio.Queue:
-        queue: asyncio.Queue = asyncio.Queue()
-        self._subscribers.add(queue)
-        return queue
-
-    def unsubscribe(self, queue: asyncio.Queue) -> None:
-        self._subscribers.discard(queue)
-
-    def publish(self, event: dict) -> None:
-        for queue in list(self._subscribers):
-            queue.put_nowait(event)
-
-    def close(self) -> None:
-        """End every subscriber's stream. Used when the daemon is going down: an open SSE
-        response keeps the daemon from finishing its shutdown, so the streams have to be told
-        to end before the servers are asked to stop, not after."""
-        for queue in list(self._subscribers):
-            queue.put_nowait(None)
 
 
 class SessionEventBus:
@@ -93,35 +66,35 @@ class SessionEventBus:
             self.complete(session_id)
 
 
-# The singletons.
+# The supervision singletons: what a session's *existence* depends on. Everything the browser
+# surface needs — the database handle, the configuration, the shared clients — lives in
+# `daisy.workspace.state` instead, which is what lets `rest` stop importing this package.
 
 registry: Any = None            # SessionRegistry
 session_store: Any = None       # SqliteSessionStore — the registry's durable half
 prototype: Any = None           # PrototypeClient
 lifecycle: Any = None           # SessionLifecycle
-turn_store: Any = None          # AppendOnlyTaskStore
-global_configuration: Any = None
-session_factory: Any = None
-async_engine: Any = None
-mcp_manager: Any = None
-remote_agent_manager: Any = None
-file_url_signer: Any = None
-file_lease_manager: Any = None
-workspace_manager: Any = None
-push_configuration_store: Any = None
-push_sender: Any = None
-terminal_manager: Any = None
-composio_servers: dict = {}
-# The agent *profiles* a session could be created with, as A2A cards, rebuilt whenever the
-# agent or skill files change. Distinct from the session registry: this is what could exist,
-# that is what does.
-agent_cards: dict = {}
-chatgpt_login_flow: Any = None
-proxy_client: Any = None
-main_loop: Any = None
 
-broadcaster = Broadcaster()
 event_bus = SessionEventBus()
+
+# Re-exported from the workspace layer, because these are read here constantly and a daemon
+# that had to spell out which module each singleton came from would be a daemon whose every
+# line advertised a split nobody reading it needs to think about. They are *the same objects*:
+# the composition root sets them once, on the workspace module, and this is a view of them.
+
+
+def __getattr__(name: str) -> Any:
+    """Read a workspace singleton through this module.
+
+    Deliberately `__getattr__` rather than an import at load time: these are set *after* this
+    module is imported, so a bound name would capture `None` and keep it forever. A module-level
+    `__getattr__` (PEP 562) resolves on each access, which is the behaviour every reader already
+    assumes `state.session_factory` has."""
+    from daisy.workspace import state as workspace_state
+
+    if hasattr(workspace_state, name):
+        return getattr(workspace_state, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 # Per-session liveness the daemon learns from the event stream rather than from the registry:
 # `_running_contexts` counts the turns a session currently has in flight (a session can be
@@ -142,11 +115,7 @@ _push_client = None
 # The daemon's own addresses and the token that guards them, written to the runtime directory
 # at startup so a client can find them without being told.
 daemon_socket: str = ""
-daemon_port: int = 0
 daemon_token: str = ""
-
-configuration_lock = asyncio.Lock()
-last_written_configuration_digest: Optional[str] = None
 
 
 async def reset_live_session_runtimes() -> None:

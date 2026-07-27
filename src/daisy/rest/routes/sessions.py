@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 from fastapi import APIRouter
-from daisy.daemon.persistence.database import SessionRecord
+from daisy.workspace.database import SessionRecord
 from daisy.base.paths import uploads_directory
 import asyncio
 import re
 from daisy.protocol.dtos import (
     SessionDraftRequest,
 )
-from daisy.daemon import state
-from daisy.daemon.services.broadcast import _publish_broadcast
-from daisy.daemon.services.sessions import _abort_pending_input, _remove_upload_file, _session_draft, _sessions_payload, _update_session_draft
+from daisy.workspace import state
+from daisy.workspace.services.broadcast import _publish_broadcast
+from daisy.workspace.services.sessions import _remove_upload_file, _session_draft, _sessions_payload, _update_session_draft
 
 router = APIRouter()
 
@@ -70,13 +70,13 @@ async def delete_session(session_id: str):
     """Permanently delete a session and all its tasks. Aborts the context first."""
     # Settle any input-required pause and drop the awaiting-input marker; the pending
     # record and tasks are removed with the session below regardless.
-    await _abort_pending_input(session_id)
-    state._awaiting_input_contexts.discard(session_id)
-    # A session's live state lives in its own process, so deleting it is a reap rather than a
-    # per-executor teardown: the process goes, and with it the runtime, the resume pump, the
-    # turn lock, and the conversation. Its rows are removed below either way.
-    if state.lifecycle is not None:
-        await state.lifecycle.reap(session_id, reason="session deleted")
+    # A session's live state lives in its own process, so deleting it means *ending* it: the
+    # process goes, and with it the runtime, the resume pump, the turn lock and the
+    # conversation. Only the control plane can do that, and this surface deliberately cannot
+    # reach the control plane — so it says what happened and the composition root decided who
+    # listens. Without one, the rows below are still removed, which is the right behaviour for
+    # a workspace served without a supervisor.
+    await state.session_deleted(session_id)
     # Delete every task in the context from the task store, then reclaim any upload files
     # the session referenced that no surviving session still references (uploads are
     # content-addressed and may be shared, so only truly-orphaned files are removed).

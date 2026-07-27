@@ -22,8 +22,8 @@ from pathlib import Path
 from typing import Any
 import daisy.base.configuration as _configuration
 import json
-from daisy.daemon import state
-from daisy.daemon.persistence.database import ModelHistoryRecord
+from daisy.workspace import state
+from daisy.workspace.database import ModelHistoryRecord
 
 
 def _catalogue_base_url() -> str:

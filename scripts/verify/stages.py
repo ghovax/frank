@@ -468,6 +468,23 @@ def library_ports() -> Outcome:
             key: sorted(str(path.relative_to(root)) for path in Path(root).rglob("*") if path.is_file())
             for key, root in roots.items()
         }
+        # Credentials and the model, supplied in code. A library that can only be keyed
+        # through a YAML file in the user's home directory is not one.
+        keyed = Session(
+            _agent_name(), directory=".",
+            providers={"anthropic": "sk-verify", "custom": {"api_key": "k", "base_url": "http://x"}},
+            model_identifier="anthropic/claude-sonnet-4",
+        )
+        credentials = keyed._configuration.providers
+        observations["providers_in_code"] = (
+            credentials["anthropic"].api_key == "sk-verify"
+            and credentials["custom"].base_url == "http://x"
+        )
+        observations["model_in_code"] = (
+            keyed.runtime._effective_model_identifier == "anthropic/claude-sonnet-4"
+        )
+        await keyed.aclose()
+
         observations.update({
             "answer": answer,
             "used_caller_model": answer == "the stub model answered",
@@ -485,6 +502,8 @@ def library_ports() -> Outcome:
             and len(resumed.conversation) >= 2
             and all(not files for files in residue.values())
             and "checkpoints:" in observations["rejects_incomplete_port"]
+            and observations["providers_in_code"]
+            and observations["model_in_code"]
         )
         return Outcome("library", passed, observations=observations)
 

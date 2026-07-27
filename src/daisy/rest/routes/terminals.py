@@ -1,7 +1,7 @@
 """Terminals routes."""
 
 from __future__ import annotations
-from daisy.daemon.brokers.terminals import TerminalSession, _delete_terminal_state, _list_terminal_states, _terminal_context_for_request, _terminal_directory
+from daisy.workspace.brokers.terminals import TerminalSession, _delete_terminal_state, _list_terminal_states, _terminal_context_for_request, _terminal_directory
 from fastapi import APIRouter
 from contextlib import suppress
 from fastapi import HTTPException
@@ -10,7 +10,7 @@ from fastapi import WebSocketDisconnect
 from pathlib import Path
 import asyncio
 import json
-from daisy.daemon import state
+from daisy.workspace import state
 
 router = APIRouter()
 

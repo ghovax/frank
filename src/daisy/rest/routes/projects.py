@@ -11,9 +11,9 @@ from daisy.protocol.dtos import (
     LocationInput,
     ProjectCreateRequest,
 )
-from daisy.daemon.services import projects as _projects
-from daisy.daemon.services.broadcast import _publish_broadcast
-from daisy.daemon.services.projects import _create_location, _create_project, _delete_location, _delete_project, _hosts_payload, _project_name, _project_payload, _projects_payload, _update_location
+from daisy.workspace.services import projects as _projects
+from daisy.workspace.services.broadcast import _publish_broadcast
+from daisy.workspace.services.projects import _create_location, _create_project, _delete_location, _delete_project, _hosts_payload, _project_name, _project_payload, _projects_payload, _update_location
 
 router = APIRouter()
 

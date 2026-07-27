@@ -272,6 +272,7 @@ async def _serve() -> int:
     from daisy.base.background_store import reap_orphaned_process_groups
     from daisy.base.configuration import GlobalConfiguration
     from daisy.daemon import state
+    from daisy.workspace import state as workspace_state
     from daisy.daemon.composition import close_shared_resources, open_shared_resources
     from daisy.daemon.lifecycle import SessionLifecycle
     from daisy.daemon.peer_identity import unix_peer_protocol
@@ -283,7 +284,7 @@ async def _serve() -> int:
         return await _defer_to_running_daemon()
     _reclaim_socket()
 
-    state.global_configuration = GlobalConfiguration.load()
+    workspace_state.global_configuration = GlobalConfiguration.load()
     # Ask once, at boot, whether this machine can enforce a profile — and on macOS ask by running
     # one, because `sandbox-exec` being on disk and Apple still honouring it are different
     # questions, and the interface is deprecated. Sessions refuse individually when they must; this
@@ -298,7 +299,7 @@ async def _serve() -> int:
         )
     state.daemon_token = secrets.token_urlsafe(32)
     state.daemon_socket = str(daemon_socket_path())
-    state.daemon_port = _free_port()
+    workspace_state.daemon_port = _free_port()
 
     await _open_stores()
 
@@ -312,7 +313,7 @@ async def _serve() -> int:
 
     # The registry is durable now: a daemon restart ends every session's *process*, not every
     # session. Live records come back asleep, and the first message to one forks it a worker.
-    state.session_store = SqliteSessionStore(state.session_factory)
+    state.session_store = SqliteSessionStore(workspace_state.session_factory)
     state.registry = SessionRegistry(store=state.session_store)
     restored = await asyncio.to_thread(state.session_store.load_all)
     state.registry.restore(restored)
@@ -331,6 +332,15 @@ async def _serve() -> int:
         state.prototype,
         on_change=lambda: state.broadcaster.publish({"type": "sessions_changed"}),
     )
+    # The two places a workspace change has a supervision consequence. Filled in here because
+    # a composition root is exactly what decides whether there *is* a control plane to tell —
+    # `daisy web` serving the same workspace without one leaves them unset, and the workspace
+    # goes on working.
+    from daisy.daemon.pending_input import settle_and_reap
+
+    workspace_state.on_session_deleted = settle_and_reap
+    workspace_state.reset_live_session_runtimes = state.reset_live_session_runtimes
+
     # Best effort: a machine that cannot start the prototype still serves the browser surface
     # and every read, and says so in `daemon.status`, rather than refusing to boot.
     try:
@@ -353,7 +363,7 @@ async def _serve() -> int:
         )
     )
     tcp_server = announcing(
-        uvicorn.Config(app, host=LOOPBACK_HOST, port=state.daemon_port, log_level="warning", access_log=False)
+        uvicorn.Config(app, host=LOOPBACK_HOST, port=workspace_state.daemon_port, log_level="warning", access_log=False)
     )
     # uvicorn captures SIGTERM/SIGINT itself, and with two servers sharing a process each
     # would install a handler that stops only itself — so a signal would down one listener and
@@ -399,14 +409,14 @@ async def _serve() -> int:
         both_ready.cancel()
         await serving
         return 1
-    _write_handshake(state.daemon_token, state.daemon_port)
+    _write_handshake(state.daemon_token, workspace_state.daemon_port)
     # One line on stdout, then close it: whoever started the daemon is waiting to read exactly
     # this, and leaving the pipe open would let later output block on a reader that has gone.
     with contextlib.suppress(OSError, ValueError):
-        sys.stdout.write(json.dumps({"ready": True, "pid": os.getpid(), "port": state.daemon_port}) + "\n")
+        sys.stdout.write(json.dumps({"ready": True, "pid": os.getpid(), "port": workspace_state.daemon_port}) + "\n")
         sys.stdout.flush()
         sys.stdout.close()
-    logger.info("daisyd listening on %s and %s:%d", state.daemon_socket, LOOPBACK_HOST, state.daemon_port)
+    logger.info("daisyd listening on %s and %s:%d", state.daemon_socket, LOOPBACK_HOST, workspace_state.daemon_port)
 
     try:
         await serving
@@ -432,8 +442,8 @@ async def _open_stores() -> None:
 
     from daisy.base.paths import database_file_path
     from daisy.base.sqlite_lock import configure_sqlite_lock, sqlite_write_lock
-    from daisy.daemon import state
-    from daisy.daemon.persistence.database import _apply_history_schema
+    from daisy.workspace import state as workspace_state
+    from daisy.workspace.database import _apply_history_schema
     from daisy.daemon.persistence.turn_store import AppendOnlyTaskStore
 
     database_path = database_file_path()
@@ -453,10 +463,10 @@ async def _open_stores() -> None:
             _apply_history_schema(sync_engine)
 
     await asyncio.to_thread(_initialize)
-    state.session_factory = sessionmaker(bind=sync_engine)
-    state.async_engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}", connect_args={"timeout": 30})
+    workspace_state.session_factory = sessionmaker(bind=sync_engine)
+    workspace_state.async_engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}", connect_args={"timeout": 30})
 
-    @event.listens_for(state.async_engine.sync_engine, "connect")
+    @event.listens_for(workspace_state.async_engine.sync_engine, "connect")
     def _async_pragmas(dbapi_connection, _record):  # noqa: ANN001
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
@@ -464,11 +474,11 @@ async def _open_stores() -> None:
         cursor.execute("PRAGMA busy_timeout=30000")
         cursor.close()
 
-    state.turn_store = AppendOnlyTaskStore(state.async_engine)
-    await state.turn_store.initialize()
+    workspace_state.turn_store = AppendOnlyTaskStore(workspace_state.async_engine)
+    await workspace_state.turn_store.initialize()
     # A turn that was mid-execution when the daemon last stopped cannot be resurrected — its
     # worker is gone — so it is marked interrupted rather than left claiming to be running.
-    interrupted = await state.turn_store.reconcile_orphaned_turns()
+    interrupted = await workspace_state.turn_store.reconcile_orphaned_turns()
     if interrupted:
         logger.warning("Marked %d interrupted turn(s) from a previous run.", len(interrupted))
 

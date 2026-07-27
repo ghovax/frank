@@ -203,7 +203,8 @@ async def valid_tokens() -> ChatGPTTokens:
     tokens = await asyncio.to_thread(load_tokens)
     if tokens is None:
         raise ChatGPTAuthError(
-            "Not signed in to ChatGPT. Run `daisy auth login`, or sign in from Settings."
+            "Not signed in to ChatGPT. Run `daisy auth login`, sign in from Settings, or "
+            "drive `daisy.base.credentials.ChatGPTLoginFlow` yourself."
         )
     if not tokens.is_expired():
         return tokens
