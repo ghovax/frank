@@ -78,6 +78,7 @@ async def serve(assignment: dict, ready_fd: int = -1) -> int:
         permission_mode=str(assignment.get("permission_mode") or "default"),
         sandbox=assignment.get("sandbox") or {},
         project_id=str(assignment.get("project_id") or ""),
+        locations=assignment.get("locations") or None,
         parent=str(assignment.get("parent") or ""),
         token=str(assignment.get("token") or ""),
         daemon_token=str(assignment.get("daemon_token") or ""),

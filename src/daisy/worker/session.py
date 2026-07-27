@@ -26,6 +26,7 @@ from langchain_core.messages import messages_from_dict
 
 from daisy.base.background_tasks import spawn_background_task
 from daisy.base.catalogue import machine_catalogue
+from daisy.base.file_leases import FileLeaseManager
 from daisy.base.configuration import GlobalConfiguration
 from daisy.base.background_store import get_background_job_store
 from daisy.base.ports import JobStore
@@ -67,6 +68,7 @@ class SessionExecutor(AgentExecutor):
         sandbox: Optional[dict] = None,
         runtime_working_directory: str = "",
         project_id: str = "",
+        locations: Optional[list[dict]] = None,
         parent: str = "",
         token: str = "",
         daemon_token: str = "",
@@ -127,17 +129,22 @@ class SessionExecutor(AgentExecutor):
         self._registry = None
         self._handler = None
 
-        self._on_new_context = None
-        self._session_permission_mode_for = None
+        # Where this session's tools may run, resolved by the daemon at `session.create` and
+        # carried in the assignment — the same once-and-immutable treatment the sandbox and the
+        # permission mode get, and for the same reason. `None` means no project, and the
+        # runtime synthesises a single local location at the working directory.
+        self._locations = locations
         self._on_turn_state = self._notify_turn_state
         self._on_permission_state = self._notify_permission_state
         # Structured turn parts are handed to the daemon as they are persisted, so an attached
         # client sees the turn as it happens rather than on the next poll.
         self._on_stream_event = self._publish_stream_event
-        self._file_lease_manager = None
-        self._ensure_session_workspace = None
-        self._ensure_mcp_servers = None
-        self._resolve_locations = None
+        # Advisory locks so two sessions editing the same file notice each other. Built here
+        # rather than injected: the manager was a `None` in every worker, so `_acquire_filesystem_lease`
+        # answered "" and no session has ever taken a lease. The cross-process `flock` under it
+        # is what actually does the work, so one per process is exactly right — the object was
+        # only ever the in-process fast path over it.
+        self._file_lease_manager = FileLeaseManager()
 
         self._contexts: dict[str, _ContextState] = {}
         # Maps an in-flight A2A task to its runtime, purely so `cancel` can abort it.
@@ -586,8 +593,7 @@ class SessionExecutor(AgentExecutor):
             # to — so a persona switch picks up exactly where the last turn left off.
             conversation = self._conversations.setdefault(session_id, [])
             locations = None
-            if self._resolve_locations is not None:
-                locations = await asyncio.to_thread(self._resolve_locations, session_id) or None
+            locations = self._locations
             runtime = self._build_runtime(
                 session_id,
                 workspace.runtime_working_directory,
@@ -595,8 +601,6 @@ class SessionExecutor(AgentExecutor):
                 conversation=conversation,
                 locations=locations,
             )
-            if self._session_permission_mode_for is not None:
-                runtime.set_permission_mode(await asyncio.to_thread(self._session_permission_mode_for, session_id))
             # Restore the agent's durable objective — its goal and task list — the first
             # time this process builds a runtime for the context (e.g. a session reopened
             # after a restart), alongside the conversation restored above, so a marathon run

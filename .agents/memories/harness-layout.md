@@ -12,15 +12,17 @@ One executable, three entry points, selected by the first argument in `src/daisy
 
 ```
 src/daisy/
-├── base/        configuration, XDG paths, skills, permission modes, MCP client, file leases
+├── __init__.py  the library surface: daisy.Session and every seam it takes
+├── base/        configuration, XDG paths, skills, ports, the catalogue, the MCP client
 ├── protocol/    A2A cards, DTOs, the wire contract
 ├── cli/         the `daisy` command and its renderers
-├── daemon/      daisyd: registry, lifecycle, prototype client, brokers, persistence
+├── workspace/   projects, locations, settings, agents, terminals — none of it supervision
+├── daemon/      daisyd: registry, lifecycle, prototype client, the turn store
 ├── worker/      a session process (its socket server and executor), and the prototype
 ├── runtime/     the agent loop, prompts, tools, models
 ├── computer/    macOS screen-control bridges (native apps + Chrome)
 ├── locations/   where files live (local, SSH, containers)
-└── rest/        the REST surface the desktop app uses
+└── rest/        the browser edge — reaches `workspace`, never `daemon`
 ```
 
 `scripts/check_layers.py` enforces the layering — `base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, with `rest` above the daemon — and four invariants:

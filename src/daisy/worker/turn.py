@@ -444,14 +444,11 @@ class _TurnRunner:
         await self._updater.start_work()
 
         workspace = self._ex._workspace(self._requested_working_directory)
-        if self._ex._ensure_mcp_servers is not None and workspace.source_working_directory:
-            await self._ex._ensure_mcp_servers(workspace.source_working_directory)
+
 
         existing_state = self._ex._contexts.get(task.context_id)
-        is_new_context = existing_state is None or existing_state.runtime is None
         runtime = await self._ex._runtime_for(task.context_id, workspace)
-        if is_new_context and self._ex._on_new_context is not None:
-            await asyncio.to_thread(self._ex._on_new_context, task.context_id)
+
         self._runtime = runtime
         self._ex._aborts[task.id] = runtime
         runtime.set_a2a_turn_id(task.id)

@@ -21,23 +21,29 @@ Design plans for larger changes — the sequential, commit-associated record of 
 daisy/
 ├── packaging/entry.py                 # entry point for the frozen build (all three roles)
 ├── src/daisy/
-│   ├── __main__.py           # argv dispatch: daisy, daisyd, worker
-│   ├── base/                 # configuration, XDG paths, skills, permission modes
+│   ├── __init__.py           # the library surface: daisy.Session and its seams
+│   ├── __main__.py           # argv dispatch: daisy, daisyd, prototype
+│   ├── base/                 # configuration, XDG paths, skills, ports, the catalogue
 │   ├── protocol/             # A2A cards, DTOs, the wire contract
 │   ├── cli/                  # the `daisy` command and its renderers
-│   ├── daemon/               # daisyd: registry, lifecycle, prototype client, persistence
-│   ├── worker/               # a session process: its socket server and executor
+│   ├── workspace/            # projects, locations, settings, terminals — no supervision
+│   ├── daemon/               # daisyd: registry, lifecycle, prototype client, turn store
+│   ├── worker/               # a session process, and the prototype it is forked from
 │   ├── runtime/              # the agent loop, prompts, tools, models
 │   ├── computer/             # macOS screen-control bridges (native apps + Chrome)
 │   ├── locations/            # where files live (local, SSH, containers)
-│   └── rest/                 # the REST surface the desktop app uses
+│   └── rest/                 # the REST surface the browser uses (never imports daemon)
 ├── .agents/                  # bundled agents, skills, memories, MCP config
 ├── web/                      # the desktop app (Next.js UI + Tauri shell in src-tauri/)
 ├── packaging/                # PyInstaller freeze + signing for the packaged app
-├── scripts/                  # layering check, event-schema generation
+├── scripts/                  # layering/import/translation checks, the verification battery
 └── examples/                 # example MCP servers
 ```
 
-The layering is enforced by `scripts/check_layers.py`: `base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, and the daemon never imports the runtime. That is what keeps the control plane small, and it is why the *prototype* — the process every session is forked out of — lives in `worker/` and is reached over a socket rather than being a function the daemon calls.
+The layering is enforced by `scripts/check_layers.py`: `base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, with `workspace` beside them and `rest` above it. Two rules do most of the work.
+
+**The daemon never imports the runtime.** That keeps the control plane small, and it is why the *prototype* — the process every session is forked out of — lives in `worker/` and is reached over a socket rather than being a function the daemon calls: whatever forks a session must already have paid for the runtime import, and the daemon must never be that.
+
+**`rest` never imports `daemon`.** The browser surface reaches `workspace` — projects, locations, settings, agents, terminals — and none of that supervises anything. It used to live inside the daemon, which is the only reason a GUI surface had to import the process that supervises agents. Where a workspace change has a supervision consequence, the workspace calls a hook the composition root filled in.
 
 Runtime state never lives in the repository. Daisy follows the XDG convention: configuration in **`~/.config/daisy/`**, durable state (including `history.db`) in **`~/.local/share/daisy/`**, sockets in the runtime directory, logs in **`~/.local/state/daisy/`**, and caches in **`~/.cache/daisy/`**. The [Configuration guide](configuration.md) is the reference for it.

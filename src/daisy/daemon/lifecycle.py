@@ -42,6 +42,21 @@ def _daemon_token() -> str:
     return state.daemon_token
 
 
+def _resolve_locations(session_id: str):
+    """The project's locations, in the shape the runtime builds executors from.
+
+    Best effort: a session with no project has none, and a lookup that fails must not stop the
+    session from starting — the runtime falls back to a single local location at its working
+    directory, which is exactly right for a session that has no project."""
+    from daisy.workspace.services.locations import _resolve_session_locations
+
+    try:
+        return _resolve_session_locations(session_id)
+    except Exception:  # noqa: BLE001 — a session without locations still runs
+        logger.warning("Could not resolve locations for %s", session_id, exc_info=True)
+        return None
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -107,6 +122,12 @@ class SessionLifecycle:
             # than being read again from a configuration file that may have changed since.
             "sandbox": record.sandbox,
             "project_id": record.project_id,
+            # Resolved once, here, rather than by the session asking back. A project's
+            # locations are fixed for a session's life in the same way its sandbox and its
+            # permission mode are, and the injection that was supposed to let a worker resolve
+            # them was never wired to anything — so multi-location projects were dead at the
+            # session level and every runtime synthesised a single local location.
+            "locations": _resolve_locations(record.id),
             "parent": record.parent,
             "token": record.token,
             # The daemon's own token, so the session can write to the ingest endpoint. Its
