@@ -4,9 +4,8 @@ reloading the configuration file."""
 from __future__ import annotations
 
 from daisy.workspace.brokers.composio import composio_mcp_servers
-from daisy.base.configuration import GlobalConfiguration
+from daisy.base.configuration import GlobalConfiguration, save_api_keys
 from daisy.base.paths import configuration_file_path
-from daisy.base.configuration import save_api_keys
 from daisy.base.mcp_client import MCPClientManager
 from typing import Optional
 import asyncio

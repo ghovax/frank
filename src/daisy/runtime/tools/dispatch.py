@@ -6,54 +6,50 @@ from the leaf ``agent_internals`` module and stable modules, so the graph stays 
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 from daisy.base import telemetry as _telemetry
-from daisy.runtime.internals import _ResolvedToolDecision
-from daisy.runtime.internals import _background_handle_kind
-from daisy.runtime.internals import _cap_model_result_payload
-from daisy.runtime.internals import _coerce_mcp_arguments
-from daisy.runtime.internals import _coerce_structured_arguments
-from daisy.runtime.internals import _maybe_json
-from daisy.runtime.internals import _model_result_status
-from daisy.runtime.internals import _model_visible_tool_result
-from daisy.runtime.internals import _tool_timing_metadata
-from daisy.runtime.internals import _utc_timestamp
-from daisy.runtime.tools import context as tool_context
-from daisy.runtime.background import bind_background_jobs
-from daisy.runtime.background import bind_tool_call_id
-from daisy.runtime.background import unbind_background_jobs
-from daisy.runtime.background import unbind_tool_call_id
+from daisy.runtime.internals import (
+    _background_handle_kind,
+    _cap_model_result_payload,
+    _coerce_mcp_arguments,
+    _coerce_structured_arguments,
+    _maybe_json,
+    _model_result_status,
+    _model_visible_tool_result,
+    _ResolvedToolDecision,
+    _tool_timing_metadata,
+    _utc_timestamp,
+)
+from daisy.runtime.tools import context as tool_context, file_operations as file_tools
+from daisy.runtime.background import (
+    bind_background_jobs,
+    bind_tool_call_id,
+    unbind_background_jobs,
+    unbind_tool_call_id,
+)
 from daisy.protocol.events import ToolStatus
 from daisy.base.file_leases import FileLeaseConflict
-from daisy.base.skills import enabled_skills
-from daisy.base.skills import load_skills
-from daisy.runtime.locations import CallExecutionPolicy
-from daisy.runtime.locations import ResolvedLocation
-from daisy.runtime.locations import ToolLocationError
-from daisy.runtime.locations import _LOCATION_TOOLS
-from daisy.base.tuning import Tunable
-from daisy.base.tuning import active_tuning
-from daisy.base.tuning import current_context_window
-from daisy.runtime.turn_events import DeniedInjection
-from daisy.runtime.turn_events import Error
-from daisy.runtime.turn_events import Mcp
-from daisy.runtime.turn_events import ToolCall
-from daisy.runtime.turn_events import ToolResult
-from daisy.runtime.turn_events import TurnEvent
-from daisy.runtime.tools import file_operations as file_tools
-from daisy.runtime.tools.registry import bash as bash_tool
-from daisy.runtime.tools.registry import call_mcp_tool_with_events
-from daisy.runtime.tools.registry import list_mcp_resources as list_mcp_resources_tool
-from daisy.runtime.tools.registry import list_mcp_tools as list_mcp_tools_tool
-from daisy.runtime.tools.registry import read_mcp_resource as read_mcp_resource_tool
-from daisy.runtime.tools.registry import search_web as search_web_tool
+from daisy.base.skills import enabled_skills, load_skills
+from daisy.runtime.locations import (
+    _LOCATION_TOOLS,
+    CallExecutionPolicy,
+    ResolvedLocation,
+    ToolLocationError,
+)
+from daisy.base.tuning import active_tuning, current_context_window, Tunable
+from daisy.runtime.turn_events import DeniedInjection, Error, Mcp, ToolCall, ToolResult, TurnEvent
+from daisy.runtime.tools.registry import (
+    bash as bash_tool,
+    call_mcp_tool_with_events,
+    list_mcp_resources as list_mcp_resources_tool,
+    list_mcp_tools as list_mcp_tools_tool,
+    read_mcp_resource as read_mcp_resource_tool,
+    search_web as search_web_tool,
+)
 from langchain_core.messages import ToolMessage
 from pathlib import Path
 from pydantic import ValidationError
-from typing import Any
-from typing import AsyncIterator
-from typing import cast
+from typing import Any, AsyncIterator, cast
 import asyncio
 import shlex
 import time

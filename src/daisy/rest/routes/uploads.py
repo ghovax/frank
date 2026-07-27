@@ -1,12 +1,8 @@
 """Uploads routes."""
 
 from __future__ import annotations
-from fastapi import APIRouter
-from datetime import datetime
-from datetime import timezone
-from fastapi import File
-from fastapi import HTTPException
-from fastapi import UploadFile
+from fastapi import APIRouter, File, HTTPException, UploadFile
+from datetime import datetime, timezone
 from daisy.base.paths import uploads_directory
 from pathlib import Path
 import asyncio

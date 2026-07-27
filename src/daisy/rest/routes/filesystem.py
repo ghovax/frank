@@ -1,9 +1,7 @@
 """Filesystem routes."""
 
 from __future__ import annotations
-from fastapi import APIRouter
-from fastapi import HTTPException
-from fastapi import Request
+from fastapi import APIRouter, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 from typing import cast
 from watchfiles import awatch

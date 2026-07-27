@@ -5,11 +5,8 @@ rewriting the conversation into a dense observation log so an unbounded turn nev
 from __future__ import annotations
 
 from daisy.runtime.internals import ObservationBatch
-from daisy.runtime.turn_events import CompactionDone
-from daisy.runtime.turn_events import CompactionStarted
-from daisy.runtime.turn_events import TurnEvent
-from langchain_core.messages import HumanMessage
-from langchain_core.messages import SystemMessage
+from daisy.runtime.turn_events import CompactionDone, CompactionStarted, TurnEvent
+from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import ValidationError
 from typing import AsyncIterator
 from daisy.base.serialization import compact

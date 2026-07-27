@@ -3,11 +3,8 @@ primitives shared by the projects service."""
 
 from __future__ import annotations
 
-from datetime import datetime
-from datetime import timezone
-from daisy.locations.resolver import LocationAddress
-from daisy.locations.resolver import host_is_defined
-from daisy.locations.resolver import location_uri_for
+from datetime import datetime, timezone
+from daisy.locations.resolver import host_is_defined, location_uri_for, LocationAddress
 from daisy.protocol.dtos import LocationInput
 from itertools import combinations
 from pathlib import Path

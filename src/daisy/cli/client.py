@@ -11,8 +11,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeout
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from typing import Any, Optional
 
 import httpx

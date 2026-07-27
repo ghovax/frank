@@ -1,17 +1,12 @@
 """Settings routes."""
 
 from __future__ import annotations
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from daisy.base.background_tasks import spawn_background_task
 import daisy.base.confinement as _confinement
 import daisy.base.configuration as _configuration
-from fastapi import HTTPException
-from daisy.base.credentials import ChatGPTLoginFlow
-from daisy.base.credentials import clear_tokens
-from daisy.base.credentials import load_tokens
-from daisy.base.models import list_models
-from daisy.base.models import ModelDefinition
-from daisy.base.models import available_models
+from daisy.base.credentials import ChatGPTLoginFlow, clear_tokens, load_tokens
+from daisy.base.models import available_models, list_models, ModelDefinition
 from daisy.base.subscription import (
     clear_subscription_models_cache,
     clear_usage_snapshot,

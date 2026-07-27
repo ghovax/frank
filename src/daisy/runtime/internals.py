@@ -6,27 +6,18 @@ the mixin files) so the dependency graph is a clean DAG — agent_internals -> m
 agent.py — with no import cycle."""
 from __future__ import annotations
 
-from dataclasses import dataclass
-from dataclasses import field
+from dataclasses import dataclass, field
 from datetime import datetime
 from daisy.base.credentials import is_signed_in
-from daisy.base.configuration import GlobalConfiguration
-from daisy.base.configuration import PromptLoader
-from daisy.protocol.events import ToolStatus
-from daisy.protocol.events import tool_status_from_result
+from daisy.base.configuration import GlobalConfiguration, PromptLoader
+from daisy.protocol.events import tool_status_from_result, ToolStatus
 from daisy.base.providers import resolve_api_key
-from daisy.base.tuning import Tunable
-from daisy.base.tuning import active_tuning
-from daisy.base.tuning import clip_to_tokens
+from daisy.base.tuning import active_tuning, clip_to_tokens, Tunable
 from daisy.base.identifiers import new_id
 from langchain_core.messages import AIMessageChunk
 from pathlib import Path
-from pydantic import BaseModel
-from pydantic import Field
-from typing import Any
-from typing import AsyncIterator
-from typing import Literal
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Any, AsyncIterator, Literal, Optional
 import json
 from daisy.base.serialization import compact
 

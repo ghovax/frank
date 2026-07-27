@@ -7,47 +7,45 @@ from __future__ import annotations
 
 import logging
 from contextlib import suppress
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 from daisy.base import telemetry as _telemetry
-from daisy.runtime.internals import _CONTINUE
-from daisy.runtime.internals import _ModelCallOutcome
-from daisy.runtime.internals import _PhaseStep
-from daisy.runtime.internals import _STOP
-from daisy.runtime.internals import _STREAM_EXHAUSTED
-from daisy.runtime.internals import _ToolPlan
-from daisy.runtime.internals import _detect_workspace
-from daisy.runtime.internals import _stream_next
-from daisy.runtime.prompt.environment import probe_local_environment
-from daisy.runtime.prompt.environment import probe_user_context
+from daisy.runtime.internals import (
+    _CONTINUE,
+    _detect_workspace,
+    _ModelCallOutcome,
+    _PhaseStep,
+    _STOP,
+    _STREAM_EXHAUSTED,
+    _stream_next,
+    _ToolPlan,
+)
+from daisy.runtime.prompt.environment import probe_local_environment, probe_user_context
 from daisy.protocol.events import TurnContext
 from daisy.base.memories import memories_payload
-from daisy.base.message_content import message_content_deltas
-from daisy.base.message_content import message_text
-from daisy.base.skills import enabled_skills
-from daisy.base.skills import skills_for_agent
-from daisy.base.skills import skills_payload
-from daisy.runtime.turn_events import Checkpoint
-from daisy.runtime.turn_events import Done
-from daisy.runtime.turn_events import Status
-from daisy.runtime.turn_events import Steering
-from daisy.runtime.turn_events import Suspended
-from daisy.runtime.turn_events import SuspensionGate
-from daisy.runtime.turn_events import TextChunk
-from daisy.runtime.turn_events import Thinking
-from daisy.runtime.turn_events import ThinkingDone
-from daisy.runtime.turn_events import TurnEvent
-from langchain_core.messages import AIMessage
-from langchain_core.messages import AIMessageChunk
-from langchain_core.messages import HumanMessage
-from langchain_core.messages import SystemMessage
-from langchain_core.messages import ToolMessage
+from daisy.base.message_content import message_content_deltas, message_text
+from daisy.base.skills import enabled_skills, skills_for_agent, skills_payload
+from daisy.runtime.turn_events import (
+    Checkpoint,
+    Done,
+    Status,
+    Steering,
+    Suspended,
+    SuspensionGate,
+    TextChunk,
+    Thinking,
+    ThinkingDone,
+    TurnEvent,
+)
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langchain_core.messages.ai import add_ai_message_chunks
 from pathlib import Path
-from typing import Any
-from typing import AsyncIterator
-from typing import Optional
-from typing import cast
+from typing import Any, AsyncIterator, cast, Optional
 import asyncio
 import platform
 import time

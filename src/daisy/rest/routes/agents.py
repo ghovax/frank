@@ -1,8 +1,7 @@
 """Agents routes."""
 
 from __future__ import annotations
-from fastapi import APIRouter
-from fastapi import HTTPException
+from fastapi import APIRouter, HTTPException
 from daisy.base.configuration import list_agents
 from daisy.base.skills import load_skills
 import asyncio

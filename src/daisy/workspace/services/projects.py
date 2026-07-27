@@ -6,8 +6,7 @@ from __future__ import annotations
 from contextlib import suppress
 from daisy.base.sqlite_lock import sqlite_write_lock
 from daisy.locations import ssh_hosts as _ssh_hosts
-from daisy.protocol.dtos import LocationInput
-from daisy.protocol.dtos import ProjectCreateRequest
+from daisy.protocol.dtos import LocationInput, ProjectCreateRequest
 from pathlib import Path
 from typing import Any
 import subprocess

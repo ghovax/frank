@@ -1,8 +1,7 @@
 """Projects routes."""
 
 from __future__ import annotations
-from fastapi import APIRouter
-from fastapi import HTTPException
+from fastapi import APIRouter, HTTPException
 from daisy.locations.executor import SshExecutor
 from daisy.locations.resolver import host_is_defined
 from pathlib import Path

@@ -5,8 +5,7 @@ from __future__ import annotations
 
 from collections import deque
 from contextlib import suppress
-from datetime import datetime
-from datetime import timezone
+from datetime import datetime, timezone
 from fastapi import HTTPException
 from daisy.base.sqlite_lock import sqlite_write_lock
 from daisy.locations.executor import SshExecutor

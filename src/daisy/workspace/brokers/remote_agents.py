@@ -4,9 +4,7 @@ remote-agent health."""
 from __future__ import annotations
 
 from daisy.base.configuration import GlobalConfiguration
-from daisy.protocol.client import RemoteAgentAuth
-from daisy.protocol.client import RemoteAgentConfiguration
-from daisy.protocol.client import RemoteAgentManager
+from daisy.protocol.client import RemoteAgentAuth, RemoteAgentConfiguration, RemoteAgentManager
 from daisy.workspace import state
 
 
