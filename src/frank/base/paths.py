@@ -97,6 +97,30 @@ def workspaces_directory() -> Path:
     return path
 
 
+def oauths_directory() -> Path:
+    """The OAuth token files, one per provider that signs in rather than taking a key.
+
+    Created 0700, unlike the other data subdirectories, because it holds nothing but
+    password-equivalent secrets. The token files are written 0600 themselves; the mode here
+    is so a file added to this directory later is protected by where it lives rather than by
+    whoever remembers to chmod it."""
+    path = data_directory() / "oauths"
+    path.mkdir(parents=True, exist_ok=True)
+    path.chmod(0o700)
+    return path
+
+
+def oauth_token_path(provider_identifier: str) -> Path:
+    """One provider's OAuth tokens (``…/frank/oauths/<provider>.json``).
+
+    There is no reading of any older layout. A token file written where this used to put one
+    is simply not found, and the provider reports itself signed out until the user signs in
+    again — which costs one browser round trip and leaves exactly one place a token can be.
+    Carrying a relocation would mean this function had to know the shape of every layout it
+    ever had, forever, and a sign-out would have to delete files from all of them."""
+    return oauths_directory() / f"{provider_identifier}.json"
+
+
 # The `sockaddr_un.sun_path` limit, which is an operating-system constant rather than a
 # filesystem one: 104 bytes on macOS and the BSDs, 108 on Linux. The smaller is used
 # everywhere, so a path that binds on one platform binds on all of them — a limit that differs

@@ -37,7 +37,7 @@ The closest tools are [Claude Code](https://code.claude.com) and [OpenAI Codex](
 | | Frank | Claude Code | OpenAI Codex |
 |---|---|---|---|
 | **License** | Open source (MIT) | Proprietary | Open-source CLI (Apache-2.0); cloud and models are OpenAI's |
-| **Models** | Any provider, or a ChatGPT login, per session — the screen tools included | Claude first; third-party providers for coding on the CLI and VS Code, but its browser and computer use need an Anthropic plan | GPT-5 Codex by default; the CLI can also point at OpenRouter, Ollama, LM Studio, or any compatible endpoint |
+| **Models** | Any provider, or a ChatGPT or Cursor login, per session — the screen tools included | Claude first; third-party providers for coding on the CLI and VS Code, but its browser and computer use need an Anthropic plan | GPT-5 Codex by default; the CLI can also point at OpenRouter, Ollama, LM Studio, or any compatible endpoint |
 | **Where it runs** | A harness you self-host — local, a VM, a container, or over SSH — with a native app pointed at it | Proprietary client; long tasks run on Anthropic's cloud | Local CLI, IDEs, and a desktop app; async tasks run on OpenAI's cloud |
 | **Screen control** | Native macOS apps and your own Chrome, read as ranked accessibility/DOM elements from a plain-language search — screenshots only when you ask | Your real Chrome session, plus macOS computer use driven by downscaled screenshots (research preview, Pro/Max) | In-app and Chrome-extension browser, plus background macOS computer use driven by screenshots |
 | **Reach** | Terminal-first (`frank`), plus a desktop app over the same API; every session is scriptable and attachable | Terminal, VS Code, JetBrains, desktop, web, mobile, Slack, CI, GitHub review; macOS and Windows | CLI, IDEs, desktop, cloud/web, Chrome, GitHub review; macOS and Windows |
@@ -74,7 +74,7 @@ A session composes over the same API rather than over this command: `create_sess
 The daemon starts itself on the first command. From the app:
 
 1. **Launch Frank.** The daemon starts automatically; the app connects to it.
-2. **Add a model key.** Open **Settings → Providers**, paste a key for any provider (or sign in with ChatGPT), and pick a model. Keys live in your Frank configuration file — see the [Configuration guide](documentation/configuration.md), or run `frank configure --all` to see every setting there is.
+2. **Add a model key.** Open **Settings → Providers**, paste a key for any provider (or sign in with a ChatGPT or Cursor subscription), and pick a model. Keys live in your Frank configuration file — see the [Configuration guide](documentation/configuration.md), or run `frank configure --all` to see every setting there is.
 3. **Start a conversation.** Type a task. Approve tool calls as they come up, or relax the [permission mode](documentation/configuration.md#permission-modes) once you trust a flow.
 
 The screen-control tools need a one-time Accessibility grant and Chrome's remote-debugging toggle — see the [Installation guide](documentation/installation.md#permissions-the-app-may-ask-for).

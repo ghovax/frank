@@ -9,11 +9,11 @@ full history resent every turn), and authenticates with the OAuth token minted f
 Codex plus a ``ChatGPT-Account-Id`` header.
 
 It sends frank's *own* system prompt in the ``instructions`` field like any normal
-Responses request — there is no Codex-prompt impersonation. (The widely repeated
-claim that the endpoint validates a Codex-specific system prompt does not hold:
-opencode's codex plugin sends its own prompt under ``originator: opencode`` and it
-works; this mirrors that with ``originator: frank``.) See
-:mod:`frank.base.credentials` for the auth/token side.
+Responses request — there is no Codex-prompt impersonation. The widely repeated claim
+that the endpoint validates a Codex-specific system prompt does not hold; what it does
+check is the client's identity, which is why ``originator`` names the Codex CLI while the
+prompt stays ours. See :mod:`frank.base.subscription` for that header set — including why
+``User-Agent`` still says frank — and :mod:`frank.base.credentials` for the auth/token side.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ from frank.base.credentials import (
     valid_tokens,
 )
 from frank.base.message_content import content_blocks_to_message_content, message_text
-from frank.base.serialization import compact
+from frank.base.serialization import compact, upstream_detail
 from frank.base.subscription import (
     RESPONSES_URL,
     cached_subscription_models,
@@ -206,9 +206,9 @@ class ChatCodexModel(BaseChatModel):
         if status in (401, 403):
             return ChatGPTAuthError(
                 "ChatGPT rejected the subscription token (expired, revoked, or plan "
-                f"lacks access). Sign in again. Detail: {body[:300]}"
+                f"lacks access). Sign in again. Detail: {upstream_detail(body)}"
             )
-        return RuntimeError(f"ChatGPT Codex endpoint returned {status}: {body[:500]}")
+        return RuntimeError(f"ChatGPT Codex endpoint returned {status}: {upstream_detail(body)}")
 
     # SSE event translation. The Responses stream is a sequence of ``data: {json}``
     # lines whose ``type`` field drives the dispatch; we turn each into the same

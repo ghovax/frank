@@ -10,8 +10,8 @@ Consequences, kept deliberately visible:
   * It rides on Codex's public client id and the account-scoped tokens Codex
     itself mints. OpenAI can invalidate this pattern at any time (Anthropic banned
     the equivalent for Claude in Feb 2026); treat it as fragile, not stable.
-  * The tokens here are password-equivalent. They are stored in
-    ``~/.frank/chatgpt_auth.json`` (mode 0600), deliberately **outside**
+  * The tokens here are password-equivalent. They are stored in the OAuth token
+    directory as ``oauths/chatgpt.json`` (mode 0600), deliberately **outside**
     ``configuration.yaml`` — the config file is watched/digest-synced and would
     thrash on every silent token refresh, and secrets do not belong in the synced
     single-source-of-truth.
@@ -43,7 +43,7 @@ from typing import Any, Optional
 
 import httpx
 
-from frank.base.paths import data_directory
+from frank.base.paths import oauth_token_path
 from frank.base.tuning import Tunable, active_tuning
 
 # Codex's public OAuth client and endpoints. The client id is not a secret — it is
@@ -60,7 +60,7 @@ REDIRECT_PATH = "/auth/callback"
 REDIRECT_URI = f"http://localhost:{REDIRECT_PORT}{REDIRECT_PATH}"
 SCOPE = "openid profile email offline_access"
 
-AUTH_FILENAME = "chatgpt_auth.json"
+PROVIDER = "chatgpt"
 
 # Serializes token refreshes: many concurrent turns can each notice an expiring
 # token at once, and we want exactly one refresh + write, not a stampede.
@@ -85,7 +85,7 @@ class ChatGPTTokens:
 
 
 def auth_file_path() -> Path:
-    return data_directory() / AUTH_FILENAME
+    return oauth_token_path(PROVIDER)
 
 
 class FileCredentials:

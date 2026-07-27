@@ -36,8 +36,8 @@ class ModelDefinition:
     vision: bool = False
     input_modalities: tuple[str, ...] = ()
     # Maximum input context in tokens, from the models.dev catalog (0 = unknown).
-    # Used for the "how full is the context" gauge; the native chatgpt provider
-    # relies on this since it has no LiteLLM model-info map to consult.
+    # Used for the "how full is the context" gauge; the native chatgpt and cursor
+    # providers rely on this since they have no LiteLLM model-info map to consult.
     context_length: int = 0
     # ISO release date (YYYY-MM-DD) from the models.dev catalog, or "" if unknown.
     # The picker sorts newest-first on this instead of alphabetically.
@@ -184,6 +184,15 @@ def _chatgpt_models(base: list[ModelDefinition]) -> list[ModelDefinition]:
     return chatgpt
 
 
+# The ``cursor`` provider contributes nothing here, and that is the design rather than an
+# omission. Its models cannot come from models.dev, which has no Cursor provider and could not
+# describe one: a Cursor model id carries its reasoning effort (``claude-4.6-opus-high``) and
+# names Cursor's own Composer family, neither of which exists in a catalog of direct-API
+# models. So the account is asked instead — ``GetUsableModels`` for the ids a plan serves and
+# ``AvailableModels`` for their context windows — and the ``/models`` endpoint appends what
+# comes back. Until a user signs in there is nothing truthful to list, so nothing is listed;
+# the picker shows the provider, its sign-in control, and no models. A hand-written stand-in
+# would only be a guess about somebody else's subscription wearing the catalog's clothes.
 _catalogue_cache: list[ModelDefinition] | None = None
 _catalogue_lock = threading.Lock()
 
@@ -247,8 +256,9 @@ def provider_and_suffix(model_identifier: str) -> tuple[str, str] | None:
 def available_models(configured_keys: dict[str, str]) -> list[ModelDefinition]:
     """Catalog entries whose provider has a resolvable credential. A provider is
     unlocked by an explicit configured key or any of its env vars. Native providers
-    (``chatgpt``) are excluded here — their availability is resolved per-model
-    against the live subscription list by the ``/models`` endpoint, not by a key."""
+    (``chatgpt``, ``cursor``) are excluded here — their availability is resolved
+    per-model against the live subscription list by the ``/models`` endpoint, not by a
+    key."""
     unlocked_providers = {
         provider.identifier
         for provider in PROVIDERS.values()

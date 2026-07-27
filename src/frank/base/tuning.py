@@ -120,6 +120,12 @@ class Tunable(Enum):
         "Characters of a single over-long line kept before it is clipped, so one minified blob "
         "cannot fill a result on its own.",
     )
+    upstream_error_detail_tokens = Default(
+        256, Scaling.TEXT,
+        "Tokens of an upstream service's error body kept in the failure this harness raises — "
+        "enough to carry the provider's own explanation, short of pasting a whole page into a "
+        "message someone has to read.",
+    )
 
     # Listing budgets, in item COUNTS, scaled by the window and context_share.results.
     read_lines = Default(
@@ -222,6 +228,39 @@ class Tunable(Enum):
     credential_refresh_leeway_seconds = Default(
         300.0, Scaling.TIME,
         "How far ahead of its expiry an access token is refreshed.",
+    )
+    daemon_probe_interval_seconds = Default(
+        0.05, Scaling.TIME,
+        "Pause between asks of whether another process's daemon socket answers yet, or whether a "
+        "daemon being replaced has finally exited.",
+    )
+    daemon_probe_connect_seconds = Default(
+        0.5, Scaling.TIME,
+        "How long one connect to a daemon socket waits before it counts as unanswered.",
+    )
+    oauth_poll_interval_seconds = Default(
+        1.0, Scaling.TIME,
+        "First pause between asks of whether a browser sign-in has completed; it widens from here.",
+    )
+    oauth_poll_ceiling_seconds = Default(
+        10.0, Scaling.TIME,
+        "Ceiling on the widening pause between sign-in polls, so a slow sign-in is not asked about "
+        "every second for minutes.",
+    )
+    oauth_poll_give_up_seconds = Default(
+        300.0, Scaling.TIME,
+        "How long a browser sign-in is waited for before it is abandoned — a person's whole trip "
+        "through a consent screen, not a network round trip.",
+    )
+    subscription_resume_ttl_seconds = Default(
+        1_800.0, Scaling.TIME,
+        "How long a subscription provider's server-side conversation state stays worth resuming "
+        "from before the whole conversation is resent instead.",
+    )
+    model_silence_give_up_seconds = Default(
+        180.0, Scaling.TIME,
+        "How long a model may hold a stream open saying nothing at all before the turn is ended. "
+        "Long, because a model weighing a hard problem is silent and still working.",
     )
     file_url_ttl_seconds = Default(600.0, Scaling.TIME, "How long a signed file URL stays valid.")
     mcp_connect_seconds = Default(20.0, Scaling.TIME, "How long connecting to one MCP server waits.")

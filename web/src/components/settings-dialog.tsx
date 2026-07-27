@@ -9,6 +9,7 @@ import { ConnectionSettings } from "./connection-settings";
 import { ConnectionSwitcher } from "./connection-switcher";
 import { ModelSelect } from "./model-select";
 import { ChatGPTAuthControl } from "./chatgpt-auth";
+import { CursorAuthControl } from "./cursor-auth";
 import { ProjectLocationsPanel } from "./project-locations";
 import { RemoteAgentsPanel } from "./remote-agents-panel";
 import { SimpleSelect } from "./ui/simple-select";
@@ -565,7 +566,7 @@ export function SettingsDialog({
             secretRow(translation("proxyServer"), "http://user:pass@host:port", webFetchProxyUrl, setWebFetchProxyUrl, translation("proxyServerHint")),
           ],
         },
-        { title: translation("modelProviders"), rows: [], block: <Box maxW="520px"><ChatGPTAuthControl /></Box> },
+        { title: translation("modelProviders"), rows: [], block: <Flex direction="column" gap={5} maxW="520px"><ChatGPTAuthControl /><CursorAuthControl /></Flex> },
       ],
     },
     ...(projectId ? [{

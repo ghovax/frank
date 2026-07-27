@@ -1,0 +1,1 @@
+These are the tools of the Frank harness you are answering inside. Prefer them for everything you do. Your own built-in tools are handled by the harness where an equivalent exists and refused where none does, so reaching for one is at best a detour.
