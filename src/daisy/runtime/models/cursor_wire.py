@@ -497,12 +497,25 @@ class BlobRequest:
 
 
 @dataclass
+class TokenDetails:
+    """What a conversation currently costs, as the server accounts for it.
+
+    ``used_tokens`` is the conversation's context fill — the prompt side, not a total — and
+    ``max_tokens`` is the window it is filling. The second is the only place the protocol
+    states a model's context window at all: it is absent from the model list, so this is
+    where a real number comes from rather than a guess about the model's family."""
+
+    used_tokens: int = 0
+    max_tokens: int = 0
+
+
+@dataclass
 class ServerMessage:
     """One ``AgentServerMessage``, reduced to what the chat model acts on.
 
-    Everything else the envelope can carry — checkpoints, step timings, interaction
-    queries — is dropped here rather than upstream, so the model's stream loop reads as
-    a short list of things that can happen in a turn."""
+    Everything else the envelope can carry — step timings, interaction queries — is dropped
+    here rather than upstream, so the model's stream loop reads as a short list of things
+    that can happen in a turn."""
 
     text_delta: str = ""
     thinking_delta: str = ""
@@ -511,7 +524,10 @@ class ServerMessage:
     blob_request: Optional[BlobRequest] = None
     turn_ended: bool = False
     heartbeat: bool = False
-    used_tokens: int = 0
+    # An increment of generated tokens, not a running total: ``TokenDeltaUpdate`` is a delta
+    # and has to be summed across a turn.
+    output_token_delta: int = 0
+    token_details: Optional[TokenDetails] = None
 
 
 def _parse_mcp_args(data: bytes) -> ToolCall:
@@ -571,9 +587,9 @@ def _parse_interaction_update(data: bytes, message: ServerMessage) -> None:
             message.thinking_delta = string_at(parse(entry.data), 1)
         elif entry.number == 2 and entry.is_message:  # tool_call_started
             message.tool_call = _parse_tool_call_update(entry.data)
-        elif entry.number == 8 and entry.is_message:  # token_delta (a count, not text)
+        elif entry.number == 8 and entry.is_message:  # token_delta — generated tokens, a count
             counter = first(parse(entry.data), 1)
-            message.used_tokens = counter.number_value if counter is not None else 0
+            message.output_token_delta = counter.number_value if counter is not None else 0
         elif entry.number == 13:  # heartbeat
             message.heartbeat = True
         elif entry.number == 14:  # turn_ended
@@ -629,6 +645,23 @@ def _parse_kv_server_message(data: bytes) -> Optional[BlobRequest]:
     return None
 
 
+def _parse_token_details(state_structure: bytes) -> Optional[TokenDetails]:
+    """agent.v1.ConversationStateStructure → its ``token_details``, when it carries any.
+
+    The checkpoint is otherwise ignored: it is the whole conversation state, and this client
+    does not resume conversations, so the token accounting is the only part of it that says
+    something a turn needs."""
+    details = message_at(parse(state_structure), 5)  # token_details
+    if details is None:
+        return None
+    used = first(details, 1)
+    maximum = first(details, 2)
+    return TokenDetails(
+        used_tokens=used.number_value if used is not None else 0,
+        max_tokens=maximum.number_value if maximum is not None else 0,
+    )
+
+
 def parse_server_message(payload: bytes) -> ServerMessage:
     """agent.v1.AgentServerMessage → the parts of it a turn reacts to."""
     message = ServerMessage()
@@ -639,6 +672,8 @@ def parse_server_message(payload: bytes) -> ServerMessage:
             _parse_interaction_update(entry.data, message)
         elif entry.number == 2:  # exec_server_message
             message.exec_request = _parse_exec_server_message(entry.data)
+        elif entry.number == 3:  # conversation_checkpoint_update
+            message.token_details = _parse_token_details(entry.data)
         elif entry.number == 4:  # kv_server_message
             message.blob_request = _parse_kv_server_message(entry.data)
     return message

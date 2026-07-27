@@ -207,11 +207,34 @@ class Tunable(Enum):
         45.0, Scaling.TIME,
         "How long a command waits for a daemon it just started to become reachable.",
     )
+    daemon_probe_interval_seconds = Default(
+        0.05, Scaling.TIME,
+        "Pause between asks of whether another process's daemon socket answers yet, or whether a "
+        "daemon being replaced has finally exited.",
+    )
+    daemon_probe_connect_seconds = Default(
+        0.5, Scaling.TIME,
+        "How long one connect to a daemon socket waits before it counts as unanswered.",
+    )
     control_plane_call_seconds = Default(60.0, Scaling.TIME, "How long one call to the daemon waits.")
     model_catalogue_ttl_seconds = Default(60.0, Scaling.TIME, "How long the list of available models is cached.")
     credential_refresh_leeway_seconds = Default(
         300.0, Scaling.TIME,
         "How far ahead of its expiry an access token is refreshed.",
+    )
+    oauth_poll_interval_seconds = Default(
+        1.0, Scaling.TIME,
+        "First pause between asks of whether a browser sign-in has completed; it widens from here.",
+    )
+    oauth_poll_ceiling_seconds = Default(
+        10.0, Scaling.TIME,
+        "Ceiling on the widening pause between sign-in polls, so a slow sign-in is not asked about "
+        "every second for minutes.",
+    )
+    oauth_poll_give_up_seconds = Default(
+        300.0, Scaling.TIME,
+        "How long a browser sign-in is waited for before it is abandoned — a person's whole trip "
+        "through a consent screen, not a network round trip.",
     )
     file_url_ttl_seconds = Default(600.0, Scaling.TIME, "How long a signed file URL stays valid.")
     mcp_connect_seconds = Default(20.0, Scaling.TIME, "How long connecting to one MCP server waits.")

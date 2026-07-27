@@ -13,6 +13,7 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
     "httpx>=0.28.0",
+    "tenacity>=9.0.0",
     "sse-starlette>=2.0.0",
     "exa-py>=2.14.0",
     "tiktoken>=0.8.0",

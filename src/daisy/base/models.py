@@ -183,49 +183,17 @@ def _chatgpt_models(base: list[ModelDefinition]) -> list[ModelDefinition]:
     return chatgpt
 
 
-# The Cursor-subscription models, as an offline placeholder only.
-#
-# Unlike the chatgpt provider, this cannot be derived from models.dev: a Cursor model id
-# carries its reasoning effort as part of the id (``claude-4.6-opus-high``,
-# ``gpt-5.4-medium``) and names Cursor's own Composer family, none of which exists in a
-# catalog of direct-API models. And unlike every other provider, the real list is an
-# account fact — a Cursor plan serves a subset that the ``/models`` endpoint discovers
-# live from ``GetUsableModels`` and appends. So this list exists for exactly one purpose:
-# so a signed-out user can see, greyed, what signing in would unlock. Being a little
-# stale is the intended cost; being wrong about a plan is not possible, because nothing
-# here is ever reported as available.
-# Names carry the effort the id encodes, as the live list's names do, because Cursor
-# serves several efforts of the same model under one display name.
-_CURSOR_PLACEHOLDER_MODELS: tuple[tuple[str, str, int], ...] = (
-    ("composer-2", "Composer 2", 200_000),
-    ("composer-1.5", "Composer 1.5", 200_000),
-    ("claude-4.6-opus-high", "Claude 4.6 Opus (high)", 200_000),
-    ("claude-4.6-sonnet-medium", "Claude 4.6 Sonnet (medium)", 200_000),
-    ("claude-4.5-sonnet", "Claude 4.5 Sonnet", 200_000),
-    ("gpt-5.4-medium", "GPT-5.4 (medium)", 272_000),
-    ("gpt-5.3-codex", "GPT-5.3 Codex", 400_000),
-    ("gemini-3.1-pro", "Gemini 3.1 Pro", 1_000_000),
-    ("grok-code-fast-1", "Grok Code Fast 1", 256_000),
-)
-
-
-def _cursor_models() -> list[ModelDefinition]:
-    """The offline ``cursor`` placeholder entries. Text-only: Cursor's agent service
-    takes a text turn, so no attachment or image capability is claimed."""
-    return [
-        ModelDefinition(
-            identifier=f"cursor/{model_id}",
-            name=name,
-            provider="cursor",
-            input_modalities=("text",),
-            context_length=context_length,
-        )
-        for model_id, name, context_length in _CURSOR_PLACEHOLDER_MODELS
-    ]
-
-
+# The ``cursor`` provider contributes nothing here, and that is the design rather than an
+# omission. Its models cannot come from models.dev, which has no Cursor provider and could not
+# describe one: a Cursor model id carries its reasoning effort (``claude-4.6-opus-high``) and
+# names Cursor's own Composer family, neither of which exists in a catalog of direct-API
+# models. So the account is asked instead — ``GetUsableModels`` for the ids a plan serves and
+# ``AvailableModels`` for their context windows — and the ``/models`` endpoint appends what
+# comes back. Until a user signs in there is nothing truthful to list, so nothing is listed;
+# the picker shows the provider, its sign-in control, and no models. A hand-written stand-in
+# would only be a guess about somebody else's subscription wearing the catalog's clothes.
 _BASE_MODELS = _catalog()
-MODELS: list[ModelDefinition] = _BASE_MODELS + _chatgpt_models(_BASE_MODELS) + _cursor_models()
+MODELS: list[ModelDefinition] = _BASE_MODELS + _chatgpt_models(_BASE_MODELS)
 
 
 def list_models() -> list[ModelDefinition]:

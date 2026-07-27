@@ -21,11 +21,11 @@ import secrets
 import signal
 import socket
 import sys
-import time
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from tenacity import AsyncRetrying, RetryError, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from daisy.base.paths import (
     daemon_port_path,
@@ -34,6 +34,7 @@ from daisy.base.paths import (
     log_file_path,
     runtime_directory,
 )
+from daisy.base.tuning import Tunable, active_tuning
 
 logger = logging.getLogger("daisy.daemon")
 
@@ -114,27 +115,37 @@ async def _defer_to_running_daemon() -> int:
 
     This waits by connecting, unlike everything else in the daemon, because the thing being
     waited on is in another process — there is no event to await across that boundary, only the
-    socket itself becoming answerable."""
-    deadline = time.monotonic() + 30.0
+    socket itself becoming answerable. The waiting itself is tenacity's, so what is left here is
+    the probe and what to do once it answers; the interval and the deadline are policy settings
+    like every other duration in the harness."""
     path = daemon_socket_path()
-    while time.monotonic() < deadline:
+    tuning = active_tuning()
+
+    def probe_once() -> None:
         probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        probe.settimeout(0.5)
+        probe.settimeout(tuning.duration(Tunable.daemon_probe_connect_seconds))
         try:
             probe.connect(str(path))
-        except OSError:
-            await asyncio.sleep(0.05)
-            continue
         finally:
             probe.close()
-        with contextlib.suppress(OSError, ValueError):
-            sys.stdout.write(json.dumps({"ready": True, "deferred": True}) + "\n")
-            sys.stdout.flush()
-            sys.stdout.close()
-        logger.info("Another daisyd already holds the runtime directory; standing down.")
-        return 0
-    logger.error("Another daisyd holds the lock but never started serving.")
-    return 1
+
+    try:
+        async for attempt in AsyncRetrying(
+            retry=retry_if_exception_type(OSError),
+            wait=wait_fixed(tuning.duration(Tunable.daemon_probe_interval_seconds)),
+            stop=stop_after_delay(tuning.duration(Tunable.daemon_startup_seconds)),
+        ):
+            with attempt:
+                await asyncio.to_thread(probe_once)
+    except RetryError:
+        logger.error("Another daisyd holds the lock but never started serving.")
+        return 1
+    with contextlib.suppress(OSError, ValueError):
+        sys.stdout.write(json.dumps({"ready": True, "deferred": True}) + "\n")
+        sys.stdout.flush()
+        sys.stdout.close()
+    logger.info("Another daisyd already holds the runtime directory; standing down.")
+    return 0
 
 
 def _reclaim_socket() -> None:

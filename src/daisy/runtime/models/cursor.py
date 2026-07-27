@@ -100,7 +100,10 @@ from daisy.runtime.models import cursor_wire as wire
 
 RUN_URL = f"{API_BASE_URL}/agent.v1.AgentService/RunSSE"
 APPEND_URL = f"{API_BASE_URL}/aiserver.v1.BidiService/BidiAppend"
-MODELS_URL = f"{API_BASE_URL}/agent.v1.AgentService/GetUsableModels"
+# The two model endpoints, on different services and knowing different halves of the answer:
+# which models a plan serves, and how large a window each has.
+USABLE_MODELS_URL = f"{API_BASE_URL}/agent.v1.AgentService/GetUsableModels"
+AVAILABLE_MODELS_URL = f"{API_BASE_URL}/aiserver.v1.AiService/AvailableModels"
 
 # Cursor gates features on the client version it is told about. This tracks a released
 # Cursor CLI build; like the Codex client's version floor, it is a value to keep current
@@ -146,10 +149,17 @@ class ChatCursorModel(BaseChatModel):
         return "cursor"
 
     def context_window(self) -> int:
-        live = cached_subscription_models().get(self.model)
-        if live and live.get("context"):
-            return int(live["context"])
-        return self.context_length or _context_window_for(self.model)
+        """The model's context window, preferring the most authoritative source that has one.
+
+        A turn that has run beats everything: the server states the window it is filling in
+        each checkpoint, for this account and this model. Before that there is the window the
+        model catalog reported at discovery. Only when neither exists — a catalog entry that
+        arrived without one — is there a constant, and it is a floor rather than a guess at
+        the model's family."""
+        if observed := _observed_context_windows.get(self.model):
+            return observed
+        discovered = cached_subscription_models().get(self.model) or {}
+        return int(discovered.get("context") or 0) or self.context_length or UNKNOWN_CONTEXT_WINDOW
 
     @property
     def _identifying_params(self) -> dict[str, Any]:
@@ -379,7 +389,12 @@ class ChatCursorModel(BaseChatModel):
         ``turn_ended``, or on a non-zero trailer status. Anything the server asks for in
         between — a blob, a built-in tool — is answered inline so the turn keeps moving."""
         deframer = wire.Deframer()
-        used_tokens = 0
+        # The two counts come from different places and mean different things. Generated tokens
+        # arrive as deltas and are summed; the prompt size is the conversation's context fill,
+        # reported whole in each checkpoint, so the largest seen in the turn is the one to keep —
+        # an early checkpoint would otherwise pin the meter below the real figure.
+        output_tokens = 0
+        input_tokens = 0
         # A tool call is announced once (``tool_call_started``) and then asked for once
         # (an mcp exec request), and it is the exec request this hands back, because that
         # is the one carrying the arguments the server committed to. The announcement is
@@ -395,7 +410,10 @@ class ChatCursorModel(BaseChatModel):
                         raise self._stream_error(status, detail)
                     continue
                 message = wire.parse_server_message(payload)
-                used_tokens = message.used_tokens or used_tokens
+                output_tokens += message.output_token_delta
+                if (details := message.token_details) is not None:
+                    input_tokens = max(input_tokens, details.used_tokens)
+                    _record_context_window(self.model, details.max_tokens)
                 announced = message.tool_call or announced
                 if message.text_delta:
                     yield _chunk(content_block=_text_block(message.text_delta, request_id))
@@ -410,28 +428,28 @@ class ChatCursorModel(BaseChatModel):
                         # The model called one of Daisy's tools. The harness runs it, so
                         # this run is over: hand the call back and stop reading.
                         yield _tool_call_chunk(request.tool_call)
-                        yield _final_chunk("tool_calls", used_tokens)
+                        yield _final_chunk("tool_calls", input_tokens, output_tokens)
                         return
                     sequence = await self._decline(client, tokens, request_id, sequence, request)
                 if message.turn_ended:
-                    async for chunk in self._close_turn(announced, used_tokens):
+                    async for chunk in self._close_turn(announced, input_tokens, output_tokens):
                         yield chunk
                     return
         # The stream closed without a turn_ended, which happens on a clean server-side
         # end as readily as on a truncation. Report what arrived rather than raising.
-        async for chunk in self._close_turn(announced, used_tokens):
+        async for chunk in self._close_turn(announced, input_tokens, output_tokens):
             yield chunk
 
     @staticmethod
     async def _close_turn(
-        announced: Optional[wire.ToolCall], used_tokens: int
+        announced: Optional[wire.ToolCall], input_tokens: int, output_tokens: int
     ) -> AsyncIterator[ChatGenerationChunk]:
         """The turn's ending, with a tool call the server announced but never asked for."""
         if announced is not None:
             yield _tool_call_chunk(announced)
-            yield _final_chunk("tool_calls", used_tokens)
+            yield _final_chunk("tool_calls", input_tokens, output_tokens)
             return
-        yield _final_chunk("stop", used_tokens)
+        yield _final_chunk("stop", input_tokens, output_tokens)
 
     async def _answer_blob(
         self,
@@ -583,16 +601,17 @@ def _tool_call_chunk(call: wire.ToolCall) -> ChatGenerationChunk:
     })
 
 
-def _final_chunk(finish_reason: str, used_tokens: int) -> ChatGenerationChunk:
+def _final_chunk(finish_reason: str, input_tokens: int, output_tokens: int) -> ChatGenerationChunk:
     """The turn's last chunk: why it ended, and what it cost.
 
-    Cursor reports one running total for the conversation rather than an input/output
-    split, so that total is recorded as input — it is the number the context gauge needs,
-    and inventing a split would be worse than reporting none."""
+    Both figures are the server's own. Neither is estimated here, and neither is reported
+    when the turn carried no accounting for it — a zero is a real zero, not a stand-in."""
     usage: Optional[UsageMetadata] = None
-    if used_tokens:
+    if input_tokens or output_tokens:
         usage = cast(UsageMetadata, {
-            "input_tokens": used_tokens, "output_tokens": 0, "total_tokens": used_tokens,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
         })
     return ChatGenerationChunk(
         message=AIMessageChunk(content="", usage_metadata=usage),
@@ -649,28 +668,23 @@ def _checksum(access_token: str) -> str:
 _models_cache: Optional[tuple[float, dict[str, dict[str, Any]]]] = None
 _models_cache_lock = asyncio.Lock()
 
-# Cursor does not report a context window with its models, so it is derived from the
-# model's family. Matched longest-prefix-first; a model we do not recognise gets the
-# floor every model on the service clears.
-_CONTEXT_WINDOWS: tuple[tuple[str, int], ...] = (
-    ("gemini-3", 1_000_000),
-    ("gemini", 1_000_000),
-    ("gpt-5.4", 272_000),
-    ("gpt-5", 400_000),
-    ("grok", 256_000),
-    ("kimi", 256_000),
-    ("claude", 200_000),
-    ("composer", 200_000),
-)
-_DEFAULT_CONTEXT_WINDOW = 200_000
+# The floor for a model the catalog named without stating a window, which is the only case
+# left once both endpoints have been asked. It is the smallest window any model on the
+# service currently has, so it under-promises: a context gauge that reads too full compacts
+# early, while one that reads too empty overruns the model.
+UNKNOWN_CONTEXT_WINDOW = 200_000
+
+# What the server itself said a model's window was, learned from a checkpoint during a turn
+# and keyed by model id. This is the most authoritative source there is — it is per-account
+# and per-model, measured rather than published — so it outranks the catalog once it exists.
+_observed_context_windows: dict[str, int] = {}
 
 
-def _context_window_for(model_id: str) -> int:
-    normalized = model_id.lower()
-    for prefix, window in _CONTEXT_WINDOWS:
-        if normalized.startswith(prefix):
-            return window
-    return _DEFAULT_CONTEXT_WINDOW
+def _record_context_window(model_id: str, max_tokens: int) -> None:
+    """Remember a window the server reported. Keeps the largest seen for a model: a turn that
+    has not yet grown past a smaller budget can be told a smaller one."""
+    if max_tokens > _observed_context_windows.get(model_id, 0):
+        _observed_context_windows[model_id] = max_tokens
 
 
 # The model ids Cursor serves are not plain model names: the reasoning effort is part of
@@ -697,12 +711,98 @@ def _display_name(entry: dict[str, Any], model_id: str) -> str:
     return name
 
 
+def _token_limit(value: Any) -> int:
+    """A Cursor parameter value as a token count. It states windows the way its interface
+    displays them — ``200k``, ``1m``, ``272000`` — so all three have to read."""
+    text_value = str(value or "").strip().lower().replace(",", "")
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)([km])?", text_value)
+    if match is None:
+        return 0
+    scale = {"k": 1_000, "m": 1_000_000}.get(match.group(2) or "", 1)
+    return round(float(match.group(1)) * scale)
+
+
+async def _connect_json(url: str, body: dict, tokens: CursorTokens) -> dict:
+    """One unary RPC over Connect's JSON encoding, which these two model endpoints accept —
+    so discovering models needs no protobuf at all, unlike running a turn."""
+    headers = {
+        **ChatCursorModel._headers(tokens, str(uuid.uuid4())),
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "connect-protocol-version": "1",
+    }
+    async with httpx.AsyncClient(timeout=15) as client:
+        response = await client.post(url, headers=headers, json=body)
+        response.raise_for_status()
+        payload = response.json()
+    return payload if isinstance(payload, dict) else {}
+
+
+async def _fetch_context_windows(tokens: CursorTokens) -> dict[str, int]:
+    """Context windows per model, from ``AvailableModels``.
+
+    This is the only endpoint that states them. It answers with base models rather than the
+    effort-suffixed ids a run request takes, each carrying variants whose parameters include
+    the window, so the result is keyed two ways: by a variant's own ``legacySlug``, which
+    matches a run id exactly when it is present, and by the base name, which matches by
+    prefix. Where a base name's variants disagree — a model offered at both its normal window
+    and an extended one — the smallest is kept, because a window that reads too large
+    overruns the model while one that reads too small only compacts early.
+
+    Nothing is requested by name. ``additionalModelNames`` exists to make the service mention
+    models it would otherwise omit, and reaching for it would mean hardcoding model names to
+    discover models — which is the thing discovery is for."""
+    payload = await _connect_json(
+        AVAILABLE_MODELS_URL,
+        {"isNightly": False, "excludeMaxNamedModels": True, "additionalModelNames": [],
+         "useModelParameters": True, "useReactModelPicker": True},
+        tokens,
+    )
+    windows: dict[str, int] = {}
+
+    def remember(key: str, window: int) -> None:
+        if not key or window <= 0:
+            return
+        existing = windows.get(key)
+        windows[key] = window if existing is None else min(existing, window)
+
+    for entry in payload.get("models") or []:
+        if not isinstance(entry, dict) or not (base_name := entry.get("name")):
+            continue
+        for variant in entry.get("variants") or []:
+            if not isinstance(variant, dict):
+                continue
+            values = {
+                parameter.get("id"): parameter.get("value")
+                for parameter in variant.get("parameterValues") or []
+                if isinstance(parameter, dict)
+            }
+            window = _token_limit(values.get("context"))
+            remember(str(variant.get("legacySlug") or ""), window)
+            remember(str(base_name), window)
+    return windows
+
+
+def _window_for(model_id: str, windows: dict[str, int]) -> int:
+    """The window for a run id: an exact match on a variant slug, else the longest base name
+    the id starts with — ``claude-4.6-opus-high`` resolving through ``claude-4.6-opus``."""
+    if exact := windows.get(model_id):
+        return exact
+    candidates = [name for name in windows if model_id.startswith(name)]
+    return windows[max(candidates, key=len)] if candidates else 0
+
+
 async def fetch_subscription_models() -> dict[str, dict[str, Any]]:
     """The account's live Cursor model list as ``{model_id: {"name", "context"}}``.
 
-    Returns an empty dict when signed out or on any failure (network, auth, parse), so
-    callers fall back to the static list. Cached briefly because the interface polls
-    ``/models`` and this must not be a round-trip each time."""
+    Two endpoints, because each knows half of it. ``GetUsableModels`` answers with the ids a
+    run request accepts verbatim — it returns the very message type the request echoes back —
+    so it owns the list. ``AvailableModels`` is the only one that states context windows, so
+    it owns those, and a failure there costs windows rather than the whole catalog.
+
+    Returns an empty dict when signed out or on any failure, which is what greys this
+    provider's models in the picker. Cached briefly because the interface polls ``/models``
+    and this must not be a round-trip each time."""
     global _models_cache
     ttl = active_tuning().duration(Tunable.model_catalogue_ttl_seconds)
     if _models_cache is not None and time.monotonic() - _models_cache[0] < ttl:
@@ -713,23 +813,21 @@ async def fetch_subscription_models() -> dict[str, dict[str, Any]]:
         result: dict[str, dict[str, Any]] = {}
         try:
             tokens = await valid_tokens()
-            headers = {
-                **ChatCursorModel._headers(tokens, str(uuid.uuid4())),
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "connect-protocol-version": "1",
-            }
-            async with httpx.AsyncClient(timeout=15) as client:
-                response = await client.post(MODELS_URL, headers=headers, json={})
-                response.raise_for_status()
-                for entry in response.json().get("models", []):
-                    model_id = entry.get("modelId") or entry.get("displayModelId")
-                    if not model_id:
-                        continue
-                    result[model_id] = {
-                        "name": _display_name(entry, model_id),
-                        "context": _context_window_for(model_id),
-                    }
+            listing = await _connect_json(USABLE_MODELS_URL, {}, tokens)
+            try:
+                windows = await _fetch_context_windows(tokens)
+            except (httpx.HTTPError, ValueError, TypeError):
+                windows = {}  # a listing without windows still beats no listing
+            for entry in listing.get("models") or []:
+                if not isinstance(entry, dict):
+                    continue
+                model_id = entry.get("modelId") or entry.get("displayModelId")
+                if not model_id:
+                    continue
+                result[model_id] = {
+                    "name": _display_name(entry, model_id),
+                    "context": _window_for(model_id, windows),
+                }
         except (CursorAuthError, httpx.HTTPError, ValueError, KeyError, TypeError):
             result = {}
         _models_cache = (time.monotonic(), result)

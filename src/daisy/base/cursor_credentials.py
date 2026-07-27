@@ -51,6 +51,13 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
+from tenacity import (
+    AsyncRetrying,
+    RetryError,
+    retry_if_exception_type,
+    stop_after_delay,
+    wait_exponential,
+)
 
 from daisy.base.paths import oauth_token_path
 from daisy.base.tuning import Tunable, active_tuning
@@ -67,17 +74,6 @@ REFRESH_URL = f"{API_BASE_URL}/auth/exchange_user_api_key"
 
 PROVIDER = "cursor"
 
-# How the login poll paces itself, mirroring the Cursor CLI's own backoff: gentle
-# growth from a second up to ten, and a total window long enough for a human to find
-# the browser tab, sign in, and grant.
-_POLL_MAX_ATTEMPTS = 150
-_POLL_BASE_DELAY_SECONDS = 1.0
-_POLL_MAX_DELAY_SECONDS = 10.0
-_POLL_BACKOFF = 1.2
-# A poll that neither succeeds nor 404s three times running is a broken network, not a
-# user who is still typing their password.
-_POLL_MAX_CONSECUTIVE_ERRORS = 3
-
 # Serializes token refreshes: many concurrent turns can each notice an expiring token
 # at once, and we want exactly one refresh + write, not a stampede.
 _refresh_lock = asyncio.Lock()
@@ -85,6 +81,17 @@ _refresh_lock = asyncio.Lock()
 
 class CursorAuthError(RuntimeError):
     """Raised when a Cursor-subscription call cannot be authenticated."""
+
+
+class _SignInPending(Exception):
+    """The browser has not finished yet — the poll's normal answer for most of its window.
+
+    A distinct type because it is what the retry below retries *on*. Everything else that can
+    go wrong falls into one of two other kinds: a transport failure, which is also worth
+    retrying because a person mid-sign-in can lose their connection and get it back, and a
+    refusal from Cursor, which is not, because asking a second time will not change the
+    answer. Distinguishing by kind is why there is no "give up after N consecutive errors"
+    tally here: a broken flow fails on the first refusal rather than on the third."""
 
 
 @dataclass
@@ -282,42 +289,48 @@ class CursorLoginFlow:
         }
         return f"{LOGIN_URL}?{urllib.parse.urlencode(parameters)}"
 
-    async def wait(self) -> CursorTokens:
-        """Poll until the browser sign-in completes, then persist and return the tokens.
+    async def _ask(self, client: httpx.AsyncClient) -> CursorTokens:
+        """One ask of whether the browser has finished.
 
-        A 404 means "not yet" and is the normal answer for most of the window; anything
-        else that is not a success is counted as an error, and three in a row ends the
-        flow rather than grinding out the full attempt budget against a broken network."""
-        delay = _POLL_BASE_DELAY_SECONDS
-        consecutive_errors = 0
-        async with httpx.AsyncClient(timeout=30) as client:
-            for _attempt in range(_POLL_MAX_ATTEMPTS):
-                await asyncio.sleep(delay)
-                if self._cancelled:
-                    raise CursorAuthError("Cursor sign-in was cancelled.")
-                delay = min(delay * _POLL_BACKOFF, _POLL_MAX_DELAY_SECONDS)
-                try:
-                    response = await client.get(
-                        POLL_URL, params={"uuid": self._uuid, "verifier": self._verifier}
-                    )
-                except httpx.HTTPError:
-                    consecutive_errors += 1
-                    if consecutive_errors >= _POLL_MAX_CONSECUTIVE_ERRORS:
-                        raise CursorAuthError("Could not reach Cursor to complete the sign-in.")
-                    continue
-                if response.status_code == 404:
-                    consecutive_errors = 0  # still waiting on the browser
-                    continue
-                if response.is_success:
-                    tokens = _tokens_from_payload(response.json())
-                    await asyncio.to_thread(save_tokens, tokens)
-                    return tokens
-                consecutive_errors += 1
-                if consecutive_errors >= _POLL_MAX_CONSECUTIVE_ERRORS:
-                    raise CursorAuthError(
-                        f"Cursor refused the sign-in poll (HTTP {response.status_code})."
-                    )
-        raise CursorAuthError("Cursor sign-in timed out. Try again.")
+        Raises :class:`_SignInPending` while it has not, ``httpx.HTTPError`` when the ask itself
+        did not get through, and :class:`CursorAuthError` when Cursor refuses — which the retry
+        does not retry, so a refusal surfaces at once instead of after the whole window."""
+        if self._cancelled:
+            raise CursorAuthError("Cursor sign-in was cancelled.")
+        response = await client.get(POLL_URL, params={"uuid": self._uuid, "verifier": self._verifier})
+        if response.status_code == 404:
+            raise _SignInPending
+        if not response.is_success:
+            raise CursorAuthError(f"Cursor refused the sign-in poll (HTTP {response.status_code}).")
+        tokens = _tokens_from_payload(response.json())
+        await asyncio.to_thread(save_tokens, tokens)
+        return tokens
+
+    async def wait(self) -> CursorTokens:
+        """Wait for the browser sign-in to complete, then persist and return the tokens.
+
+        The waiting is tenacity's: a pause that widens from the configured interval up to its
+        ceiling, and a deadline that ends the flow. What is left here is which outcomes are worth
+        asking again about — and the pacing is a policy setting like every other duration in the
+        harness rather than a constant sitting next to the code that reads it."""
+        tuning = active_tuning()
+        tokens: Optional[CursorTokens] = None
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                async for attempt in AsyncRetrying(
+                    retry=retry_if_exception_type((_SignInPending, httpx.HTTPError)),
+                    wait=wait_exponential(
+                        multiplier=tuning.duration(Tunable.oauth_poll_interval_seconds),
+                        max=tuning.duration(Tunable.oauth_poll_ceiling_seconds),
+                    ),
+                    stop=stop_after_delay(tuning.duration(Tunable.oauth_poll_give_up_seconds)),
+                ):
+                    with attempt:
+                        tokens = await self._ask(client)
+        except RetryError as error:
+            raise CursorAuthError("Cursor sign-in timed out. Try again.") from error
+        assert tokens is not None, "the retry either produces tokens or raises"
+        return tokens
 
     async def close(self) -> None:
         self._cancelled = True

@@ -1,6 +1,6 @@
 ---
 created: 2026-07-26T23:52:40Z
-updated: 2026-07-27T00:14:00Z
+updated: 2026-07-27T00:52:00Z
 commit: 98560a9
 ---
 
@@ -8,7 +8,7 @@ commit: 98560a9
 
 Daisy already lets a ChatGPT subscription pay for model calls instead of an API key. The argument for that was never about OpenAI: it was that a person who is already paying a monthly fee for a coding model should be able to spend it here, and that the harness should be indifferent to which side of a paywall a model sits on. A Cursor subscription is the same argument with a different vendor, and the same people tend to hold both.
 
-So this adds `cursor` next to `chatgpt`: an OAuth sign-in in Settings, its models in the picker, greyed until the plan is known to serve them, and a chat model behind it. From the outside the two are indistinguishable, which is the point. From the inside they have almost nothing in common, and that is what this plan is about.
+So this adds `cursor` next to `chatgpt`: an OAuth sign-in in Settings, whatever models the account turns out to serve, and a chat model behind them. From the outside the two are indistinguishable, which is the point. From the inside they have almost nothing in common, and that is what this plan is about.
 
 ## The premise that turned out to be wrong
 
@@ -24,13 +24,23 @@ That is why this is three new files rather than three new branches, and why the 
 
 OpenCode does not ship Cursor support; six community plugins do, and they disagree about the protocol in instructive ways. Three were read closely enough to matter.
 
-`ephraimduncan/opencode-cursor` and its maintained fork `otto-assistant/opencode-cursor` drive `AgentService/Run`, the bidirectional method, over a full-duplex HTTP/2 stream. Because Bun's `node:http2` cannot do that, both spawn a Node child process purely to hold the socket and ferry length-prefixed bytes over its stdin and stdout. `Yukaii/yet-another-opencode-cursor-auth` takes a different route through the same service: `RunSSE`, which is server-streaming, plus unary `BidiAppend` calls to push client messages into the stream it opened. Same protocol, but no full duplex — which means no HTTP/2 requirement, which means `httpx` can do it and Daisy needs no subprocess and no new dependency. That decided the transport.
+`ephraimduncan/opencode-cursor` and its maintained fork `otto-assistant/opencode-cursor` drive `AgentService/Run`, the bidirectional method, over a full-duplex HTTP/2 stream. Because Bun's `node:http2` cannot do that, both spawn a Node child process purely to hold the socket and ferry length-prefixed bytes over its stdin and stdout. `Yukaii/yet-another-opencode-cursor-auth` takes a different route through the same service: `RunSSE`, which is server-streaming, plus unary `BidiAppend` calls to push client messages into the stream it opened. Same protocol, but no full duplex — which means no HTTP/2 requirement, which means `httpx` can do it and Daisy needs neither a subprocess nor a protobuf runtime. That decided the transport.
 
-The field numbers were not taken from any of them. `otto`'s generated bindings embed the service's own `FileDescriptorProto`, so the descriptor was decoded and read directly, and every number in `cursor_wire.py` comes from there. This mattered more than it sounds: the hand-rolled implementations have drifted from the current schema in ways that would have been inherited silently. `TokenDeltaUpdate.tokens` is an `int32` token count, which one plugin parses as text. `McpToolDefinition.input_schema` is a `bytes` field holding a serialized `google.protobuf.Value`, which is easy to get subtly wrong from traffic alone. `RequestContextEnv.workspace_paths` is repeated, not singular. Reading the descriptor cost an hour and removed a class of bug that testing could not have found without a subscription.
+The field numbers were not taken from any of them. `otto`'s generated bindings embed the service's own `FileDescriptorProto`, so the descriptor was decoded and read directly, and every number in `cursor_wire.py` comes from there. This mattered more than it sounds: the hand-rolled implementations have drifted from the current schema in ways that would have been inherited silently. `TokenDeltaUpdate.tokens` is an `int32` count of generated tokens, which one plugin parses as text. `McpToolDefinition.input_schema` is a `bytes` field holding a serialized `google.protobuf.Value`, which is easy to get subtly wrong from traffic alone. `RequestContextEnv.workspace_paths` is repeated, not singular. Reading the descriptor cost an hour and removed a class of bug that testing could not have found without a subscription.
 
 The login flow was taken as-is, because all three implement it identically and it is not something to be clever about. It is PKCE, but not OAuth as the ChatGPT provider does it: `cursor.com/loginDeepControl` is opened with a challenge and a client-chosen `uuid`, and the client then *polls* `api2.cursor.sh/auth/poll` with that `uuid` and the verifier until the browser side completes and the poll answers with an access and refresh token pair. There is no redirect. Nothing lands back on this machine.
 
 That difference deletes the worst part of the ChatGPT sign-in rather than reproducing it. That flow needs a loopback server on port 1455 because OpenAI registered that redirect for the Codex client, so a sign-in can fail before it starts, with a `409` and a message about a port being in use, whenever a Codex CLI is also mid-login. Cursor's flow has no port to collide over. A sign-in either completes, is superseded, or times out.
+
+## Waiting is a library's job; how long to wait is the harness's
+
+The first version of the sign-in poll carried five constants of its own — a base delay, a ceiling, a multiplier, an attempt budget, and a tolerance for consecutive errors — and a loop to apply them. Every one of those was a thing already solved twice over.
+
+The mechanics are tenacity's. A pause that widens to a ceiling, a deadline that ends the attempt, and a predicate deciding which failures are worth asking again about is exactly what that library is, and writing it by hand is how the tally of "three consecutive errors" got in: an invented rule, copied from a reference implementation, that treated a permanent refusal from Cursor as two-thirds of a transient network blip. Retrying by *kind* instead is both simpler and better — a refusal now fails on the first one rather than the third, while a person who loses their connection mid-sign-in keeps their window.
+
+The values are the harness's, and they were always meant to be. `base/tuning.py` already holds every duration in Daisy as a named, described, policy-scaled `Tunable`; five module constants sitting next to the code that read them was not a new problem needing a new answer, it was ignoring the existing one. So the interval, the ceiling, and the give-up window joined the rest of them, and the library got the loop.
+
+The same reasoning reached two other waits: a stood-down daemon waiting for the winner's socket to answer, and a restart waiting for the predecessor to exit. Both were hand-rolled loops around bare literals — `30.0`, `0.5`, `0.05`, `0.1` — and both are now the library's, over named tunables. Two nearby loops were deliberately left alone: the accessibility readiness probe, whose values are *already* tunables and whose four lines tenacity would only complicate, and `settle()`, which is not a retry at all but a convergence detector that waits for a value to repeat.
 
 ## Which shape gives way
 
@@ -72,7 +82,7 @@ The ChatGPT provider has usage meters: a rolling window and a weekly one, snapsh
 
 Nothing Cursor returns on any call this makes reports the account's remaining allowance — not the model list, not the run stream, not the token deltas. There is no cheaper source to poll and no more expensive one either. The allowance surfaces exactly once, as `grpc-status 8` on a turn that has already been refused, which is reported as an error saying so. Showing an empty meter, or a meter derived from counting turns here, would be worse than showing nothing: the first is furniture and the second is a number the vendor never agreed to.
 
-Two smaller asymmetries follow from the protocol. Cursor reports one running token total for a conversation rather than an input/output split, so that total is recorded as input — it is the number the context gauge needs, and inventing a split would be worse than reporting none. And nothing on this provider claims image input, because the agent service takes a text turn.
+One smaller asymmetry follows from the protocol: nothing on this provider claims image input, because the agent service takes a text turn.
 
 ## Effort is part of the model's name
 
@@ -80,11 +90,19 @@ Every other provider in Daisy takes a reasoning effort as a setting. Cursor puts
 
 That has a visible consequence. Cursor gives every effort variant of a model the same display name, so a picker that trusted it would list "Claude 4.6 Opus" three times with no way to tell them apart. The effort is in the id, so it goes in the label.
 
-## The offline list is a placeholder and nothing more
+## Nothing about the models is written down
 
-The `chatgpt` provider derives its model list from the models.dev catalog, filtered to the Codex-eligible set, so new models appear on their own. That cannot work here: a Cursor model id carries its effort, and names Cursor's own Composer family, none of which exists in a catalog of direct-API models.
+The `chatgpt` provider derives its model list from the models.dev catalog, filtered to the Codex-eligible set, so new models appear on their own. That cannot work here, and checking rather than assuming settled it: models.dev carries a hundred and seventy-three providers and Cursor is not among them, nor could it be — a Cursor model id carries its reasoning effort, and names Cursor's own Composer family, neither of which exists in a catalog of direct-API models.
 
-So there is a short hand-written list, and it exists for exactly one purpose — so a signed-out user can see, greyed, what signing in would unlock. Nothing in it is ever reported as available. The real list is discovered live from `GetUsableModels`, and models an account serves that this version has never heard of are appended with their live names, so the list going stale costs a placeholder and never a capability.
+The first attempt at this filled the gap with a short hand-written list, justified as a way for a signed-out user to see, greyed, what signing in would unlock. That justification does not survive contact with the thing it describes: a hand-written list is a guess about somebody else's subscription, it is stale the day it lands, and dressing it in the catalog's clothes makes it look like knowledge. There is nothing truthful to show before a sign-in, so nothing is shown — the picker offers the provider, its sign-in control, and no models until there is an account to ask.
+
+Asked, the account answers completely, because two endpoints between them know everything the catalog needed. `GetUsableModels` returns the ids a run request accepts verbatim — it answers with the very message type the request echoes back — so it owns the list. `AvailableModels` is the only place the service states a context window, tucked inside each variant's parameters, so it owns those; it is reachable over Connect's JSON encoding, so discovery needs no protobuf at all. A failure there costs windows rather than the whole catalog.
+
+Joining them takes one deliberate decision. `AvailableModels` answers with base models and variants while a run id is effort-suffixed, so a window is looked up first by a variant's own `legacySlug`, which matches exactly, and then by the longest base name the id starts with. Where a base name's variants disagree — a model offered at both its normal window and an extended one — the smallest is kept, because a window that reads too large overruns the model while one that reads too small only compacts early. And nothing is requested by name: `AvailableModels` takes an `additionalModelNames` list that makes the service mention models it would otherwise omit, and reaching for it would mean hardcoding model names in order to discover models.
+
+One number survives all of this, and it is the best of them. Every checkpoint the server sends during a turn carries `ConversationTokenDetails`, which states both how full the conversation is and the window it is filling. That is per-account, per-model, and measured rather than published, so it outranks the catalog the moment a turn has run. What is left is a single floor for a model the catalog named without a window, set to the smallest window any model on the service currently has — under-promising, in the direction that compacts early rather than overruns.
+
+That same field also fixed an accounting bug that had already shipped in the first version of this work. `TokenDeltaUpdate` is a delta of *generated* tokens and has to be summed; the first version took the last one it saw and reported it as the prompt size. The prompt size is `usedTokens` from the checkpoint, reported whole, so the largest seen in a turn is the one to keep — an early checkpoint would otherwise pin the meter below the real figure. So this provider now reports a genuine input/output split rather than one number standing in for both.
 
 ## The thing to be careful about
 
