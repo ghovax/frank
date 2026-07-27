@@ -80,7 +80,7 @@ The three clients disagree, and each got something right. This is what was taken
 | System prompt | root-prompt blob | root-prompt blob | inline | **root-prompt blob** |
 | Structured turns in state | yes — **fails** | removed | n/a | **removed**, following otto's correction |
 | Checkpoint resume | yes, 30-min TTL | yes, 30-min TTL | no | **yes**, with a prefix-fingerprint guard neither has |
-| Built-in tools | executed in-process | executed in-process | executed in-process | **translated to harness tools**, else declined |
+| Built-in tools | executed in-process | executed in-process | executed in-process | **9 translated to harness tools**, 6 refused by name, 0 unanswered |
 | Backend fallback | none | none | api5 hosts, behind a flag | **api5 hosts**, automatic, only before output |
 | Silent-model watchdog | yes | yes, plus stall recovery | yes | **yes** |
 | Client version | `cli-2026.01.09-231024f` | same | older | **the newest of them** |
