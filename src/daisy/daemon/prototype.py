@@ -100,7 +100,7 @@ class PrototypeClient:
         self._closed = False
         self._status: dict[str, Any] = {}
 
-    # -- lifecycle ---------------------------------------------------------------------
+    # Starting the prototype, and taking it down.
 
     async def start(self) -> None:
         """Bring the prototype up and stay attached to it."""
@@ -149,7 +149,7 @@ class PrototypeClient:
             "sessions": int(self._status.get("children") or 0),
         }
 
-    # -- the connection ----------------------------------------------------------------
+    # The socket to the prototype, and the reports that come back over it.
 
     async def _ensure_running(self) -> None:
         async with self._lock:
@@ -271,7 +271,7 @@ class PrototypeClient:
             return
         logger.warning("ignoring an unknown report from the prototype: %s", event)
 
-    # -- supervision -------------------------------------------------------------------
+    # Keeping the prototype alive.
 
     async def _supervise(self) -> None:
         """Restart the prototype if it dies.
@@ -301,7 +301,7 @@ class PrototypeClient:
             if not waiter.done():
                 waiter.set_exception(PrototypeUnavailable(reason))
 
-    # -- forking -----------------------------------------------------------------------
+    # Asking for a session.
 
     async def fork_session(self, assignment: dict[str, Any]) -> int:
         """Fork a session and answer with its process id once it is serving.

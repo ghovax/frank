@@ -179,7 +179,7 @@ class Prototype:
         self._wakeup_write = -1
         self._stopping = False
 
-    # -- lifecycle ---------------------------------------------------------------------
+    # Binding the socket, parking on it, and tearing both down.
 
     def start(self) -> None:
         self._socket_path.parent.mkdir(parents=True, exist_ok=True)
@@ -250,7 +250,7 @@ class Prototype:
             self._socket_path.unlink()
         self._selector.close()
 
-    # -- the daemon's connection -------------------------------------------------------
+    # The daemon's connection, and the commands that arrive on it.
 
     def _accept(self, listener) -> None:
         try:
@@ -329,7 +329,7 @@ class Prototype:
         except OSError:
             self._drop_control()
 
-    # -- forking -----------------------------------------------------------------------
+    # Making a session, and everything the child does before it is one.
 
     def _fork_session(self, assignment: dict) -> None:
         session_id = str(assignment.get("session_id") or "")
@@ -446,7 +446,7 @@ class Prototype:
         reason = str(payload.get("reason") or "the session process ended before it was serving")
         self._send({"event": "failed", "session_id": session_id, "reason": reason})
 
-    # -- reaping -----------------------------------------------------------------------
+    # Noticing children die, and telling the daemon.
 
     def _on_wakeup(self, descriptor: int) -> None:
         with contextlib.suppress(BlockingIOError, InterruptedError, OSError):

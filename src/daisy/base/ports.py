@@ -66,8 +66,7 @@ if TYPE_CHECKING:  # pragma: no cover - import only for typing; `base` stays fre
     ChatModel = BaseChatModel
 
 
-# ---------------------------------------------------------------------------------------
-# Approvals
+# Who decides whether a gated tool call proceeds.
 
 
 @dataclass(frozen=True)
@@ -129,8 +128,7 @@ class Approvals(Protocol):
         ...
 
 
-# ---------------------------------------------------------------------------------------
-# Observation
+# Where the audit trail goes.
 
 
 @dataclass(frozen=True)
@@ -163,8 +161,7 @@ class Observer(Protocol):
         ...
 
 
-# ---------------------------------------------------------------------------------------
-# Checkpoints
+# Where a session's resumable state lives.
 
 
 @runtime_checkable
@@ -207,8 +204,7 @@ class MemoryCheckpoints:
         return self._states.get(session_id)
 
 
-# ---------------------------------------------------------------------------------------
-# Background jobs
+# Where background jobs are recorded so one survives a restart.
 
 
 @runtime_checkable

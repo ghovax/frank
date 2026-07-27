@@ -1,7 +1,7 @@
 ---
 created: 2026-07-27T16:27:43Z
-updated: 2026-07-27T19:20:00Z
-commit: 03a190d
+updated: 2026-07-27T19:35:00Z
+commit: 38537c6
 ---
 
 # What Must Be Resident
@@ -284,6 +284,66 @@ It is not a persistence framework. There is no registry, no entry-point discover
 It is not a taxonomy of implementations. One default per port, where a default is needed at all — in-memory for `Checkpoints` and `JobStore`, nothing for `Observer` and `Approvals`. The SQLite implementations already exist and stay where they are, supplied by the daemon, which is the layer that has a database.
 
 And it does not abstract what is already a value. The confinement `Profile` is a frozen dataclass the caller constructs and hands over; `GlobalConfiguration` is a pydantic model `Session` already accepts. Neither needs an interface, and giving them one would be the forest this section exists to avoid.
+
+## Part VIII — Where the prompt comes from is a seam too
+
+Part VII made everything the harness *writes* replaceable. This is the other half: everything it *reads*.
+
+A library session assembles its prompt from five kinds of material, and every one is found by walking hardcoded filesystem paths. Constructing a `Session` in a program means that program silently acquires the contents of `~/.agents`, and — this is the one that should not survive a reading — of two other vendors' configuration files:
+
+```python
+_GLOBAL_INSTRUCTION_PATHS = (
+    Path.home() / ".config" / "opencode" / "AGENTS.md",
+    Path.home() / ".claude" / "CLAUDE.md",
+    Path.home() / ".agents" / "AGENTS.md",
+    Path.home() / "AGENTS.md",
+)
+```
+
+That is a library reading opencode's and Claude Code's instruction files out of a user's home directory because it was imported. It is right for `daisyd`, where the person running it *is* the person those files belong to. It is indefensible for an embedded harness, and no argument can turn it off.
+
+### The sweep
+
+| Material | Found how | Reloaded | Hardcoded |
+|---|---|---|---|
+| **Agent profiles** | `agent_directories_for()` — four roots | At session build | `BUNDLED_DOTAGENTS_ROOT/agents`, `~/.agents/agents`, `<cwd>/.agents/agents`, `<cwd>/agents` |
+| **Skills** | `skill_directories_for()` — four roots | **Every turn** (live reload) | same four, `skills` |
+| **Memories** | `memory_directories_for()` — two roots | Every turn | `~/.agents/memories`, `<project>/.agents/memories` |
+| **Instructions** | `load_instructions(working_directory)` | Every turn | Four `Path.home()` literals, **two belonging to other products**, plus a per-ancestor walk |
+| **Prompt templates** | `PromptLoader(runtime/prompts)` | Per render | The package directory; the system prompt cannot be replaced at all |
+| **MCP servers** | `mcp.json` under the `.agents` roots | On change | Values already, but discovered from disk |
+| **Remote agents** | `remote-agents.json`, same roots | On change | Same |
+| **Configuration** | `configuration.yaml` under XDG | Once | Already injectable; #55 stopped it seeding |
+| **Credentials** | `auth_file_path()` | Per call | Reached only when we build the model, so `model=` already bypasses it |
+
+### One port, not six
+
+The first five are the same thing: **named text in a namespace**. An agent, a skill, a memory, an instruction file and a prompt template differ in how they are *parsed*, not in how they are *found*. Six ports for one concept is the forest; one port with five accessors is the interface.
+
+The precedent is Jinja2's `Loader` — `FileSystemLoader`, `PackageLoader`, `DictLoader`, `FunctionLoader` behind one `get_source`, which is exactly this shape and is the most-copied loader design in Python. Parsing stays ours: a `Skill` is still a `Skill`, so an implementation supplies material and never has to know our formats.
+
+| # | Change | Where | Why |
+|---|---|---|---|
+| 57 | Declare `Catalogue` in `base/ports.py`: `agent(name)`, `skills()`, `memories()`, `instructions()`, `prompt(name, variables)` | `base/ports.py` | One interface over the five, because they are one concept. `skills()` and `memories()` are called per turn, so an implementation controls live reload by being lazy or not — the harness stops deciding that for it |
+| 58 | `FileCatalogue` is today's behaviour, unchanged, and becomes the default the CLI and the daemon pass | new `base/catalogue.py` | The path-walking logic is *correct* for a person's machine. It moves rather than dies; what changes is that it is a choice |
+| 59 | `Session(catalogue=...)`, and `agent=` accepts an `AgentConfiguration` as well as a name | `src/daisy/__init__.py` | The direct answer to "build a session entirely in code". Accepting the value beats looking it up, and costs no interface at all |
+| 60 | **The library's default catalogue reads no home directory.** `FileCatalogue` gets an explicit set of roots; the library's default is the working directory only | `base/catalogue.py`, `src/daisy/__init__.py` | A program that imported us did not ask to inherit `~/.agents`, and it certainly did not ask to read `~/.claude/CLAUDE.md`. `daisyd` and the CLI keep the full set, because there the person and the home directory are the same person |
+| 61 | `PromptLoader` becomes a `Catalogue` accessor; the packaged templates are its default | `base/configuration.py:1258`, `runtime/` | The system prompt is the harness's most opinionated artefact and the least replaceable thing in it. An embedder who cannot change it is running our product, not their own |
+| 62 | The layering checker forbids `Path.home()` and `Path.cwd()` outside `base/catalogue.py`, `base/paths.py` and the composition roots | `scripts/check_layers.py` | This is a class, like items 1–5 and 46–52 were. `instructions.py` is what happens without a rule |
+| 63 | MCP and remote-agent discovery is skipped when the caller supplies the values | `base/configuration.py:786-787`, `from_dotagents_roots` | `from_yaml` unconditionally scans the `.agents` roots for `mcp.json`, so merely *loading configuration* touches the filesystem beyond the configuration file |
+
+## Part IX — The command surface
+
+`serve` and `web` are the shape [opencode](https://opencode.ai) settled on, and the reason they hold up is that they split by *intent* rather than by implementation: `serve` is the API alone, `web` is the same server plus opening a browser. Daisy has the same two things and names them for neither.
+
+| # | Change | Where | Why |
+|---|---|---|---|
+| 64 | `daisy daemon start` becomes **`daisy serve`**; `daemon` keeps `status`, `stop`, `restart`, `endpoint` | `cli/__main__.py` | Starting the API in the foreground is not "inspecting the daemon", which is what the rest of that noun group does. `serve` is the name three of the four surveyed tools would recognise |
+| 65 | **`daisy web`** keeps its name and gains the browser-open | `cli/commands/web.py` | It already serves the interface; opening the browser is what makes it `web` rather than a second `serve`. `--no-open` for a remote box |
+| 66 | `daisy open` becomes **`daisy app`** | `cli/__main__.py` | `open` names no object. Codex uses `app` for exactly this, and it reads correctly next to `serve` and `web` |
+| 67 | Add **`daisy run <prompt>`** — one turn, no daemon, straight through `daisy.Session` | new `cli/commands/run.py` | The gap the survey makes obvious: every comparable tool has a one-shot mode and Daisy needs three commands to approximate one. It is a handful of lines *because* Part VII exists, and it is the best possible proof the library surface is real — the CLI becomes its first consumer |
+| 68 | Add **`daisy auth`** — `login`, `logout`, `status` for the ChatGPT subscription | new `cli/commands/auth.py` | `auth` is the near-universal spelling, and today signing in is possible **only through the browser interface**: a headless install cannot reach the one provider that needs no API key |
+
 
 ## Verification
 
