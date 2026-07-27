@@ -1,6 +1,6 @@
 ---
 created: 2026-07-27T16:27:43Z
-updated: 2026-07-27T16:52:00Z
+updated: 2026-07-27T17:05:00Z
 commit: 98560a9
 ---
 
@@ -115,12 +115,63 @@ First, because Parts II, III and IV each depend on it, and because one of its it
 |---|---|---|---|
 | 22 | Split the database. `history.db`: turn head, history, artifacts, checkpoint, session state, registry. `workspace.db`: projects, locations, terminal states, model history, user messages, drafts | `base/paths.py`, `persistence/database.py`, `persistence/turn_store.py` | The sole-writer invariant is real for one and imaginary for the other. `base/background_store.py` already proves a worker can own a second database under the existing `fcntl` lock |
 | 23 | **`rest/` becomes process-agnostic**: it depends only on `workspace.db` and the control plane's **HTTP** API, never on `daemon` internals. The daemon still mounts it; `daisy web` may serve it in-process instead | `rest/`, `daemon/__main__.py:262`, `cli/commands/web.py` | The dependency is the problem, not the process. `rest/` currently reaches through `daemon/services/*`, which use `state.session_factory` 78 times. Severing that gets the layering, and it leaves the desktop app exactly where it is — one address, discovered as now, starting nothing. **Splitting into a separate process then becomes a deployment choice rather than an architectural one**, and can be taken later for free. Taking it *now* would mean the app has to start and supervise a backend, which is the coupling `client-and-daemon.md` removed |
-| 24 | The daemon shrinks to registry, lifecycle, prototype, `peer_identity`, `ingest`, `api`, `state`, plus mounting `rest` | `daemon/` ≈ 6,996 → ≈ 3,400 lines | What supervises processes should be readable in one sitting. `rest` being mounted is composition, not dependency — the `__main__.py` exemption already covers exactly this |
-| 25 | **Delete the artifact-versioning pipeline outright**, backend and frontend | `persistence/artifacts.py`, `persistence/versioning.py`, `rest/routes/artifacts.py` (8 of 11 routes), 4 ORM tables, `web/src/components/artifact-history.tsx`, `web/src/lib/artifact-annotations.ts` | `state.capture_queue` is never assigned and `_capture_worker` is never started, so `_enqueue_capture` returns at `artifacts.py:75` every time. It has never functioned in this architecture, so nothing regresses. `open_artifact` and the preview surface **survive**: `dispatch.py:1215` yields a `ToolResult` carrying the artifact's id, kind, title and source, so the client renders a preview from the transcript without any of this |
+| 24 | The daemon keeps a **supervision core** — registry, lifecycle, prototype, `peer_identity`, `ingest`, `api`, `state`, ≈ 2,000 lines — and everything else in `daemon/` becomes a service the browser surface reaches through the API rather than by import | `daemon/` ≈ 6,996 → ≈ 5,400 after Part V and the pool deletion | The size is not the point and claiming otherwise would be dishonest: the daemon still hosts the browser surface, so it still holds the projects, settings, agents and terminal services. What changes is that nothing above it reaches *into* it, so the supervision core can be read, reasoned about, and one day moved without touching the rest. `rest` being mounted is composition, not dependency — the `__main__.py` exemption already covers exactly that |
+| 25 | **Delete the entire artifact surface**, backend and frontend — see Part V | everywhere | It is a feature Daisy grew on top of the harness, half of it has never run, and it reaches into the turn loop, the tool registry, the protocol, the daemon, the REST surface and eleven frontend files to do it |
 | 26 | **Rewire file leases**: the manager moves to `base/` as a process-free façade over the `fcntl` locks it already uses | `base/file_leases.py:186`, `worker/session.py:129` | `_file_lease_manager` is `None` in every worker, so `_acquire_filesystem_lease` returns `""` and **no session has ever taken a lease**. `_lock_os_key` is already cross-process `flock`; the manager object was only ever the in-process fast path |
 | 27 | **Rewire location resolution**: locations travel in the assignment, resolved at `session.create` | `daemon/api.py:196`, `worker/session.py:132` | `_resolve_locations` is `None`, so every runtime synthesises one local location and multi-location projects are dead at the session level. Same treatment the sandbox and the workspace already get — resolved once, carried with the session (`confinement.md:48`) |
 | 28 | Move the ChatGPT **subscription catalogue** — `fetch_subscription_models`, `get_usage_snapshot`, and the two cache-clearing calls — out of `runtime/models/codex.py` into `base/`, beside the token store that already lives there. `ChatCodexModel` keeps only the chat model | `runtime/models/codex.py`, `base/models.py`, `base/credentials.py`, `rest/routes/settings.py:36` | These four are catalogue and cache concerns, not model-call concerns. They are the *only* reason anything above the runtime imports it, and `base/credentials.py` already owns the ChatGPT tokens |
 | 29 | The layering table changes: `rest` may import only `base`, `protocol`, `locations` and `computer`. Both exemptions go — `daemon` (it now uses the HTTP API, #23) and `runtime` (nothing needs it after #28) | `scripts/check_layers.py:44-49` | `rest` sitting above everything and reaching down into two layers is what let the GUI surface grow inside the process that supervises agents. The checker is where that stops being a habit |
+
+## Part V — The artifact surface is deleted
+
+Not trimmed to the dead half. Deleted. The version history has never run in this architecture — `state.capture_queue` is never assigned and `_capture_worker` is never started, so `_enqueue_capture` returns at `artifacts.py:75` on every call — and the half that does run, `open_artifact` and its preview panel, is machinery layered on top of the harness rather than part of it. A tool that renders a file into a tab, a rewriting HTTP proxy so that tab can load external pages, a websocket relay for the same, an injected JavaScript runtime, an image-annotation round trip back into the model's context, and four database tables, are a product feature wearing a harness's clothes. It is the single largest thing in the tree that nothing else depends on.
+
+The A2A `Task.artifacts` type stays, and it is not the same thing: it is the protocol's own name for a turn's deliverable, produced by `updater.add_artifact` (`worker/turn.py:587`) and stored in `turn_artifacts`. Deleting that would delete a turn's result and break A2A compliance.
+
+### Deleted whole
+
+| File | Lines | What it was |
+|---|---|---|
+| `daemon/persistence/artifacts.py` | 640 | Shadow-git capture, file index, surfaces, annotations, prune, the `@ctx=` path codec |
+| `daemon/persistence/versioning.py` | 438 | The shadow-git version store |
+| `rest/services/proxy.py` | 272 | The rewriting pass-through proxy, for `open_artifact` of an external URL |
+| `rest/routes/artifacts.py` | 259 | All eleven routes — index, versions, diff, restore, bytes, annotations ×3, page, proxy, proxy websocket |
+| `runtime/annotation_stamping.py` | 245 | Numbered badges stamped onto annotated images so a vision model could read them back |
+| `base/assets/proxy_runtime.js` | 149 | Injected into proxied pages |
+| `base/assets/artifact_runtime.html` | 79 | Injected into rendered artifacts |
+| `base/browser_assets.py` | 32 | The loader for both |
+| `runtime/prompts/artifact_render_error.md`, `artifact_not_previewable.md` | 6 | Model-facing copy for failures that can no longer occur |
+| `web/src/components/artifact-history.tsx` | 183 | The filmstrip |
+| `web/src/lib/artifact-annotations.ts` | 115 | Client-side annotation state |
+| `web/src/components/native-webview.tsx` | 104 | The Tauri webview host for a preview |
+| `web/src/lib/native-artifact.ts` | 52 | Native preview bridge |
+| `web/src/components/artifact-bridge.tsx` | 34 | The web preview bridge |
+| **Total** | **≈ 2,608** | |
+
+### Excised from
+
+| Where | What comes out |
+|---|---|
+| `daemon/persistence/database.py:119-216` | `ArtifactVersionRecord`, `ArtifactFileRecord`, `ArtifactSurfaceRecord`, `ArtifactAnnotationRecord` |
+| `daemon/state.py:117` | `capture_queue` |
+| `runtime/runtime.py:36,197,325,462-470,762-798` | The tool import and roster entry, the `_tool_open_artifact` dispatch entry, `_artifact_capture`, `set_artifact_capture`, `_capture_written_artifacts`, `_artifact_surface_id` |
+| `runtime/tools/dispatch.py:1154-1230` and four capture call sites at `:609,881,1173,1215` | `_tool_open_artifact` whole, and every `_capture_written_artifacts` call after edit/write/bash |
+| `runtime/tools/registry.py:474-580` | `open_artifact`, `artifact_kind_for`, `build_open_artifact_result`, `_ARTIFACT_IMAGE_SUFFIXES` |
+| `worker/session.py:133,509-510` | `_capture_artifacts` and its injection |
+| `worker/turn.py:51` and its call sites | `annotation_image_blocks`, `normalize_annotation_payloads` |
+| `protocol/parts.py:31,46`, `protocol/metadata.py` | `ARTIFACT_EVENT_KIND` and its inbound branch |
+| `protocol/dtos.py` | `ArtifactAnnotationSaveRequest`, `ArtifactRestoreRequest` |
+| `rest/routes/sessions.py:14`, `rest/routes/projects.py:19` | The `_prune_session_artifacts` calls on session and project deletion |
+| `base/tuning.py:258` | The annotated-screenshot tunable |
+| `web/src/components/chat-panel.tsx` | The artifact panel, its tab strip, and the preview pane — 242 references in one file, the largest single piece of surgery in this plan |
+| `web/src/components/tool-views/index.tsx` | 165 references: the `open_artifact` call and result views |
+| `web/src/lib/use-chat.ts` | 110 references: artifact events in the reducer |
+| `web/src/lib/api.ts` | 52 references: every artifact call |
+| `web/src/components/attachment-chips.tsx`, `chat-message.tsx`, `chat-input.tsx`, `tool-call.tsx`, `tool-group.tsx`, `panel-tiles.tsx`, `ui/panel.tsx`, `ui/panel-tab.tsx`, `ui/segmented-toggle.tsx`, `background-jobs-panel.tsx` | 77 references between them |
+| `web/src/lib/tool-display.ts` | The `open_artifact` label and icon |
+| `web/messages/en.json`, `ja.json` | 18 and 16 keys respectively — **and that asymmetry is itself a defect.** `xeac-migration.md:396` records the catalogues as verified exact mirrors, so two keys have drifted and the deletion is where it gets noticed |
+
+`bun run check:events` and the schema regeneration must land in the same commit if any wire event goes with this.
 
 ## Deleted
 
@@ -132,9 +183,7 @@ First, because Parts II, III and IV each depend on it, and because one of its it
 | `_on_new_context`, `_session_permission_mode_for`, `_ensure_mcp_servers`, `_ensure_session_workspace`, `_claim_persisted_work_habits_acknowledgement` | `worker/session.py:122-131` | Genuinely superseded: the mode is fixed at create, the workspace is resolved at create, MCP is per-session |
 | `services/sessions.py:_claim_work_habits_acknowledgement` and `SessionLifecycleRecord` | `daemon/services/sessions.py:21`, `persistence/database.py:56` | No caller; the worker keeps its own in-memory flag |
 | The duplicate `SessionRecord` | `daemon/registry.py:35` | Merged into the durable table |
-| **The whole artifact-versioning pipeline** — capture, shadow-git store, file index, filmstrip, diff, restore, per-version annotations | `daemon/persistence/artifacts.py` (640), `versioning.py` (438), `rest/routes/artifacts.py` (8 of 11 routes), `state.capture_queue`, `runtime.py:762-798` (`set_artifact_capture`, `_capture_written_artifacts`, `_artifact_surface_id`) and its four call sites in `dispatch.py` | It has never run in this architecture. Deleting it removes ~1,340 lines of daemon and the last reason for the worker to hold an artifact hook |
-| `ArtifactVersionRecord`, `ArtifactFileRecord`, `ArtifactSurfaceRecord`, `ArtifactAnnotationRecord` | `daemon/persistence/database.py:119-216` | Four tables that have only ever been empty |
-| `artifact-history.tsx`, `artifact-annotations.ts`, the version/diff/restore/annotation calls in `api.ts`, and the filmstrip surfaces in `panel-tiles.tsx` and `chat-panel.tsx` | `web/src/` | The frontend half of the same wipe. **Not** `artifact-bridge.tsx`, `native-artifact.ts` or `native-webview.tsx` — those render `open_artifact`'s preview, which survives |
+| **The entire artifact surface** — version history, `open_artifact`, the preview panel, the rewriting proxy, the injected runtimes, image annotations, four tables, eleven routes, five frontend modules | Part V | ≈ 2,608 lines deleted outright plus excisions across nineteen files. A product feature layered on the harness, half of which has never run |
 
 ## What is deliberately not changing
 
@@ -145,6 +194,8 @@ Sessions stay processes. The XEAC migration's prize was crash isolation for a ha
 The confinement design is untouched. It was never the reason for process-per-session and it is not affected by any of this.
 
 `ask_user`, `daisy send --wait`, the subtree scoping on every control-plane verb, and the permission clamp all keep their present behaviour.
+
+The A2A `Task.artifacts` type survives the Part V wipe. It shares a word with what is being deleted and is not the same thing: it is the protocol's name for a turn's deliverable, written by `updater.add_artifact` (`worker/turn.py:587`) into `turn_artifacts`. Removing it would remove a turn's result and take A2A compliance with it.
 
 ## Invariants
 
@@ -158,7 +209,7 @@ There are two resident processes where there was one: the daemon and the prototy
 
 Waking a slept session pays an MCP reconnect, and for a stdio server spawned through `uvx` that can be seconds — far more than the 60 ms fork. There is deliberately no linger window to hide it. A window would be a cache with a timeout nobody can set correctly, tuned against a cost that only exists because MCP connections are expensive; if the wake becomes painful, the honest fix is to make those connections cheap, not to keep an interpreter alive so the user does not notice.
 
-**File-version history is gone**, and it is not coming back as part of this work. The filmstrip, the per-version diff, restore, and image annotations are deleted rather than repaired. Nothing regresses today — the pipeline has never had a producer — but the feature is genuinely lost as a *design*, and rebuilding it later means rebuilding it from the worker rather than the daemon.
+**The artifact surface is gone, including the half that worked.** File-version history, the filmstrip, diff, restore and annotations regress nothing, because none of them has ever had a producer. `open_artifact` and its preview panel are a real loss: the agent can no longer render an HTML page, a chart or an image into a tab, and a person watching a session loses the one view that was not a transcript. That is taken deliberately. The feature reached from the tool registry through the turn loop, the protocol's part kinds, the daemon's persistence, a rewriting HTTP proxy and eleven frontend files, and it earned none of that reach; an agent that wants to show you something can write a file and tell you where it is. Rebuilding it later should start from the worker and the tool result, not from the daemon.
 
 A session's capability token becomes recomputable from a master key rather than existing only in RAM. That is a real widening — anything that can read the master key can mint any session's token — bounded by the fact that the same reader could already read the daemon's own token from the same 0600 directory.
 
@@ -175,7 +226,8 @@ A session's capability token becomes recomputable from a master key rather than 
 | **Sleeping immediately makes MCP-heavy sessions feel slow** | With no linger window, every message to an idle session respawns its stdio servers. The fork is 60 ms; a cold `uvx` is not | Measure wake latency split into fork and MCP-connect, reported in `daemon.status`. If the second dominates, the answer is connection reuse, not a window |
 | **Two writers to `workspace.db`** | The worker and whatever serves `rest` are both writers | They already share `base/sqlite_lock.py`'s cross-process `flock`; `background.db` has worked this way all along |
 | **`rest` drifts back into importing `daemon`** | It is the path of least resistance, and it is how the surface grew inside the daemon in the first place | The layering checker, with both exemptions removed (#29) |
-| **The artifact deletion cuts too deep** | *Artifact* names three things: the dead version history, the live `open_artifact` preview, and A2A task artifacts. Only the first goes | `open_artifact` must still yield a `ToolResult` that renders a preview tab from the transcript alone, with no surface row |
+| **The artifact deletion misses a tendril, or takes the wrong one** | It reaches nineteen files across five layers plus two i18n catalogues, and *artifact* also names the A2A deliverable, which stays. A missed reference is an import error; a wrong one silently removes a turn's result | `turn_artifacts`, `task.artifacts` and `updater.add_artifact` must survive untouched, and a turn must still produce a `result` artifact. Everything else matching `artifact` outside `protocol/` and the turn store should be gone — grep is the check, and the layering checker plus `bun run build` catch the rest |
+| **The i18n catalogues have already drifted** | `en.json` holds 18 artifact keys and `ja.json` holds 16, against `xeac-migration.md:396` recording them as exact mirrors | Compare key counts after the deletion, not just the artifact ones — the drift predates this work and the wipe is where it surfaces |
 | **A partially-migrated registry** | Two registries becoming one touches `ps`, the sidebar, the reaper and attribution together | They are merged in one change; there is no interval in which both exist |
 
 ## Left open
