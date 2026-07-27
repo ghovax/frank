@@ -1,10 +1,10 @@
 # Configuration
 
-Runtime configuration lives in **`$XDG_CONFIG_HOME/daisy/configuration.yaml`** (`~/.config/daisy/configuration.yaml` unless you have set `XDG_CONFIG_HOME`). It is created on first run from a built-in template and is the source of truth for credentials, permissions, and feature toggles. The repository never contains a filled-in copy.
+Runtime configuration lives in **`$XDG_CONFIG_HOME/frank/configuration.yaml`** (`~/.config/frank/configuration.yaml` unless you have set `XDG_CONFIG_HOME`). It is created on first run from a built-in template and is the source of truth for credentials, permissions, and feature toggles. The repository never contains a filled-in copy.
 
 Three ways to change it, all writing the same file:
 
-- `daisy configure` from the terminal — `daisy configure --all` lists every setting that exists with what it is for, what it ships at, and what this machine runs on; `daisy configure` alone lists only what you have changed; `daisy configure <setting>` reads one; `daisy configure <setting> <value>` sets it; `daisy configure <setting> --unset` removes it. A name the schema does not define, or a value it would reject, is refused with the reason rather than written;
+- `frank configure` from the terminal — `frank configure --all` lists every setting that exists with what it is for, what it ships at, and what this machine runs on; `frank configure` alone lists only what you have changed; `frank configure <setting>` reads one; `frank configure <setting> <value>` sets it; `frank configure <setting> --unset` removes it. A name the schema does not define, or a value it would reject, is refused with the reason rather than written;
 - **Settings** in the desktop app;
 - editing the file directly, which the daemon watches and picks up live.
 
@@ -15,7 +15,7 @@ This document is the reference for the file itself.
 
 A change applies to whatever starts **next**. A running session keeps the configuration it was built with — the same guarantee its permission mode carries — except for settings the daemon explicitly pushes out (the sandbox, computer control, and the user-context snapshot each ask live sessions to rebuild).
 
-**`daisy configure --all` is the complete reference.** It prints every setting the schema defines, each with what it is for, what it ships at, and what your machine currently runs on. There is deliberately no checked-in file saying the same thing: a second copy of the defaults is a second thing to keep true, and the one this repository used to carry had drifted — documenting renamed settings under their old names and missing ones that had been added. The command reads the running code, so it cannot.
+**`frank configure --all` is the complete reference.** It prints every setting the schema defines, each with what it is for, what it ships at, and what your machine currently runs on. There is deliberately no checked-in file saying the same thing: a second copy of the defaults is a second thing to keep true, and the one this repository used to carry had drifted — documenting renamed settings under their old names and missing ones that had been added. The command reads the running code, so it cannot.
 
 This document is the *narrative* — what the settings mean and how they relate. The command is the exhaustive list.
 
@@ -23,15 +23,15 @@ Names the schema does not define are **refused**, not ignored. A setting that ca
 
 ## Where everything lives
 
-Daisy follows the XDG Base Directory convention rather than one dot-directory:
+Frank follows the XDG Base Directory convention rather than one dot-directory:
 
 | Path | What is there |
 |------|---------------|
-| `$XDG_CONFIG_HOME/daisy/` | `configuration.yaml` |
-| `$XDG_DATA_HOME/daisy/` | `history.db`, uploads, the file-URL signing secret |
-| `$XDG_STATE_HOME/daisy/` | logs |
-| `$XDG_CACHE_HOME/daisy/` | caches |
-| `$XDG_RUNTIME_DIR/daisy/` | the daemon's socket, port and token, and one socket per session |
+| `$XDG_CONFIG_HOME/frank/` | `configuration.yaml` |
+| `$XDG_DATA_HOME/frank/` | `history.db`, uploads, the file-URL signing secret |
+| `$XDG_STATE_HOME/frank/` | logs |
+| `$XDG_CACHE_HOME/frank/` | caches |
+| `$XDG_RUNTIME_DIR/frank/` | the daemon's socket, port and token, and one socket per session |
 
 The runtime directory is `0700` and the token files inside it `0600`: on a shared machine, file permissions are what keep another user out of your sessions. When `XDG_RUNTIME_DIR` is unset — as on macOS — the fallback is a per-user directory under the system temporary directory.
 
@@ -53,7 +53,7 @@ providers:
   custom:      { api_key: "", base_url: "" }   # any OpenAI-compatible endpoint
 ```
 
-Around forty providers are registered, including Cerebras, Together, Fireworks, Perplexity, Moonshot, Nebius, Cloudflare and GitHub Copilot; the registry in `src/daisy/base/providers.py` is the full list, with the environment variable each one reads.
+Around forty providers are registered, including Cerebras, Together, Fireworks, Perplexity, Moonshot, Nebius, Cloudflare and GitHub Copilot; the registry in `src/frank/base/providers.py` is the full list, with the environment variable each one reads.
 
 You can also **sign in with a ChatGPT subscription** instead of pasting a key (Settings → Providers). That provider is not a LiteLLM route: it calls Codex's endpoint directly with an OAuth token from the shared token store.
 
@@ -65,7 +65,7 @@ You can also **sign in with a ChatGPT subscription** instead of pasting a key (S
 exa:       { api_key: "" }          # search_web — env: EXA_API_KEY
 jina:      { api_key: "" }          # fetch_url, free tier — env: JINA_API_KEY
 firecrawl: { api_key: "", api_url: "" }  # env: FIRECRAWL_API_KEY, FIRECRAWL_API_URL
-web_fetch: { proxy_url: "" }        # outbound proxy — env: DAISY_FETCH_PROXY
+web_fetch: { proxy_url: "" }        # outbound proxy — env: FRANK_FETCH_PROXY
 ```
 
 `fetch_url` uses a tiered engine: Jina Reader first, then Firecrawl, then a direct fetch. Each tier is optional; an unset key skips it. `proxy_url` overrides the standard `HTTPS_PROXY`/`ALL_PROXY` for the fetch and download tools only.
@@ -87,7 +87,7 @@ When enabled, Composio is folded into the ordinary MCP set rather than being a s
 
 ```yaml
 sandbox:   { enforce: "required" }   # what a tool child may do — see below
-workspace: { strategy: "none", artifact_maximum_bytes: 134217728 }
+workspace: { strategy: "none" }
 agent:     { permission_mode: "default" }
 computer_control: { enabled: false } # macOS screen tools (control_screen); opt-in — see below
 user_context:     { enabled: false } # a snapshot of how you work, in the prompt; opt-in
@@ -128,7 +128,7 @@ A session's confinement is resolved when it is **created** and cannot be widened
 
 `workspace.strategy` is one of `none`, `branch`, or `worktree`, and is resolved once when a session is created: a `worktree` session runs its tools in its own git worktree, so parallel sessions on one repository do not tread on each other.
 
-`agent.permission_mode` is the mode a session gets when none is asked for. It is a default, not a ceiling — `daisy create --mode` overrides it, and a child is clamped against its parent either way.
+`agent.permission_mode` is the mode a session gets when none is asked for. It is a default, not a ceiling — `frank create --mode` overrides it, and a child is clamped against its parent either way.
 
 ### Permission modes
 
@@ -167,11 +167,11 @@ tuning:
     grep_results: 1024
 ```
 
-Those three move whole families. `defaults` is the escape hatch for a single value: the keys are the names in `daisy.base.tuning.Tunable` — the same idea as `sandbox.limits` using `setrlimit` constant names — and an unknown name is an error at load rather than a line that looks applied and is not. An override replaces the value the code *ships with*, so `context_share` and `timeout_multiplier` still apply on top: `action_timeout_ms: 10000` under `timeout_multiplier: 2.0` resolves to twenty seconds.
+Those three move whole families. `defaults` is the escape hatch for a single value: the keys are the names in `frank.base.tuning.Tunable` — the same idea as `sandbox.limits` using `setrlimit` constant names — and an unknown name is an error at load rather than a line that looks applied and is not. An override replaces the value the code *ships with*, so `context_share` and `timeout_multiplier` still apply on top: `action_timeout_ms: 10000` under `timeout_multiplier: 2.0` resolves to twenty seconds.
 
 The names are lowercase because they are not constants. Each one is a default the file may replace, and the casing is the first thing that says so.
 
-`daisy configure --all` lists every tunable with what it is for, what it ships at, and what this machine currently runs on.
+`frank configure --all` lists every tunable with what it is for, what it ships at, and what this machine currently runs on.
 
 Settling — how long a screen surface is given to stop changing after an action — lives with the surface rather than here, under [`computer_control.settle`](#screen-control).
 
@@ -187,16 +187,6 @@ computer_control:
 
 After an action, a surface is *polled* until it stops changing rather than slept on for a fixed guess: a fast page costs one interval and a slow one costs the ceiling. These two sit here rather than under `tuning` because settling is something a **surface** does, not a budget a tool spends.
 
-## The daemon
-
-```yaml
-daemon:
-  warm_floor: 2                     # blank workers parked, so creating a session is a socket write
-  warm_ceiling: 8                   # stop pre-warming once this many workers exist in total
-```
-
-`warm_ceiling` counts warm *and* assigned workers together and bounds pre-warming, not concurrency — a claim against an empty pool spawns on demand and never consults it, so a wide fan-out is always served; it just pays a cold start per child past the spares.
-
 ## MCP servers
 
 `mcp.servers` mirrors what `.agents/mcp.json` declares and is normally edited there — see [Agents and skills](agents-and-skills.md#mcp-servers). A folder's own servers are added to the shared pool when a session in that folder starts; the pool only ever grows, so no other session loses its servers.
@@ -208,24 +198,11 @@ remote_agents:
   agents: {}                        # normally written to .agents/remote-agents.json
 ```
 
-Agents on other hosts, resolved by their A2A card and reached with `daisy remote`. Normally registered in `~/.agents/remote-agents.json` or from Settings rather than written here. A remote agent is not a session — Daisy does not own its lifecycle, cannot set its permission mode, and keeps no transcript of it — which is why it has its own verb rather than sharing `send`.
-
-## Inbound authentication
-
-Only relevant if you expose a daemon beyond loopback. The daemon's own surfaces are already gated by its capability token; this configures A2A's inbound auth on top.
-
-```yaml
-a2a:
-  api_key: ""
-  api_key_header: "X-API-Key"
-  oauth2_jwks_url: ""
-  oauth2_issuer: ""
-  oauth2_audience: ""
-```
+Agents on other hosts, resolved by their A2A card and reached with `frank remote`. Normally registered in `~/.agents/remote-agents.json` or from Settings rather than written here. A remote agent is not a session — Frank does not own its lifecycle, cannot set its permission mode, and keeps no transcript of it — which is why it has its own verb rather than sharing `send`.
 
 ## Telemetry
 
-Off by default. When enabled, spans and token usage are exported over OTLP to an endpoint you choose — Daisy ships nothing anywhere on its own.
+Off by default. When enabled, spans and token usage are exported over OTLP to an endpoint you choose — Frank ships nothing anywhere on its own.
 
 ```yaml
 telemetry:
@@ -234,12 +211,4 @@ telemetry:
   sample_ratio: 1.0
 ```
 
-## History
-
-```yaml
-maximum_history_age_days: 30
-```
-
-How long a finished session's transcript is kept.
-
-**There is no default agent setting**, here or anywhere. `daisy create --agent` is required, and no profile is nominated as the one to fall back to — a default would mean work running under an agent nobody chose, and would make every other profile's behaviour depend on that one. Which agent runs is always stated. Add your own under `~/.agents/agents/<id>/` or `.agents/agents/<id>/` in a working directory — see [Agents and skills](agents-and-skills.md).
+**There is no default agent setting**, here or anywhere. `frank create --agent` is required, and no profile is nominated as the one to fall back to — a default would mean work running under an agent nobody chose, and would make every other profile's behaviour depend on that one. Which agent runs is always stated. Add your own under `~/.agents/agents/<id>/` or `.agents/agents/<id>/` in a working directory — see [Agents and skills](agents-and-skills.md).

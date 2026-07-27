@@ -1,4 +1,4 @@
-// The Rust core of the Daisy desktop app.
+// The Rust core of the Frank desktop app.
 //
 // This is a client. It does not start, supervise, or contain the daemon — it finds one and
 // talks to it, and is powerless when there is none, exactly as it is when a remote host does
@@ -12,7 +12,7 @@
 //   2. Report where a local daemon is listening, and whether one is, by reading the port
 //      and token it publishes into the runtime directory.
 //   3. Behave like a proper macOS menu-bar app: a tray menu (New Chat, Recent
-//      Conversations, Open Daisy, Quit), and a close button that hides the window
+//      Conversations, Open Frank, Quit), and a close button that hides the window
 //      and keeps the app alive in the dock until the user quits.
 //
 // The window chrome — hidden titlebar with native macOS traffic lights overlaid on
@@ -38,12 +38,12 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 const LOCAL_HOST: &str = "127.0.0.1";
 // Only a fallback: the daemon picks a free port at startup and publishes it.
 const LOCAL_PORT: u16 = 8823;
-const TRAY_ID: &str = "daisy-tray";
+const TRAY_ID: &str = "frank-tray";
 const MAIN_WINDOW: &str = "main";
 // The embedded native webview used to preview external websites at full browser
 // fidelity (real engine, top-level navigation — X-Frame-Options never applies). It
 // floats over the app's preview panel, positioned to that panel's rect by the UI.
-const PREVIEW_WEBVIEW: &str = "daisy-preview";
+const PREVIEW_WEBVIEW: &str = "frank-preview";
 // Where the preview webview parks when hidden — far off-screen so it stays alive
 // (scripts, media, session) without being visible. Cheaper and less flickery than
 // tearing it down and rebuilding on every open/close.
@@ -86,11 +86,11 @@ fn runtime_directory() -> PathBuf {
     if let Some(directory) = std::env::var_os("XDG_RUNTIME_DIR") {
         let path = PathBuf::from(directory);
         if path.is_absolute() {
-            return path.join("daisy");
+            return path.join("frank");
         }
     }
     let uid = unsafe { libc::getuid() };
-    std::env::temp_dir().join(format!("daisy-{uid}"))
+    std::env::temp_dir().join(format!("frank-{uid}"))
 }
 
 // The daemon's loopback port and capability token, which it writes on startup. The desktop
@@ -295,12 +295,12 @@ fn local_daemon() -> serde_json::Value {
 fn daemon_endpoint() -> Result<serde_json::Value, String> {
     let (port_path, token_path) = daemon_endpoint_files();
     let port = std::fs::read_to_string(&port_path)
-        .map_err(|error| format!("daisyd has not published a port yet: {error}"))?
+        .map_err(|error| format!("frankd has not published a port yet: {error}"))?
         .trim()
         .parse::<u16>()
-        .map_err(|error| format!("daisyd published an unreadable port: {error}"))?;
+        .map_err(|error| format!("frankd published an unreadable port: {error}"))?;
     let token = std::fs::read_to_string(&token_path)
-        .map_err(|error| format!("daisyd has not published a token yet: {error}"))?
+        .map_err(|error| format!("frankd has not published a token yet: {error}"))?
         .trim()
         .to_string();
     Ok(serde_json::json!({ "url": format!("http://{LOCAL_HOST}:{port}"), "token": token }))
@@ -436,8 +436,8 @@ fn build_tray_menu<R: Runtime>(
     recents: &[RecentItem],
 ) -> tauri::Result<Menu<R>> {
     let new_chat = MenuItem::with_id(app, "new_chat", "New Chat", true, None::<&str>)?;
-    let open = MenuItem::with_id(app, "open", "Open Daisy", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Daisy", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", "Open Frank", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Frank", true, None::<&str>)?;
     let separator_one = PredefinedMenuItem::separator(app)?;
     let separator_two = PredefinedMenuItem::separator(app)?;
 
@@ -485,14 +485,14 @@ fn handle_tray_menu<R: Runtime>(app: &AppHandle<R>, id: &str) {
     match id {
         "new_chat" => {
             show_main_window(app);
-            let _ = app.emit("daisy://new-chat", ());
+            let _ = app.emit("frank://new-chat", ());
         }
         "open" => show_main_window(app),
         "quit" => app.exit(0),
         "recent_none" => {}
         session_id => {
             show_main_window(app);
-            let _ = app.emit("daisy://open-session", session_id.to_string());
+            let _ = app.emit("frank://open-session", session_id.to_string());
         }
     }
 }
@@ -570,7 +570,7 @@ pub fn run() {
             TrayIconBuilder::with_id(TRAY_ID)
                 .icon(tray_icon)
                 .icon_as_template(true)
-                .tooltip("Daisy")
+                .tooltip("Frank")
                 .menu(&menu)
                 .on_menu_event(|app, event| handle_tray_menu(app, event.id().as_ref()))
                 .build(app)?;
@@ -586,7 +586,7 @@ pub fn run() {
             }
         })
         .build(tauri::generate_context!())
-        .expect("error while building the Daisy desktop app")
+        .expect("error while building the Frank desktop app")
         .run(|app_handle, event| match event {
             // Clicking the dock icon while hidden brings the window back.
             tauri::RunEvent::Reopen { .. } => show_main_window(app_handle),

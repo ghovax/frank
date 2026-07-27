@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, Flex } from "@chakra-ui/react";
-import { SessionsSidebar, type SessionEntry, type SessionSort, type SessionStatus } from "@/components/sessions-sidebar";
+import { SessionsSidebar, type SessionEntry, type SessionSort, type SessionActivity } from "@/components/sessions-sidebar";
 import { AnimatePresence, motion } from "motion/react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 
@@ -22,7 +22,7 @@ import { playAttentionSound, playTurnEndSound, primeSounds } from "@/lib/sounds"
 // The last project the user was in, remembered so a fresh launch reopens it (there is no
 // landing page to pick from). Best-effort localStorage — a cleared/absent value just falls
 // back to the first available project.
-const LAST_PROJECT_KEY = "daisy:lastProject";
+const LAST_PROJECT_KEY = "frank:lastProject";
 function readLastProject(): string | null {
   try { return localStorage.getItem(LAST_PROJECT_KEY); } catch { return null; }
 }
@@ -31,11 +31,11 @@ function writeLastProject(projectId: string): void {
 }
 
 
-// A session that is actually working, as opposed to one whose process is merely up. A
-// session outlives its turns — created empty, messaged, idle again — so the process
-// lifecycle alone would report every live session as busy forever.
+// A session that is actually working. The daemon derives this for us now: `activity` is
+// "working" only while a turn is in flight, where the old process-lifecycle field reported
+// every live session as busy forever, because a session outlives its turns.
 function isSessionBusy(session: SessionEntry): boolean {
-  return session.status === "starting" || session.busy;
+  return session.activity === "working";
 }
 
 function ProjectWorkspace() {
@@ -53,12 +53,12 @@ function ProjectWorkspace() {
   // the grant to the freshly-started server, so this runs on launch (not while the previous
   // instance was live) and only when the permission is actually present.
   useEffect(() => {
-    if (typeof window === "undefined" || localStorage.getItem("daisy:pendingComputerControlEnable") !== "1") return;
+    if (typeof window === "undefined" || localStorage.getItem("frank:pendingComputerControlEnable") !== "1") return;
     let cancelled = false;
     void fetchAccessibility().then(async (granted) => {
       if (cancelled || !granted) return;
       await updateComputerControlSetting(true);
-      localStorage.removeItem("daisy:pendingComputerControlEnable");
+      localStorage.removeItem("frank:pendingComputerControlEnable");
     });
     return () => { cancelled = true; };
   }, []);
@@ -213,8 +213,9 @@ function ProjectWorkspace() {
       title: session.title,
       createdAt: session.created_at,
       workingDirectory: session.working_directory ?? "",
-      status: (session.status || "starting") as SessionStatus,
-      busy: session.busy ?? false,
+      activity: (session.activity || "idle") as SessionActivity,
+      ended: session.lifecycle === "ended",
+      failed: session.outcome === "failed",
       awaitingInput: session.awaiting_input ?? false,
       exitReason: session.exit_reason ?? "",
       permissionMode: session.permission_mode ?? "default",
@@ -278,7 +279,7 @@ function ProjectWorkspace() {
       .filter((session) => {
         const previous = previousById.get(session.sessionId);
         const wasBusy = !!previous && isSessionBusy(previous);
-        return wasBusy && !isSessionBusy(session) && session.sessionId !== activeId && !session.awaitingInput && session.status !== "failed";
+        return wasBusy && !isSessionBusy(session) && session.sessionId !== activeId && !session.awaitingInput && !session.failed;
       })
       .map((session) => session.sessionId);
     if (finishedUnviewed.length > 0) {
@@ -734,7 +735,7 @@ function ProjectWorkspace() {
   return (
     // Floating-panel shell: the chat is the base surface — plain white (bg) that fills the
     // whole window; only the SIDE panels are elevated cards. The sessions sidebar here — and
-    // the agents/artifacts/terminal panels inside ChatPanel — carry their own bg.panel +
+    // the agents/terminal panels inside ChatPanel — carry their own bg.panel +
     // border + shadow and inset themselves with a small margin so they read as floating above
     // the chat rather than being co-equal boxes. On white-on-white (light mode) it's the
     // shadow that makes the cards lift, so they use a soft md elevation. The top inset is the

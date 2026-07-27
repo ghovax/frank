@@ -1,6 +1,6 @@
 # Tools
 
-A session acts through tools. Every tool call goes through the [permission engine](configuration.md#permission-modes); risky ones pause for approval, which reaches you as a prompt in the app or as `daisy approve` in the terminal. The description the model reads is in the repo: a docstring in `src/daisy/runtime/tools/registry.py` for most tools, a template in `src/daisy/runtime/prompts/tool_*.md` for the peer-session ones.
+A session acts through tools. Every tool call goes through the [permission engine](configuration.md#permission-modes); risky ones pause for approval, which reaches you as a prompt in the app or as `frank approve` in the terminal. The description the model reads is in the repo: a docstring in `src/frank/runtime/tools/registry.py` for most tools, a template in `src/frank/runtime/prompts/tool_*.md` for the peer-session ones.
 
 There is no delegation tool and no in-process sub-agent. A session that needs a peer creates one with `create_session`, which reaches the same control plane your terminal does. See [Architecture](architecture.md#sessions).
 
@@ -34,7 +34,6 @@ There are no dedicated `find_files`/`search_content` tools; for literal file-nam
 | `update_goal` | Track an overarching goal. |
 | `read_turn` | Read a sibling turn handed to this session from outside. |
 | `load_skill` | Load a `SKILL.md` capability on demand. |
-| `open_artifact` | Render a produced file or output as an artifact in the UI. |
 | `ask_user` | Ask the user a question and wait for the answer. |
 | `wait_for` | Pause for a few seconds without a model round trip, to re-check something that was not ready. |
 
@@ -52,7 +51,7 @@ The caller is the parent, always — it is not an argument. That is what puts a 
 
 **A peer answers by messaging.** When it is done it calls `message_session` on the session that created it, whose id is in its context as `parent_session`, and that message lands in the caller's context the way any inbound message does. So `create_session` does not wait, there is no handle to hold, and nothing reconstructs a result: the peer decides what its answer is, in its own words, at the moment it knows. A caller starts the work, carries on with whatever does not depend on it, and ends its turn — the reply wakes it.
 
-That message arrives as a **peer turn**, not a user turn. The distinction is carried on the wire under the harness's one extension key, `urn:daisy:ext:turn:v1`, as `kind` plus `peerSender` naming the sender — without it a peer's report would reach the model as an instruction from the person it works for, and would appear in the transcript as words the user never wrote.
+That message arrives as a **peer turn**, not a user turn. The distinction is carried on the wire under the harness's one extension key, `urn:frank:ext:turn:v1`, as `kind` plus `peerSender` naming the sender — without it a peer's report would reach the model as an instruction from the person it works for, and would appear in the transcript as words the user never wrote.
 
 A peer that dies before reporting cannot say so, which is the one thing the harness says on its behalf: the daemon tells the parent when it reaps a child, with the child's id and why it ended.
 
@@ -66,7 +65,7 @@ A peer that dies before reporting cannot say so, which is the one thing the harn
 
 ## Screen control (`control_screen`)
 
-Daisy drives the live screen — native macOS apps and **your own Chrome** — through one tool, `control_screen`, whose Python script both finds elements and acts on them. It is **macOS-only** and **opt-in**: gated by `computer_control.enabled` (off by default; see [Configuration guide](configuration.md#execution-and-permissions)).
+Frank drives the live screen — native macOS apps and **your own Chrome** — through one tool, `control_screen`, whose Python script both finds elements and acts on them. It is **macOS-only** and **opt-in**: gated by `computer_control.enabled` (off by default; see [Configuration guide](configuration.md#execution-and-permissions)).
 
 **Finding — read the live surface.** Inside the script, `find_many(query)` and `find_one(query)` take a plain-language query and return the matching UI as **ranked elements** to act on, not pixels — each with a stable `id`, its role, its text, and its context. On native apps this reads the **accessibility tree**; on Chrome it reads the page's real semantic structure (roles and names, iframes included) over the Chrome DevTools Protocol through Playwright, and also surfaces the page's own **network/API requests**, so the agent can find the endpoints the page calls. `find_one` returns the single best match and raises if the top matches are indistinguishable, so an unclear target is caught rather than guessed.
 
@@ -76,14 +75,14 @@ Daisy drives the live screen — native macOS apps and **your own Chrome** — t
 
 **Frames.** An `iframe` is its own document with its own origin and its own session — the embedded checkout, the OAuth consent screen, the document viewer. Element ids are already frame-scoped, so `f1e3` is the third element of frame `f1` and clicking or typing into it needs no extra step. `frames()` lists them as `{id, url, name, parent, element}`, and `evaluate(..., frame="f1")` and `read(frame="f1")` run **inside** that document, which is the only way to reach one through the credentials it actually holds.
 
-Because Daisy attaches to **the Chrome you already use** — your real logins and sessions, not a throwaway profile — it only ever *connects* to the browser: it never launches, quits, or copies it.
+Because Frank attaches to **the Chrome you already use** — your real logins and sessions, not a throwaway profile — it only ever *connects* to the browser: it never launches, quits, or copies it.
 
-Daisy reads structure, not pixels: there is no screenshot path for computer use. A surface that is drawn rather than structured (a canvas, WebGL) exposes nothing to find — a structured visual fallback is planned but not yet built (see [the plan](plans/visual-fallback.md)).
+Frank reads structure, not pixels: there is no screenshot path for computer use. A surface that is drawn rather than structured (a canvas, WebGL) exposes nothing to find — a structured visual fallback is planned but not yet built (see [the plan](plans/visual-fallback.md)).
 
 **Enable it:**
 
-- Grant **Accessibility** permission to Daisy for native apps (System Settings → Privacy & Security → Accessibility). The app prompts you and links directly to the pane. The permission is matched to the app's code identity, so the packaged build is signed with a stable identity to keep the grant across updates (see [Development guide](development.md#building-and-signing)).
-- Turn on Chrome's remote-debugging toggle once for the browser surface. Open `chrome://inspect` and enable it under the remote-debugging option (Daisy provides a one-click prompt that opens the page).
+- Grant **Accessibility** permission to Frank for native apps (System Settings → Privacy & Security → Accessibility). The app prompts you and links directly to the pane. The permission is matched to the app's code identity, so the packaged build is signed with a stable identity to keep the grant across updates (see [Development guide](development.md#building-and-signing)).
+- Turn on Chrome's remote-debugging toggle once for the browser surface. Open `chrome://inspect` and enable it under the remote-debugging option (Frank provides a one-click prompt that opens the page).
 - Set `computer_control.enabled: true` in the config (off by default).
 
 > [!NOTE]
@@ -93,9 +92,9 @@ Daisy reads structure, not pixels: there is no screenshot path for computer use.
 
 ## Where the definitions live
 
-- Descriptions the model reads: the tool docstrings in `src/daisy/runtime/tools/registry.py`, and `src/daisy/runtime/prompts/tool_*.md` for the peer-session tools
-- Implementations: `src/daisy/runtime/tools/` and `src/daisy/computer/`
-- Model-facing message templates: `src/daisy/runtime/prompts/` and `src/daisy/computer/messages/`
-- The guidance a session gets for screen control: `src/daisy/runtime/prompts/computer_control_guidance.md`
+- Descriptions the model reads: the tool docstrings in `src/frank/runtime/tools/registry.py`, and `src/frank/runtime/prompts/tool_*.md` for the peer-session tools
+- Implementations: `src/frank/runtime/tools/` and `src/frank/computer/`
+- Model-facing message templates: `src/frank/runtime/prompts/` and `src/frank/computer/messages/`
+- The guidance a session gets for screen control: `src/frank/runtime/prompts/computer_control_guidance.md`
 
 A tool runs inside the session's own process, so its blast radius is that session: its working directory (its own git worktree, under the `worktree` strategy), its permission mode, and its own MCP connections.

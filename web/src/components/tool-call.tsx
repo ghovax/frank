@@ -7,7 +7,7 @@ import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-displ
 import { ToolCallLabel } from "./tool-label";
 import type { ToolEvent, ToolEventStatus } from "@/lib/tool-event";
 import { hasBackgroundJobId } from "@/lib/tool-event";
-import { ToolCallView, ToolResultView, extractToolArtifacts } from "./tool-views";
+import { ToolCallView, ToolResultView } from "./tool-views";
 import { Pill } from "./ui/pill";
 import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
 import { STATUS_PALETTE, toolStatusKind } from "@/lib/status";
@@ -78,10 +78,6 @@ export { ToolLocationBadge };
 
 interface ToolCallProps extends ToolEvent {
   actions?: ReactNode;
-  // The single live artifact id (owned by ChatPanel). Only the matching
-  // iframe-type artifact mounts its frame; the rest collapse to a placeholder.
-  activeArtifactId?: string | null;
-  onActivateArtifact?: (id: string) => void;
 }
 
 function isToolErrorResult(content: string | null): boolean {
@@ -100,7 +96,7 @@ function isToolErrorResult(content: string | null): boolean {
 // a few tool names render nothing inline, and background/started/empty results
 // carry no body to show.
 function resultRendersInside(name: string, content: string, status: ToolEventStatus | undefined): boolean {
-  if (name === "list_mcp_tools" || name === "list_mcp_resources" || name === "open_artifact") return false;
+  if (name === "list_mcp_tools" || name === "list_mcp_resources") return false;
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
@@ -138,11 +134,9 @@ export function toolCallDetail(
   // expand into.
   const showArguments = !!args && Object.keys(args).some((key) => key !== "justification" && key !== "location");
   const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
-  // Renderable artifacts (e.g. a map) render outside the line and stay visible; a
-  // tool_error is surfaced on the line itself; both leave nothing for the body.
-  const artifacts = resultContent ? extractToolArtifacts(name, resultContent) : [];
+  // A tool_error is surfaced on the line itself and leaves nothing for the body.
   const showResult =
-    resultContent != null && artifacts.length === 0 && !isToolErrorResult(resultContent) && resultRendersInside(name, resultContent, status);
+    resultContent != null && !isToolErrorResult(resultContent) && resultRendersInside(name, resultContent, status);
   // The task list is the model's own internal bookkeeping — its line never exposes
   // the raw task entries, so it is never collapsible regardless of its arguments.
   const isInternalPlanning = name === "set_tasks" || name === "update_tasks";

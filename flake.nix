@@ -9,7 +9,7 @@
       pkgs = import nixpkgs { inherit system; };
     in {
       devShells.${system}.default = pkgs.mkShell {
-        # The full toolchain to develop and build Daisy, pinned by flake.lock and
+        # The full toolchain to develop and build Frank, pinned by flake.lock and
         # isolated to this directory:
         #   - uv           the Python harness's environment, and the PyInstaller freeze
         #   - bun          the web UI (Next.js) package manager and bundler
@@ -24,6 +24,10 @@
         # fetches its own Python against .python-version, so no interpreter is pinned here.
         packages = with pkgs; [
           uv
+          # In the devshell as well as in the dev dependency group. It was in neither, so the
+          # verification battery's lint stage silently reported it missing on every machine
+          # that had not installed it by hand.
+          ruff
           bun
           rustc
           cargo

@@ -6,12 +6,12 @@
  */
 
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "ToolStatus".
  */
 export type ToolStatus = "running" | "ok" | "error";
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "WireEvent".
  */
 export type WireEvent =
@@ -31,9 +31,9 @@ export type WireEvent =
   | WarningEvent
   | ErrorEvent;
 
-export interface DaisyEvents {}
+export interface FrankEvents {}
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "CompactionEvent".
  */
 export interface CompactionEvent {
@@ -49,7 +49,7 @@ export interface CompactionEvent {
  * Session-lifetime running totals (monotonic), distinct from the per-call figures
  * on :class:`TokenUsageEvent` which describe only the latest model call.
  *
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "CumulativeUsage".
  */
 export interface CumulativeUsage {
@@ -61,7 +61,7 @@ export interface CumulativeUsage {
   total_tokens?: number;
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "DoneEvent".
  */
 export interface DoneEvent {
@@ -69,7 +69,7 @@ export interface DoneEvent {
   state?: string;
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "ErrorEvent".
  */
 export interface ErrorEvent {
@@ -82,7 +82,7 @@ export interface ErrorEvent {
   tool_name?: string;
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "McpEvent".
  */
 export interface McpEvent {
@@ -99,7 +99,7 @@ export interface McpEvent {
  * follows the header after a blank line, delivered **as-is**: prose stays prose (never
  * re-encoded into an escaped JSON string), structured output stays JSON.
  *
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "ModelToolResult".
  */
 export interface ModelToolResult {
@@ -114,7 +114,7 @@ export interface ModelToolResult {
   tool_name: string;
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "PermissionRequestEvent".
  */
 export interface PermissionRequestEvent {
@@ -126,7 +126,7 @@ export interface PermissionRequestEvent {
   tool_call_id?: string;
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "QuestionEvent".
  */
 export interface QuestionEvent {
@@ -136,7 +136,7 @@ export interface QuestionEvent {
   tool_call_id?: string;
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "StatusEvent".
  */
 export interface StatusEvent {
@@ -144,7 +144,7 @@ export interface StatusEvent {
   kind: "status";
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "SteeringEvent".
  */
 export interface SteeringEvent {
@@ -152,7 +152,7 @@ export interface SteeringEvent {
   text?: string;
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "TextEvent".
  */
 export interface TextEvent {
@@ -160,7 +160,7 @@ export interface TextEvent {
   text: string;
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "ThinkingDoneEvent".
  */
 export interface ThinkingDoneEvent {
@@ -168,7 +168,7 @@ export interface ThinkingDoneEvent {
   kind: "thinking_done";
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "ThinkingEvent".
  */
 export interface ThinkingEvent {
@@ -177,7 +177,7 @@ export interface ThinkingEvent {
   text?: string;
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "TokenUsageEvent".
  */
 export interface TokenUsageEvent {
@@ -188,7 +188,7 @@ export interface TokenUsageEvent {
   output_tokens?: number;
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "ToolCallEvent".
  */
 export interface ToolCallEvent {
@@ -202,7 +202,7 @@ export interface ToolCallEvent {
  * product decision — kept visible to the model too, so it can reason about what it
  * ran and when.
  *
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "ToolMetadata".
  */
 export interface ToolMetadata {
@@ -214,7 +214,7 @@ export interface ToolMetadata {
   tool_name: string;
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "ToolResultEvent".
  */
 export interface ToolResultEvent {
@@ -230,7 +230,7 @@ export interface ToolResultEvent {
  * The structured per-turn context injected at the end of the message list: the current time,
  * where the agent is, its goal, its tasks, and its background work.
  *
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "TurnContext".
  */
 export interface TurnContext {
@@ -241,7 +241,7 @@ export interface TurnContext {
   tasks?: Record<string, unknown>[];
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "WarningEvent".
  */
 export interface WarningEvent {

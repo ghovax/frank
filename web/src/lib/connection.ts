@@ -9,7 +9,7 @@
 import { setApiBase, getApiBase, invalidateDiscoveryCache, daemonStatus } from "@/lib/api";
 import { isTauri, setAppState, getAppState, touchConnection, listConnections, type ConnectionKind, type ConnectionProfile } from "@/lib/connection-store";
 
-// The conventional local daemon address. `daisyd` serves its control plane on this
+// The conventional local daemon address. `frankd` serves its control plane on this
 // loopback port for GUI clients (the webview cannot open its unix socket), and this is
 // also the API client's built-in default.
 export const LOCAL_DEFAULT_URL = "http://127.0.0.1:8823";

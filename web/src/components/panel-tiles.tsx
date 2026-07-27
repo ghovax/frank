@@ -50,7 +50,7 @@ export function PanelTiles({ panels, gap = 8 }: { panels: TilePanel[]; gap?: num
 
   // Reset the weights to an even split whenever the arrangement itself changes (a panel
   // opened/closed), using React's in-render state-adjustment pattern so the panel contents
-  // are NOT remounted (which would drop terminal/artifact state). A sentinel holds the
+  // are NOT remounted (which would drop terminal state). A sentinel holds the
   // signature the current weights belong to.
   const [layoutSignature, setLayoutSignature] = useState(signature);
   if (layoutSignature !== signature) {

@@ -11,7 +11,7 @@ import { Box, Button, Flex, IconButton, Image, Input, Kbd, Menu, Span, Text, VSt
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LuArrowDownUp, LuChevronDown, LuChevronRight, LuEllipsis, LuFolderOpen, LuFolderPlus, LuMessageSquare, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
-import daisyIcon from "@/app/icon.png";
+import frankIcon from "@/app/icon.png";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DropdownMenu, MenuOption } from "@/components/ui/menu";
 import { PanelBody, PanelCard } from "@/components/ui/panel";
@@ -24,7 +24,10 @@ import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
 import { toaster } from "./ui/toaster";
 
 // A session's process lifecycle, as the daemon's registry reports it — not the turn's.
-export type SessionStatus = "starting" | "running" | "exited" | "failed";
+// What a session is doing, as the daemon derives it. Distinct from whether it *exists*,
+// which is `lifecycle` and is the durable half: a session with no process is asleep, not
+// gone, and the next message to it forks a new worker in about 60ms.
+export type SessionActivity = "working" | "waiting" | "idle" | "asleep" | "ended";
 
 export interface SessionEntry {
   sessionId: string;
@@ -41,23 +44,28 @@ export interface SessionEntry {
   title: string;
   createdAt: string;
   workingDirectory: string;
-  status: SessionStatus;
-  // Whether a turn is in flight. Distinct from `status`, which describes the process: a
-  // session stays "running" between messages, so only this means it is working.
-  busy: boolean;
+  activity: SessionActivity;
+  // Whether this session has ended for good, as opposed to merely having no process.
+  ended: boolean;
+  // Set when an ended session ended badly.
+  failed: boolean;
   awaitingInput: boolean;
-  // Why an exited/failed session ended, when the daemon knows — shown on the status dot.
+  // Why an ended session ended, when the daemon knows — shown on the status dot.
   exitReason: string;
   permissionMode: PermissionMode;
 }
 
 export type SessionSort = "recent" | "active";
 
-// The status a session's dot reflects. "working" means the process is still up and
-// doing something — a soft pulsing gray dot, shown even while it's the active session
-// ("not finished yet"). "done" means it finished since you last looked — a solid blue
-// dot, suppressed for the active session (you're already looking at it). Plus the two
-// alerts: a crashed process, and a session parked on a decision only you can make.
+// The status a session's dot reflects. "working" means it is doing something — a soft
+// pulsing gray dot, shown even while it's the active session ("not finished yet"). "done"
+// means it finished since you last looked — a solid blue dot, suppressed for the active
+// session (you're already looking at it). Plus the two alerts: a crashed session, and one
+// parked on a decision only you can make.
+//
+// A sleeping session gets no dot at all, deliberately. It has no process, but it is not
+// gone and nothing is waiting on you; surfacing it would be surfacing an implementation
+// detail as if it were news.
 type SessionIndicator = "working" | "problem" | "attention" | "done";
 
 function sessionIndicator(
@@ -65,9 +73,9 @@ function sessionIndicator(
   isActive: boolean,
   unseenCompletions: Set<string>,
 ): SessionIndicator | null {
-  if (entry.status === "failed") return "problem";
-  if (entry.awaitingInput) return "attention";
-  if (entry.status === "starting" || entry.status === "running") return "working";
+  if (entry.failed) return "problem";
+  if (entry.awaitingInput || entry.activity === "waiting") return "attention";
+  if (entry.activity === "working") return "working";
   if (!isActive && unseenCompletions.has(entry.sessionId)) return "done";
   return null;
 }
@@ -79,11 +87,12 @@ const INDICATOR_COLOR: Record<SessionIndicator, string> = {
   done: "blue.solid",
 };
 
-const STATUS_LABEL_KEY: Record<SessionStatus, string> = {
-  starting: "statusStarting",
-  running: "statusRunning",
-  exited: "statusExited",
-  failed: "statusFailed",
+const ACTIVITY_LABEL_KEY: Record<SessionActivity, string> = {
+  working: "statusWorking",
+  waiting: "statusWaiting",
+  idle: "statusIdle",
+  asleep: "statusAsleep",
+  ended: "statusEnded",
 };
 
 // A session and everything it created. The daemon hands the registry out flat (each row
@@ -205,8 +214,10 @@ function SessionTreeRow({
   // that crashed — behind a chevron the user has no reason to open.
   const hidden = hasChildren && !expanded ? node.children.flatMap(collectEntries) : [];
   const hiddenAttention = hidden.some((child) => child.awaitingInput);
-  const hiddenProblem = hidden.some((child) => child.status === "failed");
-  const statusLabel = translation((STATUS_LABEL_KEY[entry.status] ?? "statusStarting") as Parameters<typeof translation>[0]);
+  const hiddenProblem = hidden.some((child) => child.failed);
+  const statusLabel = translation(
+    (entry.failed ? "statusFailed" : ACTIVITY_LABEL_KEY[entry.activity] ?? "statusIdle") as Parameters<typeof translation>[0]
+  );
   const statusTooltip = (
     <Box>
       <Text color="fg">{entry.awaitingInput ? translation("awaitingInput") : statusLabel}</Text>
@@ -466,8 +477,8 @@ export function SessionsSidebar({
   return (
     <PanelCard flex={1}>
       <Flex align="center" gap={2} px={3} pt={3} pb={2} flexShrink={0}>
-        <Image src={daisyIcon.src} alt="" boxSize="26px" borderRadius="md" flexShrink={0} />
-        <Text fontFamily="var(--font-display)" fontSize="2xl" lineHeight="1" fontWeight="bold" letterSpacing="tight">Daisy</Text>
+        <Image src={frankIcon.src} alt="" boxSize="26px" borderRadius="md" flexShrink={0} />
+        <Text fontFamily="var(--font-display)" fontSize="2xl" lineHeight="1" fontWeight="bold" letterSpacing="tight">Frank</Text>
       </Flex>
 
       {/* "New session" reads as the first row of the list, not a separate button — a

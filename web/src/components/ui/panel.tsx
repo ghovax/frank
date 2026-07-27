@@ -1,7 +1,7 @@
 "use client";
 
-// Shared building blocks for the floating side panels (Agents, Artifacts, Terminal/
-// Background, and any future one). Every panel is the same card with the same header and
+// Shared building blocks for the floating side panels (Agents, Terminal/Background, and
+// any future one). Every panel is the same card with the same header and
 // the same empty state, so those live here once instead of being re-spelled per panel —
 // keeping each panel's own file down to just its content.
 

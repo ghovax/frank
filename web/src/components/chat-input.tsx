@@ -23,8 +23,7 @@ import { PermissionModeControl } from "./session-controls";
 import { activeConnectionIsLocal } from "@/lib/connection";
 import { isTauri } from "@/lib/connection-store";
 import { pickDesktopFilePaths, watchDesktopFileDrop } from "@/lib/desktop-files";
-import { AttachmentChip, ArtifactAnnotationChips } from "./attachment-chips";
-import { annotationsPayload, type ArtifactAnnotationRecord, type ArtifactImageAnnotation } from "@/lib/artifact-annotations";
+import { AttachmentChip } from "./attachment-chips";
 import { Tooltip } from "./ui/tooltip";
 import { ConfirmDialog } from "./ui/confirm-dialog";
 import { ModelSelect, modelSupportsVision } from "./model-select";
@@ -80,7 +79,6 @@ interface ChatInputProps {
   // How many user messages exist in the current session. Used together with
   // compactionKeepRecentTurns to decide whether compaction would be meaningful.
   compactionUserCount: number;
-  artifactAnnotationRecords?: ArtifactAnnotationRecord[];
 }
 
 // A filling circle for how full the model's context window is. The arc grows with
@@ -265,7 +263,6 @@ export function ChatInput({
   isCompacting = false,
   compactionKeepRecentTurns,
   compactionUserCount,
-  artifactAnnotationRecords = [],
 }: ChatInputProps) {
   const translation = useTranslations("ChatInput");
   const chatgptUsage = useChatGPTUsage(agentModel, isStreaming);
@@ -284,11 +281,6 @@ export function ChatInput({
   const [sendPending, setSendPending] = useState(false);
   const [stopPending, setStopPending] = useState(false);
   const [compactConfirmOpen, setCompactConfirmOpen] = useState(false);
-  // Pending image annotations waiting to be sent — a typed message is required to send
-  // them, so the composer prompts for one (placeholder + Send tooltip) rather than
-  // silently disabling Send.
-  const hasPendingAnnotations = artifactAnnotationRecords.some((record) => record.annotations.length > 0);
-
   const agentCollection = useMemo(
     () => createListCollection({
       items: agents.map((agent) => ({ label: agent.title || agent.name, value: agent.id })),
@@ -471,33 +463,17 @@ export function ChatInput({
     setAttachments((current) => current.filter((attachment) => attachment.upload_id !== uploadId));
   }
 
-  // Annotations drawn on a pending image ride along on the attachment itself, so they
-  // travel in the outgoing `attachments` data part when the message is sent.
-  function updateAttachmentAnnotations(uploadId: string, annotations: ArtifactImageAnnotation[]) {
-    setAttachments((current) =>
-      current.map((attachment) =>
-        attachment.upload_id === uploadId
-          ? { ...attachment, annotations: annotations.length > 0 ? annotations : undefined }
-          : attachment,
-      ),
-    );
-  }
-
   async function handleSubmit() {
     const trimmed = inputValue.trim();
-    const activeArtifactAnnotationRecords = artifactAnnotationRecords.filter((record) => record.annotations.length > 0);
-    // A typed message is always required — attachments and annotations are context on
-    // top of what you say, never a substitute for it. No auto-injected placeholder text.
+    // A typed message is always required — an attachment is context on top of what you
+    // say, never a substitute for it. No auto-injected placeholder text.
     if (!trimmed) return;
     if (!directoryValid) return;
     if (uploadingCount > 0) return;
     const startedAt = performance.now();
     setSendPending(true);
     const sendText = trimmed;
-    const dataParts = [
-      ...(attachments.length > 0 ? [{ kind: "attachments", attachments }] : []),
-      ...activeArtifactAnnotationRecords.map((record) => annotationsPayload(record)),
-    ];
+    const dataParts = attachments.length > 0 ? [{ kind: "attachments", attachments }] : [];
     try {
       // While the agent is busy this enqueues for the next turn (handled upstream).
       await onSend(sendText, dataParts);
@@ -597,9 +573,9 @@ export function ChatInput({
 
       {/* Message input */}
       <Box px={0} mt={2} pb={1.5}>
-        {/* Pending attachments/annotations sit ABOVE the composer box, not inside it, so
-            the enlarged media cards have room and the input stays uncluttered. */}
-        {attachments.length > 0 || artifactAnnotationRecords.length > 0 || uploadingCount > 0 ? (
+        {/* Pending attachments sit ABOVE the composer box, not inside it, so the enlarged
+            media cards have room and the input stays uncluttered. */}
+        {attachments.length > 0 || uploadingCount > 0 ? (
           <Flex gap={2} pb={2} flexWrap="wrap">
             {attachments.map((attachment) => (
               <AttachmentChip
@@ -610,12 +586,9 @@ export function ChatInput({
                   mimeType: attachment.mime_type,
                   size: attachment.size,
                 }}
-                annotations={attachment.annotations}
-                onAnnotationsChange={(annotations) => updateAttachmentAnnotations(attachment.upload_id, annotations)}
                 onRemove={() => removeAttachment(attachment.upload_id)}
               />
             ))}
-            <ArtifactAnnotationChips records={artifactAnnotationRecords} />
             {uploadingCount > 0 ? (
               <Flex align="center" gap={1.5} px={1.5} py={1} border="1px solid" borderColor="border" borderRadius="md" bg="bg.subtle">
                 <Box color="blue.fg"><LuPaperclip size={14} /></Box>
@@ -657,13 +630,11 @@ export function ChatInput({
                   ? translation("placeholderConnecting")
                   : !directoryValid
                     ? translation("placeholderInvalidPath")
-                    : hasPendingAnnotations
-                      ? translation("placeholderAnnotations")
-                      : attachments.length > 0
-                        ? translation("placeholderAttachments")
-                        : isStreaming
-                          ? translation("placeholderStreaming")
-                          : translation("placeholderDefault")
+                    : attachments.length > 0
+                      ? translation("placeholderAttachments")
+                      : isStreaming
+                        ? translation("placeholderStreaming")
+                        : translation("placeholderDefault")
               }
               value={inputValue}
               onChange={(event) => setInputValue(event.target.value)}

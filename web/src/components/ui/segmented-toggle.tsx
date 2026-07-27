@@ -1,7 +1,7 @@
 "use client";
 
 // A small segmented control (two or three joined buttons in a muted track) used to switch
-// a panel between views — Artifacts/History, Terminal/Processes, and similar. The look was
+// a panel between views — Terminal/Processes, and similar. The look was
 // duplicated per panel; it lives here once so every toggle reads and behaves identically.
 
 import { Button, Flex } from "@chakra-ui/react";

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Emit the JSON Schema for the wire events and model-facing envelopes.
 
-Pydantic is the source of truth (``daisy.core.events``); this uses Pydantic's own
+Pydantic is the source of truth (``frank.core.events``); this uses Pydantic's own
 ``models_json_schema`` — no hand-written Python->TS type mapping — to produce
 ``web/src/lib/generated/events.schema.json``. The TypeScript is then generated from
 that schema by ``json-schema-to-typescript`` (see the web ``build:events`` script), so
@@ -25,7 +25,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from pydantic import TypeAdapter  # noqa: E402
 from pydantic.json_schema import models_json_schema  # noqa: E402
 
-from daisy.protocol import events  # noqa: E402
+from frank.protocol import events  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -142,9 +142,9 @@ def _render_schema() -> str:
     cleaned = {name: _require_discriminant(_readable_types(_strip_titles(definition))) for name, definition in definitions.items()}
     schema = {
         "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "DaisyEvents",
+        "title": "FrankEvents",
         # The root doc only exists to carry `$defs`; closing it keeps json2ts from
-        # emitting a stray open `DaisyEvents { [key: string]: unknown }` wrapper.
+        # emitting a stray open `FrankEvents { [key: string]: unknown }` wrapper.
         "type": "object",
         "additionalProperties": False,
         "$defs": cleaned,

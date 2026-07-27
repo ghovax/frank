@@ -1,6 +1,6 @@
 # Agents, skills, memory, and MCP
 
-Everything that shapes how Daisy behaves — its agents, their reusable skills, its memory, and its tool servers — is **plain Markdown and JSON on disk**. There are two layers, and they merge by name:
+Everything that shapes how Frank behaves — its agents, their reusable skills, its memory, and its tool servers — is **plain Markdown and JSON on disk**. There are two layers, and they merge by name:
 
 - **Global:** `~/.agents/` — available everywhere.
 - **Project-local:** `.agents/` in the working directory you point an agent at.
@@ -29,7 +29,6 @@ title: Senior researcher
 description: A rigorous, skeptical researcher that pushes back before it builds.
 role: primary
 enabled: true
-connection-type: internal
 ---
 
 You are the senior researcher. You do not take bullshit...

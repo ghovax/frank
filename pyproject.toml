@@ -1,5 +1,5 @@
 [project]
-name = "daisy"
+name = "frank"
 version = "0.1.0"
 description = "An agent harness where every session is a process you can address"
 readme = "README.md"
@@ -53,14 +53,14 @@ dependencies = [
 ]
 
 [project.scripts]
-daisy = "daisy.__main__:main"
+frank = "frank.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/daisy"]
+packages = ["src/frank"]
 
 [tool.uv]
 package = true
@@ -74,4 +74,24 @@ dev = [
     "pyinstaller>=6.21.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    # Pinned to a minor, not left open. Ruff's *default* rule set widens between releases, so
+    # an unpinned `ruff check` means a different check on every machine — 0 findings on one
+    # and 596 on another, from the same source. The rules this repository is checked against
+    # are stated in [tool.ruff] below rather than inherited.
+    "ruff>=0.14,<0.15",
 ]
+
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+# The set the tree is actually written against and passes clean: pycodestyle errors, pyflakes.
+# Stated explicitly because Ruff's implicit default has grown over releases, and a linter whose
+# meaning depends on which version happens to be installed cannot gate anything.
+#
+# Widening this is worth doing and is deliberately not done here: the wider default reports
+# several hundred findings, and folding those into an unrelated change is how a diff stops
+# being reviewable. It is its own piece of work.
+select = ["E4", "E7", "E9", "F"]

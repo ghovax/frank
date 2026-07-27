@@ -276,7 +276,7 @@ export function TerminalSurface({
   return (
     <Box
       ref={containerRef}
-      className="daisy-terminal-surface"
+      className="frank-terminal-surface"
       h="100%"
       w="100%"
       bg="bg"

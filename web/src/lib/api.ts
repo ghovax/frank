@@ -1,7 +1,6 @@
-import type { ArtifactAnnotationRecord, ArtifactImageAnnotation } from "./artifact-annotations";
 
 // Where the daemon lives, and what proves we may talk to it. The CLI and agents reach
-// `daisyd` over its unix socket, but a webview has no such transport, so the daemon also
+// `frankd` over its unix socket, but a webview has no such transport, so the daemon also
 // serves its control plane on a loopback TCP listener for GUI clients, gated by a
 // capability token. Both the address and the token are resolved at runtime rather than
 // baked in, because the desktop app can point at the local daemon or at a remote one
@@ -9,14 +8,14 @@ import type { ArtifactAnnotationRecord, ArtifactImageAnnotation } from "./artifa
 // tokens*. Resolution order for the address:
 //   1. an explicit target set via `setApiBase` (a connection the user activated), then
 //   2. the endpoint the Tauri shell reports (`daemon_endpoint`), then
-//   3. `daisy web`'s runtime descriptor, when this page is served by it, then
-//   4. a build-time default from NEXT_PUBLIC_DAISY_API_BASE, then
+//   3. `frank web`'s runtime descriptor, when this page is served by it, then
+//   4. a build-time default from NEXT_PUBLIC_FRANK_API_BASE, then
 //   5. the conventional local daemon address.
 // The connection layer (profiles UI / local store) writes the explicit target.
 const DEFAULT_API_BASE =
-  (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_DAISY_API_BASE : "") || "http://127.0.0.1:8823";
-const API_BASE_STORAGE_KEY = "daisy.apiBase";
-const API_TOKEN_STORAGE_KEY = "daisy.apiToken";
+  (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_FRANK_API_BASE : "") || "http://127.0.0.1:8823";
+const API_BASE_STORAGE_KEY = "frank.apiBase";
+const API_TOKEN_STORAGE_KEY = "frank.apiToken";
 
 function runningInTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -51,12 +50,12 @@ let daemonEndpointPromise: Promise<void> | null = null;
 
 async function resolveDaemonEndpoint(): Promise<void> {
   if (!runningInTauri()) {
-    // Served by `daisy web`? That server proxies the daemon at its own origin, attaching the
+    // Served by `frank web`? That server proxies the daemon at its own origin, attaching the
     // token itself, so the right base is the empty string — relative, same-origin, no token in
     // the page and no need to know the daemon's ephemeral port. Any other static host does not
     // answer this and falls through to the build-time default, unchanged.
     try {
-      const response = await fetch("/__daisy/runtime.json", { cache: "no-store" });
+      const response = await fetch("/__frank/runtime.json", { cache: "no-store" });
       if (response.ok) {
         const runtime = await response.json();
         if (runtime?.proxied && !apiBaseWasChosen) API_BASE = "";
@@ -113,7 +112,7 @@ function withDaemonToken(url: string, options?: ApiRequestOptions): string {
 }
 
 function websocketUrl(path: string, options?: ApiRequestOptions): string {
-  // An empty base means this page is served by `daisy web`, which proxies the daemon at its
+  // An empty base means this page is served by `frank web`, which proxies the daemon at its
   // own origin — so that origin is the base. `new URL(path, "/")` would throw: a relative
   // string is not a valid base, and a websocket URL has to be absolute regardless.
   const base = apiBase(options)
@@ -292,42 +291,16 @@ export function invalidateDiscoveryCache(): void {
   discoveryCache.clear();
 }
 
-// The URL that serves a file (and its sibling assets) for an `open_artifact` artifact —
-// the backend `/artifact-page/<abs path>` route reads the file and, for HTML, injects the
-// artifact runtime. Each path segment is encoded but the slashes are kept, so relative
-// assets inside a rendered page still resolve.
-//
-// When the file lives on a REMOTE location, its session + location ride in a sentinel
-// first path segment (`@ctx=<base64url>`) so the backend reads through that location's
-// executor — and, crucially, so a page's relative assets (which drop a query string but
-// keep the path prefix) inherit the same remote context. Local files omit it.
-export function artifactPageUrl(path: string, context?: { location?: string; session?: string }): string {
-  const normalized = path.replace(/^\/+/, "");
-  if (!normalized) return "";
-  const encoded = normalized.split("/").map(encodeURIComponent).join("/");
-  const location = context?.location ?? "";
-  // Only a genuinely remote location needs executor-backed serving; a local file is read
-  // straight off disk (the fast FileResponse path, with range support for PDFs).
-  if (location.startsWith("ssh://")) {
-    const payload = JSON.stringify({ s: context?.session ?? "", l: location });
-    const token = btoa(payload).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    return withDaemonToken(`${API_BASE}/artifact-page/@ctx=${token}/${encoded}`);
-  }
-  return withDaemonToken(`${API_BASE}/artifact-page/${encoded}`);
+// The URL that serves a local file for display — an attached image's thumbnail, a PDF
+// preview. Each path segment is encoded but the slashes are kept, so the path survives
+// intact. Carries the daemon token like every other request from the interface.
+export function localFileUrl(path: string): string {
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
+  return withDaemonToken(`${API_BASE}/files/${encoded}`);
 }
 
-// The URL that renders an external page. It is fetched and re-served from the
-// backend `/artifact-proxy` route with anti-framing headers (X-Frame-Options /
-// CSP frame-ancestors) stripped — otherwise sites that refuse to be framed (the
-// BBC, most news sites) render as a blank, blocked frame.
-export function artifactProxyUrl(url: string): string {
-  if (!url) return "";
-  return withDaemonToken(`${API_BASE}/artifact-proxy?url=${encodeURIComponent(url)}`);
-}
-
-// A generic uploaded file. Feature-agnostic: the core knows only the stored file and
-// its metadata, plus any image annotations the user has drawn (carried along to the
-// model when the message is sent). Skills layer their own meaning on top separately.
+// A generic uploaded file. Feature-agnostic: the core knows only the stored file and its
+// metadata. Skills layer their own meaning on top separately.
 export interface Attachment {
   upload_id: string;
   title: string;
@@ -336,7 +309,6 @@ export interface Attachment {
   mime_type: string;
   size: number;
   sha256: string;
-  annotations?: ArtifactImageAnnotation[];
 }
 
 export async function uploadFile(file: File): Promise<Attachment> {
@@ -539,10 +511,10 @@ export async function refreshRemoteAgent(name: string): Promise<{ health: string
 
 // Metadata key understood by a session's A2A surface.
 // A2A convention: an extension places its attributes under one URI-namespaced key in
-// the message `metadata` map, not as bare top-level keys. Mirrors DAISY_METADATA_KEY
+// the message `metadata` map, not as bare top-level keys. Mirrors FRANK_METADATA_KEY
 // / Metadata in the backend's protocol layer.
-export const DAISY_METADATA_KEY = "urn:daisy:ext:turn:v1";
-export const CONTENT_BLOCK_METADATA_KEY = "urn:daisy:ext:content-block:v1";
+export const FRANK_METADATA_KEY = "urn:frank:ext:turn:v1";
+export const CONTENT_BLOCK_METADATA_KEY = "urn:frank:ext:content-block:v1";
 
 export type PermissionMode = "default" | "auto" | "read_only";
 export type WorkspaceStrategy = "none" | "branch" | "worktree";
@@ -573,6 +545,7 @@ export interface AgentConfiguration {
   reasoning_effort: string;
   permission_mode: PermissionMode;
   tools_enabled: string[];
+  tools_disabled: string[];
   bash: AgentBashConfiguration;
   path: string;
 }
@@ -583,6 +556,7 @@ export interface SaveAgentConfigurationPayload {
   reasoning_effort?: string;
   permission_mode?: PermissionMode;
   tools_enabled?: string[];
+  tools_disabled?: string[];
   bash?: Partial<AgentBashConfiguration>;
 }
 
@@ -749,7 +723,7 @@ export async function fetchFullDiskAccess(): Promise<boolean> {
   }
 }
 
-// Open System Settings to the Full Disk Access pane so the user can add Daisy in one hop.
+// Open System Settings to the Full Disk Access pane so the user can add Frank in one hop.
 export async function openFullDiskAccessSettings(): Promise<void> {
   await apiFetch(`/system/full-disk-access/open`, { method: "POST" }).catch(() => {});
 }
@@ -766,7 +740,7 @@ export async function fetchAccessibility(): Promise<boolean> {
   }
 }
 
-// Trigger the system Accessibility prompt and open its pane so the user can grant Daisy.
+// Trigger the system Accessibility prompt and open its pane so the user can grant Frank.
 export async function openAccessibilitySettings(): Promise<void> {
   await apiFetch(`/system/accessibility/open`, { method: "POST" }).catch(() => {});
 }
@@ -774,11 +748,12 @@ export async function openAccessibilitySettings(): Promise<void> {
 // Restart the daemon so it picks up a new Accessibility grant, then reload the window against
 // it. Two steps, because they are two processes: macOS caches the trust check per process, and
 // the daemon is no longer the app's child, so restarting the window alone would change nothing.
-// The daemon replaces itself and every live session ends with it — `sessions_ended` says how
+// The daemon replaces itself. Sessions survive it — the registry is durable, so each live
+// session simply loses its process and comes back asleep — and `sessions_slept` says how
 // many, so a caller can warn before asking.
-export async function restartDaemon(): Promise<{ sessions_ended: number }> {
-  const result = await rpc<{ restarting: boolean; sessions_ended: number }>("daemon.restart", {});
-  return { sessions_ended: result?.sessions_ended ?? 0 };
+export async function restartDaemon(): Promise<{ sessions_slept: number }> {
+  const result = await rpc<{ restarting: boolean; sessions_slept: number }>("daemon.restart", {});
+  return { sessions_slept: result?.sessions_slept ?? 0 };
 }
 
 // Quit and relaunch the desktop app (Tauri command), so the webview reconnects to whatever
@@ -819,7 +794,7 @@ export interface ModelsResponse {
   providers: ProviderOption[];
 }
 
-// API credentials stored in the daemon's configuration.yaml (under $XDG_CONFIG_HOME/daisy).
+// API credentials stored in the daemon's configuration.yaml (under $XDG_CONFIG_HOME/frank).
 export async function fetchSettings(): Promise<Settings> {
   const response = await apiFetch(`/settings`);
   if (!response.ok) {
@@ -922,182 +897,6 @@ export async function startChatGPTLogin(): Promise<{ authorize_url: string }> {
 
 export async function signOutChatGPT(): Promise<void> {
   await apiFetch(`/auth/chatgpt`, { method: "DELETE" });
-}
-
-export async function fetchArtifactAnnotations(contextId: string): Promise<ArtifactAnnotationRecord[]> {
-  if (!contextId) return [];
-  const response = await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifact-annotations`);
-  if (!response.ok) return [];
-  const data = await response.json();
-  return Array.isArray(data.records) ? data.records as ArtifactAnnotationRecord[] : [];
-}
-
-export async function saveArtifactAnnotations(contextId: string, record: ArtifactAnnotationRecord): Promise<void> {
-  if (!contextId) return;
-  await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifact-annotations`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      surface_id: record.image.artifactId,
-      version_id: record.image.versionId,
-      annotations: record.annotations,
-      updated_at: record.updatedAt,
-    }),
-  });
-}
-
-export async function deleteArtifactAnnotations(contextId: string, surfaceId: string, versionId: string): Promise<void> {
-  if (!contextId || !surfaceId || !versionId) return;
-  const query = `surface_id=${encodeURIComponent(surfaceId)}&version_id=${encodeURIComponent(versionId)}`;
-  await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifact-annotations?${query}`, {
-    method: "DELETE",
-  });
-}
-
-// The change kind a version records against its predecessor: added, modified, or deleted.
-export type ArtifactChangeType = "A" | "M" | "D";
-
-// A version's byte source is a git blob (a file version) identified by
-// `(locationUri, gitDirectory, blobSha)`, streamed from the backend. `download`
-// sets an attachment Content-Disposition so the browser saves rather than renders.
-export function artifactBytesUrl(options: {
-  location: string;
-  gitDirectory: string;
-  sha: string;
-  session: string;
-  download?: string;
-}): string {
-  const params = new URLSearchParams();
-  params.set("location", options.location);
-  params.set("git_directory", options.gitDirectory);
-  params.set("sha", options.sha);
-  params.set("session", options.session);
-  if (options.download) params.set("download", options.download);
-  return withDaemonToken(`${API_BASE}/artifact-bytes?${params.toString()}`);
-}
-
-// The whole artifact catalog for a session: the file-history index (every changed
-// file, for History mode) plus the surfaces the agent explicitly opened as tabs.
-// `scope` = "session" limits to this session's writes; "full" spans all sessions.
-export interface ArtifactIndexEntry {
-  gitDirectory: string;
-  relativePath: string;
-  absolutePath: string;
-  locationUri: string;
-  workTree: string;
-  versionCount: number;
-  latestCommit: string;
-  latestBlob: string;
-  latestChange: ArtifactChangeType;
-  size: number;
-  isPlaceholder: boolean;
-  updatedAt: string;
-  surfaced: boolean;
-  kind: "image" | "html" | "file";
-  artifactId: string;
-  title: string;
-}
-
-export interface ArtifactSurface {
-  artifactId: string;
-  kind: "image" | "html" | "iframe" | "file";
-  title: string;
-  source: string;
-  gitDirectory: string;
-  workTree: string;
-  relativePath: string;
-  absolutePath: string;
-  locationUri: string;
-  latestCommit: string;
-  latestBlob: string;
-  toolCallId: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ArtifactVersion {
-  versionId: string;
-  commitSha: string;
-  blobSha: string;
-  sequence: number;
-  changeType: ArtifactChangeType;
-  size: number;
-  isPlaceholder: boolean;
-  createdAt: string;
-  message: string;
-  toolCallId: string;
-  gitDirectory: string;
-  relativePath: string;
-  locationUri: string;
-  workTree: string;
-  annotationCount: number;
-}
-
-export type ArtifactScope = "session" | "full";
-
-export async function fetchArtifacts(
-  contextId: string,
-  scope: ArtifactScope = "session",
-): Promise<{ artifacts: ArtifactIndexEntry[]; surfaces: ArtifactSurface[] }> {
-  if (!contextId) return { artifacts: [], surfaces: [] };
-  const response = await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifacts?scope=${scope}`);
-  if (!response.ok) return { artifacts: [], surfaces: [] };
-  const data = await response.json();
-  return {
-    artifacts: Array.isArray(data.artifacts) ? (data.artifacts as ArtifactIndexEntry[]) : [],
-    surfaces: Array.isArray(data.surfaces) ? (data.surfaces as ArtifactSurface[]) : [],
-  };
-}
-
-export async function fetchArtifactVersions(
-  contextId: string,
-  gitDirectory: string,
-  relativePath: string,
-  scope: ArtifactScope = "session",
-): Promise<ArtifactVersion[]> {
-  if (!contextId || !relativePath) return [];
-  const params = new URLSearchParams({ git_directory: gitDirectory, relative_path: relativePath, scope });
-  const response = await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifacts/versions?${params.toString()}`);
-  if (!response.ok) return [];
-  const data = await response.json();
-  return Array.isArray(data.versions) ? (data.versions as ArtifactVersion[]) : [];
-}
-
-export async function fetchArtifactDiff(
-  contextId: string,
-  options: { gitDirectory: string; relativePath: string; fromCommit: string; toCommit: string; location: string },
-): Promise<string> {
-  if (!contextId) return "";
-  const params = new URLSearchParams({
-    git_directory: options.gitDirectory,
-    relative_path: options.relativePath,
-    from_commit: options.fromCommit,
-    to_commit: options.toCommit,
-    location: options.location,
-  });
-  const response = await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifacts/diff?${params.toString()}`);
-  if (!response.ok) return "";
-  const data = await response.json();
-  return String(data.diff ?? "");
-}
-
-export async function restoreArtifact(
-  contextId: string,
-  options: { locationUri: string; gitDirectory: string; workTree: string; relativePath: string; commitSha: string },
-): Promise<boolean> {
-  if (!contextId) return false;
-  const response = await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifacts/restore`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      location_uri: options.locationUri,
-      git_directory: options.gitDirectory,
-      work_tree: options.workTree,
-      relative_path: options.relativePath,
-      commit_sha: options.commitSha,
-    }),
-  });
-  return response.ok;
 }
 
 export type SandboxEnforce = "required" | "preferred" | "off";
@@ -1236,11 +1035,15 @@ export interface SessionSummary {
   id: string;
   agent: string;
   parent: string;
-  // starting | running | exited — the process's own lifecycle, not the turn's.
-  status: string;
-  // Whether a turn is actually in flight. A session's process stays alive between
-  // messages, so `status: "running"` means "there is a process", not "it is working".
-  busy: boolean;
+  // Does this session still exist? `live` or `ended`. Durable — it survives a daemon
+  // restart, because a session is a record and only its process was ever transient.
+  lifecycle: "live" | "ended";
+  // What it is doing right now, derived by the daemon and never stored: `working` (a turn
+  // is in flight), `waiting` (parked on a decision only a person can make), `idle` (has a
+  // process, doing nothing), `asleep` (no process — the next message forks one), or `ended`.
+  activity: "working" | "waiting" | "idle" | "asleep" | "ended";
+  // How an ended session finished: `exited` or `failed`. Empty while it is live.
+  outcome: string;
   awaiting_input: boolean;
   title: string;
   working_directory: string;
@@ -1337,9 +1140,8 @@ export async function sessionSend(
   return data.task_id ?? "";
 }
 
-// The parts a turn carries: the typed prose plus any structured payloads (attachments,
-// artifact interactions, image annotations), which travel as DataParts so the agent
-// receives them as JSON rather than as prose.
+// The parts a turn carries: the typed prose plus any structured payloads (attachments),
+// which travel as DataParts so the agent receives them as JSON rather than as prose.
 export function messageParts(text: string, dataParts?: Record<string, unknown>[]): A2APart[] {
   const parts: A2APart[] = [];
   if (text) parts.push({ kind: "text", text });
@@ -1658,7 +1460,7 @@ export interface A2APart {
 // A turn's control-state lives under one URI-namespaced key in `Task.metadata`, which is
 // A2A's convention for an extension's attributes. The names inside it are plain: the
 // namespace has already said whose they are.
-export const TURN_STATE_KEY = "urn:daisy:ext:turn:v1";
+export const TURN_STATE_KEY = "urn:frank:ext:turn:v1";
 
 // What opened a turn. `peer` is a message from another session — a peer reporting its
 // result, or a parent following up — and is emphatically not the user speaking.

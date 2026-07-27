@@ -18,7 +18,7 @@ export interface ConnectionProfile {
   kind: ConnectionKind;
   createdAt: string;
   lastUsedAt: string | null;
-  // The capability token of the daemon this profile points at. Each `daisyd` mints its
+  // The capability token of the daemon this profile points at. Each `frankd` mints its
   // own on startup and publishes it in its runtime directory, so a remote host's token
   // is not something this machine can read — the user copies it in when saving the
   // profile, and it is stored here beside the address it belongs to.
@@ -34,9 +34,9 @@ export interface ConnectionProfile {
 }
 
 const DATABASE_NAME = "sqlite:internal.db";
-const LOCAL_STORAGE_CONNECTIONS = "daisy.connections";
-const LOCAL_STORAGE_APP_STATE = "daisy.appState";
-const LOCAL_STORAGE_SESSION_CONNECTIONS = "daisy.sessionConnections";
+const LOCAL_STORAGE_CONNECTIONS = "frank.connections";
+const LOCAL_STORAGE_APP_STATE = "frank.appState";
+const LOCAL_STORAGE_SESSION_CONNECTIONS = "frank.sessionConnections";
 
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
