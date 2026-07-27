@@ -100,6 +100,52 @@ def workspaces_directory() -> Path:
     return path
 
 
+def oauths_directory() -> Path:
+    """The OAuth token files, one per provider that signs in rather than taking a key.
+
+    Created 0700, unlike the other data subdirectories, because it holds nothing but
+    password-equivalent secrets. The token files are written 0600 themselves; the mode here
+    is so a file added to this directory later is protected by where it lives rather than by
+    whoever remembers to chmod it."""
+    path = data_directory() / "oauths"
+    path.mkdir(parents=True, exist_ok=True)
+    path.chmod(0o700)
+    return path
+
+
+# A token file that predates the ``oauths`` directory, by the provider that wrote it. Only
+# the ChatGPT provider has an entry: it is the only one that shipped with tokens beside the
+# databases, and nothing else was ever written under the old layout.
+_LEGACY_OAUTH_FILENAMES = {"chatgpt": "chatgpt_auth.json"}
+
+
+def oauth_token_path(provider_identifier: str) -> Path:
+    """One provider's OAuth tokens (``…/daisy/oauths/<provider>.json``).
+
+    Relocates a file from the flat pre-``oauths`` layout on first use. The move is here
+    rather than in either credentials module because this is where the layout is decided,
+    and it happens at all because the alternative is silently signing an upgrading user out
+    of a subscription they are paying for. Both paths are under the same directory, so the
+    rename is atomic and carries the file's 0600 mode with it."""
+    path = oauths_directory() / f"{provider_identifier}.json"
+    legacy_path = legacy_oauth_token_path(provider_identifier)
+    if legacy_path is not None and not path.exists() and legacy_path.exists():
+        legacy_path.replace(path)
+    return path
+
+
+def legacy_oauth_token_path(provider_identifier: str) -> Path | None:
+    """Where this provider's tokens lived before the ``oauths`` directory, or ``None`` for a
+    provider that never wrote one.
+
+    Exposed so signing out can delete it too. The relocation above fires on *every* read,
+    not just the first one after an upgrade, so a sign-out that removed only the new file
+    would leave a stale old one to be adopted on the next read — signing the account back
+    in, which is the one thing a sign-out must not do."""
+    legacy_name = _LEGACY_OAUTH_FILENAMES.get(provider_identifier, "")
+    return data_directory() / legacy_name if legacy_name else None
+
+
 def daemon_socket_path() -> Path:
     return runtime_directory() / DAEMON_SOCKET_FILENAME
 

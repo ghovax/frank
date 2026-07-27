@@ -18,11 +18,11 @@ easier than the ChatGPT flow rather than harder — a sign-in cannot fail with "
 1455 is in use", because there is no port.
 
 Everything else is deliberately the same shape as the ChatGPT module, so the two read
-as one idea with two backends: tokens live in ``~/.daisy/cursor_auth.json`` (mode
-0600), outside ``configuration.yaml`` because that file is digest-synced and would
-thrash on every silent refresh; a single lock serialises refreshes so concurrent turns
-cannot stampede; and :func:`valid_tokens` is the only way the rest of the harness gets
-a token, so a refresh is invisible to callers.
+as one idea with two backends: tokens live in the OAuth token directory as
+``oauths/cursor.json`` (mode 0600), outside ``configuration.yaml`` because that file is
+digest-synced and would thrash on every silent refresh; a single lock serialises refreshes
+so concurrent turns cannot stampede; and :func:`valid_tokens` is the only way the rest of
+the harness gets a token, so a refresh is invisible to callers.
 
 Consequences, kept visible as they are for ChatGPT:
   * This rides on Cursor's own CLI login path. There is no published API for using a
@@ -52,7 +52,7 @@ from typing import Optional
 
 import httpx
 
-from daisy.base.paths import data_directory
+from daisy.base.paths import oauth_token_path
 from daisy.base.tuning import Tunable, active_tuning
 
 # Cursor's own login surface and API host. Neither is a secret — they are the addresses
@@ -65,7 +65,7 @@ POLL_URL = f"{API_BASE_URL}/auth/poll"
 # refresh token to in order to mint a fresh access token.
 REFRESH_URL = f"{API_BASE_URL}/auth/exchange_user_api_key"
 
-AUTH_FILENAME = "cursor_auth.json"
+PROVIDER = "cursor"
 
 # How the login poll paces itself, mirroring the Cursor CLI's own backoff: gentle
 # growth from a second up to ten, and a total window long enough for a human to find
@@ -106,7 +106,7 @@ class CursorTokens:
 
 
 def auth_file_path() -> Path:
-    return data_directory() / AUTH_FILENAME
+    return oauth_token_path(PROVIDER)
 
 
 def load_tokens() -> Optional[CursorTokens]:

@@ -10,8 +10,8 @@ Consequences, kept deliberately visible:
   * It rides on Codex's public client id and the account-scoped tokens Codex
     itself mints. OpenAI can invalidate this pattern at any time (Anthropic banned
     the equivalent for Claude in Feb 2026); treat it as fragile, not stable.
-  * The tokens here are password-equivalent. They are stored in
-    ``~/.daisy/chatgpt_auth.json`` (mode 0600), deliberately **outside**
+  * The tokens here are password-equivalent. They are stored in the OAuth token
+    directory as ``oauths/chatgpt.json`` (mode 0600), deliberately **outside**
     ``configuration.yaml`` — the config file is watched/digest-synced and would
     thrash on every silent token refresh, and secrets do not belong in the synced
     single-source-of-truth.
@@ -42,7 +42,7 @@ from typing import Optional
 
 import httpx
 
-from daisy.base.paths import data_directory
+from daisy.base.paths import legacy_oauth_token_path, oauth_token_path
 from daisy.base.tuning import Tunable, active_tuning
 
 # Codex's public OAuth client and endpoints. The client id is not a secret — it is
@@ -59,7 +59,7 @@ REDIRECT_PATH = "/auth/callback"
 REDIRECT_URI = f"http://localhost:{REDIRECT_PORT}{REDIRECT_PATH}"
 SCOPE = "openid profile email offline_access"
 
-AUTH_FILENAME = "chatgpt_auth.json"
+PROVIDER = "chatgpt"
 
 # Serializes token refreshes: many concurrent turns can each notice an expiring
 # token at once, and we want exactly one refresh + write, not a stampede.
@@ -84,7 +84,7 @@ class ChatGPTTokens:
 
 
 def auth_file_path() -> Path:
-    return data_directory() / AUTH_FILENAME
+    return oauth_token_path(PROVIDER)
 
 
 def load_tokens() -> Optional[ChatGPTTokens]:
@@ -109,6 +109,11 @@ def save_tokens(tokens: ChatGPTTokens) -> None:
 
 def clear_tokens() -> None:
     auth_file_path().unlink(missing_ok=True)
+    # The pre-``oauths`` file as well, when one is still on disk. This provider is the only
+    # one with an older layout to forget, and forgetting it is the point: the relocation in
+    # `oauth_token_path` would otherwise adopt it on the next read and undo the sign-out.
+    if (legacy_path := legacy_oauth_token_path(PROVIDER)) is not None:
+        legacy_path.unlink(missing_ok=True)
 
 
 def is_signed_in() -> bool:

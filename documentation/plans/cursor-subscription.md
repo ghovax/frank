@@ -1,6 +1,6 @@
 ---
 created: 2026-07-26T23:52:40Z
-updated: 2026-07-26T23:52:40Z
+updated: 2026-07-27T00:14:00Z
 commit: 98560a9
 ---
 
@@ -89,5 +89,7 @@ So there is a short hand-written list, and it exists for exactly one purpose —
 ## The thing to be careful about
 
 This rides on the login flow Cursor's own CLI uses, against a service with no published contract for other clients. There is no version of this that is stable, and the ChatGPT provider's own history is the precedent: Anthropic banned the equivalent for Claude in February 2026. It is offered as an experiment, labelled as one in the interface, and the tokens it stores are password-equivalent and written mode 0600 outside the synced configuration file for the same reason the ChatGPT ones are.
+
+Having two of these is also what turned one file into a folder. A single `chatgpt_auth.json` beside the databases was fine when it was the only one; two of them, with more likely, is a naming convention pretending to be a directory. So both now live in `oauths/`, one file per provider, in a directory created 0700 so a token added there later is protected by where it lives rather than by whoever remembers to chmod it. A file left over from the flat layout is moved in on first use, and signing out deletes it as well as the new one — the relocation fires on every read, not only after an upgrade, so a sign-out that forgot the old file would let the next read sign the account back in.
 
 And it is unverified against the live service. Every piece that can be checked without a Cursor subscription has been: the wire codec round-trips, the framing survives arbitrary chunk boundaries, the built turn parses back to the structure the descriptor describes, and the checksum matches the reference byte for byte. What has not been checked is whether Cursor accepts it — which needs a paid account, and is the first thing to do with one.
