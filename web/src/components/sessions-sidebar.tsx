@@ -304,6 +304,7 @@ function SessionTreeRow({
                   </Box>
                 </Tooltip>
               }
+              actionsOverlay
               actions={
                 <Box data-row-actions opacity={0} pointerEvents="none" transition="opacity 0.12s">
                   <DropdownMenu

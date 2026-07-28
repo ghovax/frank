@@ -30,6 +30,12 @@ export interface DisclosureRowProps {
   // Trailing chips, right of the label and left of the chevron.
   badges?: ReactNode;
   actions?: ReactNode;
+  // Lay the actions over the row's right edge instead of beside the title. A row whose
+  // actions only appear on hover should not spend that width while they are invisible —
+  // otherwise every title is permanently shortened by controls nobody can see, and hovering
+  // shortens it again. Callers whose actions are always visible leave this off and keep the
+  // ordinary side-by-side layout.
+  actionsOverlay?: boolean;
   // The disclosure body. Absent ⇒ the row is a plain, non-clickable line.
   children?: ReactNode;
   // Controlled open state; omit to let the row own it (with `defaultOpen`).
@@ -80,6 +86,7 @@ export function DisclosureRow({
   title,
   badges,
   actions,
+  actionsOverlay = false,
   children,
   open,
   defaultOpen = false,
@@ -146,6 +153,7 @@ export function DisclosureRow({
         w={fill ? "full" : "fit-content"}
         maxW="100%"
         minW={0}
+        position={actionsOverlay ? "relative" : undefined}
       >
         {interactive ? (
           <Button
@@ -190,6 +198,9 @@ export function DisclosureRow({
             align="center"
             gap={0.5}
             flexShrink={0}
+            {...(actionsOverlay
+              ? { position: "absolute" as const, right: 0, top: "50%", transform: "translateY(-50%)" }
+              : {})}
             // Callers wrap their controls in a plain Box, which is a block box — so the
             // inline-flex button inside it sat on the *text baseline*, about 1.7px below the
             // centre, and every trailing ⋯ in the app rode low against the label beside it.
