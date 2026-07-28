@@ -106,12 +106,12 @@ Every durable thing is a seam: `checkpoints`, `jobs`, `transcript`, `approvals`,
 
 ### From the terminal
 
-```
-frank create --agent general-assistant --directory ~/code/project   # prints a session id
-frank send <id> "what does this project do?" --wait
-frank ps                                                            # what is running, and what waits on you
-frank attach <id>                                                   # follow it live
-```
+| Command | What it does |
+|---|---|
+| `frank create --agent general-assistant --directory ~/code/project` | Creates a session and prints its id |
+| `frank send <id> "what does this project do?" --wait` | Sends it work and waits for the answer |
+| `frank ps` | Shows what runs, and what waits on you |
+| `frank attach <id>` | Follows it live |
 
 A session composes over the API, not over this command. `create_session` makes a peer and gives it a brief. `message_session` reaches a session in either direction. `end_session` stops one.
 

@@ -62,14 +62,14 @@ A message that arrives while the session is mid-turn is **injected into that tur
 
 ## Watching
 
-```
-frank ps [-a|--all]          # what exists; --all includes sessions that have ended
-frank get <session>          # one session in detail
-frank tree <session>         # a session and everything it created
-frank attach <session>       # follow it live until you interrupt
-frank wait <session>         # block until idle, then print the result
-frank history <session> [-n N]
-```
+| Command | What it does |
+|---|---|
+| `frank ps [-a\|--all]` | Shows what exists. `--all` includes sessions that ended |
+| `frank get <session>` | One session in detail |
+| `frank tree <session>` | A session and everything it created |
+| `frank attach <session>` | Follow it live until you interrupt |
+| `frank wait <session>` | Block until idle, then print the result |
+| `frank history <session> [-n N]` | Prints the last N turns |
 
 `ps` prints the session records as a JSON array. Three fields between them say what a session is, and they are separate because they answer genuinely different questions:
 
@@ -165,14 +165,14 @@ The app is addressed by bundle identifier rather than by name, so renaming or mo
 
 ## Serving, and the daemon
 
-```
-frank serve                             # start the control plane and detach
-frank serve --foreground                # run it here instead, for a log or a supervisor
-frank daemon status                     # what it is running, and where
-frank daemon stop                       # stop it, and its sessions' processes with it
-frank daemon restart                    # replace it; your sessions survive
-frank daemon endpoint                   # the loopback port and capability token
-```
+| Command | What it does |
+|---|---|
+| `frank serve` | Start the control plane and detach |
+| `frank serve --foreground` | Run it here instead, for a log or a supervisor |
+| `frank daemon status` | What it is running, and where |
+| `frank daemon stop` | Stop it, and its sessions' processes with it |
+| `frank daemon restart` | Replace it; your sessions survive |
+| `frank daemon endpoint` | The loopback port and capability token |
 
 `serve` starts it; `daemon` inspects one that is already there. They are separate verbs because they are separate acts. To start the API is not a kind of introspection. Grouped under one noun, `daemon start` read like a subcommand of looking at it. Any other command also starts a daemon if none is running, so `serve` is for wanting it up on its own.
 
@@ -196,13 +196,13 @@ ssh workstation frank daemon endpoint
 
 ## Configuration
 
-```
-frank configure --all                    # every setting there is, with its default
-frank configure                          # only what you have changed
-frank configure agent.permission_mode    # read one
-frank configure agent.permission_mode read_only
-frank configure agent.permission_mode --unset
-```
+| Command | What it does |
+|---|---|
+| `frank configure --all` | Every setting there is, with its default |
+| `frank configure` | Only what you have changed |
+| `frank configure agent.permission_mode` | Read one |
+| `frank configure agent.permission_mode read_only` | Set one |
+| `frank configure agent.permission_mode --unset` | Remove one, back to its default |
 
 `--all` walks the **schema**. It therefore lists every setting that exists, not only the ones somebody wrote down. The output is a JSON object of dotted path to `{about, default, current}`. That is usually what you want. To read the file shows only the part you already know about. A setting left at its default was otherwise invisible.
 
@@ -249,9 +249,9 @@ The CLI is the ergonomic face of the control plane. It may be idiomatic where th
 | `kill` | `session.end` |
 | `remote` | `remote.list` / `remote.send` |
 | `daemon status` | `daemon.status` |
-| `serve` | starts `frankd` — no method, it *is* the thing being started |
-| `run` | none: it drives `frank.Session` in this process, with no daemon at all |
-| `auth` | none: it writes the credential file the harness reads |
+| `serve` | Starts `frankd` — no method, it *is* the thing being started |
+| `run` | None: it drives `frank.Session` in this process, with no daemon at all |
+| `auth` | None: it writes the credential file the harness reads |
 
 ## One turn, without a daemon
 
