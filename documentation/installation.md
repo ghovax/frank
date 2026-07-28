@@ -15,7 +15,7 @@ The app is **self-signed, not Apple-notarized**. macOS Gatekeeper refuses the fi
 - **Right-click** `Frank.app` → **Open** → **Open** in the dialog, or
 - from a terminal:
 
-  ```sh
+  ```shell
   xattr -dr com.apple.quarantine /Applications/Frank.app
   ```
 

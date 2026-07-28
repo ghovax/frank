@@ -139,7 +139,7 @@ session = Session(reviewer, directory="/srv/checkout", checkpoints=RedisCheckpoi
 
 That class inherits nothing and imports nothing of ours. The harness accepts it because it has `save` and `load`. One that lacks `load` fails at the constructor, by name:
 
-```
+```text
 TypeError: checkpoints: RedisCheckpoints does not satisfy Checkpoints: it is missing `load`.
 ```
 
@@ -197,7 +197,7 @@ async with Session(reviewer, directory=".") as session:
 
 Under-specify it and the error says what to do rather than failing obscurely:
 
-```
+```text
 ValueError: Agent 'reviewer' names no model. Set `provider` and `model` in its profile, pass
 `model_identifier="provider/model"` to `frank.Session`, or hand the runtime a `model=` of your own.
 ```

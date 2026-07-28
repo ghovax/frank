@@ -14,7 +14,7 @@ The daemon starts itself on your first command. There is no mandatory "start the
 
 A **session** is one OS process running one agent. You create it empty, send it work, and read what it produced. Creating and working are separate steps on purpose: the same session takes a second task, can be attached to, and can be inspected in between.
 
-```sh
+```shell
 id=$(frank create --agent general-assistant --directory ~/code/project)
 frank send "$id" "what does this project do?" --wait
 frank ps
@@ -24,7 +24,7 @@ frank ps
 
 ## Creating a session
 
-```
+```text
 frank create [-a AGENT] [-C DIRECTORY] [-m MODE] [-p PROJECT] [-P PARENT] [-t TITLE]
 ```
 
@@ -43,13 +43,13 @@ A session created without a mode gets the configured default; a session created 
 
 ## Sending work
 
-```
+```text
 frank send <session> <message> [-w|--wait]
 ```
 
 Pass `-` as the message to read it from stdin, which is how you send a file or a heredoc:
 
-```sh
+```shell
 frank send "$id" - <<'EOF'
 Review the diff on this branch. Report anything that changes behaviour
 without a test, and say what you would add.
@@ -81,7 +81,7 @@ A message that arrives while the session is mid-turn is **injected into that tur
 
 A session with no process is the normal resting state, not an error. An idle session sleeps immediately, and to wake it is a fork. Reads never wake anything. The record and the turn store answer `get`, `ps`, `tree`, `history` and `attach`. To look at a sleeping session therefore leaves it asleep.
 
-```sh
+```shell
 frank ps | jq -r '.[] | select(.awaiting_input) | .id'
 ```
 
@@ -96,7 +96,7 @@ frank ps | jq -r '.[] | select(.awaiting_input) | .id'
 
 It ends when the session does; interrupt it with Ctrl-C to stop watching without affecting the session. Because each frame is a complete line, `jq` and friends consume it incrementally:
 
-```sh
+```shell
 frank attach "$id" | jq -r 'select(.kind == "live") | .part.text // empty'
 ```
 
@@ -104,7 +104,7 @@ frank attach "$id" | jq -r 'select(.kind == "live") | .part.text // empty'
 
 When a session needs permission it parks, `awaiting_input` goes true, and `attach` emits a frame carrying the request and its id. Answer it with that id:
 
-```
+```text
 frank approve <session> <request> [-d|--deny]
 ```
 
@@ -112,7 +112,7 @@ There is no "always allow" and no bypass mode: every decision is allow-once or d
 
 ## Ending a session
 
-```
+```text
 frank kill <session>
 ```
 
@@ -184,13 +184,24 @@ A daemon that was already running when you granted the permission therefore neve
 
 ### Inspecting it
 
-`frank daemon status` reports whether the daemon is up, how many sessions it knows about, and the prototype's health. That includes its native thread count and its frozen-object count. Those two invariants fail silently.
+`frank daemon status` reports whether the daemon is up, how many sessions it knows about, and the prototype's health:
+
+```console
+$ frank daemon status
+{"ok":true,"sessions":{"live":64,"total":73},"prototype":{"alive":true,"pid":30054,
+ "threads":1,"frozen_objects":18422,"sessions":0},"port":56826,
+ "image":{"executable":"…/frank","frozen":true}}
+```
+
+`threads` and `frozen_objects` are the two invariants that fail silently. The prototype must be
+single-threaded to fork at all, and its heap must be frozen or the saving disappears without
+anything breaking.
 
 `status` never starts anything — a status check that silently launched the service could never report the absence it was asked about. Pass `--start` if you want that.
 
 `endpoint` prints a secret, which is why it is a verb you ask for rather than something `status` volunteers. It is what you need to point a desktop client at a daemon over SSH:
 
-```sh
+```shell
 ssh workstation frank daemon endpoint
 ```
 
@@ -255,7 +266,7 @@ The CLI is the ergonomic face of the control plane. It may be idiomatic where th
 
 ## One turn, without a daemon
 
-```sh
+```shell
 frank run "what does this project do?"
 frank run -C ~/code/project --agent reviewer "what changed and is it safe?"
 echo "summarise this" | frank run -

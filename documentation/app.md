@@ -6,7 +6,7 @@ the command can do, and the reverse.
 
 Start it with the daemon in one step:
 
-```sh
+```shell
 frank app
 ```
 

@@ -24,14 +24,14 @@ The Python harness runs from a local virtualenv managed with [uv](https://docs.a
 
 The CLI starts the daemon on its first command, so usually there is nothing to launch:
 
-```sh
+```shell
 uv run frank create --agent general-assistant --directory ~/code/project
 uv run frank send <id> "what does this project do?" --wait
 ```
 
 The [`frank` command](cli.md) is the full surface. To run the daemon in the foreground instead — the fastest way to watch a traceback — start it by name:
 
-```sh
+```shell
 uv run python -m frank frankd
 ```
 
@@ -90,13 +90,13 @@ There are **two artifacts**, built independently, because the app is a client of
 
 Build the daemon first. It is one image with three entry points: the daemon, the CLI, and the prototype. Set `FORCE=1` to rebuild when the freshness guard says the build is current.
 
-```sh
+```shell
 packaging/build-daemon.sh
 ```
 
 Then the desktop app, which is a Tauri shell with no Python in it at all:
 
-```sh
+```shell
 cd web && bun run tauri:build
 ```
 
@@ -114,13 +114,13 @@ The screen-control tools (`control_screen`) need the macOS **Accessibility** gra
 
 Create the self-signed identity in your login keychain once:
 
-```sh
+```shell
 packaging/create-signing-cert.sh
 ```
 
 Then sign after each build, either artifact or both:
 
-```sh
+```shell
 packaging/sign-app.sh "packaging/dist/Frank Computer Use.app"
 packaging/sign-app.sh web/src-tauri/target/release/bundle/macos/Frank.app
 ```
@@ -129,7 +129,7 @@ The daemon is signed `--deep` with `packaging/Entitlements.plist`. It sends Appl
 
 ### Installing the daemon
 
-```sh
+```shell
 ditto "packaging/dist/Frank Computer Use.app" "/Applications/Frank Computer Use.app"
 ln -sf "/Applications/Frank Computer Use.app/Contents/MacOS/frank" /usr/local/bin/frank
 ```
