@@ -185,11 +185,20 @@ class _PermissionsMixin:
         """
         return rule == "ask" or model_risk in ("medium", "high")
 
-    def _new_permission_request_id(self) -> str:
-        return f"perm-{self._session_id}-{uuid.uuid4()}"
+    def _new_permission_request_id(self, tool_call_id: str = "") -> str:
+        """The id a person's answer is filed under. Derived from the call, not minted fresh.
 
-    def _new_question_request_id(self) -> str:
-        return f"q-{self._session_id}-{uuid.uuid4()}"
+        Preflight runs again when a suspended turn resumes — the batch has not executed, so it
+        is planned again — and a random id meant the resumed plan asked under a *new* name while
+        the answer sat under the old one. Nothing matched, so the turn re-gated and ended without
+        running the tool, and the person who had just clicked Allow was told their request was no
+        longer active. Deriving it from the tool call makes the second ask the same ask.
+        """
+        return f"perm-{self._session_id}-{tool_call_id or uuid.uuid4()}"
+
+    def _new_question_request_id(self, tool_call_id: str = "") -> str:
+        """Stable for the same reason, and by the same means, as the permission id above."""
+        return f"q-{self._session_id}-{tool_call_id or uuid.uuid4()}"
 
     async def _preflight_permissions(
         self, tool_calls: list[dict]
@@ -318,7 +327,7 @@ class _PermissionsMixin:
                         self._record_event("bash_auto_approved", {"command": raw_command, "reason": decision.explanation, "risk": decision.risk})
                     else:
                         plan.gates.append(_PreflightGate(
-                            request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                            request_id=self._new_permission_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
                             kind="permission", command=raw_command,
                             explanation=decision.explanation or sandbox_message, risk=decision.risk, is_bash=True,
                             deny_message="Sandbox read was not approved by the user.",
@@ -328,7 +337,7 @@ class _PermissionsMixin:
                         plan.denial = {"code": "", "message": "Sandbox read denied by the default permission policy.", "denied_injection": False, "raw_command": raw_command}
                         return plan
                     plan.gates.append(_PreflightGate(
-                        request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                        request_id=self._new_permission_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
                         kind="permission", command=raw_command, explanation=sandbox_message, risk="medium", is_bash=True,
                         deny_message="Sandbox read was not approved by the user.",
                     ))
@@ -361,14 +370,14 @@ class _PermissionsMixin:
                         self._record_event("bash_auto_approved", {"command": raw_command, "reason": decision.explanation, "risk": decision.risk})
                     else:
                         plan.gates.append(_PreflightGate(
-                            request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                            request_id=self._new_permission_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
                             kind="permission", command=raw_command,
                             explanation=decision.explanation or explanation, risk=decision.risk, is_bash=True,
                             deny_message="Command was not approved by the user.",
                         ))
                 else:
                     plan.gates.append(_PreflightGate(
-                        request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                        request_id=self._new_permission_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
                         kind="permission", command=raw_command, explanation=explanation, risk=risk, is_bash=True,
                         deny_message="Command was not approved by the user.",
                     ))
@@ -397,14 +406,14 @@ class _PermissionsMixin:
                         })
                     else:
                         plan.gates.append(_PreflightGate(
-                            request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                            request_id=self._new_permission_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
                             kind="permission", command=action,
                             explanation=decision.explanation or explanation, risk=decision.risk,
                             deny_message="MCP tool call not approved by user",
                         ))
                 else:
                     plan.gates.append(_PreflightGate(
-                        request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                        request_id=self._new_permission_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
                         kind="permission", command=action, explanation=explanation, risk=risk,
                         deny_message="MCP tool call not approved by user",
                     ))
@@ -412,7 +421,7 @@ class _PermissionsMixin:
 
         if tool_name == "ask_user":
             plan.gates.append(_PreflightGate(
-                request_id=self._new_question_request_id(), tool_call_id=tool_call_identifier,
+                request_id=self._new_question_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
                 kind="question", questions=tool_arguments.get("questions", []) or [],
             ))
             return plan
@@ -441,14 +450,14 @@ class _PermissionsMixin:
                         self._record_event("screen_auto_approved", {"reason": decision.explanation, "risk": decision.risk})
                     else:
                         plan.gates.append(_PreflightGate(
-                            request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                            request_id=self._new_permission_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
                             kind="permission", command="control_screen",
                             explanation=decision.explanation or explanation, risk=decision.risk,
                             deny_message="Screen action not approved by user",
                         ))
                 else:
                     plan.gates.append(_PreflightGate(
-                        request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                        request_id=self._new_permission_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
                         kind="permission", command="control_screen", explanation=explanation, risk=risk or "medium",
                         deny_message="Screen action not approved by user",
                     ))
@@ -464,7 +473,7 @@ class _PermissionsMixin:
             if self._tool_risk == "none" or not self._permission_mode.is_interactive:
                 return plan
             plan.gates.append(_PreflightGate(
-                request_id=self._new_permission_request_id(),
+                request_id=self._new_permission_request_id(tool_call_identifier),
                 tool_call_id=tool_call_identifier,
                 kind="permission",
                 command=tool_name,
