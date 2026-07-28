@@ -18,6 +18,8 @@
 // moved to 8824 while every client here still said 8823, which left the browser interface
 // unable to reach a local daemon at all while the packaged app, which reads the real port
 // out of the runtime directory, carried on working and hid it.
+import { swallowed } from "./swallowed";
+
 export const LOCAL_DAEMON_PORT = 8824;
 export const LOCAL_DAEMON_URL = `http://127.0.0.1:${LOCAL_DAEMON_PORT}`;
 
@@ -727,7 +729,8 @@ export async function fetchFullDiskAccess(): Promise<boolean> {
     const response = await apiFetch(`/system/full-disk-access`);
     if (!response.ok) return false;
     return (await response.json()).granted === true;
-  } catch {
+  } catch (caught) {
+    swallowed("fetchFullDiskAccess failed", caught);
     return false;
   }
 }
@@ -744,7 +747,8 @@ export async function fetchAccessibility(): Promise<boolean> {
     const response = await apiFetch(`/system/accessibility`);
     if (!response.ok) return false;
     return (await response.json()).granted === true;
-  } catch {
+  } catch (caught) {
+    swallowed("fetchAccessibility failed", caught);
     return false;
   }
 }
@@ -988,7 +992,8 @@ export async function fetchSkills(workingDirectory?: string): Promise<AgentSkill
       fetchJson<{ skills?: AgentSkill[] }>(`/skills${query}`)
     );
     return data.skills ?? [];
-  } catch {
+  } catch (caught) {
+    swallowed("fetchSkills failed", caught);
     return [];
   }
 }
@@ -1005,7 +1010,8 @@ export async function fetchMcpTools(workingDirectory?: string): Promise<McpServe
       fetchJson<{ servers?: McpServerTools[] }>(`/mcp/tools${query}`)
     );
     return data.servers ?? [];
-  } catch {
+  } catch (caught) {
+    swallowed("fetchMcpTools failed", caught);
     return [];
   }
 }
@@ -1063,7 +1069,8 @@ export async function fetchHostHomeDirectory(alias: string): Promise<string> {
     if (!response.ok) return "";
     const data = await response.json();
     return String(data.path ?? "");
-  } catch {
+  } catch (caught) {
+    swallowed("fetchHostHomeDirectory failed", caught);
     return "";
   }
 }
@@ -1107,7 +1114,8 @@ export async function fetchSession(sessionId: string, options?: ApiRequestOption
   try {
     const data = await rpc<{ session: SessionSummary }>("session.get", { id: sessionId }, options);
     return data.session ?? null;
-  } catch {
+  } catch (caught) {
+    swallowed("fetchSession failed", caught);
     return null;
   }
 }
@@ -1124,7 +1132,8 @@ export async function sessionTree(sessionId: string, options?: ApiRequestOptions
   if (!sessionId) return null;
   try {
     return await rpc<SessionTree>("session.tree", { id: sessionId }, options);
-  } catch {
+  } catch (caught) {
+    swallowed("sessionTree failed", caught);
     return null;
   }
 }
@@ -1201,7 +1210,8 @@ export async function turnGet(turnId: string): Promise<A2ATurn | null> {
   try {
     const data = await rpc<{ turn: A2ATurn }>("turn.get", { turn_id: turnId });
     return data.turn ?? null;
-  } catch {
+  } catch (caught) {
+    swallowed("turnGet failed", caught);
     return null;
   }
 }
@@ -1212,7 +1222,8 @@ export async function turnGet(turnId: string): Promise<A2ATurn | null> {
 export async function daemonStatus(options?: ApiRequestOptions & { signal?: AbortSignal }): Promise<Record<string, unknown> | null> {
   try {
     return await rpc<Record<string, unknown>>("daemon.status", {}, options);
-  } catch {
+  } catch (caught) {
+    swallowed("daemonStatus failed", caught);
     return null;
   }
 }
@@ -1322,7 +1333,8 @@ export async function cancelTurn(sessionId: string): Promise<boolean> {
   try {
     await rpc("turn.cancel", { id: sessionId });
     return true;
-  } catch {
+  } catch (caught) {
+    swallowed("cancelTurn failed", caught);
     return false;
   }
 }
@@ -1333,7 +1345,8 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
   try {
     await rpc("session.end", { id: sessionId });
     return true;
-  } catch {
+  } catch (caught) {
+    swallowed("deleteSession failed", caught);
     return false;
   }
 }
@@ -1342,7 +1355,8 @@ export async function compactSession(sessionId: string): Promise<boolean> {
   try {
     const result = await rpc<{ compacting?: boolean }>("session.compact", { id: sessionId });
     return Boolean(result?.compacting);
-  } catch {
+  } catch (caught) {
+    swallowed("compactSession failed", caught);
     return false;
   }
 }
@@ -1354,7 +1368,8 @@ export async function abortToolCall(sessionId: string, toolCallId: string): Prom
   try {
     await rpc("turn.cancel", { id: sessionId, tool_call_id: toolCallId });
     return true;
-  } catch {
+  } catch (caught) {
+    swallowed("abortToolCall failed", caught);
     return false;
   }
 }
@@ -1369,7 +1384,8 @@ export async function sendToolToBackground(sessionId: string, toolCallId: string
       tool_call_id: toolCallId,
     });
     return Boolean(result?.backgrounded);
-  } catch {
+  } catch (caught) {
+    swallowed("sendToolToBackground failed", caught);
     return false;
   }
 }
@@ -1387,7 +1403,8 @@ export async function fetchBackgroundJobs(sessionId: string): Promise<Background
   try {
     const result = await rpc<{ jobs?: BackgroundJob[] }>("jobs.list", { id: sessionId });
     return Array.isArray(result?.jobs) ? result.jobs : [];
-  } catch {
+  } catch (caught) {
+    swallowed("fetchBackgroundJobs failed", caught);
     return [];
   }
 }
@@ -1452,7 +1469,8 @@ export async function revealInFinder(path: string): Promise<boolean> {
       body: JSON.stringify({ path }),
     });
     return response.ok;
-  } catch {
+  } catch (caught) {
+    swallowed("revealInFinder failed", caught);
     return false;
   }
 }
@@ -1466,7 +1484,8 @@ export async function openBrowserRemoteDebugging(browserName = "chrome"): Promis
       { method: "POST" }
     );
     return response.ok;
-  } catch {
+  } catch (caught) {
+    swallowed("openBrowserRemoteDebugging failed", caught);
     return false;
   }
 }

@@ -46,6 +46,21 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    // An error that is caught and discarded leaves nothing behind — no log, no trace, no
+    // way to find it without a reproduction. The interface accumulated 113 of these and
+    // then a broken live stream cost days, because the browser was failing silently while
+    // every server log said the work had succeeded. An empty catch must instead say which
+    // it is, through `lib/swallowed`: `expected(why)` when silence is the right answer, or
+    // `swallowed(context, error)` when it is not but the code can carry on.
+    //
+    // A warning rather than an error: the existing sites are being converted as they are
+    // touched, and a wall of build failures would only get the rule turned off.
+    files: ["src/**/*.{ts,tsx}"],
+    rules: {
+      "no-empty": ["warn", { allowEmptyCatch: false }],
+    },
+  },
+  {
     // This is the sole factory boundary for semantic roots Chakra does not export.
     files: ["src/components/ui/semantic.tsx"],
     rules: {

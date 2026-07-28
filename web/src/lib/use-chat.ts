@@ -24,6 +24,7 @@ import {
 } from "./api";
 import { isSameToolEvent, type QuestionAnswer, type QuestionItem, type ToolEvent, type ToolEventStatus, type ToolPermission, type ToolQuestion } from "./tool-event";
 import { toaster } from "@/components/ui/toaster";
+import { swallowed } from "@/lib/swallowed";
 import { asArray, asRecord } from "@/lib/coerce";
 import type { WireEvent } from "@/lib/generated/events";
 
@@ -1024,9 +1025,10 @@ export function useChat(
           applyHistoryFragments();
           setIsHistoryLoading(false);
           return;
-        } catch {
+        } catch (caught) {
           if (cancelled || controller.signal.aborted) return;
           if (attempt === MAX_ATTEMPTS - 1) {
+            swallowed("could not load the transcript after retrying", caught);
             setHistoryError(true);
             setIsHistoryLoading(false);
             return;
@@ -1075,9 +1077,12 @@ export function useChat(
         cursor = page.next_before_row_id;
         fetchedAny = true;
       }
-    } catch {
+    } catch (caught) {
       // Leave what we have loaded; the fill effect re-triggers and resumes from the
-      // last cursor since hasOlderHistoryRef is still true.
+      // last cursor since hasOlderHistoryRef is still true. Still reported: resuming is the
+      // recovery, not the reason, and a drain that fails every time looks identical to one
+      // that simply reached the end.
+      swallowed("could not load older history", caught);
     } finally {
       // Skip the apply if a local turn began mid-drain (guarded above too) — the
       // fetched fragments stay in the ref, unused, rather than clobbering live state.
@@ -1150,8 +1155,11 @@ export function useChat(
               try {
                 const tasks = await fetchSessionTurns(initialSessionId, controller.signal);
                 if (!cancelled && !isStreamingRef.current && !streamedLocallyRef.current) applySnapshot(tasks);
-              } catch {
-                // transient — the sessionRunning path below still captures it
+              } catch (caught) {
+                // The `sessionRunning` path below captures the same terminal state a moment
+                // later, so this is recoverable — but not silent, or a store that never
+                // answers is indistinguishable from one that answers slowly.
+                swallowed("could not read the finished turn", caught);
               }
             })();
           }
@@ -1170,8 +1178,9 @@ export function useChat(
         try {
           const tasks = await fetchSessionTurns(initialSessionId, controller.signal);
           if (!cancelled && !isStreamingRef.current && !streamedLocallyRef.current) applySnapshot(tasks);
-        } catch {
-          // transient — leave the last live state in place
+        } catch (caught) {
+          // Leave the last live state in place; it is very nearly the terminal state.
+          swallowed("could not read the session's final state", caught);
         }
       })();
     }
