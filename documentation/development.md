@@ -1,6 +1,10 @@
 # Development
 
-Frank has three parts: the **Python harness** (one executable entered as `frank`, `frankd`, or a worker), the **Next.js web UI**, and the **Tauri desktop shell**. In development you run the daemon and the UI directly. The packaged app is built only for releases.
+Frank has three parts:
+
+- The **Python harness**: one executable, entered as `frank`, `frankd`, or a worker.
+- The **Next.js web UI**.
+- The **Tauri desktop shell**. In development you run the daemon and the UI directly. The packaged app is built only for releases.
 
 ## Toolchain
 
@@ -33,9 +37,17 @@ uv run python -m frank frankd
 
 One image, three entry points, chosen by the first argument: `frank` (the CLI), `frankd` (the daemon), `prototype` (the process sessions are forked out of). A bare launch lands in the CLI, which is why the daemon has to be asked for. `frank daemon stop` takes down a foreground daemon and its sessions with it.
 
-There is deliberately no `worker` entry point. Nothing execs a session — each one is a `fork()` of the prototype — so an entry point for it would be a way of starting a process the architecture never starts.
+There is deliberately no `worker` entry point. Nothing execs a session. Each one is a `fork()` of the prototype. An entry point for a session would therefore start a process that the architecture never starts.
 
-It listens on a unix socket in your runtime directory and on an ephemeral loopback port for GUI clients; `frank daemon endpoint` reports the port and the capability token. State follows the XDG convention — configuration in `~/.config/frank/`, durable state in `~/.local/share/frank/`, logs in `~/.local/state/frank/` — all created on first run. Add provider keys via `frank configure`, the configuration file, or environment variables; see the [Configuration guide](configuration.md).
+It listens on a unix socket in your runtime directory. For GUI clients it also listens on an ephemeral loopback port. `frank daemon endpoint` reports the port and the capability token.
+
+State follows the XDG convention, and all of it is created on first run:
+
+- Configuration in `~/.config/frank/`
+- Durable state in `~/.local/share/frank/`
+- Logs in `~/.local/state/frank/`
+
+Add provider keys with `frank configure`, in the configuration file, or through environment variables. See the [Configuration guide](configuration.md).
 
 ## Running the web UI
 
@@ -52,10 +64,12 @@ Useful scripts (in `web/`):
 - `bun run build` — production static export (to `web/out`).
 - `bun run build:events` — regenerate the TypeScript event schema from the Python models (`scripts/generate_event_schema.py`). Run this whenever the event contract changes.
 
-Outside `web/` the package layering is `base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, with the daemon never importing the runtime. Three invariants ride on it, and they are all really one invariant about the prototype, the process every session is forked out of — none is visible in a diff, so each is worth checking by hand when you touch its area:
+Outside `web/` the package layering is `base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, with the daemon never importing the runtime. Three invariants ride on it. All three are really one invariant about the prototype, which is the process every session is forked out of. None of them is visible in a diff. Check each one by hand when you touch its area:
 
 - **`computer/` is never imported at module level.** It pulls in PyObjC, which initialises CoreFoundation, which genuinely cannot survive a `fork()` on macOS.
-- **Nothing reaches the network at import.** This is the half that actually bit. A catalogue fetch at module scope left two *native* threads in the process, and a multi-threaded process cannot legally fork — the child aborted inside the Objective-C runtime with a message naming CoreFoundation, which is not what was wrong. `threading.enumerate()` cannot see those threads; only the kernel's count can, which is why the prototype measures with mach `task_threads` and refuses to fork when the answer is not 1.
+- **Nothing reaches the network at import.** This is the half that actually bit. A catalogue fetch at module scope left two *native* threads in the process, and a multi-threaded process cannot legally fork. The child aborted inside the Objective-C runtime, with a message that named CoreFoundation — which was not what was wrong.
+
+  `threading.enumerate()` cannot see those threads; only the kernel's count can. The prototype therefore measures with mach `task_threads`, and refuses to fork when the answer is not 1.
 - **Nothing under `runtime/` parks a caller's argument in a module global, installs a signal handler, or registers an exit hook.** The runtime is a library now, and one process may host more than one session.
 
 A new setting needs nothing beyond its `Field(description=...)` — no reference file to update, no listing to add it to. `frank configure --all` walks the schema, so a setting is discoverable from the moment it exists. Write the description as the sentence you would want printed at a terminal, because that is exactly where it goes.
@@ -68,7 +82,7 @@ cd web
 bun run tauri:dev       # launches the Tauri window against the dev UI
 ```
 
-Start the daemon first, in either order but before you expect the window to work. The app is a client: with nothing listening it shows the connection picker and says what to run, rather than launching a harness of its own.
+Start the daemon first, in either order but before you expect the window to work. The app is a client. When nothing is listening, it shows the connection picker and says what to run. It does not launch a harness of its own.
 
 ## Building and signing
 
@@ -84,7 +98,9 @@ cd web && bun run tauri:build
 
 The first freezes the harness with PyInstaller into `packaging/dist/Frank Computer Use.app`, smoke-tests it, and is a no-op when nothing that goes into it has changed. The second produces `web/src-tauri/target/release/bundle/macos/Frank.app` plus a `.dmg` under `bundle/dmg/`.
 
-The smoke test runs the frozen daemon under a **throwaway set of XDG directories**, which is load-bearing rather than tidy. With your own directories it would find the lock held by whatever daemon you are already running, stand down, exit `0`, and the probe would then find *that* daemon's socket answering — a green result for a binary it never exercised, in exactly the case that is most common. Isolation means the binary under test is the only thing that can answer, and it also keeps a build from seeding your configuration or writing to your transcript store.
+The smoke test runs the frozen daemon under a **throwaway set of XDG directories**, which is load-bearing rather than tidy. With your own directories it would find the lock held by the daemon you already run. It would stand down and exit `0`. The probe would then find *that* daemon's socket answering. That is a green result for a binary the probe never exercised, in the most common case of all.
+
+Isolation means the binary under test is the only thing that can answer. It also keeps a build from seeding your configuration or writing to your transcript store.
 
 For the full step-by-step with expected output, see [Installation](installation.md#every-step-and-what-you-should-see).
 
@@ -101,7 +117,7 @@ packaging/sign-app.sh "packaging/dist/Frank Computer Use.app"
 packaging/sign-app.sh web/src-tauri/target/release/bundle/macos/Frank.app
 ```
 
-The daemon is signed `--deep` with `packaging/Entitlements.plist` — it needs to send Apple Events for its login-items and running-apps probes, and to load PyInstaller's dylibs without library validation. The app needs neither and signs plain; both entitlements used to sit on the app only because it was the daemon's parent process. The identity is self-signed, so Gatekeeper still warns on other machines until a build is Apple-notarized.
+The daemon is signed `--deep` with `packaging/Entitlements.plist`. It sends Apple Events for its login-items and running-apps probes. It also loads PyInstaller's dylibs without library validation. The app needs neither and signs plain; both entitlements used to sit on the app only because it was the daemon's parent process. The identity is self-signed, so Gatekeeper still warns on other machines until a build is Apple-notarized.
 
 ### Installing the daemon
 
@@ -114,7 +130,7 @@ The symlink is what puts `frank` and `frankd` on your `PATH`, both entering the 
 
 ## Tests
 
-The repository ships **no unit-test suite**, but it does ship a **verification battery** — the specific, falsifiable claims the architecture rests on, each checked by doing it:
+The repository ships **no unit-test suite**. It ships a **verification battery** instead. The battery holds the specific, falsifiable claims that the architecture rests on, and it checks each one by doing it:
 
 ```sh
 uv run ruff check src/ scripts/
@@ -123,7 +139,15 @@ cd web && bun run build          # regenerates and diffs the event schema, then 
 
 Each stage gets its own temporary XDG roots and its own daemon and cleans up after itself, so a run touches nothing of yours. Exit status is the number of failures.
 
-Two stages need a real machine and are skipped elsewhere, which is the reason to run this locally at least once. `macos-fork` answers the three questions only macOS can — whether a forked child may initialise CoreFoundation, whether the Accessibility grant follows a fork, whether `sandbox-exec` still works from a child — and counts threads with mach, which is the only way to see the ones that make a fork illegal. And confinement is only genuinely exercised where the kernel can enforce it: without Landlock (or a working `sandbox-exec`) the battery runs with `sandbox.enforce: preferred` and the sandbox is never applied.
+Two stages need a real machine and are skipped elsewhere, which is the reason to run this locally at least once. `macos-fork` answers the three questions that only macOS can answer:
+
+- May a forked child initialise CoreFoundation?
+- Does the Accessibility grant follow a fork?
+- Does `sandbox-exec` still work from a child?
+
+It also counts threads with mach. That is the only way to see the threads that make a fork illegal.
+
+Confinement is only genuinely exercised where the kernel can enforce it. Without Landlock, or a working `sandbox-exec`, the battery runs with `sandbox.enforce: preferred`. The sandbox is then never applied.
 
 Beyond the battery: lint with `uv run ruff check`, and drive the affected path through the CLI directly. `pyproject.toml` is already set up for `pytest` (`testpaths = ["tests"]`, `asyncio_mode = "auto"`), so if you add a `tests/` directory `uv run pytest` will pick it up.
 

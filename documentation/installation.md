@@ -64,7 +64,9 @@ You need [Nix](https://nixos.org) (the flake devshell pins everything else, `uv`
 | `ln -sf … /usr/local/bin/frank` is denied | `/usr/local/bin` is root-owned | `sudo ln -sf …`, or symlink into `~/.local/bin` and put that on `PATH` |
 | `packaging/build-daemon.sh` says "daemon up to date" after you changed something | The freshness guard decided nothing that goes into the freeze had changed | `FORCE=1 packaging/build-daemon.sh` |
 
-Signing (steps 6, 7, 11) is optional for a build that merely runs, and required for a **stable Accessibility grant**: without it every rebuild is a new code identity and macOS asks again. Both artifacts carry the same `CFBundleName` and identifier, which is why one certificate over both keeps them a single **Frank** row — see [Development guide](development.md#building-and-signing).
+Signing (steps 6, 7, 11) is optional for a build that only runs. It is necessary for a **stable Accessibility grant**. Without it, every rebuild is a new code identity, and macOS asks again.
+
+Both artifacts carry the same `CFBundleName` and identifier. One certificate over both therefore keeps them as a single **Frank** row. See the [Development guide](development.md#building-and-signing).
 
 ## Coming from a build named XEAC
 

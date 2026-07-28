@@ -5,7 +5,7 @@ Everything that shapes how Frank behaves — its agents, their reusable skills, 
 - **Global:** `~/.agents/` — available everywhere.
 - **Project-local:** `.agents/` in the working directory you point an agent at.
 
-A project-local entry **overrides** a global one with the same name, so a repo can ship its own agents and skills without touching your global setup. The server also bundles a base set that is always present.
+A project-local entry **overrides** a global one with the same name. A repository can therefore ship its own agents and skills, and leave your global setup alone. The server also bundles a base set, which is always present.
 
 ```
 .agents/
@@ -51,7 +51,9 @@ You are the senior researcher. You do not take bullshit...
 }
 ```
 
-Each agent is a profile a session can be created with, and a running session serves [A2A](https://github.com/google/A2A) on its own socket. A session that needs a peer creates one with its `create_session` tool and messages it over the same control plane your terminal uses — one API, whoever the caller is — rather than through an in-process delegation tool. The peer answers the same way, by messaging the session that created it. Bundled agents:
+Each agent is a profile a session can be created with, and a running session serves [A2A](https://github.com/google/A2A) on its own socket. A session that needs a peer creates one with its `create_session` tool. It then messages that peer over the control plane your terminal uses. There is one API, whoever the caller is; Frank uses no in-process delegation tool.
+
+The peer answers the same way, by messaging the session that created it. Bundled agents:
 
 | Agent | Role |
 |-------|------|

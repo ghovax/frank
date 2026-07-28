@@ -15,8 +15,11 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Use it to embed the harness in another program, to write a terminal interface that shares code
-with the browser one rather than reimplementing it, or to run a one-shot agent in a script.
+Use it for three things:
+
+- Embed the harness in another program.
+- Write a terminal interface that shares code with the browser one, instead of reimplementing it.
+- Run a one-shot agent in a script.
 
 ## What you give up
 
@@ -31,16 +34,11 @@ exists to provide:
 | Peers (`create_session` and friends) | Only if you supply `peers` | Yes |
 | Confinement of tool children | **Identical** | **Identical** |
 
-Confinement is the one that surprises people, so it is worth stating plainly: a session
-process was never sandboxed, its *tool children* are, and a child is confined at the moment it
-is spawned. That is the same code on both paths.
+Confinement surprises people, so here it is plainly. A session process was never sandboxed. Its *tool children* are. A child is confined at the moment it is spawned. That is the same code on both paths.
 
 ## The seams
 
-Everything durable is a constructor argument with an interface behind it. The defaults are
-chosen for a program that is not a daemon, which for anything durable means *in memory* — a
-library that writes a database into your home directory because you ran one background command
-is a library you cannot embed.
+Everything durable is a constructor argument with an interface behind it. The defaults suit a program that is not a daemon. For anything durable, that means *in memory*. A library that writes a database into your home directory, because you ran one background command, is a library you cannot embed.
 
 | Argument | Interface | Default | What it decides |
 |---|---|---|---|
@@ -88,8 +86,7 @@ class RedisCheckpoints:
 session = Session("general-assistant", checkpoints=RedisCheckpoints(redis))
 ```
 
-That class inherits nothing and imports nothing of ours. It is accepted because it has `save`
-and `load`; one that were missing `load` is rejected at the constructor, by name:
+That class inherits nothing and imports nothing of ours. The harness accepts it because it has `save` and `load`. One that lacks `load` fails at the constructor, by name:
 
 ```
 TypeError: checkpoints: RedisCheckpoints does not satisfy Checkpoints: it is missing `load`.
@@ -115,11 +112,11 @@ async with Session("general-assistant", tools=[house_price]) as session:
     print(await session.ask("what did 12 Elm St sell for?"))
 ```
 
-A supplied tool goes through the *same* preamble every built-in does — permission resolved, location resolved, policy applied — because the extension point is the handler, not the pipeline. Two consequences worth knowing:
+A supplied tool goes through the *same* preamble as every built-in: permission resolved, location resolved, policy applied. The extension point is the handler, not the pipeline. Two consequences follow:
 
-- **It is gated at `tool_risk`, which defaults to `"medium"`.** The permission engine classifies by tool name and has never heard of yours, so there is no honest way to infer what it does; defaulting to *ask* means adding a tool cannot silently widen what a session may do. `tool_risk="none"` says otherwise deliberately.
-- **It cannot shadow a built-in.** A tool named `bash` that is not this harness's `bash` would be a confinement surprise, not an extension point, so a name collision resolves to ours.
-- **The agent profile's `tools_enabled` list does not filter it.** That list narrows the *harness's* capabilities and was written before your program existed; a supplied tool would otherwise vanish for every agent that names an explicit list.
+- **It is gated at `tool_risk`, which defaults to `"medium"`.** The permission engine classifies by tool name, and it does not know yours. There is no honest way to infer what your tool does. The default is *ask*, so a new tool cannot silently widen what a session may do. Set `tool_risk="none"` to say otherwise deliberately.
+- **It cannot shadow a built-in.** A tool named `bash` that is not this harness's `bash` is a confinement surprise, not an extension point. A name collision therefore resolves to ours.
+- **The agent profile's `tools_enabled` list does not filter it.** That list narrows the *harness's* capabilities, and someone wrote it before your program existed. Otherwise a supplied tool disappears for every agent that names an explicit list.
 
 ### Building the agent itself
 
@@ -157,8 +154,7 @@ ValueError: Agent 'reviewer' names no model. Set `provider` and `model` in its p
 **Narrowing the built-in tools** has two complementary forms. `tools_enabled` is an allow-list,
 so naming one tool means naming all of them — right for an agent defined by a small capability
 set. `tools.disabled` is a deny-list — right when an agent should have everything *except*
-shell access. Both are enforced twice: the roster decides what the model is offered, and the
-gate decides what it may run, because a model can call a tool it was never offered.
+shell access. Both are enforced twice. The roster decides what the model is offered. The gate decides what it may run. A model can call a tool it was never offered.
 
 `permissions=` replaces the rule engine outright, for a program whose policy is its own.
 `Approvals` answers a gate once the engine has decided there should be one; `permissions=`
@@ -166,7 +162,7 @@ decides whether there is one at all.
 
 ### The transcript
 
-`Checkpoints` answers "resume this conversation". `Transcript` answers "what has this session done" — one entry per completed turn, with what was asked, what came back, how it ended and what it cost:
+`Checkpoints` answers "resume this conversation". `Transcript` answers "what has this session done". It holds one entry per completed turn. Each entry records what was asked, what came back, how it ended, and what it cost:
 
 ```python
 async with Session("general-assistant", session_id="nightly") as session:
@@ -176,7 +172,7 @@ for turn in await session.transcript.turns("nightly"):
     print(turn.outcome, turn.tools_called, turn.input_tokens + turn.output_tokens)
 ```
 
-Deliberately **not** a2a's `TaskStore`. The daemon speaks A2A and its record is rightly one; the library speaks no A2A, and handing it Tasks would add a protocol it does not use to solve a problem it does not have.
+Deliberately **not** a2a's `TaskStore`. The daemon speaks A2A, and its record is rightly an A2A one. The library speaks no A2A. To hand it Tasks would add a protocol it does not use, for a problem it does not have.
 
 ### Credentials and the model
 
@@ -191,23 +187,20 @@ session = Session(
 )
 ```
 
-`providers` is merged onto whatever configuration is in play rather than replacing it, so a
-program can supply one key and inherit the rest — and the providers' conventional environment
-variables keep the precedence they already had, so a deployment that injects them keeps
-working. The long form takes a `base_url` too, for an OpenAI-compatible endpoint.
+`providers` merges onto the configuration in play; it does not replace it. A program can therefore supply one key and inherit the rest. The providers' conventional environment variables keep the precedence they had, so a deployment that injects them continues to work. The long form takes a `base_url` too, for an OpenAI-compatible endpoint.
 
-`model_identifier` overrides the agent profile's own choice, because the common case for an
-embedder is one agent definition run against whichever model *their* program is configured for,
-and editing a profile file to express a runtime choice is the wrong shape.
+`model_identifier` overrides the agent profile's own choice. The common case for an embedder is one agent definition, run against whichever model *their* program is configured for. To edit a profile file for a runtime choice is the wrong shape.
 
 If you already hold a configured `BaseChatModel`, `model=` skips all of this — no credential of
 ours is consulted, because none is needed.
 
 ### The catalogue
 
-Everything the prompt is assembled from — the agent profile, the skills, the memories, the project's instructions, the prompt templates themselves — comes from one interface, because those differ in how they are *parsed*, not in how they are *found*.
+One interface supplies everything the prompt is assembled from: the agent profile, the skills, the memories, the project's instructions, and the prompt templates. These differ in how the harness *parses* them, not in how it *finds* them.
 
-The default matters more here than anywhere else. Before this seam existed, finding that material meant walking hardcoded paths, and the instruction loader read `~/.config/opencode/AGENTS.md` and `~/.claude/CLAUDE.md` — two *other products'* configuration files — out of the user's home directory unconditionally. So a library session's default catalogue reads the working directory and the packaged agents, and nothing of `$HOME`. `frankd` and the CLI use `machine_catalogue`, which does read all of it, because there the person running it is the person those files describe.
+The default matters more here than anywhere else. Before this seam existed, the harness walked hardcoded paths to find that material. The instruction loader read `~/.config/opencode/AGENTS.md` and `~/.claude/CLAUDE.md` unconditionally, out of the user's home directory. Those are two *other products'* configuration files.
+
+A library session's default catalogue therefore reads the working directory and the packaged agents, and nothing of `$HOME`. `frankd` and the CLI use `machine_catalogue`, which does read all of it, because there the person running it is the person those files describe.
 
 Build one entirely in code when you want the prompt fully under your control:
 
@@ -224,18 +217,16 @@ catalogue = DictCatalogue(
 session = Session("reviewer", catalogue=catalogue)
 ```
 
-Unlisted prompt templates fall back to the packaged ones, so replacing the system prompt is something you opt into rather than something you have to reproduce to get started. And `agent=` accepts an `AgentConfiguration` directly as well as a name, which is the shortest path of all when you have one in hand.
+Unlisted prompt templates fall back to the packaged ones. You therefore opt in to replace the system prompt. You do not have to reproduce it to get started. And `agent=` accepts an `AgentConfiguration` directly as well as a name, which is the shortest path of all when you have one in hand.
 
 `FileCatalogue` is the other shipped implementation — it is what the harness has always done, with the roots as an argument instead of derived.
 
 ### Approvals
 
 By default a gated tool call does what it does under the daemon: the turn emits a `Suspended`
-event and waits. That is right when a person is watching and wrong in a script, where the turn
-hangs on a gate nobody will ever answer — which is why `ask()` raises rather than hanging.
+event and waits. That is right when a person watches, and wrong in a script. In a script the turn stops at a gate that nobody will answer. `ask()` therefore raises instead.
 
-An approver decides gates in code. Answering `None` means *no opinion*, and that gate suspends
-as before, so you can auto-approve what you understand and still escalate the rest:
+An approver decides gates in code. Answer `None` to give *no opinion*; that gate then suspends as before. You can therefore auto-approve what you understand, and still escalate the rest:
 
 ```python
 from frank import Approval, Session
@@ -267,7 +258,7 @@ class LogObserver:
 session = Session("general-assistant", observer=LogObserver())
 ```
 
-`observe` may return an awaitable, which is scheduled rather than awaited — a synchronous
+`observe` can return an awaitable. The harness schedules it; it does not await it. A synchronous
 implementation that appends to a list is the common case, and one that writes to a database
 should not have to block the turn. An observer that raises is logged and ignored: a turn must
 not fail because its audit sink did.
@@ -276,7 +267,7 @@ not fail because its audit sink did.
 
 `tracer_provider=` binds a tracer for this session rather than reconfiguring the process, so two sessions in one program can report to different places. `credentials=` is bound the same way. Both unbind when the session closes.
 
-A git worktree per session is opt-in, because it writes to disk and every other default here is chosen so a library session leaves nothing behind:
+A git worktree per session is opt-in, because it writes to disk. Every other default here leaves nothing behind:
 
 ```python
 session = Session("general-assistant", directory="/path/to/repo")
@@ -302,8 +293,7 @@ async for event in session.stream("refactor the parser"):
             ...  # answer them, or stop
 ```
 
-The conversation is checkpointed when a turn ends, including when it ends badly — a turn that
-raised has still changed the conversation, and losing that is worse than recording a failure.
+The harness checkpoints the conversation when a turn ends, including when it ends badly. A turn that raised still changed the conversation. To lose that is worse than to record a failure.
 
 Resuming is giving a new `Session` the same id and the same store:
 
@@ -321,8 +311,12 @@ its own core forces every non-obvious use into a fork.
 
 ## When to use the daemon instead
 
-Reach for `frankd` when you want a session that outlives the terminal that started it, a
-harness reachable from another machine, crash isolation between sessions, or peer composition.
+Reach for `frankd` when you want one of these:
+
+- A session that outlives the terminal that started it.
+- A harness you can reach from another machine.
+- Crash isolation between sessions.
+- Peer composition.
 Those are what a control plane is *for*, and none of them can be had from an object in your
 process.
 
