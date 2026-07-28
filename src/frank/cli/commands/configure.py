@@ -134,10 +134,10 @@ def _validates(data: dict) -> str:
     Checked before the file is written, because the daemon reads this file at startup: a value
     the schema rejects does not fail the command that set it, it fails every command after —
     including the one that would put it back."""
-    from frank.base.configuration import GlobalConfiguration
+    from frank.base.configuration import Configuration
 
     try:
-        GlobalConfiguration.model_validate(data)
+        Configuration.model_validate(data)
     except Exception as error:  # noqa: BLE001 — the validator's message is the useful part
         # Pydantic reports the field, then the reason, then a documentation URL. The first two
         # are what a person needs; the URL is noise at a terminal.

@@ -130,9 +130,9 @@ def _walk(model: type[BaseModel], prefix: str) -> list[Setting]:
 def settings() -> list[Setting]:
     """Every setting, in the order the schema declares them — which is the order a person
     reading the file top to bottom would meet them, not alphabetical."""
-    from frank.base.configuration import GlobalConfiguration
+    from frank.base.configuration import Configuration
 
-    return _walk(GlobalConfiguration, "")
+    return _walk(Configuration, "")
 
 
 def leaf_settings() -> list[Setting]:
@@ -158,9 +158,9 @@ def setting_for(path: str) -> Optional[Setting]:
     if path.startswith(TUNING_DEFAULTS + "."):
         # Every valid name under it was in the list just searched, so this one is a typo.
         return None
-    from frank.base.configuration import GlobalConfiguration
+    from frank.base.configuration import Configuration
 
-    return _descend(GlobalConfiguration, path.split("."), path)
+    return _descend(Configuration, path.split("."), path)
 
 
 def _descend(model: type[BaseModel], segments: list[str], full_path: str) -> Optional[Setting]:

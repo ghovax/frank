@@ -47,7 +47,7 @@ def _report(ready_fd: int, payload: dict) -> None:
 
 async def serve(assignment: dict, ready_fd: int = -1) -> int:
     """Run one session until its socket closes. Answers with the process exit status."""
-    from frank.base.configuration import GlobalConfiguration
+    from frank.base.configuration import Configuration
     from frank.worker.server import build_app
     from frank.worker.session import SessionExecutor
 
@@ -69,7 +69,7 @@ async def serve(assignment: dict, ready_fd: int = -1) -> int:
     # keeps the other path from being silently wrong.
     os.environ["FRANK_SESSION_ID"] = session_id
 
-    configuration = GlobalConfiguration.load()
+    configuration = Configuration.load()
     session = SessionExecutor(
         session_id=session_id,
         agent_name=agent_name,

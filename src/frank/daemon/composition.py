@@ -70,7 +70,7 @@ async def open_shared_resources() -> None:
     if seeded:
         logger.info("Seeded home agents and skills: %s", ", ".join(seeded))
     # Seed the digest with the file as just loaded, so the bootstrap write that
-    # `GlobalConfiguration.load` may have performed is not mistaken for a manual edit by the
+    # `Configuration.load` may have performed is not mistaken for a manual edit by the
     # watcher below and echoed straight back.
     workspace_state.last_written_configuration_digest = await asyncio.to_thread(_configuration_digest)
 

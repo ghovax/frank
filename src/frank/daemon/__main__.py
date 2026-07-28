@@ -281,7 +281,7 @@ async def _serve() -> int:
 
     from frank.base import confinement
     from frank.base.background_store import reap_orphaned_process_groups
-    from frank.base.configuration import GlobalConfiguration
+    from frank.base.configuration import Configuration
     from frank.daemon import state
     from frank.workspace import state as workspace_state
     from frank.daemon.composition import close_shared_resources, open_shared_resources
@@ -295,7 +295,7 @@ async def _serve() -> int:
         return await _defer_to_running_daemon()
     _reclaim_socket()
 
-    workspace_state.global_configuration = GlobalConfiguration.load()
+    workspace_state.global_configuration = Configuration.load()
     # Ask once, at boot, whether this machine can enforce a profile — and on macOS ask by running
     # one, because `sandbox-exec` being on disk and Apple still honouring it are different
     # questions, and the interface is deprecated. Sessions refuse individually when they must; this

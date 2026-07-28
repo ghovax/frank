@@ -3,7 +3,7 @@ re-merges mcp.json with the Composio-provisioned servers."""
 
 from __future__ import annotations
 
-from frank.base.configuration import GlobalConfiguration
+from frank.base.configuration import Configuration
 from frank.base.mcp_client import MCPClientManager
 from frank.workspace import state
 
@@ -17,7 +17,7 @@ async def _reload_mcp() -> None:
     # Serialize with the settings endpoints and the configuration watcher: they all
     # rebuild the shared `_mcp_manager`, so overlapping runs would clobber it.
     async with state.configuration_lock:
-        state.global_configuration.mcp = GlobalConfiguration.load().mcp
+        state.global_configuration.mcp = Configuration.load().mcp
         # Re-fold the startup-provisioned Composio server back in so a live mcp.json
         # edit doesn't drop Composio's tools (and the agent keeps its MCP tools).
         state.global_configuration.mcp.servers.update(state.composio_servers)

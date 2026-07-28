@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28T21:15:00Z
-updated: 2026-07-28T21:15:00Z
+updated: 2026-07-28T22:30:00Z
 commit: TBD
 ---
 
@@ -161,3 +161,23 @@ Five of the six checks need no model, which matters: the account this is develop
 **The compaction extraction is the only part that can break something that works today.** `ObserverReflector` currently reaches for `self._global_configuration`, `self._context_window` and `self._latest_context_tokens`; extracting it means defining `CompactionState` to carry those explicitly, and an omission there is a behaviour change rather than a compile error. It is therefore done last, after the two purely additive seams have landed, and check 5 is aimed squarely at it.
 
 The other two seams cannot regress a caller who does not use them: an empty hook list and an empty pipeline are both a no-op branch.
+
+## Names that leaked
+
+Three names in the public surface described how a thing is built rather than what it is, and they were found by asking a simple question of each: does a caller need to know this word to use the library, or does it only make sense once you have read the source?
+
+**`DictCatalogue` named its container.** A caller does not care that agents are held in a dictionary; they care that *they* supplied them. Its sibling `FileCatalogue` names the axis correctly — where the material comes from — so the in-code one should too. Except that the honest answer to "where does it come from" is "you", and a name that says so is a word spent explaining something the caller already knows. So the concrete class takes the plain name, `Catalogue`, and the protocol becomes `CatalogueLike`.
+
+That inverts the convention the other seams follow, where the protocol holds the plain name and the implementation carries a qualifier — `Checkpoints` and `MemoryCheckpoints`, `JobStore` and `MemoryJobStore`. The inversion is deliberate and rests on two facts. The `Catalogue` protocol is named twice in the whole codebase, in one annotation and one validation call, while the concrete class appears in every example and every embedding program. And a catalogue is not like the other three: `MemoryCheckpoints` is a default that most callers never type, where a caller who wants their own agents *must* construct a catalogue. Giving the most-written thing the plainest name is worth more than a symmetry that serves the rule rather than the reader.
+
+**The field names repeated their types.** `agent_configurations`, `skill_list`, `memory_list`, `instruction_text` — four fields, three of which name a container and one a serialisation. They become `agents`, `skills`, `memories`, `instructions`.
+
+**`GlobalConfiguration` was the daemon's word.** In `frankd` the configuration genuinely is global: one process, one machine, one file. In a library it is one value among several, and two sessions in one interpreter can hold different ones — so "global" invites a reader to believe something that is not true. It becomes `Configuration`.
+
+## Instructions as values, not as a wire format
+
+`Catalogue.instructions()` returned a JSON string, which made it the only seam that asked a caller to hand-write a serialisation. Its siblings do not: `skills()` returns `Sequence[Skill]`, `memories()` returns `Sequence[Memory]`, and the runtime encodes both at the point where it assembles the prompt. Instructions were doing the encoding a layer too early, and the shape leaked all the way into the documented example, where a reader met `instruction_text='[{"path": "in-memory", "content": "…"}]'` and reasonably asked what it was.
+
+`Instruction` joins `Skill` and `Memory` as a value with two fields: `source` and `content`. `source` rather than `path`, because the file-backed catalogue puts a real path there and an in-code one puts a label, and calling a label a path is how the confusion started. The runtime serialises it beside the other two.
+
+The common case takes a shorthand. A caller with one body of conventions writes `instructions="Always cite file and line."` and the catalogue wraps it; a caller with several passes `Instruction` values.

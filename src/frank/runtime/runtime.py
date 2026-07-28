@@ -16,7 +16,7 @@ from pydantic import BaseModel, SecretStr
 
 from frank.base.configuration import (
     AgentConfiguration,
-    GlobalConfiguration,
+    Configuration,
     PermissionEvaluator,
 )
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -126,7 +126,7 @@ async def _drain_observation(pending) -> None:
 
 def build_chat_model(
     model_identifier: str,
-    global_configuration: GlobalConfiguration,
+    global_configuration: Configuration,
     agent_configuration: AgentConfiguration,
     working_directory: str,
 ) -> BaseChatModel:
@@ -176,7 +176,7 @@ def build_chat_model(
 
 def _build_tools(
     agent_configuration: AgentConfiguration,
-    global_configuration: GlobalConfiguration,
+    global_configuration: Configuration,
     working_directory: str = "",
     *,
     can_reach_peers: bool = False,
@@ -217,7 +217,7 @@ def _live_allow_list(configured: list[str], existing: set[str]) -> set[str]:
     return live
 
 
-def _installed_agent_names(global_configuration: GlobalConfiguration, working_directory: str) -> list[str]:
+def _installed_agent_names(global_configuration: Configuration, working_directory: str) -> list[str]:
     """The agent profiles a peer could be created with, here.
 
     Read at build time so `create_session` can enumerate them in its schema rather than take a
@@ -239,7 +239,7 @@ def _installed_agent_names(global_configuration: GlobalConfiguration, working_di
 
 def _all_available_tools(
     agent_configuration: AgentConfiguration,
-    global_configuration: GlobalConfiguration,
+    global_configuration: Configuration,
     working_directory: str = "",
     *,
     can_reach_peers: bool = False,
@@ -299,7 +299,7 @@ def _all_available_tools(
 
 
 def _build_tool_context(
-    global_configuration: GlobalConfiguration,
+    global_configuration: Configuration,
     *,
     sandbox,
     workspace: str,
@@ -424,7 +424,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
     # when finished, uses ``wait_for`` to poll rather than spinning, and re-reads a tool's
     # ``output_file`` to see whether a repeated action changed anything. Context compaction is
     # Observational Memory (Observer/Reflector); its thresholds and on/off switch live in
-    # GlobalConfiguration.compaction.
+    # Configuration.compaction.
 
     # Tool-name -> handler method. ``_execute_tool`` resolves permission, location, and
     # policy once (the shared preamble), then dispatches the call to its handler here.
@@ -463,7 +463,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
     def __init__(
         self,
         agent_configuration: AgentConfiguration,
-        global_configuration: GlobalConfiguration,
+        global_configuration: Configuration,
         session_id: str = "",
         conversation: Optional[list] = None,
         working_directory: str = "",

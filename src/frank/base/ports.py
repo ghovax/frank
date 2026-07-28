@@ -47,7 +47,7 @@ No registry, no entry-point discovery, no configuration key naming an implementa
 path. You pass an object. Anything more would be machinery in front of a constructor argument.
 
 And nothing that is already a value. The confinement `Profile` is a frozen dataclass the caller
-constructs and hands over; `GlobalConfiguration` is a model `Session` already accepts. Giving
+constructs and hands over; `Configuration` is a model `Session` already accepts. Giving
 either an interface would be abstraction for its own sake.
 """
 
@@ -491,7 +491,7 @@ class ToolMiddleware(Protocol):
 
 
 @runtime_checkable
-class Catalogue(Protocol):
+class CatalogueLike(Protocol):
     """The source of everything the prompt is assembled from.
 
     Five kinds of material — an agent profile, a skill, a memory, an instruction file, a prompt
@@ -531,8 +531,8 @@ class Catalogue(Protocol):
     def memories(self) -> Sequence[Any]:
         ...
 
-    def instructions(self) -> str:
-        """The project's own conventions, as the JSON array the prompt template expects."""
+    def instructions(self) -> Sequence[Any]:
+        """The project's own conventions, as `Instruction` values."""
         ...
 
     def prompt(self, name: str, variables: Mapping[str, str]) -> str:
@@ -563,7 +563,7 @@ def describe_unmet(port: type, candidate: Any) -> str:
 __all__ = [
     "Approval",
     "Approvals",
-    "Catalogue",
+    "CatalogueLike",
     "Checkpoints",
     "Credentials",
     "JobStore",

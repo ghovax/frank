@@ -70,7 +70,7 @@ def seed_home_agents() -> list[str]:
     profile a writable home copy that overrides the base, which is what lets per-agent
     model choices (and any other edit) actually save. Returns the relative paths seeded,
     for logging. A no-op when the bundle ships no ``.agents``."""
-    home_root = Path(GlobalConfiguration.HOME_AGENTS_ROOT_DIRECTORY).expanduser()
+    home_root = Path(Configuration.HOME_AGENTS_ROOT_DIRECTORY).expanduser()
     seeded: list[str] = []
     for kind in ("agents", "skills"):
         source_root = BUNDLED_DOTAGENTS_ROOT / kind
@@ -649,7 +649,7 @@ class AgentDefaults(Section):
     )
 
 
-class GlobalConfiguration(Section):
+class Configuration(Section):
     HOME_AGENTS_ROOT_DIRECTORY: ClassVar[str] = "~/.agents"
     AGENTS_ROOT_DIRECTORY: ClassVar[str] = ".agents"
     AGENTS_DIRECTORY: ClassVar[str] = ".agents/agents"
@@ -718,7 +718,7 @@ class GlobalConfiguration(Section):
     )
 
     @classmethod
-    def load(cls, *, seed: bool = True) -> GlobalConfiguration:
+    def load(cls, *, seed: bool = True) -> Configuration:
         """Load the configuration from the XDG configuration file.
 
         Seeds the file from the packaged template on first run, because a person who has just
@@ -735,7 +735,7 @@ class GlobalConfiguration(Section):
         return cls.from_yaml(path)
 
     @classmethod
-    def from_yaml(cls, path: str | Path) -> GlobalConfiguration:
+    def from_yaml(cls, path: str | Path) -> Configuration:
         with open(path) as file_handle:
             data = yaml.safe_load(file_handle)
         configuration = cls(**(data or {}))

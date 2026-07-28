@@ -28,7 +28,8 @@ the person those files belong to, and inheriting them is the feature — while
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from frank.base.instructions import Instruction, as_instructions
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
@@ -124,10 +125,8 @@ class FileCatalogue:
 
     # Instructions
 
-    def instructions(self) -> str:
-        from frank.base.serialization import compact
-
-        entries: list[dict[str, str]] = []
+    def instructions(self) -> list[Instruction]:
+        entries: list[Instruction] = []
         seen: set[Path] = set()
 
         if self._roots.include_home_instructions:
@@ -139,13 +138,13 @@ class FileCatalogue:
                 if not resolved.is_file() or resolved in seen:
                     continue
                 seen.add(resolved)
-                entries.append({"path": str(resolved), "content": resolved.read_text(errors="ignore").strip()})
+                entries.append(Instruction(source=str(resolved), content=resolved.read_text(errors="ignore").strip()))
 
         project = self._project_instruction()
         if project is not None and project not in seen:
-            entries.append({"path": str(project), "content": project.read_text(errors="ignore").strip()})
+            entries.append(Instruction(source=str(project), content=project.read_text(errors="ignore").strip()))
 
-        return compact(entries)
+        return entries
 
     def _project_instruction(self) -> Optional[Path]:
         """The nearest instruction file at or above the project directory.
@@ -180,50 +179,64 @@ class FileCatalogue:
         return PromptLoader(directory).load(name, dict(variables))
 
 
-@dataclass
-class DictCatalogue:
+class Catalogue:
     """Everything supplied in code, nothing read from disk.
 
     For a program that builds its own agent, ships its own skills, or wants a session whose
     prompt it fully controls — and for a test that would otherwise depend on whatever happens
     to be in the developer's home directory.
 
+    Not a dataclass, deliberately: the protocol answers `agents()`, `skills()`, `memories()`
+    and `instructions()` as methods, and a caller writes those same words as keywords. Taking
+    them in the constructor and holding them privately lets both be the plain word, rather
+    than one of them carrying a suffix to get out of the other's way.
+
     Prompt templates fall back to the packaged ones unless `prompts` overrides them by name,
     because replacing the system prompt is a thing to opt into rather than a thing to be
     required to reproduce.
     """
 
-    agent_configurations: dict[str, Any] = field(default_factory=dict)
-    skill_list: list[Any] = field(default_factory=list)
-    memory_list: list[Any] = field(default_factory=list)
-    instruction_text: str = "[]"
-    prompts: dict[str, str] = field(default_factory=dict)
-    # Where unlisted templates come from. `None` means the packaged ones.
-    fallback_prompts: Optional[Path] = None
+    def __init__(
+        self,
+        agents: Optional[Mapping[str, Any]] = None,
+        skills: Optional[Iterable[Any]] = None,
+        memories: Optional[Iterable[Any]] = None,
+        instructions: str | Iterable[Instruction] | None = None,
+        prompts: Optional[Mapping[str, str]] = None,
+        fallback_prompts: Optional[Path] = None,
+    ) -> None:
+        self._agents = dict(agents or {})
+        self._skills = list(skills or ())
+        self._memories = list(memories or ())
+        self._instructions = as_instructions(instructions)
+        self._prompts = dict(prompts or {})
+        # Where unlisted templates come from. `None` means the packaged ones.
+        self._fallback_prompts = fallback_prompts
 
     def agent(self, name: str) -> Any:
-        return self.agent_configurations.get(name)
+        return self._agents.get(name)
 
     def agents(self) -> Sequence[str]:
-        return sorted(self.agent_configurations)
+        return sorted(self._agents)
 
     def skills(self) -> Sequence[Any]:
-        return list(self.skill_list)
+        return list(self._skills)
 
     def memories(self) -> Sequence[Any]:
-        return list(self.memory_list)
+        return list(self._memories)
 
-    def instructions(self) -> str:
-        return self.instruction_text
+    def instructions(self) -> list[Instruction]:
+        return list(self._instructions)
 
     def prompt(self, name: str, variables: Mapping[str, str]) -> str:
         from frank.base.configuration import PromptLoader
 
-        template = self.prompts.get(name)
+        template = self._prompts.get(name)
         if template is not None:
             return PromptLoader.render(template, dict(variables), name)
-        directory = self.fallback_prompts or packaged_prompts_directory()
+        directory = self._fallback_prompts or packaged_prompts_directory()
         return PromptLoader(directory).load(name, dict(variables))
+
 
 
 def packaged_prompts_directory() -> Path:
@@ -269,8 +282,8 @@ def project_catalogue(configuration: Any, working_directory: str) -> FileCatalog
 
 
 __all__ = [
+    "Catalogue",
     "CatalogueRoots",
-    "DictCatalogue",
     "FileCatalogue",
     "PROJECT_INSTRUCTION_NAMES",
     "home_instruction_paths",

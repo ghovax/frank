@@ -22,19 +22,19 @@ from pathlib import Path
 from typing import Any
 
 from frank.base.catalogue import project_catalogue
-from frank.base.configuration import GlobalConfiguration
+from frank.base.configuration import Configuration
 
 
-def load_configuration(*, seed: bool = True) -> GlobalConfiguration:
+def load_configuration(*, seed: bool = True) -> Configuration:
     """Read the XDG configuration file, seeding it from the packaged template on first run.
 
     `seed=False` reads without creating, for a program that wants what is there and does not
     want to leave a file behind if there is nothing.
     """
-    return GlobalConfiguration.load(seed=seed)
+    return Configuration.load(seed=seed)
 
 
-def load_catalogue(configuration: GlobalConfiguration, directory: str | Path) -> Any:
+def load_catalogue(configuration: Configuration, directory: str | Path) -> Any:
     """The agents, skills, memories and instructions reachable from `directory`.
 
     Walks that directory's `.agents`, the packaged base layer, and — because this is the
@@ -43,7 +43,7 @@ def load_catalogue(configuration: GlobalConfiguration, directory: str | Path) ->
     return project_catalogue(configuration, str(Path(directory).resolve()))
 
 
-def load_agent(name: str, directory: str | Path, *, configuration: GlobalConfiguration | None = None) -> Any:
+def load_agent(name: str, directory: str | Path, *, configuration: Configuration | None = None) -> Any:
     """One named agent profile from this machine, ready to hand to `Session`.
 
     Raises `LookupError` naming what is available, because a typo in an agent name is the most

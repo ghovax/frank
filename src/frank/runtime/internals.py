@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from frank.base.credentials import is_signed_in
 from frank.base.cursor_credentials import is_signed_in as cursor_is_signed_in
-from frank.base.configuration import GlobalConfiguration, PromptLoader
+from frank.base.configuration import Configuration, PromptLoader
 from frank.protocol.events import tool_status_from_result, ToolStatus
 from frank.base.providers import resolve_api_key
 from frank.base.tuning import active_tuning, clip_to_tokens, Tunable
@@ -69,7 +69,7 @@ async def _stream_next(iterator: AsyncIterator) -> Any:
 
 def model_is_authorized(
     model_identifier: str,
-    global_configuration: GlobalConfiguration,
+    global_configuration: Configuration,
 ) -> bool:
     """Whether we currently hold credentials to call ``model_identifier``.
 

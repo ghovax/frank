@@ -3,7 +3,7 @@ remote-agent health."""
 
 from __future__ import annotations
 
-from frank.base.configuration import GlobalConfiguration
+from frank.base.configuration import Configuration
 from frank.protocol.client import RemoteAgentAuth, RemoteAgentConfiguration, RemoteAgentManager
 from frank.workspace import state
 
@@ -36,7 +36,7 @@ async def _reload_remote_agents() -> None:
     the change. No server restart required."""
     assert state.global_configuration is not None
     async with state.configuration_lock:
-        state.global_configuration.remote_agents = GlobalConfiguration.load().remote_agents
+        state.global_configuration.remote_agents = Configuration.load().remote_agents
         configurations = _remote_agent_dataclasses()
         if state.remote_agent_manager is None:
             state.remote_agent_manager = RemoteAgentManager(configurations)

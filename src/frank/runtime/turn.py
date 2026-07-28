@@ -22,6 +22,7 @@ from frank.runtime.internals import (
 )
 from frank.runtime.prompt.environment import probe_local_environment, probe_user_context
 from frank.protocol.events import TurnContext
+from frank.base.instructions import instructions_payload
 from frank.base.memories import memories_payload
 from frank.base.message_content import message_content_deltas, message_text
 from frank.base.skills import enabled_skills, skills_for_agent, skills_payload
@@ -129,7 +130,7 @@ class _TurnLoopMixin:
                 "context": context_json,
                 "system_environment": probe_local_environment(),
                 "user_environment": user_environment,
-                "instructions": self._catalogue.instructions(),
+                "instructions": compact(instructions_payload(self._catalogue.instructions())),
                 "skills": compact(skills_payload(agent_skills)),
                 "memories": compact(memories_payload(memories)),
                 "agent_context": agent_context,

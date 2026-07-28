@@ -27,7 +27,7 @@ from langchain_core.messages import messages_from_dict
 from frank.base.background_tasks import spawn_background_task
 from frank.base.catalogue import machine_catalogue
 from frank.base.file_leases import FileLeaseManager
-from frank.base.configuration import GlobalConfiguration
+from frank.base.configuration import Configuration
 from frank.base.background_store import get_background_job_store
 from frank.base.ports import JobStore
 from frank.base.workspaces import SessionWorkspace
@@ -64,7 +64,7 @@ class SessionExecutor(AgentExecutor):
         agent_name: str,
         working_directory: str,
         permission_mode: str,
-        global_configuration: GlobalConfiguration,
+        global_configuration: Configuration,
         sandbox: Optional[dict] = None,
         runtime_working_directory: str = "",
         project_id: str = "",

@@ -4,7 +4,7 @@ reloading the configuration file."""
 from __future__ import annotations
 
 from frank.workspace.brokers.composio import composio_mcp_servers
-from frank.base.configuration import GlobalConfiguration, save_api_keys
+from frank.base.configuration import Configuration, save_api_keys
 from frank.base.paths import configuration_file_path
 from frank.base.mcp_client import MCPClientManager
 from typing import Optional
@@ -60,7 +60,7 @@ async def _reload_configuration_from_disk() -> None:
     any folder-added servers) is left to its own watcher — only the credential-derived
     Composio server is re-provisioned here."""
     assert state.global_configuration is not None
-    fresh = await asyncio.to_thread(GlobalConfiguration.load)
+    fresh = await asyncio.to_thread(Configuration.load)
     configuration = state.global_configuration
     user_context_setting_changed = configuration.user_context.enabled != fresh.user_context.enabled
     configuration.exa = fresh.exa

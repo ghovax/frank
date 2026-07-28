@@ -40,7 +40,7 @@ the words the others use, so it comes first:
 
 ```python
 import asyncio
-from frank import AgentConfiguration, DictCatalogue, Session
+from frank import AgentConfiguration, Catalogue, Session
 
 reviewer = AgentConfiguration(
     name="reviewer",
@@ -54,7 +54,7 @@ async def main() -> None:
     async with Session(
         reviewer,
         directory="/srv/checkout",
-        catalogue=DictCatalogue(agent_configurations={"reviewer": reviewer}),
+        catalogue=Catalogue(agents={"reviewer": reviewer}),
         providers={"anthropic": "sk-ant-…"},
     ) as session:
         print(await session.ask("What would break if I removed the retry loop?"))

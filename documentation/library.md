@@ -16,7 +16,7 @@ Everything a session needs can be built in code:
 
 ```python
 import asyncio
-from frank import AgentConfiguration, DictCatalogue, Session
+from frank import AgentConfiguration, Catalogue, Session
 
 reviewer = AgentConfiguration(
     name="reviewer",
@@ -31,7 +31,7 @@ async def main() -> None:
     async with Session(
         reviewer,
         directory="/srv/checkout",
-        catalogue=DictCatalogue(agent_configurations={"reviewer": reviewer}),
+        catalogue=Catalogue(agents={"reviewer": reviewer}),
         providers={"anthropic": "sk-ant-…"},
     ) as session:
         print(await session.ask("What would break if I removed the retry loop in the fetcher?"))
@@ -103,7 +103,7 @@ Everything durable is a constructor argument with an interface behind it. The de
 | `catalogue` | `frank.Catalogue` | The working directory's `.agents` plus the packaged base layer — **and nothing of `$HOME`** | Where agents, skills, memories, instructions and prompt templates come from |
 | `providers` | `{"anthropic": "sk-..."}` or `{"custom": {"api_key": ..., "base_url": ...}}` | Whatever the machine is configured with | Provider credentials, in code |
 | `model_identifier` | `"provider/model"` | The agent profile's own | Which model this session runs, overriding the profile |
-| `configuration` | `GlobalConfiguration` | Read from XDG, **without creating it** | Providers, tuning, agent directories |
+| `configuration` | `Configuration` | Read from XDG, **without creating it** | Providers, tuning, agent directories |
 | `agent` | `str` name **or** an `AgentConfiguration` you build | — (required) | The agent itself: prompt, model, permission mode, which built-in tools it has |
 | `tools` | LangChain [`BaseTool`](https://python.langchain.com/docs/concepts/tools/) | None | Tools the agent gains, on top of the harness's |
 | `permissions` | A `PermissionEvaluator`-shaped object | The built-in rule engine | Whether a call is gated at all |
@@ -258,27 +258,27 @@ A library session's default catalogue therefore reads the working directory and 
 Build one entirely in code when you want the prompt fully under your control:
 
 ```python
-from frank.base.catalogue import DictCatalogue
+from frank.base.catalogue import Catalogue
 from frank.base.configuration import AgentConfiguration
 from frank.base.skills import Skill
 
-catalogue = DictCatalogue(
-    agent_configurations={"reviewer": reviewer},
-    skill_list=[
+catalogue = Catalogue(
+    agents={"reviewer": reviewer},
+    skills=[
         Skill(
             name="house-style",
             description="How this codebase names things and orders imports.",
             body=HOUSE_STYLE,
         ),
     ],
-    instruction_text='[{"path": "in-memory", "content": "Always cite file and line."}]',
+    instructions="Always cite file and line.",
 )
 session = Session(reviewer, directory="/srv/checkout", catalogue=catalogue)
 ```
 
-Unlisted prompt templates fall back to the packaged ones. You therefore opt in to replace the system prompt. You do not have to reproduce it to get started. And `agent=` accepts an `AgentConfiguration` directly as well as a name, which is the shortest path of all when you have one in hand.
+Unlisted prompt templates fall back to the packaged ones. You therefore opt in to replace the system prompt. You do not have to reproduce it to get started.
 
-`FileCatalogue` is the other shipped implementation — it is what the harness has always done, with the roots as an argument instead of derived.
+`FileCatalogue` is the other shipped implementation, and it reads a machine. It lives behind [`frank.daemon.machine`](#taking-what-the-machine-has), which is where machine-shaped things belong.
 
 ### Approvals
 

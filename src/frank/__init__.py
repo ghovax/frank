@@ -52,16 +52,17 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, AsyncIterator, Mapping, Optional, Sequence
 
-from frank.base.catalogue import DictCatalogue
-from frank.base.configuration import AgentConfiguration, GlobalConfiguration
+from frank.base.catalogue import Catalogue
+from frank.base.configuration import AgentConfiguration, Configuration
 from frank.base.permission_mode import PermissionMode
+from frank.base.instructions import Instruction
 from frank.base.skills import Skill
 from frank.runtime.compaction import KeepRecentTurns
 from frank.runtime.hooks import MaximumToolCalls
 from frank.base.ports import (
     Approval,
     Approvals,
-    Catalogue,
+    CatalogueLike,
     Checkpoints,
     Compaction,
     CompactionState,
@@ -85,12 +86,13 @@ __all__ = [
     "Approval",
     "Approvals",
     "Catalogue",
+    "CatalogueLike",
     "Checkpoints",
     "Compaction",
     "CompactionState",
     "Credentials",
-    "DictCatalogue",
-    "GlobalConfiguration",
+    "Configuration",
+    "Instruction",
     "JobStore",
     "KeepRecentTurns",
     "MaximumToolCalls",
@@ -180,7 +182,7 @@ class Session:
         # The seams. Each defaults to the least surprising thing for a program that is not a
         # daemon, which for anything durable means "in memory", not "somewhere under $HOME".
         model: Any = None,
-        catalogue: Optional[Catalogue] = None,
+        catalogue: Optional[CatalogueLike] = None,
         checkpoints: Optional[Checkpoints] = None,
         jobs: Optional[JobStore] = None,
         observer: Optional[Observer] = None,
@@ -205,7 +207,7 @@ class Session:
         workspace: Any = None,
         tracer_provider: Any = None,
     ) -> None:
-        from frank.base.configuration import GlobalConfiguration
+        from frank.base.configuration import Configuration
         from frank.base.identifiers import new_id
 
         if isinstance(agent, str):
@@ -228,16 +230,16 @@ class Session:
         # `seed=False`: reading configuration must not leave a file in the caller's home
         # directory. The CLI and the daemon seed it deliberately, because a person installing
         # Frank needs something to edit; a program that imported us did not ask for that.
-        # `GlobalConfiguration()`, not `.load()`. A library that reads your home directory
+        # `Configuration()`, not `.load()`. A library that reads your home directory
         # because you imported it is not location-agnostic, whatever it does with what it finds.
         # `frank.daemon.machine` is where the XDG loaders live, and it is the daemon's business
         # because the daemon is the program that runs on a machine.
-        self._configuration = configuration if configuration is not None else GlobalConfiguration()
+        self._configuration = configuration if configuration is not None else Configuration()
         if providers:
             _apply_providers(self._configuration, providers)
         self._model_identifier = model_identifier
         self._model = model
-        self._catalogue = _require(Catalogue, catalogue, "catalogue")
+        self._catalogue = _require(CatalogueLike, catalogue, "catalogue")
         self._checkpoints = _require(Checkpoints, checkpoints, "checkpoints") or MemoryCheckpoints()
         self._jobs = _require(JobStore, jobs, "jobs") or MemoryJobStore()
         self._observer = _require(Observer, observer, "observer")
@@ -301,7 +303,7 @@ class Session:
             # skills, no memories and no project instructions — not that the harness should go
             # and find some. Prompt templates still fall back to the packaged ones, which is
             # the library reading itself rather than reading your machine.
-            catalogue = self._catalogue if self._catalogue is not None else DictCatalogue()
+            catalogue = self._catalogue if self._catalogue is not None else Catalogue()
             agent_configuration = self._agent
             # A model named at the call site beats the profile's. The common case for an
             # embedder is one agent definition run against whichever model the program is
