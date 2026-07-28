@@ -1,6 +1,6 @@
 # Plans
 
-Design plans for the Daisy harness, built sequentially — each plan is a self-contained Markdown document describing one body of work and is associated with the commit it landed in. There is no manifest and no folder nesting: the plans are a flat, append-only sequence, read in creation order.
+Design plans for the Frank harness, built sequentially — each plan is a self-contained Markdown document describing one body of work and is associated with the commit it landed in. There is no manifest and no folder nesting: the plans are a flat, append-only sequence, read in creation order.
 
 The plans themselves are left as they were written, which is why several of them say `xeac`: the harness carried that name for a stretch, and the plans from that stretch are records of the work as it was done. A record edited to match the present is not a record. Only this index, which describes the convention rather than any particular piece of work, tracks the current name.
 
