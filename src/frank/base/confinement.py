@@ -119,7 +119,7 @@ class Profile:
             enforce=max(self.enforce, parent.enforce, key=strictness.index),
         )
 
-    def narrowed(self, *, writable: Iterable[str], network: bool) -> "Profile":
+    def narrowed(self, *, writable: Iterable[str], network: bool, workspace: str = "") -> "Profile":
         """A stricter variant of this profile, for a child that needs less than the session does.
 
         The `control_screen` child is the case: everything it can do is bridged to its parent over
@@ -134,7 +134,7 @@ class Profile:
                 # have meant that a session permitted to write nowhere useful handed its child
                 # a directory it did not itself hold — a widening, in the one method whose
                 # whole purpose is to narrow.
-                writable=_contained_in(tuple(writable), self.filesystem.writable),
+                writable=_contained_in(tuple(writable), self.filesystem.writable, workspace=workspace),
                 deny=self.filesystem.deny,
             ),
             network=self.network and network,
@@ -190,10 +190,16 @@ def expand(path: str, *, workspace: str = "") -> str:
         return ""
 
 
-def _contained_in(paths: Iterable[str], allowed: Iterable[str]) -> tuple[str, ...]:
+def _contained_in(paths: Iterable[str], allowed: Iterable[str], *, workspace: str = "") -> tuple[str, ...]:
     """The paths that lie within ``allowed``. An empty allowance permits nothing, which is what
-    makes the clamp a clamp: a parent that may write nowhere gives a child nowhere."""
-    allowed_paths = [Path(entry) for entry in allowed]
+    makes the clamp a clamp: a parent that may write nowhere gives a child nowhere.
+
+    Both sides are expanded first. They were not, and a parent whose allowance is written the way
+    every allowance is written — ``$WORKSPACE``, ``$TMPDIR`` — was compared against a real
+    directory, matched nothing, and clamped its child to nowhere. The child then also lost the
+    *read* that came with that allowance, which is how a screen-control helper ended up unable to
+    execute the interpreter running it."""
+    allowed_paths = [Path(resolved) for entry in allowed if (resolved := expand(entry, workspace=workspace))]
     kept = []
     for entry in paths:
         candidate = Path(entry)
@@ -252,6 +258,22 @@ def _quote_sbpl(text: str) -> str:
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+def _interpreter_roots() -> tuple[str, ...]:
+    """The directories a child needs in order to be the Python that was asked for.
+
+    Deduplicated and resolved, because in a virtualenv `sys.prefix` and `sys.base_prefix` differ
+    and the child needs both — one for the environment it was launched from, one for the
+    interpreter and standard library it actually is."""
+    roots = []
+    for candidate in (os.path.realpath(sys.executable), sys.prefix, sys.base_prefix):
+        resolved = os.path.realpath(candidate)
+        if os.path.isfile(resolved):
+            resolved = os.path.dirname(resolved)
+        if resolved and resolved not in roots:
+            roots.append(resolved)
+    return tuple(roots)
+
+
 def build_sbpl(profile: Profile, *, workspace: str = "") -> str:
     """The Seatbelt profile for one child.
 
@@ -282,6 +304,23 @@ def build_sbpl(profile: Profile, *, workspace: str = "") -> str:
         resolved = expand(entry, workspace=workspace)
         if resolved:
             lines.append(f"(deny file-read* file-write* (subpath {_quote_sbpl(resolved)}))")
+    # Metadata everywhere, content nowhere it was not granted. Denying `file-read*` across a
+    # home directory also denies `file-read-metadata` on every directory *above* an allowance,
+    # and a path cannot be reached without traversing its ancestors — so a subpath allowance
+    # under home silently did nothing, including the ones a person writes in their own
+    # settings. Metadata is the existence and shape of a file, not its contents; the denial
+    # above still refuses every byte, which is what it is for.
+    lines.append("(allow file-read-metadata)")
+    # Last of all, and therefore winning over every denial above it. A profile that cannot read
+    # and execute the interpreter cannot run anything at all, so this is not a preference and not
+    # configurable — a home-wide read denial would otherwise silently make the whole sandbox
+    # unusable, which is precisely what it did. `sys.executable` is usually a symlink (a
+    # virtualenv's `bin/python3`, a managed interpreter under `~/.local/share/uv`) and the sandbox
+    # judges the resolved file, so the real prefixes are what get allowed: `sys.prefix` for the
+    # environment, `sys.base_prefix` for the interpreter and its standard library.
+    for interpreter_root in _interpreter_roots():
+        lines.append(f"(allow file-read* process-exec (subpath {_quote_sbpl(interpreter_root)}))")
+
     return "\n".join(lines)
 
 

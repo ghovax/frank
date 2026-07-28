@@ -76,7 +76,7 @@ async def run_control_script(
     # profiles to configure would be two profiles to get wrong.
     scratch = confinement.temporary_directory(profile, workspace=workspace)
     child_profile = (
-        profile.narrowed(writable=[scratch] if scratch else [], network=False)
+        profile.narrowed(writable=[scratch] if scratch else [], network=False, workspace=workspace)
         if profile is not None else None
     )
     spawn = confinement.spawn_recipe(
