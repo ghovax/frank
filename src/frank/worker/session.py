@@ -854,7 +854,12 @@ class SessionExecutor(AgentExecutor):
             if title:
                 await self._turn_store.publish_title(title)
         except Exception:  # noqa: BLE001 — a session is not worth failing over its own name
-            logger.debug("Could not generate a title for session %s", self._session_id, exc_info=True)
+            # Not `debug`. Failing to name a session is cosmetic; failing to name *every*
+            # session is a fault, and at debug level the difference was invisible — a sidebar
+            # full of "Untitled conversation" with nothing anywhere saying why.
+            logger.warning(
+                "Could not generate a title for session %s", self._session_id, exc_info=True
+            )
 
     def inject(self, text: str) -> bool:
         """Deliver a message into the turn that is already running, at its next safe point.
