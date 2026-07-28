@@ -476,7 +476,12 @@
     "peerMessage": "メッセージ",
     "peerStatus": "状態",
     "peerWaiting": "待機中",
-    "noPeerSessions": "ピアセッションはありません"
+    "noPeerSessions": "ピアセッションはありません",
+    "surfaceBrowser": "ブラウザ",
+    "surfaceComputer": "この Mac",
+    "errorTitle": "この手順は実行できませんでした",
+    "controlScreenNoResult": "画面操作スクリプトは何も返さずに終了しました。通常は途中で停止したことを意味します。エージェントはより小さな手順で再試行できます。",
+    "controlScreenDied": "画面操作スクリプトは完了する前に停止しました。最後の出力を以下に示します。"
   },
   "ChatGPTAuthControl": {
     "signInError": "サインインを開始できませんでした。",

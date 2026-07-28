@@ -153,9 +153,9 @@ def _quietly_close(stream: Any) -> None:
 def _parse_result(stdout: Optional[bytes]) -> dict:
     text = (stdout or b"").decode("utf-8", "replace").strip()
     if not text:
-        return {"ok": False, "error": "control_screen: the script produced no result."}
+        return {"ok": False, "error": "The screen-control script ended without returning anything. It most likely stopped early; try a smaller step."}
     try:
         return json.loads(text)
     except Exception:
         # The child always writes JSON last; anything else is a hard crash (segfault, OOM kill).
-        return {"ok": False, "error": "control_screen: the script process died before returning a result.", "output": text[-2000:]}
+        return {"ok": False, "error": "The screen-control script stopped before it finished.", "output": text[-2000:]}

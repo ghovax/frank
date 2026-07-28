@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Button, Flex, IconButton, Image, Link, Text, Textarea } from "@chakra-ui/react";
+import { Alert, Box, Button, Flex, IconButton, Image, Link, Text, Textarea } from "@chakra-ui/react";
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
 import { useTranslations } from "next-intl";
 import { LuAppWindow, LuCheck, LuExternalLink, LuImageOff, LuRotateCw, LuTrash2 } from "react-icons/lu";
@@ -102,7 +102,11 @@ function ControlScreenCallView({ args }: { args: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   return (
     <FieldList>
-      {asString(args.surface) && <InlineField label={translation("searchSurface")}>{asString(args.surface)}</InlineField>}
+      {asString(args.surface) && (
+        <InlineField label={translation("searchSurface")}>
+          {asString(args.surface) === "computer" ? translation("surfaceComputer") : translation("surfaceBrowser")}
+        </InlineField>
+      )}
       <Field label={translation("controlScript")}>
         <MonoBlock>{asString(args.script)}</MonoBlock>
       </Field>
@@ -862,11 +866,28 @@ function AlertBox({ colorPalette, children }: { colorPalette: string; children: 
   );
 }
 
+// Backend wording that says what happened to a program rather than to a person. Each is
+// replaced with a sentence that names the failure and what can be done about it; anything
+// unrecognised still shows verbatim, under a heading, because an unexplained error is worse
+// than a blunt one.
+const REPHRASED_ERRORS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^control_screen: the script produced no result\.?$/i, "controlScreenNoResult"],
+  [/^control_screen: the script process died before returning a result\.?$/i, "controlScreenDied"],
+];
+
 function ErrorView({ message }: { message: string }) {
+  const translation = useTranslations("ToolViews");
+  const trimmed = message.trim();
+  const rephrased = REPHRASED_ERRORS.find(([pattern]) => pattern.test(trimmed));
+  const body = rephrased ? translation(rephrased[1] as Parameters<typeof translation>[0]) : trimmed;
   return (
-    <AlertBox colorPalette="red">
-      <Text fontSize="xs" color="red.fg">{message}</Text>
-    </AlertBox>
+    <Alert.Root status="error" size="sm" borderRadius="md" alignItems="flex-start">
+      <Alert.Indicator />
+      <Alert.Content flex={1} minW={0}>
+        <Alert.Title fontSize="xs">{translation("errorTitle")}</Alert.Title>
+        <Alert.Description fontSize="xs" color="fg.muted">{body}</Alert.Description>
+      </Alert.Content>
+    </Alert.Root>
   );
 }
 

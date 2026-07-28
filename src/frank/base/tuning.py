@@ -205,6 +205,15 @@ class Tunable(Enum):
     )
 
     # The control plane and the processes it supervises.
+    warm_workers = Default(
+        2, Scaling.NONE,
+        "How many session workers to keep started and waiting. A worker spends about two and a "
+        "half seconds importing the runtime before it can serve, and none of that work depends "
+        "on which session it becomes — so some are started ahead of demand and a new session is "
+        "handed one instead of waiting. Raise it if several sessions are often created at once. "
+        "One is the minimum: a session created with the pool empty starts its own worker and "
+        "waits for the import, which is what every session did before the pool existed.",
+    )
     prototype_start_seconds = Default(
         120.0, Scaling.TIME,
         "How long the daemon waits for the prototype to start and accept a connection. The "

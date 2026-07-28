@@ -88,11 +88,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from frank.base.fork_protocol import StartFailure
-
-# How many workers to keep started and waiting. Two rather than one so a second session created
-# while the first is being handed over still finds a warm worker; more would hold interpreters
-# resident for a burst that does not happen on a personal machine.
-WARM_WORKERS = 2
+from frank.base.tuning import Tunable, active_tuning
 
 logger = logging.getLogger("frank.prototype")
 
@@ -291,6 +287,7 @@ class Prototype:
         # They are kept apart from `_children` deliberately: a parked worker belongs to no
         # session, so its death is a pool refill and not a session that ended.
         self._parked: list[_ParkedWorker] = []
+        self._refill_wanted = False
         self._wakeup_read = -1
         self._wakeup_write = -1
         self._stopping = False
@@ -309,9 +306,9 @@ class Prototype:
         self._listener = listener
         self._selector.register(listener, selectors.EVENT_READ, self._accept)
         self._install_child_wakeup()
-        # Start the pool now, so the first session of the day is as quick as the rest. The
-        # daemon is not waiting on this: these workers are for requests that have not arrived.
-        self._refill_pool()
+        # Ask for the pool now, so the first session of the day is as quick as the rest. The
+        # loop starts them; `start()` returns without waiting for any of it.
+        self._want_refill()
 
     def _install_child_wakeup(self) -> None:
         """Turn `SIGCHLD` into a readable descriptor.
@@ -328,6 +325,12 @@ class Prototype:
         signal.set_wakeup_fd(write_end)
         self._selector.register(read_end, selectors.EVENT_READ, self._on_wakeup)
 
+    def _interrupt_wait(self) -> None:
+        """Wake a `select` that is parked with no timeout, so deferred work happens promptly."""
+        if self._wakeup_write >= 0:
+            with contextlib.suppress(OSError):
+                os.write(self._wakeup_write, b"\x00")
+
     def run(self) -> int:
         """Park, and serve fork requests until told to stop."""
         logger.info(
@@ -336,7 +339,7 @@ class Prototype:
         )
         while not self._stopping:
             try:
-                events = self._selector.select(timeout=None)
+                events = self._selector.select(timeout=0 if self._refill_wanted else None)
             except InterruptedError:
                 continue
             except OSError:
@@ -345,6 +348,10 @@ class Prototype:
                 raise
             for key, _mask in events:
                 key.data(key.fileobj)
+            # After the requests, never before: a worker started here is for a session nobody
+            # has asked for yet, and the one who did ask has already been answered.
+            if self._refill_wanted and not self._stopping:
+                self._refill_pool()
         return 0
 
     def stop(self) -> None:
@@ -484,15 +491,35 @@ class Prototype:
         return _ParkedWorker(pid=pid, assignment_write=assignment_write, ready_read=ready_read)
 
     def _refill_pool(self) -> None:
-        """Bring the pool back up to strength. Called after a hand-out and after a parked death.
+        """Bring the pool back up to strength.
 
-        Never on the path of a request: a worker started here is for the session after next.
+        Never called directly from a request. `_want_refill` marks the need and the event loop
+        does the work once it has nothing else to answer, so a fork request is replied to before
+        any worker is started for the session after it. Starting one is a fork and an exec — a
+        few milliseconds, not seconds, because the child does the importing — but a few
+        milliseconds spent inside a request is still spent by whoever is waiting.
         """
-        while len(self._parked) < WARM_WORKERS:
+        self._refill_wanted = False
+        target = self._warm_workers()
+        while len(self._parked) < target:
             worker = self._start_worker()
             if worker is None:
+                logger.warning("could not start a warm worker; the pool is short (%d of %d)",
+                               len(self._parked), target)
                 return
             self._parked.append(worker)
+            logger.info("warm worker started (pid %d); importing the runtime — pool %d of %d",
+                        worker.pid, len(self._parked), target)
+
+    def _warm_workers(self) -> int:
+        """How many to keep. Read afresh so a change in configuration takes effect on the next
+        refill rather than at the next restart of this process."""
+        return active_tuning().amount(Tunable.warm_workers)
+
+    def _want_refill(self) -> None:
+        """Ask for a refill on the next turn of the loop, rather than doing one here."""
+        self._refill_wanted = True
+        self._interrupt_wait()
 
     def _fork_session(self, fork: str, assignment: dict) -> None:
         """Give one worker a session, and tell the daemon which process became it.
@@ -508,7 +535,14 @@ class Prototype:
         """
         session_id = str(assignment.get("session_id") or "")
 
-        worker = self._parked.pop(0) if self._parked else self._start_worker()
+        warm = bool(self._parked)
+        worker = self._parked.pop(0) if warm else self._start_worker()
+        if warm:
+            logger.info("session %s takes warm worker pid %d — %d left parked",
+                        session_id or "?", worker.pid if worker else -1, len(self._parked))
+        else:
+            logger.info("session %s found no warm worker and starts its own; it waits for the "
+                        "runtime import", session_id or "?")
         if worker is None:
             self._send({
                 "event": "failed", "fork": fork, "session_id": session_id,
@@ -531,13 +565,13 @@ class Prototype:
                 "event": "failed", "fork": fork, "session_id": session_id,
                 "reason": StartFailure.ASSIGNMENT_UNWRITABLE, "detail": str(error),
             })
-            self._refill_pool()
+            self._want_refill()
             return
 
         self._children[worker.pid] = (session_id, fork)
         self._pending[worker.ready_read] = (session_id, fork, bytearray())
         self._selector.register(worker.ready_read, selectors.EVENT_READ, self._on_ready_readable)
-        self._refill_pool()
+        self._want_refill()
 
     def _become_session(self, assignment_read: int, ready_read: int, ready_write: int) -> int:
         """Everything the child does between `fork` and `exec`. Runs only in the child.
@@ -665,7 +699,7 @@ class Prototype:
                     with contextlib.suppress(OSError):
                         os.close(descriptor)
                 logger.warning("a parked worker (pid %d) ended before it was used", pid)
-                self._refill_pool()
+                self._want_refill()
                 continue
             session_id, fork = self._children.pop(pid, ("", ""))
             if os.WIFSIGNALED(status):

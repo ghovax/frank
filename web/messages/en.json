@@ -476,7 +476,12 @@
     "peerMessage": "Message",
     "peerStatus": "Status",
     "peerWaiting": "waiting",
-    "noPeerSessions": "No peer sessions"
+    "noPeerSessions": "No peer sessions",
+    "surfaceBrowser": "Your browser",
+    "surfaceComputer": "This Mac",
+    "errorTitle": "This step did not work",
+    "controlScreenNoResult": "The screen-control script ended without returning anything. This usually means it stopped early — the agent can try again with a smaller step.",
+    "controlScreenDied": "The screen-control script stopped before it finished. Its last output is below."
   },
   "ChatGPTAuthControl": {
     "signInError": "Could not start sign-in.",
