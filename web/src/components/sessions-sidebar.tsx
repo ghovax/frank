@@ -233,6 +233,12 @@ function SessionTreeRow({
         bg={isActive ? SELECTED_BG : undefined}
         _hover={{ bg: isActive ? SELECTED_HOVER_BG : HOVER_BG }}
         transition="background-color 0.12s"
+        // The row draws the selected and hover background, and `DisclosureRow` inside it is a
+        // fixed-height strip with no padding of its own — so without this the highlight ended
+        // exactly at the glyph and the last letter of the title, which read as a label crammed
+        // into a box rather than a row that happens to be selected.
+        px={2}
+        py={1}
         css={{
           "& [data-row-actions]": { opacity: 0, pointerEvents: "none" },
           "&:hover [data-row-actions]": { opacity: 1, pointerEvents: "auto" },
@@ -642,6 +648,8 @@ export function SessionsSidebar({
                   key={project.id}
                   className="sidebar-row"
                   borderRadius={ROW_RADIUS}
+                  px={2}
+                  py={1}
                 >
                   <DisclosureRow
                     fill

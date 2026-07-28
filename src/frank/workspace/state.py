@@ -59,6 +59,19 @@ terminal_manager: Any = None
 chatgpt_login_flow: Any = None
 cursor_login_flow: Any = None
 
+# Per-session liveness the daemon learns from the event stream rather than from the registry:
+# `_running_contexts` counts the turns a session currently has in flight (a session can be live
+# but idle), and `_awaiting_input_contexts` marks the ones parked on a human decision. The
+# registry knows whether a *process* is alive; these know what it is doing.
+#
+# They sit here rather than in `frank.daemon.state`, where they used to, because both layers
+# need them: the daemon writes them from the event stream, and `_sessions_payload` reads them
+# to say which rows are running. `daemon` may import `workspace` and not the reverse, so the
+# daemon reaches these through that module's `__getattr__` and gets these very objects — while
+# a copy on the daemon side would leave the session list reading an attribute that is not there.
+_running_contexts: dict[str, int] = {}
+_awaiting_input_contexts: set[str] = set()
+
 # Where the daemon is listening, for the surfaces that must hand out an address.
 daemon_port: int = 0
 # The loop the process runs on, for the callbacks that arrive on other threads.
@@ -94,6 +107,8 @@ async def reset_runtimes() -> None:
 
 __all__ = [
     "Broadcaster",
+    "_awaiting_input_contexts",
+    "_running_contexts",
     "agent_cards",
     "async_engine",
     "broadcaster",

@@ -96,12 +96,10 @@ def __getattr__(name: str) -> Any:
         return getattr(workspace_state, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-# Per-session liveness the daemon learns from the event stream rather than from the registry:
-# `_running_contexts` counts the turns a session currently has in flight (a session can be
-# live but idle), and `_awaiting_input_contexts` marks the ones parked on a human decision.
-# The registry knows whether a *process* is alive; these know what it is doing.
-_running_contexts: dict[str, int] = {}
-_awaiting_input_contexts: set[str] = set()
+# `_running_contexts` and `_awaiting_input_contexts` live on the workspace module and reach
+# this one through the `__getattr__` above. They are read from both layers — the daemon writes
+# them as events arrive, and the workspace builds the session list from them — and the workspace
+# cannot import this module, so the shared object has to sit on the side that both can see.
 # Strong references to in-flight title generations, so a task is not collected mid-flight.
 _title_tasks: set = set()
 # Long-lived tasks the daemon owns: the on-disk watchers, and the two background connects

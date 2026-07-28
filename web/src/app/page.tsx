@@ -181,10 +181,14 @@ function ProjectWorkspace() {
     fetchAgents(workingDirectoryRef.current)
       .then((agentList) => {
         setAgents(agentList);
-        // Keep the current selection when the folder still offers it; otherwise clear it and
-        // let the picker ask. There is no configured default to fall back to, and quietly
-        // substituting some other profile would run the work under an agent nobody chose.
-        setSelectedAgent((current) => (agentList.some((agent) => agent.id === current) ? current : ""));
+        // Keep the current selection when the folder still offers it, otherwise take the first
+        // agent on offer. Selecting nothing was the honest answer — no profile is configured as
+        // the default, so any pick is this code's rather than the user's — but it left a fresh
+        // connection unable to send at all, which is a worse kind of dishonesty: the box accepts
+        // a message and silently drops it. The picker is one click away and shows what is set.
+        setSelectedAgent((current) =>
+          agentList.some((agent) => agent.id === current) ? current : agentList[0]?.id ?? ""
+        );
         setIsConnected(true);
       })
       .catch(() => setIsConnected(false));
