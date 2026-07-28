@@ -521,7 +521,14 @@ export function ChatPanel({
       ? new Set(timelineAnimationState.seen)
       : new Set<string>();
     const nextAnimated = new Set<string>();
-    if (previousSeen.size > 0) {
+    // Only when this is the same transcript with something added. When a turn ends, the
+    // snapshot replays it from the store and every row is rebuilt under a different id — the
+    // live tail numbers rows by position, the replay numbers them by message. Nothing has
+    // changed on screen, but no key survives, and treating that as "all new" re-animated the
+    // whole conversation: the flash after an answer lands, with the thinking row fading in
+    // again under the reply it already produced.
+    const survived = timelineKeys.some((key) => previousSeen.has(key));
+    if (previousSeen.size > 0 && survived) {
       for (let index = timelineKeys.length - 1; index >= 0; index -= 1) {
         if (previousSeen.has(timelineKeys[index])) break;
         nextAnimated.add(timelineKeys[index]);
