@@ -296,9 +296,7 @@ class NativeSurface(Surface):
             pid = self._last_pid if self._last_pid is not None else self._resolve_pid("")
             keys = modifiers or []
             if not input_synthesis.press_key(pid, key, keys):
-                return {"ok": False, "error": f"{key!r} is not a key I can press. Give a named key "
-                        "(return, tab, escape, arrows, f1…) or a single letter or digit, on its own or "
-                        "in a chord: press(\"cmd+shift+g\"), press(\"escape\"), press(\"a\")."}
+                return {"ok": False, "error": f"{key!r} is not a key. Use a named key, a letter, or a chord: press(\"cmd+shift+g\")."}
             return {"ok": True, "did": f"Pressed {' '.join([*keys, key])}"}
 
         return self.guard(run)
