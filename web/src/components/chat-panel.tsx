@@ -565,7 +565,12 @@ export function ChatPanel({
 
   // A tool call awaiting the user's approval or answer pauses the turn. While it is
   // outstanding, the composer may only queue (see handleSend) and Stop auto-denies it.
-  const hasInputRequired = isStreaming && messages.some(
+  // Deliberately not gated on `isStreaming`. A turn parked on a permission is *not* running —
+  // the daemon sleeps the session, because the whole turn is checkpointed and holding an
+  // interpreter to wait for a person is what sleeping exists to avoid. So the one moment a
+  // decision must be shown is the moment the turn stops. Requiring a live turn hid every
+  // prompt behind the thing that raised it.
+  const hasInputRequired = messages.some(
     (message) => message.role === "tool_call" && message.meta?.status === "input_required"
   );
   useEffect(() => {
@@ -581,7 +586,7 @@ export function ChatPanel({
     | { kind: "permission"; permission: ToolPermission; title: string; command?: string; arguments?: Record<string, unknown> }
     | null
   ) = null;
-  if (isStreaming) {
+  {
     for (const message of messages) {
       if (message.role !== "tool_call" || message.meta?.status !== "input_required") continue;
       const question = message.meta?.question as ToolQuestion | undefined;

@@ -159,6 +159,23 @@ def _set_session_title(session_id: str, title: str) -> bool:
             database_session.close()
 
 
+def _activity_of(session_id: str, lifecycle: str) -> str:
+    """What a session is doing, in the order of interest.
+
+    A session parked on a person is the fact worth surfacing even though a turn is technically
+    still open, so `waiting` outranks `working`. A session with no process is asleep rather
+    than idle — but that is the daemon's knowledge, so an unreachable-from-here distinction
+    collapses to `idle`, which is what the interface already showed for it.
+    """
+    if lifecycle == "ended":
+        return "ended"
+    if session_id in state._awaiting_input_contexts:
+        return "waiting"
+    if session_id in state._running_contexts:
+        return "working"
+    return "idle"
+
+
 def _sessions_payload() -> dict[str, list[dict[str, Any]]]:
     """List recent chat sessions for the sidebar."""
     assert state.session_factory is not None
@@ -191,6 +208,16 @@ def _sessions_payload() -> dict[str, list[dict[str, Any]]]:
                     ),
                     "running": row.id in state._running_contexts,
                     "awaiting_input": row.id in state._awaiting_input_contexts,
+                    # What the session is *doing*, which `lifecycle` deliberately does not say.
+                    # The interface reads this to choose a status dot, and it was simply absent
+                    # from this payload — so `session.activity || "idle"` on the other side made
+                    # every session look idle, including one parked on a decision.
+                    #
+                    # Derived here rather than read from the daemon's registry, because the
+                    # workspace is served without a daemon and must not reach across. The two
+                    # facts it does have are pushed to it by the daemon at the same edges the
+                    # registry learns them, so they agree.
+                    "activity": _activity_of(row.id, str(row.lifecycle or "live")),
                 }
                 for row in rows
             ]
