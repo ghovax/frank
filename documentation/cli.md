@@ -16,7 +16,7 @@ A **session** is one OS process running one agent. You create it empty, send it 
 
 ```shell
 id=$(frank create --agent general-assistant --directory ~/code/project)
-frank send "$id" "what does this project do?" --wait
+frank send "$id" "What does this project do?" --wait
 frank ps
 ```
 
@@ -267,8 +267,8 @@ The CLI is the ergonomic face of the control plane. It may be idiomatic where th
 ## One turn, without a daemon
 
 ```shell
-frank run "what does this project do?"
-frank run -C ~/code/project --agent reviewer "what changed and is it safe?"
+frank run "What does this project do?"
+frank run -C ~/code/project --agent reviewer "What changed on this branch, and is it safe to ship?"
 echo "summarise this" | frank run -
 frank run --allow "run the tests and tell me what failed"
 ```

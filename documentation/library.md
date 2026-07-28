@@ -191,8 +191,8 @@ reviewer = AgentConfiguration(
     ),
 )
 
-async with Session(reviewer, directory=".") as session:
-    print(await session.ask("what changed and is it safe?"))
+async with Session(reviewer, directory="/srv/checkout") as session:
+    print(await session.ask("What changed on this branch, and is it safe to ship?"))
 ```
 
 Under-specify it and the error says what to do rather than failing obscurely:
@@ -340,7 +340,7 @@ results, usage, suspensions, the same events a session sends a client over its s
 ```python
 from frank.runtime.turn_events import TextChunk, ToolCall, Suspended
 
-async for event in session.stream("refactor the parser"):
+async for event in session.stream("Refactor the parser to use the streaming reader."):
     match event:
         case TextChunk(text=text):
             print(text, end="", flush=True)

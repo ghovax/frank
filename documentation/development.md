@@ -26,7 +26,7 @@ The CLI starts the daemon on its first command, so usually there is nothing to l
 
 ```shell
 uv run frank create --agent general-assistant --directory ~/code/project
-uv run frank send <id> "what does this project do?" --wait
+uv run frank send "$id" "What does this project do?" --wait
 ```
 
 The [`frank` command](cli.md) is the full surface. To run the daemon in the foreground instead — the fastest way to watch a traceback — start it by name:

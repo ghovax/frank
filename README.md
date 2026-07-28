@@ -91,7 +91,7 @@ A program that *is* running on someone's machine can ask for that machine's agen
 | Command | What it does |
 |---|---|
 | `frank create --agent general-assistant --directory ~/code/project` | Creates a session and prints its id |
-| `frank send <id> "what does this project do?" --wait` | Sends it work and waits for the answer |
+| `frank send <id> "What does this project do?" --wait` | Sends it work and waits for the answer |
 | `frank ps` | Shows what runs, and what waits on you |
 | `frank attach <id>` | Follows it live |
 
