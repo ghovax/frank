@@ -8,7 +8,6 @@
 // (a decline) — which tells the model the user chose not to answer and stops.
 
 import { Box, Button, Flex, IconButton, Input, Text } from "@chakra-ui/react";
-import { AnimatePresence, motion } from "motion/react";
 import { useTranslations } from "next-intl";
 import { useRef, useState } from "react";
 import { LuCheck, LuChevronLeft, LuChevronRight, LuSkipForward, LuX } from "react-icons/lu";
@@ -104,13 +103,6 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
   });
 
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.15 }}
-      >
         <Box
           ref={boxRef}
           w="full"
@@ -246,7 +238,5 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
             </Button>
           </Flex>
         </Box>
-      </motion.div>
-    </AnimatePresence>
   );
 }

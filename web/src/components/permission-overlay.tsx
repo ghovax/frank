@@ -9,7 +9,6 @@
 // when the triggering card is scrolled out of view.
 
 import { Box, Button, Flex, Text } from "@chakra-ui/react";
-import { AnimatePresence, motion } from "motion/react";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef } from "react";
 import { LuShieldAlert } from "react-icons/lu";
@@ -68,13 +67,6 @@ export function PermissionOverlay({ permission, title, detail, command, argument
   const risk = permission.risk ? String(permission.risk).toLowerCase() : "";
 
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.15 }}
-      >
         <Box
           ref={boxRef}
           tabIndex={0}
@@ -154,7 +146,5 @@ export function PermissionOverlay({ permission, title, detail, command, argument
             </Button>
           </Flex>
         </Box>
-      </motion.div>
-    </AnimatePresence>
   );
 }

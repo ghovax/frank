@@ -954,25 +954,42 @@ export function ChatPanel({
         {/* The approval/question overlay sits in the same 80rem centered column as the messages
             and composer, so it reads as a card in the chat column instead of a bar spanning the
             whole panel. No overflow clipping here — that would slice the card's drop shadow. */}
-        {pendingPrompt && (
-          <Box px={4}>
-            <Box w="full" maxW="80rem" mx="auto">
-              {pendingPrompt.kind === "question" && (
-                <QuestionOverlay question={pendingPrompt.question} onQuestion={handleQuestion} onDismiss={declineQuestion} />
-              )}
-              {pendingPrompt.kind === "permission" && (
-                <PermissionOverlay
-                  permission={pendingPrompt.permission}
-                  title={pendingPrompt.title}
-                  detail={pendingPrompt.detail}
-                  command={pendingPrompt.command}
-                  arguments={pendingPrompt.arguments}
-                  onPermission={handlePermission}
-                />
-              )}
-            </Box>
-          </Box>
-        )}
+        {/* One owner for the transition, keyed by the request being asked about. The overlays
+            used to wrap themselves in an `AnimatePresence` whose child had no key, while this
+            parent mounted and unmounted them outright — so exit could never run, and every new
+            prompt replayed the entrance from nothing. `mode="wait"` makes a replacing prompt
+            wait for the outgoing one to finish, so two decisions can never be on screen at
+            once; `initial={false}` keeps a prompt that is already pending on load from
+            animating in as though it had just arrived. */}
+        <AnimatePresence mode="wait" initial={false}>
+          {pendingPrompt && (
+            <motion.div
+              key={pendingPromptId}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
+            >
+              <Box px={4}>
+                <Box w="full" maxW="80rem" mx="auto">
+                  {pendingPrompt.kind === "question" && (
+                    <QuestionOverlay question={pendingPrompt.question} onQuestion={handleQuestion} onDismiss={declineQuestion} />
+                  )}
+                  {pendingPrompt.kind === "permission" && (
+                    <PermissionOverlay
+                      permission={pendingPrompt.permission}
+                      title={pendingPrompt.title}
+                      detail={pendingPrompt.detail}
+                      command={pendingPrompt.command}
+                      arguments={pendingPrompt.arguments}
+                      onPermission={handlePermission}
+                    />
+                  )}
+                </Box>
+              </Box>
+            </motion.div>
+          )}
+        </AnimatePresence>
         {/* The composer wrapper mirrors the transcript scroll container's horizontal geometry
             — same px, and the scrollbar gutter reserved via overflow:hidden + scrollbar-gutter
             stable both-edges — so the input's 80rem column co-centers with the messages above it

@@ -123,7 +123,6 @@ samp {
     background-position: 26em 0;
   }
 }
-}
 
 /* A soft breathing pulse for the "still working" status dot in the sessions
    sidebar. Intensity only — the dot must never change size, so nothing around
