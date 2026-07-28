@@ -1640,7 +1640,9 @@ function openEventStream(path: string, onData: (raw: string) => void): { close: 
 // them would either stop watching after the first turn or wait for a process to die.
 export type SessionStreamFrame =
   | { kind: "snapshot"; turns: A2ATurn[] }
-  | { kind: "live"; seq: number; message: A2AMessage }
+  // A single part, as the session emitted it — the live tail is part-granular, so a turn's
+  // prose arrives as a run of text parts and never as an assembled message.
+  | { kind: "live"; seq: number; part: A2APart }
   | { kind: "turn"; seq: number; running: boolean }
   | { kind: "done" };
 
@@ -1655,7 +1657,11 @@ export function attachSession(
     headers: { Accept: "text/event-stream" },
   })
     .then(async (response) => {
-      if (!response.ok || !response.body) return;
+      if (!response.ok || !response.body) {
+        // Silence here reads exactly like a session with nothing to say, so say it.
+        console.error("[frank] attach stream refused:", sessionId, response.status);
+        return;
+      }
       await pumpEventStream(response.body, (raw) => {
         let frame: SessionStreamFrame;
         try {

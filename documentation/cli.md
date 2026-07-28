@@ -95,7 +95,7 @@ frank ps | jq -r '.[] | select(.awaiting_input) | .id'
 It ends when the session does; interrupt it with Ctrl-C to stop watching without affecting the session. Because each frame is a complete line, `jq` and friends consume it incrementally:
 
 ```sh
-frank attach "$id" | jq -r 'select(.kind == "live") | .message.text // empty'
+frank attach "$id" | jq -r 'select(.kind == "live") | .part.text // empty'
 ```
 
 ## Answering a session

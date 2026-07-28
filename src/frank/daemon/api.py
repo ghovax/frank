@@ -682,7 +682,12 @@ async def attach(session_id: str, request: Request) -> EventSourceResponse:
                         "running": bool((event.get("turn") or {}).get("running")),
                     })}
                     continue
-                yield {"data": compact({"kind": "live", "seq": event.get("seq", 0), "message": event.get("part")})}
+                # One part, not one message: the bus carries parts as the model emits them,
+                # so a turn's prose arrives as a run of text parts rather than a finished
+                # message. Naming the field `message` cost the interface every live update —
+                # the client's reducers all walk `.parts`, which a part does not have, so
+                # each frame reduced to nothing and answers only appeared on reload.
+                yield {"data": compact({"kind": "live", "seq": event.get("seq", 0), "part": event.get("part")})}
         finally:
             state.event_bus.unsubscribe(session_id, subscription)
 

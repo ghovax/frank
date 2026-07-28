@@ -25,8 +25,16 @@ const browser = await chromium.launch({ channel: "chrome", headless: true });
 const page = await browser.newPage({ viewport: { width: 1400, height: 950 } });
 
 const consoleErrors = [];
+// `/__frank/runtime.json` is a deliberate probe for "am I being served by `frank web`?".
+// Under `next dev` nothing answers it and the code handles that; the browser still logs the
+// 404, so filter it out rather than let a healthy run look broken.
+const EXPECTED_NOISE = /__frank\/runtime\.json/;
 page.on("console", (message) => {
-  if (message.type() === "error") consoleErrors.push(message.text());
+  if (message.type() !== "error") return;
+  // A failed-resource log carries the URL on the location, not in the text.
+  const where = message.location()?.url ?? "";
+  if (EXPECTED_NOISE.test(where) || EXPECTED_NOISE.test(message.text())) return;
+  consoleErrors.push(`${message.text()} ${where}`.trim());
 });
 page.on("pageerror", (error) => consoleErrors.push(String(error)));
 
@@ -57,21 +65,36 @@ try {
   );
 
   // The turn itself, and — the part that matters — whether the answer appears *without* a
-  // reload. That is the bug this file exists for.
-  const marker = `PLAYWRIGHT-${Date.now() % 100000}`;
-  await composer.fill(`Reply with exactly ${marker} and nothing else.`);
-  await composer.press("Enter");
+  // reload. That is the bug this file exists for: the live frames were arriving and being
+  // handed to a reducer that walked `.parts` on something that was a single part, so every
+  // one of them reduced to nothing and answers only showed up on a refresh.
+  //
+  // Three in a row, not one: the first message also creates the session, so a fault in the
+  // per-turn attach lifecycle hides behind a passing first round.
+  for (const round of [1, 2, 3]) {
+    const marker = `PLAYWRIGHT-${round}-${Date.now() % 100000}`;
+    await composer.fill(`Reply with exactly ${marker} and nothing else.`);
+    await composer.press("Enter");
 
-  let appeared = false;
-  for (let waited = 0; waited < 240000; waited += 2000) {
-    await page.waitForTimeout(2000);
-    const text = await page.locator("body").innerText();
-    if (text.includes(marker) && text.split(marker).length > 2) {
-      appeared = true;
-      break;
+    let appeared = false;
+    for (let waited = 0; waited < 120000; waited += 1000) {
+      await page.waitForTimeout(1000);
+      const text = await page.locator("body").innerText();
+      // Twice: once in the prompt we typed, once in the answer.
+      if (text.split(marker).length > 2) {
+        appeared = true;
+        break;
+      }
     }
+    check(`reply ${round} appears live, with no reload`, appeared);
+    if (!appeared) break;
+    // The composer only accepts a fresh turn once this one has wound down; sending sooner
+    // queues the text instead, which tests something else.
+    await page
+      .getByRole("button", { name: "Stop" })
+      .waitFor({ state: "detached", timeout: 60000 })
+      .catch(() => {});
   }
-  check("the reply appears live, with no reload", appeared);
 
   // Hovering one conversation must not act on the others. Regression guard for the project
   // row's descendant selectors matching every nested row.

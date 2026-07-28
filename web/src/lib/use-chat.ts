@@ -17,6 +17,7 @@ import {
   partPayload,
   turnState,
   type A2AMessage,
+  type A2APart,
   type A2ATurn as A2ATurnWire,
   type PermissionMode,
   type WorkspaceStrategy,
@@ -196,14 +197,13 @@ function friendlyErrorFromData(data: Record<string, unknown>): FriendlyError {
 // A turn-level failure worth a toast. A tool-scoped error (one carrying a tool call id)
 // is already delivered to the model and rendered on that tool's card, so it must not
 // raise a banner as well.
-function friendlyErrorFromMessage(message: A2AMessage | undefined): FriendlyError | null {
-  for (const part of message?.parts ?? []) {
-    const payload = part.kind === "data" ? partPayload(part.data) : {};
-    if (payload.kind === "error" && !payload.tool_call_id) {
-      return friendlyErrorFromData(payload);
-    }
-  }
-  return null;
+function friendlyErrorFromPart(part: A2APart | undefined): FriendlyError | null {
+  if (!part || part.kind !== "data") return null;
+  const payload = partPayload(part.data);
+  // A `tool_call_id` marks a failure that belongs to one tool card, which renders in place;
+  // only a turn-level error becomes a toast.
+  if (payload.kind !== "error" || payload.tool_call_id) return null;
+  return friendlyErrorFromData(payload);
 }
 
 function pushErrorMessage(state: ReduceState, error: FriendlyError, sourceId?: string): void {
@@ -499,30 +499,26 @@ function reduceInboundMessage(state: ReduceState, message: A2AMessage, peerSende
   ];
 }
 
-function reduceAgentMessage(state: ReduceState, message: A2AMessage): void {
-  for (const part of message.parts ?? []) {
-    if (part.kind === "text") {
-      pushAssistantText(
-        state,
-        part.text ?? "",
-        requiredContentBlockIdentifier(part.metadata),
-        message.messageId,
-      );
-      continue;
-    }
-    if (part.kind !== "data" || !part.data) continue;
-    reduceDataPart(state, partPayload(part.data), message.messageId);
+// The single reduction of one part. Replay walks a stored message's parts through this;
+// the live tail hands it each part as the session emits it. Both must go through the same
+// code or the transcript you watch being written differs from the one you reload.
+function reduceAgentPart(state: ReduceState, part: A2APart, sourceId?: string): void {
+  if (part.kind === "text") {
+    pushAssistantText(state, part.text ?? "", requiredContentBlockIdentifier(part.metadata), sourceId);
+    return;
   }
+  if (part.kind !== "data" || !part.data) return;
+  reduceDataPart(state, partPayload(part.data), sourceId);
 }
 
-function steeringText(message: A2AMessage | undefined): string {
-  for (const part of message?.parts ?? []) {
-    const payload = part.kind === "data" ? partPayload(part.data) : {};
-    if (payload.kind === "steering") {
-      return String(payload.text ?? "").trim();
-    }
-  }
-  return "";
+function reduceAgentMessage(state: ReduceState, message: A2AMessage): void {
+  for (const part of message.parts ?? []) reduceAgentPart(state, part, message.messageId);
+}
+
+function steeringTextFromPart(part: A2APart | undefined): string {
+  if (!part || part.kind !== "data") return "";
+  const payload = partPayload(part.data);
+  return payload.kind === "steering" ? String(payload.text ?? "").trim() : "";
 }
 
 function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourceId?: string): void {
@@ -950,8 +946,8 @@ export function useChat(
     flushNow();
   }, [flushNow]);
 
-  const notifyTurnError = useCallback((message: A2AMessage | undefined) => {
-    const error = friendlyErrorFromMessage(message);
+  const notifyTurnError = useCallback((part: A2APart | undefined) => {
+    const error = friendlyErrorFromPart(part);
     if (!error) return;
     const key = `${sessionIdRef.current || "turn"}:${error.code}:${error.status ?? ""}`;
     if (errorToastKeysRef.current.has(key)) return;
@@ -1142,7 +1138,7 @@ export function useChat(
             setHistoryError(false);
             setIsHistoryLoading(false);
           } else if (frame.kind === "live") {
-            reduceAgentMessage(stateRef.current, frame.message);
+            reduceAgentPart(stateRef.current, frame.part);
             flush();
           } else if (frame.kind === "turn" && !frame.running) {
             // The turn ended, said by the session itself. The `sessionRunning` flip below
@@ -1274,9 +1270,9 @@ export function useChat(
             // We are driving, so our own state already includes the message we just
             // sent and replacing it would drop it from view until it persists.
             if (frame.kind !== "live") return;
-            acknowledgeSteering(steeringText(frame.message));
-            notifyTurnError(frame.message);
-            reduceAgentMessage(stateRef.current, frame.message);
+            acknowledgeSteering(steeringTextFromPart(frame.part));
+            notifyTurnError(frame.part);
+            reduceAgentPart(stateRef.current, frame.part);
             flush();
           },
           finishTurn,
