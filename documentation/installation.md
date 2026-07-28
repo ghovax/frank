@@ -68,6 +68,3 @@ Signing (steps 6, 7, 11) is optional for a build that only runs. It is necessary
 
 Both artifacts carry the same `CFBundleName` and identifier. One certificate over both therefore keeps them as a single **Frank** row. See the [Development guide](development.md#building-and-signing).
 
-## Coming from a build named XEAC
-
-The harness was briefly called XEAC and is now Frank again. Nothing migrates: Frank reads `~/.config/frank/` and `~/.local/share/frank/`, so it starts with a freshly seeded configuration and an empty transcript store. Your old configuration and transcripts are still at `~/.config/xeac/configuration.yaml` and `~/.local/share/xeac/history.db` if you want to move them across by hand. Your agents, skills, memories and MCP servers are unaffected — they live in `~/.agents/`, which was never named after the product. The desktop app's bundle identifier changed too, so macOS will ask for the Accessibility grant once more the first time you use the screen tools.

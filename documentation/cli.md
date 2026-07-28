@@ -126,10 +126,10 @@ A process survives one way only: it calls `setsid` and leaves the session. That 
 
 ## Agents on other hosts
 
-```
-frank remote                        # the registered remote agents, with their live health
-frank remote <name> <message>       # hand one a message and print what it produced
-```
+| Command | What it does |
+|---|---|
+| `frank remote` | The registered remote agents, with their live health |
+| `frank remote <name> <message>` | Hand one a message and print what it produced |
 
 A remote agent is not a session. It runs on someone else's machine, at their cost. It has no shared history and no access to this filesystem. That is a different bargain from a peer session, so it is a different verb. You must never be unsure which side of the wire your work went to.
 
@@ -137,11 +137,11 @@ Registered in `~/.agents/remote-agents.json` by card URL, or from **Settings →
 
 ## The interface in a browser
 
-```
-frank web                               # http://127.0.0.1:8824
-frank web --port 9000
-frank web --no-daemon                   # serve without starting one
-```
+| Command | What it does |
+|---|---|
+| `frank web` | Http://127.0.0.1:8824 |
+| `frank web --port 9000` |  |
+| `frank web --no-daemon` | Serve without starting one |
 
 This serves the same interface the desktop app embeds, so a browser is a client like any other. It is useful on a headless machine, over an SSH tunnel, or anywhere you would rather not install an application.
 
@@ -154,10 +154,10 @@ Needs the interface to have been built (`cd web && bun run build` in a checkout)
 
 ## The desktop app
 
-```
-frank app                               # start the daemon if needed, then launch the app
-frank app --no-daemon                   # just the window
-```
+| Command | What it does |
+|---|---|
+| `frank app` | Start the daemon if needed, then launch the app |
+| `frank app --no-daemon` | Just the window |
 
 The app is a **client**. It contains no daemon, and it starts none. It finds one by reading the port and token that `frankd` publishes. When there is none it is powerless, exactly as it is when a remote host does not answer. So the convenience runs this way round: the command line, which owns the daemon, brings it up and then launches the window.
 
@@ -268,11 +268,11 @@ frank run --allow "run the tests and tell me what failed"
 
 ## Signing in
 
-```sh
-frank auth login                        # open the browser, sign in to ChatGPT
-frank auth status                       # who is signed in, if anyone
-frank auth logout
-```
+| Command | What it does |
+|---|---|
+| `frank auth login` | Open the browser, sign in to ChatGPT |
+| `frank auth status` | Who is signed in, if anyone |
+| `frank auth logout` |  |
 
 Only ChatGPT works this way — every other provider takes an API key through `frank configure`. It is a verb, not a setting, because you cannot type the credential. It is an OAuth exchange that lands on a loopback callback. Before this it existed only inside the browser interface, which meant a headless install could not reach the one provider that needs no key.
 

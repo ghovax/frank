@@ -10,15 +10,15 @@ Frank has three parts:
 
 The repo ships a **Nix flake devshell** that pins bun, Rust, `cargo-tauri`, and `pkg-config`. With [direnv](https://direnv.net):
 
-```sh
-direnv allow            # loads the devshell on entry; or run `nix develop`
-```
+| Command | What it does |
+|---|---|
+| `direnv allow` | Loads the devshell on entry; or run `nix develop` |
 
 The Python harness runs from a local virtualenv managed with [uv](https://docs.astral.sh/uv/):
 
-```sh
-uv sync                 # create .venv and install the project + dependencies
-```
+| Command | What it does |
+|---|---|
+| `uv sync` | Create .venv and install the project + dependencies |
 
 ## Running it
 
@@ -51,11 +51,11 @@ Add provider keys with `frank configure`, in the configuration file, or through 
 
 ## Running the web UI
 
-```sh
-cd web
-bun install
-bun run dev             # http://localhost:3000, talks to the daemon's loopback port
-```
+| Command | What it does |
+|---|---|
+| `cd web` |  |
+| `bun install` |  |
+| `bun run dev` | Http://localhost:3000, talks to the daemon's loopback port |
 
 Useful scripts (in `web/`):
 
@@ -76,11 +76,11 @@ A new setting needs nothing beyond its `Field(description=...)` — no reference
 
 ## Running the desktop app in dev
 
-```sh
-frank serve             # the app connects to a daemon; it does not start one
-cd web
-bun run tauri:dev       # launches the Tauri window against the dev UI
-```
+| Command | What it does |
+|---|---|
+| `frank serve` | The app connects to a daemon; it does not start one |
+| `cd web` |  |
+| `bun run tauri:dev` | Launches the Tauri window against the dev UI |
 
 Start the daemon first, in either order but before you expect the window to work. The app is a client. When nothing is listening, it shows the connection picker and says what to run. It does not launch a harness of its own.
 
@@ -112,11 +112,15 @@ For the full step-by-step with expected output, see [Installation](installation.
 
 The screen-control tools (`control_screen`) need the macOS **Accessibility** grant, which is tied to code identity. Every session worker is a re-exec of the daemon binary for exactly this reason — one grant covers the fleet. Both artifacts carry the same `CFBundleName` and identifier, so signing both with one persistent identity keeps them a single **Frank** row that survives rebuilds:
 
-```sh
-# once: create the self-signed identity in your login keychain
-packaging/create-signing-cert.sh
+Create the self-signed identity in your login keychain once:
 
-# after each build, either or both:
+```sh
+packaging/create-signing-cert.sh
+```
+
+Then sign after each build, either artifact or both:
+
+```sh
 packaging/sign-app.sh "packaging/dist/Frank Computer Use.app"
 packaging/sign-app.sh web/src-tauri/target/release/bundle/macos/Frank.app
 ```
@@ -136,10 +140,10 @@ The symlink is what puts `frank` and `frankd` on your `PATH`, both entering the 
 
 The repository ships **no unit-test suite**. It ships a **verification battery** instead. The battery holds the specific, falsifiable claims that the architecture rests on, and it checks each one by doing it:
 
-```sh
-uv run ruff check src/ scripts/
-cd web && bun run build          # regenerates and diffs the event schema, then type-checks
-```
+| Command | What it does |
+|---|---|
+| `uv run ruff check src/ scripts/` |  |
+| `cd web && bun run build` | Regenerates and diffs the event schema, then type-checks |
 
 Each stage gets its own temporary XDG roots and its own daemon and cleans up after itself, so a run touches nothing of yours. Exit status is the number of failures.
 

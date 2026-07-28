@@ -133,9 +133,9 @@ reviewer = AgentConfiguration(
     model="claude-sonnet-4",
     system_prompt="You review code. Be terse.",
     permission_mode="read_only",
-    tools_enabled=["read_file", "search_code"],       # an allow-list
+    tools_enabled=["read_file", "search_code"],
     tools=ToolsConfiguration(
-        disabled=["fetch_url"],                        # …or a deny-list
+        disabled=["fetch_url"],
         bash=BashToolConfiguration(enabled=False, background_allowed=False),
     ),
 )
@@ -234,7 +234,7 @@ class AllowReads:
     async def decide(self, gate):
         if gate.kind == "permission" and gate.risk in ("", "low"):
             return Approval(allow=True, reason="read-only work is pre-approved")
-        return None          # anything riskier still asks a human
+        return None
 
 async with Session("general-assistant", approvals=AllowReads()) as session:
     print(await session.ask("summarise the test failures"))
@@ -268,7 +268,7 @@ A git worktree per session is opt-in, because it writes to disk. Every other def
 
 ```python
 session = Session("general-assistant", directory="/path/to/repo")
-runtime_directory = await session.prepare_workspace()   # its own worktree
+runtime_directory = await session.prepare_workspace()
 await session.ask("refactor the parser and run the tests")
 ```
 
@@ -287,7 +287,7 @@ async for event in session.stream("refactor the parser"):
         case ToolCall(tool_name=name):
             print(f"\n[{name}]")
         case Suspended(interactions=gates):
-            ...  # answer them, or stop
+            ...
 ```
 
 The harness checkpoints the conversation when a turn ends, including when it ends badly. A turn that raised still changed the conversation. To lose that is worse than to record a failure.
@@ -300,7 +300,7 @@ async with Session("general-assistant", session_id="review", checkpoints=store) 
     await first.ask("read src/parser.py")
 
 async with Session("general-assistant", session_id="review", checkpoints=store) as second:
-    await second.ask("now what would you change?")   # remembers the file
+    await second.ask("now what would you change?")
 ```
 
 `session.runtime` is the `AgentRuntime` underneath, deliberately public. A library that hides

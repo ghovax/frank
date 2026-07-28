@@ -140,19 +140,21 @@ What a session's tool children may do: a `bash` command, or a `control_screen` s
 
 ```yaml
 sandbox:
-  enforce: required              # required | preferred | off
+  enforce: required
   filesystem:
     readable: ["~/.config", "~/.ssh", "~/.gitconfig", "~/.cargo", "~/.npmrc"]
     writable: ["$WORKSPACE", "$TMPDIR", "$XDG_CACHE_HOME"]
     deny:     ["~/Documents", "~/Desktop", "~/Downloads", "~/Library/Mail"]
   network: true
-  limits:                        # POSIX rlimits, by their own names, in their own units
+  limits:
     RLIMIT_CORE: 0
     RLIMIT_FSIZE: 8589934592
     RLIMIT_NPROC: 2048
   umask: "0077"
   nice: 0
 ```
+
+`enforce` is one of `required`, `preferred`, or `off`. `limits` are POSIX rlimits, under their own names and in their own units.
 
 Almost every field is a Unix primitive under its own name. `limits` are [`setrlimit(2)`](https://man7.org/linux/man-pages/man2/setrlimit.2.html) constants, and they take the integers that call takes. `umask` is `umask(2)`, and `nice` is `nice(2)`. Only the filesystem and the network have no POSIX spelling, and they are the two that need a platform behind them.
 
@@ -255,7 +257,7 @@ After an action, the harness *polls* a surface until it stops changing. It does 
 
 ```yaml
 remote_agents:
-  agents: {}                        # normally written to .agents/remote-agents.json
+  agents: {}
 ```
 
 Agents on other hosts, resolved by their A2A card and reached with `frank remote`. Normally registered in `~/.agents/remote-agents.json` or from Settings rather than written here. A remote agent is not a session. Frank does not own its lifecycle, cannot set its permission mode, and keeps no transcript of it. It therefore has its own verb, and does not share `send`.
