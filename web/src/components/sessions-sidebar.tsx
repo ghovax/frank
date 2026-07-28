@@ -11,7 +11,8 @@ import { Box, Button, Flex, IconButton, Input, Kbd, Menu, Span, Text, VStack } f
 import { swallowed } from "@/lib/swallowed";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LuArrowDownUp, LuChevronDown, LuChevronRight, LuEllipsis, LuFolderOpen, LuFolderPlus, LuMessageSquare, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
+import { LuArrowDownUp, LuChevronDown, LuChevronRight, LuEllipsis, LuFolderOpen, LuFolderPlus, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
+import { ActivityIcon } from "@/components/ui/activity-icon";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FrankMark } from "@/components/ui/frank-mark";
 import { DropdownMenu, MenuOption } from "@/components/ui/menu";
@@ -59,9 +60,10 @@ export type SessionSort = "recent" | "active";
 // session (you're already looking at it). Plus the two alerts: a crashed session, and one
 // parked on a decision only you can make.
 //
-// A sleeping session gets no dot at all, deliberately. It has no process, but it is not
-// gone and nothing is waiting on you; surfacing it would be surfacing an implementation
-// detail as if it were news.
+// A sleeping or idle session gets the resting dot: present, so every row's title starts on
+// the same line, but in the muted foreground so it reads as punctuation rather than news.
+// Having no process is not something to report — it is not gone, and nothing is waiting on
+// you — so it looks the same as idle.
 type SessionIndicator = "working" | "problem" | "attention" | "done";
 
 function sessionIndicator(
@@ -277,24 +279,22 @@ function SessionTreeRow({
               fill
               tone={isActive ? "active" : "muted"}
               onActivate={() => onResume(entry)}
+              // The status is the whole icon, not a badge pinned to the corner of one. Every
+              // row in this list is a conversation, so a speech bubble on each said nothing
+              // and spent the only glyph slot the row has saying it. `ActivityIcon` keeps the
+              // slot exactly the size the bubble occupied, so the titles stay on their line
+              // and an idle row lines up with a working one — which is why an idle session
+              // gets a resting dot rather than nothing at all.
               icon={
                 <Tooltip content={statusTooltip} rich openDelay={350} positioning={{ placement: "right" }}>
-                  <Box position="relative" color={isActive ? "blue.fg" : "fg.muted"}>
-                    <LuMessageSquare />
-                    {indicator ? (
-                      <Box
-                        position="absolute"
-                        right="-2px"
-                        bottom="-2px"
-                        boxSize="1.5"
-                        borderRadius="full"
-                        bg={INDICATOR_COLOR[indicator]}
-                        outline="1px solid"
-                        outlineColor="bg.panel"
-                        className={indicator === "working" ? "status-dot-pulse" : undefined}
-                      />
-                    ) : null}
-                  </Box>
+                  <ActivityIcon>
+                    <Box
+                      boxSize="1.5"
+                      borderRadius="full"
+                      bg={indicator ? INDICATOR_COLOR[indicator] : isActive ? "blue.solid" : "fg.subtle"}
+                      className={indicator === "working" ? "status-dot-pulse" : undefined}
+                    />
+                  </ActivityIcon>
                 </Tooltip>
               }
               title={
