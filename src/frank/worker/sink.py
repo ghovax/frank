@@ -246,6 +246,7 @@ class _TurnEventSink:
                         await self._emit(_event_part(PermissionRequestEvent(
                             request_id=gate.request_id,
                             tool_call_id=gate.tool_call_id,
+                            tool_name=gate.tool_name, arguments=gate.arguments,
                             command=gate.command, explanation=gate.explanation,
                             risk=gate.risk,
                         )))

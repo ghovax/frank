@@ -253,6 +253,9 @@
     "PermissionRequestEvent": {
       "additionalProperties": false,
       "properties": {
+        "arguments": {
+          "tsType": "Record<string, unknown>"
+        },
         "command": {
           "default": "",
           "type": "string"
@@ -274,6 +277,10 @@
           "type": "string"
         },
         "tool_call_id": {
+          "default": "",
+          "type": "string"
+        },
+        "tool_name": {
           "default": "",
           "type": "string"
         }

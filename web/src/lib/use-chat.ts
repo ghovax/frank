@@ -711,18 +711,24 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
             : message
         );
       } else {
-        // No card to attach to. This used to be a `.map` that matched nothing and therefore
-        // did nothing, so a permission request whose tool call had not been announced was
-        // dropped in silence — the turn parked forever on a decision the person was never
-        // shown. A prompt that needs an answer is never droppable: raise a card for it.
+        // No card to attach to — and this is the *ordinary* case, not an edge one: approval is
+        // decided in preflight, before the batch runs, so the tool call has not been announced
+        // yet. The card raised here is therefore what a person actually reads, and it is built
+        // like any announced call: `content` is the tool name and `meta.arguments` the model's
+        // arguments. It used to put the command in `content` — the field every other tool call
+        // uses for the name — so nothing downstream recognised the tool, and the model's own
+        // `explanation` of why it wanted the call was nowhere to be found.
         const raised: ChatMessage = {
           id: stableMessageId(state, "tool", toolCallId),
           role: "tool_call",
-          // The command is what is actually being asked for, and the event carries it, so
-          // the card can say what it wants even with no tool call to name it.
-          content: event.command ?? "",
+          content: event.tool_name || "",
           timestamp: new Date().toISOString(),
-          meta: { toolCallId: toolCallId ?? "", status: "input_required", permission },
+          meta: {
+            toolCallId: toolCallId ?? "",
+            status: "input_required",
+            permission,
+            arguments: event.arguments ?? {},
+          },
         };
         state.messages = [...state.messages, raised];
       }

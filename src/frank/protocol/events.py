@@ -175,7 +175,14 @@ class PermissionRequestEvent(_EventBase):
     kind: Literal["permission_request"] = "permission_request"
     request_id: str
     tool_call_id: str = ""
+    # A permission is asked for before its tool call is announced, so this event is the only
+    # description of the call a client has when it draws the prompt. It carries the tool and
+    # its arguments so the prompt renders as the tool call it is, rather than a bare command.
+    tool_name: str = ""
+    arguments: dict[str, Any] = Field(default_factory=dict)
     command: str = ""
+    # Why approval is needed. The model's own reason for wanting the call lives in
+    # ``arguments["explanation"]``; both are shown.
     explanation: str = ""
     risk: str = ""
 

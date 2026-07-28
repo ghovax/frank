@@ -206,6 +206,14 @@ class _PermissionsMixin:
             plan = await self._classify_tool_permission(
                 tool_call_data["name"], tool_call_data["args"], tool_call_data["id"],
             )
+            # Stamp the call's identity onto every gate it raised, here rather than at each
+            # of the ten construction sites. A gate is shown to a person before the tool call
+            # it belongs to has been announced, so the gate is the only thing that can tell
+            # them what is being asked for: which tool, and the arguments the model chose —
+            # including its own `explanation` of why it wants the call.
+            for gate in plan.gates:
+                gate.tool_name = tool_call_data["name"]
+                gate.arguments = dict(tool_call_data["args"] or {})
             plans[tool_call_data["id"]] = plan
             pending.extend(plan.gates)
         return plans, pending

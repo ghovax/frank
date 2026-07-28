@@ -112,9 +112,14 @@ export function PermissionOverlay({ permission, title, detail, command, argument
             </Flex>
           </Flex>
 
+          {/* Three things, and each answers a different question a person has before deciding:
+              what the agent is trying to do (the title — its own explanation of the call),
+              exactly what will run (the command), and what made this stop for approval (the
+              detail). These used to be an either/or, so a call with a command never showed
+              the reason for it and the prompt was a bare line of shell with no case for it. */}
           <Flex direction="column" gap={1.5} mb={3} minH={0}>
             <Text fontSize="sm" fontWeight="medium">{title}</Text>
-            {command ? (
+            {command && (
               <Pre
                 fontFamily="var(--app-font-mono)"
                 fontSize="xs"
@@ -132,11 +137,12 @@ export function PermissionOverlay({ permission, title, detail, command, argument
               >
                 {command}
               </Pre>
-            ) : detail ? (
+            )}
+            {detail && detail !== title && (
               <Box color="fg.muted" minH={0} overflow="auto">
                 <MarkdownContent content={detail} fontSize="xs" />
               </Box>
-            ) : null}
+            )}
           </Flex>
 
           <Flex align="center" justify="space-between" gap={2} flexShrink={0}>

@@ -591,7 +591,7 @@ export function ChatPanel({
   // card, though in practice a card carries only one.
   let pendingPrompt: (
     | { kind: "question"; question: ToolQuestion }
-    | { kind: "permission"; permission: ToolPermission; title: string; command?: string; arguments?: Record<string, unknown> }
+    | { kind: "permission"; permission: ToolPermission; title: string; detail?: string; command?: string; arguments?: Record<string, unknown> }
     | null
   ) = null;
   {
@@ -610,7 +610,12 @@ export function ChatPanel({
         pendingPrompt = {
           kind: "permission",
           permission,
+          // Two different answers to two different questions, and a person deciding wants
+          // both: the title says what the agent is trying to do and why it wants to (the
+          // model's own `explanation`, via the same display helper the tool card uses), and
+          // the detail says what made this stop for approval.
           title: getToolCallDisplay(name, args, tToolDisplay).label,
+          detail: permission.explanation || undefined,
           command: command || undefined,
           arguments: args,
         };
@@ -952,6 +957,7 @@ export function ChatPanel({
                 <PermissionOverlay
                   permission={pendingPrompt.permission}
                   title={pendingPrompt.title}
+                  detail={pendingPrompt.detail}
                   command={pendingPrompt.command}
                   arguments={pendingPrompt.arguments}
                   onPermission={handlePermission}

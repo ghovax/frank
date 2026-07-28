@@ -307,7 +307,15 @@ class _PreflightGate:
     request_id: str
     tool_call_id: str
     kind: str  # "permission" | "question"
+    # The call this gate stands in front of. A gate is raised during preflight, before the
+    # tool call has been announced to a client, so these are what a person is shown — without
+    # them the prompt can only print a bare command and the model's own reason is lost.
+    tool_name: str = ""
+    arguments: dict = field(default_factory=dict)
     command: str = ""
+    # Why *approval* is needed, from the rules or the classifier. Distinct from
+    # ``arguments["explanation"]``, which is why the model wants the call at all. A person
+    # deciding wants both: what is being attempted, and what made it stop here.
     explanation: str = ""
     risk: str = ""
     questions: list = field(default_factory=list)
@@ -321,6 +329,7 @@ class _PreflightGate:
     def to_dict(self) -> dict:
         return {
             "request_id": self.request_id, "tool_call_id": self.tool_call_id, "kind": self.kind,
+            "tool_name": self.tool_name, "arguments": self.arguments,
             "command": self.command, "explanation": self.explanation, "risk": self.risk,
             "questions": self.questions, "is_bash": self.is_bash,
             "deny_message": self.deny_message, "egress_agent": self.egress_agent,
@@ -330,7 +339,9 @@ class _PreflightGate:
     def from_dict(cls, data: dict) -> _PreflightGate:
         return cls(
             request_id=str(data.get("request_id", "")), tool_call_id=str(data.get("tool_call_id", "")),
-            kind=str(data.get("kind", "permission")), command=str(data.get("command", "")),
+            kind=str(data.get("kind", "permission")),
+            tool_name=str(data.get("tool_name", "")), arguments=dict(data.get("arguments") or {}),
+            command=str(data.get("command", "")),
             explanation=str(data.get("explanation", "")), risk=str(data.get("risk", "")),
             questions=list(data.get("questions", []) or []), is_bash=bool(data.get("is_bash", False)),
             deny_message=str(data.get("deny_message", "")), egress_agent=str(data.get("egress_agent", "")),

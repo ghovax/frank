@@ -118,12 +118,14 @@ export interface ModelToolResult {
  * via the `definition` "PermissionRequestEvent".
  */
 export interface PermissionRequestEvent {
+  arguments?: Record<string, unknown>;
   command?: string;
   explanation?: string;
   kind: "permission_request";
   request_id: string;
   risk?: string;
   tool_call_id?: string;
+  tool_name?: string;
 }
 /**
  * This interface was referenced by `FrankEvents`'s JSON-Schema
