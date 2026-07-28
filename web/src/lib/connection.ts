@@ -6,13 +6,13 @@
 // here or anywhere, so a local daemon that is not running is simply unreachable, exactly as a
 // remote host that is not answering is.
 
-import { setApiBase, getApiBase, invalidateDiscoveryCache, daemonStatus } from "@/lib/api";
+import { setApiBase, getApiBase, invalidateDiscoveryCache, daemonStatus, LOCAL_DAEMON_PORT, LOCAL_DAEMON_URL } from "@/lib/api";
 import { isTauri, setAppState, getAppState, touchConnection, listConnections, type ConnectionKind, type ConnectionProfile } from "@/lib/connection-store";
 
 // The conventional local daemon address. `frankd` serves its control plane on this
 // loopback port for GUI clients (the webview cannot open its unix socket), and this is
 // also the API client's built-in default.
-export const LOCAL_DEFAULT_URL = "http://127.0.0.1:8823";
+export const LOCAL_DEFAULT_URL = LOCAL_DAEMON_URL;
 
 // app_state key remembering what the user connected to last: "local" or a
 // connection profile id. Drives the launcher's auto-connect on startup.
@@ -167,7 +167,7 @@ export async function startSshTunnel(profile: Pick<ConnectionProfile, "id" | "ss
       port: profile.sshPort || undefined,
       identityFile: profile.sshIdentityFile || undefined,
       localPort: profile.sshLocalPort || undefined,
-      remotePort: profile.sshRemotePort || 8823,
+      remotePort: profile.sshRemotePort || LOCAL_DAEMON_PORT,
     },
   });
 }

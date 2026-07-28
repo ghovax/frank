@@ -12,8 +12,17 @@
 //   4. a build-time default from NEXT_PUBLIC_FRANK_API_BASE, then
 //   5. the conventional local daemon address.
 // The connection layer (profiles UI / local store) writes the explicit target.
+// The port `frank serve` binds, and therefore the only port a browser can guess. It is
+// stated once because it is really the CLI's number — `serve`'s `--port` default in
+// `frank/cli/__main__.py` — and the two were allowed to disagree once already: the server
+// moved to 8824 while every client here still said 8823, which left the browser interface
+// unable to reach a local daemon at all while the packaged app, which reads the real port
+// out of the runtime directory, carried on working and hid it.
+export const LOCAL_DAEMON_PORT = 8824;
+export const LOCAL_DAEMON_URL = `http://127.0.0.1:${LOCAL_DAEMON_PORT}`;
+
 const DEFAULT_API_BASE =
-  (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_FRANK_API_BASE : "") || "http://127.0.0.1:8823";
+  (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_FRANK_API_BASE : "") || LOCAL_DAEMON_URL;
 const API_BASE_STORAGE_KEY = "frank.apiBase";
 const API_TOKEN_STORAGE_KEY = "frank.apiToken";
 
