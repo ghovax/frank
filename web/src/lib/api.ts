@@ -1707,10 +1707,10 @@ export function attachSession(
 // The transport for handled-error reports. Installed here rather than imported there, because
 // this module owns the daemon's address and its capability token — and already imports
 // `swallowed`, so the other direction would be a cycle.
-setFaultSender((faults) =>
+setFaultSender((fault) =>
   apiFetch("/telemetry/faults", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ faults }),
+    body: JSON.stringify(fault),
   })
 );

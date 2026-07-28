@@ -614,17 +614,22 @@ async def telemetry_faults(request: Request) -> JSONResponse:
         payload = await request.json()
     except Exception:
         return JSONResponse({"accepted": False}, status_code=202)
-    for fault in (payload.get("faults") or [])[:64]:
-        if not isinstance(fault, dict):
-            continue
-        telemetry.record_client_fault(
-            str(fault.get("context") or "")[:200],
-            str(fault.get("detail") or "")[:2000],
-            {
-                "frank.client.url": str(fault.get("url") or "")[:500],
-                "frank.client.session_id": str(fault.get("sessionId") or "")[:100],
-            },
-        )
+    if not isinstance(payload, dict):
+        return JSONResponse({"accepted": False}, status_code=202)
+    context = str(payload.get("context") or "")[:200]
+    detail = str(payload.get("detail") or "")[:2000]
+    # Logged whether or not telemetry is configured, and that is the point: the interface no
+    # longer keeps a console copy, so this log is the single answer to "where did that go".
+    # Telemetry, when on, is an additional destination rather than the only one.
+    logger.warning("interface fault at %s: %s -- %s", payload.get("url") or "?", context, detail)
+    telemetry.record_client_fault(
+        context,
+        detail,
+        {
+            "frank.client.url": str(payload.get("url") or "")[:500],
+            "frank.client.session_id": str(payload.get("sessionId") or "")[:100],
+        },
+    )
     return JSONResponse({"accepted": True}, status_code=202)
 
 
