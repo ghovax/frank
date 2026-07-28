@@ -114,56 +114,8 @@ def _control_script_assessment(script: str) -> tuple[str, str]:
 
 class _PermissionsMixin:
 
-    def _evaluate_bash_permission(self, command: str) -> str:
-        unmatched = "ask" if self._interactive_manual_mode else "allow"
-        return self._permissions.evaluate_bash_permission(command, unmatched=unmatched)
 
-    async def _classify_permission(
-        self,
-        *,
-        tool_kind: str,
-        command: str,
-        raw_command: str,
-        default_decision: str,
-        read_only: bool,
-        risk: str,
-        explanation: str,
-        static_classification: str = "",
-        static_detail: str = "",
-        outside_reads: Optional[list[str]] = None,
-    ) -> PermissionDecision:
-        context = compact(
-            {
-                "tool_kind": tool_kind,
-                "working_directory": self._working_directory,
-                "command": command,
-                "raw_command": raw_command,
-                "default_permission_decision": default_decision,
-                "model_declared_read_only": read_only,
-                "model_declared_risk": risk,
-                "model_explanation": explanation,
-                "static_read_only_classification": static_classification,
-                "static_detail": static_detail,
-                "outside_working_directory_reads": outside_reads or [],
-                "allowed_actions": ["auto_approve", "escalate"],
-            },
-        )
-        prompt = self._prompt_loader.load("permission_classifier", {"context": context})
-        try:
-            model = self._llm.bind_tools([PermissionDecision], tool_choice="auto")
-            response = await model.ainvoke([
-                SystemMessage(content=prompt),
-            ])
-            if not response.tool_calls:
-                return PermissionDecision(action="escalate", explanation="Classifier returned no structured decision.", risk="medium")
-            decision = PermissionDecision.model_validate(response.tool_calls[0]["args"])
-            if default_decision == "deny" and decision.action == "auto_approve":
-                return PermissionDecision(action="escalate", explanation="User-configured permissions deny this action.", risk="high")
-            if not decision.explanation.strip():
-                return PermissionDecision(action="escalate", explanation="Classifier did not provide a explanation.", risk="medium")
-            return decision
-        except Exception as exception:
-            return PermissionDecision(action="escalate", explanation=f"{exception}", risk="medium")
+
 
     def _evaluate_bash_permission(self, command: str) -> str:
         unmatched = "ask" if self._interactive_manual_mode else "allow"
@@ -216,107 +168,22 @@ class _PermissionsMixin:
         except Exception as exception:
             return PermissionDecision(action="escalate", explanation=f"{exception}", risk="medium")
 
-    def _evaluate_bash_permission(self, command: str) -> str:
-        unmatched = "ask" if self._interactive_manual_mode else "allow"
-        return self._permissions.evaluate_bash_permission(command, unmatched=unmatched)
+    def _needs_a_second_opinion(self, rule: str, model_risk: str) -> bool:
+        """The barrier. Does this call need the classifier, or is the answer already known?
 
-    async def _classify_permission(
-        self,
-        *,
-        tool_kind: str,
-        command: str,
-        raw_command: str,
-        default_decision: str,
-        read_only: bool,
-        risk: str,
-        explanation: str,
-        static_classification: str = "",
-        static_detail: str = "",
-        outside_reads: Optional[list[str]] = None,
-    ) -> PermissionDecision:
-        context = compact(
-            {
-                "tool_kind": tool_kind,
-                "working_directory": self._working_directory,
-                "command": command,
-                "raw_command": raw_command,
-                "default_permission_decision": default_decision,
-                "model_declared_read_only": read_only,
-                "model_declared_risk": risk,
-                "model_explanation": explanation,
-                "static_read_only_classification": static_classification,
-                "static_detail": static_detail,
-                "outside_working_directory_reads": outside_reads or [],
-                "allowed_actions": ["auto_approve", "escalate"],
-            },
-        )
-        prompt = self._prompt_loader.load("permission_classifier", {"context": context})
-        try:
-            model = self._llm.bind_tools([PermissionDecision], tool_choice="auto")
-            response = await model.ainvoke([
-                SystemMessage(content=prompt),
-            ])
-            if not response.tool_calls:
-                return PermissionDecision(action="escalate", explanation="Classifier returned no structured decision.", risk="medium")
-            decision = PermissionDecision.model_validate(response.tool_calls[0]["args"])
-            if default_decision == "deny" and decision.action == "auto_approve":
-                return PermissionDecision(action="escalate", explanation="User-configured permissions deny this action.", risk="high")
-            if not decision.explanation.strip():
-                return PermissionDecision(action="escalate", explanation="Classifier did not provide a explanation.", risk="medium")
-            return decision
-        except Exception as exception:
-            return PermissionDecision(action="escalate", explanation=f"{exception}", risk="medium")
+        Two cheap facts decide it, and neither costs a model call:
 
-    def _evaluate_bash_permission(self, command: str) -> str:
-        unmatched = "ask" if self._interactive_manual_mode else "allow"
-        return self._permissions.evaluate_bash_permission(command, unmatched=unmatched)
+        - **The rule** the user configured for this command: allow, ask, or deny.
+        - **The risk the model itself declared** when it made the call.
 
-    async def _classify_permission(
-        self,
-        *,
-        tool_kind: str,
-        command: str,
-        raw_command: str,
-        default_decision: str,
-        read_only: bool,
-        risk: str,
-        explanation: str,
-        static_classification: str = "",
-        static_detail: str = "",
-        outside_reads: Optional[list[str]] = None,
-    ) -> PermissionDecision:
-        context = compact(
-            {
-                "tool_kind": tool_kind,
-                "working_directory": self._working_directory,
-                "command": command,
-                "raw_command": raw_command,
-                "default_permission_decision": default_decision,
-                "model_declared_read_only": read_only,
-                "model_declared_risk": risk,
-                "model_explanation": explanation,
-                "static_read_only_classification": static_classification,
-                "static_detail": static_detail,
-                "outside_working_directory_reads": outside_reads or [],
-                "allowed_actions": ["auto_approve", "escalate"],
-            },
-        )
-        prompt = self._prompt_loader.load("permission_classifier", {"context": context})
-        try:
-            model = self._llm.bind_tools([PermissionDecision], tool_choice="auto")
-            response = await model.ainvoke([
-                SystemMessage(content=prompt),
-            ])
-            if not response.tool_calls:
-                return PermissionDecision(action="escalate", explanation="Classifier returned no structured decision.", risk="medium")
-            decision = PermissionDecision.model_validate(response.tool_calls[0]["args"])
-            if default_decision == "deny" and decision.action == "auto_approve":
-                return PermissionDecision(action="escalate", explanation="User-configured permissions deny this action.", risk="high")
-            if not decision.explanation.strip():
-                return PermissionDecision(action="escalate", explanation="Classifier did not provide a explanation.", risk="medium")
-            return decision
-        except Exception as exception:
-            return PermissionDecision(action="escalate", explanation=f"{exception}", risk="medium")
+        A call the rules allow, which the model judged low-risk, runs. A call the rules deny
+        never gets here — a denial is not a question. Everything between those is the
+        ambiguous middle, and only that middle is worth a model call.
+
+        This is the whole shape of the permission system: a static barrier in front, and a
+        classifier behind it that sees only what the barrier could not settle.
+        """
+        return rule == "ask" or model_risk in ("medium", "high")
 
     def _new_permission_request_id(self) -> str:
         return f"perm-{self._session_id}-{uuid.uuid4()}"
@@ -423,7 +290,15 @@ class _PermissionsMixin:
                 # created by another parks the same way: its request reaches a person through
                 # `frank approve` or the app, because there is nobody else to answer it.
                 permission_decision = self._evaluate_bash_permission(raw_command)
-                if policy.auto_permissions and permission_decision != "deny":
+                # Behind the same barrier as every other call. A read outside the working
+                # directory used to reach the classifier on every occurrence, whatever the
+                # rules said and whatever risk the model had declared — the one path that
+                # skipped the barrier, and the one that fires most often.
+                if (
+                    policy.auto_permissions
+                    and permission_decision != "deny"
+                    and self._needs_a_second_opinion(permission_decision, risk or "medium")
+                ):
                     decision = await self._classify_permission(
                         tool_kind="bash", command=raw_command, raw_command=raw_command,
                         default_decision=permission_decision, read_only=read_only,
@@ -465,7 +340,7 @@ class _PermissionsMixin:
             if permission_decision == "deny":
                 plan.denial = {"code": "", "message": f"Command '{raw_command}' is not permitted.", "denied_injection": True, "raw_command": raw_command}
                 return plan
-            elif permission_decision == "ask" or risk in ("medium", "high"):
+            elif self._needs_a_second_opinion(permission_decision, risk):
                 if policy.auto_permissions:
                     decision = await self._classify_permission(
                         tool_kind="bash", command=raw_command, raw_command=raw_command,
