@@ -151,10 +151,9 @@ ValueError: Agent 'reviewer' names no model. Set `provider` and `model` in its p
 `model_identifier="provider/model"` to `frank.Session`, or hand the runtime a `model=` of your own.
 ```
 
-**Narrowing the built-in tools** has two complementary forms. `tools_enabled` is an allow-list,
-so naming one tool means naming all of them — right for an agent defined by a small capability
-set. `tools.disabled` is a deny-list — right when an agent should have everything *except*
-shell access. Both are enforced twice. The roster decides what the model is offered. The gate decides what it may run. A model can call a tool it was never offered.
+**Narrowing the built-in tools** has two complementary forms. `tools_enabled` is an allow-list, so naming one tool means naming all of them — right for an agent defined by a small capability set. `tools.disabled` is a deny-list — right when an agent should have everything *except* shell access. Both are enforced twice.
+
+The roster decides what the model is offered. The gate decides what it may run. A model can call a tool it was never offered.
 
 `permissions=` replaces the rule engine outright, for a program whose policy is its own.
 `Approvals` answers a gate once the engine has decided there should be one; `permissions=`
@@ -258,9 +257,7 @@ class LogObserver:
 session = Session("general-assistant", observer=LogObserver())
 ```
 
-`observe` can return an awaitable. The harness schedules it; it does not await it. A synchronous
-implementation that appends to a list is the common case, and one that writes to a database
-should not have to block the turn. An observer that raises is logged and ignored: a turn must
+`observe` can return an awaitable. The harness schedules it; it does not await it. A synchronous implementation that appends to a list is the common case. One that writes to a database must not block the turn. An observer that raises is logged and ignored: a turn must
 not fail because its audit sink did.
 
 ### Telemetry and workspaces

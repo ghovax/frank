@@ -122,7 +122,7 @@ The daemon starts itself on the first command.
 ### From the app
 
 1. **Launch Frank.** The daemon starts automatically; the app connects to it.
-2. **Add a model key.** Open **Settings → Providers**, paste a key for any provider (or sign in with a ChatGPT or Cursor subscription), and pick a model. Keys live in your Frank configuration file — see the [Configuration guide](documentation/configuration.md), or run `frank configure --all` to see every setting there is.
+2. **Add a model key.** Open **Settings → Providers** and paste a key for any provider. You can also sign in with a ChatGPT or Cursor subscription. Then pick a model. Keys live in your Frank configuration file — see the [Configuration guide](documentation/configuration.md), or run `frank configure --all` to see every setting there is.
 3. **Start a conversation.** Type a task. Approve tool calls as they come up, or relax the [permission mode](documentation/configuration.md#permission-modes) once you trust a flow.
 
 The screen-control tools need a one-time Accessibility grant and Chrome's remote-debugging toggle — see the [Installation guide](documentation/installation.md#permissions-the-app-may-ask-for).

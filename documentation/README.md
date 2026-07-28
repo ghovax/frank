@@ -3,8 +3,7 @@
 Detailed guides for installing, configuring, understanding, and developing Frank. For a
 high-level overview, start with the [project README](../README.md).
 
-**Start with the one that matches how you are using it.** The harness is the same underneath;
-these are three faces of it, not three products.
+**Start with the one that matches how you use it.** The harness is the same underneath. These are three faces of it, not three products.
 
 | If you want to… | Read |
 |---|---|

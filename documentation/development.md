@@ -70,7 +70,7 @@ Outside `web/` the package layering is `base` → `protocol` → `computer`/`loc
 - **Nothing reaches the network at import.** This is the half that actually bit. A catalogue fetch at module scope left two *native* threads in the process, and a multi-threaded process cannot legally fork. The child aborted inside the Objective-C runtime, with a message that named CoreFoundation — which was not what was wrong.
 
   `threading.enumerate()` cannot see those threads; only the kernel's count can. The prototype therefore measures with mach `task_threads`, and refuses to fork when the answer is not 1.
-- **Nothing under `runtime/` parks a caller's argument in a module global, installs a signal handler, or registers an exit hook.** The runtime is a library now, and one process may host more than one session.
+- **The runtime keeps no process-wide state.** Nothing under `runtime/` parks a caller's argument in a module global. Nothing installs a signal handler or registers an exit hook. The runtime is a library now, and one process may host more than one session.
 
 A new setting needs nothing beyond its `Field(description=...)` — no reference file to update, no listing to add it to. `frank configure --all` walks the schema, so a setting is discoverable from the moment it exists. Write the description as the sentence you would want printed at a terminal, because that is exactly where it goes.
 
