@@ -169,6 +169,10 @@ function MarqueeTitle({ text }: { text: string }) {
     <Span
       ref={outerRef}
       className="sidebar-title"
+      // The same metrics as `DisclosureLabel`, which is what the project row above uses.
+      // Inheriting instead left conversation titles at 12px under a 14px project name — a
+      // difference small enough to look like a rendering fault rather than a hierarchy.
+      textStyle="sm"
       data-overflow={overflow > 0 ? "true" : undefined}
       style={{
         ["--marquee-overflow" as string]: `${travel}px`,
@@ -674,7 +678,13 @@ export function SessionsSidebar({
                     actions={projectActions}
                   >
                     {projectSessions.length > 0 ? (
-                      <VStack gap={1} align="stretch">
+                      // The project row pads itself by 2 so its own highlight clears the label,
+                      // but that padding also inset this list — which then adds its own 2 on
+                      // each row. The result was a conversation's ⋯ sitting 8px inside the
+                      // project's ⋯, reading as two columns that nearly line up. Give the
+                      // right-hand padding back to the nested rows so the trailing controls
+                      // share one edge; the left inset is the disclosure rail and stays.
+                      <VStack gap={1} align="stretch" mr={-2}>
                         {buildSessionTree(projectSessions).map((node) => (
                           <SessionTreeRow
                             key={node.entry.sessionId}
