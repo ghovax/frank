@@ -336,7 +336,7 @@ export function ConnectionSettings({
               borderRadius="l2"
               borderColor={localActive ? "green.emphasized" : "border"}
               px={4}
-              py={2.5}
+              py={4}
               gap={2}
             >
               <Box
@@ -402,7 +402,7 @@ export function ConnectionSettings({
                     borderRadius="l2"
                     borderColor={active ? "green.emphasized" : "border"}
                     px={4}
-                    py={2.5}
+                    py={4}
                     gap={2}
                   >
                     <Box
