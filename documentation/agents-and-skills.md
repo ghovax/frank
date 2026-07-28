@@ -102,7 +102,7 @@ Bundled skills include `coding`, `data-visualization`, `literature-search`, `har
       "enabled": true,
       "transport": "stdio",
       "command": "uv",
-      "args": ["run", "python", "examples/mcp/example/server.py"],
+      "args": ["run", "python", "examples/mcp/echo/server.py"],
       "env": { "UV_CACHE_DIR": "/private/tmp/uv-cache" },
       "cwd": "."
     }

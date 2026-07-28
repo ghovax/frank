@@ -84,20 +84,38 @@ async with Session(reviewer, directory="/srv/checkout", model=ChatAnthropic(mode
 
 Every durable thing is a seam: `checkpoints`, `jobs`, `transcript`, `approvals`, `observer`, `sandbox`, `catalogue`, and `peers`. Each one defaults to something a library may safely do, which for anything durable means *in memory*.
 
-Three more sit around the turn — bound it, wrap its tools, decide how its history folds:
+Three more sit around the turn: bound it, wrap its tools, decide how its history folds. Each one is an object with a method or two, so your own is as short as the ones that ship:
 
 ```python
 from frank import KeepRecentTurns, MaximumToolCalls, Session
 
+class RefuseNetworkTools:
+    """A hook. Sees the batch the permission rules approved, and narrows it."""
+
+    async def before_tools(self, calls):
+        return [call for call in calls if call["name"] not in ("fetch_url", "search_web")]
+
+class Timed:
+    """Middleware. Wraps every tool call, yours and the harness's alike."""
+
+    async def run(self, call, proceed):
+        started = time.monotonic()
+        try:
+            return await proceed(call)
+        finally:
+            metrics.timing("frank.tool", time.monotonic() - started, tags={"tool": call.name})
+
 async with Session(
     reviewer,
     directory="/srv/checkout",
-    hooks=[MaximumToolCalls(20)],        # a turn with a budget
-    pipeline=[Timed(), RetryTransient()],  # every tool call, yours and the harness's
-    compaction=KeepRecentTurns(20),      # drop old turns instead of summarising them
+    hooks=[MaximumToolCalls(20), RefuseNetworkTools()],
+    pipeline=[Timed()],
+    compaction=KeepRecentTurns(20),
 ) as session:
     ...
 ```
+
+A hook narrows and can never widen: `before_tools` runs after the permission barrier, so it sees only calls the rules already allowed. [As a library](documentation/library.md) has the rest.
 
 A program that *is* running on someone's machine can ask for that machine's agents deliberately, through `frank.daemon.machine`. [As a library](documentation/library.md) is the reference: the full seam table, a worked Redis checkpoint store, and what you give up by not using the daemon.
 

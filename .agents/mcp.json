@@ -13,11 +13,11 @@
       "args": ["--from", "semble[mcp]", "semble"],
       "stateful": true
     },
-    "example": {
+    "echo": {
       "enabled": false,
       "transport": "stdio",
       "command": "uv",
-      "args": ["run", "python", "examples/mcp/example/server.py"],
+      "args": ["run", "python", "examples/mcp/echo/server.py"],
       "stateful": true,
       "env": {
         "UV_CACHE_DIR": "/private/tmp/uv-cache"
