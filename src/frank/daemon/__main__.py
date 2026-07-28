@@ -364,9 +364,15 @@ async def _serve() -> int:
 
     app = build_app()
     announcing = _announcing_server_class()
+    # `log_config=None` leaves uvicorn's loggers alone so they inherit the root configuration
+    # set in `main()` — stderr *and* `frankd.log`. Uvicorn's default config does the opposite:
+    # it binds `uvicorn.error` to a stderr handler with `propagate=False`, so an unhandled
+    # exception in a route is written to a stream nobody is keeping and never reaches the file.
+    # A `GET /sessions` that raised `AttributeError` on every call therefore answered 500 in
+    # complete silence, through a merge and a packaged build, until someone thought to curl it.
     socket_server = announcing(
         uvicorn.Config(
-            app, uds=state.daemon_socket, log_level="warning", access_log=False,
+            app, uds=state.daemon_socket, log_level="warning", access_log=False, log_config=None,
             # Only the unix listener: the kernel can name the process on the other end of a
             # local socket, and that is what identifies a session. The loopback listener is
             # the desktop client and has no such identity to offer.
@@ -374,7 +380,10 @@ async def _serve() -> int:
         )
     )
     tcp_server = announcing(
-        uvicorn.Config(app, host=LOOPBACK_HOST, port=workspace_state.daemon_port, log_level="warning", access_log=False)
+        uvicorn.Config(
+            app, host=LOOPBACK_HOST, port=workspace_state.daemon_port,
+            log_level="warning", access_log=False, log_config=None,
+        )
     )
     # uvicorn captures SIGTERM/SIGINT itself, and with two servers sharing a process each
     # would install a handler that stops only itself — so a signal would down one listener and
