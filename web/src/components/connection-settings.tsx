@@ -328,17 +328,17 @@ export function ConnectionSettings({
             <SectionHeader mb={0} icon={<LuLaptop size={15} />} title={translation("thisMachine")} />
             <Flex
               align="center"
-              gap={2}
               borderWidth="1px"
               borderColor={localActive ? "green.emphasized" : "border"}
               borderRadius="md"
-              px={2}
-              py={2}
+              px={4}
+              py={2.5}
+              pr={2.5}
             >
-              <Box color={localActive ? "green.fg" : "fg.muted"}>
+              <Box color={localActive ? "green.fg" : "fg.muted"} flexShrink={0} lineHeight="0">
                 <LuLaptop size={14} />
               </Box>
-              <Box flex={1} minW={0}>
+              <Box textAlign="left" pl={1.5} flex={1} minW={0}>
                 <Text fontSize="sm" fontWeight="medium" truncate>
                   {LOCAL_CONNECTION_TARGET.name}
                 </Text>
@@ -389,17 +389,17 @@ export function ConnectionSettings({
                   <Flex
                     key={profile.id}
                     align="center"
-                    gap={2}
                     borderWidth="1px"
                     borderColor={active ? "green.emphasized" : "border"}
                     borderRadius="md"
-                    px={2}
-                    py={2}
+                    px={4}
+                    py={2.5}
+                    pr={2.5}
                   >
-                    <Box color={active ? "green.fg" : "fg.muted"}>
+                    <Box color={active ? "green.fg" : "fg.muted"} flexShrink={0} lineHeight="0">
                       {profile.kind === "ssh" ? <LuNetwork size={14} /> : <LuServer size={14} />}
                     </Box>
-                    <Box flex={1} minW={0}>
+                    <Box textAlign="left" pl={1.5} flex={1} minW={0}>
                       <Text fontSize="sm" fontWeight="medium" truncate>
                         {profile.name}
                       </Text>
