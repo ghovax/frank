@@ -31,6 +31,7 @@ import json
 import logging
 import os
 import sys
+import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
@@ -94,7 +95,9 @@ class PrototypeClient:
         self._writer: Optional[asyncio.StreamWriter] = None
         self._pump: Optional[asyncio.Task] = None
         self._supervisor: Optional[asyncio.Task] = None
-        # session id -> the future waiting for that session's readiness
+        # fork token -> the future waiting for *that* fork's readiness. Keyed by fork rather
+        # than by session, because a session is forked afresh for every turn and its
+        # incarnations must not be able to answer for one another.
         self._awaiting: dict[str, asyncio.Future] = {}
         self._lock = asyncio.Lock()
         self._closed = False
@@ -242,8 +245,12 @@ class PrototypeClient:
         if event == "status":
             self._status = message
             return
+        # Every report about a child carries the token its fork was given, and that — never the
+        # session id — is what finds the waiter. One session id covers every process the
+        # conversation has ever had; a token covers exactly one.
+        fork = str(message.get("fork") or "")
         if event in ("ready", "failed"):
-            waiter = self._awaiting.pop(session_id, None)
+            waiter = self._awaiting.pop(fork, None)
             if waiter is not None and not waiter.done():
                 if event == "ready":
                     waiter.set_result(int(message.get("pid") or 0))
@@ -255,7 +262,9 @@ class PrototypeClient:
         if event == "exited":
             # A session that never became ready exits too; settling its waiter here is what
             # stops `fork_session` waiting out its whole timeout for a process already gone.
-            waiter = self._awaiting.pop(session_id, None)
+            # Keyed by token, an exit can only ever settle the fork it actually belongs to —
+            # a dead predecessor cannot fail the successor that replaced it.
+            waiter = self._awaiting.pop(fork, None)
             if waiter is not None and not waiter.done():
                 waiter.set_exception(PrototypeUnavailable("the session process ended before it was serving"))
             if self._on_exit is not None:
@@ -312,17 +321,23 @@ class PrototypeClient:
         if not session_id:
             raise PrototypeUnavailable("an assignment must name its session")
         await self._ensure_running()
+        # This fork's own name. A session id names the *conversation*, and a conversation
+        # outlives many processes — one per turn, since a session exits when its turn ends. So
+        # a report keyed by session id says nothing about *which* incarnation it describes, and
+        # the previous worker's `exited`, arriving after its replacement was forked, settled the
+        # replacement's waiter and failed the wake. The token names one child, once.
+        fork = uuid.uuid4().hex
         waiter: asyncio.Future = asyncio.get_running_loop().create_future()
-        self._awaiting[session_id] = waiter
+        self._awaiting[fork] = waiter
         try:
-            await self._request({"command": "fork", "assignment": assignment})
+            await self._request({"command": "fork", "fork": fork, "assignment": assignment})
             return await asyncio.wait_for(
                 waiter, timeout=active_tuning().duration(Tunable.session_start_seconds)
             )
         except asyncio.TimeoutError as error:
             raise PrototypeUnavailable("the session did not report ready in time") from error
         finally:
-            self._awaiting.pop(session_id, None)
+            self._awaiting.pop(fork, None)
 
     async def refresh_status(self) -> dict[str, Any]:
         """Ask the prototype what it looks like right now, for `daemon.status`."""

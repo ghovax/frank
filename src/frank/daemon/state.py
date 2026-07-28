@@ -159,14 +159,15 @@ async def wake_then_relay(record, method: str, params: dict) -> dict:
     try:
         return await relay_to_session(record, method, params)
     except SessionUnreachable:
-        # `asleep` is derived from a pid the daemon recorded; the socket is the fact. A session
-        # exits cleanly when its turn ends, so a message sent in the moment between that exit
-        # and the reaper noticing dialled a socket that was already gone — and the person who
-        # sent it was told their session was unreachable, for a session that was merely between
-        # workers. Trust the socket over the pid: record the sleep and try once more.
+        # Not an edge case: this is the ordinary path for the second and every later message in
+        # a conversation. A session exits when its turn ends, so by the time the next message
+        # arrives its worker is usually gone while the record still carries that worker's pid —
+        # and `asleep`, derived from the pid, still says false. The socket is the fact and the
+        # pid is a memory, so trust the socket: record the sleep and try once more.
         #
         # Once, deliberately. A second failure is a session that cannot be woken at all, which
         # is a real fault and must surface rather than turn into a retry loop.
+        logger.info("Session %s had no worker for %s; waking it and retrying", record.id, method)
         slept = registry.sleep(record.id)
         await _wake(slept if slept is not None else record)
         return await relay_to_session(slept if slept is not None else record, method, params)

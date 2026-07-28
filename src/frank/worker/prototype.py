@@ -246,10 +246,13 @@ class Prototype:
         self._listener: Optional[socket.socket] = None
         self._control: Optional[socket.socket] = None
         self._control_buffer = b""
-        # pid -> session id, so an exit can be reported as the session it was.
-        self._children: dict[int, str] = {}
-        # ready-pipe read end -> (session id, buffer)
-        self._pending: dict[int, tuple[str, bytearray]] = {}
+        # pid -> (session id, fork token), so an exit can be reported both as the session it
+        # was and as the *particular* process it was. The token is what lets the daemon tell a
+        # dead worker's exit from its replacement's: a session is forked afresh every turn, so
+        # the session id alone names a queue of processes rather than one.
+        self._children: dict[int, tuple[str, str]] = {}
+        # ready-pipe read end -> (session id, fork token, buffer)
+        self._pending: dict[int, tuple[str, str, bytearray]] = {}
         self._wakeup_read = -1
         self._wakeup_write = -1
         self._stopping = False
@@ -377,7 +380,7 @@ class Prototype:
             return
         command = str(message.get("command") or "")
         if command == "fork":
-            self._fork_session(message.get("assignment") or {})
+            self._fork_session(str(message.get("fork") or ""), message.get("assignment") or {})
         elif command == "status":
             self._send({
                 "event": "status",
@@ -406,7 +409,13 @@ class Prototype:
 
     # Making a session, and everything the child does before it is one.
 
-    def _fork_session(self, assignment: dict) -> None:
+    def _fork_session(self, fork: str, assignment: dict) -> None:
+        """Fork one session process.
+
+        `fork` names *this* child and is echoed on every report about it. The session id names
+        the conversation, which outlives any one process — so it cannot tell the daemon which
+        incarnation a report describes, and a report is useless to a waiter that cannot.
+        """
         session_id = str(assignment.get("session_id") or "")
 
         ready_read, ready_write = os.pipe()
@@ -422,7 +431,7 @@ class Prototype:
                 with contextlib.suppress(OSError):
                     os.close(descriptor)
             logger.error("could not write the assignment for %s: %s", session_id, error)
-            self._send({"event": "failed", "session_id": session_id, "reason": str(error)})
+            self._send({"event": "failed", "fork": fork, "session_id": session_id, "reason": str(error)})
             return
         os.close(assignment_write)
         # `exec` closes everything marked close-on-exec, which is the default for a pipe. These
@@ -437,7 +446,7 @@ class Prototype:
                 with contextlib.suppress(OSError):
                     os.close(descriptor)
             logger.error("could not fork: %s", error)
-            self._send({"event": "failed", "session_id": session_id, "reason": str(error)})
+            self._send({"event": "failed", "fork": fork, "session_id": session_id, "reason": str(error)})
             return
 
         if pid == 0:
@@ -446,8 +455,8 @@ class Prototype:
         os.close(ready_write)
         os.close(assignment_read)
         os.set_blocking(ready_read, False)
-        self._children[pid] = session_id
-        self._pending[ready_read] = (session_id, bytearray())
+        self._children[pid] = (session_id, fork)
+        self._pending[ready_read] = (session_id, fork, bytearray())
         self._selector.register(ready_read, selectors.EVENT_READ, self._on_ready_readable)
 
     def _become_session(self, assignment_read: int, ready_read: int, ready_write: int) -> int:
@@ -504,7 +513,7 @@ class Prototype:
                     connection.close()
 
     def _on_ready_readable(self, descriptor: int) -> None:
-        session_id, buffer = self._pending[descriptor]
+        session_id, fork, buffer = self._pending[descriptor]
         try:
             chunk = os.read(descriptor, 4096)
         except (BlockingIOError, InterruptedError):
@@ -515,9 +524,9 @@ class Prototype:
             buffer.extend(chunk)
             if b"\n" not in buffer:
                 return
-        self._finish_ready(descriptor, session_id, bytes(buffer))
+        self._finish_ready(descriptor, session_id, fork, bytes(buffer))
 
-    def _finish_ready(self, descriptor: int, session_id: str, raw: bytes) -> None:
+    def _finish_ready(self, descriptor: int, session_id: str, fork: str, raw: bytes) -> None:
         with contextlib.suppress(OSError, KeyError):
             self._selector.unregister(descriptor)
         with contextlib.suppress(OSError):
@@ -529,12 +538,17 @@ class Prototype:
             with contextlib.suppress(ValueError, UnicodeDecodeError):
                 payload = json.loads(line.decode())
         if payload.get("ready"):
-            self._send({"event": "ready", "session_id": session_id, "pid": int(payload.get("pid") or 0)})
+            self._send({
+                "event": "ready",
+                "fork": fork,
+                "session_id": session_id,
+                "pid": int(payload.get("pid") or 0),
+            })
             return
         # The pipe closing with nothing on it means the child died before it could answer.
         # The exit report follows on its own; this is what stops the daemon waiting for it.
         reason = str(payload.get("reason") or "the session process ended before it was serving")
-        self._send({"event": "failed", "session_id": session_id, "reason": reason})
+        self._send({"event": "failed", "fork": fork, "session_id": session_id, "reason": reason})
 
     # Noticing children die, and telling the daemon.
 
@@ -558,7 +572,7 @@ class Prototype:
                 return
             if pid == 0:
                 return
-            session_id = self._children.pop(pid, "")
+            session_id, fork = self._children.pop(pid, ("", ""))
             if os.WIFSIGNALED(status):
                 code, signal_number = -1, os.WTERMSIG(status)
             else:
@@ -566,6 +580,7 @@ class Prototype:
             logger.info("session %s (pid %d) ended: code=%d signal=%d", session_id or "?", pid, code, signal_number)
             self._send({
                 "event": "exited",
+                "fork": fork,
                 "session_id": session_id,
                 "pid": pid,
                 "code": code,
