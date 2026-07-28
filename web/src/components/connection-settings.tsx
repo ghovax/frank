@@ -10,11 +10,11 @@
 // `onConnected`, letting the caller decide what happens next (render the app, or
 // switch the live session and close the dialog).
 
-import { Box, Button, EmptyState, Field, Flex, Image, Input, Text, Textarea, VStack } from "@chakra-ui/react";
+import { Box, Button, EmptyState, Field, Flex, Input, Text, Textarea, VStack } from "@chakra-ui/react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { LuCheck, LuLaptop, LuNetwork, LuPlug, LuPlus, LuRotateCcw, LuServer, LuTrash2 } from "react-icons/lu";
-import frankIcon from "@/app/icon.png";
+import { FrankMark } from "@/components/ui/frank-mark";
 import { toaster } from "@/components/ui/toaster";
 import { SectionHeader } from "@/components/ui/section-header";
 import {
@@ -301,7 +301,7 @@ export function ConnectionSettings({
       {variant === "page" && (
         <VStack gap={3}>
           <Flex align="center" gap={2.5}>
-            <Image src={frankIcon.src} alt="" boxSize={14} borderRadius="xl" flexShrink={0} />
+            <FrankMark size="56px" style={{ flexShrink: 0 }} />
             <Text fontSize="4xl" fontWeight="bold" fontFamily="var(--font-display)" lineHeight="1" letterSpacing="tight">
               Frank
             </Text>

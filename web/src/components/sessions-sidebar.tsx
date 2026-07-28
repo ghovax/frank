@@ -7,12 +7,12 @@
 // page wraps it in the resizable panel, and the collapsed state wraps the very same component
 // in a hover popover), so the list looks and behaves identically wherever it is shown.
 
-import { Box, Button, Flex, IconButton, Image, Input, Kbd, Menu, Span, Text, VStack } from "@chakra-ui/react";
+import { Box, Button, Flex, IconButton, Input, Kbd, Menu, Span, Text, VStack } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LuArrowDownUp, LuChevronDown, LuChevronRight, LuEllipsis, LuFolderOpen, LuFolderPlus, LuMessageSquare, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
-import frankIcon from "@/app/icon.png";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { FrankMark } from "@/components/ui/frank-mark";
 import { DropdownMenu, MenuOption } from "@/components/ui/menu";
 import { PanelBody, PanelCard } from "@/components/ui/panel";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -477,7 +477,7 @@ export function SessionsSidebar({
   return (
     <PanelCard flex={1}>
       <Flex align="center" gap={2} px={3} pt={3} pb={2} flexShrink={0}>
-        <Image src={frankIcon.src} alt="" boxSize="26px" borderRadius="md" flexShrink={0} />
+        <FrankMark size="26px" style={{ flexShrink: 0 }} />
         <Text fontFamily="var(--font-display)" fontSize="2xl" lineHeight="1" fontWeight="bold" letterSpacing="tight">Frank</Text>
       </Flex>
 
