@@ -35,6 +35,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
+from frank.base.fork_protocol import StartFailure, describe
 from frank.base.paths import prototype_socket_path
 from frank.base.tuning import Tunable, active_tuning
 
@@ -255,9 +256,9 @@ class PrototypeClient:
                 if event == "ready":
                     waiter.set_result(int(message.get("pid") or 0))
                 else:
-                    waiter.set_exception(
-                        PrototypeUnavailable(str(message.get("reason") or "the session did not start"))
-                    )
+                    waiter.set_exception(PrototypeUnavailable(describe(
+                        str(message.get("reason") or ""), str(message.get("detail") or ""),
+                    )))
             return
         if event == "exited":
             # A session that never became ready exits too; settling its waiter here is what
@@ -266,7 +267,9 @@ class PrototypeClient:
             # a dead predecessor cannot fail the successor that replaced it.
             waiter = self._awaiting.pop(fork, None)
             if waiter is not None and not waiter.done():
-                waiter.set_exception(PrototypeUnavailable("the session process ended before it was serving"))
+                waiter.set_exception(
+                    PrototypeUnavailable(describe(StartFailure.EXITED_BEFORE_SERVING))
+                )
             if self._on_exit is not None:
                 report = SessionExit(
                     session_id=session_id,
@@ -335,7 +338,7 @@ class PrototypeClient:
                 waiter, timeout=active_tuning().duration(Tunable.session_start_seconds)
             )
         except asyncio.TimeoutError as error:
-            raise PrototypeUnavailable("the session did not report ready in time") from error
+            raise PrototypeUnavailable(describe(StartFailure.NEVER_REPORTED)) from error
         finally:
             self._awaiting.pop(fork, None)
 

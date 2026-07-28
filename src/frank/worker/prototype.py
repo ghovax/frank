@@ -75,7 +75,10 @@ import socket
 import subprocess
 import sys
 from pathlib import Path
+
 from typing import Any, Optional
+
+from frank.base.fork_protocol import StartFailure
 
 logger = logging.getLogger("frank.prototype")
 
@@ -431,7 +434,10 @@ class Prototype:
                 with contextlib.suppress(OSError):
                     os.close(descriptor)
             logger.error("could not write the assignment for %s: %s", session_id, error)
-            self._send({"event": "failed", "fork": fork, "session_id": session_id, "reason": str(error)})
+            self._send({
+                "event": "failed", "fork": fork, "session_id": session_id,
+                "reason": StartFailure.ASSIGNMENT_UNWRITABLE, "detail": str(error),
+            })
             return
         os.close(assignment_write)
         # `exec` closes everything marked close-on-exec, which is the default for a pipe. These
@@ -446,7 +452,10 @@ class Prototype:
                 with contextlib.suppress(OSError):
                     os.close(descriptor)
             logger.error("could not fork: %s", error)
-            self._send({"event": "failed", "fork": fork, "session_id": session_id, "reason": str(error)})
+            self._send({
+                "event": "failed", "fork": fork, "session_id": session_id,
+                "reason": StartFailure.FORK_FAILED, "detail": str(error),
+            })
             return
 
         if pid == 0:
@@ -547,8 +556,11 @@ class Prototype:
             return
         # The pipe closing with nothing on it means the child died before it could answer.
         # The exit report follows on its own; this is what stops the daemon waiting for it.
-        reason = str(payload.get("reason") or "the session process ended before it was serving")
-        self._send({"event": "failed", "fork": fork, "session_id": session_id, "reason": reason})
+        reason = str(payload.get("reason") or StartFailure.EXITED_BEFORE_SERVING)
+        self._send({
+            "event": "failed", "fork": fork, "session_id": session_id,
+            "reason": reason, "detail": str(payload.get("detail") or ""),
+        })
 
     # Noticing children die, and telling the daemon.
 

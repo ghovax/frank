@@ -27,12 +27,15 @@ import logging
 import os
 import sys
 
+from frank.base.fork_protocol import StartFailure
+
 logger = logging.getLogger(__name__)
 
 # Why a session refused to start, as a value rather than a sentence. Prose belongs in the log,
 # where a person reads it; what crosses the ready pipe is consumed by the prototype and ends up
 # in a session record, so it wants to be matchable and stable.
-ASSIGNMENT_UNREADABLE = "assignment_unreadable"
+# The vocabulary lives in `base.fork_protocol`, because the reader of this value is a
+# different process and a code only works if both ends agree on it in one place.
 
 
 def _configure_logging() -> None:
@@ -91,7 +94,7 @@ def main(arguments: list[str]) -> int:
         # Said on the ready pipe as well as in the log, because the prototype is waiting on that
         # pipe and would otherwise report a session that simply never arrived.
         with os.fdopen(ready_fd, "wb", closefd=True) as ready:
-            ready.write(json.dumps({"ready": False, "reason": ASSIGNMENT_UNREADABLE}).encode())
+            ready.write(json.dumps({"ready": False, "reason": StartFailure.ASSIGNMENT_UNREADABLE}).encode())
         return 1
 
     from frank.worker.serve import run
