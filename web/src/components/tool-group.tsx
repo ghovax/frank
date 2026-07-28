@@ -167,7 +167,19 @@ export const ToolGroup = memo(function ToolGroup({
   // with both labels in the same grid cell so nothing reflows, and shimmers while active.
   // `minmax(0,1fr)` lets it truncate with an ellipsis.
   const titleSlot = (
-    <Box minW={0} display="grid" gridTemplateColumns="minmax(0, 1fr)" position="relative">
+    // The shimmer belongs to this box, not to the label inside it. A CSS animation restarts
+    // whenever its element mounts, and the label below is keyed by its own text so that a new
+    // tool crossfades in — so the gradient was starting over partway through every time the
+    // batch moved on, which reads as the animation stuttering rather than running. This box
+    // outlives every label it shows. `background-clip: text` still paints only glyphs,
+    // because it clips to the text of descendants too.
+    <Box
+      minW={0}
+      display="grid"
+      gridTemplateColumns="minmax(0, 1fr)"
+      position="relative"
+      className={active ? "running-title-shimmer" : undefined}
+    >
       <AnimatePresence initial={false} mode="popLayout">
         <motion.div
           key={headingText}
@@ -183,10 +195,6 @@ export const ToolGroup = memo(function ToolGroup({
             whiteSpace="nowrap"
             overflow="hidden"
             textOverflow="ellipsis"
-            // While active, leave the color unset so the shimmer class controls it: an
-            // inline color would override the gradient's transparent fill and the shimmer
-            // would silently not render.
-            className={active ? "running-title-shimmer" : undefined}
           >
             {latestTool ? <ToolCallLabel name={latestTool.name} args={latestTool.arguments} /> : headingText}
           </Text>

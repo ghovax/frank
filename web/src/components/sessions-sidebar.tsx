@@ -60,10 +60,10 @@ export type SessionSort = "recent" | "active";
 // session (you're already looking at it). Plus the two alerts: a crashed session, and one
 // parked on a decision only you can make.
 //
-// A sleeping or idle session gets the resting dot: present, so every row's title starts on
-// the same line, but in the muted foreground so it reads as punctuation rather than news.
-// Having no process is not something to report — it is not gone, and nothing is waiting on
-// you — so it looks the same as idle.
+// A sleeping or idle session shows no dot at all — there is nothing to report, and a mark
+// against every row would say nothing while making the few that matter harder to find. The
+// slot stays (an empty `ActivityIcon`), so a quiet row still lines up with a busy one and
+// the list does not shift as sessions change state.
 type SessionIndicator = "working" | "problem" | "attention" | "done";
 
 function sessionIndicator(
@@ -288,12 +288,14 @@ function SessionTreeRow({
               icon={
                 <Tooltip content={statusTooltip} rich openDelay={350} positioning={{ placement: "right" }}>
                   <ActivityIcon>
-                    <Box
-                      boxSize="1.5"
-                      borderRadius="full"
-                      bg={indicator ? INDICATOR_COLOR[indicator] : isActive ? "blue.solid" : "fg.subtle"}
-                      className={indicator === "working" ? "status-dot-pulse" : undefined}
-                    />
+                    {indicator ? (
+                      <Box
+                        boxSize="1.5"
+                        borderRadius="full"
+                        bg={INDICATOR_COLOR[indicator]}
+                        className={indicator === "working" ? "status-dot-pulse" : undefined}
+                      />
+                    ) : null}
                   </ActivityIcon>
                 </Tooltip>
               }
