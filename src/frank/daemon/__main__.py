@@ -227,42 +227,64 @@ def build_app() -> FastAPI:
             {"error": {"code": error.code, "message": error.message}}, status_code=error.status_code
         )
 
-    @app.middleware("http")
-    async def authenticate(request: Request, call_next):
-        """Every call carries the token. Discovery of the daemon's existence is not a secret;
-        driving it is."""
-        if request.url.path in {"/health"}:
-            return await call_next(request)
-        header = request.headers.get("Authorization", "")
-        # A WebSocket handshake and an <img>/<iframe> URL cannot carry a header, so the
-        # terminal passes the same token as a query parameter.
-        presented = (
-            header[len("Bearer "):] if header.startswith("Bearer ")
-            else request.query_params.get("token", "")
-        )
-        # Who the *kernel* says is calling, which no token can contradict. A session's own
-        # shell can read the daemon's 0600 token file — same user, same machine — so a token
-        # alone could never establish that a caller was not a session. This can.
-        peer_session = calling_session(request.scope)
+    # Pure ASGI, not `@app.middleware("http")`. That decorator builds a `BaseHTTPMiddleware`,
+    # which runs the rest of the app inside an anyio task group and pumps the response body
+    # through a memory stream — and this daemon's busiest routes are streams: `attach` and
+    # `/events` are open for the life of a page. When a client goes away mid-stream, which a
+    # browser does on every reload, the task group unwinds from a different task than the one
+    # that entered it and the request dies with "Attempted to exit a cancel scope that isn't
+    # the current task's current cancel scope". The reply never arrives, and a caller that was
+    # only submitting an approval is told its request is no longer active.
+    #
+    # Reading the scope and calling the next app directly has no task group and so no scope to
+    # mis-exit. Nothing about the policy below changed.
+    class Authenticate:
+        def __init__(self, application):
+            self.application = application
 
-        if presented and secrets.compare_digest(presented, state.daemon_token):
-            # The daemon token says "you may drive this daemon" and nothing about who is
-            # asking — so a caller the kernel identified as a session is still that session,
-            # holding this token or not. That is what closes the escape hatch: reading the
-            # token buys a session no anonymity.
-            request.state.calling_session = peer_session or ""
-            return await call_next(request)
-        # A session's own token identifies *which* session is calling, which the daemon token
-        # cannot. That attribution is what lets a session's control-plane calls be attributed
-        # to it — so a peer it creates is its child, and is clamped against it, whatever the
-        # request body claims.
-        caller = state.registry.session_for_token(presented) if (presented and state.registry) else None
-        if caller is None:
-            return JSONResponse({"error": {"code": "unauthorized", "message": "Bad or missing token."}}, status_code=401)
-        # The kernel's answer wins over the token's when both are available: a session holding
-        # another session's token is still itself.
-        request.state.calling_session = peer_session or caller.id
-        return await call_next(request)
+        async def __call__(self, scope, receive, send):
+            if scope["type"] != "http":
+                return await self.application(scope, receive, send)
+            request = Request(scope)
+            if request.url.path in {"/health"}:
+                return await self.application(scope, receive, send)
+            header = request.headers.get("Authorization", "")
+            # A WebSocket handshake and an <img>/<iframe> URL cannot carry a header, so the
+            # terminal passes the same token as a query parameter.
+            presented = (
+                header[len("Bearer "):] if header.startswith("Bearer ")
+                else request.query_params.get("token", "")
+            )
+            # Who the *kernel* says is calling, which no token can contradict. A session's own
+            # shell can read the daemon's 0600 token file — same user, same machine — so a token
+            # alone could never establish that a caller was not a session. This can.
+            peer_session = calling_session(scope)
+            scope.setdefault("state", {})
+
+            if presented and secrets.compare_digest(presented, state.daemon_token):
+                # The daemon token says "you may drive this daemon" and nothing about who is
+                # asking — so a caller the kernel identified as a session is still that session,
+                # holding this token or not. That is what closes the escape hatch: reading the
+                # token buys a session no anonymity.
+                scope["state"]["calling_session"] = peer_session or ""
+                return await self.application(scope, receive, send)
+            # A session's own token identifies *which* session is calling, which the daemon token
+            # cannot. That attribution is what lets a session's control-plane calls be attributed
+            # to it — so a peer it creates is its child, and is clamped against it, whatever the
+            # request body claims.
+            caller = state.registry.session_for_token(presented) if (presented and state.registry) else None
+            if caller is None:
+                response = JSONResponse(
+                    {"error": {"code": "unauthorized", "message": "Bad or missing token."}},
+                    status_code=401,
+                )
+                return await response(scope, receive, send)
+            # The kernel's answer wins over the token's when both are available: a session holding
+            # another session's token is still itself.
+            scope["state"]["calling_session"] = peer_session or caller.id
+            return await self.application(scope, receive, send)
+
+    app.add_middleware(Authenticate)
 
     @app.get("/health")
     async def health() -> dict:
