@@ -790,7 +790,12 @@ export function ChatPanel({
             <AnimatePresence mode="popLayout" initial={false}>
               {messages.length === 0 ? (
                 <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15, ease: "easeOut" }} style={{ width: "100%" }}>
-                  <Flex direction="column" align="center" gap={8} px={4} pt={{ base: 10, md: 20 }} pb={{ base: 8, md: 12 }}>
+                  {/* The same `80rem` centred column as the transcript, the composer and the
+                      approval overlay. Without it the welcome grew with the window while
+                      everything else stayed put, so on a wide display the skills and tools ran
+                      far outside the chat. No `px` of its own either: the scroller already pads,
+                      and a second inset put this list 10px inside the composer instead of flush. */}
+                  <Flex direction="column" align="center" gap={8} w="full" maxW="80rem" mx="auto" pt={{ base: 10, md: 20 }} pb={{ base: 8, md: 12 }}>
                     {/* The blank-conversation state inside a project: no brand lockup (that lives
                         on the Projects home) — the build prompt, the project's locations (dotted
                         by connection status), then the folder's skills. */}
