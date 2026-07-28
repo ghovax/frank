@@ -169,10 +169,11 @@ function MarqueeTitle({ text }: { text: string }) {
     <Span
       ref={outerRef}
       className="sidebar-title"
-      // The same metrics as `DisclosureLabel`, which is what the project row above uses.
-      // Inheriting instead left conversation titles at 12px under a 14px project name — a
-      // difference small enough to look like a rendering fault rather than a hierarchy.
-      textStyle="sm"
+      // The sidebar sits one step below the app's default text size: it is a list to scan,
+      // not prose to read, and a smaller face fits more of a title before the marquee has to
+      // do any work. The project row above matches this deliberately, so a name and the
+      // conversations under it read as one list rather than two.
+      textStyle="xs"
       data-overflow={overflow > 0 ? "true" : undefined}
       style={{
         ["--marquee-overflow" as string]: `${travel}px`,
@@ -672,7 +673,8 @@ export function SessionsSidebar({
                     icon={<Box color="fg.muted"><LuFolderOpen /></Box>}
                     title={
                       <Tooltip content={tooltipContent} rich={Boolean(address)} openDelay={350} positioning={{ placement: "right" }}>
-                        <Box minW={0}><DisclosureLabel>{label}</DisclosureLabel></Box>
+                        {/* `xs` to match the conversations beneath it — see MarqueeTitle. */}
+                        <Box minW={0}><DisclosureLabel size="xs">{label}</DisclosureLabel></Box>
                       </Tooltip>
                     }
                     actions={projectActions}

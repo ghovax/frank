@@ -50,11 +50,20 @@ export interface DisclosureRowProps {
 }
 
 // The standard disclosure label: one line, ellipsized, with Chakra's complete sm
-// typography metrics. `shimmer` applies the running gradient for a live line.
-export function DisclosureLabel({ children, shimmer }: { children: ReactNode; shimmer?: boolean }) {
+// typography metrics. `shimmer` applies the running gradient for a live line. `size` drops
+// it a step for a dense list — the sessions sidebar, which is scanned rather than read.
+export function DisclosureLabel({
+  children,
+  shimmer,
+  size = "sm",
+}: {
+  children: ReactNode;
+  shimmer?: boolean;
+  size?: "sm" | "xs";
+}) {
   return (
     <Text
-      textStyle="sm"
+      textStyle={size}
       fontWeight="normal"
       whiteSpace="nowrap"
       overflow="hidden"
