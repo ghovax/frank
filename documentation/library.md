@@ -1,25 +1,76 @@
 # Frank as a library
 
-The harness runs turns. The daemon makes those turns addressable, durable and crash-isolated.
-Those are separable, and this is the half without the daemon: `frank.Session` drives an agent
-in your own process.
+**The library is the bottom of the stack, and everything else is built on it.**
+
+| Layer | What it is | What it knows about your machine |
+|---|---|---|
+| `frank.Session` | The harness: the turn loop, the tools, the prompts, the permissions | Nothing. Every value is one you passed |
+| `frank.daemon.machine` | The loaders that turn a home directory into what `Session` takes | The XDG paths, and your `.agents` |
+| `frankd` | Supervision: a process per session, a socket each, the databases | Everything, and it is the right place to |
+| `frank`, and the app | Clients of the daemon | Where the daemon is |
+
+`Session` runs an agent in your own process. It reads no path you did not give it, resolves no
+name against anything, and leaves nothing behind. That is what makes it embeddable. A library that writes a database into your home directory, because you imported it, is one you cannot ship inside something else.
+
+Everything a session needs can be built in code:
 
 ```python
 import asyncio
-from frank import Session
+from frank import AgentConfiguration, DictCatalogue, Session
+
+reviewer = AgentConfiguration(
+    name="reviewer",
+    description="Reads a change and reports what it would break.",
+    system_prompt="You review changes. Name the risk, or say there is none.",
+    permission_mode="read_only",
+    provider="anthropic",
+    model="claude-opus-4-5",
+)
 
 async def main() -> None:
-    async with Session("general-assistant", directory=".") as session:
-        print(await session.ask("what does this project do?"))
+    async with Session(
+        reviewer,
+        directory="/srv/checkout",
+        catalogue=DictCatalogue(agent_configurations={"reviewer": reviewer}),
+        providers={"anthropic": "sk-ant-…"},
+    ) as session:
+        print(await session.ask("What would break if I removed the retry loop in the fetcher?"))
 
 asyncio.run(main())
 ```
+
+No configuration file, no `.agents` directory, no `$HOME`. The agent, its prompt, its
+permission mode and its credentials are all values in the program.
 
 Use it for three things:
 
 - Embed the harness in another program.
 - Write a terminal interface that shares code with the browser one, instead of reimplementing it.
 - Run a one-shot agent in a script.
+
+## Taking what the machine has
+
+A program that *is* running on someone's machine — a CLI, a scheduled job — can ask for the
+machine's agents deliberately. The import says what it is doing:
+
+```python
+from frank import Session
+from frank.daemon.machine import load_agent, load_catalogue, load_configuration
+
+configuration = load_configuration(seed=False)
+directory = "/Users/you/code/project"
+
+async with Session(
+    load_agent("general-assistant", directory, configuration=configuration),
+    directory=directory,
+    configuration=configuration,
+    catalogue=load_catalogue(configuration, directory),
+) as session:
+    print(await session.ask("What does this project do?"))
+```
+
+Four lines that touch the machine, each one written by you. `frank.daemon.machine` is the only
+module that knows XDG exists, and `frank.Session` never imports it.
 
 ## What you give up
 
@@ -83,7 +134,7 @@ class RedisCheckpoints:
         raw = await self._client.get(f"frank:{session_id}")
         return json.loads(raw) if raw else None
 
-session = Session("general-assistant", checkpoints=RedisCheckpoints(redis))
+session = Session(reviewer, directory="/srv/checkout", checkpoints=RedisCheckpoints(redis))
 ```
 
 That class inherits nothing and imports nothing of ours. The harness accepts it because it has `save` and `load`. One that lacks `load` fails at the constructor, by name:
@@ -104,12 +155,12 @@ from langchain_core.tools import tool
 from frank import Session
 
 @tool
-def house_price(address: str) -> str:
-    """Look up what a house last sold for."""
-    return db.lookup(address)
+def open_incidents(service: str) -> str:
+    """Every open incident for a service, newest first."""
+    return incidents.query(service=service, status="open")
 
-async with Session("general-assistant", tools=[house_price]) as session:
-    print(await session.ask("what did 12 Elm St sell for?"))
+async with Session(reviewer, directory="/srv/checkout", tools=[open_incidents]) as session:
+    print(await session.ask("Are there open incidents on the checkout service?"))
 ```
 
 A supplied tool goes through the *same* preamble as every built-in: permission resolved, location resolved, policy applied. The extension point is the handler, not the pipeline. Two consequences follow:
@@ -164,10 +215,12 @@ decides whether there is one at all.
 `Checkpoints` answers "resume this conversation". `Transcript` answers "what has this session done", with one entry per completed turn. Each entry records what was asked, what came back, how it ended, and what it cost:
 
 ```python
-async with Session("general-assistant", session_id="nightly") as session:
-    await session.ask("audit the dependency tree")
+nightly = "session-8f9c724a-ce51-41b3-83a9-f5969b22a9e2"
 
-for turn in await session.transcript.turns("nightly"):
+async with Session(reviewer, directory="/srv/checkout", session_id=nightly) as session:
+    await session.ask("Audit the dependency tree and flag anything unmaintained.")
+
+for turn in await session.transcript.turns(nightly):
     print(turn.outcome, turn.tools_called, turn.input_tokens + turn.output_tokens)
 ```
 
@@ -180,9 +233,10 @@ not a library. Pass them in:
 
 ```python
 session = Session(
-    "general-assistant",
+        reviewer,
+    directory="/srv/checkout",
     providers={"anthropic": os.environ["MY_APP_ANTHROPIC_KEY"]},
-    model_identifier="anthropic/claude-sonnet-4",
+    model_identifier="anthropic/claude-opus-4-5",
 )
 ```
 
@@ -209,11 +263,17 @@ from frank.base.configuration import AgentConfiguration
 from frank.base.skills import Skill
 
 catalogue = DictCatalogue(
-    agent_configurations={"reviewer": AgentConfiguration(identifier="reviewer", ...)},
-    skill_list=[Skill(name="house-style", description="our conventions", body=STYLE)],
-    instruction_text='[{"path": "in-memory", "content": "always cite line numbers"}]',
+    agent_configurations={"reviewer": reviewer},
+    skill_list=[
+        Skill(
+            name="house-style",
+            description="How this codebase names things and orders imports.",
+            body=HOUSE_STYLE,
+        ),
+    ],
+    instruction_text='[{"path": "in-memory", "content": "Always cite file and line."}]',
 )
-session = Session("reviewer", catalogue=catalogue)
+session = Session(reviewer, directory="/srv/checkout", catalogue=catalogue)
 ```
 
 Unlisted prompt templates fall back to the packaged ones. You therefore opt in to replace the system prompt. You do not have to reproduce it to get started. And `agent=` accepts an `AgentConfiguration` directly as well as a name, which is the shortest path of all when you have one in hand.
@@ -233,11 +293,11 @@ from frank import Approval, Session
 class AllowReads:
     async def decide(self, gate):
         if gate.kind == "permission" and gate.risk in ("", "low"):
-            return Approval(allow=True, reason="read-only work is pre-approved")
+            return Approval(allow=True, reason="Reads are pre-approved for this job.")
         return None
 
-async with Session("general-assistant", approvals=AllowReads()) as session:
-    print(await session.ask("summarise the test failures"))
+async with Session(reviewer, directory="/srv/checkout", approvals=AllowReads()) as session:
+    print(await session.ask("Summarise the test failures on the current branch."))
 ```
 
 An approver that raises escalates the gate rather than allowing it. A broken policy fails
@@ -254,7 +314,7 @@ class LogObserver:
     def observe(self, observation):
         logger.info("%s %s", observation.kind, observation.data)
 
-session = Session("general-assistant", observer=LogObserver())
+session = Session(reviewer, directory="/srv/checkout", observer=LogObserver())
 ```
 
 `observe` can return an awaitable. The harness schedules it; it does not await it. A synchronous implementation that appends to a list is the common case. One that writes to a database must not block the turn. An observer that raises is logged and ignored: a turn must
@@ -267,9 +327,9 @@ not fail because its audit sink did.
 A git worktree per session is opt-in, because it writes to disk. Every other default here leaves nothing behind:
 
 ```python
-session = Session("general-assistant", directory="/path/to/repo")
+session = Session(reviewer, directory="/srv/checkout")
 runtime_directory = await session.prepare_workspace()
-await session.ask("refactor the parser and run the tests")
+await session.ask("Refactor the parser to use the streaming reader, then run the tests.")
 ```
 
 ## Driving a turn
@@ -296,11 +356,13 @@ Resuming is giving a new `Session` the same id and the same store:
 
 ```python
 store = MemoryCheckpoints()
-async with Session("general-assistant", session_id="review", checkpoints=store) as first:
-    await first.ask("read src/parser.py")
+review = "session-3d965dfe-21c4-4f2c-9040-290e77bea0b1"
 
-async with Session("general-assistant", session_id="review", checkpoints=store) as second:
-    await second.ask("now what would you change?")
+async with Session(reviewer, directory="/srv/checkout", session_id=review, checkpoints=store) as first:
+    await first.ask("Read src/parser.py and tell me what it assumes about its input.")
+
+async with Session(reviewer, directory="/srv/checkout", session_id=review, checkpoints=store) as second:
+    await second.ask("Now what would you change?")
 ```
 
 `session.runtime` is the `AgentRuntime` underneath, deliberately public. A library that hides

@@ -16,7 +16,7 @@ A session here has three properties, and they are the whole design:
 
 Everything in Frank is a **session**: one OS process running one agent, created empty and then driven by messages over its life. A session serves [A2A](https://github.com/google/A2A) on its own unix socket. Every client reaches it through the daemon, which relays: you from the terminal, the desktop app, or another session. There is one path in, so a caller is identified and scoped in exactly one place.
 
-Four ways in, kept apart:
+Four layers, each built on the one before it:
 
 - **`frankd`** — a thin daemon. It keeps the registry of sessions, supervises their processes, owns the databases as the sole writer, and brokers the shared resources. It runs no agents itself and never imports the agent runtime, so it delegates the start of a session to the **prototype**. That process imports the runtime once, then forks a copy of itself for each session in about 60 milliseconds.
 - **`frank`** — the command. `create` a session, `send` it work, and `ps` what runs. `attach` to watch, `tree` to see what created what, and `approve` what it asks for. `configure` the next session, `open` the desktop app, and `kill` a subtree. The command adds nothing that the control plane does not have; it is the ergonomic face of it. See the [CLI guide](documentation/cli.md).
@@ -77,32 +77,46 @@ address (the daemon), a window (the app), or an object in your own program (the 
 
 ### As a library
 
-No daemon, no socket, nothing written to your home directory:
+No daemon, no socket, and nothing read from or written to your home directory. The agent, its prompt and its credentials are values in your program:
 
 ```python
 import asyncio
-from frank import Session
+from frank import AgentConfiguration, DictCatalogue, Session
+
+reviewer = AgentConfiguration(
+    name="reviewer",
+    description="Reads a change and reports what it would break.",
+    system_prompt="You review changes. Name the risk, or say there is none.",
+    permission_mode="read_only",
+    provider="anthropic",
+    model="claude-opus-4-5",
+)
 
 async def main() -> None:
-    async with Session("general-assistant", directory=".") as session:
-        print(await session.ask("what does this project do?"))
+    async with Session(
+        reviewer,
+        directory="/srv/checkout",
+        catalogue=DictCatalogue(agent_configurations={"reviewer": reviewer}),
+        providers={"anthropic": "sk-ant-…"},
+    ) as session:
+        print(await session.ask("What would break if I removed the retry loop in the fetcher?"))
 
 asyncio.run(main())
 ```
 
-Use `stream()` instead of `ask()` to get the turn as it happens. Supply your own model, and the harness does not read your machine's configuration:
+`stream()` instead of `ask()` gives the turn as it happens: text chunks, tool calls, tool results, suspensions. `model=` takes any LangChain chat model, and the same session composes with it:
 
 ```python
 from langchain_anthropic import ChatAnthropic
 
-async with Session("general-assistant", directory=".", model=ChatAnthropic(model="claude-opus-4-5")) as session:
-    async for event in session.stream("summarise the test suite"):
+async with Session(reviewer, directory="/srv/checkout", model=ChatAnthropic(model="claude-opus-4-5")) as session:
+    async for event in session.stream("Summarise what the test suite covers."):
         print(event)
 ```
 
-Every durable thing is a seam: `checkpoints`, `jobs`, `transcript`, `approvals`, `observer`, `sandbox`, `catalogue`, and `peers`. Each one defaults to something that a library may safely do. For anything durable, that means *in memory*.
+Every durable thing is a seam: `checkpoints`, `jobs`, `transcript`, `approvals`, `observer`, `sandbox`, `catalogue`, and `peers`. Each one defaults to something a library may safely do, which for anything durable means *in memory*.
 
-[As a library](documentation/library.md) is the reference. It includes a worked Redis checkpoint store, and it lists what you give up when you do not use the daemon.
+A program that *is* running on someone's machine can ask for that machine's agents deliberately, through `frank.daemon.machine`. [As a library](documentation/library.md) is the reference: the full seam table, a worked Redis checkpoint store, and what you give up by not using the daemon.
 
 ### From the terminal
 

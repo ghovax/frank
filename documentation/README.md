@@ -3,7 +3,16 @@
 Detailed guides for installing, configuring, understanding, and developing Frank. For a
 high-level overview, start with the [project README](../README.md).
 
-**Start with the one that matches how you use it.** The harness is the same underneath. These are three faces of it, not three products.
+**They are a stack, not three products.** The library is the bottom of it, and everything else is built on top:
+
+| Layer | What it is | What it knows about your machine |
+|---|---|---|
+| `frank.Session` | The harness: turn loop, tools, prompts, permissions | Nothing. Every value is one you passed |
+| `frank.daemon.machine` | Turns a home directory into what `Session` takes | The XDG paths, and your `.agents` |
+| `frankd` | Supervision: a process per session, a socket each, the databases | Everything, and it is the right place to |
+| `frank`, and the app | Clients of the daemon | Where the daemon is |
+
+Start with the layer you are actually using.
 
 | If you want to… | Read |
 |---|---|
@@ -28,16 +37,29 @@ Then the rest, in roughly the order they become relevant:
 
 ```python
 import asyncio
-from frank import Session
+from frank import AgentConfiguration, DictCatalogue, Session
+
+reviewer = AgentConfiguration(
+    name="reviewer",
+    system_prompt="You review changes. Name the risk, or say there is none.",
+    permission_mode="read_only",
+    provider="anthropic",
+    model="claude-opus-4-5",
+)
 
 async def main() -> None:
-    async with Session("general-assistant", directory=".") as session:
-        print(await session.ask("what does this project do?"))
+    async with Session(
+        reviewer,
+        directory="/srv/checkout",
+        catalogue=DictCatalogue(agent_configurations={"reviewer": reviewer}),
+        providers={"anthropic": "sk-ant-…"},
+    ) as session:
+        print(await session.ask("What would break if I removed the retry loop?"))
 
 asyncio.run(main())
 ```
 
-That writes nothing to your home directory, and it starts no daemon. A library that installs a database because you imported it is a library you cannot embed. Every durable seam therefore defaults to memory.
+That reads nothing from your home directory, writes nothing to it, and starts no daemon. A library that installs a database because you imported it is a library you cannot embed, so every durable seam defaults to memory.
 
 To swap one, pass an object with the right methods. Each seam is a `typing.Protocol`: no base class to inherit, and no import of Frank in your type. [As a library](library.md) has the full table and a worked Redis checkpoint store.
 
