@@ -52,6 +52,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, AsyncIterator, Mapping, Optional, Sequence
 
+from frank.base.catalogue import DictCatalogue
+from frank.base.configuration import AgentConfiguration, GlobalConfiguration
+from frank.base.permission_mode import PermissionMode
+from frank.base.skills import Skill
 from frank.base.ports import (
     Approval,
     Approvals,
@@ -71,18 +75,23 @@ from frank.base.ports import (
 )
 
 __all__ = [
+    "AgentConfiguration",
     "Approval",
     "Approvals",
     "Catalogue",
     "Checkpoints",
     "Credentials",
+    "DictCatalogue",
+    "GlobalConfiguration",
     "JobStore",
     "MemoryCheckpoints",
     "MemoryJobStore",
     "MemoryTranscript",
     "Observation",
     "Observer",
+    "PermissionMode",
     "Session",
+    "Skill",
     "SuspensionGate",
     "Transcript",
     "TurnSummary",
@@ -144,9 +153,9 @@ class Session:
 
     def __init__(
         self,
-        agent: str | Any,
+        agent: AgentConfiguration,
         *,
-        directory: str | Path = ".",
+        directory: str | Path,
         session_id: str = "",
         permission_mode: str = "",
         sandbox: Any = None,
@@ -182,8 +191,18 @@ class Session:
         from frank.base.configuration import GlobalConfiguration
         from frank.base.identifiers import new_id
 
+        if isinstance(agent, str):
+            raise TypeError(
+                "agent must be an AgentConfiguration, not a name. A name would mean this "
+                "library goes looking for a profile on your machine. Build one in code, or "
+                "load it yourself: `frank.daemon.machine.load_catalogue(...).agent(name)`."
+            )
         self._agent = agent
-        self._directory = str(Path(directory).resolve())
+        # Absolute, and not resolved against the process's current directory. Where tools run
+        # is a property of the run, not of where you happened to start Python.
+        if not Path(directory).is_absolute():
+            raise ValueError(f"directory must be absolute, got {directory!r}.")
+        self._directory = str(Path(directory))
         self._session_id = session_id or new_id("session")
         self._permission_mode = permission_mode
         self._sandbox = sandbox
@@ -192,7 +211,11 @@ class Session:
         # `seed=False`: reading configuration must not leave a file in the caller's home
         # directory. The CLI and the daemon seed it deliberately, because a person installing
         # Frank needs something to edit; a program that imported us did not ask for that.
-        self._configuration = configuration or GlobalConfiguration.load(seed=False)
+        # `GlobalConfiguration()`, not `.load()`. A library that reads your home directory
+        # because you imported it is not location-agnostic, whatever it does with what it finds.
+        # `frank.daemon.machine` is where the XDG loaders live, and it is the daemon's business
+        # because the daemon is the program that runs on a machine.
+        self._configuration = configuration if configuration is not None else GlobalConfiguration()
         if providers:
             _apply_providers(self._configuration, providers)
         self._model_identifier = model_identifier
@@ -254,21 +277,12 @@ class Session:
             # another product's configuration file. `frankd` and the CLI pass a catalogue that
             # does read those, because there the person and the home directory are the same
             # person.
-            catalogue = self._catalogue
-            if catalogue is None:
-                from frank.base.catalogue import project_catalogue
-
-                catalogue = project_catalogue(self._configuration, self._directory)
-            agent_configuration = (
-                self._agent if not isinstance(self._agent, str) else catalogue.agent(self._agent)
-            )
-            if agent_configuration is None:
-                available = ", ".join(catalogue.agents()) or "none"
-                raise LookupError(
-                    f"No agent profile named {self._agent!r}. This catalogue offers: {available}. "
-                    "Pass `catalogue=` to supply your own agents, or `agent=` an "
-                    "AgentConfiguration directly."
-                )
+            # An empty catalogue, not a search. Supplying nothing means the session has no
+            # skills, no memories and no project instructions — not that the harness should go
+            # and find some. Prompt templates still fall back to the packaged ones, which is
+            # the library reading itself rather than reading your machine.
+            catalogue = self._catalogue if self._catalogue is not None else DictCatalogue()
+            agent_configuration = self._agent
             # A model named at the call site beats the profile's. The common case for an
             # embedder is one agent definition run against whichever model the program is
             # configured for, and editing the profile to say so would be editing a file to

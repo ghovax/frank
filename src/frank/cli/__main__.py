@@ -386,9 +386,19 @@ def _command_run(arguments: argparse.Namespace) -> int:
             async def decide(self, _gate):
                 return Approval(allow=True, reason="--allow was passed")
 
+        # The CLI is a program for a person on a machine, so it reads the machine — visibly,
+        # here, rather than inside the library. `Session` takes the resolved profile.
+        from pathlib import Path
+
+        from frank.daemon.machine import load_agent, load_catalogue, load_configuration
+
+        configuration = load_configuration(seed=False)
+        directory = str(Path(arguments.directory).resolve())
         session = Session(
-            arguments.agent,
-            directory=arguments.directory,
+            load_agent(arguments.agent, directory, configuration=configuration),
+            directory=directory,
+            configuration=configuration,
+            catalogue=load_catalogue(configuration, directory),
             permission_mode=arguments.permission_mode,
             approvals=AllowEverything() if arguments.allow else None,
         )
