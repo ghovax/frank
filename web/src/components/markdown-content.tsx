@@ -436,7 +436,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
 });
 
 // A stripped-down, single-line Markdown renderer for places where a label must
-// render inline and stay on one line: tool-call headings (the justification).
+// render inline and stay on one line: tool-call headings (the explanation).
 // Every block element collapses to its inline children so nothing forces a line
 // break or block margin — only code spans, emphasis, links, and inline math keep
 // their formatting. Pairs with a parent that owns the truncation/ellipsis.

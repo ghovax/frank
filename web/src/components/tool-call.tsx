@@ -130,10 +130,10 @@ export function toolCallDetail(
   result: unknown,
   status?: ToolEventStatus,
 ): ToolCallDetail {
-  // `justification` is rendered as the line's label, and `location` as a trailing
+  // `explanation` is rendered as the line's label, and `location` as a trailing
   // badge — neither is body content, so a call carrying only those has nothing to
   // expand into.
-  const showArguments = !!args && Object.keys(args).some((key) => key !== "justification" && key !== "location");
+  const showArguments = !!args && Object.keys(args).some((key) => key !== "explanation" && key !== "location");
   const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
   // A tool_error is surfaced on the line itself and leaves nothing for the body.
   const showResult =

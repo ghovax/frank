@@ -176,7 +176,7 @@ class PermissionRequestEvent(_EventBase):
     request_id: str
     tool_call_id: str = ""
     command: str = ""
-    justification: str = ""
+    explanation: str = ""
     risk: str = ""
 
 

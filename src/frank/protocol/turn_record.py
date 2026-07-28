@@ -85,7 +85,7 @@ def reconcile_action(kind: Optional[TurnKind], state: str, *, input_required: st
 class ToolGate(BaseModel):
     """One human decision a turn is blocked on: a permission request for a tool call, or a
     question posed to the user. ``kind`` discriminates (``"permission"`` | ``"question"``); the
-    permission fields (``command``/``justification``/``risk``) and the question field
+    permission fields (``command``/``explanation``/``risk``) and the question field
     (``questions``) are populated per kind. Every field is declared and typed — the durable
     twin of the in-process :class:`~frank.runtime.turn_events.SuspensionGate`, so a suspend
     round-trips through it with no ``extra="allow"`` catch-all."""
@@ -94,7 +94,7 @@ class ToolGate(BaseModel):
     kind: Literal["permission", "question"] = "permission"
     tool_call_id: str = ""
     command: str = ""
-    justification: str = ""
+    explanation: str = ""
     risk: str = ""
     questions: list[Any] = Field(default_factory=list)
     # Permission-gate detail carried through a suspend so a resume can re-apply an

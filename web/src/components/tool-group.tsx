@@ -136,7 +136,7 @@ export const ToolGroup = memo(function ToolGroup({
   // The left icon owns the latest call. The trailing tally therefore counts only
   // earlier calls, preventing the latest tool from appearing twice in the same row.
   const tally = useMemo(() => tallyTools(tools.slice(0, -1)), [tools]);
-  // The status line shows the most recent tool's own label (its justification),
+  // The status line shows the most recent tool's own label (its explanation),
   // animated as work streams in and left in place when the batch finishes — more
   // informative than a static "Still working" / "Actions taken".
   const latestTool = tools[tools.length - 1];

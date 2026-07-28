@@ -3,10 +3,10 @@
 `frank configure` used to be able to show only what a file already contained, which is exactly
 backwards: a person reaching for it wants to know what they *could* set, and the file they have
 is by definition the part they already know about. Nothing enumerated the rest, because nothing
-knew what the rest was — the settings existed as Pydantic fields and the explanations for them
+knew what the rest was — the settings existed as Pydantic fields and the descriptions for them
 existed as comments beside those fields, in a form no program could read.
 
-So the explanations moved into ``Field(description=...)`` and the tunables' into
+So the descriptions moved into ``Field(description=...)`` and the tunables' into
 :class:`~frank.base.tuning.Default`, and this module walks the models to produce the list. Both
 the terminal listing and the generated reference file read it, which is what keeps them from
 disagreeing with the code or with each other.

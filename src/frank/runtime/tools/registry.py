@@ -43,7 +43,7 @@ async def bash(
     command: str,
     location: str = "",
     read_only: bool = False,
-    justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     risk: Literal["low", "medium", "high"] = "low",
     background: bool = False,
     timeout: float = Tunable.bash_sync_window_seconds.default,
@@ -54,7 +54,7 @@ async def bash(
 
     Set background=True only for genuinely long-running work you do NOT need the result of before your turn can continue — a build, a test suite, a dev server, a broad scan. A backgrounded command returns immediately with a task identifier; its result is auto-injected into the conversation when it finishes, and the harness re-engages you then. Do NOT background a command whose output you need next (and never background then re-run the same command — it is already running).
 
-    Always provide a clear justification and risk assessment for the command. Set read_only=True only for commands that provably just read state (cat, head, tail, ls, grep, find, etc.). Omitted, the command is treated as potentially mutating.
+    Always provide a clear explanation and risk assessment for the command. Set read_only=True only for commands that provably just read state (cat, head, tail, ls, grep, find, etc.). Omitted, the command is treated as potentially mutating.
 
     **Prefer specialized tools** for file discovery, content search, file reads, edits, writes, URL fetching, and downloads. Use bash for tests, builds, Git, process and package management, pipelines, and work without a dedicated tool.
 
@@ -64,7 +64,7 @@ async def bash(
         command: The shell command to execute.
         location: The project location to run the command on — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
         read_only: Whether this command only reads state without modifying it. Defaults to False (treated as mutating) when omitted.
-        justification: Explain why this command is needed for the task.
+        explanation: Explain why this command is needed for the task.
         risk: One of "low", "medium", "high" — assess the potential damage. Low for read-only commands, medium for modifications, high for destructive operations.
         background: Run the command in the background instead of waiting for it. Use for long-running work whose result is not needed immediately.
         timeout: How many seconds to wait synchronously for the command before it auto-backgrounds (its result is then delivered when it finishes). Raise it for a command you want to wait longer for; it does not kill the command.
@@ -205,7 +205,7 @@ async def bash(
             "command": command,
             "location": location,
             "read_only": read_only,
-            "justification": justification,
+            "explanation": explanation,
             "risk": risk,
             "background": background,
         },
@@ -237,7 +237,7 @@ async def bash(
 @tool
 async def search_web(
     query: str,
-    justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     result_count: int = 5,
 ) -> str:
     """Search the web using Exa. Returns a ranked list of results with titles, URLs, and a summary of each — so you can often answer directly without fetching the page.
@@ -248,7 +248,7 @@ async def search_web(
 
     Arguments:
         query: The search query.
-        justification: A concise, user-facing description of why this search is needed.
+        explanation: A concise, user-facing description of why this search is needed.
         result_count: Number of results to return (1-10, default 5).
     """
     client = tool_context.current().exa_client
@@ -299,7 +299,7 @@ async def search_web(
     jobs = current_background_jobs()
     jobs.spawn(
         "search_web", run(), identifier=job_id, output_path=output_path,
-        arguments={"query": query, "justification": justification, "result_count": result_count},
+        arguments={"query": query, "explanation": explanation, "result_count": result_count},
         # A search that outlives the turn keeps running detached — a Stop ends the
         # turn but leaves it running, so its result still lands and wakes the agent.
         detached=True,
@@ -322,14 +322,14 @@ async def search_web(
 
 
 @tool
-async def list_mcp_tools(server: str = "", justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+async def list_mcp_tools(server: str = "", explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
     """List tools exposed by configured MCP servers.
 
     Use this to discover the exact tool name and input schema before calling ``call_mcp_tool``. Pass a server name to inspect one configured server or leave it empty to inspect every enabled server.
 
     Arguments:
         server: Optional configured MCP server name. Leave empty to list every enabled server.
-        justification: A concise, user-facing reason for inspecting MCP tools.
+        explanation: A concise, user-facing reason for inspecting MCP tools.
     """
     try:
         result = await _require_mcp_client_manager().list_tools(server)
@@ -344,7 +344,7 @@ async def call_mcp_tool(
     tool_name: str,
     arguments: dict[str, Any] | None = None,
     read_only: bool = False,
-    justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
     """Call a tool exposed by a configured MCP server.
@@ -356,7 +356,7 @@ async def call_mcp_tool(
         tool_name: Tool name as advertised by list_mcp_tools.
         arguments: JSON object matching the MCP tool input schema.
         read_only: Whether this MCP tool call only reads state. Defaults to False (treated as mutating) when omitted.
-        justification: A concise, user-facing reason for the tool call.
+        explanation: A concise, user-facing reason for the tool call.
         risk: One of "low", "medium", "high" for non-read-only calls.
     """
     try:
@@ -381,14 +381,14 @@ async def call_mcp_tool_with_events(
 
 
 @tool
-async def list_mcp_resources(server: str = "", justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+async def list_mcp_resources(server: str = "", explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
     """List resources exposed by configured MCP servers.
 
     Use this to discover resource URIs before calling ``read_mcp_resource``. Pass a server name to inspect one configured server or leave it empty to inspect every enabled server.
 
     Arguments:
         server: Optional configured MCP server name. Leave empty to list every enabled server.
-        justification: A concise, user-facing reason for inspecting resources.
+        explanation: A concise, user-facing reason for inspecting resources.
     """
     try:
         result = await _require_mcp_client_manager().list_resources(server)
@@ -398,7 +398,7 @@ async def list_mcp_resources(server: str = "", justification: str = Field(..., d
 
 
 @tool
-async def read_mcp_resource(server: str, uri: str, justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+async def read_mcp_resource(server: str, uri: str, explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
     """Read a resource exposed by a configured MCP server.
 
     Discover the exact URI with ``list_mcp_resources`` first.
@@ -406,7 +406,7 @@ async def read_mcp_resource(server: str, uri: str, justification: str = Field(..
     Arguments:
         server: Configured MCP server name.
         uri: Resource URI as advertised by list_mcp_resources.
-        justification: A concise, user-facing reason for reading the resource.
+        explanation: A concise, user-facing reason for reading the resource.
     """
     try:
         result = await _require_mcp_client_manager().read_resource(server, uri)
@@ -420,7 +420,7 @@ async def read_mcp_resource(server: str, uri: str, justification: str = Field(..
 @tool
 async def wait_for(
     seconds: float,
-    justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
 ) -> str:
     """Pause for a fixed number of seconds, then continue — a cheap, intentional wait with no model round-trip while it runs.
 
@@ -430,7 +430,7 @@ async def wait_for(
 
     Arguments:
         seconds: How long to wait before continuing. Prefer small values (a few seconds) and re-check.
-        justification: A concise, user-facing reason for the wait.
+        explanation: A concise, user-facing reason for the wait.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -439,7 +439,7 @@ async def wait_for(
 
 
 @tool
-def read_turn(turn_id: str = "", justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+def read_turn(turn_id: str = "", explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
     """Read a sibling turn in this session by its id, returning its current status and artifact (deliverable).
 
     Use this to coordinate with externally supplied sibling A2A task ids: check whether a sibling has finished and read what it produced, then build on it.
@@ -448,7 +448,7 @@ def read_turn(turn_id: str = "", justification: str = Field(..., description="A 
 
     Arguments:
         turn_id: The id of an externally supplied sibling turn to read.
-        justification: A concise, user-facing description of why you are reading this task — shown as the label for this call.
+        explanation: A concise, user-facing description of why you are reading this task — shown as the label for this call.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -486,7 +486,7 @@ def update_tasks(updates: list[dict]) -> str:
 def update_goal(
     goal: str = "",
     status: Literal["active", "satisfied", "cleared"] = "active",
-    justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
 ) -> str:
     """Set, replace, satisfy, or clear the single active goal for this turn.
 
@@ -495,7 +495,7 @@ def update_goal(
     Arguments:
         goal: The goal text to set when status is "active". Leave empty when marking the current goal as "satisfied" or "cleared".
         status: "active" sets/replaces the goal, "satisfied" removes it because the requested outcome is done, and "cleared" removes it because it is obsolete or no longer applicable.
-        justification: A concise, user-facing reason for this update.
+        explanation: A concise, user-facing reason for this update.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -506,7 +506,7 @@ def read_file(
     location: str = "",
     offset: int = 1,
     limit: int | None = 2048,
-    justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
 ) -> str:
     """Read a file, returning its lines in cat -n format. Image files (.png/.jpg/.jpeg/.gif/.webp) are ingested natively instead: the result is structured metadata, and on a vision model the image itself follows.
 
@@ -517,7 +517,7 @@ def read_file(
         location: The project location to read from — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
         offset: 1-indexed line number to start reading from.
         limit: Maximum number of lines to return (defaults to 2048).
-        justification: A concise, user-facing reason for this read.
+        explanation: A concise, user-facing reason for this read.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -527,7 +527,7 @@ def search_code(
     query: str,
     top_k: int = 10,
     reindex: bool = False,
-    justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
 ) -> str:
     """Search the codebase by meaning, in plain language.
 
@@ -537,7 +537,7 @@ def search_code(
         query: What you are looking for, in plain language.
         top_k: How many matching chunks to return (default 10).
         reindex: Rebuild the code index first — pass this after you have edited files and need fresh results.
-        justification: A concise, user-facing reason for this search.
+        explanation: A concise, user-facing reason for this search.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -549,7 +549,7 @@ def edit_file(
     replace_with: str,
     location: str = "",
     replace_all: bool = False,
-    justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
     """Replace exact text in a file, staged and validated before commit.
@@ -564,7 +564,7 @@ def edit_file(
         replace_with: The text to replace it with.
         location: The project location to edit in — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
         replace_all: Replace every occurrence instead of requiring a unique match.
-        justification: A concise, user-facing reason for this edit.
+        explanation: A concise, user-facing reason for this edit.
         risk: "low" for targeted edits, "medium" broad, "high" hard to reverse.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -575,7 +575,7 @@ def write_file(
     file_path: str,
     content: str,
     location: str = "",
-    justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
     """Write content to a file, overwriting it if it exists.
@@ -586,7 +586,7 @@ def write_file(
         file_path: Absolute path (or path relative to the working directory).
         content: The full text to write to the file.
         location: The project location to write to — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
-        justification: A concise, user-facing reason for this write.
+        explanation: A concise, user-facing reason for this write.
         risk: "low" new file, "medium" broad rewrite, "high" hard to reconstruct.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -599,7 +599,7 @@ async def fetch_url(
     timeout: float = Tunable.slow_tool_sync_window_seconds.default,
     hard_deadline: float = 30,
     background: bool = False,
-    justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
 ) -> str:
     """Fetch content from a URL and convert it to the requested format.
 
@@ -613,7 +613,7 @@ async def fetch_url(
         timeout: Inline-wait window in seconds before the fetch backgrounds (does not abort it).
         hard_deadline: Network deadline in seconds that aborts the request itself.
         background: Skip the inline wait and background the fetch immediately.
-        justification: A concise, user-facing reason for this fetch.
+        explanation: A concise, user-facing reason for this fetch.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -626,7 +626,7 @@ async def download_file(
     timeout: float = Tunable.slow_tool_sync_window_seconds.default,
     hard_deadline: float = 120,
     background: bool = False,
-    justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
 ) -> str:
     """Download a file from a URL to a path, defeating typical bot/TLS blocks.
 
@@ -641,7 +641,7 @@ async def download_file(
         timeout: Inline-wait window in seconds before the download backgrounds (does not abort it).
         hard_deadline: Network deadline in seconds that aborts the transfer itself.
         background: Skip the inline wait and background the download immediately.
-        justification: A concise, user-facing reason for this download.
+        explanation: A concise, user-facing reason for this download.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -651,7 +651,7 @@ async def control_screen(
     script: str,
     surface: Literal["browser", "computer"] = "browser",
     app: str = "",
-    justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
     """Read and drive the live screen by composing a short Python script — one program that both finds elements and acts on them.
@@ -678,7 +678,7 @@ async def control_screen(
         script: The Python to run.
         surface: "browser" (the user's Chrome) or "computer" (a native macOS app).
         app: For the computer surface — which app to look at, by name; omit to reuse the last one.
-        justification: Why this is needed.
+        explanation: Why this is needed.
         risk: Damage potential — higher for actions that change state.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -687,7 +687,7 @@ async def control_screen(
 @tool
 def ask_user(
     questions: list[dict],
-    justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
 ) -> str:
     """Ask the user one or more questions and receive their answers.
 
@@ -695,20 +695,20 @@ def ask_user(
 
     Arguments:
         questions: List of question objects, each with "question" (full text), "header" (short label, max ~30 chars), "options" (list of {"label", "description"}), and optional "multiple" (bool) and "custom" (bool, default true).
-        justification: A concise, user-facing reason for asking.
+        explanation: A concise, user-facing reason for asking.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
-def load_skill(name: str, justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+def load_skill(name: str, explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
     """Load a specialized skill's instructions into the conversation.
 
     When a task matches a skill listed in ``Available skills``, load that skill before acting rather than guessing its workflow. The result injects the full instructions and references to any scripts, files, or resources it provides.
 
     Arguments:
         name: The skill name, matching one listed in "Available skills".
-        justification: A concise, user-facing reason for loading this skill.
+        explanation: A concise, user-facing reason for loading this skill.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 

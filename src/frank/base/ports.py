@@ -75,7 +75,7 @@ class SuspensionGate:
     question.
 
     ``kind`` discriminates (``"permission"`` | ``"question"``); the permission fields
-    (``command``/``justification``/``risk``) and the question field (``questions``) are
+    (``command``/``explanation``/``risk``) and the question field (``questions``) are
     populated per kind. A typed carrier so a reader takes ``gate.kind`` rather than an untyped
     ``gate.get("kind")`` off a bare dict.
 
@@ -88,7 +88,7 @@ class SuspensionGate:
     tool_call_id: str = ""
     kind: str = "permission"
     command: str = ""
-    justification: str = ""
+    explanation: str = ""
     risk: str = ""
     questions: list[dict[str, Any]] = field(default_factory=list)
     is_bash: bool = False

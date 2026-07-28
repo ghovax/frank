@@ -27,7 +27,7 @@ type RuntimeDecision = "deny" | "allow_once";
 interface PermissionOverlayProps {
   permission: ToolPermission;
   // A short label for what is being approved (the tool's own display label, e.g.
-  // the command or the justification) plus an optional longer detail line.
+  // the command or the explanation) plus an optional longer detail line.
   title: string;
   detail?: string;
   command?: string;

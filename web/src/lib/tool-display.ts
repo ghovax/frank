@@ -25,10 +25,10 @@ interface ToolDisplayInfo {
   // generic wrench icon and its raw name shown monospace (see `mono`).
   known: boolean;
   // Render the whole label as monospace code — true only for an unrecognized tool
-  // shown by its bare name (no justification to describe it).
+  // shown by its bare name (no explanation to describe it).
   mono: boolean;
   // Render the label as inline Markdown — true when it is the model's own
-  // justification (which may carry code spans, `file:line` refs, emphasis). A
+  // explanation (which may carry code spans, `file:line` refs, emphasis). A
   // fallback label (a raw command or path) is plain text so it is never mangled.
   labelIsMarkdown: boolean;
 }
@@ -150,7 +150,7 @@ function readFileLabel(filePath: string, args: Record<string, unknown>, t: ToolD
   return t("readFileLines", { file, start: offset, end: offset + limit - 1 });
 }
 
-// A control_screen call with no justification: describe it from its surface + the
+// A control_screen call with no explanation: describe it from its surface + the
 // script's first line (the whole script is body content, not a one-line label).
 function controlScreenLabel(args: Record<string, unknown> | undefined, t: ToolDisplayTranslator): string {
   const surface = args?.surface ? String(args.surface) : "";
@@ -174,14 +174,14 @@ export function getToolCallDisplay(
   t: ToolDisplayTranslator,
 ): ToolDisplayInfo {
   const known = KNOWN_TOOL_NAMES.has(name);
-  const justification = args?.justification ? String(args.justification) : "";
+  const explanation = args?.explanation ? String(args.explanation) : "";
   return {
     ...iconForTool(name),
-    label: justification || fallbackLabel(name, args, t),
+    label: explanation || fallbackLabel(name, args, t),
     known,
     // A bare, unrecognized tool name reads as code (it *is* an identifier).
-    mono: !known && !justification,
-    // Only the model's justification is trusted as Markdown; fallbacks stay literal.
-    labelIsMarkdown: !!justification,
+    mono: !known && !explanation,
+    // Only the model's explanation is trusted as Markdown; fallbacks stay literal.
+    labelIsMarkdown: !!explanation,
   };
 }

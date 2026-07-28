@@ -93,9 +93,9 @@ function mergeTasks(messageTasks: ShellJob[], liveTasks: ShellJob[]): ShellJob[]
   }
   for (const task of liveTasks) {
     const messageTask = tasksByIdentifier.get(task.toolCallId);
-    const transcriptJustification = messageTask?.arguments.justification;
-    tasksByIdentifier.set(task.toolCallId, transcriptJustification && !task.arguments.justification
-      ? { ...task, arguments: { ...task.arguments, justification: transcriptJustification } }
+    const transcriptExplanation = messageTask?.arguments.explanation;
+    tasksByIdentifier.set(task.toolCallId, transcriptExplanation && !task.arguments.explanation
+      ? { ...task, arguments: { ...task.arguments, explanation: transcriptExplanation } }
       : task);
   }
   return Array.from(tasksByIdentifier.values())

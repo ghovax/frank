@@ -24,7 +24,7 @@ The system-prompt one matters more than its length suggests. It is where a sessi
 
 > You run as one OS process with a pid, reachable on your own socket, holding your own capability token. That is why a peer is not a subroutine: it is a session like you, with its own process and its own address, and it answers by sending you a message rather than by returning a value.
 
-The README paragraph loses the wordplay about `xargs` and `xdg-open`, which was only ever a justification for a letter that is no longer there, and keeps the three properties in a shorter form.
+The README paragraph loses the wordplay about `xargs` and `xdg-open`, which was only ever a explanation for a letter that is no longer there, and keeps the three properties in a shorter form.
 
 ## What is deliberately not renamed
 

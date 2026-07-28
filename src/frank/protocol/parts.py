@@ -173,7 +173,7 @@ def _work_habits_acknowledgement_parts(job_id: str) -> tuple[Part, Part]:
         _event_part(ToolCallEvent(
             tool_name="work_habits",
             tool_call_id=acknowledgement_identifier,
-            arguments={"justification": "Loading your work habits"},
+            arguments={"explanation": "Loading your work habits"},
         )),
         _event_part(ToolResultEvent(
             tool_name="work_habits",

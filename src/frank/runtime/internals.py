@@ -308,7 +308,7 @@ class _PreflightGate:
     tool_call_id: str
     kind: str  # "permission" | "question"
     command: str = ""
-    justification: str = ""
+    explanation: str = ""
     risk: str = ""
     questions: list = field(default_factory=list)
     # A bash command approval remembers an "always allow" as a session rule.
@@ -321,7 +321,7 @@ class _PreflightGate:
     def to_dict(self) -> dict:
         return {
             "request_id": self.request_id, "tool_call_id": self.tool_call_id, "kind": self.kind,
-            "command": self.command, "justification": self.justification, "risk": self.risk,
+            "command": self.command, "explanation": self.explanation, "risk": self.risk,
             "questions": self.questions, "is_bash": self.is_bash,
             "deny_message": self.deny_message, "egress_agent": self.egress_agent,
         }
@@ -331,7 +331,7 @@ class _PreflightGate:
         return cls(
             request_id=str(data.get("request_id", "")), tool_call_id=str(data.get("tool_call_id", "")),
             kind=str(data.get("kind", "permission")), command=str(data.get("command", "")),
-            justification=str(data.get("justification", "")), risk=str(data.get("risk", "")),
+            explanation=str(data.get("explanation", "")), risk=str(data.get("risk", "")),
             questions=list(data.get("questions", []) or []), is_bash=bool(data.get("is_bash", False)),
             deny_message=str(data.get("deny_message", "")), egress_agent=str(data.get("egress_agent", "")),
         )

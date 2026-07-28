@@ -76,7 +76,7 @@ const settledTools: ToolEvent[] = [
     name: "read_file",
     toolCallId: "t1",
     status: "completed",
-    arguments: { file_path: "web/src/components/tool-call.tsx", justification: "Reading the current `ToolCall` layout" },
+    arguments: { file_path: "web/src/components/tool-call.tsx", explanation: "Reading the current `ToolCall` layout" },
     result: { content: "export function ToolCall() { /* … */ }" },
   },
   {
@@ -101,7 +101,7 @@ const settledTools: ToolEvent[] = [
       file_path: "web/src/components/ui/disclosure-row.tsx",
       old_string: "ml=\"5px\"\nmt={0.5}",
       new_string: "ml={1.5}\nmt={0.5}\npt={1.5}",
-      justification: "Aligning the disclosure body rule",
+      explanation: "Aligning the disclosure body rule",
       read_only: false,
     },
     result: { code: "ok" },
@@ -127,7 +127,7 @@ const runningTools: ToolEvent[] = [
     name: "bash",
     toolCallId: "r2",
     status: "running",
-    arguments: { command: "bun run build", justification: "Building to verify the change", read_only: false },
+    arguments: { command: "bun run build", explanation: "Building to verify the change", read_only: false },
   },
 ];
 
@@ -179,7 +179,7 @@ export default function GalleryPage() {
         name: "read_file",
         toolCallId: `live-${current.length}`,
         status: "running",
-        arguments: { file_path: `web/src/components/pass-${current.length}.tsx`, justification: `Reading pass ${current.length} of the layout` },
+        arguments: { file_path: `web/src/components/pass-${current.length}.tsx`, explanation: `Reading pass ${current.length} of the layout` },
       },
     ]);
   return (
@@ -271,7 +271,7 @@ export default function GalleryPage() {
         </Section>
         <Section title="Compact markdown (tool detail scale)">
           <Box data-audit="markdown-xs" maxW="560px">
-            <MarkdownContent content={"A `justification` rendered at the compact field scale, with **bold** and a [link](https://example.com)."} fontSize="xs" />
+            <MarkdownContent content={"A `explanation` rendered at the compact field scale, with **bold** and a [link](https://example.com)."} fontSize="xs" />
           </Box>
         </Section>
       </VStack>

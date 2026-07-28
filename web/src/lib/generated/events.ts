@@ -119,7 +119,7 @@ export interface ModelToolResult {
  */
 export interface PermissionRequestEvent {
   command?: string;
-  justification?: string;
+  explanation?: string;
   kind: "permission_request";
   request_id: string;
   risk?: string;

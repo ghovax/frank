@@ -257,7 +257,7 @@
           "default": "",
           "type": "string"
         },
-        "justification": {
+        "explanation": {
           "default": "",
           "type": "string"
         },

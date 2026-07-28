@@ -127,7 +127,7 @@ class _PermissionsMixin:
         default_decision: str,
         read_only: bool,
         risk: str,
-        justification: str,
+        explanation: str,
         static_classification: str = "",
         static_detail: str = "",
         outside_reads: Optional[list[str]] = None,
@@ -141,7 +141,7 @@ class _PermissionsMixin:
                 "default_permission_decision": default_decision,
                 "model_declared_read_only": read_only,
                 "model_declared_risk": risk,
-                "model_justification": justification,
+                "model_explanation": explanation,
                 "static_read_only_classification": static_classification,
                 "static_detail": static_detail,
                 "outside_working_directory_reads": outside_reads or [],
@@ -155,15 +155,15 @@ class _PermissionsMixin:
                 SystemMessage(content=prompt),
             ])
             if not response.tool_calls:
-                return PermissionDecision(action="escalate", justification="Classifier returned no structured decision.", risk="medium")
+                return PermissionDecision(action="escalate", explanation="Classifier returned no structured decision.", risk="medium")
             decision = PermissionDecision.model_validate(response.tool_calls[0]["args"])
             if default_decision == "deny" and decision.action == "auto_approve":
-                return PermissionDecision(action="escalate", justification="User-configured permissions deny this action.", risk="high")
-            if not decision.justification.strip():
-                return PermissionDecision(action="escalate", justification="Classifier did not provide a justification.", risk="medium")
+                return PermissionDecision(action="escalate", explanation="User-configured permissions deny this action.", risk="high")
+            if not decision.explanation.strip():
+                return PermissionDecision(action="escalate", explanation="Classifier did not provide a explanation.", risk="medium")
             return decision
         except Exception as exception:
-            return PermissionDecision(action="escalate", justification=f"{exception}", risk="medium")
+            return PermissionDecision(action="escalate", explanation=f"{exception}", risk="medium")
 
     def _evaluate_bash_permission(self, command: str) -> str:
         unmatched = "ask" if self._interactive_manual_mode else "allow"
@@ -178,7 +178,7 @@ class _PermissionsMixin:
         default_decision: str,
         read_only: bool,
         risk: str,
-        justification: str,
+        explanation: str,
         static_classification: str = "",
         static_detail: str = "",
         outside_reads: Optional[list[str]] = None,
@@ -192,7 +192,7 @@ class _PermissionsMixin:
                 "default_permission_decision": default_decision,
                 "model_declared_read_only": read_only,
                 "model_declared_risk": risk,
-                "model_justification": justification,
+                "model_explanation": explanation,
                 "static_read_only_classification": static_classification,
                 "static_detail": static_detail,
                 "outside_working_directory_reads": outside_reads or [],
@@ -206,15 +206,15 @@ class _PermissionsMixin:
                 SystemMessage(content=prompt),
             ])
             if not response.tool_calls:
-                return PermissionDecision(action="escalate", justification="Classifier returned no structured decision.", risk="medium")
+                return PermissionDecision(action="escalate", explanation="Classifier returned no structured decision.", risk="medium")
             decision = PermissionDecision.model_validate(response.tool_calls[0]["args"])
             if default_decision == "deny" and decision.action == "auto_approve":
-                return PermissionDecision(action="escalate", justification="User-configured permissions deny this action.", risk="high")
-            if not decision.justification.strip():
-                return PermissionDecision(action="escalate", justification="Classifier did not provide a justification.", risk="medium")
+                return PermissionDecision(action="escalate", explanation="User-configured permissions deny this action.", risk="high")
+            if not decision.explanation.strip():
+                return PermissionDecision(action="escalate", explanation="Classifier did not provide a explanation.", risk="medium")
             return decision
         except Exception as exception:
-            return PermissionDecision(action="escalate", justification=f"{exception}", risk="medium")
+            return PermissionDecision(action="escalate", explanation=f"{exception}", risk="medium")
 
     def _evaluate_bash_permission(self, command: str) -> str:
         unmatched = "ask" if self._interactive_manual_mode else "allow"
@@ -229,7 +229,7 @@ class _PermissionsMixin:
         default_decision: str,
         read_only: bool,
         risk: str,
-        justification: str,
+        explanation: str,
         static_classification: str = "",
         static_detail: str = "",
         outside_reads: Optional[list[str]] = None,
@@ -243,7 +243,7 @@ class _PermissionsMixin:
                 "default_permission_decision": default_decision,
                 "model_declared_read_only": read_only,
                 "model_declared_risk": risk,
-                "model_justification": justification,
+                "model_explanation": explanation,
                 "static_read_only_classification": static_classification,
                 "static_detail": static_detail,
                 "outside_working_directory_reads": outside_reads or [],
@@ -257,15 +257,15 @@ class _PermissionsMixin:
                 SystemMessage(content=prompt),
             ])
             if not response.tool_calls:
-                return PermissionDecision(action="escalate", justification="Classifier returned no structured decision.", risk="medium")
+                return PermissionDecision(action="escalate", explanation="Classifier returned no structured decision.", risk="medium")
             decision = PermissionDecision.model_validate(response.tool_calls[0]["args"])
             if default_decision == "deny" and decision.action == "auto_approve":
-                return PermissionDecision(action="escalate", justification="User-configured permissions deny this action.", risk="high")
-            if not decision.justification.strip():
-                return PermissionDecision(action="escalate", justification="Classifier did not provide a justification.", risk="medium")
+                return PermissionDecision(action="escalate", explanation="User-configured permissions deny this action.", risk="high")
+            if not decision.explanation.strip():
+                return PermissionDecision(action="escalate", explanation="Classifier did not provide a explanation.", risk="medium")
             return decision
         except Exception as exception:
-            return PermissionDecision(action="escalate", justification=f"{exception}", risk="medium")
+            return PermissionDecision(action="escalate", explanation=f"{exception}", risk="medium")
 
     def _evaluate_bash_permission(self, command: str) -> str:
         unmatched = "ask" if self._interactive_manual_mode else "allow"
@@ -280,7 +280,7 @@ class _PermissionsMixin:
         default_decision: str,
         read_only: bool,
         risk: str,
-        justification: str,
+        explanation: str,
         static_classification: str = "",
         static_detail: str = "",
         outside_reads: Optional[list[str]] = None,
@@ -294,7 +294,7 @@ class _PermissionsMixin:
                 "default_permission_decision": default_decision,
                 "model_declared_read_only": read_only,
                 "model_declared_risk": risk,
-                "model_justification": justification,
+                "model_explanation": explanation,
                 "static_read_only_classification": static_classification,
                 "static_detail": static_detail,
                 "outside_working_directory_reads": outside_reads or [],
@@ -308,15 +308,15 @@ class _PermissionsMixin:
                 SystemMessage(content=prompt),
             ])
             if not response.tool_calls:
-                return PermissionDecision(action="escalate", justification="Classifier returned no structured decision.", risk="medium")
+                return PermissionDecision(action="escalate", explanation="Classifier returned no structured decision.", risk="medium")
             decision = PermissionDecision.model_validate(response.tool_calls[0]["args"])
             if default_decision == "deny" and decision.action == "auto_approve":
-                return PermissionDecision(action="escalate", justification="User-configured permissions deny this action.", risk="high")
-            if not decision.justification.strip():
-                return PermissionDecision(action="escalate", justification="Classifier did not provide a justification.", risk="medium")
+                return PermissionDecision(action="escalate", explanation="User-configured permissions deny this action.", risk="high")
+            if not decision.explanation.strip():
+                return PermissionDecision(action="escalate", explanation="Classifier did not provide a explanation.", risk="medium")
             return decision
         except Exception as exception:
-            return PermissionDecision(action="escalate", justification=f"{exception}", risk="medium")
+            return PermissionDecision(action="escalate", explanation=f"{exception}", risk="medium")
 
     def _new_permission_request_id(self) -> str:
         return f"perm-{self._session_id}-{uuid.uuid4()}"
@@ -401,7 +401,7 @@ class _PermissionsMixin:
 
         if tool_name == "bash":
             raw_command = tool_arguments.get("command", "")
-            justification = tool_arguments.get("justification", "")
+            explanation = tool_arguments.get("explanation", "")
             risk = tool_arguments.get("risk", "")
             read_only = tool_arguments.get("read_only", False)
             if isinstance(read_only, str):
@@ -427,17 +427,17 @@ class _PermissionsMixin:
                     decision = await self._classify_permission(
                         tool_kind="bash", command=raw_command, raw_command=raw_command,
                         default_decision=permission_decision, read_only=read_only,
-                        risk=risk or "medium", justification=justification or sandbox_message,
+                        risk=risk or "medium", explanation=explanation or sandbox_message,
                         static_classification=static_classification, static_detail=static_detail,
                         outside_reads=outside_reads,
                     )
                     if decision.action == "auto_approve":
-                        self._record_event("bash_auto_approved", {"command": raw_command, "reason": decision.justification, "risk": decision.risk})
+                        self._record_event("bash_auto_approved", {"command": raw_command, "reason": decision.explanation, "risk": decision.risk})
                     else:
                         plan.gates.append(_PreflightGate(
                             request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
                             kind="permission", command=raw_command,
-                            justification=decision.justification or sandbox_message, risk=decision.risk, is_bash=True,
+                            explanation=decision.explanation or sandbox_message, risk=decision.risk, is_bash=True,
                             deny_message="Sandbox read was not approved by the user.",
                         ))
                 else:
@@ -446,7 +446,7 @@ class _PermissionsMixin:
                         return plan
                     plan.gates.append(_PreflightGate(
                         request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
-                        kind="permission", command=raw_command, justification=sandbox_message, risk="medium", is_bash=True,
+                        kind="permission", command=raw_command, explanation=sandbox_message, risk="medium", is_bash=True,
                         deny_message="Sandbox read was not approved by the user.",
                     ))
             # Read-only enforcement is a hard block (no human in the loop).
@@ -470,23 +470,23 @@ class _PermissionsMixin:
                     decision = await self._classify_permission(
                         tool_kind="bash", command=raw_command, raw_command=raw_command,
                         default_decision=permission_decision, read_only=read_only,
-                        risk=risk or "medium", justification=justification,
+                        risk=risk or "medium", explanation=explanation,
                         static_classification=static_classification, static_detail=static_detail,
                         outside_reads=outside_reads,
                     )
                     if decision.action == "auto_approve":
-                        self._record_event("bash_auto_approved", {"command": raw_command, "reason": decision.justification, "risk": decision.risk})
+                        self._record_event("bash_auto_approved", {"command": raw_command, "reason": decision.explanation, "risk": decision.risk})
                     else:
                         plan.gates.append(_PreflightGate(
                             request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
                             kind="permission", command=raw_command,
-                            justification=decision.justification or justification, risk=decision.risk, is_bash=True,
+                            explanation=decision.explanation or explanation, risk=decision.risk, is_bash=True,
                             deny_message="Command was not approved by the user.",
                         ))
                 else:
                     plan.gates.append(_PreflightGate(
                         request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
-                        kind="permission", command=raw_command, justification=justification, risk=risk, is_bash=True,
+                        kind="permission", command=raw_command, explanation=explanation, risk=risk, is_bash=True,
                         deny_message="Command was not approved by the user.",
                     ))
             return plan
@@ -500,29 +500,29 @@ class _PermissionsMixin:
                 return plan
             if not read_only and risk in ("medium", "high"):
                 action = f"MCP {tool_arguments.get('server', '')}.{tool_arguments.get('tool_name', '')}"
-                justification = tool_arguments.get("justification", "")
+                explanation = tool_arguments.get("explanation", "")
                 if policy.auto_permissions:
                     decision = await self._classify_permission(
                         tool_kind="mcp", command=action,
                         raw_command=compact(tool_arguments.get("arguments") or {}),
-                        default_decision="ask", read_only=False, risk=risk, justification=justification,
+                        default_decision="ask", read_only=False, risk=risk, explanation=explanation,
                     )
                     if decision.action == "auto_approve":
                         self._record_event("mcp_auto_approved", {
                             "server": tool_arguments.get("server", ""), "tool": tool_arguments.get("tool_name", ""),
-                            "reason": decision.justification, "risk": decision.risk,
+                            "reason": decision.explanation, "risk": decision.risk,
                         })
                     else:
                         plan.gates.append(_PreflightGate(
                             request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
                             kind="permission", command=action,
-                            justification=decision.justification or justification, risk=decision.risk,
+                            explanation=decision.explanation or explanation, risk=decision.risk,
                             deny_message="MCP tool call not approved by user",
                         ))
                 else:
                     plan.gates.append(_PreflightGate(
                         request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
-                        kind="permission", command=action, justification=justification, risk=risk,
+                        kind="permission", command=action, explanation=explanation, risk=risk,
                         deny_message="MCP tool call not approved by user",
                     ))
             return plan
@@ -536,7 +536,7 @@ class _PermissionsMixin:
 
         if tool_name == "control_screen":
             script = tool_arguments.get("script", "") or ""
-            justification = tool_arguments.get("justification", "")
+            explanation = tool_arguments.get("explanation", "")
             risk = tool_arguments.get("risk", "") or ""
             static_classification, static_detail = _control_script_assessment(script)
             # Read-only enforcement is a hard block (no human in the loop): a mutating script cannot
@@ -551,22 +551,22 @@ class _PermissionsMixin:
                     decision = await self._classify_permission(
                         tool_kind="screen", command="control_screen", raw_command=script,
                         default_decision="ask", read_only=(static_classification == "read_only"),
-                        risk=risk or "medium", justification=justification,
+                        risk=risk or "medium", explanation=explanation,
                         static_classification=static_classification, static_detail=static_detail,
                     )
                     if decision.action == "auto_approve":
-                        self._record_event("screen_auto_approved", {"reason": decision.justification, "risk": decision.risk})
+                        self._record_event("screen_auto_approved", {"reason": decision.explanation, "risk": decision.risk})
                     else:
                         plan.gates.append(_PreflightGate(
                             request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
                             kind="permission", command="control_screen",
-                            justification=decision.justification or justification, risk=decision.risk,
+                            explanation=decision.explanation or explanation, risk=decision.risk,
                             deny_message="Screen action not approved by user",
                         ))
                 else:
                     plan.gates.append(_PreflightGate(
                         request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
-                        kind="permission", command="control_screen", justification=justification, risk=risk or "medium",
+                        kind="permission", command="control_screen", explanation=explanation, risk=risk or "medium",
                         deny_message="Screen action not approved by user",
                     ))
             return plan
@@ -585,7 +585,7 @@ class _PermissionsMixin:
                 tool_call_id=tool_call_identifier,
                 kind="permission",
                 command=tool_name,
-                justification=f"{tool_name} was supplied by the program embedding this session.",
+                explanation=f"{tool_name} was supplied by the program embedding this session.",
                 risk=self._tool_risk,
                 deny_message=f"{tool_name} was not approved by the user",
             ))

@@ -202,7 +202,7 @@ function UpdateTasksCallView({ args }: { args: Record<string, unknown> }) {
 // Fields whose values are human prose (not identifiers/data) — rendered with the
 // markdown renderer in the normal font rather than monospace.
 const PROSE_FIELD_KEYS = new Set([
-  "justification",
+  "explanation",
   "goal",
   "prompt",
   "reason",
@@ -222,7 +222,7 @@ const FIELD_LABEL_KEYS: Record<string, string> = {
   tool_name: "fieldToolName",
   arguments: "fieldArguments",
   read_only: "readOnly",
-  justification: "justification",
+  explanation: "explanation",
   risk: "risk",
   uri: "fieldUri",
   query: "query",
@@ -770,10 +770,10 @@ export function ToolCallView({ name, args }: { name: string; args?: Record<strin
       case "end_session":
         return <SessionReferenceCallView args={args} />;
       default: {
-        // The justification is already the collapsed heading (the tool-call title);
+        // The explanation is already the collapsed heading (the tool-call title);
         // strip it so the expanded body never repeats it. MCP calls fall here too.
         const rest = { ...args };
-        delete rest.justification;
+        delete rest.explanation;
         return <GenericView data={rest} />;
       }
     }

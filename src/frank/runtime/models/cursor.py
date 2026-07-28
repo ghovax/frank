@@ -717,7 +717,7 @@ class ChatCursorModel(BaseChatModel):
         if arguments is None:
             return None
         return wire.ToolCall(call_id=f"cursor-{request.exec_id_number}", tool_name=name,
-                             arguments={**arguments, "justification": _BUILTIN_JUSTIFICATION})
+                             arguments={**arguments, "explanation": _BUILTIN_JUSTIFICATION})
 
     @staticmethod
     async def _answer_blob(

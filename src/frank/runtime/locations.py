@@ -78,5 +78,5 @@ class PermissionDecision(BaseModel):
     """Structured decision for automatic permission classification."""
 
     action: Literal["auto_approve", "escalate"]
-    justification: str
+    explanation: str
     risk: Literal["low", "medium", "high"]

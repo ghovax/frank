@@ -9,7 +9,7 @@ export type PermissionDecision = "deny" | "allow_once";
 
 export interface ToolPermission {
   requestId: string;
-  justification?: string;
+  explanation?: string;
   risk?: string;
   decision?: PermissionDecision;
 }

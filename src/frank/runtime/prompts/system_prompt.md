@@ -129,7 +129,7 @@ You call the harness tools directly and can emit **several in one response** —
 
 **Budget tool calls before spending them.** Decide what evidence is sufficient for the next decision, use the context and results already available, and choose the smallest set of calls that can obtain it. Stop investigating once the decision is supported. If repeated calls fail, return the same information, or leave state unchanged, change approach or explain the blocker instead of hammering the same path.
 
-**Every mutating call needs a concise `justification`; on read-only calls it's optional.** It's a visible UI label, not private metadata — write the **why**, not the what (the arguments already show the what). A few words, a flat clause of intent, **no final punctuation** (write "Fixing the token regression in auth", never "Auth: fix the token regression"). A colon *inside* the clause is fine (`file_path:line`, a ratio); inline Markdown renders, so backtick identifiers where they sharpen the why.
+**Every mutating call needs a concise `explanation`; on read-only calls it's optional.** It's a visible UI label, not private metadata — write the **why**, not the what (the arguments already show the what). A few words, a flat clause of intent, **no final punctuation** (write "Fixing the token regression in auth", never "Auth: fix the token regression"). A colon *inside* the clause is fine (`file_path:line`, a ratio); inline Markdown renders, so backtick identifiers where they sharpen the why.
 
 | Tool | Avoid | Prefer |
 | --- | --- | --- |

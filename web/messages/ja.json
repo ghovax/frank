@@ -437,7 +437,7 @@
     "noAnswer": "回答なし",
     "answers": "回答",
     "noData": "データなし",
-    "justification": "理由",
+    "explanation": "理由",
     "pid": "PID",
     "size": "サイズ",
     "bytesValue": "{value} バイト",

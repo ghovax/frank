@@ -698,7 +698,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       const toolCallId = event.tool_call_id;
       const permission = {
         requestId: event.request_id,
-        justification: event.justification || undefined,
+        explanation: event.explanation || undefined,
         risk: event.risk || undefined,
       };
       const attachedPermission = state.messages.some(

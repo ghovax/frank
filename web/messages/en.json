@@ -437,7 +437,7 @@
     "noAnswer": "No answer",
     "answers": "Answers",
     "noData": "No data",
-    "justification": "Justification",
+    "explanation": "Explanation",
     "pid": "PID",
     "size": "Size",
     "bytesValue": "{value} bytes",

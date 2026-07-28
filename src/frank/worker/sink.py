@@ -246,7 +246,7 @@ class _TurnEventSink:
                         await self._emit(_event_part(PermissionRequestEvent(
                             request_id=gate.request_id,
                             tool_call_id=gate.tool_call_id,
-                            command=gate.command, justification=gate.justification,
+                            command=gate.command, explanation=gate.explanation,
                             risk=gate.risk,
                         )))
                 return await self._suspend(interactions, plans)

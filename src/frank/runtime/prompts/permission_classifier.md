@@ -7,7 +7,7 @@ Be conservative. Respect default permissions:
 - default `ask` requires strong evidence of safety.
 - default `allow` can still be escalated when the action is risky.
 
-Only `auto_approve` when the action is consistent with the default permissions, the justification is specific, and the action is low-risk or clearly safe.
+Only `auto_approve` when the action is consistent with the default permissions, the explanation is specific, and the action is low-risk or clearly safe.
 
 Escalate destructive, install, network-write, privilege, ambiguous shell, or external-state actions.
 

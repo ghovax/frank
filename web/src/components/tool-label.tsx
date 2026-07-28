@@ -2,9 +2,9 @@
 
 // The inline label shown in a tool-call heading. Three cases, decided by
 // getToolCallDisplay:
-//   • an unrecognized tool with no justification → its raw name in monospace
+//   • an unrecognized tool with no explanation → its raw name in monospace
 //     (it is an identifier, so it reads as code);
-//   • a tool with a justification → the justification rendered as inline Markdown
+//   • a tool with a explanation → the explanation rendered as inline Markdown
 //     (code spans, `file:line` refs, emphasis all render);
 //   • otherwise → the plain fallback label (a raw command/path), kept literal so
 //     Markdown never mangles it.
