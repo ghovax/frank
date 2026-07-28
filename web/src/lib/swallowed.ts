@@ -11,19 +11,85 @@
  * Two ways to not propagate an error, and they are different:
  *
  * - `expected(...)` — the failure is a normal outcome. A cancelled fetch, a probe for a
- *   feature that may not be there, a clipboard read the user declined. Nothing is written;
+ *   feature that may not be there, a clipboard read the user declined. Nothing is reported;
  *   the call documents *why* silence is right, which a bare `catch {}` cannot.
  * - `swallowed(...)` — the failure is not expected, but this code can carry on without it.
- *   Written to the console with a stable `[frank]` prefix and the context that names where it
- *   happened, so it is findable without a reproduction.
+ *   Reported to the daemon, which forwards it to the OTLP collector already carrying the
+ *   harness's traces and metrics.
  *
- * The rule is that neither takes an empty body. If you cannot say which of the two it is, it
- * is `swallowed`.
+ * **Why the daemon and not the collector.** The OTLP endpoint and its headers are user
+ * configuration living in the daemon. A browser talking to the collector directly would mean
+ * shipping those credentials into a page and negotiating CORS with someone else's backend.
+ * One configured endpoint, three streams, and nothing sensitive in the webview.
+ *
+ * The transport is *installed* rather than imported: `api.ts` owns endpoint resolution and
+ * the capability token, and it already imports this module, so reaching back for its fetch
+ * would be a cycle. It hands the sender in at load instead, which also keeps this module
+ * dependency-free and therefore safe to call from anywhere, including from inside `api.ts`.
+ *
+ * Batched and fire-and-forget: a fault report must never delay the thing that survived the
+ * fault, and must never fail loudly enough to become a second fault. The console keeps a copy
+ * because when telemetry is unconfigured — the local-first default — there is nowhere to send
+ * and a developer still has to be able to see it.
  */
+
+interface ClientFault {
+  context: string;
+  detail: string;
+  url: string;
+  sessionId: string;
+}
+
+type FaultSender = (faults: ClientFault[]) => Promise<unknown>;
+
+let send: FaultSender | null = null;
+
+/** Install the transport. Called once by `api.ts`, which owns the endpoint and the token. */
+export function setFaultSender(sender: FaultSender): void {
+  send = sender;
+}
+
+const PENDING: ClientFault[] = [];
+// Enough to ride out a burst (a failing poll fires repeatedly) without growing without bound
+// if the daemon is the thing that is down.
+const MAX_PENDING = 64;
+const FLUSH_DELAY_MS = 2000;
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function detailOf(error: unknown): string {
+  if (error instanceof Error) return error.stack || `${error.name}: ${error.message}`;
+  return String(error);
+}
+
+async function flush(): Promise<void> {
+  flushTimer = null;
+  if (PENDING.length === 0) return;
+  const faults = PENDING.splice(0, PENDING.length);
+  if (send === null) return;
+  try {
+    await send(faults);
+  } catch {
+    // Deliberately terminal. Reporting that we could not report is a loop, and re-queuing
+    // would keep a dead daemon's worth of faults alive forever. The console copy below was
+    // already written, so nothing is lost that was not already visible.
+  }
+}
 
 /** A failure this code can continue past, but which nobody chose. Reported. */
 export function swallowed(context: string, error: unknown): void {
+  const detail = detailOf(error);
+  // Written first and unconditionally: this is what a developer reads when telemetry is off,
+  // which is the default, and what survives if the daemon is the thing that broke.
   console.error(`[frank] ${context}:`, error);
+  if (typeof window === "undefined") return;
+  if (PENDING.length >= MAX_PENDING) return;
+  PENDING.push({
+    context,
+    detail,
+    url: window.location?.pathname ?? "",
+    sessionId: new URLSearchParams(window.location?.search ?? "").get("session") ?? "",
+  });
+  if (flushTimer === null) flushTimer = setTimeout(() => void flush(), FLUSH_DELAY_MS);
 }
 
 /**

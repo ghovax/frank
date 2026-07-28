@@ -35,6 +35,7 @@ from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from frank.base.permission_mode import PermissionMode
+from frank.base import telemetry
 from frank.daemon import state
 from frank.daemon.registry import SessionRecord
 from frank.base.serialization import compact
@@ -593,6 +594,38 @@ def _refuse_session_caller(caller: str, method: str, params: dict) -> Optional[R
     return RpcError(
         f"Session {target!r} is not yours.", status_code=403, code="forbidden",
     )
+
+
+@router.post("/telemetry/faults")
+async def telemetry_faults(request: Request) -> JSONResponse:
+    """Where the interface reports a fault it handled and carried on past.
+
+    The browser cannot reach the collector itself — the OTLP endpoint and its headers are
+    configuration that lives in this process, and a webview holding either would mean
+    credentials in a page and a CORS negotiation with someone else's backend. So it reports
+    here and this forwards, through the exporter already carrying traces and metrics.
+
+    Always 202, and deliberately: a client must never retry, escalate, or show a person
+    anything because its *telemetry* did not land. When telemetry is switched off — the
+    default — `record_client_fault` is a no-op and this quietly discards, which is the same
+    answer the rest of the harness gives.
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse({"accepted": False}, status_code=202)
+    for fault in (payload.get("faults") or [])[:64]:
+        if not isinstance(fault, dict):
+            continue
+        telemetry.record_client_fault(
+            str(fault.get("context") or "")[:200],
+            str(fault.get("detail") or "")[:2000],
+            {
+                "frank.client.url": str(fault.get("url") or "")[:500],
+                "frank.client.session_id": str(fault.get("sessionId") or "")[:100],
+            },
+        )
+    return JSONResponse({"accepted": True}, status_code=202)
 
 
 @router.post("/rpc")

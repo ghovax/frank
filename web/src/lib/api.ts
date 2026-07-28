@@ -18,7 +18,7 @@
 // moved to 8824 while every client here still said 8823, which left the browser interface
 // unable to reach a local daemon at all while the packaged app, which reads the real port
 // out of the runtime directory, carried on working and hid it.
-import { swallowed } from "./swallowed";
+import { setFaultSender, swallowed } from "./swallowed";
 
 export const LOCAL_DAEMON_PORT = 8824;
 export const LOCAL_DAEMON_URL = `http://127.0.0.1:${LOCAL_DAEMON_PORT}`;
@@ -1702,3 +1702,15 @@ export function attachSession(
 
   return { abort: () => controller.abort() };
 }
+
+
+// The transport for handled-error reports. Installed here rather than imported there, because
+// this module owns the daemon's address and its capability token — and already imports
+// `swallowed`, so the other direction would be a cycle.
+setFaultSender((faults) =>
+  apiFetch("/telemetry/faults", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ faults }),
+  })
+);
