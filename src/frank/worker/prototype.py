@@ -548,8 +548,17 @@ class Prototype:
 
 
 def main() -> int:
+    # The same file the daemon writes, because this process and every session forked from it
+    # are where turns actually run — and `logging.basicConfig` without a handler writes to a
+    # stderr that nothing keeps. `_fail` in `worker/turn.py` has always called
+    # `logger.exception("Agent turn failed")`; it went nowhere, so a turn that died reached the
+    # interface as "the raw details were written to the server log" when no such line existed.
+    from frank.base.paths import log_file_path
+
     logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        handlers=[logging.StreamHandler(sys.stderr), logging.FileHandler(log_file_path("frankd"))],
     )
     from frank.base.paths import prototype_socket_path
 

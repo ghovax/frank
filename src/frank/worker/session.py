@@ -21,7 +21,7 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.request_handlers.request_handler import RequestHandler
 from a2a.server.tasks import TaskUpdater
-from a2a.types import DataPart, Message, MessageSendParams, Part, Role, Task, TaskState
+from a2a.types import Message, MessageSendParams, Role, Task, TaskState
 from langchain_core.messages import messages_from_dict
 
 from frank.base.background_tasks import spawn_background_task
@@ -550,12 +550,12 @@ class SessionExecutor(AgentExecutor):
             session_access=self._peers,
             mcp_manager=self._mcp_manager,
         )
-        stream_event_callback = self._on_stream_event
-        if stream_event_callback is not None:
-            runtime.set_agent_event_sink(lambda event: stream_event_callback(
-                session_id,
-                Part(root=DataPart(data=event)),
-            ))
+        # No agent-event sink is installed on the runtime any more: `AgentRuntime` stopped
+        # carrying one in the package restructure, and path-tagged activity now reaches the
+        # stream from `worker/turn.py`, which calls `_on_stream_event` itself. The call that
+        # used to be here survived the method it called, so *every* turn died on
+        # `AttributeError: 'AgentRuntime' object has no attribute 'set_agent_event_sink'`
+        # before it could start — reported to the interface as "the turn stopped unexpectedly".
         runtime.set_turn_reader(self._make_turn_reader())
         return runtime
 
