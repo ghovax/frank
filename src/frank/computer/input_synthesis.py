@@ -169,12 +169,30 @@ def type_text(pid: int, text: str) -> None:
         time.sleep(chunk_interval)
 
 
+_MODIFIER_ALIASES = {
+    "cmd": "command", "meta": "command", "super": "command", "win": "command", "⌘": "command",
+    "opt": "option", "alt": "option", "⌥": "option",
+    "ctrl": "control", "⌃": "control", "⇧": "shift",
+}
+
+
 def press_key(pid: int, key: str, modifiers: list[str]) -> bool:
     """Press a key or chord (optionally with modifiers) in the target app — a named
     non-printing key (return, tab, escape, arrows, f-keys) or a single letter/digit for a
     shortcut (with Cmd/Option/Ctrl/Shift). Returns False if the key name or a modifier is
-    unknown."""
+    unknown.
+
+    A chord may arrive as one string — ``"cmd+shift+g"`` — as well as a key plus a
+    ``modifiers`` list. Both are accepted because both are what callers write: the browser
+    surface has always taken the joined form (it hands the string to Playwright, whose
+    ``"Control+Shift+G"`` is the convention every automation tool shares), so a script that
+    worked in a browser raised here on nothing but punctuation. Refusing it taught nobody
+    anything; a `+` is unambiguous and splitting on it costs a line.
+    """
     name = key.strip().lower()
+    if "+" in name and len(name) > 1:
+        *chord_modifiers, name = [part.strip() for part in name.split("+") if part.strip()]
+        modifiers = [*modifiers, *chord_modifiers]
     code = _NAMED_KEY_CODES.get(name)
     if code is None and len(name) == 1:
         # Ask the active layout which physical key types this character; fall back to the US
@@ -186,7 +204,8 @@ def press_key(pid: int, key: str, modifiers: list[str]) -> bool:
         return False
     flags = 0
     for modifier in modifiers:
-        flag = _MODIFIER_FLAGS.get(modifier.strip().lower())
+        spelled = modifier.strip().lower()
+        flag = _MODIFIER_FLAGS.get(_MODIFIER_ALIASES.get(spelled, spelled))
         if flag is None:
             return False
         flags |= flag
