@@ -4,7 +4,13 @@ Runtime configuration lives in **`$XDG_CONFIG_HOME/frank/configuration.yaml`** (
 
 Three ways to change it, all writing the same file:
 
-- `frank configure` from the terminal — `frank configure --all` lists every setting that exists with what it is for, what it ships at, and what this machine runs on; `frank configure` alone lists only what you have changed; `frank configure <setting>` reads one; `frank configure <setting> <value>` sets it; `frank configure <setting> --unset` removes it. A name the schema does not define, or a value it would reject, is refused with the reason rather than written;
+- `frank configure` from the terminal:
+
+  - `frank configure --all` lists every setting that exists, with what it is for, what it ships at, and what this machine runs on.
+  - `frank configure` alone lists only what you changed.
+  - `frank configure <setting>` reads one setting.
+  - `frank configure <setting> <value>` sets it, and `--unset` removes it.
+ A name the schema does not define, or a value it would reject, is refused with the reason rather than written;
 - **Settings** in the desktop app;
 - editing the file directly, which the daemon watches and picks up live.
 
@@ -13,9 +19,9 @@ This document is the reference for the file itself.
 > [!IMPORTANT]
 > Every credential can also be set through an environment variable, which takes precedence over the file. That lets you run a daemon without writing any secret to disk. Never commit a filled-in configuration or a `.env` — see [Security notes](../SECURITY.md).
 
-A change applies to whatever starts **next**. A running session keeps the configuration it was built with — the same guarantee its permission mode carries — except for settings the daemon explicitly pushes out (the sandbox, computer control, and the user-context snapshot each ask live sessions to rebuild).
+A change applies to whatever starts **next**. A running session keeps the configuration it was built with. That is the same guarantee its permission mode carries. Some settings are the exception: the daemon pushes them out, and the sandbox, computer control, and the user-context snapshot each ask live sessions to rebuild.
 
-**`frank configure --all` is the complete reference.** It prints every setting the schema defines, each with what it is for, what it ships at, and what your machine currently runs on. There is deliberately no checked-in file saying the same thing: a second copy of the defaults is a second thing to keep true, and the one this repository used to carry had drifted — documenting renamed settings under their old names and missing ones that had been added. The command reads the running code, so it cannot.
+**`frank configure --all` is the complete reference.** It prints every setting the schema defines. Each one shows what it is for, what it ships at, and what your machine runs on now. There is deliberately no checked-in file that says the same thing. A second copy of the defaults is a second thing to keep true. The one this repository carried had drifted: it documented renamed settings under their old names, and it missed settings that someone added. The command reads the running code, so it cannot.
 
 This document is the *narrative* — what the settings mean and how they relate. The command is the exhaustive list.
 
@@ -33,7 +39,7 @@ Frank follows the XDG Base Directory convention rather than one dot-directory:
 | `$XDG_CACHE_HOME/frank/` | caches |
 | `$XDG_RUNTIME_DIR/frank/` | the daemon's socket, port and token, and one socket per session |
 
-The runtime directory is `0700` and the token files inside it `0600`: on a shared machine, file permissions are what keep another user out of your sessions. When `XDG_RUNTIME_DIR` is unset — as on macOS — the fallback is a per-user directory under the system temporary directory.
+The runtime directory is `0700`, and the token files inside it are `0600`. On a shared machine, file permissions keep another user out of your sessions. When `XDG_RUNTIME_DIR` is unset — as on macOS — the fallback is a per-user directory under the system temporary directory.
 
 ## Model providers
 
@@ -53,11 +59,15 @@ providers:
   custom:      { api_key: "", base_url: "" }   # any OpenAI-compatible endpoint
 ```
 
-Around forty providers are registered, including Cerebras, Together, Fireworks, Perplexity, Moonshot, Nebius, Cloudflare and GitHub Copilot; the registry in `src/frank/base/providers.py` is the full list, with the environment variable each one reads.
+Around forty providers are registered. They include Cerebras, Together, Fireworks, Perplexity, Moonshot, Nebius, Cloudflare and GitHub Copilot. The registry in `src/frank/base/providers.py` is the full list, with the environment variable each one reads.
 
-You can also **sign in with a ChatGPT or a Cursor subscription** instead of pasting a key (Settings → Providers). Neither is a LiteLLM route and neither appears in the block above, because neither has a key to store: `chatgpt` calls Codex's Responses endpoint with an OAuth token, and `cursor` calls Cursor's agent service with one. Both live in the data directory's `oauths/` folder, one file per provider — `oauths/chatgpt.json`, `oauths/cursor.json` — written mode 0600 inside a 0700 directory, and kept out of `configuration.yaml` deliberately: that file is digest-synced and would thrash on every silent token refresh. Nothing reads any older location, so upgrading from a version that kept tokens elsewhere signs you out once: sign in again and the token lands in the folder. Which models each plan actually serves is discovered live from the account, so a model the plan does not include stays greyed in the picker. The `cursor` provider lists nothing at all until you sign in — its models, their names, and their context windows all come from the account rather than from a list shipped in the code. Both are unofficial routes that the vendor can withdraw at any time.
+You can also **sign in with a ChatGPT or a Cursor subscription** instead of pasting a key (Settings → Providers). Neither is a LiteLLM route, and neither appears in the block above, because neither has a key to store. `chatgpt` calls Codex's Responses endpoint with an OAuth token. `cursor` calls Cursor's agent service with one. Both live in the data directory's `oauths/` folder, one file per provider: `oauths/chatgpt.json` and `oauths/cursor.json`. They are written mode 0600, inside a 0700 directory.
 
-**Which model a session uses** is not set here — it belongs to the agent profile, in that agent's `configuration.json` under `preset`. See [Agents and skills](agents-and-skills.md#agents). A profile pinned to a provider you have no credentials for fails on its first call rather than borrowing another profile's model: an agent is defined by its own configuration and nothing else.
+They stay out of `configuration.yaml` deliberately. That file is digest-synced, and it would thrash on every silent token refresh.
+
+Nothing reads any older location. An upgrade from a version that kept tokens elsewhere therefore signs you out once. Sign in again, and the token lands in the folder. Which models each plan actually serves is discovered live from the account, so a model the plan does not include stays greyed in the picker. The `cursor` provider lists nothing until you sign in. Its models, their names, and their context windows all come from the account. No list of them ships in the code. Both are unofficial routes that the vendor can withdraw at any time.
+
+**Which model a session uses** is not set here — it belongs to the agent profile, in that agent's `configuration.json` under `preset`. See [Agents and skills](agents-and-skills.md#agents). A profile pinned to a provider you have no credentials for fails on its first call. It does not borrow another profile's model. Its own configuration defines an agent, and nothing else does.
 
 ## Web search and retrieval
 
@@ -81,7 +91,7 @@ composio:
   timeout_seconds: 60
 ```
 
-When enabled, Composio is folded into the ordinary MCP set rather than being a second path, so tool gating and the client both see it as just another server.
+When you enable Composio, it joins the ordinary MCP set. It is not a second path. Tool gating and the client both see it as another server.
 
 ## Execution and permissions
 
@@ -95,7 +105,7 @@ user_context:     { enabled: false } # a snapshot of how you work, in the prompt
 
 ### Confinement
 
-What a session's tool children — a `bash` command, a `control_screen` script — may actually do, enforced by the operating system rather than inferred from the text of a command.
+What a session's tool children may do: a `bash` command, or a `control_screen` script. The operating system enforces this. The harness does not infer it from the text of a command.
 
 ```yaml
 sandbox:
@@ -113,20 +123,28 @@ sandbox:
   nice: 0
 ```
 
-Almost every field is a Unix primitive under its own name: `limits` are [`setrlimit(2)`](https://man7.org/linux/man-pages/man2/setrlimit.2.html) constants taking the integers that call takes, `umask` is `umask(2)`, `nice` is `nice(2)`. Only the filesystem and the network have no POSIX spelling, and they are the two that need a platform behind them.
+Almost every field is a Unix primitive under its own name. `limits` are [`setrlimit(2)`](https://man7.org/linux/man-pages/man2/setrlimit.2.html) constants, and they take the integers that call takes. `umask` is `umask(2)`, and `nice` is `nice(2)`. Only the filesystem and the network have no POSIX spelling, and they are the two that need a platform behind them.
 
-**The filesystem.** The system stays readable — `/usr` and `/etc` are not secrets, and denying them breaks every command while protecting nothing. What the lists govern is *your home*, which is closed by default: `readable` is the allowlist that keeps toolchains working, `writable` is narrower still, and `deny` wins over both. The shipped defaults keep credential and configuration directories readable, because breaking `git push` to protect a key is a bad trade; what they close is the personal data no toolchain touches. `$WORKSPACE` is the session's own directory.
+**The filesystem.** The system stays readable — `/usr` and `/etc` are not secrets, and denying them breaks every command while protecting nothing. The lists govern *your home*, which is closed by default. `readable` is the allowlist that keeps toolchains working. `writable` is narrower still, and `deny` wins over both.
 
-**The backend.** macOS uses [`sandbox-exec`](https://keith.github.io/xcode-man-pages/sandbox-exec.1.html) with a generated Seatbelt profile; Linux uses [Landlock](https://docs.kernel.org/userspace-api/landlock.html) plus a network namespace. `sandbox-exec` has been **deprecated by Apple since 10.15** and is depended on anyway, because nothing else on macOS confines a single child process: App Sandbox applies to a whole signed application and would confine the harness out of the files it exists to reach, Endpoint Security observes rather than bounds, and a separate uid or a container stops the agent being able to act as you. If Apple removes it, the boot-time probe fails and `enforce` decides what happens — which is why that setting exists.
+The shipped defaults keep credential and configuration directories readable. To break `git push` in order to protect a key is a bad trade. What the defaults close is the personal data that no toolchain touches. `$WORKSPACE` is the session's own directory.
+
+**The backend.** macOS uses [`sandbox-exec`](https://keith.github.io/xcode-man-pages/sandbox-exec.1.html) with a generated Seatbelt profile; Linux uses [Landlock](https://docs.kernel.org/userspace-api/landlock.html) plus a network namespace. Apple has **deprecated `sandbox-exec` since 10.15**, and Frank depends on it anyway. Nothing else on macOS confines a single child process:
+
+- App Sandbox applies to a whole signed application. It would confine the harness out of the files it exists to reach.
+- Endpoint Security observes; it does not bound.
+- A separate uid, or a container, stops the agent from acting as you. If Apple removes it, the boot-time probe fails and `enforce` decides what happens — which is why that setting exists.
 
 **`enforce`.** `required` (the default) refuses to create a session when no backend is available, naming what is missing. `preferred` runs with the POSIX half only — limits, mask, priority, a scoped environment — which is hygiene, not a boundary. `off` does not confine. The daemon logs which backend it found at startup, and a machine with none says so before the first session fails.
 
-A session's confinement is resolved when it is **created** and cannot be widened afterwards, exactly like its permission mode — and it is clamped against the session that created it, so path sets intersect and a peer can never be handed a wider filesystem than its creator holds. An agent profile may narrow it further with its own `sandbox:` block.
+The harness resolves a session's confinement when it **creates** the session, and nothing widens it afterwards. That is exactly like its permission mode.
+
+It also clamps the confinement against the session that created it. Path sets intersect, so a peer never gets a wider filesystem than its creator holds. An agent profile may narrow it further with its own `sandbox:` block.
 
 > [!NOTE]
 > Commands run against a **remote location** are not confined: they execute on another machine, where a boundary drawn by this process has no meaning.
 
-`workspace.strategy` is one of `none`, `branch`, or `worktree`, and is resolved once when a session is created: a `worktree` session runs its tools in its own git worktree, so parallel sessions on one repository do not tread on each other.
+`workspace.strategy` is one of `none`, `branch`, or `worktree`. The harness resolves it once, when it creates the session. A `worktree` session runs its tools in its own git worktree, so parallel sessions on one repository do not tread on each other.
 
 `agent.permission_mode` is the mode a session gets when none is asked for. It is a default, not a ceiling — `frank create --mode` overrides it, and a child is clamped against its parent either way.
 
@@ -138,7 +156,7 @@ A session's confinement is resolved when it is **created** and cannot be widened
 | `auto` | Auto-approve low-risk actions, ask for the rest. |
 | `read_only` | Allow reads; deny writes and side effects. |
 
-There is **no bypass mode**, and no standing "always allow": the only runtime decisions are allow-once and deny. A session's mode is fixed when it is created and cannot be changed afterwards, and a session created by another can never be looser than its parent.
+There is **no bypass mode**, and no standing "always allow": the only runtime decisions are allow-once and deny. A session's mode is fixed when the harness creates it, and nothing changes it afterwards. A session created by another is never looser than its parent.
 
 Bash additionally honours per-command rules on each agent (`sudo *: deny`, `rm *: ask`, …) — see [Agents and skills](agents-and-skills.md).
 
@@ -154,7 +172,7 @@ compaction:
 
 ## Tool tuning
 
-How much of a model's context tool output may occupy, and how patient the tools are. Size and count caps are token budgets derived from the **live** model context window, so a small model gets tight caps and a large one gets room; `context_share` says what proportion of that window one result may fill. Timeouts do not depend on the window and answer only to `timeout_multiplier`.
+How much of a model's context tool output may occupy, and how patient the tools are. Size and count caps are token budgets, derived from the **live** model context window. A small model therefore gets tight caps, and a large one gets room. `context_share` says what proportion of that window one result may fill. Timeouts do not depend on the window and answer only to `timeout_multiplier`.
 
 ```yaml
 tuning:
@@ -167,7 +185,7 @@ tuning:
     grep_results: 1024
 ```
 
-Those three move whole families. `defaults` is the escape hatch for a single value: the keys are the names in `frank.base.tuning.Tunable` — the same idea as `sandbox.limits` using `setrlimit` constant names — and an unknown name is an error at load rather than a line that looks applied and is not. An override replaces the value the code *ships with*, so `context_share` and `timeout_multiplier` still apply on top: `action_timeout_ms: 10000` under `timeout_multiplier: 2.0` resolves to twenty seconds.
+Those three move whole families. `defaults` is the escape hatch for a single value. Its keys are the names in `frank.base.tuning.Tunable`, which is the same idea as `sandbox.limits` using `setrlimit` constant names. An unknown name is an error at load. It is not a line that looks applied and is not. An override replaces the value the code *ships with*, so `context_share` and `timeout_multiplier` still apply on top: `action_timeout_ms: 10000` under `timeout_multiplier: 2.0` resolves to twenty seconds.
 
 The names are lowercase because they are not constants. Each one is a default the file may replace, and the casing is the first thing that says so.
 
@@ -185,11 +203,11 @@ computer_control:
     give_up_seconds: 1.5            # the longest to wait before reading it anyway
 ```
 
-After an action, a surface is *polled* until it stops changing rather than slept on for a fixed guess: a fast page costs one interval and a slow one costs the ceiling. These two sit here rather than under `tuning` because settling is something a **surface** does, not a budget a tool spends.
+After an action, the harness *polls* a surface until it stops changing. It does not sleep for a fixed guess. A fast page therefore costs one interval, and a slow one costs the ceiling. These two sit here rather than under `tuning` because settling is something a **surface** does, not a budget a tool spends.
 
 ## MCP servers
 
-`mcp.servers` mirrors what `.agents/mcp.json` declares and is normally edited there — see [Agents and skills](agents-and-skills.md#mcp-servers). A folder's own servers are added to the shared pool when a session in that folder starts; the pool only ever grows, so no other session loses its servers.
+`mcp.servers` mirrors what `.agents/mcp.json` declares and is normally edited there — see [Agents and skills](agents-and-skills.md#mcp-servers). A folder's own servers join the shared pool when a session in that folder starts. The pool only grows, so no other session loses its servers.
 
 ## Remote peers
 
@@ -198,7 +216,7 @@ remote_agents:
   agents: {}                        # normally written to .agents/remote-agents.json
 ```
 
-Agents on other hosts, resolved by their A2A card and reached with `frank remote`. Normally registered in `~/.agents/remote-agents.json` or from Settings rather than written here. A remote agent is not a session — Frank does not own its lifecycle, cannot set its permission mode, and keeps no transcript of it — which is why it has its own verb rather than sharing `send`.
+Agents on other hosts, resolved by their A2A card and reached with `frank remote`. Normally registered in `~/.agents/remote-agents.json` or from Settings rather than written here. A remote agent is not a session. Frank does not own its lifecycle, cannot set its permission mode, and keeps no transcript of it. It therefore has its own verb, and does not share `send`.
 
 ## Telemetry
 
@@ -211,4 +229,4 @@ telemetry:
   sample_ratio: 1.0
 ```
 
-**There is no default agent setting**, here or anywhere. `frank create --agent` is required, and no profile is nominated as the one to fall back to — a default would mean work running under an agent nobody chose, and would make every other profile's behaviour depend on that one. Which agent runs is always stated. Add your own under `~/.agents/agents/<id>/` or `.agents/agents/<id>/` in a working directory — see [Agents and skills](agents-and-skills.md).
+**There is no default agent setting**, here or anywhere. `frank create --agent` is required, and no profile is the one to fall back to. A default would run work under an agent nobody chose. It would also make every other profile's behaviour depend on that one. Which agent runs is always stated. Add your own under `~/.agents/agents/<id>/` or `.agents/agents/<id>/` in a working directory — see [Agents and skills](agents-and-skills.md).
