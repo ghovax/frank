@@ -19,6 +19,7 @@ from frank.runtime.internals import (
     _model_result_status,
     _model_visible_tool_result,
     _ResolvedToolDecision,
+    _ToolCall,
     _tool_timing_metadata,
     _utc_timestamp,
 )
@@ -436,6 +437,22 @@ class _ToolsMixin:
                 self._invalid_tool_call_content(cast(dict, invalid)),
             ))
 
+    async def _through_pipeline(self, tool_name: str, tool_arguments: dict, invoke) -> Any:
+        """Run one tool call through the middleware the caller supplied.
+
+        Wraps the invocation rather than `_execute_tool`, which is an async generator of
+        events: middleware asks a plain question — did this call happen, and what came back —
+        and a generator cannot answer it without the middleware learning the event protocol.
+
+        A raising middleware is *not* absorbed. It is in the call path and decides whether the
+        call happens, so swallowing here would turn a retry layer's bug into a tool that
+        silently never ran.
+        """
+        if self._pipeline.empty:
+            return await invoke(tool_arguments)
+        call = _ToolCall(name=tool_name, arguments=tool_arguments)
+        return await self._pipeline.run(call, lambda made: invoke(made.arguments))
+
     async def _execute_tool(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
         decision: _ResolvedToolDecision,
@@ -545,7 +562,7 @@ class _ToolsMixin:
         built-in failure too."""
         tool = self._extra_tools[tool_name]
         try:
-            result = await tool.ainvoke(tool_arguments)
+            result = await self._through_pipeline(tool_name, tool_arguments, tool.ainvoke)
         except Exception as error:  # noqa: BLE001 — a caller's tool failing is a tool result
             logger.debug("Supplied tool %s raised", tool_name, exc_info=True)
             yield Error(

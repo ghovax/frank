@@ -513,6 +513,9 @@ class _TurnLoopMixin:
         generation_span = _telemetry.start_span(
             "gen_ai.generation", {"gen_ai.request.model": self.effective_model_identifier}
         )
+        # A hook may read the conversation about to leave the process, and may change it.
+        if not self._hooks.empty:
+            messages = await self._hooks.before_model(messages)
         model_stream = self._bound_model.astream(messages)
         abort_waiter = asyncio.ensure_future(self._abort_event.wait())
         try:
@@ -665,6 +668,10 @@ class _TurnLoopMixin:
                 return
             else:
                 decisions = self._resolve_tool_decisions(plans, answered)
+            # After the barrier, deliberately. A hook sees only what the rules already
+            # approved, so it can drop calls and can never introduce one.
+            if not self._hooks.empty:
+                tool_calls = await self._hooks.before_tools(tool_calls)
             async for event in self._drain_tools_concurrently(
                 tool_calls, turn_tool_calls_log, turn_tool_results_log, outcomes, decisions,
             ):

@@ -123,6 +123,57 @@ async def the_library_stays_location_agnostic() -> None:
     )
 
 
+async def compaction_is_replaceable() -> None:
+    from frank import CompactionState, KeepRecentTurns
+
+    strategy = KeepRecentTurns(3)
+    twenty = CompactionState(messages=list(range(20)), context_window=1000, context_tokens=900)
+    check(strategy.should_compact(twenty), "a strategy folds when its own rule says so")
+
+    kept = await strategy.compact(twenty)
+    check(len(kept) == 6 and kept[0] == 14, "keeping 3 turns keeps the last 6 messages", f"{len(kept)} kept")
+
+    four = CompactionState(messages=list(range(4)), context_window=1000, context_tokens=10)
+    check(not strategy.should_compact(four), "a short conversation is left alone")
+
+    try:
+        KeepRecentTurns(0)
+        check(False, "an impossible keep is rejected")
+    except ValueError:
+        check(True, "an impossible keep is rejected")
+
+
+async def the_seams_reach_a_session() -> None:
+    from frank import (
+        AgentConfiguration, DictCatalogue, KeepRecentTurns, MaximumToolCalls, Session,
+    )
+
+    agent = AgentConfiguration(name="probe", system_prompt="Say nothing.")
+    with tempfile.TemporaryDirectory() as scratch:
+        session = Session(
+            agent, directory=scratch, catalogue=DictCatalogue(),
+            hooks=[MaximumToolCalls(5)],
+            pipeline=[_PassThrough()],
+            compaction=KeepRecentTurns(10),
+        )
+        check(session is not None, "a session accepts all three seams together")
+
+    class NotCompaction:
+        pass
+
+    with tempfile.TemporaryDirectory() as scratch:
+        try:
+            Session(agent, directory=scratch, compaction=NotCompaction())
+            check(False, "a compaction that does not satisfy the seam is rejected at the constructor")
+        except TypeError:
+            check(True, "a compaction that does not satisfy the seam is rejected at the constructor")
+
+
+class _PassThrough:
+    async def run(self, call, proceed):
+        return await proceed(call)
+
+
 async def seams_are_structural() -> None:
     from frank.base.ports import Compaction, ToolMiddleware, TurnHook, describe_unmet
     from frank.runtime.hooks import MaximumToolCalls
@@ -150,6 +201,8 @@ async def main() -> int:
         ("Hooks bound a turn", hooks_bound_a_turn()),
         ("Middleware composes", middleware_composes()),
         ("The library stays location-agnostic", the_library_stays_location_agnostic()),
+        ("Compaction is replaceable", compaction_is_replaceable()),
+        ("The seams reach a session", the_seams_reach_a_session()),
         ("Seams are structural", seams_are_structural()),
     ):
         print(f"\n{title}")

@@ -56,11 +56,15 @@ from frank.base.catalogue import DictCatalogue
 from frank.base.configuration import AgentConfiguration, GlobalConfiguration
 from frank.base.permission_mode import PermissionMode
 from frank.base.skills import Skill
+from frank.runtime.compaction import KeepRecentTurns
+from frank.runtime.hooks import MaximumToolCalls
 from frank.base.ports import (
     Approval,
     Approvals,
     Catalogue,
     Checkpoints,
+    Compaction,
+    CompactionState,
     Credentials,
     JobStore,
     MemoryCheckpoints,
@@ -69,7 +73,9 @@ from frank.base.ports import (
     Observation,
     Observer,
     SuspensionGate,
+    ToolMiddleware,
     Transcript,
+    TurnHook,
     TurnSummary,
     describe_unmet,
 )
@@ -80,10 +86,14 @@ __all__ = [
     "Approvals",
     "Catalogue",
     "Checkpoints",
+    "Compaction",
+    "CompactionState",
     "Credentials",
     "DictCatalogue",
     "GlobalConfiguration",
     "JobStore",
+    "KeepRecentTurns",
+    "MaximumToolCalls",
     "MemoryCheckpoints",
     "MemoryJobStore",
     "MemoryTranscript",
@@ -91,6 +101,8 @@ __all__ = [
     "Observer",
     "PermissionMode",
     "Session",
+    "ToolMiddleware",
+    "TurnHook",
     "Skill",
     "SuspensionGate",
     "Transcript",
@@ -181,6 +193,11 @@ class Session:
         # run them.
         tools: Sequence[Any] = (),
         tool_risk: str = "medium",
+        # The three seams around a turn. Each defaults to what the harness has always done,
+        # so a caller who passes none of them sees no change.
+        hooks: Sequence[Any] = (),
+        pipeline: Sequence[Any] = (),
+        compaction: Optional[Compaction] = None,
         permissions: Any = None,
         locations: Optional[list[dict]] = None,
         # A git worktree per session. Off by default and deliberately: it writes to disk, and a
@@ -230,6 +247,9 @@ class Session:
         self._tools = list(tools)
         self._tool_risk = tool_risk
         self._permissions = permissions
+        self._hooks = list(hooks)
+        self._pipeline = list(pipeline)
+        self._compaction = _require(Compaction, compaction, "compaction")
         self._locations = locations
         self._workspace = workspace
         self._tracer_provider = tracer_provider
@@ -315,6 +335,9 @@ class Session:
                 tools=self._tools,
                 tool_risk=self._tool_risk,
                 permissions=self._permissions,
+                hooks=self._hooks,
+                pipeline=self._pipeline,
+                compaction=self._compaction,
                 locations=self._resolved_locations(),
             )
         return self._runtime

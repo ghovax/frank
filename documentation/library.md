@@ -332,6 +332,104 @@ runtime_directory = await session.prepare_workspace()
 await session.ask("Refactor the parser to use the streaming reader, then run the tests.")
 ```
 
+## Around the turn
+
+Three seams sit around a turn rather than inside it. Each defaults to what the harness has always done, so passing none of them changes nothing.
+
+### Bounding and watching a turn
+
+A **hook** sees a turn as it runs, and may narrow it. It has three optional methods, and you implement only the one you need.
+
+```python
+from frank import MaximumToolCalls, Session
+
+class AuditPrompts:
+    async def before_model(self, messages):
+        audit.write({"at": time.time(), "messages": len(messages)})
+        return messages
+
+class RefuseNetworkTools:
+    async def before_tools(self, calls):
+        return [call for call in calls if call["name"] not in ("fetch_url", "search_web")]
+
+async with Session(
+    reviewer,
+    directory="/srv/checkout",
+    hooks=[MaximumToolCalls(20), AuditPrompts(), RefuseNetworkTools()],
+) as session:
+    ...
+```
+
+`MaximumToolCalls` ships with the harness and has no privileges you do not — it is twelve lines that return a shorter list. That is deliberate. A cap as a `maximum_tool_calls=` argument would be the loop hardcoding one policy. A cap as a hook is proof the seam has the right shape.
+
+**`before_tools` runs after the permission barrier**, so a hook sees only calls the rules already approved. It may return fewer, and anything it adds is dropped. A hook narrows; it can never widen, and a careless one cannot become a permission bypass.
+
+**A hook that raises is logged and skipped.** A turn must not fail on account of something watching it.
+
+### Wrapping a tool call
+
+**Middleware** wraps one call, the harness's own tools and yours alike. `proceed` is the rest of the chain, so the order you write is the order they nest.
+
+```python
+class Timed:
+    async def run(self, call, proceed):
+        started = time.monotonic()
+        try:
+            return await proceed(call)
+        finally:
+            metrics.timing("frank.tool", time.monotonic() - started, tags={"tool": call.name})
+
+class RetryTransient:
+    async def run(self, call, proceed):
+        for attempt in range(3):
+            try:
+                return await proceed(call)
+            except TransientError:
+                if attempt == 2:
+                    raise
+                await asyncio.sleep(2 ** attempt)
+
+async with Session(reviewer, directory="/srv/checkout", pipeline=[Timed(), RetryTransient()]) as session:
+    ...
+```
+
+`[Timed(), RetryTransient()]` times the retries; reversing it retries the timing.
+
+Middleware is **not** absorbed on failure, unlike a hook. A hook watches. Middleware is in the call path and decides whether the call happens. Swallowing there would turn a retry layer's bug into a tool that silently never ran.
+
+### Folding the conversation
+
+The default folds older turns into an observation log and condenses that log as it grows. It preserves long-horizon memory and costs two model calls each time it runs. That is right for a conversation someone returns to over days, and wrong for a scripted agent with a budget.
+
+```python
+from frank import KeepRecentTurns
+
+async with Session(reviewer, directory="/srv/checkout", compaction=KeepRecentTurns(20)) as session:
+    ...
+```
+
+Your own strategy is two methods:
+
+```python
+class KeepDecisions:
+    """Fold everything except the turns where something was decided."""
+
+    def should_compact(self, state) -> bool:
+        return state.context_tokens > 0.7 * state.context_window
+
+    async def compact(self, state) -> list:
+        decisions = [message for message in state.messages if looks_like_a_decision(message)]
+        return [summarise(state.messages)] + decisions
+```
+
+`state` carries the conversation, the live context window and what it currently occupies. It is passed rather than reached for, which is what makes an alternative possible at all.
+
+### What is not a seam
+
+**The turn loop itself.** A `runtime=` argument would let you supply a working agent loop in twenty lines. That loop would silently drop the permission preflight, the durable suspend and resume, concurrent execution, compaction, abort and steering. Reimplement those and you have copied the loop; skip them and you have a harness that runs tools without asking.
+
+`session.runtime` is public, so a program that genuinely wants a different architecture can drive `AgentRuntime` directly or not use `Session` at all. What the argument would add is a door that looks supported onto a room where the safety properties do not hold.
+
 ## Driving a turn
 
 `ask()` is the convenience. `stream()` is the whole vocabulary — text chunks, tool calls, tool

@@ -77,10 +77,25 @@ class _CompactionMixin:
             return 0
         return human_indices[-keep]
 
+    def _compaction_state(self, reason: str = "auto"):
+        """What a supplied strategy is given. Passed, never reached for."""
+        from frank.base.ports import CompactionState
+
+        return CompactionState(
+            messages=list(self._conversation),
+            context_window=self._context_window,
+            context_tokens=self._latest_context_tokens,
+            reason=reason,
+        )
+
     def _should_compact(self) -> bool:
-        """Auto-compaction trigger: enabled in config, live context past the observer
-        fraction of the window, and something old enough to fold. Manual compaction
-        ignores this and always runs a pass."""
+        """Auto-compaction trigger.
+
+        A supplied strategy answers this itself. The default is: enabled in configuration,
+        live context past the observer fraction of the window, and something old enough to
+        fold. Manual compaction ignores this and always runs a pass."""
+        if self._compaction is not None:
+            return bool(self._compaction.should_compact(self._compaction_state()))
         compaction = self._global_configuration.compaction
         if not compaction.auto or self._context_window <= 0:
             return False
@@ -120,6 +135,24 @@ class _CompactionMixin:
         window. Recent turns stay verbatim. Yields COMPACTION_STARTED/DONE for the UI. A
         no-op yields nothing. Manual calls force a pass; the auto trigger is gated by
         :meth:`_should_compact`."""
+        # A supplied strategy replaces the Observer/Reflector pass entirely. It answers with
+        # the conversation to carry forward and calls no model unless it wants to; the events
+        # around it stay the runtime's, so the interface shows a compaction the same way
+        # whichever strategy produced it.
+        if self._compaction is not None:
+            state = self._compaction_state(reason)
+            messages_before = len(self._conversation)
+            tokens_before = self._latest_context_tokens
+            yield CompactionStarted(
+                reason=reason, messages_before=messages_before, tokens_before=tokens_before,
+            )
+            self._conversation[:] = await self._compaction.compact(state)
+            yield CompactionDone(
+                reason=reason, ok=True,
+                messages_before=messages_before, messages_after=len(self._conversation),
+                tokens_before=tokens_before, tokens_after=self._latest_context_tokens,
+            )
+            return
         boundary = self._observer_boundary()
         if boundary <= 0:
             return
@@ -160,3 +193,31 @@ class _CompactionMixin:
             messages_after=len(self._conversation),
             tokens_before=tokens_before,
         )
+
+
+class KeepRecentTurns:
+    """Keep the last `keep` exchanges and drop the rest. No model call, no cost.
+
+    The default folds older turns into an observation log, which preserves long-horizon
+    memory and costs two model calls each time it runs. That is right for a conversation
+    someone returns to over days. It is wrong for a scripted agent with a budget and no
+    memory to preserve, which wants the cheap deterministic answer — and until this existed,
+    that program had no way to say so.
+
+    Counts messages rather than turns, at two messages to a turn, because a conversation is a
+    flat list here and a turn boundary is not marked in it.
+    """
+
+    def __init__(self, keep: int = 20) -> None:
+        if keep < 1:
+            raise ValueError(f"keep must be at least 1, got {keep}.")
+        self._keep = keep
+
+    def should_compact(self, state) -> bool:
+        return len(state.messages) > self._keep * 2
+
+    async def compact(self, state) -> list:
+        return list(state.messages[-self._keep * 2:])
+
+
+__all__ = ["KeepRecentTurns"]

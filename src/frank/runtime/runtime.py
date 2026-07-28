@@ -484,7 +484,19 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         tools: Sequence[BaseTool] = (),
         tool_risk: str = "medium",
         permissions: Any = None,
+        hooks: Sequence[Any] = (),
+        pipeline: Sequence[Any] = (),
+        compaction: Any = None,
     ):
+        from frank.runtime.hooks import HookRunner
+        from frank.runtime.pipeline import ToolPipeline
+
+        # The three seams around a turn. Each defaults to what the harness has always done:
+        # no hooks, no middleware, and the Observer/Reflector compaction built from
+        # configuration. Passing none of them changes nothing.
+        self._hooks = HookRunner(hooks)
+        self._pipeline = ToolPipeline(pipeline)
+        self._compaction = compaction
         self._session_id = session_id
         # The session that created this one, empty when a person did. Reaches the model in the
         # turn context, because reporting back is sending it a message and that needs an id.

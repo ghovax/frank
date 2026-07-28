@@ -493,7 +493,12 @@
     "usageWeekly": "Weekly",
     "usageDaysShort": "{count}d",
     "usageHoursShort": "{count}h",
-    "usageMinutesShort": "{count}m"
+    "usageMinutesShort": "{count}m",
+    "usagePlanFree": "Free plan",
+    "usagePlanPlus": "Plus plan",
+    "usagePlanPro": "Pro plan",
+    "usagePlanTeam": "Team plan",
+    "usagePlanEnterprise": "Enterprise plan"
   },
   "CursorAuthControl": {
     "signInError": "Could not start sign-in.",

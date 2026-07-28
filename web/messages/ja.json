@@ -493,7 +493,12 @@
     "usageWeekly": "週間",
     "usageDaysShort": "{count}日",
     "usageHoursShort": "{count}時間",
-    "usageMinutesShort": "{count}分"
+    "usageMinutesShort": "{count}分",
+    "usagePlanFree": "無料プラン",
+    "usagePlanPlus": "Plus プラン",
+    "usagePlanPro": "Pro プラン",
+    "usagePlanTeam": "Team プラン",
+    "usagePlanEnterprise": "Enterprise プラン"
   },
   "CursorAuthControl": {
     "signInError": "サインインを開始できませんでした。",

@@ -15,6 +15,20 @@ function windowLabel(translation: Translator, minutes: number): string {
   return translation("usageMinutesShort", { count: minutes });
 }
 
+// The plan the account is on, as the provider reports it. A plan with no label is shown as it
+// came rather than hidden: an unfamiliar plan is still worth seeing, and inventing a name for
+// it would be worse than passing the provider's through.
+function planLabel(translation: Translator, planType: string): string {
+  switch (planType) {
+    case "free": return translation("usagePlanFree");
+    case "plus": return translation("usagePlanPlus");
+    case "pro": return translation("usagePlanPro");
+    case "team": return translation("usagePlanTeam");
+    case "enterprise": return translation("usagePlanEnterprise");
+    default: return planType;
+  }
+}
+
 function meterColor(percent: number): string {
   if (percent >= 90) return "red.500";
   if (percent >= 70) return "orange.400";
@@ -43,9 +57,14 @@ export function ChatGPTUsageMeters({ usage }: { usage: ChatGPTUsage | null }) {
   if (windows.length === 0) return null;
   return (
     <Box>
-      <Text textStyle="fieldLabel" mb={1.5}>
-        {translation("usageTitle")}
-      </Text>
+      <HStack justify="space-between" mb={1.5} gap={4}>
+        <Text textStyle="fieldLabel">{translation("usageTitle")}</Text>
+        {/* The plan is why a percentage is what it is. Without it a high number reads as
+            inexplicable — a free-tier allowance is small, so most of it goes quickly. */}
+        {usage?.plan_type ? (
+          <Text fontSize="xs" color="fg.muted">{planLabel(translation, usage.plan_type)}</Text>
+        ) : null}
+      </HStack>
       <Stack gap={2.5}>
         {windows.map((window) => {
           const percent = Math.min(Math.max(window.used_percent, 0), 100);

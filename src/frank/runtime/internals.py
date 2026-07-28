@@ -370,6 +370,18 @@ class _ToolPlan:
 
 
 @dataclass
+@dataclass
+class _ToolCall:
+    """One call, as middleware sees it.
+
+    Mutable arguments, deliberately: a layer that rewrites a path or injects a default is a
+    legitimate use, and a frozen value would force every such layer to reconstruct the call.
+    """
+
+    name: str
+    arguments: dict
+
+
 class _ResolvedToolDecision:
     """The verdict a batch runner hands each tool: run it, deny it (with the exact
     error the gate would have produced), or — for ``ask_user`` — the answers to return.

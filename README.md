@@ -84,6 +84,21 @@ async with Session(reviewer, directory="/srv/checkout", model=ChatAnthropic(mode
 
 Every durable thing is a seam: `checkpoints`, `jobs`, `transcript`, `approvals`, `observer`, `sandbox`, `catalogue`, and `peers`. Each one defaults to something a library may safely do, which for anything durable means *in memory*.
 
+Three more sit around the turn — bound it, wrap its tools, decide how its history folds:
+
+```python
+from frank import KeepRecentTurns, MaximumToolCalls, Session
+
+async with Session(
+    reviewer,
+    directory="/srv/checkout",
+    hooks=[MaximumToolCalls(20)],        # a turn with a budget
+    pipeline=[Timed(), RetryTransient()],  # every tool call, yours and the harness's
+    compaction=KeepRecentTurns(20),      # drop old turns instead of summarising them
+) as session:
+    ...
+```
+
 A program that *is* running on someone's machine can ask for that machine's agents deliberately, through `frank.daemon.machine`. [As a library](documentation/library.md) is the reference: the full seam table, a worked Redis checkpoint store, and what you give up by not using the daemon.
 
 ### From the terminal
