@@ -186,7 +186,17 @@ export function DisclosureRow({
           </Flex>
         )}
         {actions && (
-          <Flex align="center" gap={0.5} flexShrink={0}>
+          <Flex
+            align="center"
+            gap={0.5}
+            flexShrink={0}
+            // Callers wrap their controls in a plain Box, which is a block box — so the
+            // inline-flex button inside it sat on the *text baseline*, about 1.7px below the
+            // centre, and every trailing ⋯ in the app rode low against the label beside it.
+            // Centring here rather than in each caller, because sitting on the row's centre
+            // line is what this slot is for, not something each caller should have to know.
+            css={{ "& > *": { display: "flex", alignItems: "center" } }}
+          >
             {actions}
           </Flex>
         )}
