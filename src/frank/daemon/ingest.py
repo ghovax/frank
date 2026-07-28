@@ -144,6 +144,16 @@ async def _session_event(params: dict) -> dict:
         awaiting = bool(event.get("awaiting_input"))
         if state.registry is not None:
             state.registry.mark(session_id, awaiting_input=awaiting)
+        # And the set the *workspace* reads. The registry is the control plane's, and the
+        # browser's session list is built by the workspace, which deliberately cannot reach
+        # across — so the daemon pushes into it here, exactly as `_set_turn_state` does for
+        # running turns. Marking only the registry left the two disagreeing: a session parked
+        # on a permission prompt reported `awaiting_input: false` to the interface, so the
+        # prompt was never raised and the turn sat waiting on a decision nobody was asked for.
+        if awaiting:
+            state._awaiting_input_contexts.add(session_id)
+        else:
+            state._awaiting_input_contexts.discard(session_id)
         state.broadcaster.publish({"type": "sessions_changed"})
         if awaiting:
             # The best case for sleeping, and the one that motivated it. `input-required` is
