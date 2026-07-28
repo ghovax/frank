@@ -157,28 +157,45 @@ def _quietly_close(stream: Any) -> None:
         pass
 
 
+# Recognised ways the child dies before it can speak. Each is a real condition with a
+# different remedy, so each says its own thing rather than all of them sharing one apology.
+def _explain_silent_exit(complaint: str) -> str:
+    lowered = complaint.lower()
+    if "operation not permitted" in lowered or "sandbox" in lowered:
+        return (
+            "The screen-control helper could not start because the sandbox refused to run it. "
+            "Screen control needs the helper to be executable inside the session's sandbox; "
+            "check the sandbox settings for this project, or turn enforcement off to confirm "
+            "that is the cause."
+        )
+    if "accessibility" in lowered or "axapi" in lowered or "not trusted" in lowered:
+        return (
+            "The screen-control helper could not read the screen because macOS Accessibility "
+            "is not granted. Grant it in Settings, then try again."
+        )
+    if not complaint:
+        return (
+            "The screen-control helper stopped before it could report anything, and said "
+            "nothing about why — it was most likely killed as it started."
+        )
+    return "The screen-control helper stopped before it could do anything. The daemon log says why."
+
+
 def _parse_result(stdout: Optional[bytes], stderr: Optional[bytes] = None, exit_code: Optional[int] = None) -> dict:
     text = (stdout or b"").decode("utf-8", "replace").strip()
     complaint = (stderr or b"").decode("utf-8", "replace").strip()
     if not text:
         # The child writes its JSON last, so empty stdout means it never got there. Whatever it
         # said on the way out is the reason, and it is reported rather than summarised away.
-        detail = complaint.splitlines()[-1].strip() if complaint else ""
         logger.warning(
             "control_screen produced no result (exit code %s): %s",
             exit_code, complaint[-2000:] or "(nothing on stderr either)",
         )
-        return {
-            "ok": False,
-            "error": (
-                f"The screen-control script stopped without returning anything: {detail}"
-                if detail
-                else "The screen-control script stopped without returning anything, and said "
-                     "nothing about why. It may have been killed before it could start."
-            ),
-            "output": complaint[-2000:],
-            "exit_code": exit_code,
-        }
+        # The child's own words go to the log, where they are wanted, and not into the answer.
+        # Handing raw stderr back as the tool's error put a sandbox denial in front of a person
+        # as a sentence about a Python executable — true, useless, and not their vocabulary.
+        # What reaches the model is what happened and what can be done about it.
+        return {"ok": False, "error": _explain_silent_exit(complaint), "exit_code": exit_code}
     try:
         return json.loads(text)
     except Exception:
