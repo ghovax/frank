@@ -2,37 +2,42 @@
 
 **An open agent harness where every session is a process you can address.**
 
-The harness is the code between the model and your machine — turn loop, tools, prompts, permissions — and in Frank all of it is yours to edit. Drive it from the terminal, from the macOS app, or from another agent.
+The harness is the code between the model and your machine. It holds the turn loop, the tools, the prompts, and the permissions. In Frank you can edit all of it. Drive it from the terminal, from the macOS app, from your own program, or from another agent.
 
-A session here is *executable*, because it is a real OS process with a pid you can kill; *addressable*, because it has its own unix socket and its own capability token; and *composable*, because sessions create and message each other through the same control plane you use. Those three properties are the whole design, and everything below follows from them.
+A session here has three properties, and they are the whole design:
+
+- **Executable.** It is a real OS process with a pid. You can kill it.
+- **Addressable.** It has its own unix socket and its own capability token.
+- **Composable.** Sessions create each other and message each other. They use the control plane that you use.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Platform: macOS (Apple Silicon)](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-black) ![Built with Tauri, Next.js, LangChain](https://img.shields.io/badge/built%20with-Tauri%2C%20Next.js%2C%20LangChain-6E56CF)
 
 ## What it is
 
-Everything in Frank is a **session**: one OS process running one agent, created empty and then driven by messages over its life. A session serves [A2A](https://github.com/google/A2A) on its own unix socket, and every client — you from the terminal, the desktop app, another session — reaches it through the daemon, which relays. One path in, so a caller is identified and scoped in exactly one place.
+Everything in Frank is a **session**: one OS process running one agent, created empty and then driven by messages over its life. A session serves [A2A](https://github.com/google/A2A) on its own unix socket. Every client reaches it through the daemon, which relays: you from the terminal, the desktop app, or another session. There is one path in, so a caller is identified and scoped in exactly one place.
 
-Three parts, kept apart:
+Four ways in, kept apart:
 
-- **`frankd`** — a thin daemon. It keeps the registry of sessions, supervises their processes, owns the databases as the sole writer, and brokers the shared resources. It runs no agents itself, and it never imports the agent runtime — which is why it delegates starting a session to the **prototype**, a process that has imported the runtime once and forks a copy of itself for each session in about 60 milliseconds.
-- **`frank`** — the command. `create` a session, `send` it work, `ps` what is running, `attach` to watch, `tree` to see what created what, `approve` what it asks for, `configure` what the next one starts with, `open` the desktop app, `kill` to end a subtree. It adds nothing the control plane does not have; it is the ergonomic face of it — see the [CLI guide](documentation/cli.md).
+- **`frankd`** — a thin daemon. It keeps the registry of sessions, supervises their processes, owns the databases as the sole writer, and brokers the shared resources. It runs no agents itself, and it never imports the agent runtime. It therefore delegates the start of a session to the **prototype**. The prototype imports the runtime once. It then forks a copy of itself for each session in about 60 milliseconds.
+- **`frank`** — the command. `create` a session, `send` it work, and `ps` what runs. `attach` to watch, `tree` to see what created what, and `approve` what it asks for. `configure` the next session, `open` the desktop app, and `kill` a subtree. The command adds nothing that the control plane does not have; it is the ergonomic face of it. See the [CLI guide](documentation/cli.md).
 - **The app** — a native macOS client (Tauri + Next.js) over the same API. A *client*: it finds a daemon and talks to it, and contains no harness of its own. `frank app` starts one and launches the window together.
+- **The library** — `import frank`. `frank.Session` runs an agent in *your* process, with no daemon and no socket. Everything it would write to disk is a seam you can replace: the model, the checkpoints, the jobs, the approver, the observer. Each seam is a `typing.Protocol`, so your object qualifies by having the right methods. See [As a library](documentation/library.md).
 
-It is also importable. `frank.Session` runs an agent in your own process — no daemon, no socket — and everything it would otherwise write to disk is a constructor argument with an interface behind it: bring your own model, checkpoint store, job store, approver or observer by passing an object with the right methods. See [As a library](documentation/library.md).
+Sessions compose the same way you do. A session that needs a peer calls `create_session`. That reaches the same control plane your terminal reaches. There is one API, whether the caller is a person, the desktop app, or an agent.
 
-Sessions compose the same way you do. A session that needs a peer calls `create_session`, which reaches the same control plane your terminal does — one API, whether the caller is a person, the desktop app, or an agent. The peer reports back by sending its parent a message, so an answer is a message rather than something reconstructed from a transcript. A child is a real session: it appears in `frank ps`, you can attach to it, and it is reaped when its parent ends.
+The peer reports back by sending its parent a message. An answer is therefore a message, not something rebuilt from a transcript. A child is a real session: it appears in `frank ps`, you can attach to it, and it is reaped when its parent ends.
 
 ## Why own the harness
 
 The harness writes the system prompt, defines the tools, manages context, and sets what the agent may do. The same model does different work under different harnesses — OpenCode versus Claude Code or Codex, say. Frank lets you change that layer:
 
-- **Tune the guardrails.** Permission modes and per-command allow/deny rules are config; the engine that enforces them is open code, so you can change how permissioning works when the settings aren't enough ([Permissions](documentation/configuration.md#permission-modes)).
-- **The agent can work on Frank itself.** Its prompt says it's running Frank; open the Frank repo as the project and it can read and edit the harness, then you rebuild ([Architecture](documentation/architecture.md)).
+- **Tune the guardrails.** Permission modes and per-command rules are configuration. The engine that enforces them is open code. When the settings are not enough, you can change how permissioning works ([Permissions](documentation/configuration.md#permission-modes)).
+- **The agent can work on Frank itself.** Its prompt says that it runs Frank. Open the Frank repository as the project. The agent then reads and edits the harness, and you rebuild ([Architecture](documentation/architecture.md)).
 - **The agent can start with context about you** — an opt-in snapshot of your machine and habits, off by default ([What it sends](SECURITY.md#what-the-agent-sends-to-your-model-provider)).
 
 ## How it compares
 
-The closest tools are [Claude Code](https://code.claude.com) and [OpenAI Codex](https://github.com/openai/codex), both more mature than Frank. As of 2026 both also drive a real, logged-in browser and control native macOS apps, and Codex is likewise open source and runs on non-OpenAI models — so this compares approaches, not things only Frank does.
+The closest tools are [Claude Code](https://code.claude.com) and [OpenAI Codex](https://github.com/openai/codex). Both are more mature than Frank. In 2026 both also drive a real browser and control native macOS apps. Codex is open source too, and it runs on models that are not OpenAI's. This table compares approaches. It does not list things that only Frank does.
 
 | | Frank | Claude Code | OpenAI Codex |
 |---|---|---|---|
@@ -44,23 +49,62 @@ The closest tools are [Claude Code](https://code.claude.com) and [OpenAI Codex](
 
 Three design choices distinguish Frank:
 
-- **Structure, not screenshots.** It reads the screen as a semantic search over the accessibility tree and DOM, returning a few ranked elements where the rivals reason over screenshots — a query costs a handful of elements, not a downscaled image.
-- **A session is a process, not a coroutine.** Each session runs in its own OS process behind its own socket, so it is crash-isolated, addressable, and killable. A session creates a peer by creating another session and messaging it over the same API a person uses, instead of through a bespoke in-process delegation tool.
-- **A composed script, not a click-by-click loop.** `control_screen` runs a Python program whose primitives (`click`, `type`, `scroll`, `evaluate`, …) are the *same* on native apps and in the browser. A whole task — loop over rows, branch on what you find, call the page's own API in one line — is a single call, not a screenshot‑decide‑act round trip per click. Far fewer model turns to finish the job.
+- **Structure, not screenshots.** Frank reads the screen as a semantic search over the accessibility tree and the DOM. It returns a few ranked elements. The other tools reason over screenshots. A query here costs a few elements, not an image.
+- **A session is a process, not a coroutine.** Each session runs in its own OS process behind its own socket. It is therefore crash-isolated, addressable, and killable. To make a peer, a session creates another session and messages it. It uses the API that a person uses.
+- **A composed script, not a click-by-click loop.** `control_screen` runs a Python program. Its primitives (`click`, `type`, `scroll`, `evaluate`) are the same on native apps and in the browser. One call can loop over rows, branch on what it finds, and call the page's own API. The other tools need one round trip for each click. Frank needs far fewer model turns.
 
 The trade-off: it needs an accessibility tree or DOM to read, where a screenshot approach works on anything drawn on screen. See [Tools](documentation/tools.md).
 
-Elsewhere they lead: more polish, more places to run, deeper ecosystems — Claude Code's subagents, hooks, plugins, and Agent SDK; Codex's cloud tasks, 90+ plugins, and automatic PR review. All three gate actions behind approvals and a sandbox. Frank is the small, open, model-agnostic option you host yourself; for a mature multi-surface agent on a vendor's cloud, use theirs.
+Elsewhere they lead. They have more polish, more places to run, and deeper ecosystems. Claude Code has subagents, hooks, plugins, and an Agent SDK. Codex has cloud tasks, more than 90 plugins, and automatic PR review. All three tools gate actions behind approvals and a sandbox.
+
+Frank is the small, open, model-agnostic option that you host yourself. For a mature agent on a vendor's cloud, use theirs.
 
 ## Install
 
-Frank targets **macOS on Apple Silicon**, and ships as two pieces: the harness (the `frank` command and its daemon) and the app that talks to it. Download the latest release, install both, and `frank app`; the build is self-signed, so Gatekeeper warns on first launch. Or build from source with the Nix-pinned toolchain.
+Frank runs on **macOS on Apple Silicon**. It ships as two pieces:
+
+- The harness: the `frank` command and its daemon.
+- The app that talks to the harness.
+
+Download the latest release, install both, and run `frank app`. The build is self-signed, so Gatekeeper warns you at the first launch. You can also build from source with the Nix-pinned toolchain.
 
 See the [Installation guide](documentation/installation.md) for both paths in full.
 
 ## Quickstart
 
-From the terminal:
+Three ways in, and they are the same harness. Pick by whether you want a process you can
+address (the daemon), a window (the app), or an object in your own program (the library).
+
+### As a library
+
+No daemon, no socket, nothing written to your home directory:
+
+```python
+import asyncio
+from frank import Session
+
+async def main() -> None:
+    async with Session("general-assistant", directory=".") as session:
+        print(await session.ask("what does this project do?"))
+
+asyncio.run(main())
+```
+
+Use `stream()` instead of `ask()` to get the turn as it happens. Supply your own model, and the harness does not read your machine's configuration:
+
+```python
+from langchain_anthropic import ChatAnthropic
+
+async with Session("general-assistant", directory=".", model=ChatAnthropic(model="claude-opus-4-5")) as session:
+    async for event in session.stream("summarise the test suite"):
+        print(event)
+```
+
+Every durable thing is a seam: `checkpoints`, `jobs`, `transcript`, `approvals`, `observer`, `sandbox`, `catalogue`, and `peers`. Each one defaults to something that a library may safely do. For anything durable, that means *in memory*.
+
+[As a library](documentation/library.md) is the reference. It includes a worked Redis checkpoint store, and it lists what you give up when you do not use the daemon.
+
+### From the terminal
 
 ```
 frank create --agent general-assistant --directory ~/code/project   # prints a session id
@@ -69,9 +113,13 @@ frank ps                                                            # what is ru
 frank attach <id>                                                   # follow it live
 ```
 
-A session composes over the same API rather than over this command: `create_session` makes a peer and hands it a brief, `message_session` reaches a session in either direction, `end_session` stops one. Same daemon, same sockets, same tree — the tool carries the caller's identity, which an argv string cannot, so a peer is always a child of whoever made it, and its answer comes back as a message.
+A session composes over the API, not over this command. `create_session` makes a peer and gives it a brief. `message_session` reaches a session in either direction. `end_session` stops one.
 
-The daemon starts itself on the first command. From the app:
+These use the same daemon, the same sockets, and the same tree. The tool carries the caller's identity, which an argv string cannot do. A peer is therefore always a child of whoever made it, and its answer arrives as a message.
+
+The daemon starts itself on the first command.
+
+### From the app
 
 1. **Launch Frank.** The daemon starts automatically; the app connects to it.
 2. **Add a model key.** Open **Settings → Providers**, paste a key for any provider (or sign in with a ChatGPT or Cursor subscription), and pick a model. Keys live in your Frank configuration file — see the [Configuration guide](documentation/configuration.md), or run `frank configure --all` to see every setting there is.
@@ -80,20 +128,30 @@ The daemon starts itself on the first command. From the app:
 The screen-control tools need a one-time Accessibility grant and Chrome's remote-debugging toggle — see the [Installation guide](documentation/installation.md#permissions-the-app-may-ask-for).
 
 > [!NOTE]
-> Opt in and the system prompt also carries a snapshot of how you work, sent to your model provider along with the rest of the prompt. It is off by default; see [what the agent sends to your model provider](SECURITY.md#what-the-agent-sends-to-your-model-provider).
+> You can opt in to send a snapshot of how you work. The system prompt then carries it to your model provider. This is off by default. See [what the agent sends to your model provider](SECURITY.md#what-the-agent-sends-to-your-model-provider).
 
 ## Where things live
 
-Frank follows the XDG convention rather than a single dot-directory: configuration in `~/.config/frank`, durable state in `~/.local/share/frank`, sockets in the runtime directory (which the OS clears on logout, so a crashed daemon leaves nothing behind), logs in `~/.local/state/frank`, and caches in `~/.cache/frank`.
+Frank follows the XDG convention. It does not use a single dot-directory:
 
-Sessions are reachable only by whoever holds their handle: `create` mints a capability token, and every call to a session's socket must present it. The daemon's own API is guarded the same way, by a token it writes 0600 into the runtime directory. *Which* session is calling is not left to that token, though — a session runs as the same user and could read the file. On the unix socket the daemon asks the kernel for the peer's pid and resolves it to a session through the process session every worker leads, so a call is attributed to whoever actually made it.
+- Configuration in `~/.config/frank`
+- Durable state in `~/.local/share/frank`
+- Sockets in the runtime directory
+- Logs in `~/.local/state/frank`
+- Caches in `~/.cache/frank`
+
+The OS clears the runtime directory when you log out. A crashed daemon therefore leaves nothing behind.
+
+Only the holder of a session's handle can reach it. `create` mints a capability token. Every call to a session's socket must present that token. The daemon guards its own API the same way, with a token that it writes 0600 into the runtime directory.
+
+That token does not say *which* session is calling. A session runs as the same user and could read the file. So on the unix socket the daemon asks the kernel for the peer's pid. It resolves the pid to a session through the process session that every worker leads. A call is therefore attributed to whoever made it.
 
 > [!NOTE]
-> A session's permission mode is fixed when it is created and cannot be changed afterwards, and a child is clamped to no looser a mode than its parent. There is no bypass mode and no standing "always allow" — the only runtime decisions are allow-once and deny. See the [Security notes](SECURITY.md).
+> A session's permission mode is fixed when the session is created. You cannot change it afterwards. A child gets a mode no looser than its parent's. There is no bypass mode and no standing "always allow". The only decisions at runtime are allow-once and deny. See the [Security notes](SECURITY.md).
 
 ## Documentation
 
-The full guides — installation, the [`frank` command](documentation/cli.md), configuration, architecture, authoring agents and skills, the tool surface, and development — live in the **[Documentation](documentation/README.md)**, which indexes them and sketches the project layout.
+The full guides live in the **[Documentation](documentation/README.md)**. It indexes them and sketches the project layout. They cover installation, the [`frank` command](documentation/cli.md), configuration, architecture, agents and skills, the tool surface, and development.
 
 ## Built with
 
