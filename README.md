@@ -1,4 +1,10 @@
-# Frank
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="documentation/assets/frank-mark-dark.svg">
+    <img src="documentation/assets/frank-mark.svg" alt="" width="34" align="top">
+  </picture>
+  Frank
+</h1>
 
 **An open coding agent you run yourself, and a harness you can edit.**
 
