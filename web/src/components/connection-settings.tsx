@@ -37,21 +37,6 @@ import {
   type ConnectionProfile,
 } from "@/lib/connection-store";
 
-// Every "a place you can connect to" control is laid out from this one object: the local
-// row, each saved row, and the two picker cards. They are not the same element — the cards
-// are Chakra Buttons and the rows are Flexes — so left alone the rows inherit nothing while
-// the cards inherit the button recipe (px 3.5, gap 2, radius l2). Matching them by eye is
-// what let them drift: the rows ended up a hair wider, squarer, and with the icon 8px closer
-// to its label than the cards sitting directly beneath them. Stated explicitly on both, they
-// cannot disagree again, and neither depends on a recipe default that may change.
-const CONNECTION_TILE = {
-  borderWidth: "1px",
-  borderRadius: "l2",
-  px: 3.5,
-  py: 2.5,
-  gap: 2,
-} as const;
-
 export function ConnectionSettings({
   currentTargetId,
   onConnected,
@@ -341,11 +326,18 @@ export function ConnectionSettings({
               choices it sits beside. */}
           <VStack gap={2} align="stretch">
             <SectionHeader mb={0} icon={<LuLaptop size={15} />} title={translation("thisMachine")} />
+            {/* Same box as the Server URL / SSH host cards below: a Button's `md` recipe is
+                px 4, gap 2, radius l2, and it sizes its glyph through `_icon` (20px) — which
+                is why those cards ignore the `size` prop they are passed. A Flex inherits
+                none of that, so it is spelled out here to land on the same shape. */}
             <Flex
               align="center"
-              {...CONNECTION_TILE}
+              borderWidth="1px"
+              borderRadius="l2"
               borderColor={localActive ? "green.emphasized" : "border"}
-              pr={2.5}
+              px={4}
+              py={2.5}
+              gap={2}
             >
               <Box
                 color={localActive ? "green.fg" : "fg.muted"}
@@ -353,7 +345,7 @@ export function ConnectionSettings({
                 display="flex"
                 alignItems="center"
               >
-                <LuLaptop size={14} />
+                <LuLaptop size={20} />
               </Box>
               <Box textAlign="left" pl={1.5} flex={1} minW={0}>
                 <Text fontSize="sm" fontWeight="medium" truncate>
@@ -406,9 +398,12 @@ export function ConnectionSettings({
                   <Flex
                     key={profile.id}
                     align="center"
-                    {...CONNECTION_TILE}
+                    borderWidth="1px"
+                    borderRadius="l2"
                     borderColor={active ? "green.emphasized" : "border"}
-                    pr={2.5}
+                    px={4}
+                    py={2.5}
+                    gap={2}
                   >
                     <Box
                       color={active ? "green.fg" : "fg.muted"}
@@ -416,7 +411,7 @@ export function ConnectionSettings({
                       display="flex"
                       alignItems="center"
                     >
-                      {profile.kind === "ssh" ? <LuNetwork size={14} /> : <LuServer size={14} />}
+                      {profile.kind === "ssh" ? <LuNetwork size={20} /> : <LuServer size={20} />}
                     </Box>
                     <Box textAlign="left" pl={1.5} flex={1} minW={0}>
                       <Text fontSize="sm" fontWeight="medium" truncate>
@@ -464,14 +459,14 @@ export function ConnectionSettings({
             <Flex gap={2.5}>
               <Button
                 h="auto"
-                {...CONNECTION_TILE}
+                py={2.5}
                 variant={addMode === "url" ? "subtle" : "outline"}
                 colorPalette={addMode === "url" ? "blue" : "gray"}
                 flex={1}
                 justifyContent="flex-start"
                 onClick={() => setAddMode("url")}
               >
-                <LuServer size={14} />
+                <LuServer size={20} />
                 <Box textAlign="left" pl={1.5}>
                   <Text fontSize="sm" fontWeight="medium">{translation("serverUrl")}</Text>
                   <Text fontSize="xs" color="fg.muted">{translation("serverUrlSubtitle")}</Text>
@@ -479,14 +474,14 @@ export function ConnectionSettings({
               </Button>
               <Button
                 h="auto"
-                {...CONNECTION_TILE}
+                py={2.5}
                 variant={addMode === "ssh" ? "subtle" : "outline"}
                 colorPalette={addMode === "ssh" ? "blue" : "gray"}
                 flex={1}
                 justifyContent="flex-start"
                 onClick={() => setAddMode("ssh")}
               >
-                <LuNetwork size={14} />
+                <LuNetwork size={20} />
                 <Box textAlign="left" pl={1.5}>
                   <Text fontSize="sm" fontWeight="medium">{translation("sshHost")}</Text>
                   <Text fontSize="xs" color="fg.muted">{translation("sshHostSubtitle")}</Text>
