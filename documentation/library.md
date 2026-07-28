@@ -175,8 +175,7 @@ A supplied tool goes through the *same* preamble as every built-in: permission r
 constructed one, nothing on the machine is consulted — the agent is a value your program owns:
 
 ```python
-from frank import Session
-from frank.base.configuration import AgentConfiguration, BashToolConfiguration, ToolsConfiguration
+from frank import AgentConfiguration, BashToolConfiguration, Session, ToolsConfiguration
 
 reviewer = AgentConfiguration(
     name="reviewer",
@@ -258,17 +257,19 @@ A library session's default catalogue therefore reads the working directory and 
 Build one entirely in code when you want the prompt fully under your control:
 
 ```python
-from frank.base.catalogue import Catalogue
-from frank.base.configuration import AgentConfiguration
-from frank.base.skills import Skill
+from frank import Catalogue, Session, Skill
 
 catalogue = Catalogue(
     agents={"reviewer": reviewer},
     skills=[
         Skill(
-            name="house-style",
-            description="How this codebase names things and orders imports.",
-            body=HOUSE_STYLE,
+            name="migration-safety",
+            description="Check whether a schema change can be rolled back.",
+            body=(
+                "A migration is safe to ship when it can be reversed without data loss. "
+                "Adding a nullable column is safe. Dropping a column is not, until a release "
+                "has shipped that no longer reads it. Renaming is a drop and an add."
+            ),
         ),
     ],
     instructions="Always cite file and line.",

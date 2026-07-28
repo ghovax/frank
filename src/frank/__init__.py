@@ -53,7 +53,12 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Mapping, Optional, Sequence
 
 from frank.base.catalogue import Catalogue
-from frank.base.configuration import AgentConfiguration, Configuration
+from frank.base.configuration import (
+    AgentConfiguration,
+    BashToolConfiguration,
+    Configuration,
+    ToolsConfiguration,
+)
 from frank.base.permission_mode import PermissionMode
 from frank.base.instructions import Instruction
 from frank.base.skills import Skill
@@ -83,6 +88,7 @@ from frank.base.ports import (
 
 __all__ = [
     "AgentConfiguration",
+    "BashToolConfiguration",
     "Approval",
     "Approvals",
     "Catalogue",
@@ -106,6 +112,7 @@ __all__ = [
     "ToolMiddleware",
     "TurnHook",
     "Skill",
+    "ToolsConfiguration",
     "SuspensionGate",
     "Transcript",
     "TurnSummary",
