@@ -308,7 +308,7 @@ export function ConnectionSettings({
       {variant === "page" && (
         <VStack gap={3}>
           <Flex align="center" gap={2.5}>
-            <FrankMark size="44px" style={{ flexShrink: 0 }} />
+            <FrankMark size="56px" style={{ flexShrink: 0 }} />
             <Text fontSize="4xl" fontWeight="bold" fontFamily="var(--font-display)" lineHeight="1" letterSpacing="tight">
               Frank
             </Text>
@@ -332,12 +332,10 @@ export function ConnectionSettings({
                 none of that, so it is spelled out here to land on the same shape. */}
             <Flex
               align="center"
-              borderWidth="1px"
               borderRadius="l2"
-              borderColor={localActive ? "green.emphasized" : "border"}
-              px={4}
-              py={4}
-              gap={2}
+              px={2}
+              py={1.5}
+              gap={0.5}
             >
               <Box
                 color={localActive ? "green.fg" : "fg.muted"}
@@ -345,7 +343,7 @@ export function ConnectionSettings({
                 display="flex"
                 alignItems="center"
               >
-                <LuLaptop size={20} />
+                <LuNetwork size={20} />
               </Box>
               <Box textAlign="left" pl={1.5} flex={1} minW={0}>
                 <Text fontSize="sm" fontWeight="medium" truncate>

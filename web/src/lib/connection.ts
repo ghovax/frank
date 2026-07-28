@@ -47,7 +47,7 @@ export interface SshHost {
 
 export const LOCAL_CONNECTION_TARGET: ConnectionTarget = {
   id: LOCAL_TARGET_ID,
-  name: "Local server",
+  name: "Local server endpoint",
   url: LOCAL_DEFAULT_URL,
   kind: "local",
 };

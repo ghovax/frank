@@ -33,7 +33,6 @@ from frank.protocol.metadata import (
     turn_metadata,
 )
 from frank.protocol.parts import (
-    _all_attachments,
     _attachment_warning_event,
     _event_part,
     _image_attachments,
@@ -522,7 +521,12 @@ class _TurnRunner:
                 self._turn_input = text_payload
         else:
             self._turn_input = self._user_text
-        runtime.set_pending_attachments(_all_attachments(self._structured_payloads))
+        # No `runtime.set_pending_attachments(...)` here any more. `AgentRuntime` lost that
+        # method in the package restructure and nothing reads the field it set; attachments
+        # reach the model through `_structured_payloads` above, which is where the image blocks
+        # in `_turn_input` come from. The call outlived the method, so every turn carrying any
+        # structured payload raised `AttributeError` — the second orphan of exactly this shape,
+        # after `set_agent_event_sink`.
         return _ComposedTurn(
             prepared=prepared,
             turn_input=self._turn_input,

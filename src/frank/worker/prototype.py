@@ -191,6 +191,23 @@ def _settle_proxy_environment() -> dict[str, str]:
     return exported
 
 
+def session_command(assignment_fd: int, ready_fd: int) -> list[str]:
+    """How a session worker is launched: a re-exec of *this* executable.
+
+    The same reasoning as :func:`frank.daemon.prototype.prototype_command`, and now it carries
+    more weight. A session used to inherit the prototype's code signature by being a fork of
+    it; it execs now, so the signature comes from the image it execs — which is why that image
+    has to be this one and not the interpreter. Anything else would be a second code identity
+    and a second Accessibility prompt per session.
+
+    The two descriptors are passed as numbers because that is all an `exec` boundary carries.
+    The assignment itself is not: it holds capability tokens, and `argv` is readable by any
+    process on the machine."""
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "session", str(assignment_fd), str(ready_fd)]
+    return [sys.executable, "-m", "frank", "session", str(assignment_fd), str(ready_fd)]
+
+
 def _load_runtime() -> None:
     """Import everything a session will need, so the fork has nothing left to pay for.
 
@@ -391,44 +408,60 @@ class Prototype:
 
     def _fork_session(self, assignment: dict) -> None:
         session_id = str(assignment.get("session_id") or "")
-        threads = native_thread_count()
-        if threads != 1:
-            # Refusing is the whole point of measuring. A fork from here would produce a
-            # child that either deadlocks on an inherited lock or aborts inside the
-            # Objective-C runtime with a message that names the wrong cause.
-            logger.error("refusing to fork: %d native threads, expected 1", threads)
-            self._send({
-                "event": "failed",
-                "session_id": session_id,
-                "reason": f"the prototype is not single-threaded ({threads} native threads)",
-            })
-            return
 
         ready_read, ready_write = os.pipe()
+        # Written before the fork, so the child finds its assignment already in the pipe and
+        # neither process has to coordinate a handover between `fork` and `exec` — the window
+        # where almost nothing is legal to do. An assignment is well under the pipe buffer;
+        # a write that would block here is a bug in what is being assigned, not in the size.
+        assignment_read, assignment_write = os.pipe()
+        try:
+            os.write(assignment_write, json.dumps(assignment).encode())
+        except OSError as error:
+            for descriptor in (ready_read, ready_write, assignment_read, assignment_write):
+                with contextlib.suppress(OSError):
+                    os.close(descriptor)
+            logger.error("could not write the assignment for %s: %s", session_id, error)
+            self._send({"event": "failed", "session_id": session_id, "reason": str(error)})
+            return
+        os.close(assignment_write)
+        # `exec` closes everything marked close-on-exec, which is the default for a pipe. These
+        # two have to cross it, and their numbers are what the child is told on its command line.
+        os.set_inheritable(assignment_read, True)
+        os.set_inheritable(ready_write, True)
+
         try:
             pid = os.fork()
         except OSError as error:
-            os.close(ready_read)
-            os.close(ready_write)
+            for descriptor in (ready_read, ready_write, assignment_read):
+                with contextlib.suppress(OSError):
+                    os.close(descriptor)
             logger.error("could not fork: %s", error)
             self._send({"event": "failed", "session_id": session_id, "reason": str(error)})
             return
 
         if pid == 0:
-            os._exit(self._become_session(assignment, ready_read, ready_write))
+            os._exit(self._become_session(assignment_read, ready_read, ready_write))
 
         os.close(ready_write)
+        os.close(assignment_read)
         os.set_blocking(ready_read, False)
         self._children[pid] = session_id
         self._pending[ready_read] = (session_id, bytearray())
         self._selector.register(ready_read, selectors.EVENT_READ, self._on_ready_readable)
 
-    def _become_session(self, assignment: dict, ready_read: int, ready_write: int) -> int:
-        """Everything the child does before it is a session. Runs only in the child.
+    def _become_session(self, assignment_read: int, ready_read: int, ready_write: int) -> int:
+        """Everything the child does between `fork` and `exec`. Runs only in the child.
 
-        Anything raising here would otherwise propagate into the parent's code path with the
-        child's copy of the world, so it is wrapped: a child that cannot start must exit,
-        not return."""
+        Deliberately short, and every call in it async-signal-safe. Between those two points a
+        forked child may touch almost nothing — it holds copies of locks no thread here will
+        ever release — so this does the handful of things that must happen before the image is
+        replaced and then replaces it. The session itself begins on the other side of the
+        `exec`, in :mod:`frank.worker.session_entry`.
+
+        It does not return on success. Anything raising would otherwise carry on into the
+        parent's code path holding the child's copy of the world, so it is wrapped: a child
+        that cannot start must exit, not return."""
         try:
             # Its own process session, which is what kernel-attested peer identity is keyed
             # on and what lets a reap signal the session's whole shell subtree at once.
@@ -436,6 +469,7 @@ class Prototype:
             # Default handling for everything the parent may have touched. An inherited
             # handler that calls `sys.exit` kills this child the first time it is signalled,
             # and the wakeup descriptor belongs to a process this one is no longer part of.
+            # `exec` resets handlers anyway; doing it here covers the window before it.
             signal.set_wakeup_fd(-1)
             for received in (signal.SIGCHLD, signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
                 with contextlib.suppress(OSError, ValueError):
@@ -444,23 +478,15 @@ class Prototype:
             # listening socket open would make the prototype's own shutdown never complete.
             os.close(ready_read)
             self._close_inherited()
-            # The frozen heap is deliberately *kept*. Unfreezing here was the obvious-looking
-            # thing to do and is exactly wrong: the permanent generation holds the parent's
-            # module-level objects, and putting them back under the collector means the child's
-            # first full collection walks all of them, writes a mark bit into every page, and
-            # un-shares the entire image — which is the decay `gc.freeze()` exists to prevent,
-            # only now paid per child. Measured: it cost about 45 MB per session.
-            #
-            # Nothing is lost by keeping it. Objects this process allocates after the fork are
-            # not frozen and are collected normally; the frozen set is the import graph, which
-            # a session never collects anyway because it is reachable for the process's life.
-
-            from frank.worker.serve import run
-
-            return run(assignment, ready_write)
+            command = session_command(assignment_read, ready_write)
+            os.execv(command[0], command)
+            # `execv` does not return. Reaching here at all means it failed without raising,
+            # which it cannot, but a fall-through into the parent's loop would be far worse
+            # than an exit.
+            return 1
         except BaseException:  # noqa: BLE001 — a child that cannot start must exit, not unwind
             with contextlib.suppress(Exception):
-                logging.getLogger("frank.worker").exception("Session process could not start")
+                logging.getLogger("frank.worker").exception("Session process could not exec")
             return 1
 
     def _close_inherited(self) -> None:
@@ -565,28 +591,20 @@ def main() -> int:
     # Strictly before `_load_runtime`. Importing `litellm` is what calls `getproxies()`, and
     # once SystemConfiguration has been touched the threads are permanent — settling the
     # environment afterwards would be too late by one import.
+    # Still settled here even though a session now execs and calls `getproxies()` for itself.
+    # It is inherited through the environment, so doing it once in this process spares every
+    # session the SystemConfiguration lookup rather than paying it per session.
     exported = _settle_proxy_environment()
     if exported:
         logger.info("proxy environment settled out of process: %s", sorted(exported))
 
-    _load_runtime()
-
-    threads = native_thread_count()
-    if threads != 1:
-        # Failing at startup rather than at the first fork: the operator sees the cause here,
-        # where the import that caused it just happened, instead of seeing a child abort with
-        # a message about the Objective-C runtime an hour later.
-        logger.error(
-            "the runtime import left %d native threads; the prototype cannot fork safely. "
-            "Something imported at module scope started one — most likely a network call, or "
-            "on macOS a proxy lookup reaching SystemConfiguration through _scproxy. "
-            "The last one came from a third-party package, which no rule over this repository "
-            "can see. Bisect the imports in `_load_runtime` against this same counter to find it.",
-            threads,
-        )
-        return 1
-
-    _freeze()
+    # No runtime import, no `gc.freeze()`, and no single-threaded assertion. All three existed
+    # to make a fork *without* an exec survivable: the import so the child inherited a warm
+    # image, the freeze so its first collection did not un-share that image, and the assertion
+    # because a multi-threaded process cannot fork safely into arbitrary code. A child that
+    # execs inherits none of it and is bound by none of it — between `fork` and `exec` it makes
+    # only async-signal-safe calls, which is legal from any number of threads. What is left
+    # here is a supervisor: it forks, it execs, it waits, and it reports what happened.
 
     prototype = Prototype(prototype_socket_path())
     prototype.start()
