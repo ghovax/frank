@@ -12,6 +12,7 @@ tool handler, not here.
 from __future__ import annotations
 
 import asyncio
+import logging
 import json
 import os
 import sys
@@ -21,6 +22,8 @@ from frank.base import confinement
 from frank.computer.surface import message_loader
 from frank.base.serialization import compact
 from frank.base.tuning import Tunable, active_tuning
+
+logger = logging.getLogger("frank.computer.control")
 
 # Model-facing control messages live in messages/control/*.md, loaded here so the child (which
 # holds no Frank code) can report bare facts and leave the prose to the loader.
@@ -115,7 +118,11 @@ async def run_control_script(
 
     pump_task = asyncio.create_task(pump())
     try:
-        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        # Keep stderr. It used to be discarded into `_`, so a child that died before it could
+        # write its JSON — no Accessibility grant, a sandbox denial, a failed import — was
+        # reported as "produced no result" with the one line that said why thrown away, and
+        # nothing in the log either. The reason the child gives is the whole diagnosis.
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
         process.kill()
         await _drain(process)
@@ -125,7 +132,7 @@ async def run_control_script(
         _quietly_close(requests)
         _quietly_close(replies)
 
-    result = _parse_result(stdout)
+    result = _parse_result(stdout, stderr, process.returncode)
     if result.get("error_code") == "syntax_error":
         return {"ok": False, "error": message("syntax_error", detail=str(result.get("detail", "")), line=str(result.get("line", "")))}
     return result
@@ -150,12 +157,31 @@ def _quietly_close(stream: Any) -> None:
         pass
 
 
-def _parse_result(stdout: Optional[bytes]) -> dict:
+def _parse_result(stdout: Optional[bytes], stderr: Optional[bytes] = None, exit_code: Optional[int] = None) -> dict:
     text = (stdout or b"").decode("utf-8", "replace").strip()
+    complaint = (stderr or b"").decode("utf-8", "replace").strip()
     if not text:
-        return {"ok": False, "error": "The screen-control script ended without returning anything. It most likely stopped early; try a smaller step."}
+        # The child writes its JSON last, so empty stdout means it never got there. Whatever it
+        # said on the way out is the reason, and it is reported rather than summarised away.
+        detail = complaint.splitlines()[-1].strip() if complaint else ""
+        logger.warning(
+            "control_screen produced no result (exit code %s): %s",
+            exit_code, complaint[-2000:] or "(nothing on stderr either)",
+        )
+        return {
+            "ok": False,
+            "error": (
+                f"The screen-control script stopped without returning anything: {detail}"
+                if detail
+                else "The screen-control script stopped without returning anything, and said "
+                     "nothing about why. It may have been killed before it could start."
+            ),
+            "output": complaint[-2000:],
+            "exit_code": exit_code,
+        }
     try:
         return json.loads(text)
     except Exception:
         # The child always writes JSON last; anything else is a hard crash (segfault, OOM kill).
+        logger.warning("control_screen returned unparseable output (exit code %s): %s", exit_code, text[-500:])
         return {"ok": False, "error": "The screen-control script stopped before it finished.", "output": text[-2000:]}
