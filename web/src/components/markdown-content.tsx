@@ -116,8 +116,17 @@ function renderEmojiChildren(children: ReactNode): ReactNode {
 const TOKEN_ANIMATION = "token-fade-in";
 const TOKEN_DURATION = "0.16s";
 const TOKEN_TIMING = "cubic-bezier(0.2, 0.8, 0.2, 1)";
+// The duration is read from a custom property rather than passed down, so that whether a
+// turn is streaming never reaches a component's identity. It used to: `animating` was a
+// dependency of the `components` object below, so settling a turn handed react-markdown a
+// wholly new set of component functions and React rebuilt the entire answer — every text
+// leaf restarting its animation, every code block re-highlighting, every image reloading,
+// and any selection lost, at the exact moment the reader started reading. CSS carries the
+// one bit that actually differs.
+const TOKEN_DURATION_PROPERTY = "--token-duration";
+const TOKEN_DURATION_VALUE = `var(${TOKEN_DURATION_PROPERTY}, 0s)`;
 
-function AnimatedText({ text, animate }: { text: string; animate: boolean }): ReactNode {
+function AnimatedText({ text }: { text: string }): ReactNode {
   return Children.toArray(renderTextWithTwemoji(text)).map((segment, segmentIndex) => {
     if (typeof segment !== "string") return segment;
     return (
@@ -126,7 +135,7 @@ function AnimatedText({ text, animate }: { text: string; animate: boolean }): Re
           input={segment}
           sep="diff"
           animation={TOKEN_ANIMATION}
-          animationDuration={animate ? TOKEN_DURATION : "0s"}
+          animationDuration={TOKEN_DURATION_VALUE}
           animationTimingFunction={TOKEN_TIMING}
           animationIterationCount={1}
         />
@@ -137,8 +146,8 @@ function AnimatedText({ text, animate }: { text: string; animate: boolean }): Re
 
 // Every text leaf keeps the same Flowtoken and Twemoji structure in both states. Only the
 // animation duration changes, so completing a turn cannot change wrapping or image metrics.
-function renderChildren(children: ReactNode, animate: boolean): ReactNode {
-  return Children.map(children, (child) => typeof child === "string" ? <AnimatedText text={child} animate={animate} /> : child);
+function renderChildren(children: ReactNode): ReactNode {
+  return Children.map(children, (child) => typeof child === "string" ? <AnimatedText text={child} /> : child);
 }
 
 // A single-line `$$...$$` is parsed by remark-math as *inline* math, so it lands
@@ -212,19 +221,19 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       if (isDisplayMathParagraph(node)) {
         return <Box textAlign="center" fontSize="inherit">{children}</Box>;
       }
-      return <Text fontSize="inherit" lineHeight="1.55">{renderChildren(children, animating)}</Text>;
+      return <Text fontSize="inherit" lineHeight="1.55">{renderChildren(children)}</Text>;
     },
     h1({ children }) {
-      return <Heading as="h1" fontSize="lg" fontWeight="bold">{renderChildren(children, animating)}</Heading>;
+      return <Heading as="h1" fontSize="lg" fontWeight="bold">{renderChildren(children)}</Heading>;
     },
     h2({ children }) {
-      return <Heading as="h2" fontSize="md" fontWeight="bold">{renderChildren(children, animating)}</Heading>;
+      return <Heading as="h2" fontSize="md" fontWeight="bold">{renderChildren(children)}</Heading>;
     },
     h3({ children }) {
-      return <Heading as="h3" fontSize="sm" fontWeight="bold">{renderChildren(children, animating)}</Heading>;
+      return <Heading as="h3" fontSize="sm" fontWeight="bold">{renderChildren(children)}</Heading>;
     },
     h4({ children }) {
-      return <Heading as="h4" fontSize="sm" fontWeight="semibold" color="fg.muted">{renderChildren(children, animating)}</Heading>;
+      return <Heading as="h4" fontSize="sm" fontWeight="semibold" color="fg.muted">{renderChildren(children)}</Heading>;
     },
     a({ href, children }) {
       // Editorial underline like the reference prose: offset from the baseline and
@@ -239,7 +248,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
           target="_blank"
           rel="noopener noreferrer"
         >
-          {renderChildren(children, animating)}
+          {renderChildren(children)}
         </Link>
       );
     },
@@ -250,14 +259,14 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       return <List.Root as="ol" pl={6} fontSize="inherit" listStyleType="decimal">{children}</List.Root>;
     },
     li({ children }) {
-      return <List.Item mb={0.5} fontSize="inherit" lineHeight="1.55" _last={{ mb: 0 }}>{renderChildren(children, animating)}</List.Item>;
+      return <List.Item mb={0.5} fontSize="inherit" lineHeight="1.55" _last={{ mb: 0 }}>{renderChildren(children)}</List.Item>;
     },
     blockquote({ children }) {
       // 2px rule + pl=3: the exact grammar of an expanded tool call's detail rail
       // (tool-call.tsx), so quoted prose and quoted activity read as one language.
       return (
         <Box borderLeftWidth="2px" borderColor="border.muted" pl={3} py={0.5} color="fg.muted" fontSize="inherit">
-          {renderChildren(children, animating)}
+          {renderChildren(children)}
         </Box>
       );
     },
@@ -335,25 +344,25 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       return (
         <Box overflowX="auto" maxW="100%" my={2}>
           <Table.Root minW="100%" fontSize="inherit" lineHeight="1.55" borderCollapse="collapse">
-            {renderChildren(children, animating)}
+            {renderChildren(children)}
           </Table.Root>
         </Box>
       );
     },
     tr({ children }) {
-      return <Table.Row>{renderChildren(children, animating)}</Table.Row>;
+      return <Table.Row>{renderChildren(children)}</Table.Row>;
     },
     th({ children }) {
       return (
         <Table.ColumnHeader textAlign="left" pr={3} pl={0} py={1.5} fontWeight="semibold" color="fg" borderBottom="1px solid" borderColor="border" verticalAlign="top" overflowWrap="break-word">
-          {renderChildren(children, animating)}
+          {renderChildren(children)}
         </Table.ColumnHeader>
       );
     },
     td({ children }) {
       return (
         <Table.Cell pr={3} pl={0} py={1.5} borderBottom="1px solid" borderColor="border.muted" verticalAlign="top" overflowWrap="break-word">
-          {renderChildren(children, animating)}
+          {renderChildren(children)}
         </Table.Cell>
       );
     },
@@ -361,20 +370,23 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       return <Separator borderColor="border.muted" my={1} />;
     },
     strong({ children }) {
-      return <Strong fontSize="inherit" fontWeight="bold">{renderChildren(children, animating)}</Strong>;
+      return <Strong fontSize="inherit" fontWeight="bold">{renderChildren(children)}</Strong>;
     },
     em({ children }) {
-      return <Emphasis fontSize="inherit" fontStyle="italic">{renderChildren(children, animating)}</Emphasis>;
+      return <Emphasis fontSize="inherit" fontStyle="italic">{renderChildren(children)}</Emphasis>;
     },
     del({ children }) {
-      return <DeletedText fontSize="inherit">{renderChildren(children, animating)}</DeletedText>;
+      return <DeletedText fontSize="inherit">{renderChildren(children)}</DeletedText>;
     },
-  }), [syntaxTheme, animating]);
+  }), [syntaxTheme]);
 
   return (
     <Box
       minW={0}
       fontSize={fontSize}
+      // The only thing that changes when a turn settles: newly-arrived text stops fading
+      // in. Everything below keeps its identity, so the answer is never rebuilt.
+      style={{ [TOKEN_DURATION_PROPERTY]: animating ? TOKEN_DURATION : "0s" } as CSSProperties}
       css={{
         "& > *": {
           marginBlock: 0,

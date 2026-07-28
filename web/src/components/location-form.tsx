@@ -169,7 +169,12 @@ export function LocationForm({
         <Flex direction="column" gap={1}>
           <Text textStyle="fieldLabel">{translation("host")}</Text>
           {hosts.length === 0 ? (
-            <Text fontSize="2xs" color="orange.fg">{translation("noHosts")}</Text>
+            <Alert.Root status="warning" size="sm" borderRadius="md" alignItems="center">
+              <Alert.Indicator />
+              <Alert.Content flex={1} minW={0}>
+                <Alert.Description fontSize="xs">{translation("noHosts")}</Alert.Description>
+              </Alert.Content>
+            </Alert.Root>
           ) : (
             <SimpleSelect items={hostItems} value={value.host_alias ?? ""} onValueChange={(next) => set({ host_alias: next })} />
           )}
