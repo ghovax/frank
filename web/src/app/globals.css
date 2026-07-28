@@ -84,41 +84,45 @@ samp {
   outline: none;
 }
 
-/* The highlight has to be back where it started at the end of every cycle, or the loop
-   shows a seam. It used to travel 260% across a gradient that does not repeat, so the
-   highlight swept once, spent the rest of the cycle off the end of the text, and jumped
-   back — read as the animation stopping and restarting rather than running.
+/* A gloss travelling along a running tool's title. The highlight has to be back where it
+   started at the end of every cycle or the loop shows a seam, and it must not restart part
+   way — which is why the class sits on a container that outlives the labels crossfading
+   inside it (see tool-group.tsx) rather than on the text itself.
 
-   A repeating gradient tiles the highlight, and the tile is exactly half the element. That
-   size is not a taste: `background-position` percentages are relative to the *difference*
-   between the element and the background, so 0%→100% travels `W - bgW`. Seamless needs that
-   travel to equal one tile — `W - bgW = bgW` — which happens only at 50%. Any other size
-   leaves a fraction of a tile and the seam comes back. */
+   Both the tile and the travel are in `em`, and they are the same length: one cycle moves
+   the background by exactly one tile, so the loop closes no matter how wide the text is.
+   Percentages cannot do this — `background-position` percentages are relative to the
+   difference between the element and the background, so seamlessness would pin the tile to
+   half the element, putting two highlights on every title and halving the distance each one
+   travels. In `em` the tile is set by how a gloss should look, not by that arithmetic: wide
+   enough that one band crosses at a time, with the bright part narrow so it reads as a
+   sheen passing rather than a gradient sloshing. */
 .running-title-shimmer {
   color: transparent;
   background-image: repeating-linear-gradient(
     90deg,
     var(--chakra-colors-fg-muted) 0%,
-    var(--chakra-colors-fg-muted) 38%,
+    var(--chakra-colors-fg-muted) 40%,
     var(--chakra-colors-fg) 50%,
-    var(--chakra-colors-fg-muted) 62%,
+    var(--chakra-colors-fg-muted) 60%,
     var(--chakra-colors-fg-muted) 100%
   );
-  background-size: 50% 100%;
+  background-size: 26em 100%;
   background-repeat: repeat;
   background-clip: text;
   -webkit-background-clip: text;
-  animation: running-title-shimmer 3.2s linear infinite;
+  animation: running-title-shimmer 1.8s linear infinite;
 }
 
 @keyframes running-title-shimmer {
   from {
-    background-position: 100% 0;
+    background-position: 0 0;
   }
 
   to {
-    background-position: 0% 0;
+    background-position: 26em 0;
   }
+}
 }
 
 /* A soft breathing pulse for the "still working" status dot in the sessions
