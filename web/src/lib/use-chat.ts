@@ -287,6 +287,10 @@ function newReduceState(): ReduceState {
 // more than one prose lane, e.g. text → tool call → text), so re-replaying the
 // transcript with older pages prepended keeps every existing key byte-identical.
 // Falls back to a position-based id only when no messageId is available.
+function toolCallMessageId(toolCallId: string | undefined): string {
+  return `toolcall-${toolCallId || crypto.randomUUID()}`;
+}
+
 function stableMessageId(state: ReduceState, prefix: string, sourceId: string | undefined): string {
   if (!sourceId) {
     // A monotonic counter, not `state.messages.length`. Keying on the length made a row's
@@ -644,10 +648,35 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       state.lane = null;
       finishRunningThinking(state);
       const toolCallId = event.tool_call_id;
+      // One row per tool call, always. This used to append unconditionally, which is only
+      // correct if a call is announced exactly once — and it is not. A turn that stops for
+      // approval announces the call to raise the prompt, then announces it again when it
+      // actually runs, so the transcript ended up holding the same call twice under the same
+      // id. React says what that costs out loud: "Encountered two children with the same key
+      // … may cause children to be duplicated and/or omitted". The duplicates are what made
+      // the transcript grow and snap back, and what made a group of two failures count four.
+      const existing = state.messages.findIndex(
+        (message) => message.role === "tool_call" && String(message.meta?.toolCallId ?? "") === toolCallId,
+      );
+      if (existing >= 0 && toolCallId) {
+        state.messages = state.messages.map((message, index) =>
+          index === existing
+            ? {
+                ...message,
+                content: event.tool_name || message.content,
+                // A call announced a second time is the same call running for real: keep
+                // whatever the prompt attached to it (its permission, its result) and let the
+                // arguments and status catch up.
+                meta: { ...message.meta, arguments: event.arguments ?? message.meta?.arguments, status: "running" },
+              }
+            : message,
+        );
+        break;
+      }
       state.messages = [
         ...state.messages,
         {
-          id: `toolcall-${toolCallId || crypto.randomUUID()}`,
+          id: toolCallMessageId(toolCallId),
           role: "tool_call",
           content: event.tool_name || "unknown",
           timestamp: new Date().toISOString(),
@@ -678,7 +707,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
         state.messages = [
           ...state.messages,
           {
-            id: `toolcall-${toolCallId || crypto.randomUUID()}`,
+            id: toolCallMessageId(toolCallId),
             role: "tool_call",
             content: toolName || "unknown",
             timestamp: new Date().toISOString(),
@@ -729,7 +758,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
         // uses for the name — so nothing downstream recognised the tool, and the model's own
         // `explanation` of why it wanted the call was nowhere to be found.
         const raised: ChatMessage = {
-          id: stableMessageId(state, "tool", toolCallId),
+          id: toolCallMessageId(toolCallId),
           role: "tool_call",
           content: event.tool_name || "",
           timestamp: new Date().toISOString(),
