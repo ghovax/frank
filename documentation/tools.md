@@ -49,7 +49,8 @@ There are no dedicated `find_files`/`search_content` tools; for literal file-nam
 
 The caller is the parent, always — it is not an argument. That puts a peer inside the tree, inside the reaper, and under the permission clamp. A peer can therefore never hold authority that its parent does not have.
 
-**A peer answers by messaging.** When the peer finishes, it calls `message_session` on the session that created it. That session's id is in its context, as `parent_session`. The message lands in the caller's context like any other inbound message. `create_session` therefore does not wait, and there is no handle to hold. Nothing reconstructs a result. The peer decides its own answer, in its own words, at the moment it knows. A caller starts the work, carries on with whatever does not depend on it, and ends its turn — the reply wakes it.
+**A peer answers by messaging.** When the peer finishes, it calls `message_session` on the session that created it. That session's id is in its context, as `parent_session`. The message lands in the caller's context like any other inbound message. 
+`create_session` therefore does not wait, and there is no handle to hold. Nothing reconstructs a result. The peer decides its own answer, in its own words, at the moment it knows. A caller starts the work, carries on with whatever does not depend on it, and ends its turn — the reply wakes it.
 
 That message arrives as a **peer turn**, not a user turn. The wire carries the distinction under the harness's one extension key, `urn:frank:ext:turn:v1`. It sends `kind` plus `peerSender` to name the sender.
 
@@ -73,7 +74,7 @@ Frank drives the live screen through one tool, `control_screen`. It covers nativ
 
 It also surfaces the page's own **network and API requests**. The agent can therefore find the endpoints that the page calls. `find_one` returns the single best match and raises if the top matches are indistinguishable, so an unclear target is caught rather than guessed.
 
-**Acting — a composed script of trusted-input primitives.** The same script drives the elements that a find returned, by `id` or by a query resolved the same way. It uses **trusted input**: click, type, scroll, `evaluate`, and the like. The script is ordinary Python, so a whole task is a single call. It can loop over rows, branch on what it finds, and call the page's own API in one line. It does not need a round trip for each action. On the browser, `evaluate` can **replay the page's own authenticated API in-page**, reusing the logged-in session instead of re-authenticating. Actions run against the real surface. Browser clicks go through Playwright's actionability checks. The result reports what each action touched, in `acted_on`, so the agent sees what changed.
+**Acting — a composed script of trusted-input primitives.** The same script drives the elements that a find returned. It addresses them by `id`, or by a query resolved the same way. It uses **trusted input**: click, type, scroll, `evaluate`, and the like. The script is ordinary Python, so a whole task is a single call. It can loop over rows, branch on what it finds, and call the page's own API in one line. It does not need a round trip for each action. On the browser, `evaluate` can **replay the page's own authenticated API in-page**, reusing the logged-in session instead of re-authenticating. Actions run against the real surface. Browser clicks go through Playwright's actionability checks. The result reports what each action touched, in `acted_on`, so the agent sees what changed.
 
 **Tabs.** The browser has more than one page, and the script chooses which one it is on:
 
@@ -81,7 +82,8 @@ It also surfaces the page's own **network and API requests**. The agent can ther
   - `tab(id)` switches to a tab and brings it to the front.
   - `new_tab(url)` opens a tab and returns its id.
   - `close_tab(id)` closes a tab.
- The listing covers **all** of your tabs, not only the ones the agent opened. To filter it would make an ordinary request impossible to serve, such as "the invoice in my other tab". The tool already drives that browser with your logins. Nothing stops an agent from closing a tab it did not open. It has an instruction instead, in the tool description: these tabs are your working state, and to close one can lose a half-filled form, with no undo.
+ 
+The listing covers **all** of your tabs, not only the ones the agent opened. To filter it would make an ordinary request impossible to serve, such as "the invoice in my other tab". The tool already drives that browser with your logins. Nothing stops an agent from closing a tab it did not open. It has an instruction instead, in the tool description. These tabs are your working state. To close one can lose a half-filled form, with no undo.
 
 **Frames.** An `iframe` is its own document with its own origin and its own session — the embedded checkout, the OAuth consent screen, the document viewer. Element ids are already frame-scoped, so `f1e3` is the third element of frame `f1` and clicking or typing into it needs no extra step. `frames()` lists them as `{id, url, name, parent, element}`, and `evaluate(..., frame="f1")` and `read(frame="f1")` run **inside** that document, which is the only way to reach one through the credentials it actually holds.
 
@@ -98,7 +100,8 @@ Frank reads structure, not pixels: there is no screenshot path for computer use.
 > [!NOTE]
 > Typing fills a field without submitting unless the agent explicitly asks to — so it never posts a form by accident.
 
-**What counts as changing something.** The permission classifier reads the script. It decides whether the script only looks, or also acts. It scans for the primitives that change state: `click`, `type`, `choose`, `upload`, `drag`, `evaluate`, `press`, `navigate`, `new_tab` and `close_tab`. Finding, reading, listing tabs and frames, and switching between tabs are all reads. `evaluate` is on the acting side because it runs arbitrary JavaScript in a page you are signed in to, and `navigate` because on a great many sites a URL *is* a command — `/logout`, `/unsubscribe?token=…`, `/items/12/delete` — and nothing that reads primitive names can tell those from a page worth reading. In an ordinary session a script that acts is examined rather than blocked; in a [read-only session](configuration.md#permission-modes) it is refused outright.
+**What counts as changing something.** The permission classifier reads the script. It decides whether the script only looks, or also acts. It scans for the primitives that change state: `click`, `type`, `choose`, `upload`, `drag`, `evaluate`, `press`, `navigate`, `new_tab` and `close_tab`. Finding, reading, listing tabs and frames, and switching between tabs are all reads. `evaluate` is on the acting side, because it runs arbitrary JavaScript in a page you are signed in to. `navigate` is there too, because on many sites a URL *is* a command: `/logout`, `/unsubscribe?token=…`, `/items/12/delete`. Nothing that reads primitive names alone can tell those from a page worth reading. 
+In an ordinary session, the harness examines a script that acts; it does not block it. In a [read-only session](configuration.md#permission-modes) it refuses the script outright.
 
 ## Where the definitions live
 
