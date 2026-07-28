@@ -513,7 +513,7 @@ class _TurnLoopMixin:
         generation_span = _telemetry.start_span(
             "gen_ai.generation", {"gen_ai.request.model": self.effective_model_identifier}
         )
-        model_stream = self._bound_llm.astream(messages)
+        model_stream = self._bound_model.astream(messages)
         abort_waiter = asyncio.ensure_future(self._abort_event.wait())
         try:
             while True:

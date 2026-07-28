@@ -71,7 +71,7 @@ from frank.runtime.tools.dispatch import (
     _ToolsMixin,
 )
 
-from frank.runtime.turnloop import (
+from frank.runtime.turn import (
     _TurnLoopMixin,
 )
 
@@ -556,7 +556,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         # never forcing `tool_choice` and keeping each turn's tool results in
         # one contiguous block (see the turn loop).
         self._tool_schemas: dict[str, Any] = {tool.name: tool.args_schema for tool in self._tools}
-        self._bound_llm = self._llm.bind_tools(self._tools)
+        self._bound_model = self._llm.bind_tools(self._tools)
         # The evaluator gates against the same narrowed allow-list the tool set was built
         # from, so a profile naming a tool that no longer exists cannot refuse everything.
         # A caller's own evaluator replaces the rule engine entirely. `Approvals` answers a

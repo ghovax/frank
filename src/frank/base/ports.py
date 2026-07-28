@@ -409,6 +409,87 @@ class Credentials(Protocol):
 # Where the prompt's material comes from.
 
 
+@dataclass
+class CompactionState:
+    """What a compaction strategy is given to decide with.
+
+    Passed rather than reached for. The strategy that ships reads these off the runtime it
+    lives on, which is exactly what stops any other strategy existing — a protocol whose
+    implementations must know the runtime's attribute names is not a seam.
+    """
+
+    messages: list
+    """The conversation as it stands, oldest first."""
+
+    context_window: int
+    """The live model's context window in tokens, or 0 when it is not known."""
+
+    context_tokens: int
+    """What the conversation currently occupies, as the last reply reported it."""
+
+    reason: str = "auto"
+    """``auto`` when the loop asked, ``manual`` when a person did."""
+
+
+@runtime_checkable
+class Compaction(Protocol):
+    """Decides when a conversation is folded, and how.
+
+    The default folds older turns into a dense observation log and condenses that log as it
+    grows, which costs two model calls and preserves long-horizon memory. That is right for a
+    conversation someone returns to and wrong for a scripted agent with a budget, which wants
+    the cheap deterministic answer. Neither is the harness's to insist on.
+    """
+
+    def should_compact(self, state: CompactionState) -> bool:
+        """Whether to fold now. Called before each model call; must be cheap."""
+        ...
+
+    async def compact(self, state: CompactionState) -> list:
+        """The conversation to carry forward, oldest first."""
+        ...
+
+
+@runtime_checkable
+class TurnHook(Protocol):
+    """Sees a turn as it runs, and may bound it. It cannot replace the loop.
+
+    Every method is optional; implement only the point you care about. A hook that raises is
+    logged and skipped, because a turn must not fail on account of something watching it.
+
+    `before_tools` receives the batch *after* the permission barrier has resolved it, so a
+    hook may return fewer calls and never a call the rules denied. A hook narrows; it cannot
+    widen. That ordering is what makes bounding a turn expressible as a hook at all.
+    """
+
+    async def before_model(self, messages: list) -> list:
+        """The conversation about to go to the model. Return it, or a changed copy."""
+        ...
+
+    async def before_tools(self, calls: list[dict]) -> list[dict]:
+        """The approved batch about to run. Return it, a subset, or an empty list."""
+        ...
+
+    async def after_turn(self, summary: TurnSummary) -> None:
+        """The turn is over: what it did, what it cost, how it ended."""
+        ...
+
+
+@runtime_checkable
+class ToolMiddleware(Protocol):
+    """Wraps one tool call, the harness's own and the caller's alike.
+
+    `proceed` is the rest of the pipeline, so ordering is explicit at the call site and each
+    layer is testable on its own. Without this, a cross-cutting concern — timing, retries,
+    caching — can only be built inside a tool, which means a caller's tools can have it and
+    the built-ins never can.
+    """
+
+    async def run(self, call: Any, proceed: Any) -> Any:
+        """Run `call`, or don't, or run it and do something around it."""
+        ...
+
+
 @runtime_checkable
 class Catalogue(Protocol):
     """The source of everything the prompt is assembled from.
@@ -491,7 +572,11 @@ __all__ = [
     "MemoryTranscript",
     "Observation",
     "Observer",
+    "Compaction",
+    "CompactionState",
     "SuspensionGate",
+    "ToolMiddleware",
+    "TurnHook",
     "Transcript",
     "TurnSummary",
     "describe_unmet",

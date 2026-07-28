@@ -16,7 +16,7 @@ Everything durable in a library session is already a seam. The model, the checkp
 
 **A turn cannot be bounded or watched.** There is no iteration ceiling and no stuck-detector, by design — the model owns progress and ends its own turn. That is right for a person at a keyboard who can hit Stop. It is wrong for a scheduled job with a budget, where "runs until the model decides" is not a policy anyone chose. And a program that wants to audit every prompt before it leaves the process has no interception point at all.
 
-**The name says the wrong thing twice.** `turnloop.py` names the mechanism rather than the subject, and `_bound_llm` names the vendor category rather than the thing. Both are small, both are load-bearing to how the file reads, and both are fixed here because this plan touches every site that uses them.
+**The name says the wrong thing twice.** The file was `turnloop.py`, naming the mechanism rather than the subject, and the model was `_bound_llm`, naming a vendor category rather than the thing. Both are small, both are load-bearing to how the file reads, and both are fixed here because this plan touches every site that uses them.
 
 ## The core idea
 
@@ -32,7 +32,7 @@ Everything durable in a library session is already a seam. The model, the checkp
 
 ## What is deliberately not built
 
-**The turn loop itself stays fixed.** A `runtime=` seam is twenty lines to specify and would let a caller supply a working agent loop — and that loop would silently drop the permission preflight, the durable suspend and resume, concurrent batch execution, compaction, abort and steering. A caller who reimplements those has copied `turnloop.py`; a caller who does not has a harness that runs tools without asking. The seam is not withheld for effort: `session.runtime` is already public, and a program that genuinely wants a different architecture can drive `AgentRuntime` directly or not use `Session` at all. What a `runtime=` argument would add is a door that looks supported onto a room where the safety properties do not hold.
+**The turn loop itself stays fixed.** A `runtime=` seam is twenty lines to specify and would let a caller supply a working agent loop — and that loop would silently drop the permission preflight, the durable suspend and resume, concurrent batch execution, compaction, abort and steering. A caller who reimplements those has copied the loop; a caller who does not has a harness that runs tools without asking. The seam is not withheld for effort: `session.runtime` is already public, and a program that genuinely wants a different architecture can drive `AgentRuntime` directly or not use `Session` at all. What a `runtime=` argument would add is a door that looks supported onto a room where the safety properties do not hold.
 
 ## The design
 
@@ -133,9 +133,9 @@ All three default to what happens today: `hooks=()`, `pipeline=()`, and `compact
 
 | Seam | File and point | Fires |
 |---|---|---|
-| `before_model` | `turnloop.py`, before `astream(messages)` | Every model call |
-| `before_tools` | `turnloop.py`, between `_resolve_tool_decisions` and `_drain_tools_concurrently` | Every batch, after the barrier |
-| `after_turn` | `turnloop.py`, where `Done` is yielded | Once per turn |
+| `before_model` | `turn.py`, before `astream(messages)` | Every model call |
+| `before_tools` | `turn.py`, between `_resolve_tool_decisions` and `_drain_tools_concurrently` | Every batch, after the barrier |
+| `after_turn` | `turn.py`, where `Done` is yielded | Once per turn |
 | Pipeline | `_drain_tools_concurrently`, around each call | Every tool call |
 | Compaction | `compaction.py`, `_should_compact` and `compact` | When the loop asks |
 
