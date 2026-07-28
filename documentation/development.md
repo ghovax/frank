@@ -88,11 +88,15 @@ Start the daemon first, in either order but before you expect the window to work
 
 There are **two artifacts**, built independently, because the app is a client of the daemon rather than its container. Building one never rebuilds the other.
 
-```sh
-# The daemon (and the CLI, and the prototype — one image, three entry points).
-packaging/build-daemon.sh          # FORCE=1 to rebuild when the freshness guard says it is current
+Build the daemon first. It is one image with three entry points: the daemon, the CLI, and the prototype. Set `FORCE=1` to rebuild when the freshness guard says the build is current.
 
-# The desktop app: a Tauri shell, no Python in it at all.
+```sh
+packaging/build-daemon.sh
+```
+
+Then the desktop app, which is a Tauri shell with no Python in it at all:
+
+```sh
 cd web && bun run tauri:build
 ```
 

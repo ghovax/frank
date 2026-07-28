@@ -47,17 +47,32 @@ Set an `api_key` for the providers you use. Most resolve through LiteLLM's built
 
 ```yaml
 providers:
-  anthropic:   { api_key: "" }      # env: ANTHROPIC_API_KEY
-  openai:      { api_key: "" }      # env: OPENAI_API_KEY
-  google:      { api_key: "" }      # env: GOOGLE_GENERATIVE_AI_API_KEY or GEMINI_API_KEY
-  openrouter:  { api_key: "" }      # env: OPENROUTER_API_KEY
-  xai:         { api_key: "" }      # env: XAI_API_KEY
-  deepseek:    { api_key: "" }      # env: DEEPSEEK_API_KEY
-  groq:        { api_key: "" }      # env: GROQ_API_KEY
-  mistral:     { api_key: "" }      # env: MISTRAL_API_KEY
+  anthropic:   { api_key: "" }
+  openai:      { api_key: "" }
+  google:      { api_key: "" }
+  openrouter:  { api_key: "" }
+  xai:         { api_key: "" }
+  deepseek:    { api_key: "" }
+  groq:        { api_key: "" }
+  mistral:     { api_key: "" }
   opencode:    { api_key: "", base_url: "https://opencode.ai/zen/go/v1" }
-  custom:      { api_key: "", base_url: "" }   # any OpenAI-compatible endpoint
+  custom:      { api_key: "", base_url: "" }
 ```
+
+Each provider also reads an environment variable, which takes precedence over the file:
+
+| Provider | Environment variable |
+|---|---|
+| `anthropic` | `ANTHROPIC_API_KEY` |
+| `openai` | `OPENAI_API_KEY` |
+| `google` | `GOOGLE_GENERATIVE_AI_API_KEY`, or `GEMINI_API_KEY` |
+| `openrouter` | `OPENROUTER_API_KEY` |
+| `xai` | `XAI_API_KEY` |
+| `deepseek` | `DEEPSEEK_API_KEY` |
+| `groq` | `GROQ_API_KEY` |
+| `mistral` | `MISTRAL_API_KEY` |
+
+`custom` takes any OpenAI-compatible endpoint, which is why it needs a `base_url` as well.
 
 Around forty providers are registered. They include Cerebras, Together, Fireworks, Perplexity, Moonshot, Nebius, Cloudflare and GitHub Copilot. The registry in `src/frank/base/providers.py` is the full list, with the environment variable each one reads.
 
@@ -77,11 +92,18 @@ Both are unofficial routes that the vendor can withdraw at any time.
 ## Web search and retrieval
 
 ```yaml
-exa:       { api_key: "" }          # search_web — env: EXA_API_KEY
-jina:      { api_key: "" }          # fetch_url, free tier — env: JINA_API_KEY
-firecrawl: { api_key: "", api_url: "" }  # env: FIRECRAWL_API_KEY, FIRECRAWL_API_URL
-web_fetch: { proxy_url: "" }        # outbound proxy — env: FRANK_FETCH_PROXY
+exa:       { api_key: "" }
+jina:      { api_key: "" }
+firecrawl: { api_key: "", api_url: "" }
+web_fetch: { proxy_url: "" }
 ```
+
+| Setting | What it serves | Environment variable |
+|---|---|---|
+| `exa` | `search_web` | `EXA_API_KEY` |
+| `jina` | `fetch_url`, on the free tier | `JINA_API_KEY` |
+| `firecrawl` | `fetch_url` | `FIRECRAWL_API_KEY`, `FIRECRAWL_API_URL` |
+| `web_fetch` | An outbound proxy | `FRANK_FETCH_PROXY` |
 
 `fetch_url` uses a tiered engine: Jina Reader first, then Firecrawl, then a direct fetch. Each tier is optional; an unset key skips it. `proxy_url` overrides the standard `HTTPS_PROXY`/`ALL_PROXY` for the fetch and download tools only.
 
@@ -91,22 +113,26 @@ web_fetch: { proxy_url: "" }        # outbound proxy — env: FRANK_FETCH_PROXY
 composio:
   enabled: false
   url: "https://connect.composio.dev/mcp"
-  api_key: ""                       # env: COMPOSIO_API_KEY
+  api_key: ""
   server_name: "composio"
   timeout_seconds: 60
 ```
+
+`api_key` also reads `COMPOSIO_API_KEY` from the environment.
 
 When you enable Composio, it joins the ordinary MCP set. It is not a second path. Tool gating and the client both see it as another server.
 
 ## Execution and permissions
 
 ```yaml
-sandbox:   { enforce: "required" }   # what a tool child may do — see below
+sandbox:   { enforce: "required" }
 workspace: { strategy: "none" }
 agent:     { permission_mode: "default" }
-computer_control: { enabled: false } # macOS screen tools (control_screen); opt-in — see below
-user_context:     { enabled: false } # a snapshot of how you work, in the prompt; opt-in
+computer_control: { enabled: false }
+user_context:     { enabled: false }
 ```
+
+`sandbox.enforce` sets what a tool child may do, and it is described below. `computer_control` turns on the macOS screen tools (`control_screen`), and it is opt-in; it is also described below. `user_context` puts a snapshot of how you work into the prompt, and it is opt-in too.
 
 ### Confinement
 
@@ -169,11 +195,13 @@ Bash additionally honours per-command rules on each agent (`sudo *: deny`, `rm *
 
 ```yaml
 compaction:
-  auto: true                        # compact automatically as the context fills
+  auto: true
   observer_context_fraction: 0.6
   reflector_observation_fraction: 0.3
-  keep_recent_turns: 6              # turns kept verbatim after a compaction
+  keep_recent_turns: 6
 ```
+
+`auto` compacts as the context fills. `keep_recent_turns` is how many turns stay verbatim after a compaction.
 
 ## Tool tuning
 
@@ -182,13 +210,20 @@ How much of a model's context tool output may occupy, and how patient the tools 
 ```yaml
 tuning:
   context_share:
-    text: 0.25                      # share one result's text may fill — output, fetched pages
-    results: 0.15                   # share a set of results may fill — matches, lines, records
-  timeout_multiplier: 1.0           # 2.0 doubles every wait for a slow machine; 1.0 is neutral
-  defaults:                         # override one value, by its own name and in its own unit
+    text: 0.25
+    results: 0.15
+  timeout_multiplier: 1.0
+  defaults:
     action_timeout_ms: 10000
     grep_results: 1024
 ```
+
+| Setting | What it does |
+|---|---|
+| `context_share.text` | The share one result's text may fill: output, fetched pages |
+| `context_share.results` | The share a set of results may fill: matches, lines, records |
+| `timeout_multiplier` | `2.0` doubles every wait, for a slow machine. `1.0` is neutral |
+| `defaults` | Overrides one value, by its own name and in its own unit |
 
 Those three move whole families. `defaults` is the escape hatch for a single value. Its keys are the names in `frank.base.tuning.Tunable`, which is the same idea as `sandbox.limits` using `setrlimit` constant names. An unknown name is an error at load. It is not a line that looks applied and is not. An override replaces the value the code *ships with*, so `context_share` and `timeout_multiplier` still apply on top: `action_timeout_ms: 10000` under `timeout_multiplier: 2.0` resolves to twenty seconds.
 
@@ -202,11 +237,13 @@ Settling — how long a screen surface is given to stop changing after an action
 
 ```yaml
 computer_control:
-  enabled: false                    # drive native macOS apps and your own Chrome; opt-in
+  enabled: false
   settle:
-    poll_seconds: 0.05              # how often to re-check whether the surface has settled
-    give_up_seconds: 1.5            # the longest to wait before reading it anyway
+    poll_seconds: 0.05
+    give_up_seconds: 1.5
 ```
+
+`enabled` drives native macOS apps and your own Chrome, and it is opt-in. `poll_seconds` is how often to re-check whether the surface settled. `give_up_seconds` is the longest to wait before reading it anyway.
 
 After an action, the harness *polls* a surface until it stops changing. It does not sleep for a fixed guess. A fast page therefore costs one interval, and a slow one costs the ceiling. These two sit here rather than under `tuning` because settling is something a **surface** does, not a budget a tool spends.
 
