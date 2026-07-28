@@ -193,6 +193,8 @@ async def _session_create(params: dict) -> dict:
 
     sandbox = _resolve_sandbox(agent, working_directory, parent)
 
+    # `create` registers the session in memory; the durable write is awaited here, off the
+    # loop, because the worker about to be started will look this row up.
     record = state.registry.create(
         agent=agent,
         working_directory=working_directory,

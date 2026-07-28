@@ -17,6 +17,11 @@ releases it. Therefore:
 - Off-loop writers (background threads, or sync helpers dispatched through
   ``asyncio.to_thread``) use the synchronous :func:`sqlite_write_lock` context
   manager. They may block their own thread; they must never run on the loop thread.
+  That last sentence used to be the whole of the enforcement, and it was not enough:
+  the rule held across seventeen call sites until one of them was reached from a
+  coroutine, and the server hung with no clue as to why. :func:`sqlite_write_lock`
+  now refuses to run on a thread with a running event loop, so breaking the rule
+  raises at the call site that broke it instead of stopping every session at once.
 - ``background.db`` (background-job bookkeeping) is a *separate* database written
   only from the event loop, so it gets its own lock via :func:`background_sqlite_write_lock`.
   Sharing the history-database lock would reintroduce exactly the loop deadlock above.
@@ -87,13 +92,39 @@ def _release_file_locks(thread_lock: threading.Lock, lock_handle) -> None:
     thread_lock.release()
 
 
+def _refuse_on_event_loop() -> None:
+    """Raise if this thread is running an event loop.
+
+    The deadlock this prevents is not a race — it is certain whenever the two overlap.
+    The async history writer holds this same lock across its transaction's ``await``,
+    and only the loop can run the code that releases it; so a synchronous acquire *on*
+    the loop waits for something that cannot happen until it stops waiting. Every
+    session, every stream and every page load stop with it, and a stack trace shows only
+    a thread parked on a mutex.
+
+    ``get_running_loop`` is the exact discriminator: it succeeds only on a thread
+    currently running a loop, so a worker started by ``asyncio.to_thread`` passes and
+    a coroutine does not.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    raise RuntimeError(
+        "sqlite_write_lock() was entered on the event-loop thread, which would deadlock "
+        "the daemon. Await acquire_sqlite_write_lock()/release_sqlite_write_lock() here, "
+        "or move this write off the loop with asyncio.to_thread()."
+    )
+
+
 @contextmanager
 def sqlite_write_lock():
     """Synchronous history.db write lock, for callers running OFF the event loop
     (background threads or sync helpers dispatched through ``asyncio.to_thread``).
-    Never enter this on the event-loop thread: it blocks, and the async writer holds
-    the same lock across an await, so a loop-side acquire deadlocks the whole server.
-    Loop-side writers must use :func:`acquire_sqlite_write_lock` instead."""
+
+    Refuses to run on the loop thread rather than trusting the caller, because the
+    alternative is a server that stops answering with nothing in the log."""
+    _refuse_on_event_loop()
     lock_handle = _acquire_file_locks(_sqlite_write_lock, _sqlite_lock_path)
     try:
         yield

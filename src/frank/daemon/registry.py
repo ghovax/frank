@@ -22,6 +22,8 @@ Entries outlive the process they describe, and now outlive the daemon too.
 
 from __future__ import annotations
 
+import asyncio
+
 import hashlib
 import hmac
 import os
@@ -223,8 +225,44 @@ class SessionRegistry:
             self._sessions[record.id] = replace(record, pid=0, busy=False)
 
     def _persist(self, record: SessionRecord) -> None:
+        """Write a record durably, from a thread that may block.
+
+        Never call this from a coroutine. The store takes the synchronous history lock,
+        which the async turn writer holds across its transaction's await — so a loop-side
+        call waits on something only the loop can finish. `sqlite_write_lock` now refuses
+        rather than hanging, which is what turned this from a frozen daemon into a stack
+        trace. Loop-side callers use :meth:`persist_off_loop`.
+        """
         if self._store is not None:
             self._store.save(record)
+
+    async def persist_off_loop(self, record: SessionRecord) -> None:
+        """Write a record durably from the event loop, without blocking it.
+
+        For a caller that must not continue until the row exists — `create`, whose session
+        is about to be handed to a worker that will look for it.
+        """
+        if self._store is not None:
+            await asyncio.to_thread(self._persist, record)
+
+    def _persist_wherever_we_are(self, record: SessionRecord) -> None:
+        """Write a record from either side of the loop, without ever blocking it.
+
+        `mark` is called from coroutines and from threads alike — a turn ending, a title
+        arriving, a worker reporting its pid — and none of them can reasonably be asked to
+        know which they are. Off the loop the write happens now; on it the write is handed to
+        a thread and the caller carries on. This is bookkeeping, so a write that lands a
+        moment later is correct; `create` deliberately does not use this, because the row has
+        to be there before the worker looks for it.
+        """
+        if self._store is None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._persist(record)
+            return
+        loop.create_task(asyncio.to_thread(self._persist, record))
 
     def create(
         self,
@@ -259,7 +297,6 @@ class SessionRegistry:
             updated_at=created_at,
         )
         self._sessions[identifier] = record
-        self._persist(record)
         return record
 
     def get(self, session_id: str) -> Optional[SessionRecord]:
@@ -342,7 +379,7 @@ class SessionRegistry:
             if name not in _VOLATILE_FIELDS:
                 durable_changed = True
         if durable_changed:
-            self._persist(record)
+            self._persist_wherever_we_are(record)
         return record
 
     def end(
