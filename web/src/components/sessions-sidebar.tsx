@@ -477,7 +477,7 @@ export function SessionsSidebar({
   return (
     <PanelCard flex={1}>
       <Flex align="center" gap={2} px={3} pt={3} pb={2} flexShrink={0}>
-        <FrankMark size="26px" style={{ flexShrink: 0 }} />
+        <FrankMark size="21px" style={{ flexShrink: 0 }} />
         <Text fontFamily="var(--font-display)" fontSize="2xl" lineHeight="1" fontWeight="bold" letterSpacing="tight">Frank</Text>
       </Flex>
 

@@ -130,8 +130,15 @@ export function ConnectionSettings({
   const connectLocal = useCallback(async () => {
     setConnectingTarget(LOCAL_TARGET_ID);
     setFailedTarget(null);
+    // A loopback probe answers, or is refused, in single-digit milliseconds. Left alone the
+    // spinner appears and vanishes inside one frame, so a successful connection looks like
+    // nothing happened and a refused one looks like the button broke — it snaps to "Retry"
+    // before a person can register that it was ever trying. Holding the attempt for a beat
+    // is what makes the outcome readable; it is a floor on the animation, not a delay on
+    // the work, which proceeds underneath it.
+    const settled = new Promise((resolve) => window.setTimeout(resolve, 420));
     try {
-      const { url, listening } = await findLocalDaemon();
+      const [{ url, listening }] = await Promise.all([findLocalDaemon(), settled]);
       if (!listening) {
         setFailedTarget(LOCAL_TARGET_ID);
         setConnectingTarget(null);
@@ -301,7 +308,7 @@ export function ConnectionSettings({
       {variant === "page" && (
         <VStack gap={3}>
           <Flex align="center" gap={2.5}>
-            <FrankMark size="56px" style={{ flexShrink: 0 }} />
+            <FrankMark size="44px" style={{ flexShrink: 0 }} />
             <Text fontSize="4xl" fontWeight="bold" fontFamily="var(--font-display)" lineHeight="1" letterSpacing="tight">
               Frank
             </Text>
@@ -313,22 +320,51 @@ export function ConnectionSettings({
       )}
 
       <VStack gap={4} w="100%" minH={0} align="stretch">
-          <Button
-            w="100%"
-            size={variant === "page" ? "md" : undefined}
-            variant={localActive ? "subtle" : "outline"}
-            bg={localActive ? "bg.subtle" : "bg"}
-            borderColor="border"
-            color="fg"
-            _hover={{ bg: "bg.muted" }}
-            onClick={connectLocal}
-            disabled={localActive || connecting}
-            loading={connectingTarget === LOCAL_TARGET_ID}
-            loadingText={translation("lookingForLocalDaemon")}
-          >
-            {localActive ? <LuCheck /> : failedTarget === LOCAL_TARGET_ID ? <LuRotateCcw /> : <LuLaptop />}
-            {localActive ? translation("connectedToLocalDaemon") : failedTarget === LOCAL_TARGET_ID ? translation("retryLocalDaemon") : translation("connectLocalDaemon")}
-          </Button>
+          {/* This machine is one of the places you can connect to, not a headline action, so it
+              is a row in the same shape as a saved connection rather than a full-width button
+              above the first heading — where it had no section to belong to and outweighed the
+              choices it sits beside. */}
+          <VStack gap={2} align="stretch">
+            <SectionHeader mb={0} icon={<LuLaptop size={15} />} title={translation("thisMachine")} />
+            <Flex
+              align="center"
+              gap={2}
+              borderWidth="1px"
+              borderColor={localActive ? "green.emphasized" : "border"}
+              borderRadius="md"
+              px={2}
+              py={2}
+            >
+              <Box color={localActive ? "green.fg" : "fg.muted"}>
+                <LuLaptop size={14} />
+              </Box>
+              <Box flex={1} minW={0}>
+                <Text fontSize="sm" fontWeight="medium" truncate>
+                  {LOCAL_CONNECTION_TARGET.name}
+                </Text>
+                <Text fontSize="xs" color="fg.muted" truncate>
+                  {LOCAL_CONNECTION_TARGET.url}
+                </Text>
+              </Box>
+              {localActive ? (
+                <Flex align="center" gap={1} color="green.fg" px={1} flexShrink={0}>
+                  <LuCheck size={12} />
+                  <Text textStyle="fieldLabel">{translation("connected")}</Text>
+                </Flex>
+              ) : (
+                <Button
+                  variant="outline"
+                  onClick={connectLocal}
+                  disabled={connecting}
+                  loading={connectingTarget === LOCAL_TARGET_ID}
+                  loadingText={translation("lookingForLocalDaemon")}
+                >
+                  {failedTarget === LOCAL_TARGET_ID ? <LuRotateCcw size={12} /> : <LuPlug size={12} />}
+                  {failedTarget === LOCAL_TARGET_ID ? translation("retry") : translation("connect")}
+                </Button>
+              )}
+            </Flex>
+          </VStack>
 
           <VStack gap={2} align="stretch">
             <SectionHeader mb={0} icon={<LuServer size={15} />} title={translation("savedConnections")} />

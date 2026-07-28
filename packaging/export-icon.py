@@ -25,11 +25,16 @@ MACOS_ICON_SIZES = (16, 32, 64, 128, 256, 512, 1024)
 MONO_ARTWORK = COMPOSER_DOCUMENT / "Assets" / "face-mono.png"
 TRAY_ICON = WEB_ROOT / "src-tauri" / "icons" / "tray-icon.png"
 TRAY_ICON_SIZE = 88
-WEB_ICONS = (
+# Browser-tab icons: the mark alone on transparency, like the in-interface logo. A tab strip
+# already frames what it shows, so a tile inside it is a second frame — the icon pasted into a
+# space that did not need one.
+TAB_ICONS = (
     (WEB_ROOT / "src" / "app" / "icon.png", 512),
-    (WEB_ROOT / "src" / "app" / "apple-icon.png", 512),
     (WEB_ROOT / "src" / "app" / "favicon.ico", 256),
 )
+# The iOS home-screen icon is the exception and keeps its tile: iOS composites this onto the
+# home screen and fills transparency with black, so a bare mark would arrive in a black square.
+APPLE_TOUCH_ICON = (WEB_ROOT / "src" / "app" / "apple-icon.png", 512)
 WEB_CORNER_RADIUS_RATIO = 0.22
 
 
@@ -181,13 +186,27 @@ def create_web_icons() -> None:
     These were the last place the old mark survived a rename, because nothing regenerated
     them: they are Next.js file-convention assets picked up by filename, so no import ever
     breaks to say they are stale. Deriving them here means the interface cannot disagree
-    with the app about what the product looks like."""
-    source_image = render_legacy_macos_icon()
-    for destination, size in WEB_ICONS:
-        resized = source_image.resize((size, size), Image.Resampling.LANCZOS)
-        resized.putalpha(_rounded_mask(size))
+    with the app about what the product looks like.
+
+    Tab icons get the mark on its own, in the brand colour rather than in white — a tab strip
+    may be light or dark and the icon has to survive both, and one coloured mark does that
+    where a white one would vanish against a light strip."""
+    fill_configuration = json.loads((COMPOSER_DOCUMENT / "icon.json").read_text())
+    brand_red, brand_green, brand_blue, _ = _extended_srgb_fill(
+        fill_configuration["fill"]["automatic-gradient"]
+    )
+    with Image.open(MONO_ARTWORK) as artwork_image:
+        alpha_channel = artwork_image.convert("RGBA").getchannel("A")
+    mark = Image.new("RGBA", alpha_channel.size, (brand_red, brand_green, brand_blue, 0))
+    mark.putalpha(alpha_channel)
+    for destination, size in TAB_ICONS:
         destination.parent.mkdir(parents=True, exist_ok=True)
-        resized.save(destination)
+        mark.resize((size, size), Image.Resampling.LANCZOS).save(destination)
+
+    destination, size = APPLE_TOUCH_ICON
+    tile = render_legacy_macos_icon().resize((size, size), Image.Resampling.LANCZOS)
+    tile.putalpha(_rounded_mask(size))
+    tile.save(destination)
 
 
 def generate_tauri_icons() -> None:
