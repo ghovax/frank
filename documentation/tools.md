@@ -1,6 +1,6 @@
 # Tools
 
-A session acts through tools. Every tool call goes through the [permission engine](configuration.md#permission-modes); risky ones pause for approval, which reaches you as a prompt in the app or as `frank approve` in the terminal. The description the model reads is in the repo: a docstring in `src/frank/runtime/tools/registry.py` for most tools, a template in `src/frank/runtime/prompts/tool_*.md` for the peer-session ones.
+A session acts through tools. Every tool call goes through the [permission engine](configuration.md#permission-modes). A risky call pauses for approval. The approval reaches you as a prompt in the app, or as `frank approve` in the terminal. The description the model reads is in the repo: a docstring in `src/frank/runtime/tools/registry.py` for most tools, a template in `src/frank/runtime/prompts/tool_*.md` for the peer-session ones.
 
 There is no delegation tool and no in-process sub-agent. A session that needs a peer creates one with `create_session`, which reaches the same control plane your terminal does. See [Architecture](architecture.md#sessions).
 
@@ -47,17 +47,19 @@ There are no dedicated `find_files`/`search_content` tools; for literal file-nam
 | `list_sessions` | The sessions this one created. Its own subtree, not the machine's. |
 | `end_session` | End a peer and everything under it. |
 
-The caller is the parent, always — it is not an argument. That is what puts a peer inside the tree, inside the reaper, and under the permission clamp, so a peer can never hold authority the session that made it does not have.
+The caller is the parent, always — it is not an argument. That puts a peer inside the tree, inside the reaper, and under the permission clamp. A peer can therefore never hold authority that its parent does not have.
 
-**A peer answers by messaging.** When it is done it calls `message_session` on the session that created it, whose id is in its context as `parent_session`, and that message lands in the caller's context the way any inbound message does. So `create_session` does not wait, there is no handle to hold, and nothing reconstructs a result: the peer decides what its answer is, in its own words, at the moment it knows. A caller starts the work, carries on with whatever does not depend on it, and ends its turn — the reply wakes it.
+**A peer answers by messaging.** When the peer finishes, it calls `message_session` on the session that created it. That session's id is in its context, as `parent_session`. The message lands in the caller's context like any other inbound message. `create_session` therefore does not wait, and there is no handle to hold. Nothing reconstructs a result. The peer decides its own answer, in its own words, at the moment it knows. A caller starts the work, carries on with whatever does not depend on it, and ends its turn — the reply wakes it.
 
-That message arrives as a **peer turn**, not a user turn. The distinction is carried on the wire under the harness's one extension key, `urn:frank:ext:turn:v1`, as `kind` plus `peerSender` naming the sender — without it a peer's report would reach the model as an instruction from the person it works for, and would appear in the transcript as words the user never wrote.
+That message arrives as a **peer turn**, not a user turn. The wire carries the distinction under the harness's one extension key, `urn:frank:ext:turn:v1`. It sends `kind` plus `peerSender` to name the sender.
 
-A peer that dies before reporting cannot say so, which is the one thing the harness says on its behalf: the daemon tells the parent when it reaps a child, with the child's id and why it ended.
+Without that, a peer's report reaches the model as an instruction from the person it works for. It also appears in the transcript as words the user never wrote.
+
+A peer that dies before it reports cannot say so. That is the one thing the harness says for it. The daemon tells the parent when it reaps a child, with the child's id and the reason it ended.
 
 **Agents on other hosts**
 
-`list_remote_agents` and `message_remote_agent` — separate verbs, because a remote agent is a separate bargain: someone else's machine, someone else's cost, no shared history, and no access to this filesystem. Present only when one is registered.
+`list_remote_agents` and `message_remote_agent` are separate verbs, because a remote agent is a separate bargain. It runs on someone else's machine, at someone else's cost. It has no shared history and no access to this filesystem. Present only when one is registered.
 
 **MCP**
 
@@ -65,30 +67,38 @@ A peer that dies before reporting cannot say so, which is the one thing the harn
 
 ## Screen control (`control_screen`)
 
-Frank drives the live screen — native macOS apps and **your own Chrome** — through one tool, `control_screen`, whose Python script both finds elements and acts on them. It is **macOS-only** and **opt-in**: gated by `computer_control.enabled` (off by default; see [Configuration guide](configuration.md#execution-and-permissions)).
+Frank drives the live screen through one tool, `control_screen`. It covers native macOS apps and **your own Chrome**. Its Python script finds elements and acts on them. It is **macOS-only** and **opt-in**: gated by `computer_control.enabled` (off by default; see [Configuration guide](configuration.md#execution-and-permissions)).
 
-**Finding — read the live surface.** Inside the script, `find_many(query)` and `find_one(query)` take a plain-language query and return the matching UI as **ranked elements** to act on, not pixels — each with a stable `id`, its role, its text, and its context. On native apps this reads the **accessibility tree**; on Chrome it reads the page's real semantic structure (roles and names, iframes included) over the Chrome DevTools Protocol through Playwright, and also surfaces the page's own **network/API requests**, so the agent can find the endpoints the page calls. `find_one` returns the single best match and raises if the top matches are indistinguishable, so an unclear target is caught rather than guessed.
+**Finding — read the live surface.** Inside the script, `find_many(query)` and `find_one(query)` take a plain-language query. They return the matching UI as **ranked elements** to act on, not as pixels. Each element carries a stable `id`, its role, its text, and its context. On native apps this reads the **accessibility tree**. On Chrome it reads the page's real semantic structure, roles and names, iframes included. It uses the Chrome DevTools Protocol through Playwright.
 
-**Acting — a composed script of trusted-input primitives.** The same script drives the elements a find returned (by `id`, or by a query resolved the same way) with **trusted input** — click, type, scroll, `evaluate`, and the like. Because it is ordinary Python, a whole task — loop over rows, branch on what you find, call the page's own API in one line — is a single call, not a round trip per action. On the browser, `evaluate` can **replay the page's own authenticated API in-page**, reusing the logged-in session instead of re-authenticating. Actions run against the real surface (browser clicks go through Playwright's actionability checks), and the result reports what each action touched (`acted_on`) so the agent sees what changed.
+It also surfaces the page's own **network and API requests**. The agent can therefore find the endpoints that the page calls. `find_one` returns the single best match and raises if the top matches are indistinguishable, so an unclear target is caught rather than guessed.
 
-**Tabs.** The browser has more than one page and the script chooses which one it is on: `tabs()` lists every open tab as `{id, title, url, active}`, `tab(id)` switches to one and brings it to the front, `new_tab(url)` opens one and returns its id, and `close_tab(id)` closes it. The listing covers **all** of your tabs, not only the ones the agent opened — filtering it would make the ordinary request ("the invoice in my other tab") impossible to serve, and the tool is already driving that browser with your logins. Nothing stops an agent closing a tab it did not open, either; what it has instead is an instruction, in the tool description, that these are your working state and that closing one can lose a half-filled form with no undo.
+**Acting — a composed script of trusted-input primitives.** The same script drives the elements that a find returned, by `id` or by a query resolved the same way. It uses **trusted input**: click, type, scroll, `evaluate`, and the like. The script is ordinary Python, so a whole task is a single call. It can loop over rows, branch on what it finds, and call the page's own API in one line. It does not need a round trip for each action. On the browser, `evaluate` can **replay the page's own authenticated API in-page**, reusing the logged-in session instead of re-authenticating. Actions run against the real surface. Browser clicks go through Playwright's actionability checks. The result reports what each action touched, in `acted_on`, so the agent sees what changed.
+
+**Tabs.** The browser has more than one page, and the script chooses which one it is on:
+
+  - `tabs()` lists every open tab as `{id, title, url, active}`.
+  - `tab(id)` switches to a tab and brings it to the front.
+  - `new_tab(url)` opens a tab and returns its id.
+  - `close_tab(id)` closes a tab.
+ The listing covers **all** of your tabs, not only the ones the agent opened. To filter it would make an ordinary request impossible to serve, such as "the invoice in my other tab". The tool already drives that browser with your logins. Nothing stops an agent from closing a tab it did not open. It has an instruction instead, in the tool description: these tabs are your working state, and to close one can lose a half-filled form, with no undo.
 
 **Frames.** An `iframe` is its own document with its own origin and its own session — the embedded checkout, the OAuth consent screen, the document viewer. Element ids are already frame-scoped, so `f1e3` is the third element of frame `f1` and clicking or typing into it needs no extra step. `frames()` lists them as `{id, url, name, parent, element}`, and `evaluate(..., frame="f1")` and `read(frame="f1")` run **inside** that document, which is the only way to reach one through the credentials it actually holds.
 
-Because Frank attaches to **the Chrome you already use** — your real logins and sessions, not a throwaway profile — it only ever *connects* to the browser: it never launches, quits, or copies it.
+Frank attaches to **the Chrome you already use**, with your real logins and sessions, not a throwaway profile. It therefore only ever *connects* to the browser. It never launches it, quits it, or copies it.
 
-Frank reads structure, not pixels: there is no screenshot path for computer use. A surface that is drawn rather than structured (a canvas, WebGL) exposes nothing to find — a structured visual fallback is planned but not yet built (see [the plan](plans/visual-fallback.md)).
+Frank reads structure, not pixels: there is no screenshot path for computer use. A drawn surface, such as a canvas or WebGL, exposes nothing to find. A structured visual fallback is planned, but it does not exist yet. See [the plan](plans/visual-fallback.md).
 
 **Enable it:**
 
-- Grant **Accessibility** permission to Frank for native apps (System Settings → Privacy & Security → Accessibility). The app prompts you and links directly to the pane. The permission is matched to the app's code identity, so the packaged build is signed with a stable identity to keep the grant across updates (see [Development guide](development.md#building-and-signing)).
+- Grant **Accessibility** permission to Frank for native apps (System Settings → Privacy & Security → Accessibility). The app prompts you and links directly to the pane. macOS matches the permission to the app's code identity. The packaged build therefore carries a stable identity, which keeps the grant across updates. See the [Development guide](development.md#building-and-signing).
 - Turn on Chrome's remote-debugging toggle once for the browser surface. Open `chrome://inspect` and enable it under the remote-debugging option (Frank provides a one-click prompt that opens the page).
 - Set `computer_control.enabled: true` in the config (off by default).
 
 > [!NOTE]
 > Typing fills a field without submitting unless the agent explicitly asks to — so it never posts a form by accident.
 
-**What counts as changing something.** The permission classifier reads the script and decides whether it only looks or also acts, by scanning for the primitives that change state: `click`, `type`, `choose`, `upload`, `drag`, `evaluate`, `press`, `navigate`, `new_tab` and `close_tab`. Finding, reading, listing tabs and frames, and switching between tabs are all reads. `evaluate` is on the acting side because it runs arbitrary JavaScript in a page you are signed in to, and `navigate` because on a great many sites a URL *is* a command — `/logout`, `/unsubscribe?token=…`, `/items/12/delete` — and nothing that reads primitive names can tell those from a page worth reading. In an ordinary session a script that acts is examined rather than blocked; in a [read-only session](configuration.md#permission-modes) it is refused outright.
+**What counts as changing something.** The permission classifier reads the script. It decides whether the script only looks, or also acts. It scans for the primitives that change state: `click`, `type`, `choose`, `upload`, `drag`, `evaluate`, `press`, `navigate`, `new_tab` and `close_tab`. Finding, reading, listing tabs and frames, and switching between tabs are all reads. `evaluate` is on the acting side because it runs arbitrary JavaScript in a page you are signed in to, and `navigate` because on a great many sites a URL *is* a command — `/logout`, `/unsubscribe?token=…`, `/items/12/delete` — and nothing that reads primitive names can tell those from a page worth reading. In an ordinary session a script that acts is examined rather than blocked; in a [read-only session](configuration.md#permission-modes) it is refused outright.
 
 ## Where the definitions live
 
@@ -97,4 +107,4 @@ Frank reads structure, not pixels: there is no screenshot path for computer use.
 - Model-facing message templates: `src/frank/runtime/prompts/` and `src/frank/computer/messages/`
 - The guidance a session gets for screen control: `src/frank/runtime/prompts/computer_control_guidance.md`
 
-A tool runs inside the session's own process, so its blast radius is that session: its working directory (its own git worktree, under the `worktree` strategy), its permission mode, and its own MCP connections.
+A tool runs inside the session's own process, so its blast radius is that session. That means its working directory, its permission mode, and its own MCP connections. Under the `worktree` strategy the working directory is the session's own git worktree.

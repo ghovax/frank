@@ -46,28 +46,32 @@ Design plans for larger changes — the sequential, commit-associated record of 
 
 ## The shape of the project
 
-```
-frank/
-├── packaging/entry.py                 # entry point for the frozen build (all three roles)
-├── src/frank/
-│   ├── __init__.py           # the library surface: frank.Session and its seams
-│   ├── __main__.py           # argv dispatch: frank, frankd, prototype
-│   ├── base/                 # configuration, XDG paths, skills, ports, the catalogue
-│   ├── protocol/             # A2A cards, DTOs, the wire contract
-│   ├── cli/                  # the `frank` command and its renderers
-│   ├── workspace/            # projects, locations, settings, terminals — no supervision
-│   ├── daemon/               # frankd: registry, lifecycle, prototype client, turn store
-│   ├── worker/               # a session process, and the prototype it is forked from
-│   ├── runtime/              # the agent loop, prompts, tools, models
-│   ├── computer/             # macOS screen-control bridges (native apps + Chrome)
-│   ├── locations/            # where files live (local, SSH, containers)
-│   └── rest/                 # the REST surface the browser uses (never imports daemon)
-├── .agents/                  # bundled agents, skills, memories, MCP config
-├── web/                      # the desktop app (Next.js UI + Tauri shell in src-tauri/)
-├── packaging/                # PyInstaller freeze + signing for the packaged app
-├── scripts/                  # layering/import/translation checks, the verification battery
-└── examples/                 # example MCP servers
-```
+**`src/frank/`** — the Python harness, layered:
+
+| Module | What lives there |
+|---|---|
+| `__init__.py` | The library surface: `frank.Session` and its seams |
+| `__main__.py` | argv dispatch: `frank`, `frankd`, `prototype` |
+| `base/` | Configuration, XDG paths, skills, ports, the catalogue |
+| `protocol/` | A2A cards, DTOs, the wire contract |
+| `cli/` | The `frank` command and its renderers |
+| `workspace/` | Projects, locations, settings, terminals — no supervision |
+| `daemon/` | `frankd`: registry, lifecycle, prototype client, turn store |
+| `worker/` | A session process, and the prototype it is forked from |
+| `runtime/` | The agent loop, prompts, tools, models |
+| `computer/` | macOS screen-control bridges: native apps and Chrome |
+| `locations/` | Where files live: local, SSH, containers |
+| `rest/` | The REST surface the browser uses; never imports `daemon` |
+
+**Everything else:**
+
+| Path | What lives there |
+|---|---|
+| `.agents/` | Bundled agents, skills, memories, MCP configuration |
+| `web/` | The desktop app: Next.js UI, and the Tauri shell in `src-tauri/` |
+| `packaging/` | PyInstaller freeze and signing, plus `entry.py` for the frozen build |
+| `scripts/` | Layering, import and translation checks; the verification battery |
+| `examples/` | Example MCP servers |
 
 The layering is `base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, with `workspace` beside them and `rest` above it. Two rules do most of the work.
 

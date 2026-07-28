@@ -7,14 +7,15 @@ Everything that shapes how Frank behaves — its agents, their reusable skills, 
 
 A project-local entry **overrides** a global one with the same name. A repository can therefore ship its own agents and skills, and leave your global setup alone. The server also bundles a base set, which is always present.
 
-```
-.agents/
-├── agents/<id>/agent.md            # profile: frontmatter + prompt body
-├── agents/<id>/configuration.json  # model preset, tools, permissions
-├── skills/<id>/SKILL.md            # a reusable capability, loaded on demand
-├── memories/*.md                   # persistent project memory
-└── mcp.json                        # MCP server configuration
-```
+Everything sits under `.agents/`:
+
+| Path | What it holds |
+|---|---|
+| `agents/<id>/agent.md` | The profile: frontmatter and the prompt body |
+| `agents/<id>/configuration.json` | Model preset, tools, permissions |
+| `skills/<id>/SKILL.md` | A reusable capability, loaded on demand |
+| `memories/*.md` | Persistent project memory |
+| `mcp.json` | MCP server configuration |
 
 ## Agents
 
