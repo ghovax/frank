@@ -70,22 +70,22 @@ Design plans for larger changes — the sequential, commit-associated record of 
 
 ## The shape of the project
 
-**`src/frank/`** — the Python harness, layered:
+**`src/frank/`** — the Python image, in the import order stated below:
 
 | Module | What lives there |
 |---|---|
-| `__init__.py` | The library surface: `frank.Session` and its seams |
-| `__main__.py` | argv dispatch: `frank`, `frankd`, `prototype` |
 | `base/` | Configuration, XDG paths, skills, ports, the catalogue |
 | `protocol/` | A2A cards, DTOs, the wire contract |
-| `cli/` | The `frank` command and its renderers |
-| `workspace/` | Projects, locations, settings, terminals — no supervision |
-| `daemon/` | `frankd`: registry, lifecycle, prototype client, turn store |
-| `worker/` | A session process, and the prototype it is forked from |
-| `runtime/` | The agent loop, prompts, tools, models |
 | `computer/` | macOS screen-control bridges: native apps and Chrome |
 | `locations/` | Where files live: local, SSH, containers |
+| `runtime/` | The agent loop, prompts, tools, models |
+| `worker/` | A session process, and the prototype it is forked from |
+| `__init__.py` | The library surface: `frank.Session` and its seams |
+| `workspace/` | Projects, locations, settings, terminals — beside the rest, not above |
+| `daemon/` | `frankd`: registry, lifecycle, prototype client, machine loaders |
 | `rest/` | The REST surface the browser uses; never imports `daemon` |
+| `cli/` | The `frank` command and its renderers |
+| `__main__.py` | argv dispatch: `frank`, `frankd`, `prototype`, `session` |
 
 **Everything else:**
 

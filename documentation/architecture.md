@@ -37,7 +37,7 @@ Frank is one executable entered four ways. `frank` is the command a person runs 
 They are the same image, not four binaries, for two reasons. Packaging stays a single specification. A worker launched as a re-exec also carries the same code identity as the signed application bundle. One macOS Accessibility grant therefore covers every session, instead of prompting once per worker.
 
 ```mermaid
-flowchart LR
+flowchart BT
     subgraph Clients
         Cli["frank (CLI)"]
         App["Desktop app<br/>(Tauri + Next.js)"]
