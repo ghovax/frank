@@ -219,6 +219,21 @@ samp {
   transition: transform var(--marquee-duration, 0s) linear;
 }
 
+/* A project row *contains* its session rows, and the rules above are descendant selectors —
+   so hovering one conversation matched every title inside that project and faded all of them
+   at once, which read as the whole list reacting to one row. These put the nested rows back:
+   a row inside a hovered row that is not itself hovered is not the row being pointed at. */
+.sidebar-row:hover .sidebar-row:not(:hover):not(:focus-within) .sidebar-title,
+.sidebar-row:focus-within .sidebar-row:not(:hover):not(:focus-within) .sidebar-title {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.sidebar-row:hover .sidebar-row:not(:hover):not(:focus-within) .sidebar-title-inner,
+.sidebar-row:focus-within .sidebar-row:not(:hover):not(:focus-within) .sidebar-title-inner {
+  transform: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .running-title-shimmer {
     color: var(--chakra-colors-fg-muted);

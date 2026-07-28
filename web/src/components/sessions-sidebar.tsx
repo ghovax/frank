@@ -243,6 +243,12 @@ function SessionTreeRow({
           "& [data-row-actions]": { opacity: 0, pointerEvents: "none" },
           "&:hover [data-row-actions]": { opacity: 1, pointerEvents: "auto" },
           "&:focus-within [data-row-actions]": { opacity: 1, pointerEvents: "auto" },
+          // Same nesting problem as the title mask in globals.css: a project row contains its
+          // session rows, so its `:hover` revealed every nested row's actions at once.
+          "&:hover .sidebar-row:not(:hover):not(:focus-within) [data-row-actions]": {
+            opacity: 0,
+            pointerEvents: "none",
+          },
         }}
       >
         <Flex align="center" gap={0.5} minW={0}>

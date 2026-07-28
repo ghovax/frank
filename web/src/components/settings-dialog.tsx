@@ -6,7 +6,6 @@ import { LuEye, LuEyeOff, LuKeyRound, LuPlug, LuPlus, LuSearch, LuServer, LuTras
 import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, restartDaemon, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel, type SandboxEnforce } from "@/lib/api";
 import type { ConnectionTarget } from "@/lib/connection";
 import { ConnectionSettings } from "./connection-settings";
-import { ConnectionSwitcher } from "./connection-switcher";
 import { ModelSelect } from "./model-select";
 import { ChatGPTAuthControl } from "./chatgpt-auth";
 import { CursorAuthControl } from "./cursor-auth";
@@ -594,14 +593,12 @@ export function SettingsDialog({
       id: "connection", label: translation("tabConnection"), icon: <LuPlug size={14} />,
       sections: [{
         rows: [],
+        // No "Current connection" switcher above this. It named the same thing the panel
+        // below already shows — "This machine" marks the local server as connected, and each
+        // saved connection says so on its own row — so it was a second control for a fact
+        // stated twice on one screen.
         block: (
-          <Flex direction="column" gap={4}>
-            <Box>
-              <Text textStyle="fieldLabel" mb={1}>{translation("currentConnection")}</Text>
-              <ConnectionSwitcher currentTargetId={currentConnectionId} onConnectionChange={onConnectionChange} onOpenConnectionSettings={() => undefined} />
-            </Box>
-            <ConnectionSettings key={connectionResetToken} variant="dialog" currentTargetId={currentConnectionId} onDirtyChange={setConnectionDirty} onConnected={(target) => { onConnectionChange?.(target); onOpenChange(false); }} />
-          </Flex>
+          <ConnectionSettings key={connectionResetToken} variant="dialog" currentTargetId={currentConnectionId} onDirtyChange={setConnectionDirty} onConnected={(target) => { onConnectionChange?.(target); onOpenChange(false); }} />
         ),
       }],
     },
