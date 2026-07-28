@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, Flex, Span, Text } from "@chakra-ui/react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { LuListChecks, LuPlug, LuPuzzle, LuWrench } from "react-icons/lu";
 import { fetchMcpTools, fetchSkills, subscribeEvents, type AgentCard, type AgentSkill, type McpServerTools, type McpTool } from "@/lib/api";
@@ -40,7 +40,7 @@ function disabledLast(first: { enabled?: boolean }, second: { enabled?: boolean 
 // agent and rendered as collapsible rows, so you can see what an agent can do —
 // plus the tools exposed by the configured MCP servers, grouped per server.
 // Every row starts collapsed to keep the empty state uncluttered.
-export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: AgentCard | null; workingDirectory?: string; homeDirectory?: string }) {
+export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null; workingDirectory?: string }) {
   const translation = useTranslations("AgentSkills");
   const [mcpServers, setMcpServers] = useState<McpServerTools[]>([]);
   const [folderSkills, setFolderSkills] = useState<AgentSkill[]>([]);
@@ -105,7 +105,6 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
 
   // The home folder has no project scope of its own, so its "This project" group
   // (which would always be empty) is suppressed — only real project folders show it.
-  const isHomeFolder = !workingDirectory || workingDirectory === homeDirectory;
 
   return (
     <Box w="100%" maxW="640px" mx="auto" pb={4}>
@@ -117,14 +116,10 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
             description={translation("skillsDescription")}
           />
           <Flex direction="column" gap={2}>
-            <ScopeGroup icon={<LuPuzzle />} label={translation("skillsAvailableGlobally")}>
-              {globalSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)}
-            </ScopeGroup>
-            {!isHomeFolder && (
-              <ScopeGroup icon={<LuPuzzle />} label={translation("skillsAvailableInProject")}>
-                {projectSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)}
-              </ScopeGroup>
-            )}
+            {/* One list, not two. Where a skill is defined is how it got here, not something
+                anyone picks it by — splitting on it made every capability one level deeper
+                and asked the reader to care about the filesystem. */}
+            {[...globalSkills, ...projectSkills].map((skill) => <SkillCard key={skill.id} skill={skill} />)}
           </Flex>
         </>
       )}
@@ -137,35 +132,11 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
             description={translation("toolsDescription")}
           />
           <Flex direction="column" gap={2}>
-            <ScopeGroup icon={<LuPlug />} label={translation("toolsAvailableGlobally")}>
-              {globalServers.map((server) => <McpServerGroup key={server.name} server={server} />)}
-            </ScopeGroup>
-            {!isHomeFolder && (
-              <ScopeGroup icon={<LuPlug />} label={translation("toolsAvailableInProject")}>
-                {projectServers.map((server) => <McpServerGroup key={server.name} server={server} />)}
-              </ScopeGroup>
-            )}
+            {[...globalServers, ...projectServers].map((server) => <McpServerGroup key={server.name} server={server} />)}
           </Flex>
         </Box>
       )}
     </Box>
-  );
-}
-
-// A scope group ("… globally" / "… in this project") — the same disclosure row as an
-// individual capability, one level up: its body holds that scope's cards. Open by
-// default so the capabilities stay visible while letting a whole scope be tucked away.
-function ScopeGroup({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
-  return (
-    <DisclosureRow
-      defaultOpen
-      icon={<Box color="fg.subtle">{icon}</Box>}
-      title={<DisclosureLabel>{label}</DisclosureLabel>}
-    >
-      <Flex direction="column" gap={1}>
-        {children}
-      </Flex>
-    </DisclosureRow>
   );
 }
 

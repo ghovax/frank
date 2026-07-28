@@ -800,7 +800,7 @@ export function ChatPanel({
                       )}
                     </Flex>
 
-                    <AgentSkills card={agentCard ?? null} workingDirectory={workingDirectory} homeDirectory={homeDirectory} />
+                    <AgentSkills card={agentCard ?? null} workingDirectory={workingDirectory} />
                   </Flex>
                 </motion.div>
               ) : (

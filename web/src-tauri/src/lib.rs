@@ -514,26 +514,8 @@ pub fn run() {
     let migrations = vec![
         Migration {
             version: 1,
-            description: "create_connection_store",
-            sql: include_str!("../migrations/001_create_connection_store.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 2,
-            description: "map_sessions_to_connections",
-            sql: include_str!("../migrations/002_map_sessions_to_connections.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 3,
-            description: "add_ssh_connections",
-            sql: include_str!("../migrations/003_add_ssh_connections.sql"),
-            kind: MigrationKind::Up,
-        },
-        Migration {
-            version: 4,
-            description: "add_connection_tokens",
-            sql: include_str!("../migrations/004_add_connection_tokens.sql"),
+            description: "create_app_state",
+            sql: include_str!("../migrations/001_create_app_state.sql"),
             kind: MigrationKind::Up,
         },
     ];
