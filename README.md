@@ -1,9 +1,9 @@
 <h1>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="documentation/assets/frank-mark-dark.svg">
-    <img src="documentation/assets/frank-mark.svg" alt="" width="34" align="top">
+    <img src="documentation/assets/frank-mark.svg" alt="" height="30" align="middle">
   </picture>
-  Frank
+  &nbsp;Frank
 </h1>
 
 **An open coding agent you run yourself, and a harness you can edit.**
