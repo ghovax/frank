@@ -173,6 +173,15 @@ class SessionLifecycle:
             return
         record = self._registry.get(session_id)
         if record is not None and record.is_live:
+            if not report.clean:
+                # Said out loud, because until now it was not. The reason went onto the record
+                # and into the database, where nothing reads it until a client asks about that
+                # session — so a worker dying on every single fork looked, from the log, like
+                # nothing happening at all. The client is told "could not start the turn"; this
+                # is the line that says why.
+                logger.error(
+                    "Session %s died: %s", session_id, report.describe(),
+                )
             self._registry.end(
                 session_id,
                 outcome=EXITED if report.clean else FAILED,
