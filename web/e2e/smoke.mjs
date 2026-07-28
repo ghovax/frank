@@ -12,8 +12,18 @@
  */
 
 import { chromium } from "playwright";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const APP = process.env.FRANK_APP_URL ?? "http://localhost:3000";
+
+// Scratch the run owns and destroys. A fixed path would accumulate across runs, leave state
+// behind on the machine, and let one run see what an earlier one wrote.
+const SCRATCH = mkdtempSync(join(tmpdir(), "frank-e2e-"));
+writeFileSync(join(SCRATCH, "log-a.txt"), "The lighthouse keeper logged a storm.\n");
+writeFileSync(join(SCRATCH, "log-b.txt"), "A crate washed ashore, unopened.\n");
+const SHOT = join(SCRATCH, "screen.png");
 const results = [];
 
 function check(label, passed, detail = "") {
@@ -114,7 +124,7 @@ try {
   await page.getByRole("button", { name: /new conversation/i }).first().click().catch(() => {});
   await page.waitForTimeout(1500);
   const toolComposer = page.locator("textarea").first();
-  await toolComposer.fill("List the files in /tmp/frank-probe using your tools.");
+  await toolComposer.fill(`List the files in ${SCRATCH} using your tools.`);
   await toolComposer.press("Enter");
 
   let prompted = false;
@@ -123,7 +133,7 @@ try {
     const text = await page.locator("body").innerText();
     // Either the prompt is raised, or the tool ran outright — both mean the turn did not
     // vanish into a decision nobody was asked for.
-    if (/frank-probe/.test(text) && /(ls |allow|approve|deny|log-a\.txt)/i.test(text)) {
+    if (/(ls |find |allow|approve|deny|log-a\.txt)/i.test(text)) {
       prompted = true;
       break;
     }
@@ -156,10 +166,14 @@ try {
   const seen = await page.locator("body").innerText().catch(() => "");
   console.log("   ", seen.replace(/\n+/g, " | ").slice(0, 400));
 } finally {
-  await page.screenshot({ path: "/tmp/frank-e2e.png", fullPage: false }).catch(() => {});
+  await page.screenshot({ path: SHOT, fullPage: false }).catch(() => {});
   await browser.close();
 }
 
 const failed = results.filter((entry) => !entry.passed).length;
-console.log(`\n  ${results.length - failed}/${results.length} passed  (screenshot: /tmp/frank-e2e.png)`);
+// The screenshot is only worth keeping when something failed, and only until it has been
+// looked at; on a clean run the whole scratch goes.
+if (failed > 0) console.log(`  screenshot: ${SHOT}`);
+else rmSync(SCRATCH, { recursive: true, force: true });
+console.log(`\n  ${results.length - failed}/${results.length} passed`);
 process.exit(failed === 0 ? 0 : 1);
