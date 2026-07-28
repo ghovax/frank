@@ -1,6 +1,7 @@
 "use client";
 
 import { Alert, Box, Button, Text } from "@chakra-ui/react";
+import { swallowed } from "@/lib/swallowed";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LuLogIn, LuLogOut } from "react-icons/lu";
 import { useTranslations } from "next-intl";
@@ -55,7 +56,7 @@ export function ChatGPTAuthControl({
         setStatus(next);
         onStatusChange?.(next);
       })
-      .catch(() => {});
+      .catch((caught) => swallowed("chatgpt auth: a background load failed", caught));
     return () => {
       cancelled = true;
       stopPolling();
@@ -69,7 +70,7 @@ export function ChatGPTAuthControl({
   useEffect(() => {
     if (!status?.signed_in) return;
     const id = window.setInterval(() => {
-      refresh().catch(() => {});
+      refresh().catch((caught) => swallowed("chatgpt auth: a background load failed", caught));
     }, 5000);
     return () => window.clearInterval(id);
   }, [status?.signed_in, refresh]);

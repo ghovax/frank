@@ -47,6 +47,7 @@ import { scrollFade, scrollFadeTopBottom } from "@/lib/scroll-fade";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { playAttentionSound, playTurnEndSound } from "@/lib/sounds";
 import { closePermissionNotification, notifyPermissionRequest, setPermissionNotificationHandler } from "@/lib/notify";
+import { swallowed } from "@/lib/swallowed";
 
 // A Chakra Box that is also a motion component, so the right panel region can
 // animate its open/close (opacity + slide) exactly like the history sidebar on
@@ -251,7 +252,7 @@ export function ChatPanel({
     // on the next microtask rather than mid-render.
     const load = () => {
       const request = projectId ? getProject(projectId) : Promise.resolve(null);
-      request.then((project) => { if (!cancelled) setProjectLocations(project?.locations ?? []); }).catch(() => {});
+      request.then((project) => { if (!cancelled) setProjectLocations(project?.locations ?? []); }).catch((caught) => swallowed("chat panel: a background load failed", caught));
     };
     load();
     const unsubscribe = subscribeEvents((event) => { if (event.type === "projects_changed") load(); });
@@ -267,7 +268,7 @@ export function ChatPanel({
     fetchSettings().then((settings) => {
       if (cancelled || settings.permission_mode === permissionMode) return;
       setPermissionModeState(settings.permission_mode);
-    }).catch(() => {});
+    }).catch((caught) => swallowed("chat panel: a background load failed", caught));
     return () => { cancelled = true; };
   // Only run when there is no session — once the session is set, the session's own
   // permission_mode is authoritative.
@@ -484,12 +485,12 @@ export function ChatPanel({
     setPermissionModeState(nextMode);
     onPermissionModeChange?.(nextMode);
     // Persist to server settings so it survives across sessions.
-    saveSettings({ permission_mode: nextMode }).catch(() => {});
+    saveSettings({ permission_mode: nextMode }).catch((caught) => swallowed("chat panel: a background load failed", caught));
   }
 
   const handleInputDraftChange = useCallback((nextDraft: string) => {
     if (!sessionId) return;
-    saveSessionDraft(sessionId, nextDraft).catch(() => {});
+    saveSessionDraft(sessionId, nextDraft).catch((caught) => swallowed("chat panel: a background load failed", caught));
   }, [sessionId]);
 
   const currentFolderName = folderDisplayName(workingDirectory) || translation("thisFolder");

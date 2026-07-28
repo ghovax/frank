@@ -42,6 +42,7 @@ async function ensurePermission(): Promise<boolean> {
   try {
     return (await Notification.requestPermission()) === "granted";
   } catch {
+    // The person declined, or the browser has no notification permission model.
     return false;
   }
 }
@@ -63,6 +64,7 @@ async function swRegistration(): Promise<ServiceWorkerRegistration | null> {
     }
     return registration;
   } catch {
+    // No notification support here; the in-app cue is the fallback.
     return null;
   }
 }

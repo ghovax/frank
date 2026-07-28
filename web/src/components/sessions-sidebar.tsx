@@ -8,6 +8,7 @@
 // in a hover popover), so the list looks and behaves identically wherever it is shown.
 
 import { Box, Button, Flex, IconButton, Input, Kbd, Menu, Span, Text, VStack } from "@chakra-ui/react";
+import { swallowed } from "@/lib/swallowed";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LuArrowDownUp, LuChevronDown, LuChevronRight, LuEllipsis, LuFolderOpen, LuFolderPlus, LuMessageSquare, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
@@ -420,7 +421,7 @@ export function SessionsSidebar({
     : sessions;
 
   const refreshProjects = useCallback(() => {
-    listProjects().then(setProjects).catch(() => {});
+    listProjects().then(setProjects).catch((caught) => swallowed("sessions sidebar: a background load failed", caught));
   }, []);
 
   useEffect(() => {

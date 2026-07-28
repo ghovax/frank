@@ -171,6 +171,7 @@ export function TerminalSurface({
         try {
           message = JSON.parse(String(event.data)) as Record<string, unknown>;
         } catch {
+          // A frame that will not parse is handled by the error flag set below.
           socketHadError = true;
           setConnectionStatus(null);
           notifyTerminalFailure(translateRef.current("protocolErrorTitle"), translateRef.current("protocolErrorDescription"), "terminal_protocol_error");

@@ -1,6 +1,7 @@
 "use client";
 
 import { Alert, Box, Button, Dialog, EmptyState, Flex, IconButton, Input, Portal, Spinner, Text, VStack } from "@chakra-ui/react";
+import { swallowed } from "@/lib/swallowed";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LuEye, LuEyeOff, LuKeyRound, LuPlug, LuPlus, LuSearch, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
 import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, restartDaemon, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel, type SandboxEnforce } from "@/lib/api";
@@ -198,7 +199,7 @@ export function SettingsDialog({
         setWebFetchProxyUrl(settings.web_fetch_proxy_url ?? "");
         setSavedWebFetchProxyUrl(settings.web_fetch_proxy_url ?? "");
       })
-      .catch(() => {});
+      .catch((caught) => swallowed("settings: a background load failed", caught));
     return () => {
       cancelled = true;
     };
@@ -301,7 +302,7 @@ export function SettingsDialog({
           reconcile(settings.firecrawl_api_key ?? "", fields.firecrawlApiKey, fields.savedFirecrawlApiKey, setFirecrawlApiKey, setSavedFirecrawlApiKey);
           reconcile(settings.web_fetch_proxy_url ?? "", fields.webFetchProxyUrl, fields.savedWebFetchProxyUrl, setWebFetchProxyUrl, setSavedWebFetchProxyUrl);
         })
-        .catch(() => {});
+        .catch((caught) => swallowed("settings: a background load failed", caught));
     });
   }, [open]);
 
@@ -331,7 +332,7 @@ export function SettingsDialog({
           setAgentConfiguration(configuration);
           setSavedAgentConfiguration(configuration);
         })
-        .catch(() => {});
+        .catch((caught) => swallowed("settings: a background load failed", caught));
     });
   }, [open]);
 

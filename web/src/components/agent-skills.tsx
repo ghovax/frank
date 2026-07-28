@@ -1,6 +1,7 @@
 "use client";
 
 import { Box, Flex, Span, Text } from "@chakra-ui/react";
+import { swallowed } from "@/lib/swallowed";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { LuListChecks, LuPlug, LuPuzzle, LuWrench } from "react-icons/lu";
@@ -56,12 +57,12 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
         .then((skills) => {
           if (!cancelled) setFolderSkills(skills);
         })
-        .catch(() => {});
+        .catch((caught) => swallowed("agent skills: a background load failed", caught));
       fetchMcpTools(workingDirectory)
         .then((servers) => {
           if (!cancelled) setMcpServers(servers);
         })
-        .catch(() => {});
+        .catch((caught) => swallowed("agent skills: a background load failed", caught));
     };
     loadCapabilities();
     // Skills and MCP servers reload live (their files are watched server-side);

@@ -1653,6 +1653,7 @@ export function attachSession(
         try {
           frame = JSON.parse(raw) as SessionStreamFrame;
         } catch {
+          // A stream that closes is the normal end of one; nothing to report.
           return;
         }
         onFrame(frame);

@@ -91,6 +91,7 @@ export function RemoteAgentsPanel() {
     try {
       setAgents(await listRemoteAgents());
     } catch {
+      // The toast below is the report; a console copy would duplicate it.
       toaster.create({ title: "Could not load external agents", type: "error" });
     }
   }, []);
@@ -106,6 +107,7 @@ export function RemoteAgentsPanel() {
         const loaded = await listRemoteAgents();
         if (!cancelled) setAgents(loaded);
       } catch {
+        // Reported by the toast below.
         if (!cancelled) toaster.create({ title: "Could not load external agents", type: "error" });
       }
     })();
@@ -131,6 +133,7 @@ export function RemoteAgentsPanel() {
       await reload();
       toaster.create({ title: `Saved ${input.name}`, type: "success" });
     } catch {
+      // Reported by the toast below.
       toaster.create({ title: "Could not save external agent", type: "error" });
     } finally {
       setSaving(false);
@@ -143,6 +146,7 @@ export function RemoteAgentsPanel() {
         await deleteRemoteAgent(name);
         await reload();
       } catch {
+        // Reported by the toast below.
         toaster.create({ title: "Could not remove external agent", type: "error" });
       }
     },
@@ -154,6 +158,7 @@ export function RemoteAgentsPanel() {
       const result = await refreshRemoteAgent(name);
       toaster.create({ title: `${name}: ${result.health}`, type: result.health === "ok" ? "success" : "error" });
     } catch {
+      // Reported by the toast below.
       toaster.create({ title: "Could not refresh external agent", type: "error" });
     }
   }, []);

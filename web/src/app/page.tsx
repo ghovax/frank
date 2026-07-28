@@ -78,7 +78,7 @@ function ProjectWorkspace() {
         params.set("project", target);
         router.replace(`?${params.toString()}`, { scroll: false });
       })
-      .catch(() => {});
+      .catch((caught) => swallowed("page: a background load failed", caught));
     return () => { cancelled = true; };
   }, [projectId, router]);
 
@@ -146,7 +146,7 @@ function ProjectWorkspace() {
     workingDirectoryRef.current = workingDirectory;
   }, [workingDirectory]);
   const loadAgentCards = useCallback(() => {
-    fetchAgentCards(workingDirectoryRef.current).then(setAgentCards).catch(() => {});
+    fetchAgentCards(workingDirectoryRef.current).then(setAgentCards).catch((caught) => swallowed("page: a background load failed", caught));
   }, []);
   const loadAgents = useCallback(() => {
     fetchAgents(workingDirectoryRef.current)
@@ -171,7 +171,7 @@ function ProjectWorkspace() {
         setModels(catalog.models);
         setModelProviders(catalog.providers);
       })
-      .catch(() => {});
+      .catch((caught) => swallowed("page: a background load failed", caught));
   }, []);
 
 
@@ -282,7 +282,7 @@ function ProjectWorkspace() {
           setWorkspaceStrategy(settings.workspace_strategy ?? "none");
           setCompactionKeepRecentTurns(settings.compaction?.keep_recent_turns ?? 6);
         })
-        .catch(() => {});
+        .catch((caught) => swallowed("page: a background load failed", caught));
     };
     // Arm the audio cues on the first user interaction (browsers keep audio
     // suspended until a gesture); every later chime plays immediately.
@@ -294,13 +294,13 @@ function ProjectWorkspace() {
     loadModelCatalog();
     fetchRecentModels()
       .then(setRecentModels)
-      .catch(() => {});
+      .catch((caught) => swallowed("page: a background load failed", caught));
     // Home is the default project for a brand-new chat; the restoration effect
     // below applies it (or the active session's own folder) — we don't force it
     // here, or it would clobber a session opened directly via ?session=.
     fetchHomeDirectory()
       .then(setHomeProject)
-      .catch(() => {});
+      .catch((caught) => swallowed("page: a background load failed", caught));
 
     // Live reload: refresh agents when they change on disk, and the session list
     // when a session's (LLM-generated) title is updated.
@@ -316,7 +316,7 @@ function ProjectWorkspace() {
       if (event.type === "settings_changed") {
         loadSettings();
         loadModelCatalog();
-        fetchRecentModels().then(setRecentModels).catch(() => {});
+        fetchRecentModels().then(setRecentModels).catch((caught) => swallowed("page: a background load failed", caught));
       }
     });
     return unsubscribe;
@@ -382,7 +382,7 @@ function ProjectWorkspace() {
     let cancelled = false;
     fetchSessionDraft(activeSessionId)
       .then((draft) => { if (!cancelled) setActiveSessionDraft(draft); })
-      .catch(() => {});
+      .catch((caught) => swallowed("page: a background load failed", caught));
     return () => { cancelled = true; };
   }, [activeSessionId]);
 
@@ -404,7 +404,7 @@ function ProjectWorkspace() {
 
   const refreshSessions = useCallback(() => {
     loadSessions()
-      .catch(() => {});
+      .catch((caught) => swallowed("page: a background load failed", caught));
   }, [loadSessions]);
 
   const handleSessionCreated = useCallback(
@@ -557,9 +557,13 @@ function ProjectWorkspace() {
     );
     try {
       await saveAgentConfiguration(selectedAgent, { provider, model }, workingDirectory);
-      fetchRecentModels().then(setRecentModels).catch(() => {});
+      fetchRecentModels().then(setRecentModels).catch((caught) => swallowed("page: a background load failed", caught));
       loadAgents();
-    } catch {
+    } catch (caught) {
+      // The model the user picked did not save. Reloading the agents puts the real value back
+      // on screen, so the change appears to undo itself — which is the only signal they get,
+      // and says nothing about why.
+      swallowed("could not save the agent's model", caught);
       loadAgents();
     }
   }
@@ -569,7 +573,10 @@ function ProjectWorkspace() {
     setSandboxEnforceState(enforce);
     try {
       await setSandboxEnforce(enforce);
-    } catch {
+    } catch (caught) {
+      // Roll the toggle back so it reflects the daemon rather than the click. A sandbox
+      // setting that silently refuses to change is worth a record.
+      swallowed("could not change sandbox enforcement", caught);
       setSandboxEnforceState(previous);
     }
   }
@@ -587,7 +594,8 @@ function ProjectWorkspace() {
         provider_base_urls: {},
         workspace_strategy: strategy,
       });
-    } catch {
+    } catch (caught) {
+      swallowed("could not change the workspace strategy", caught);
       setWorkspaceStrategy(previous);
     }
   }
@@ -641,7 +649,7 @@ function ProjectWorkspace() {
       }
       const local = (project.locations ?? []).find((location) => location.kind === "local");
       setWorkingDirectory(local?.base_directory || homeProject?.path || "");
-    }).catch(() => {});
+    }).catch((caught) => swallowed("page: a background load failed", caught));
     return () => { cancelled = true; };
   }, [projectId, homeProject, router]);
 

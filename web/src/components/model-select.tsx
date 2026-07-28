@@ -26,6 +26,7 @@ import {
 } from "@/lib/api";
 import { ChatGPTAuthControl } from "@/components/chatgpt-auth";
 import { CursorAuthControl } from "@/components/cursor-auth";
+import { swallowed } from "@/lib/swallowed";
 
 interface ModelSelectProps {
   models: ModelOption[];
@@ -249,7 +250,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
         setProviderKeys(keyByProvider(loaded));
         setCustomBaseUrl(loaded.providers?.custom?.base_url ?? "");
       })
-      .catch(() => {});
+      .catch((caught) => swallowed("model select: a background load failed", caught));
     return () => {
       cancelled = true;
     };

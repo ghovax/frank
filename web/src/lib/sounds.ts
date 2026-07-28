@@ -28,6 +28,7 @@ async function playNativeSystemSound(cue: SystemSoundCue): Promise<boolean> {
     const { invoke } = await import("@tauri-apps/api/core");
     return await invoke<boolean>("play_system_sound", { cue });
   } catch {
+    // No Tauri shell — the web build has no system sound to play.
     return false;
   }
 }
@@ -37,6 +38,7 @@ function audioContext(): AudioContext | null {
   try {
     context ??= new AudioContext();
   } catch {
+    // Audio is blocked until the page has been interacted with.
     return null;
   }
   if (context.state === "suspended") void context.resume().catch(() => {});

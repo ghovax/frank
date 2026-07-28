@@ -33,6 +33,7 @@ function tryParse(content: string): unknown {
   try {
     return JSON.parse(content);
   } catch {
+    // Not JSON. Returning null is this function's answer, not a failure.
     return null;
   }
 }
@@ -945,6 +946,7 @@ function safeWebUrl(value: string): string {
     const url = new URL(value);
     return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : "";
   } catch {
+    // Not JSON. Returning null is this function's answer, not a failure.
     return "";
   }
 }

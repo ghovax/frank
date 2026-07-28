@@ -1,6 +1,7 @@
 "use client";
 
 import { Button, Flex, Text } from "@chakra-ui/react";
+import { swallowed } from "@/lib/swallowed";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
@@ -65,7 +66,7 @@ export function ProjectLocationsPanel({ projectId }: { projectId: string }) {
     // projects_changed event (a save reloads explicitly).
     const unsubscribe = subscribeEvents((event) => {
       if (event.type === "hosts_changed") {
-        listSshHosts().then((nextHosts) => { if (!cancelled) setHosts(nextHosts); }).catch(() => {});
+        listSshHosts().then((nextHosts) => { if (!cancelled) setHosts(nextHosts); }).catch((caught) => swallowed("project locations: a background load failed", caught));
       }
     });
     return () => {

@@ -86,6 +86,7 @@ function isToolErrorResult(content: string | null): boolean {
     const parsed = JSON.parse(content);
     return !!parsed && typeof parsed === "object" && !Array.isArray(parsed) && (parsed as Record<string, unknown>).code === "tool_error";
   } catch {
+    // Not JSON — the plain text is what gets shown, which is the point of trying.
     return false;
   }
 }

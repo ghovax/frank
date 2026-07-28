@@ -1,6 +1,7 @@
 "use client";
 
 import { Alert, Box, Button, Text } from "@chakra-ui/react";
+import { swallowed } from "@/lib/swallowed";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LuLogIn, LuLogOut } from "react-icons/lu";
 import { useTranslations } from "next-intl";
@@ -60,7 +61,7 @@ export function CursorAuthControl({
         setStatus(next);
         onStatusChange?.(next);
       })
-      .catch(() => {});
+      .catch((caught) => swallowed("cursor auth: a background load failed", caught));
     return () => {
       cancelled = true;
       stopPolling();
