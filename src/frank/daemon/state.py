@@ -156,7 +156,27 @@ async def wake_then_relay(record, method: str, params: dict) -> dict:
     """
     if record.asleep:
         await _wake(record)
-    return await relay_to_session(record, method, params)
+    try:
+        return await relay_to_session(record, method, params)
+    except SessionUnreachable:
+        # `asleep` is derived from a pid the daemon recorded; the socket is the fact. A session
+        # exits cleanly when its turn ends, so a message sent in the moment between that exit
+        # and the reaper noticing dialled a socket that was already gone — and the person who
+        # sent it was told their session was unreachable, for a session that was merely between
+        # workers. Trust the socket over the pid: record the sleep and try once more.
+        #
+        # Once, deliberately. A second failure is a session that cannot be woken at all, which
+        # is a real fault and must surface rather than turn into a retry loop.
+        slept = registry.sleep(record.id)
+        await _wake(slept if slept is not None else record)
+        return await relay_to_session(slept if slept is not None else record, method, params)
+
+
+class SessionUnreachable(RuntimeError):
+    """No worker answered on the session's socket.
+
+    Distinct from a worker that answered and refused: this one is recoverable by waking.
+    """
 
 
 _wake_locks: dict[str, asyncio.Lock] = {}
@@ -205,9 +225,10 @@ async def relay_to_session(record, method: str, params: dict) -> dict:
                 headers={"Authorization": f"Bearer {record.token}"},
             )
     except (httpx.HTTPError, OSError) as error:
-        # A session whose socket has gone is a session that died without being reaped. Say that
-        # plainly rather than surfacing a connection error the caller cannot act on.
-        raise RuntimeError(f"Session {record.id} is not reachable ({error}).") from error
+        # A session whose socket has gone has no worker right now — either it died without
+        # being reaped, or it simply exited at the end of its turn. Its own type, so the caller
+        # can tell "no worker" apart from "the worker refused this", and act on it.
+        raise SessionUnreachable(f"Session {record.id} is not reachable ({error}).") from error
     if response.status_code >= 400:
         raise RuntimeError(f"Session {record.id} rejected {method}: {response.text[:400]}")
     body = response.json()

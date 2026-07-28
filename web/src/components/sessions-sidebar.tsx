@@ -501,7 +501,7 @@ export function SessionsSidebar({
       {/* "New session" reads as the first row of the list, not a separate button — a
           circle-plus leading glyph on the shared row grid, with a ⌘N hint that surfaces on
           hover. Disabled when we're already in a fresh, un-started conversation. */}
-      <Box px={2} pt={1} flexShrink={0} pb={1}>
+      <Box px={2} pt={1} flexShrink={0} pb={2}>
         <Button
           type="button"
           variant="subtle"
@@ -526,7 +526,7 @@ export function SessionsSidebar({
         </Button>
       </Box>
 
-      <Box px={2} flexShrink={0} pb={1}>
+      <Box px={2} flexShrink={0} pb={2}>
         <Button
           type="button"
           variant="outline"
@@ -546,7 +546,7 @@ export function SessionsSidebar({
       </Box>
 
       {/* Filter the list by title — the same field treatment as the settings search. */}
-      <Box px={2} flexShrink={0} pb={1}>
+      <Box px={2} flexShrink={0} pb={2}>
         <Flex align="center" gap={2} h={8} px={2} borderRadius="md" bg="bg.subtle" borderWidth="1px" borderColor="border.muted" _focusWithin={{ borderColor: "border.emphasized" }}>
           <Box color="fg.muted" flexShrink={0} display="flex" alignItems="center"><LuSearch size={14} /></Box>
           <Input

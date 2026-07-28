@@ -1222,13 +1222,29 @@ export function useChat(
 
       const text = input.text;
 
+      // The turn is over, however it ended. Three things can end it, and they are not
+      // ordered: the session says so with a `turn` frame (the normal case), the stream
+      // closes under us (the session itself ended, or the connection dropped), or the
+      // opening calls threw. Whichever lands first is the one that counts.
+      //
+      // This guard is load-bearing, not defensive: ending the turn closes our stream,
+      // which fires the stream's own `onDone` straight back into here.
+      let settled = false;
       const finishTurn = () => {
+        if (settled) return;
+        settled = true;
+        // Stop watching. The attach stream belongs to the *session* and would otherwise
+        // stay open across every following turn — one leaked connection per turn, against
+        // a browser limit of six per host. The read-only effect below picks the session
+        // back up if the harness wakes it on its own.
+        attachRef.current?.abort();
+        attachRef.current = null;
         stateRef.current.lane = null;
-        // The attach stream has closed. A clean turn already settled its cards from the
-        // events it emitted; but a Stop, or a connection that drops mid-turn (daemon
-        // stall, network loss), closes the stream with no terminal event, which would
-        // otherwise leave every in-flight tool/thinking card spinning forever. Sweep
-        // here as the single catch-all so a card can never outlive its stream.
+        // A clean turn already settled its cards from the events it emitted; but a Stop, or
+        // a connection that drops mid-turn (daemon stall, network loss), ends it with no
+        // terminal event, which would otherwise leave every in-flight tool/thinking card
+        // spinning forever. Sweep here as the single catch-all so a card can never outlive
+        // its turn.
         finishRunningThinking(stateRef.current);
         finishActiveTools(stateRef.current);
         // A message still flagged `steering` was already delivered by `send`: a message
@@ -1239,7 +1255,7 @@ export function useChat(
         const pendingText = queuedMessagesRef.current.filter((message) => !message.steering);
         if (pendingText.length !== queuedMessagesRef.current.length) setQueue(pendingText);
         flush();
-        // A user Stop closes the stream; do not immediately relaunch a queued
+        // A user Stop ends the turn; do not immediately relaunch a queued
         // message as a new turn — that is exactly the "Stop didn't stop" symptom.
         // Consume the one-shot flag and fall through to idle, leaving the queue for
         // the user to send deliberately.
@@ -1260,12 +1276,20 @@ export function useChat(
         }
       };
 
-      let observing = false;
       const observe = (sessionIdentifier: string) => {
-        observing = true;
         attachRef.current = attachSession(
           sessionIdentifier,
           (frame) => {
+            // The one frame that says the turn ended. Ignoring it left the client waiting
+            // for the stream to close instead — which it does not do, because the stream
+            // is the session's and the session goes idle many times over its life. The
+            // turn then never ended as far as the interface was concerned: Stop stayed up,
+            // the composer stayed in queue-a-message mode, and every later send was routed
+            // as steering into a turn that had long since finished.
+            if (frame.kind === "turn") {
+              if (!frame.running) finishTurn();
+              return;
+            }
             // A snapshot is the attach stream's catch-up for a viewer joining mid-turn.
             // We are driving, so our own state already includes the message we just
             // sent and replacing it would drop it from view until it persists.
@@ -1313,10 +1337,9 @@ export function useChat(
             title: "Server request failed",
             message: `Frank could not start the turn: ${detail}`,
           });
-          // Let the attach close drive the wind-down when there is one, so the queue is
-          // drained exactly once however the turn failed.
-          if (observing) attachRef.current?.abort();
-          else finishTurn();
+          // One wind-down for every ending, so the queue is drained exactly once however
+          // the turn failed. `finishTurn` closes the stream itself if one was opened.
+          finishTurn();
         }
       })();
     },

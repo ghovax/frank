@@ -88,13 +88,30 @@ try {
     }
     check(`reply ${round} appears live, with no reload`, appeared);
     if (!appeared) break;
-    // The composer only accepts a fresh turn once this one has wound down; sending sooner
-    // queues the text instead, which tests something else.
-    await page
+
+    // The turn must also *end*. It ends when the session says so on the stream, not when
+    // the stream closes — the stream is the session's and stays open across turns. When
+    // that was confused, the answer arrived and the turn never finished: Stop stayed up
+    // and the next message was routed as steering into a turn already over.
+    const stopped = await page
       .getByRole("button", { name: "Stop" })
-      .waitFor({ state: "detached", timeout: 60000 })
-      .catch(() => {});
+      .waitFor({ state: "hidden", timeout: 60000 })
+      .then(() => true)
+      .catch(() => false);
+    check(`turn ${round} ends: the Stop button goes away`, stopped);
+    if (!stopped) break;
+
+    const composerPlaceholder = await composer.getAttribute("placeholder");
+    check(
+      `composer ${round} returns to normal, not queueing`,
+      !/queue/i.test(composerPlaceholder ?? ""),
+      composerPlaceholder ?? "",
+    );
   }
+
+  // A message sent after a turn has ended starts its own turn; it is not steering.
+  const steeringChips = await page.getByText(/steering next opening/i).count();
+  check("no message was mistaken for steering", steeringChips === 0, `${steeringChips} chips`);
 
   // Hovering one conversation must not act on the others. Regression guard for the project
   // row's descendant selectors matching every nested row.
