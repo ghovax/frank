@@ -393,6 +393,7 @@ class _ToolCall:
     arguments: dict
 
 
+@dataclass
 class _ResolvedToolDecision:
     """The verdict a batch runner hands each tool: run it, deny it (with the exact
     error the gate would have produced), or — for ``ask_user`` — the answers to return.

@@ -33,6 +33,9 @@ session_factory: Any = None
 # The durable turn record. Shared rather than supervision-owned: the daemon writes it as turns
 # happen, and the browser reads it to replay a transcript. Both need the same object.
 turn_store: Any = None
+# The registry's durable half, on the same terms and for the same reason: the daemon owns the
+# registry, and the workspace services read the session rows behind it.
+session_store: Any = None
 async_engine: Any = None
 global_configuration: Any = None
 # Guards a read-modify-write of the configuration file against two clients saving at once.

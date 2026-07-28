@@ -71,7 +71,6 @@ class SessionEventBus:
 # `frank.workspace.state` instead, which is what lets `rest` stop importing this package.
 
 registry: Any = None            # SessionRegistry
-session_store: Any = None       # SqliteSessionStore — the registry's durable half
 prototype: Any = None           # PrototypeClient
 lifecycle: Any = None           # SessionLifecycle
 

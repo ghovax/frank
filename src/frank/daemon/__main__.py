@@ -324,9 +324,9 @@ async def _serve() -> int:
 
     # The registry is durable now: a daemon restart ends every session's *process*, not every
     # session. Live records come back asleep, and the first message to one forks it a worker.
-    state.session_store = SqliteSessionStore(workspace_state.session_factory)
-    state.registry = SessionRegistry(store=state.session_store)
-    restored = await asyncio.to_thread(state.session_store.load_all)
+    workspace_state.session_store = SqliteSessionStore(workspace_state.session_factory)
+    state.registry = SessionRegistry(store=workspace_state.session_store)
+    restored = await asyncio.to_thread(workspace_state.session_store.load_all)
     state.registry.restore(restored)
     live = [record for record in restored if record.is_live]
     if live:

@@ -214,6 +214,19 @@ def build_application(daemon_url: str, token: str, directory: Path):
     ])
 
 
+def _port_is_taken(host: str, port: int) -> bool:
+    """Whether something already listens there. Asked before a daemon is started, not after."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind((host, port))
+        except OSError:
+            return True
+    return False
+
+
 def run(arguments) -> int:
     import uvicorn
 
@@ -225,6 +238,17 @@ def run(arguments) -> int:
         _note(
             "frank: the interface has not been built. Run `cd web && bun run build` in a "
             "checkout, or install the packaged build which carries it."
+        )
+        return 1
+
+    # Claim the port before starting anything, because `uvicorn.run` binds last and a bind that
+    # fails after `ensure_daemon` leaves a daemon running that nobody asked for and nothing is
+    # serving. Whoever already holds the port is almost always an earlier `frank serve`, and the
+    # useful thing to say is so — not a traceback from deep inside uvicorn.
+    if _port_is_taken(arguments.host, arguments.port):
+        _note(
+            f"frank: {arguments.host}:{arguments.port} is already in use — most likely another "
+            f"`frank serve`. Stop it, or pass `--port` to use a different one."
         )
         return 1
 

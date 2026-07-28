@@ -288,7 +288,17 @@ function newReduceState(): ReduceState {
 // transcript with older pages prepended keeps every existing key byte-identical.
 // Falls back to a position-based id only when no messageId is available.
 function stableMessageId(state: ReduceState, prefix: string, sourceId: string | undefined): string {
-  if (!sourceId) return `${prefix}-pos-${state.messages.length}`;
+  if (!sourceId) {
+    // A monotonic counter, not `state.messages.length`. Keying on the length made a row's
+    // identity depend on how many rows happened to precede it, so anything inserted earlier
+    // in the transcript renumbered every row after it. React then saw those rows as new,
+    // mounted fresh copies while the old ones were still fading out, and — because the
+    // outgoing copies were still in the layout — the timeline briefly rendered both. That is
+    // the shift: the conversation grows by the height of the duplicates, then snaps back.
+    const issued = state.keyCounts.get("") ?? 0;
+    state.keyCounts.set("", issued + 1);
+    return `${prefix}-anon-${issued}`;
+  }
   const seen = state.keyCounts.get(sourceId) ?? 0;
   state.keyCounts.set(sourceId, seen + 1);
   return `${prefix}-${sourceId}-${seen}`;
