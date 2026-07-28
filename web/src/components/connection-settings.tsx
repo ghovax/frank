@@ -37,6 +37,21 @@ import {
   type ConnectionProfile,
 } from "@/lib/connection-store";
 
+// Every "a place you can connect to" control is laid out from this one object: the local
+// row, each saved row, and the two picker cards. They are not the same element — the cards
+// are Chakra Buttons and the rows are Flexes — so left alone the rows inherit nothing while
+// the cards inherit the button recipe (px 3.5, gap 2, radius l2). Matching them by eye is
+// what let them drift: the rows ended up a hair wider, squarer, and with the icon 8px closer
+// to its label than the cards sitting directly beneath them. Stated explicitly on both, they
+// cannot disagree again, and neither depends on a recipe default that may change.
+const CONNECTION_TILE = {
+  borderWidth: "1px",
+  borderRadius: "l2",
+  px: 3.5,
+  py: 2.5,
+  gap: 2,
+} as const;
+
 export function ConnectionSettings({
   currentTargetId,
   onConnected,
@@ -328,14 +343,16 @@ export function ConnectionSettings({
             <SectionHeader mb={0} icon={<LuLaptop size={15} />} title={translation("thisMachine")} />
             <Flex
               align="center"
-              borderWidth="1px"
+              {...CONNECTION_TILE}
               borderColor={localActive ? "green.emphasized" : "border"}
-              borderRadius="md"
-              px={4}
-              py={2.5}
               pr={2.5}
             >
-              <Box color={localActive ? "green.fg" : "fg.muted"} flexShrink={0} lineHeight="0">
+              <Box
+                color={localActive ? "green.fg" : "fg.muted"}
+                flexShrink={0}
+                display="flex"
+                alignItems="center"
+              >
                 <LuLaptop size={14} />
               </Box>
               <Box textAlign="left" pl={1.5} flex={1} minW={0}>
@@ -389,14 +406,16 @@ export function ConnectionSettings({
                   <Flex
                     key={profile.id}
                     align="center"
-                    borderWidth="1px"
+                    {...CONNECTION_TILE}
                     borderColor={active ? "green.emphasized" : "border"}
-                    borderRadius="md"
-                    px={4}
-                    py={2.5}
                     pr={2.5}
                   >
-                    <Box color={active ? "green.fg" : "fg.muted"} flexShrink={0} lineHeight="0">
+                    <Box
+                      color={active ? "green.fg" : "fg.muted"}
+                      flexShrink={0}
+                      display="flex"
+                      alignItems="center"
+                    >
                       {profile.kind === "ssh" ? <LuNetwork size={14} /> : <LuServer size={14} />}
                     </Box>
                     <Box textAlign="left" pl={1.5} flex={1} minW={0}>
@@ -445,7 +464,7 @@ export function ConnectionSettings({
             <Flex gap={2.5}>
               <Button
                 h="auto"
-                py={2.5}
+                {...CONNECTION_TILE}
                 variant={addMode === "url" ? "subtle" : "outline"}
                 colorPalette={addMode === "url" ? "blue" : "gray"}
                 flex={1}
@@ -460,7 +479,7 @@ export function ConnectionSettings({
               </Button>
               <Button
                 h="auto"
-                py={2.5}
+                {...CONNECTION_TILE}
                 variant={addMode === "ssh" ? "subtle" : "outline"}
                 colorPalette={addMode === "ssh" ? "blue" : "gray"}
                 flex={1}
