@@ -108,7 +108,7 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
   // (which would always be empty) is suppressed — only real project folders show it.
 
   return (
-    <Box w="100%" maxW="640px" mx="auto" pb={4}>
+    <Box w="100%" pb={4}>
       {hasSkills && (
         <>
           <SectionHeader

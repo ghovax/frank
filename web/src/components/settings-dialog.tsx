@@ -560,7 +560,7 @@ export function SettingsDialog({
             secretRow(translation("proxyServer"), "http://user:pass@host:port", webFetchProxyUrl, setWebFetchProxyUrl, translation("proxyServerHint")),
           ],
         },
-        { title: translation("modelProviders"), rows: [], block: <Flex direction="column" gap={5} maxW="520px"><ChatGPTAuthControl /><CursorAuthControl /></Flex> },
+        { title: translation("modelProviders"), rows: [], block: <Flex direction="column" gap={5} w="100%"><ChatGPTAuthControl /><CursorAuthControl /></Flex> },
       ],
     },
     ...(projectId ? [{
@@ -711,7 +711,16 @@ export function SettingsDialog({
                             ))}
                             {/* A block after rows is separated from the last row's divider by top
                                 padding; a standalone block (no rows) sits flush under the heading. */}
-                            {pageSection.block ? <Box pt={pageSection.rows.length > 0 ? 4 : 0}>{pageSection.block}</Box> : null}
+                            {pageSection.block ? (
+                              // Settings owns the content width, and every panel fills it.
+                              // Each panel used to pick its own — 520, 560, 640 — so the
+                              // Folders panel stopped short of the pane while its neighbours
+                              // reached the edge, and the measure changed as you moved between
+                              // tabs.
+                              <Box pt={pageSection.rows.length > 0 ? 4 : 0} w="100%" maxW="640px">
+                                {pageSection.block}
+                              </Box>
+                            ) : null}
                           </SettingsSection>
                         ))}
                       </Box>

@@ -211,6 +211,12 @@ def get_usage_snapshot() -> Optional[dict[str, Any]]:
     return _usage_snapshot
 
 
+def set_usage_snapshot(usage: Optional[dict[str, Any]]) -> None:
+    """Hold a snapshot captured elsewhere. The daemon calls this with what a worker read."""
+    global _usage_snapshot
+    _usage_snapshot = usage
+
+
 def clear_usage_snapshot() -> None:
     """Drop the snapshot on sign-out or sign-in, so stale limits do not linger."""
     global _usage_snapshot

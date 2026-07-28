@@ -112,7 +112,7 @@ export function ProjectLocationsPanel({ projectId }: { projectId: string }) {
   }
 
   return (
-    <Flex direction="column" gap={3} maxW="560px">
+    <Flex direction="column" gap={3} w="100%">
       {failedProjectId === projectId ? (
         <Text fontSize="sm" color="red.fg">{translation("loadError")}</Text>
       ) : (

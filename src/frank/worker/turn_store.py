@@ -103,6 +103,14 @@ class DaemonTurnStore(TaskStore):
         than after the turn's next persistence point."""
         await self._call("session.event", event=event)
 
+    async def publish_usage(self, usage: dict) -> None:
+        """Hand the daemon the account's rate-limit snapshot, read from a reply's headers.
+
+        It is captured in this process and read by the daemon, which serves the settings
+        surface — two processes, so a module global in one is invisible to the other. It
+        travels the same road as every other thing a worker knows and the daemon owns."""
+        await self._call("session.usage", usage=usage)
+
     async def publish_title(self, title: str) -> None:
         """Hand the daemon a title this session generated for itself."""
         await self._call("session.title", title=title)

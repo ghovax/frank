@@ -215,6 +215,13 @@ class Tunable(Enum):
         5.0, Scaling.TIME,
         "How long the daemon waits before trying again after the prototype failed to restart.",
     )
+    session_idle_sleep_seconds = Default(
+        18000.0, Scaling.TIME,
+        "How long a session keeps its process after its last turn before it sleeps. Five hours "
+        "by default: long enough that a working day of on-and-off use never pays a wake, short "
+        "enough that a machine left overnight is not holding interpreters for conversations "
+        "nobody returned to.",
+    )
     session_start_seconds = Default(
         60.0, Scaling.TIME,
         "How long the daemon waits for a forked session to bind its socket and report ready.",

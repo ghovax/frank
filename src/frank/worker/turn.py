@@ -259,6 +259,21 @@ class _TurnRunner:
 
     # The phases themselves.
 
+    async def _publish_usage_snapshot(self) -> None:
+        """Send the daemon whatever this turn learned about the account's limits.
+
+        Best-effort and never fatal: a turn that worked must not be reported as failed
+        because a usage reading did not reach the daemon."""
+        from frank.base.subscription import get_usage_snapshot
+
+        snapshot = get_usage_snapshot()
+        if not snapshot:
+            return
+        try:
+            await self._ex._turn_store.publish_usage(snapshot)
+        except Exception:  # noqa: BLE001 — telemetry must not fail a turn
+            logger.warning("Could not publish the subscription usage snapshot", exc_info=True)
+
     async def _ingest(self) -> _Ingested:
         """Parse the request message into the turn's inputs and mode flags. Returns them as a
         typed ``_Ingested`` (threaded into the next phase) and also stores the lifecycle bits
@@ -604,6 +619,11 @@ class _TurnRunner:
             )
             if session_state is not None and self._runtime is not None:
                 self._runtime.clear_session_dirty()
+            # The subscription's rate-limit reading, captured off this turn's replies. It is
+            # read here and held by the daemon: the headers only ride on a model call, which
+            # happens in this process, and the settings surface that shows it is served by
+            # another. A module global cannot cross that.
+            await self._publish_usage_snapshot()
         # Stop accepting steering for this context before draining the queue, then discard
         # anything that arrived too late to be honored (raced in after the loop's final
         # drain, or while the turn was ending/failing). Such messages were never applied to

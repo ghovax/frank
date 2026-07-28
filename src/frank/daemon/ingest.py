@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse
 from a2a.types import Task
 
 from frank.base.background_tasks import spawn_background_task
+from frank.base.tuning import Tunable, active_tuning
 from frank.daemon import state
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,9 @@ def _set_turn_state(session_id: str, running: bool, retains: bool = False) -> No
     A count rather than a flag because a session can have more than one turn open at once —
     a compaction or an autonomous wake alongside the user's — and the sidebar must not go
     quiet when the first of them finishes."""
+    if running:
+        # Used again, so any pending idle timer is stale.
+        cancel_idle_sleep(session_id)
     previous = state._running_contexts.get(session_id, 0)
     updated = previous + 1 if running else max(0, previous - 1)
     if updated:
@@ -95,28 +99,63 @@ def _set_turn_state(session_id: str, running: bool, retains: bool = False) -> No
             _sleep_when_idle(session_id)
 
 
+# One pending idle timer per session. A session that goes idle starts one; anything that
+# touches the session again cancels it and the next idle start replaces it.
+_IDLE_TIMERS: dict[str, asyncio.Task] = {}
+
+
+def cancel_idle_sleep(session_id: str) -> None:
+    """The session was used again, so it is no longer idle."""
+    timer = _IDLE_TIMERS.pop(session_id, None)
+    if timer is not None and not timer.done():
+        timer.cancel()
+
+
+async def _sleep_after_idle(session_id: str, delay: float) -> None:
+    """Wait out the idle window, then stop the process if nothing intervened."""
+    try:
+        await asyncio.sleep(delay)
+    except asyncio.CancelledError:
+        return
+    _IDLE_TIMERS.pop(session_id, None)
+    if state.lifecycle is None or state.registry is None:
+        return
+    record = state.registry.get(session_id)
+    if record is None or not record.is_live or not record.pid or record.busy:
+        return
+    logger.info("Session %s idle for %.0fs; sleeping it", session_id, delay)
+    await state.lifecycle.sleep(session_id)
+
+
 def _sleep_when_idle(session_id: str) -> None:
-    """Stop an idle session's process, keeping the session itself.
+    """Stop an idle session's process after the idle window, keeping the session itself.
 
-    **Immediately, with no linger window.** A window would be a cache with a timeout nobody can
-    set correctly, and it would be caching against a cost that no longer exists: waking is a
-    fork, which is about 60 ms. Keeping a 12 MB interpreter alive on the chance that a message
-    arrives is paying continuously to avoid paying occasionally.
+    **Not immediately.** A session used to sleep the moment its turn ended, on the reasoning
+    that waking is only a fork and therefore cheap. Waking is cheap; the things that live in
+    the process are not. Anything a session holds in memory between turns — a usage snapshot
+    read from a reply's headers, a warm connection, an in-flight background job — died with
+    every turn, and the only way to keep it was to give it a home outside the process. That is
+    the right answer for durable state and the wrong one for everything else.
 
-    `retains` is the one thing that stops this, and it comes from the worker because only the
-    worker can know it: a background job is an in-process `asyncio.Task` and sleeping would
-    kill it.
+    So a session now keeps its process until it has been idle for
+    `Tunable.session_idle_sleep_seconds` — five hours by default. A conversation you come back
+    to is still there; a machine left overnight is not holding interpreters for conversations
+    nobody returned to.
 
-    A session parked on a permission prompt is the clearest case for this and takes a
-    different path — it never had a running turn to end — so it is handled where the
-    suspension is reported rather than here.
+    `retains` still stops this outright, and it comes from the worker because only the worker
+    can know it: a background job is an in-process `asyncio.Task` and sleeping would kill it.
+
+    A session parked on a permission prompt takes a different path — it never had a running
+    turn to end — so it is handled where the suspension is reported rather than here.
     """
     if state.lifecycle is None:
         return
     record = state.registry.get(session_id) if state.registry is not None else None
     if record is None or not record.is_live or not record.pid:
         return
-    spawn_background_task(state.lifecycle.sleep(session_id))
+    cancel_idle_sleep(session_id)
+    delay = active_tuning().duration(Tunable.session_idle_sleep_seconds)
+    _IDLE_TIMERS[session_id] = spawn_background_task(_sleep_after_idle(session_id, delay))
 
 
 async def _session_claim_work_habits(params: dict) -> dict:
@@ -172,6 +211,19 @@ async def _session_event(params: dict) -> dict:
     return {"published": True}
 
 
+async def _session_usage(params: dict) -> dict:
+    """A subscription's rate-limit snapshot, as a worker read it off a reply.
+
+    Captured in the session process because that is where the model call happens, and held
+    here because the daemon is what serves the settings surface. The daemon keeps the latest;
+    there is one account, and an older reading of it is of no interest."""
+    from frank.base import subscription
+
+    usage = params.get("usage")
+    subscription.set_usage_snapshot(usage if isinstance(usage, dict) else None)
+    return {"noted": True}
+
+
 async def _session_title(params: dict) -> dict:
     """A title a session generated for itself.
 
@@ -205,6 +257,7 @@ _METHODS = {
     "turn.list_for_session": _turn_list_for_session,
     "session.event": _session_event,
     "session.title": _session_title,
+    "session.usage": _session_usage,
 }
 
 
