@@ -61,11 +61,16 @@ providers:
 
 Around forty providers are registered. They include Cerebras, Together, Fireworks, Perplexity, Moonshot, Nebius, Cloudflare and GitHub Copilot. The registry in `src/frank/base/providers.py` is the full list, with the environment variable each one reads.
 
-You can also **sign in with a ChatGPT or a Cursor subscription** instead of pasting a key (Settings → Providers). Neither is a LiteLLM route, and neither appears in the block above, because neither has a key to store. `chatgpt` calls Codex's Responses endpoint with an OAuth token. `cursor` calls Cursor's agent service with one. Both live in the data directory's `oauths/` folder, one file per provider: `oauths/chatgpt.json` and `oauths/cursor.json`. They are written mode 0600, inside a 0700 directory.
+You can also **sign in with a ChatGPT or a Cursor subscription** instead of pasting a key (Settings → Providers). Neither is a LiteLLM route, and neither appears in the block above, because neither has a key to store. `chatgpt` calls Codex's Responses endpoint with an OAuth token. `cursor` calls Cursor's agent service with one.
+ Both live in the data directory's `oauths/` folder, one file per provider: `oauths/chatgpt.json` and `oauths/cursor.json`. They are written mode 0600, inside a 0700 directory.
 
 They stay out of `configuration.yaml` deliberately. That file is digest-synced, and it would thrash on every silent token refresh.
 
-Nothing reads any older location. An upgrade from a version that kept tokens elsewhere therefore signs you out once. Sign in again, and the token lands in the folder. Which models each plan actually serves is discovered live from the account, so a model the plan does not include stays greyed in the picker. The `cursor` provider lists nothing until you sign in. Its models, their names, and their context windows all come from the account. No list of them ships in the code. Both are unofficial routes that the vendor can withdraw at any time.
+Nothing reads any older location. An upgrade from a version that kept tokens elsewhere therefore signs you out once. Sign in again, and the token lands in the folder.
+
+Which models each plan actually serves is discovered live from the account, so a model the plan does not include stays greyed in the picker. The `cursor` provider lists nothing until you sign in. Its models, their names, and their context windows all come from the account. No list of them ships in the code.
+
+Both are unofficial routes that the vendor can withdraw at any time.
 
 **Which model a session uses** is not set here — it belongs to the agent profile, in that agent's `configuration.json` under `preset`. See [Agents and skills](agents-and-skills.md#agents). A profile pinned to a provider you have no credentials for fails on its first call. It does not borrow another profile's model. Its own configuration defines an agent, and nothing else does.
 
