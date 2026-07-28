@@ -2,13 +2,13 @@
 
 **An open agent harness where every session is a process you can address.**
 
-The harness is the code between the model and your machine. It holds the turn loop, the tools, the prompts, and the permissions. In Frank you can edit all of it. Drive it from the terminal, from the macOS app, from your own program, or from another agent.
+The harness is the code between the model and your machine: the turn loop, the tools, the prompts, and the permissions. In Frank all of it is yours to edit. Drive it from the terminal, from the macOS app, from your own program, or from another agent.
 
 A session here has three properties, and they are the whole design:
 
-- **Executable.** It is a real OS process with a pid. You can kill it.
-- **Addressable.** It has its own unix socket and its own capability token.
-- **Composable.** Sessions create each other and message each other. They use the control plane that you use.
+- **Executable**, because it is a real OS process with a pid you can kill.
+- **Addressable**, because it has its own unix socket and its own capability token.
+- **Composable**, because sessions create and message each other through the control plane you use yourself.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Platform: macOS (Apple Silicon)](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-black) ![Built with Tauri, Next.js, LangChain](https://img.shields.io/badge/built%20with-Tauri%2C%20Next.js%2C%20LangChain-6E56CF)
 
@@ -18,12 +18,12 @@ Everything in Frank is a **session**: one OS process running one agent, created 
 
 Four ways in, kept apart:
 
-- **`frankd`** — a thin daemon. It keeps the registry of sessions, supervises their processes, owns the databases as the sole writer, and brokers the shared resources. It runs no agents itself, and it never imports the agent runtime. It therefore delegates the start of a session to the **prototype**. The prototype imports the runtime once. It then forks a copy of itself for each session in about 60 milliseconds.
+- **`frankd`** — a thin daemon. It keeps the registry of sessions, supervises their processes, owns the databases as the sole writer, and brokers the shared resources. It runs no agents itself and never imports the agent runtime, so it delegates the start of a session to the **prototype**. That process imports the runtime once, then forks a copy of itself for each session in about 60 milliseconds.
 - **`frank`** — the command. `create` a session, `send` it work, and `ps` what runs. `attach` to watch, `tree` to see what created what, and `approve` what it asks for. `configure` the next session, `open` the desktop app, and `kill` a subtree. The command adds nothing that the control plane does not have; it is the ergonomic face of it. See the [CLI guide](documentation/cli.md).
 - **The app** — a native macOS client (Tauri + Next.js) over the same API. A *client*: it finds a daemon and talks to it, and contains no harness of its own. `frank app` starts one and launches the window together.
 - **The library** — `import frank`. `frank.Session` runs an agent in *your* process, with no daemon and no socket. Everything it would write to disk is a seam you can replace: the model, the checkpoints, the jobs, the approver, the observer. Each seam is a `typing.Protocol`, so your object qualifies by having the right methods. See [As a library](documentation/library.md).
 
-Sessions compose the same way you do. A session that needs a peer calls `create_session`. That reaches the same control plane your terminal reaches. There is one API, whether the caller is a person, the desktop app, or an agent.
+Sessions compose the same way you do. A session that needs a peer calls `create_session`, which reaches the same control plane your terminal reaches. There is one API, whether the caller is a person, the desktop app, or an agent.
 
 The peer reports back by sending its parent a message. An answer is therefore a message, not something rebuilt from a transcript. A child is a real session: it appears in `frank ps`, you can attach to it, and it is reaped when its parent ends.
 
@@ -113,7 +113,7 @@ Every durable thing is a seam: `checkpoints`, `jobs`, `transcript`, `approvals`,
 | `frank ps` | Shows what runs, and what waits on you |
 | `frank attach <id>` | Follows it live |
 
-A session composes over the API, not over this command. `create_session` makes a peer and gives it a brief. `message_session` reaches a session in either direction. `end_session` stops one.
+A session composes over the API, not over this command. `create_session` makes a peer and gives it a brief, `message_session` reaches a session in either direction, and `end_session` stops one.
 
 These use the same daemon, the same sockets, and the same tree. The tool carries the caller's identity, which an argv string cannot do. A peer is therefore always a child of whoever made it, and its answer arrives as a message.
 

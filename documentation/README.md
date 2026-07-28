@@ -76,7 +76,7 @@ The layering is `base` → `protocol` → `computer`/`locations` → `runtime` �
 
 **The daemon never imports the runtime.** That keeps the control plane small. It is also why the *prototype* lives in `worker/` and is reached over a socket, rather than being a function the daemon calls. Every session is forked out of the prototype. Whatever forks a session must already have paid for the runtime import, and the daemon must never be that.
 
-**`rest` never imports `daemon`.** The browser surface reaches `workspace` — projects, locations, settings, agents, terminals — and none of that supervises anything. It used to live inside the daemon, which is the only reason a GUI surface had to import the process that supervises agents. Where a workspace change has a supervision consequence, the workspace calls a hook the composition root filled in.
+**`rest` never imports `daemon`.** The browser surface reaches `workspace`: projects, locations, settings, agents, terminals. None of that supervises anything, so a GUI surface never imports the process that supervises agents. Where a workspace change has a supervision consequence, the workspace calls a hook that the composition root filled in.
 
 Runtime state never lives in the repository. Frank follows the XDG convention:
 

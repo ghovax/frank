@@ -120,7 +120,7 @@ Ends the session and everything under it, children first, so a child never obser
 
 "Everything under it" means the session's whole **process session**, not just the worker. Each session spawns as a process-session leader. Every shell command it ran, and everything those commands started, therefore carries its session id.
 
-A dev server that a session left holding a port goes down with the session that started it. The process *group* is the wrong unit for this, and it used to be what the harness signalled. The `bash` tool deliberately puts each command in a group of its own, so that a cancelled job reaps that job's subtree. By construction, that put the command outside a group-wide kill.
+A dev server that a session left holding a port goes down with the session that started it. The process *group* is the wrong unit for this. The `bash` tool deliberately puts each command in a group of its own, so that a cancelled job reaps that job's subtree. That by construction puts the command outside a group-wide kill.
 
 A process survives one way only: it calls `setsid` and leaves the session. That also takes it out of everything else the harness tracks. If you want something to outlive the session that started it, that is how — and it is then yours to stop.
 
@@ -178,7 +178,7 @@ The app is addressed by bundle identifier rather than by name, so renaming or mo
 
 `restart` **keeps your sessions**. Each one loses its process and comes back asleep, picking up where it left off on the next message; `sessions_slept` says how many that was. It exists because macOS caches the Accessibility trust check per process.
 
-A daemon that was already running when you granted the permission therefore never sees it. The prototype it forks sessions from is a re-exec of it, so neither do the sessions. The desktop app asks for the same thing over the control plane, with `daemon.restart`. That makes the grant flow one click, now that a restart of the window no longer restarts the harness.
+A daemon that was already running when you granted the permission therefore never sees it. The prototype it forks sessions from is a re-exec of it, so neither do the sessions. The desktop app asks for the same thing over the control plane, with `daemon.restart`. That makes the grant flow one click, because a restart of the window does not restart the harness.
 
 `stop` and `restart` signal the process group; they do not call the API. A daemon wedged badly enough to need stopping may not answer its own socket.
 
@@ -274,7 +274,7 @@ frank run --allow "run the tests and tell me what failed"
 | `frank auth status` | Who is signed in, if anyone |
 | `frank auth logout` |  |
 
-Only ChatGPT works this way — every other provider takes an API key through `frank configure`. It is a verb, not a setting, because you cannot type the credential. It is an OAuth exchange that lands on a loopback callback. Before this it existed only inside the browser interface, which meant a headless install could not reach the one provider that needs no key.
+Only ChatGPT works this way — every other provider takes an API key through `frank configure`. It is a verb, not a setting, because you cannot type the credential. It is an OAuth exchange that lands on a loopback callback. It is a command so that a headless install can reach the one provider that needs no key.
 
 ## Talking to a session directly
 

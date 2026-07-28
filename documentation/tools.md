@@ -1,6 +1,6 @@
 # Tools
 
-A session acts through tools. Every tool call goes through the [permission engine](configuration.md#permission-modes). A risky call pauses for approval. The approval reaches you as a prompt in the app, or as `frank approve` in the terminal. The description the model reads is in the repo: a docstring in `src/frank/runtime/tools/registry.py` for most tools, a template in `src/frank/runtime/prompts/tool_*.md` for the peer-session ones.
+A session acts through tools, and every tool call goes through the [permission engine](configuration.md#permission-modes). A risky call pauses for approval. The approval reaches you as a prompt in the app, or as `frank approve` in the terminal. The description the model reads is in the repo: a docstring in `src/frank/runtime/tools/registry.py` for most tools, a template in `src/frank/runtime/prompts/tool_*.md` for the peer-session ones.
 
 There is no delegation tool and no in-process sub-agent. A session that needs a peer creates one with `create_session`, which reaches the same control plane your terminal does. See [Architecture](architecture.md#sessions).
 
@@ -69,7 +69,7 @@ A peer that dies before it reports cannot say so. That is the one thing the harn
 
 ## Screen control (`control_screen`)
 
-Frank drives the live screen through one tool, `control_screen`. It covers native macOS apps and **your own Chrome**. Its Python script finds elements and acts on them. It is **macOS-only** and **opt-in**: gated by `computer_control.enabled` (off by default; see [Configuration guide](configuration.md#execution-and-permissions)).
+Frank drives the live screen through one tool, `control_screen`, covering native macOS apps and **your own Chrome**. Its Python script both finds elements and acts on them. It is **macOS-only** and **opt-in**: gated by `computer_control.enabled` (off by default; see [Configuration guide](configuration.md#execution-and-permissions)).
 
 **Finding — read the live surface.** Inside the script, `find_many(query)` and `find_one(query)` take a plain-language query. They return the matching UI as **ranked elements** to act on, not as pixels. Each element carries a stable `id`, its role, its text, and its context. On native apps this reads the **accessibility tree**. On Chrome it reads the page's real semantic structure, roles and names, iframes included. It uses the Chrome DevTools Protocol through Playwright.
 

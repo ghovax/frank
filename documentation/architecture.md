@@ -43,7 +43,7 @@ flowchart LR
 
 A **session** is a durable record, with an OS process only while it is working. The harness creates it empty, then drives it by messages over its life. Creation and work are separate steps. You can therefore send the same session a second task, attach to it, and inspect it between them.
 
-The process is an activity, not the session. An idle session sleeps immediately. Its worker stops; its record and its conversation stay. The next message forks it a new worker from the prototype, in about 60 ms.
+The process is an activity, not the session. An idle session sleeps immediately: its worker stops, and its record and its conversation stay. The next message forks it a new worker from the prototype, in about 60 ms.
 
  There is deliberately no linger window. At that price, a 12 MB interpreter held alive for a message that may not come pays continuously to avoid paying occasionally. 
 A session parked on a permission prompt is the clearest case. The suspension is already fully on disk. To hold an interpreter for a person who may take hours bought nothing.

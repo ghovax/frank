@@ -34,7 +34,7 @@ exists to provide:
 | Peers (`create_session` and friends) | Only if you supply `peers` | Yes |
 | Confinement of tool children | **Identical** | **Identical** |
 
-Confinement surprises people, so here it is plainly. A session process was never sandboxed. Its *tool children* are. A child is confined at the moment it is spawned. That is the same code on both paths.
+Confinement surprises people, so here it is plainly. A session process was never sandboxed; its *tool children* are, and a child is confined at the moment it is spawned. That is the same code on both paths.
 
 ## The seams
 
@@ -161,7 +161,7 @@ decides whether there is one at all.
 
 ### The transcript
 
-`Checkpoints` answers "resume this conversation". `Transcript` answers "what has this session done". It holds one entry per completed turn. Each entry records what was asked, what came back, how it ended, and what it cost:
+`Checkpoints` answers "resume this conversation". `Transcript` answers "what has this session done", with one entry per completed turn. Each entry records what was asked, what came back, how it ended, and what it cost:
 
 ```python
 async with Session("general-assistant", session_id="nightly") as session:
@@ -197,7 +197,7 @@ ours is consulted, because none is needed.
 
 One interface supplies everything the prompt is assembled from: the agent profile, the skills, the memories, the project's instructions, and the prompt templates. These differ in how the harness *parses* them, not in how it *finds* them.
 
-The default matters more here than anywhere else. Before this seam existed, the harness walked hardcoded paths to find that material. The instruction loader read `~/.config/opencode/AGENTS.md` and `~/.claude/CLAUDE.md` unconditionally, out of the user's home directory. Those are two *other products'* configuration files.
+The default matters more here than anywhere else. A library must not read another product's configuration out of your home directory, and must not walk hardcoded paths to find prompt material.
 
 A library session's default catalogue therefore reads the working directory and the packaged agents, and nothing of `$HOME`. `frankd` and the CLI use `machine_catalogue`, which does read all of it, because there the person running it is the person those files describe.
 

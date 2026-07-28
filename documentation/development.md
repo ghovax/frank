@@ -37,7 +37,7 @@ uv run python -m frank frankd
 
 One image, three entry points, chosen by the first argument: `frank` (the CLI), `frankd` (the daemon), `prototype` (the process sessions are forked out of). A bare launch lands in the CLI, which is why the daemon has to be asked for. `frank daemon stop` takes down a foreground daemon and its sessions with it.
 
-There is deliberately no `worker` entry point. Nothing execs a session. Each one is a `fork()` of the prototype. An entry point for a session would therefore start a process that the architecture never starts.
+There is deliberately no `worker` entry point. Nothing execs a session — each one is a `fork()` of the prototype. An entry point for a session would therefore start a process that the architecture never starts.
 
 It listens on a unix socket in your runtime directory. For GUI clients it also listens on an ephemeral loopback port. `frank daemon endpoint` reports the port and the capability token.
 
@@ -125,7 +125,7 @@ packaging/sign-app.sh "packaging/dist/Frank Computer Use.app"
 packaging/sign-app.sh web/src-tauri/target/release/bundle/macos/Frank.app
 ```
 
-The daemon is signed `--deep` with `packaging/Entitlements.plist`. It sends Apple Events for its login-items and running-apps probes. It also loads PyInstaller's dylibs without library validation. The app needs neither and signs plain; both entitlements used to sit on the app only because it was the daemon's parent process. The identity is self-signed, so Gatekeeper still warns on other machines until a build is Apple-notarized.
+The daemon is signed `--deep` with `packaging/Entitlements.plist`. It sends Apple Events for its login-items and running-apps probes. It also loads PyInstaller's dylibs without library validation. The app needs neither entitlement, so it signs plain. The identity is self-signed, so Gatekeeper still warns on other machines until a build is Apple-notarized.
 
 ### Installing the daemon
 

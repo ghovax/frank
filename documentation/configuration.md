@@ -21,7 +21,7 @@ This document is the reference for the file itself.
 
 A change applies to whatever starts **next**. A running session keeps the configuration it was built with. That is the same guarantee its permission mode carries. Some settings are the exception: the daemon pushes them out, and the sandbox, computer control, and the user-context snapshot each ask live sessions to rebuild.
 
-**`frank configure --all` is the complete reference.** It prints every setting the schema defines. Each one shows what it is for, what it ships at, and what your machine runs on now. There is deliberately no checked-in file that says the same thing. A second copy of the defaults is a second thing to keep true. The one this repository carried had drifted: it documented renamed settings under their old names, and it missed settings that someone added. The command reads the running code, so it cannot.
+**`frank configure --all` is the complete reference.** It prints every setting the schema defines. Each one shows what it is for, what it ships at, and what your machine runs on now. There is deliberately no checked-in file that says the same thing. A second copy of the defaults is a second thing to keep true, and it drifts. It names settings under the wrong names, and misses settings entirely. This command reads the running code, so it cannot drift.
 
 This document is the *narrative* — what the settings mean and how they relate. The command is the exhaustive list.
 
@@ -81,7 +81,7 @@ You can also **sign in with a ChatGPT or a Cursor subscription** instead of past
 
 They stay out of `configuration.yaml` deliberately. That file is digest-synced, and it would thrash on every silent token refresh.
 
-Nothing reads any older location. An upgrade from a version that kept tokens elsewhere therefore signs you out once. Sign in again, and the token lands in the folder.
+
 
 Which models each plan actually serves is discovered live from the account, so a model the plan does not include stays greyed in the picker. The `cursor` provider lists nothing until you sign in. Its models, their names, and their context windows all come from the account. No list of them ships in the code.
 
