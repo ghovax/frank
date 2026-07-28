@@ -1305,11 +1305,17 @@ export function useChat(
           // message, and a subscription opened afterwards would miss the opening frames.
           observe(sessionIdentifier);
           await sessionSend(sessionIdentifier, messageParts(text, dataParts), { messageId: userMessageId });
-        } catch {
+        } catch (caught) {
+          // The reason, not just the fact. This was a bare `catch {}`, so whatever actually
+          // went wrong — which call, which status, which network failure — was discarded and
+          // replaced with advice to read a daemon log that, for a failure on this side of the
+          // wire, has nothing in it. That sent an investigation looking in the wrong process.
+          const detail = caught instanceof Error ? caught.message : String(caught);
+          console.error("[frank] could not start the turn:", caught);
           pushErrorMessage(stateRef.current, {
             code: "server_error",
             title: "Server request failed",
-            message: "Frank could not start the turn. Check the daemon log and try again.",
+            message: `Frank could not start the turn: ${detail}`,
           });
           // Let the attach close drive the wind-down when there is one, so the queue is
           // drained exactly once however the turn failed.
