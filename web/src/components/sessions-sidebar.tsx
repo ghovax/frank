@@ -135,10 +135,10 @@ const SELECTED_BG = "blue.subtle";
 const SELECTED_HOVER_BG = "blue.muted";
 
 // Extra left-shift, beyond the raw overflow, so a fully-scrolled title comes to rest with
-// its end clear of the row's trailing ⋯ actions (which sit ~24px in from the right) rather
-// than sliding underneath them. The matching CSS mask (globals.css) keeps that trailing
-// gap transparent while a title travels.
-const MARQUEE_TAIL_CLEARANCE = 30;
+// its end clear of the row's trailing ⋯ actions rather than sliding underneath them. The
+// button is 32px wide, so this is that plus a margin, and it matches the clear zone of the
+// hover mask in globals.css — the two describe the same edge and drifted apart once already.
+const MARQUEE_TAIL_CLEARANCE = 44;
 
 // A session title that scrolls its overflow on hover (see `.sidebar-title` in globals.css). It
 // measures how far the text overruns its box, adds the tail clearance, and hands the CSS both
