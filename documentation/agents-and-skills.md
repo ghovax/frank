@@ -52,7 +52,7 @@ You are the senior researcher. You do not take bullshit...
 }
 ```
 
-Each agent is a profile a session can be created with, and a running session serves [A2A](https://github.com/google/A2A) on its own socket. A session that needs a peer creates one with its `create_session` tool. It then messages that peer over the control plane your terminal uses. There is one API, whoever the caller is; Frank uses no in-process delegation tool.
+Each agent is a profile a session can be created with, and a running session serves [A2A](https://github.com/google/A2A) on its own socket. A session that needs a peer creates one with its `create_session` tool, over the control plane your terminal uses. See [Tools](tools.md#composing-with-other-sessions) for how a peer reports back.
 
 The peer answers the same way, by messaging the session that created it. Bundled agents:
 

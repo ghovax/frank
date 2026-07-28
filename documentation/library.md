@@ -143,8 +143,8 @@ That class inherits nothing and imports nothing of ours. The harness accepts it 
 TypeError: checkpoints: RedisCheckpoints does not satisfy Checkpoints: it is missing `load`.
 ```
 
-Structural typing gives no compile-time guarantee, so the check happens once per session
-rather than surfacing as an `AttributeError` deep inside a turn.
+Structural typing gives no compile-time guarantee. The check happens once per session
+rather than failing part-way through a turn, far from the call that supplied it.
 
 ### Your own tools
 

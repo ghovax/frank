@@ -12,7 +12,7 @@ Three ways to change it, all writing the same file:
   - `frank configure <setting> <value>` sets it, and `--unset` removes it.
  A name the schema does not define, or a value it would reject, is refused with the reason rather than written;
 - **Settings** in the desktop app;
-- editing the file directly, which the daemon watches and picks up live.
+- editing the file directly, which the next thing to start reads.
 
 This document is the reference for the file itself.
 

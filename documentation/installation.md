@@ -30,7 +30,7 @@ Neither is needed for plain chat or the file, shell, and web tools.
 
 ## Option 2 — Build from source
 
-Frank is **two artifacts**, built independently, because the app is a *client* of the daemon rather than its container. The daemon is the harness — the `frank` command, `frankd`, and every session worker in one signed image. The app is a window that finds a daemon and talks to it. Build them in either order; neither build triggers the other.
+Frank is **two artifacts**, built independently, because the app is a *client* of the daemon rather than its container. That bundle carries the harness, the `frank` command, `frankd` and every session worker in one signed image. The app is a window that finds a daemon and talks to it. Build them in either order; neither build triggers the other.
 
 You need [Nix](https://nixos.org) (the flake devshell pins everything else, `uv` included) and optionally [direnv](https://direnv.net).
 

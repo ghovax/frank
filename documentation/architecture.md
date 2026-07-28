@@ -1,6 +1,40 @@
 # Architecture
 
-Frank is one executable entered three ways. `frank` is the command a person runs, `frankd` is the daemon, and a **worker** is what the daemon re-execs to become a session. They are the same image, not three binaries, for two reasons. Packaging stays a single specification. A worker launched as a re-exec also carries the same code identity as the signed application bundle. One macOS Accessibility grant therefore covers every session, instead of prompting once per worker.
+## The words this uses
+
+Six terms carry most of the meaning here, and four of them are Frank's own.
+
+| Term | What it means |
+|---|---|
+| **Session** | One conversation with an agent. It is a durable record, and it has an OS process only while it is working. |
+| **Turn** | One exchange within a session: a message in, the model's work, and everything it said and did before it stopped. A session has many turns over its life. |
+| **Harness** | The code between the model and your machine — the turn loop, the tools, the prompts, the permissions. `frank.Session` is the harness, and everything else here is built on it. |
+| **Control plane** | The daemon's API. Every client reaches a session through it, so a caller is identified and scoped in exactly one place. |
+| **Location** | Where a session's tools actually run: this machine, or an SSH host. Distinct from its working directory, which is *where* on that location. |
+| **Peer** | A session created by another session. Not a special kind of thing — an ordinary session, addressed the way you address any session. |
+
+[A2A](https://github.com/google/A2A) is Agent-to-Agent, Google's JSON-RPC protocol for one agent to
+call another. Each session serves it on its own socket, so a peer and a person reach a session the
+same way.
+
+## The four layers
+
+Each layer uses the one below it and adds a single thing.
+
+| Layer | What it adds | What it knows about your machine |
+|---|---|---|
+| `frank.Session` | The harness: the turn loop, the tools, the prompts, the permissions | Nothing. Every value is one you passed |
+| `frank.daemon.machine` | Turns a home directory into what the harness takes | The XDG paths, and your `.agents` |
+| `frankd` | A process per session, a socket each, and the databases | Everything, and it is the right place to |
+| `frank`, and the app | A way for a person to reach the daemon | Where the daemon is |
+
+The bottom layer is the whole of the harness. A program can embed it and never start a daemon;
+see [As a library](library.md). Everything below in this document is what the three layers above
+add.
+
+Frank is one executable entered four ways. `frank` is the command a person runs and `frankd` is the daemon. `prototype` is the process the daemon forks sessions from, and `session` is one session worker. 
+
+They are the same image, not four binaries, for two reasons. Packaging stays a single specification. A worker launched as a re-exec also carries the same code identity as the signed application bundle. One macOS Accessibility grant therefore covers every session, instead of prompting once per worker.
 
 ```mermaid
 flowchart LR
@@ -52,7 +86,7 @@ Two consequences follow. A daemon restart ends every session's *process* and no 
 
 Each session serves [A2A](https://github.com/google/A2A) (JSON-RPC) on **its own unix socket** in the runtime directory, and the daemon is what talks to it. Every client reaches the daemon, and the daemon relays: the terminal, the desktop app, another session. There is therefore one place that identifies a caller, scopes it to its own subtree, and records it. A session's socket being real and addressable is what makes that relay a thin hop rather than a reimplementation, but nothing bypasses it today.
 
-There is no in-process delegation. A session that needs a peer creates one with its `create_session` tool, through the control plane a person's client calls. The peer answers by messaging it back. A child appears in `frank ps`, can be attached to, and is reaped when its parent ends.
+There is no in-process delegation: a session that needs a peer creates an ordinary session and messages it. See [Tools](tools.md#composing-with-other-sessions). A child appears in `frank ps`, can be attached to, and is reaped when its parent ends.
 
 Isolation is a property of the process. A process becomes one session and stays that session for the rest of its life.
 
@@ -62,7 +96,7 @@ Nothing reuses it, and it never serves a second session. No path exists by which
 
 `frankd` is deliberately thin — it runs no agents, and it never imports the runtime. It owns:
 
-- the **registry** of sessions (identity, parent, permission mode, capability token, status);
+- the **registry** of sessions (identity, parent, permission mode, status);
 - the **lifecycle**: asking the prototype to fork a session, hearing about crashes, and reaping a subtree parent-last so a child never outlives its parent;
 - the **databases**, as the sole writer — workers persist by posting to the daemon's ingest surface, so there is exactly one process writing SQLite;
 - the shared **brokers**: events, terminals, file leases, workspaces, signed file URLs, push notifications, and remote agents — everything there can only sensibly be one of;
@@ -122,15 +156,14 @@ A session's permission mode is fixed when the session is created, and you cannot
 
 ## Request lifecycle (a message)
 
-1. You send a message to a session — `frank send` writes to its socket directly; the app posts to the daemon, which relays it.
+1. You send a message to a session. Every client posts to the daemon, which relays it to the session that owns it.
 2. The agent loop calls the model, which may request tool calls.
 3. Each tool call is classified for risk and checked against the session's permission mode. If it needs approval, the session streams a permission request; the CLI prints it and `frank approve` answers, or the app shows an overlay.
 4. Approved tools then run:
-
-- **Shell**, inside an OS-enforced confinement: `sandbox-exec` on macOS, Landlock on Linux. The harness resolves it when the session is created, and clamps it against the creator.
-- **Files**, on the active location.
-- **Screen control** (`control_screen`), against the local machine.
-- **MCP**, against the session's own connections. Stateful connections and stdio subprocesses do not cross a process boundary, so a session connects its own rather than sharing the daemon's.
+   - **Shell**, inside an OS-enforced confinement: `sandbox-exec` on macOS, Landlock on Linux. The harness resolves it when the session is created, and clamps it against the creator.
+   - **Files**, on the active location.
+   - **Screen control** (`control_screen`), against the local machine.
+   - **MCP**, against the session's own connections. Stateful connections and stdio subprocesses do not cross a process boundary, so a session connects its own rather than sharing the daemon's.
 5. Results stream back as structured events. The session posts them to the daemon, which is the only writer of `history.db`, and fans them out to whoever is attached.
 
 ## Where to go next

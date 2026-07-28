@@ -2,7 +2,7 @@
 
 A session acts through tools, and every tool call goes through the [permission engine](configuration.md#permission-modes). A risky call pauses for approval. The approval reaches you as a prompt in the app, or as `frank approve` in the terminal. The description the model reads is in the repo: a docstring in `src/frank/runtime/tools/registry.py` for most tools, a template in `src/frank/runtime/prompts/tool_*.md` for the peer-session ones.
 
-There is no delegation tool and no in-process sub-agent. A session that needs a peer creates one with `create_session`, which reaches the same control plane your terminal does. See [Architecture](architecture.md#sessions).
+There is no delegation tool and no in-process sub-agent. A session that needs a peer creates one with `create_session`, which reaches the same control plane your terminal does. See [Composing with other sessions](#composing-with-other-sessions).
 
 ## The built-in surface
 
@@ -38,6 +38,9 @@ There are no dedicated `find_files`/`search_content` tools; for literal file-nam
 | `wait_for` | Pause for a few seconds without a model round trip, to re-check something that was not ready. |
 
 **Peer sessions**
+
+## Composing with other sessions
+
 
 | Tool | What it does |
 |------|--------------|

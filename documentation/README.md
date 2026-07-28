@@ -3,7 +3,7 @@
 Detailed guides for installing, configuring, understanding, and developing Frank. For a
 high-level overview, start with the [project README](../README.md).
 
-**They are a stack, not three products.** The library is the bottom of it, and everything else is built on top:
+**They are a stack, not separate products.** The library is the bottom of it, and everything else is built on top:
 
 | Layer | What it is | What it knows about your machine |
 |---|---|---|
@@ -18,20 +18,23 @@ Start with the layer you are actually using.
 |---|---|
 | **Embed the harness in your own program** — `import frank`, no daemon, no socket | [As a library](library.md) |
 | **Drive it from a terminal** — create, send, attach, approve | [The `frank` command](cli.md) |
-| **Use the macOS app** | [Installation](installation.md) |
+| **Use the macOS app** | [The desktop app](app.md) |
 
-Then the rest, in roughly the order they become relevant:
+Then the rest, in the order they build on each other. [Architecture](architecture.md) defines
+the words the others use, so it comes first:
 
 | Guide | What's in it |
 |-------|--------------|
+| [Architecture](architecture.md) | The vocabulary, the four layers, and how a message becomes work |
 | [Installation](installation.md) | Download and Gatekeeper, or building from source |
-| [As a library](library.md) | `frank.Session` in your own process, and every seam you can replace — model, checkpoints, jobs, approvals, observer, sandbox, catalogue, peers |
+| [As a library](library.md) | `frank.Session` in your own process, and every seam you can replace |
 | [The `frank` command](cli.md) | Every verb, the session states, JSON and exit codes |
-| [Configuration](configuration.md) | Providers, keys, permissions, MCP, and every config key |
-| [Architecture](architecture.md) | Sessions as processes, the daemon, the CLI, the app, and how they connect |
+| [The desktop app](app.md) | The window, decisions, folders, and screen control |
 | [Agents and skills](agents-and-skills.md) | Authoring agents, skills, memory, and MCP servers |
+| [Configuration](configuration.md) | Providers, keys, permissions, MCP, and every config key |
 | [Tools](tools.md) | The full tool surface, including screen control (`control_screen`) |
 | [Development](development.md) | The dev environment, running the pieces, building the app |
+| [Security](../SECURITY.md) | What the agent sends, and what confines it |
 
 ## The shortest thing that works
 

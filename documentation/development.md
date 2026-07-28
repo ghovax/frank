@@ -2,7 +2,7 @@
 
 Frank has three parts:
 
-- The **Python harness**: one executable, entered as `frank`, `frankd`, or a worker.
+- The **Python image**: one executable, entered as `frank`, `frankd`, `prototype`, or `session`. It carries the harness.
 - The **Next.js web UI**.
 - The **Tauri desktop shell**. In development you run the daemon and the UI directly. The packaged app is built only for releases.
 
@@ -37,7 +37,7 @@ uv run python -m frank frankd
 
 One image, three entry points, chosen by the first argument: `frank` (the CLI), `frankd` (the daemon), `prototype` (the process sessions are forked out of). A bare launch lands in the CLI, which is why the daemon has to be asked for. `frank daemon stop` takes down a foreground daemon and its sessions with it.
 
-There is deliberately no `worker` entry point. Nothing execs a session — each one is a `fork()` of the prototype. An entry point for a session would therefore start a process that the architecture never starts.
+A session is `fork()` **and then** `exec()` back into the same image, through the `session` entry point. The fork is what makes it cheap; the exec is what makes it safe. On macOS, a forked child that has not exec'd cannot use Network.framework or the Objective-C runtime. A session without the exec cannot reach a model at all.
 
 It listens on a unix socket in your runtime directory. For GUI clients it also listens on an ephemeral loopback port. `frank daemon endpoint` reports the port and the capability token.
 
@@ -67,7 +67,7 @@ Useful scripts (in `web/`):
 Outside `web/` the package layering is `base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, with the daemon never importing the runtime. Three invariants ride on it. All three are really one invariant about the prototype, which is the process every session is forked out of. None of them is visible in a diff. Check each one by hand when you touch its area:
 
 - **`computer/` is never imported at module level.** It pulls in PyObjC, which initialises CoreFoundation, which genuinely cannot survive a `fork()` on macOS.
-- **Nothing reaches the network at import.** This is the half that actually bit. A catalogue fetch at module scope left two *native* threads in the process, and a multi-threaded process cannot legally fork. The child aborted inside the Objective-C runtime, with a message that named CoreFoundation — which was not what was wrong.
+- **Nothing reaches the network at import.** This is the half that actually bit. A catalogue fetch at module scope left two *native* threads in the process, and a multi-threaded process cannot legally fork. The failure then surfaces far from its cause, which is why this is checked rather than assumed.
 
   `threading.enumerate()` cannot see those threads; only the kernel's count can. The prototype therefore measures with mach `task_threads`, and refuses to fork when the answer is not 1.
 - **The runtime keeps no process-wide state.** Nothing under `runtime/` parks a caller's argument in a module global. Nothing installs a signal handler or registers an exit hook. The runtime is a library now, and one process may host more than one session.
