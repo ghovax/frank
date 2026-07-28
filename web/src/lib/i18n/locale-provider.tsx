@@ -8,7 +8,7 @@
 
 import * as React from "react";
 import { NextIntlClientProvider } from "next-intl";
-import { getAppState, isTauri, setAppState } from "@/lib/connection-store";
+import { getAppState, isTauri, setAppState } from "@/lib/app-state";
 import { DEFAULT_LOCALE, MESSAGES, isLocale, type Locale } from "./messages";
 
 const LOCALE_KEY = "locale";

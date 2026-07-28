@@ -4,8 +4,6 @@ import { Alert, Box, Button, Dialog, EmptyState, Flex, IconButton, Input, Portal
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LuEye, LuEyeOff, LuKeyRound, LuPlug, LuPlus, LuSearch, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
 import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, restartDaemon, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel, type SandboxEnforce } from "@/lib/api";
-import type { ConnectionTarget } from "@/lib/connection";
-import { ConnectionSettings } from "./connection-settings";
 import { ModelSelect } from "./model-select";
 import { ChatGPTAuthControl } from "./chatgpt-auth";
 import { CursorAuthControl } from "./cursor-auth";
@@ -71,8 +69,6 @@ export function SettingsDialog({
   onOpenChange,
   section,
   onSectionChange,
-  currentConnectionId,
-  onConnectionChange,
   projectId = "",
   workingDirectory = "",
   models = [],
@@ -93,8 +89,6 @@ export function SettingsDialog({
   onOpenChange: (open: boolean) => void;
   section: SettingsSection;
   onSectionChange: (section: SettingsSection) => void;
-  currentConnectionId?: string;
-  onConnectionChange?: (target: ConnectionTarget) => void;
   projectId?: string;
   workingDirectory?: string;
   models?: ModelOption[];
@@ -588,19 +582,6 @@ export function SettingsDialog({
         },
         { title: "External agents", rows: [], block: <RemoteAgentsPanel /> },
       ],
-    },
-    {
-      id: "connection", label: translation("tabConnection"), icon: <LuPlug size={14} />,
-      sections: [{
-        rows: [],
-        // No "Current connection" switcher above this. It named the same thing the panel
-        // below already shows — "This machine" marks the local server as connected, and each
-        // saved connection says so on its own row — so it was a second control for a fact
-        // stated twice on one screen.
-        block: (
-          <ConnectionSettings key={connectionResetToken} variant="dialog" currentTargetId={currentConnectionId} onDirtyChange={setConnectionDirty} onConnected={(target) => { onConnectionChange?.(target); onOpenChange(false); }} />
-        ),
-      }],
     },
   ];
 

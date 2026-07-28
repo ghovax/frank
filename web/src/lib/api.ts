@@ -25,8 +25,6 @@ export const LOCAL_DAEMON_URL = `http://127.0.0.1:${LOCAL_DAEMON_PORT}`;
 
 const DEFAULT_API_BASE =
   (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_FRANK_API_BASE : "") || LOCAL_DAEMON_URL;
-const API_BASE_STORAGE_KEY = "frank.apiBase";
-const API_TOKEN_STORAGE_KEY = "frank.apiToken";
 
 function runningInTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -43,7 +41,7 @@ function readStoredValue(key: string, fallback: string): string {
   }
 }
 
-let API_BASE = readStoredValue(API_BASE_STORAGE_KEY, DEFAULT_API_BASE);
+let API_BASE = DEFAULT_API_BASE;
 
 // The token for the daemon we are actually talking to. Two sources, and the distinction
 // matters: the *local* token is the one the Tauri shell reads out of the runtime
@@ -51,12 +49,6 @@ let API_BASE = readStoredValue(API_BASE_STORAGE_KEY, DEFAULT_API_BASE);
 // profile therefore carries its own token, and when one is activated it wins — otherwise
 // every SSH-tunnelled daemon would be handed the local machine's secret and answer 401.
 let localDaemonToken = "";
-// Null, not "": a profile deliberately saved without a token must present none rather
-// than silently fall back to the local daemon's.
-let activeConnectionToken: string | null = readStoredValue(API_TOKEN_STORAGE_KEY, "") || null;
-// True once a connection has been activated, so the shell's local endpoint no longer
-// overwrites the target the user chose.
-let apiBaseWasChosen = Boolean(readStoredValue(API_BASE_STORAGE_KEY, ""));
 let daemonEndpointPromise: Promise<void> | null = null;
 
 async function resolveDaemonEndpoint(): Promise<void> {
@@ -69,7 +61,7 @@ async function resolveDaemonEndpoint(): Promise<void> {
       const response = await fetch("/__frank/runtime.json", { cache: "no-store" });
       if (response.ok) {
         const runtime = await response.json();
-        if (runtime?.proxied && !apiBaseWasChosen) API_BASE = "";
+        if (runtime?.proxied) API_BASE = "";
       }
     } catch {
       // Not served by it; nothing to learn.
@@ -79,7 +71,7 @@ async function resolveDaemonEndpoint(): Promise<void> {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     const endpoint = await invoke<{ url: string; token: string }>("daemon_endpoint");
-    if (endpoint?.url && !apiBaseWasChosen) API_BASE = endpoint.url.replace(/\/+$/, "");
+    if (endpoint?.url) API_BASE = endpoint.url.replace(/\/+$/, "");
     localDaemonToken = endpoint?.token ?? "";
   } catch {
     // The shell could not report an endpoint (the daemon is not up yet). Leave the
@@ -110,7 +102,7 @@ function apiUrl(path: string, options?: ApiRequestOptions): string {
 }
 
 function requestToken(options?: ApiRequestOptions): string {
-  return options?.token ?? activeConnectionToken ?? localDaemonToken;
+  return options?.token ?? localDaemonToken;
 }
 
 // The token as a query parameter, for the transports that cannot carry a header: a
@@ -175,9 +167,6 @@ async function rpc<T>(
 }
 
 // The address the client is currently talking to.
-export function getApiBase(): string {
-  return API_BASE;
-}
 
 export function terminalWebSocketUrl(options: { sessionId?: string | null; workingDirectory?: string; terminalKey?: string; locationKind?: string; locationBaseDirectory?: string; locationHostAlias?: string; rows?: number; columns?: number } = {}): string {
   const params = new URLSearchParams();
@@ -234,28 +223,6 @@ export async function deleteTerminal(sessionId: string | null, workingDirectory:
 // The token is required rather than optional so a call site cannot quietly leave the
 // previous daemon's token in place: pass "" for the local daemon, whose token the Tauri
 // shell reads from the runtime directory instead.
-export function setApiBase(url: string, token: string): void {
-  const normalized = url.trim().replace(/\/+$/, "");
-  API_BASE = normalized || DEFAULT_API_BASE;
-  apiBaseWasChosen = Boolean(normalized);
-  activeConnectionToken = token.trim() || null;
-  if (typeof window === "undefined") return;
-  if (runningInTauri()) return;
-  try {
-    if (normalized) {
-      window.localStorage.setItem(API_BASE_STORAGE_KEY, normalized);
-    } else {
-      window.localStorage.removeItem(API_BASE_STORAGE_KEY);
-    }
-    if (activeConnectionToken) {
-      window.localStorage.setItem(API_TOKEN_STORAGE_KEY, activeConnectionToken);
-    } else {
-      window.localStorage.removeItem(API_TOKEN_STORAGE_KEY);
-    }
-  } catch {
-    // Best-effort persistence; the in-memory value still applies this session.
-  }
-}
 
 type CacheEntry = {
   expiresAt: number;

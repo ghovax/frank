@@ -12,9 +12,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { deleteSession, fetchAccessibility, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchSessionDraft, fetchSessions, fetchSettings, getProject, listProjects, saveAgentConfiguration, saveSettings, setSandboxEnforce, subscribeEvents, updateComputerControlSetting, type AgentCard, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
 import { useTray } from "@/lib/use-tray";
-import { activateConnectionTarget, checkConnection, getApiBase, getLastTargetId, listConnectionTargets, LOCAL_CONNECTION_TARGET, LOCAL_TARGET_ID, resolveReachableConnectionUrl, type ConnectionTarget } from "@/lib/connection";
-import { setSessionConnection } from "@/lib/connection-store";
 import { playAttentionSound, playTurnEndSound, primeSounds } from "@/lib/sounds";
+import { swallowed } from "@/lib/swallowed";
 
 // SessionEntry and the sessions-sidebar UI live in the SessionsSidebar component (the
 // chat history is its own unit); this page owns the data + the notification tracking.
@@ -87,9 +86,6 @@ function ProjectWorkspace() {
   const [agentCards, setAgentCards] = useState<AgentCard[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>("");
   const [isConnected, setIsConnected] = useState(false);
-  const [currentConnection, setCurrentConnection] = useState<ConnectionTarget | null>(null);
-  const connectionTargetsRef = useRef<ConnectionTarget[]>([]);
-  const currentConnectionRef = useRef<ConnectionTarget | null>(null);
 
   const [sessions, setSessions] = useState<SessionEntry[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
@@ -140,31 +136,6 @@ function ProjectWorkspace() {
     return window.matchMedia("(max-width: 767px)").matches;
   }, []);
 
-  const currentConnectionId = currentConnection?.id ?? LOCAL_TARGET_ID;
-
-  const refreshConnectionTargets = useCallback(async () => {
-    const targets = await listConnectionTargets();
-    connectionTargetsRef.current = targets;
-    return targets;
-  }, []);
-
-  useEffect(() => {
-    currentConnectionRef.current = currentConnection;
-  }, [currentConnection]);
-
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      listConnectionTargets().catch(() => [LOCAL_CONNECTION_TARGET]),
-      getLastTargetId().catch(() => null),
-    ]).then(([targets, lastTarget]) => {
-      if (cancelled) return;
-      connectionTargetsRef.current = targets;
-      const selected = targets.find((target) => target.id === lastTarget) ?? targets[0] ?? LOCAL_CONNECTION_TARGET;
-      setCurrentConnection({ ...selected, url: getApiBase() || selected.url });
-    });
-    return () => { cancelled = true; };
-  }, []);
 
   // Agents, their cards (skills), MCP servers and memories are all scoped to the
   // selected folder — home globals plus that folder's own `.agents`, deduped,
@@ -204,15 +175,11 @@ function ProjectWorkspace() {
   }, []);
 
 
-  const mapSessions = useCallback((serverSessions: Awaited<ReturnType<typeof fetchSessions>>, target: ConnectionTarget, apiBase: string): SessionEntry[] => {
+  const mapSessions = useCallback((serverSessions: Awaited<ReturnType<typeof fetchSessions>>): SessionEntry[] => {
     return serverSessions.map((session) => ({
       sessionId: session.id,
       parentSessionId: session.parent ?? "",
       projectId: session.project_id ?? "",
-      connectionId: target.id,
-      connectionName: target.name,
-      connectionUrl: apiBase,
-      connectionKind: target.kind,
       agent: session.agent,
       title: session.title,
       createdAt: session.created_at,
@@ -226,43 +193,19 @@ function ProjectWorkspace() {
     }));
   }, []);
 
-  // Where a target answers, and the token that authorises talking to it. The two travel
-  // together because the session list is fetched from every known daemon at once, and each
-  // one holds a different secret — presenting the active connection's token to the others
-  // would come back 401 and read as "that host is down".
-  const sessionTargetEndpoint = useCallback(async (target: ConnectionTarget): Promise<{ url: string; token?: string } | null> => {
-    const activeTarget = currentConnectionRef.current?.id === target.id;
-    const url = activeTarget || target.kind === "ssh" ? await resolveReachableConnectionUrl(target) : target.url;
-    const token = target.kind === "local" ? undefined : target.token ?? "";
-    const ok = await checkConnection(url, { token, timeoutMs: activeTarget ? 2000 : 900 });
-    return ok ? { url, token } : null;
-  }, []);
-
-  const loadSessions = useCallback(async (targetsOverride?: ConnectionTarget[]) => {
-    const targets = targetsOverride ?? (connectionTargetsRef.current.length > 0 ? connectionTargetsRef.current : [currentConnectionRef.current ?? LOCAL_CONNECTION_TARGET]);
-    const rows = await Promise.all(targets.map(async (target) => {
-      try {
-        const endpoint = await sessionTargetEndpoint(target);
-        if (!endpoint) return { target, sessions: null as SessionEntry[] | null };
-        const serverSessions = await fetchSessions({ apiBase: endpoint.url, token: endpoint.token });
-        for (const session of serverSessions) {
-          void setSessionConnection(session.id, target.id);
-        }
-        return { target, sessions: mapSessions(serverSessions, target, endpoint.url) };
-      } catch {
-        return { target, sessions: null as SessionEntry[] | null };
-      }
-    }));
+  const loadSessions = useCallback(async () => {
     const previousList = sessionsRef.current;
-    // A target that was transiently unreachable (a slow probe right after a send, while the
-    // server is busy) returns null — keep its previous sessions rather than blanking the list.
-    const merged: SessionEntry[] = [];
-    for (const { target, sessions } of rows) {
-      if (sessions === null) {
-        merged.push(...previousList.filter((session) => session.connectionId === target.id));
-      } else {
-        merged.push(...sessions);
-      }
+    // One daemon, one fetch. This used to fan out across every saved backend and merge the
+    // answers, because a session could live on any of them; a folder now says where its work
+    // runs, so there is one place to ask.
+    let merged: SessionEntry[];
+    try {
+      merged = mapSessions(await fetchSessions());
+    } catch (caught) {
+      // A transient failure (a slow probe right after a send, while the server is busy) keeps
+      // what we already have rather than blanking the list.
+      swallowed("could not list sessions", caught);
+      return;
     }
     // Structural sharing: reuse the previous object for any session whose data is identical, so
     // an equal refetch yields identity-stable rows and the list does not re-render or flash.
@@ -318,7 +261,7 @@ function ProjectWorkspace() {
     sessionsRef.current = mapped;
     setSessions(mapped);
     setSessionsLoaded(true);
-  }, [mapSessions, sessionTargetEndpoint]);
+  }, [mapSessions]);
 
   // Coalesce the burst of sessions_changed events a single turn emits (running→true, title
   // generated, message saved, running→false) into one trailing refetch, so the session list
@@ -344,8 +287,7 @@ function ProjectWorkspace() {
     // Arm the audio cues on the first user interaction (browsers keep audio
     // suspended until a gesture); every later chime plays immediately.
     primeSounds();
-    refreshConnectionTargets()
-      .then((targets) => loadSessions(targets))
+    loadSessions()
       .catch(() => loadSessions());
     loadSettings();
     // The model catalog drives the provider and agent model pickers.
@@ -378,7 +320,7 @@ function ProjectWorkspace() {
       }
     });
     return unsubscribe;
-  }, [currentConnectionId, refreshConnectionTargets, loadSessions, scheduleSessionsReload, loadAgents, loadAgentCards, loadModelCatalog]);
+  }, [loadSessions, scheduleSessionsReload, loadAgents, loadAgentCards, loadModelCatalog]);
 
   // Reload the agents and their cards whenever the selected folder changes (and
   // on first render): the available agents, skills and MCP servers are all
@@ -418,8 +360,9 @@ function ProjectWorkspace() {
   const selectedCard =
     agentCards.find((card) => card.url.endsWith(`/agents/${selectedAgent}`)) ?? null;
   const activeSession = sessions.find((entry) => entry.sessionId === activeSessionId);
-  const activeSessionConnectionReady =
-    !activeSessionId || (!sessionsLoaded && !activeSession ? false : !activeSession || activeSession.connectionId === currentConnectionId);
+  // A session used to have to wait for its backend to be activated before it could be
+  // opened. There is one backend now, so a session is openable as soon as it is known.
+  const activeSessionConnectionReady = !activeSessionId || sessionsLoaded || !!activeSession;
   const activeSessionRunning = activeSession ? isSessionBusy(activeSession) : false;
 
   // The composer draft belongs to the session, not to the registry listing, so it is read
@@ -443,21 +386,6 @@ function ProjectWorkspace() {
     return () => { cancelled = true; };
   }, [activeSessionId]);
 
-  useEffect(() => {
-    if (!activeSession || activeSession.connectionId === currentConnectionId) return;
-    const target: ConnectionTarget = {
-      id: activeSession.connectionId,
-      name: activeSession.connectionName,
-      url: activeSession.connectionUrl,
-      kind: activeSession.connectionKind,
-    };
-    activateConnectionTarget(target)
-      .then(() => {
-        setCurrentConnection(target);
-        setChatKey((current) => current + 1);
-      })
-      .catch(() => {});
-  }, [activeSession, currentConnectionId]);
   // Sidebar sort: "recent" (newest first, the load order) or "active" (sessions
   // needing attention or running float to the top, then newest). The sidebar groups
   // these conversations under every project; the filtered subset remains useful to
@@ -482,7 +410,6 @@ function ProjectWorkspace() {
   const handleSessionCreated = useCallback(
     (sessionId: string) => {
       setActiveSessionId(sessionId);
-      void setSessionConnection(sessionId, currentConnectionId);
       const params = new URLSearchParams(window.location.search);
       params.set("session", sessionId);
       router.replace(`?${params.toString()}`, { scroll: false });
@@ -490,7 +417,7 @@ function ProjectWorkspace() {
       refreshSessions();
       setTimeout(refreshSessions, 5000);
     },
-    [currentConnectionId, isCompactViewport, refreshSessions, router]
+    [isCompactViewport, refreshSessions, router]
   );
 
   const handleStreamingChange = useCallback((streaming: boolean) => {
@@ -555,14 +482,6 @@ function ProjectWorkspace() {
     }
   }
 
-  function handleConnectionChange(target: ConnectionTarget) {
-    setCurrentConnection(target);
-    setSelectedAgent("");
-    setHomeProject(null);
-    handleNewChat();
-    void refreshConnectionTargets().then((targets) => loadSessions(targets)).catch(() => {});
-  }
-
 
   async function handleResumeSession(entry: SessionEntry) {
     // Opening a session acknowledges its notification.
@@ -572,16 +491,6 @@ function ProjectWorkspace() {
       next.delete(entry.sessionId);
       return next;
     });
-    if (entry.connectionId !== currentConnectionId || getApiBase() !== entry.connectionUrl) {
-      const target: ConnectionTarget = {
-        id: entry.connectionId,
-        name: entry.connectionName,
-        url: entry.connectionUrl,
-        kind: entry.connectionKind,
-      };
-      await activateConnectionTarget(target);
-      setCurrentConnection(target);
-    }
     setSelectedAgent(entry.agent);
     setSelectedPermissionMode(entry.permissionMode);
     // The restoration effect rebinds the working directory to this session's
@@ -793,7 +702,6 @@ function ProjectWorkspace() {
             onSessionSortChange={setSessionSort}
             unseenCompletions={unseenCompletions}
             currentProjectId={projectId}
-            connectionId={currentConnectionId}
             onSwitchProject={handleSwitchProject}
             onOpenProjectSettings={openProjectSettings}
             onNewChat={handleNewChat}
@@ -827,8 +735,6 @@ function ProjectWorkspace() {
           sessionTitle={activeSession?.title}
           initialInputDraft={activeSessionDraft}
           onDeleteSession={activeSessionId ? handleDeleteSession : undefined}
-          currentConnectionId={currentConnectionId}
-          onConnectionChange={handleConnectionChange}
           onPermissionModeChange={setSelectedPermissionMode}
           sessionRunning={activeSessionRunning}
           onSessionCreated={handleSessionCreated}

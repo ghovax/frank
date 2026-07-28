@@ -20,8 +20,7 @@ import { LuArrowUp, LuCoins, LuFoldVertical, LuPaperclip, LuSquare, LuUser } fro
 import { fetchChatGPTAuthStatus, fetchMessageHistory, referenceAttachment, saveMessageHistory, uploadFile, type Attachment, type ChatGPTUsage, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
 import { ChatGPTUsageMeters } from "./chatgpt-usage-meters";
 import { PermissionModeControl } from "./session-controls";
-import { activeConnectionIsLocal } from "@/lib/connection";
-import { isTauri } from "@/lib/connection-store";
+import { isTauri } from "@/lib/app-state";
 import { pickDesktopFilePaths, watchDesktopFileDrop } from "@/lib/desktop-files";
 import { AttachmentChip } from "./attachment-chips";
 import { Tooltip } from "./ui/tooltip";
@@ -406,7 +405,7 @@ export function ChatInput({
   // picker and reference the chosen files by path; otherwise fall back to the web
   // <input>, which yields bytes to upload.
   async function handleAttachClick() {
-    if (isTauri() && (await activeConnectionIsLocal())) {
+    if (isTauri()) {
       const paths = await pickDesktopFilePaths();
       await attachByPaths(paths);
       return;
@@ -424,7 +423,7 @@ export function ChatInput({
   useEffect(() => {
     desktopDropRef.current = (paths: string[]) => {
       void (async () => {
-        if (await activeConnectionIsLocal()) await attachByPaths(paths);
+        await attachByPaths(paths);
       })();
     };
   });

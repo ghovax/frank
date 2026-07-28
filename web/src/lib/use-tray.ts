@@ -6,7 +6,7 @@
 // app. In a plain browser it does nothing.
 
 import { useEffect, useRef } from "react";
-import { isTauri } from "@/lib/connection-store";
+import { isTauri } from "@/lib/app-state";
 
 export interface TrayRecentItem {
   id: string;

@@ -43,7 +43,6 @@ import type { ToolPermission, ToolQuestion } from "@/lib/tool-event";
 
 import { fetchSettings, getProject, revealInFinder, saveSessionDraft, saveSettings, subscribeEvents, type AgentCard, type AgentSummary, type Location, type PermissionMode, type SandboxEnforce, type WorkspaceStrategy } from "@/lib/api";
 import { PdfDocumentView } from "./pdf-view";
-import type { ConnectionTarget } from "@/lib/connection";
 import { scrollFade, scrollFadeTopBottom } from "@/lib/scroll-fade";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { playAttentionSound, playTurnEndSound } from "@/lib/sounds";
@@ -76,8 +75,6 @@ interface ChatPanelProps {
   // the user back to a blank chat). Absent when there is no active session.
   onDeleteSession?: (sessionId: string) => void;
   initialPermissionMode?: PermissionMode;
-  currentConnectionId?: string;
-  onConnectionChange?: (target: ConnectionTarget) => void;
   onPermissionModeChange?: (mode: PermissionMode) => void;
   sessionRunning?: boolean;
   onSessionCreated: (sessionId: string) => void;
@@ -203,8 +200,6 @@ export function ChatPanel({
   initialInputDraft = "",
   onDeleteSession,
   initialPermissionMode = "default",
-  currentConnectionId,
-  onConnectionChange,
   onPermissionModeChange,
   sessionRunning = false,
   onSessionCreated,
@@ -1054,8 +1049,6 @@ export function ChatPanel({
         onOpenChange={setSettingsOpen}
         section={settingsSection}
         onSectionChange={setSettingsSection}
-        currentConnectionId={currentConnectionId}
-        onConnectionChange={onConnectionChange}
         projectId={projectId}
         workingDirectory={workingDirectory}
         models={models}

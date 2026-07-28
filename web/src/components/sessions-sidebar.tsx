@@ -17,7 +17,6 @@ import { DropdownMenu, MenuOption } from "@/components/ui/menu";
 import { PanelBody, PanelCard } from "@/components/ui/panel";
 import { Tooltip } from "@/components/ui/tooltip";
 import { deleteProject, listProjects, listSshHosts, revealInFinder, subscribeEvents, type PermissionMode, type Project, type SshHost } from "@/lib/api";
-import type { ConnectionKind } from "@/lib/connection-store";
 import { locationTargetAddress, locationTargetLabel } from "./location-status";
 import { NewProjectDialog } from "./new-project-dialog";
 import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
@@ -36,10 +35,6 @@ export interface SessionEntry {
   // flat in this list unless they are nested under the row that created them.
   parentSessionId: string;
   projectId: string;
-  connectionId: string;
-  connectionName: string;
-  connectionUrl: string;
-  connectionKind: ConnectionKind;
   agent: string;
   title: string;
   createdAt: string;
@@ -380,7 +375,6 @@ export function SessionsSidebar({
   onSessionSortChange,
   unseenCompletions,
   currentProjectId,
-  connectionId,
   onSwitchProject,
   onOpenProjectSettings,
   onNewChat,
@@ -394,7 +388,6 @@ export function SessionsSidebar({
   onSessionSortChange: (sort: SessionSort) => void;
   unseenCompletions: Set<string>;
   currentProjectId: string;
-  connectionId?: string;
   onSwitchProject: (projectId: string) => void;
   onOpenProjectSettings: (projectId: string) => void;
   onNewChat: () => void;
@@ -406,7 +399,7 @@ export function SessionsSidebar({
   const [pendingProjectDelete, setPendingProjectDelete] = useState<Project | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [sshHosts, setSshHosts] = useState<SshHost[]>([]);
-  const [loadedSshHostsConnectionId, setLoadedSshHostsConnectionId] = useState<string | null>(null);
+  const [sshHostsLoaded, setSshHostsLoaded] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [projectOpenOverrides, setProjectOpenOverrides] = useState<Record<string, boolean>>({});
   // Which parents have their child sessions showing. Collapsed is the default and the
@@ -422,12 +415,9 @@ export function SessionsSidebar({
   }, []);
   const [search, setSearch] = useState("");
   const searchQuery = search.trim().toLowerCase();
-  const connectionSessions = connectionId
-    ? sessions.filter((entry) => entry.connectionId === connectionId)
-    : sessions;
   const shownSessions = searchQuery
-    ? connectionSessions.filter((entry) => (entry.title || "").toLowerCase().includes(searchQuery))
-    : connectionSessions;
+    ? sessions.filter((entry) => (entry.title || "").toLowerCase().includes(searchQuery))
+    : sessions;
 
   const refreshProjects = useCallback(() => {
     listProjects().then(setProjects).catch(() => {});
@@ -435,16 +425,15 @@ export function SessionsSidebar({
 
   useEffect(() => {
     let cancelled = false;
-    const sshHostsConnectionId = connectionId ?? "";
     const refreshSshHosts = () => {
       listSshHosts()
         .then((nextHosts) => {
           if (cancelled) return;
           setSshHosts(nextHosts);
-          setLoadedSshHostsConnectionId(sshHostsConnectionId);
+          setSshHostsLoaded(true);
         })
         .catch(() => {
-          if (!cancelled) setLoadedSshHostsConnectionId(sshHostsConnectionId);
+          if (!cancelled) setSshHostsLoaded(true);
         });
     };
     refreshProjects();
@@ -457,7 +446,7 @@ export function SessionsSidebar({
       cancelled = true;
       unsubscribe();
     };
-  }, [refreshProjects, connectionId]);
+  }, [refreshProjects]);
 
   async function confirmProjectDelete() {
     if (!pendingProjectDelete) return;
@@ -724,7 +713,7 @@ export function SessionsSidebar({
         <NewProjectDialog
           open
           hosts={sshHosts}
-          hostsLoaded={loadedSshHostsConnectionId === (connectionId ?? "")}
+          hostsLoaded={sshHostsLoaded}
           onOpenChange={setNewProjectOpen}
           onCreated={(project) => {
             setProjects((current) => [project, ...current.filter((entry) => entry.id !== project.id)]);

@@ -4,7 +4,7 @@ import type { IconButtonProps, SpanProps } from "@chakra-ui/react"
 import { ClientOnly, IconButton, Skeleton, Span } from "@chakra-ui/react"
 import * as React from "react"
 import { LuMoon, LuSun } from "react-icons/lu"
-import { getAppState, isTauri, setAppState } from "@/lib/connection-store"
+import { getAppState, isTauri, setAppState } from "@/lib/app-state"
 
 export type ColorMode = "light" | "dark"
 

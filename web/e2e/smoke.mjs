@@ -39,19 +39,13 @@ page.on("console", (message) => {
 page.on("pageerror", (error) => consoleErrors.push(String(error)));
 
 try {
-  await page.goto(APP, { waitUntil: "networkidle" });
-  await page.waitForTimeout(2500);  // React has to hydrate before a click has a handler.
+  // Not `networkidle`: with the connection gate gone the app opens a live attach stream as
+  // soon as it mounts, so the network is never idle and waiting for it always times out.
+  await page.goto(APP, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(3500);  // React has to hydrate before a click has a handler.
 
-  // The connection gate: connect to the local daemon if it is offering. Exact name, because
-  // "Save connection" also matches a loose /connect/i and clicking that does nothing here.
-  const connect = page.getByRole("button", { name: "Connect", exact: true }).first();
-  if (await connect.isVisible({ timeout: 20000 }).catch(() => false)) {
-    await connect.click();
-    // The gate holds the attempt for a beat deliberately, so give it room to resolve.
-    await page.waitForTimeout(3000);
-  }
-
-  // The composer is the signal that we are past the gate and into the app.
+  // The composer is the signal that the app has mounted. There is no gate to clear: the
+  // interface talks to the local daemon, and reaching elsewhere is a property of the folder.
   const composer = page.locator("textarea").first();
   await composer.waitFor({ state: "visible", timeout: 45000 });
   check("interface reaches the chat view", true);
