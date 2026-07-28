@@ -87,6 +87,22 @@ def main(arguments: list[str]) -> int:
 
     _configure_logging()
 
+    # Import before reading the assignment, not after. The order is the whole reason a session
+    # can start quickly: this is around two and a half seconds — most of it litellm — and none
+    # of it depends on which session this will become. Paying it first means the prototype can
+    # start a child before anyone has asked for one, let it do this work while nobody is
+    # waiting, and leave it parked on the read below. Handing that child a session is then a
+    # write down a pipe. Read-then-import made every session pay the cost in full, with the
+    # caller waiting for all of it.
+    #
+    # `serve` alone is not enough and is the easy mistake: it is a third of a second, because it
+    # deliberately defers the expensive graph into the body of `serve()`. The two modules named
+    # here are where litellm, the model clients and the tool registry actually come from, so
+    # they are imported by name rather than by whatever happens to be reachable from `run`.
+    from frank.worker.serve import run
+    import frank.worker.server  # noqa: F401 — imported for its cost, not its name
+    import frank.worker.session  # noqa: F401 — see above
+
     try:
         assignment = _read_assignment(assignment_fd)
     except Exception:  # noqa: BLE001 — a session that cannot read its assignment cannot start
@@ -96,7 +112,5 @@ def main(arguments: list[str]) -> int:
         with os.fdopen(ready_fd, "wb", closefd=True) as ready:
             ready.write(json.dumps({"ready": False, "reason": StartFailure.ASSIGNMENT_UNREADABLE}).encode())
         return 1
-
-    from frank.worker.serve import run
 
     return run(assignment, ready_fd)

@@ -1,31 +1,39 @@
-"""The prototype: one process that has paid the import, so every session is a copy of it.
+"""The prototype: the process that starts session workers, and keeps some started already.
 
-A session worker costs about 264 MB and five seconds, and almost all of both is importing
-the runtime — LangChain, LiteLLM, the model clients, tree-sitter — which is identical for
-every session regardless of which agent it will run. The old answer was to keep a couple of
-started-but-unassigned workers around and hand one out, which hides the cost for the first
-two sessions and pays it in full for the third.
+Almost all of what a session worker costs is importing the runtime — LangChain, LiteLLM, the
+model clients, tree-sitter — about two and a half seconds, and identical for every session
+whatever agent it will run. Nothing about that work depends on which session it is for, which
+is the fact this file is built around.
 
-This is the other answer. The prototype imports the runtime once, freezes its heap, and
-parks. Asked for a session, it forks; the child inherits the whole address space
-copy-on-write and is serving in about 60 milliseconds with roughly 12 MB of its own. Twelve
-sessions cost 406 MB instead of 3.4 GB, and the thirteenth costs the same as the second.
+So a worker is started before anyone asks for one. It forks, execs, imports the runtime, and
+then blocks reading an assignment that has not been written yet. Handing it a session is a
+write down that pipe. The import is still paid in full; it is simply paid by a process nobody
+is waiting for, ahead of the request that needs it.
 
-    frankd  ──spawns──▶  prototype  ──forks──▶  session worker
-     14.8 MB              263.8 MB               ≈ 12 MB
-     no runtime           runtime + gc.freeze()  setsid, own socket, own signals
+    frankd  ──spawns──▶  prototype  ──starts ahead──▶  parked worker
+                              │                         (imported, waiting on a pipe)
+                              └──assignment──────────▶  session worker
+
+Two are kept parked, so a second session created while the first is being handed one still
+finds a warm worker. When the pool is empty a worker is started on the spot and that session
+waits for the import, exactly as every session used to.
+
+An earlier design forked a prototype that had already imported, letting the child inherit the
+address space copy-on-write. That is dramatically cheaper in memory and it is why `gc.freeze`
+and the single-thread rule below still matter — but a child that only forks and never execs
+inherits CoreFoundation state it cannot legally use on macOS, which is what made sessions
+crash in `getaddrinfo`. Every child now execs. The pool is what buys the speed back.
 
 It runs no agent, holds no registry, and makes no decisions. It knows nothing about
 permission modes, session trees or tokens — an assignment is an opaque dictionary it passes
 to the child. It does exactly one thing the daemon cannot do for itself, because the daemon
-must never import the runtime and the thing that forks must be the thing that has already
-paid for it. It reports child exits for the same structural reason: the daemon cannot
-`waitpid` a process it did not fork, and the prototype is the only process in a position to
-see them.
+must never import the runtime. It reports child exits for the same structural reason: the
+daemon cannot `waitpid` a process it did not fork, and the prototype is the only process in a
+position to see them.
 
 **One worker, one session, one activation.** A child is never reused and never returns here.
-A slept session's next worker is a fresh copy of this image, not a recycled one, so there is
-no path by which one session's state can reach another's.
+A parked worker has no session until it is given one, and having had one it never goes back to
+the pool — so there is no path by which one session's state can reach another's.
 
 ## The three conditions
 
@@ -76,9 +84,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from frank.base.fork_protocol import StartFailure
+
+# How many workers to keep started and waiting. Two rather than one so a second session created
+# while the first is being handed over still finds a warm worker; more would hold interpreters
+# resident for a burst that does not happen on a personal machine.
+WARM_WORKERS = 2
 
 logger = logging.getLogger("frank.prototype")
 
@@ -233,6 +247,19 @@ def _freeze() -> None:
     gc.freeze()
 
 
+@dataclass
+class _ParkedWorker:
+    """A worker started ahead of demand, waiting to be told which session it is.
+
+    It has forked, exec'd and imported the runtime; it is blocked reading `assignment_write`'s
+    other end. Writing the assignment there and closing it is what turns it into a session.
+    """
+
+    pid: int
+    assignment_write: int
+    ready_read: int
+
+
 class Prototype:
     """The parked image, and the fork loop that copies it.
 
@@ -256,6 +283,14 @@ class Prototype:
         self._children: dict[int, tuple[str, str]] = {}
         # ready-pipe read end -> (session id, fork token, buffer)
         self._pending: dict[int, tuple[str, str, bytearray]] = {}
+        # Workers started before anyone asked for one. Each has already forked, exec'd and paid
+        # the runtime import, and is blocked reading an assignment that has not been written
+        # yet. Handing a session to one is a write down that pipe, which is why a session can
+        # start in milliseconds instead of the seconds the import takes.
+        #
+        # They are kept apart from `_children` deliberately: a parked worker belongs to no
+        # session, so its death is a pool refill and not a session that ended.
+        self._parked: list[_ParkedWorker] = []
         self._wakeup_read = -1
         self._wakeup_write = -1
         self._stopping = False
@@ -274,6 +309,9 @@ class Prototype:
         self._listener = listener
         self._selector.register(listener, selectors.EVENT_READ, self._accept)
         self._install_child_wakeup()
+        # Start the pool now, so the first session of the day is as quick as the rest. The
+        # daemon is not waiting on this: these workers are for requests that have not arrived.
+        self._refill_pool()
 
     def _install_child_wakeup(self) -> None:
         """Turn `SIGCHLD` into a readable descriptor.
@@ -412,34 +450,15 @@ class Prototype:
 
     # Making a session, and everything the child does before it is one.
 
-    def _fork_session(self, fork: str, assignment: dict) -> None:
-        """Fork one session process.
+    def _start_worker(self) -> Optional[_ParkedWorker]:
+        """Fork and exec one worker, and leave it blocked on an assignment nobody has written.
 
-        `fork` names *this* child and is echoed on every report about it. The session id names
-        the conversation, which outlives any one process — so it cannot tell the daemon which
-        incarnation a report describes, and a report is useless to a waiter that cannot.
+        This is the expensive half — the fork, the exec, and the runtime import the child does
+        before it reads anything — and none of it needs to know which session it is for. Split
+        out so it can be paid ahead of demand.
         """
-        session_id = str(assignment.get("session_id") or "")
-
         ready_read, ready_write = os.pipe()
-        # Written before the fork, so the child finds its assignment already in the pipe and
-        # neither process has to coordinate a handover between `fork` and `exec` — the window
-        # where almost nothing is legal to do. An assignment is well under the pipe buffer;
-        # a write that would block here is a bug in what is being assigned, not in the size.
         assignment_read, assignment_write = os.pipe()
-        try:
-            os.write(assignment_write, json.dumps(assignment).encode())
-        except OSError as error:
-            for descriptor in (ready_read, ready_write, assignment_read, assignment_write):
-                with contextlib.suppress(OSError):
-                    os.close(descriptor)
-            logger.error("could not write the assignment for %s: %s", session_id, error)
-            self._send({
-                "event": "failed", "fork": fork, "session_id": session_id,
-                "reason": StartFailure.ASSIGNMENT_UNWRITABLE, "detail": str(error),
-            })
-            return
-        os.close(assignment_write)
         # `exec` closes everything marked close-on-exec, which is the default for a pipe. These
         # two have to cross it, and their numbers are what the child is told on its command line.
         os.set_inheritable(assignment_read, True)
@@ -448,25 +467,77 @@ class Prototype:
         try:
             pid = os.fork()
         except OSError as error:
-            for descriptor in (ready_read, ready_write, assignment_read):
+            for descriptor in (ready_read, ready_write, assignment_read, assignment_write):
                 with contextlib.suppress(OSError):
                     os.close(descriptor)
             logger.error("could not fork: %s", error)
-            self._send({
-                "event": "failed", "fork": fork, "session_id": session_id,
-                "reason": StartFailure.FORK_FAILED, "detail": str(error),
-            })
-            return
+            return None
 
         if pid == 0:
+            with contextlib.suppress(OSError):
+                os.close(assignment_write)
             os._exit(self._become_session(assignment_read, ready_read, ready_write))
 
         os.close(ready_write)
         os.close(assignment_read)
         os.set_blocking(ready_read, False)
-        self._children[pid] = (session_id, fork)
-        self._pending[ready_read] = (session_id, fork, bytearray())
-        self._selector.register(ready_read, selectors.EVENT_READ, self._on_ready_readable)
+        return _ParkedWorker(pid=pid, assignment_write=assignment_write, ready_read=ready_read)
+
+    def _refill_pool(self) -> None:
+        """Bring the pool back up to strength. Called after a hand-out and after a parked death.
+
+        Never on the path of a request: a worker started here is for the session after next.
+        """
+        while len(self._parked) < WARM_WORKERS:
+            worker = self._start_worker()
+            if worker is None:
+                return
+            self._parked.append(worker)
+
+    def _fork_session(self, fork: str, assignment: dict) -> None:
+        """Give one worker a session, and tell the daemon which process became it.
+
+        `fork` names *this* child and is echoed on every report about it. The session id names
+        the conversation, which outlives any one process — so it cannot tell the daemon which
+        incarnation a report describes, and a report is useless to a waiter that cannot.
+
+        A parked worker is used when one is available, which is the common case and the fast
+        one — it has already imported, so it goes from assignment to serving in milliseconds.
+        Otherwise a worker is started here and the session waits for the import, which is what
+        every session used to do.
+        """
+        session_id = str(assignment.get("session_id") or "")
+
+        worker = self._parked.pop(0) if self._parked else self._start_worker()
+        if worker is None:
+            self._send({
+                "event": "failed", "fork": fork, "session_id": session_id,
+                "reason": StartFailure.FORK_FAILED, "detail": "could not start a worker",
+            })
+            return
+
+        # An assignment is well under the pipe buffer; a write that would block here is a bug in
+        # what is being assigned, not in the size. Closing is what ends the child's read.
+        try:
+            os.write(worker.assignment_write, json.dumps(assignment).encode())
+            os.close(worker.assignment_write)
+        except OSError as error:
+            with contextlib.suppress(OSError):
+                os.close(worker.assignment_write)
+            with contextlib.suppress(OSError):
+                os.close(worker.ready_read)
+            logger.error("could not write the assignment for %s: %s", session_id, error)
+            self._send({
+                "event": "failed", "fork": fork, "session_id": session_id,
+                "reason": StartFailure.ASSIGNMENT_UNWRITABLE, "detail": str(error),
+            })
+            self._refill_pool()
+            return
+
+        self._children[worker.pid] = (session_id, fork)
+        self._pending[worker.ready_read] = (session_id, fork, bytearray())
+        self._selector.register(worker.ready_read, selectors.EVENT_READ, self._on_ready_readable)
+        self._refill_pool()
 
     def _become_session(self, assignment_read: int, ready_read: int, ready_write: int) -> int:
         """Everything the child does between `fork` and `exec`. Runs only in the child.
@@ -584,6 +655,18 @@ class Prototype:
                 return
             if pid == 0:
                 return
+            # A worker that died while parked belonged to no session, so there is nothing to
+            # report — only a gap in the pool to close. Reporting it as an exit would tell the
+            # daemon a session ended that was never started.
+            parked = next((worker for worker in self._parked if worker.pid == pid), None)
+            if parked is not None:
+                self._parked.remove(parked)
+                for descriptor in (parked.assignment_write, parked.ready_read):
+                    with contextlib.suppress(OSError):
+                        os.close(descriptor)
+                logger.warning("a parked worker (pid %d) ended before it was used", pid)
+                self._refill_pool()
+                continue
             session_id, fork = self._children.pop(pid, ("", ""))
             if os.WIFSIGNALED(status):
                 code, signal_number = -1, os.WTERMSIG(status)

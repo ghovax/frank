@@ -207,9 +207,9 @@ class Tunable(Enum):
     # The control plane and the processes it supervises.
     prototype_start_seconds = Default(
         120.0, Scaling.TIME,
-        "How long the daemon waits for the prototype to import the runtime and accept a "
-        "connection. Generous because this is the one cold start left in the system — every "
-        "session after it is a fork.",
+        "How long the daemon waits for the prototype to start and accept a connection. The "
+        "prototype itself imports nothing heavy; it starts the workers that do, and keeps a "
+        "couple of them started ahead of demand.",
     )
     prototype_restart_seconds = Default(
         5.0, Scaling.TIME,
