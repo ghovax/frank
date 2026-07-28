@@ -107,6 +107,29 @@ try {
   const steeringChips = await page.getByText(/steering next opening/i).count();
   check("no message was mistaken for steering", steeringChips === 0, `${steeringChips} chips`);
 
+  // A turn that needs a tool. Every check above uses a pure-text reply, which is exactly why
+  // none of them caught a turn parking invisibly on a permission prompt: the request was
+  // emitted, the session waited, and the interface showed the agent saying it would act and
+  // then nothing at all.
+  await page.getByRole("button", { name: /new conversation/i }).first().click().catch(() => {});
+  await page.waitForTimeout(1500);
+  const toolComposer = page.locator("textarea").first();
+  await toolComposer.fill("List the files in /tmp/frank-probe using your tools.");
+  await toolComposer.press("Enter");
+
+  let prompted = false;
+  for (let waited = 0; waited < 90000; waited += 1500) {
+    await page.waitForTimeout(1500);
+    const text = await page.locator("body").innerText();
+    // Either the prompt is raised, or the tool ran outright — both mean the turn did not
+    // vanish into a decision nobody was asked for.
+    if (/frank-probe/.test(text) && /(ls |allow|approve|deny|log-a\.txt)/i.test(text)) {
+      prompted = true;
+      break;
+    }
+  }
+  check("a tool-using turn surfaces its prompt or its result", prompted);
+
   // Hovering one conversation must not act on the others. Regression guard for the project
   // row's descendant selectors matching every nested row.
   const rows = page.locator(".sidebar-row");
