@@ -5,14 +5,15 @@ model clients, tree-sitter — about two and a half seconds, and identical for e
 whatever agent it will run. Nothing about that work depends on which session it is for, which
 is the fact this file is built around.
 
-So a worker is started before anyone asks for one. It forks, execs, imports the runtime, and
-then blocks reading an assignment that has not been written yet. Handing it a session is a
-write down that pipe. The import is still paid in full; it is simply paid by a process nobody
-is waiting for, ahead of the request that needs it.
+So a worker is started before anyone asks for one. The import is still paid in full; it is
+simply paid by a process nobody is waiting for, ahead of the request that needs it. Three
+parts, each doing one thing:
 
-    frankd  ──spawns──▶  prototype  ──starts ahead──▶  parked worker
-                              │                         (imported, waiting on a pipe)
-                              └──assignment──────────▶  session worker
+- **`frankd`** spawns the prototype and never imports the runtime itself.
+- **The prototype** starts workers ahead of demand and hands them out. It is the only process
+  that can, because a parent cannot `waitpid` a child it did not fork.
+- **A worker** forks, execs, imports, then blocks reading an assignment nobody has written.
+  Writing one is what turns it from parked into a session, and costs a pipe write.
 
 Two are kept parked, so a second session created while the first is being handed one still
 finds a warm worker. When the pool is empty a worker is started on the spot and that session
