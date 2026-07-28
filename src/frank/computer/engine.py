@@ -376,8 +376,23 @@ class NativeSurface(Surface):
 
         return self.guard(run)
 
-    def _primitive_read(self, ref: str, **_: Any) -> dict:
+    def _primitive_read(self, ref: Optional[str] = None, **_: Any) -> dict:
+        """Read one element's text.
+
+        `ref` is optional here because it is optional on the browser surface, and a script is
+        written against `read()` — not against whichever surface happens to be answering. It
+        used to be required, so `read()` on this surface raised a bare
+        `TypeError: missing 1 required positional argument` out of the primitive dispatcher and
+        into the transcript: a Python signature shown to someone who never called a Python
+        function. A surface that cannot do something says so in words.
+        """
         def run() -> dict:
+            if not ref:
+                return {
+                    "ok": False,
+                    "error": "read() needs the id of an element on this surface. Call find_one "
+                             "or find_many first and pass the id you want to read.",
+                }
             entry = self._entry(ref)
             handle = self._live_handle(entry)
             if handle is None:
