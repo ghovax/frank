@@ -224,3 +224,19 @@ The reason is visible in the fragmentation ladder. Stripping the tags out of the
 One result points the other way and is worth keeping. On the native surface, 68.7% of recorded elements have **no name at all**, and for those the key is empty and retrieval is impossible. Indexing the accessibility declaration instead drops that to zero and is the only native strategy that reaches every element; it measures as indistinguishable from the shipped key overall (−1.3%, [−2.7%, +0.2%]). It does not help the elements that have a name, but it gives the unnamed two-thirds something to match against, and that is a coverage gain a top-1 average over answerable queries cannot show.
 
 Fixtures now live in a directory per surface — `fixtures/web/` and `fixtures/native/` — rather than carrying the surface as a prefix on the filename.
+
+## Narrowing beats describing
+
+The sharpest result in this whole investigation was not an encoding at all. Ranking has always been a similarity contest across every element on the surface, and both primitives already carried `role`, `name` and `context` arguments — but `find_many` did not, and `find_one` applied them to the *shortlist*: it ranked the whole page, truncated to eight, and only then kept the buttons. On a page with six hundred buttons, a query whose top eight happened to contain none reported "no match".
+
+Narrowing before ranking, so that the contest runs inside the requested set, is worth **12.9%** of top-1 accuracy on the browser surface (95% interval [+12.0%, +13.7%]) and **2.4%** on native ([+1.1%, +3.8%]). Fixing the ordering alone — narrowing the corpus rather than the shortlist — is a further 2.0% ([+1.7%, +2.4%]) on the browser. For comparison, every encoding decision in this document put together moved single digits. The reason is arithmetic rather than subtle: a median browser element shares its role with 222 others, so naming the kind of control removes about nine candidates in ten before similarity is asked to do anything.
+
+The embedding cannot be asked to do this itself. Same-role elements do sit closer than different-role ones — cohesion of about +0.134 across eight sites, which is real, since roles correlate with wording — but a signal of that size cannot pick one kind of control out of hundreds. That is why the facet is an explicit set operation and not extra words in the query.
+
+**A correction belongs here.** The first version of this analysis reported that cohesion was 0.000, and concluded that the embedding encoded no notion of role whatsoever. That number came from building a similarity matrix over one random sample and then indexing it with positions drawn from a second, so the comparison was reading unrelated pairs. It survived review because the answer was tidy and pointed the way the argument was already going. The empirical case for narrowing — the 12.9% — was measured separately and stands; the explanation attached to it did not.
+
+### The embedding space, per construction
+
+Mean pairwise cosine over a page's elements turns out to predict retrieval quality almost perfectly, and inversely. On the browser surface the words key sits at 0.229 with 19.4 effective dimensions; the full declaration sits at 0.691 with 10.9; the ancestor path collapses to 0.845 with 3.0, and only 12% of its values are even distinct. This is the mechanism behind the markup result: adding markup does not add discriminating information, it adds tokens shared by thousands of elements, which pulls every document toward a common centroid and destroys the space's ability to separate anything.
+
+The native surface shows the same law with the terms reversed. Names are highly distinctive there but only 32% of elements have one at all, while declarations are complete and collapsed (0.671). Neither is satisfactory, and the honest reading is that the native key is coverage-limited rather than encoding-limited.

@@ -1321,11 +1321,43 @@ class _ToolsMixin:
         element_mutating_verbs = frozenset({"click", "type", "choose", "upload", "drag"})
         targeting_verbs = element_mutating_verbs | frozenset({"read", "hover", "scroll"})
 
-        def _rank(query: str, limit: int, everything: bool) -> list:
+        def _matching(documents: list, facets: dict) -> list:
+            """The documents a facet admits, narrowed before anything is ranked.
+
+            Narrowing first rather than filtering a shortlist afterwards is the whole point.
+            Ranking inside the facet is worth 12.9% of top-1 accuracy on the browser surface
+            (95% interval [12.0%, 13.7%]) against not narrowing at all, and 2.0% [1.7%, 2.4%]
+            against narrowing a shortlist — which was the previous behaviour, and could report
+            "no match" on a page of six hundred buttons whenever none reached the top eight.
+
+            The embedding does carry *some* notion of role: same-role elements sit 0.134 closer in
+            cosine than different-role ones, across eight sites. That is real and far too weak to
+            act on. A median browser element shares its role with 222 others, so a signal of that
+            size cannot isolate a kind of control by similarity — which is why the facet is an
+            explicit set operation rather than words appended to the query.
+            """
+            if not facets:
+                return documents
+            def admits(document) -> bool:
+                for field, wanted in facets.items():
+                    present = str(document.payload.get(field, "") or "")
+                    # `context` is a containment test because it names a region and a caller
+                    # knows part of it; `role` and `name` are exact, because a caller quoting
+                    # them has read them off a previous result.
+                    if field == "context":
+                        if wanted not in present:
+                            return False
+                    elif present != wanted:
+                        return False
+                return True
+            return [document for document in documents if admits(document)]
+
+        def _rank(query: str, limit: int, everything: bool, facets: dict | None = None) -> list:
             raw = surface.documents(app) if surface_name == "computer" else surface.documents()
             if not raw.get("ok"):
                 raise RuntimeError(raw.get("error", "Could not read the screen."))
-            hits = retrieval.Index(raw.get("documents", [])).search(query, top_k=limit, everything=everything)
+            candidates = _matching(raw.get("documents", []), facets or {})
+            hits = retrieval.Index(candidates).search(query, top_k=limit, everything=everything)
             # What the model actually asks for, recorded so the index can be tuned against real
             # queries instead of invented ones. Every encoding decision in
             # ``the-input-is-the-ceiling`` rests on a guess about how often a query names a
@@ -1361,21 +1393,19 @@ class _ToolsMixin:
                 lines.append("  - " + ", ".join(parts))
             return "\n".join(lines)
 
-        def find_many(query: Any, limit: int = 8, all: bool = False, **_: Any) -> list:
-            records = [_record(hit) for hit in _rank(str(query), int(limit), bool(all))]
+        def find_many(query: Any, limit: int = 8, all: bool = False, role: str = "",
+                      name: str = "", context: str = "", **_: Any) -> list:
+            facets = {key: value for key, value in
+                      (("role", role), ("name", name), ("context", context)) if value}
+            records = [_record(hit) for hit in _rank(str(query), int(limit), bool(all), facets)]
             for record in records:
                 _register(record)
             return records
 
         def find_one(query: Any, role: str = "", name: str = "", context: str = "", **_: Any) -> dict:
-            scored = [(_record(hit), float(hit.score or 0.0)) for hit in _rank(str(query), 8, False)]
-            if role or name or context:
-                scored = [
-                    (record, score) for record, score in scored
-                    if (not role or record.get("role", "") == role)
-                    and (not name or record.get("name", "") == name)
-                    and (not context or context in (record.get("context", "") or ""))
-                ]
+            facets = {key: value for key, value in
+                      (("role", role), ("name", name), ("context", context)) if value}
+            scored = [(_record(hit), float(hit.score or 0.0)) for hit in _rank(str(query), 8, False, facets)]
             if not scored:
                 raise RuntimeError(control_message("no_match", query=str(query)))
             top, top_score = scored[0]

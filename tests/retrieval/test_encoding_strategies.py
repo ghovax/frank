@@ -163,3 +163,51 @@ def test_the_live_key_has_not_fallen_behind_its_own_fields(outcomes):
         f"the live key is separably worse than {equivalent!r} by {difference:+.1%} "
         f"[{low:+.1%}, {high:+.1%}]"
     )
+
+
+def test_the_role_signal_in_the_embedding_stays_too_weak_to_act_on(corpora):
+    """Same-role elements sit measurably closer — and nowhere near closely enough.
+
+    This is the measurement behind faceted narrowing in `dispatch.py`. The cohesion is about
+    +0.134, which is real: roles correlate with wording, since buttons say "Submit" and links
+    carry article titles. It is also far too weak to isolate a kind of control, because a median
+    browser element shares its role with 222 others. Hence an explicit set operation rather than
+    words appended to the query.
+
+    The bound is two-sided on purpose. If cohesion collapsed toward zero the space would have
+    stopped encoding role at all; if it rose past a quarter, similarity might isolate a role on
+    its own and the facet would deserve re-examining. An earlier version of this analysis reported
+    0.000 — the result of indexing a similarity matrix with positions from a different sample,
+    which is the kind of mistake that survives precisely because its answer looks tidy."""
+    from model2vec import StaticModel
+    import numpy
+
+    from tests.retrieval.strategies import compose
+
+    model = StaticModel.from_pretrained("minishlab/M2V_multilingual_output")
+    build_text = compose(("name", "url", "title"))
+    cohesions = []
+    for corpus in corpora:
+        elements = corpus.elements[:400]
+        if len(elements) < 50:
+            continue
+        vectors = numpy.asarray(model.encode([build_text(element) or " " for element in elements],
+                                             show_progress_bar=False), dtype=numpy.float32)
+        # One sample, used for both the matrix and the pairing below. Drawing them separately is
+        # the bug this test's docstring describes.
+        vectors /= numpy.maximum(numpy.linalg.norm(vectors, axis=1, keepdims=True), 1e-9)
+        similarity = vectors @ vectors.T
+        same, different = [], []
+        for first in range(len(elements)):
+            for second in range(first + 1, len(elements)):
+                bucket = same if elements[first].role == elements[second].role else different
+                bucket.append(similarity[first, second])
+        if same and different:
+            cohesions.append(float(numpy.mean(same) - numpy.mean(different)))
+    assert cohesions, "no corpus large enough to measure role cohesion"
+    cohesion = float(numpy.mean(cohesions))
+    assert 0.02 < cohesion < 0.25, (
+        f"same-role cohesion is now {cohesion:+.3f}, outside the range this design assumes. Below "
+        f"0.02 the embedding has stopped encoding role at all; above 0.25 similarity may isolate a "
+        f"role unaided and faceted narrowing deserves re-examining"
+    )
