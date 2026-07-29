@@ -303,3 +303,23 @@ On the native surface every structural variant is indistinguishable, because str
 Real `find` queries — the one piece of evidence that would settle the family weighting, and with it the standing of `role` and of every trade in this document — were not captured. The logging is in place and correct: running a `Session` from the library, the model reached for `control_screen` three times unprompted. Each call died before issuing a query, with the child process unable to open `computer/control_child.py` despite the file being readable and owned by the user. The same failure appeared with the surrounding shell sandbox disabled, which narrows it to either the process-tree restrictions of the environment this was run from, or a genuine defect in the library path of `control_screen` — the daemon runs from a frozen bundle where those paths differ, so a source checkout may simply never have been exercised. Distinguishing the two needs one run from an ordinary shell.
 
 This matters more than it looks. Every family weighting in this document is an invention, and the queries a model actually writes are the only thing that can replace it.
+
+## Borrowing a description, and the ceiling on generating one
+
+The last idea standing was to give an element a description without paying a language model for it: embed it, find the nearest element that *does* carry a real tooltip, and borrow those words. No decoder, no generation, a second cosine lookup — static speed. Six variants were tested leave-one-out, so that nothing an element owns was ever used to retrieve it, and every query was a real tooltip somebody wrote.
+
+| Strategy | Description query @1 | Label query @1 | Seconds |
+|---|---:|---:|---:|
+| no description at all | **18.9%** | **60.1%** | 0.25 |
+| transfer, nearest neighbour | 11.4% | 51.1% | 0.21 |
+| transfer, three nearest | 8.9% | 39.8% | 0.24 |
+| transfer, same role only | 13.9% | 50.2% | 0.28 |
+| transfer, only above 0.6 similarity | 16.1% | 57.5% | 0.20 |
+| transfer, only when the element has no name | 18.6% | 60.0% | 0.20 |
+| *oracle: the element's own tooltip (circular)* | *28.6%* | *60.1%* | *0.24* |
+
+**Transfer never helps, and the way it fails is the tell.** The more conservative each variant, the closer it gets to zero — from −7.5% to −5.0% to −2.9% to −0.4% — converging on *doing nothing* rather than on doing good. A mechanism whose best configuration is the one that fires least often has no signal in it. The same-role restriction and the similarity threshold both reduce the damage without ever reversing its sign. Latency was never the issue: every variant ran in about a quarter of a second.
+
+The reason is the law again. A description borrowed from a neighbour is by construction *shared* text — the popular descriptions get borrowed by many elements at once — so it adds inter-document similarity without adding anything that distinguishes one element from another. It is `context` and `landmark` wearing a third costume.
+
+**The oracle row is the more important result, and it corrects an earlier claim in this document.** Giving every element its own real, human-written tooltip — perfect generation, free — is worth **+9.6%** on description queries (95% interval [+6.1%, +13.6%]) and **nothing at all** on label queries. The gap between heuristic composition and real descriptions was earlier quoted as 23 points; measured properly, against queries rather than against a circular index, it is about ten, and it exists on only one query family. Any future proposal to generate descriptions with a language model should be judged against ten points on a minority of queries, not against twenty-three.
