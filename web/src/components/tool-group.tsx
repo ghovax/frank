@@ -183,26 +183,23 @@ export const ToolGroup = memo(function ToolGroup({
       position="relative"
       className={active ? "running-title-shimmer" : undefined}
     >
-      <AnimatePresence initial={false} mode="popLayout">
-        <motion.div
-          key={headingText}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0, transition: { duration: 0.1, ease: "easeOut" } }}
-          transition={{ duration: 0.22, ease: "easeOut" }}
-          style={{ gridArea: "1 / 1", minWidth: 0, display: "flex", alignItems: "center" }}
+      {/* No cross-fade. This was keyed on the heading text, so every change of the running
+          tool's explanation faded the whole line out and a new one in — and during a burst of
+          tool calls the explanation changes every second or two, which read as the line
+          flickering rather than as anything meaning something. A label that is simply replaced
+          is easier to read, and the shimmer on the container above already says work is under
+          way, which is the only thing the animation was really communicating. */}
+      <Box gridArea="1 / 1" minW={0} display="flex" alignItems="center">
+        <Text
+          textStyle="sm"
+          fontWeight="normal"
+          whiteSpace="nowrap"
+          overflow="hidden"
+          textOverflow="ellipsis"
         >
-          <Text
-            textStyle="sm"
-            fontWeight="normal"
-            whiteSpace="nowrap"
-            overflow="hidden"
-            textOverflow="ellipsis"
-          >
-            {latestTool ? <ToolCallLabel name={latestTool.name} args={latestTool.arguments} /> : headingText}
-          </Text>
-        </motion.div>
-      </AnimatePresence>
+          {latestTool ? <ToolCallLabel name={latestTool.name} args={latestTool.arguments} /> : headingText}
+        </Text>
+      </Box>
     </Box>
   );
 

@@ -614,6 +614,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="do not start a control plane; serve against one that is already running",
     )
     serve.add_argument(
+        "--allow-stale-interface", action="store_true",
+        help="serve the built interface even when it is older than web/src (it will not match "
+             "this checkout; normally you want `cd web && bun run build` instead)",
+    )
+    serve.add_argument(
         "--no-open", action="store_true",
         help="do not open a browser; print the address and serve (for a headless box)",
     )
