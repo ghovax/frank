@@ -954,6 +954,33 @@ class WebSurface(Surface):
             logger.debug("Could not list tabs of the connected browser", exc_info=True)
             return []
 
+    def observe(self) -> dict:
+        """Title, url and focus — what a page can say about itself without a full read.
+
+        `url` is here and absent on a window, which is the whole design: one shape, and a key
+        appears when the surface has something to put in it."""
+        session = self._session
+        if session is None or not session.browser.is_connected() or session.page is None:
+            return {}
+        page = session.page
+        try:
+            focused = page.evaluate(
+                "() => { const a = document.activeElement;"
+                " return a ? (a.getAttribute('aria-label') || a.innerText || a.tagName) : null; }")
+        except Exception:  # noqa: BLE001
+            focused = None
+        return {"title": _safe_title(page), "url": _safe_url(page),
+                "focus": (str(focused)[:80] if focused else None)}
+
+    def _primitive_focus(self, **_: Any) -> dict:
+        """Bring this tab to the front. The browser's answer to the same question a window asks."""
+        def run() -> dict:
+            session, page = self._live()
+            page.bring_to_front()
+            return {"ok": True, "focused": True, "tab": session.tab_id(page)}
+
+        return self.guard(run)
+
     def _primitive_tabs(self, **_: Any) -> dict:
         def run() -> dict:
             session = self.session()

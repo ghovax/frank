@@ -518,6 +518,48 @@ class NativeSurface(Surface):
 
         return self.guard(run)
 
+    def observe(self) -> dict:
+        """Title, focus and selection — the three cheap facts a native window can answer.
+
+        No url and no network here, because a window has neither. The keys a surface cannot fill
+        are absent rather than null, so the model learns one shape and reads whatever is present."""
+        pid = self._last_pid
+        if pid is None:
+            return {}
+        try:
+            snapshot = accessibility.snapshot_app(pid, budget_seconds=1.0)
+        except Exception:  # noqa: BLE001 — an observation must never be the thing that fails
+            return {}
+        focused = next((_element_name(ax) for ax in snapshot.elements if getattr(ax, "focused", False)), None)
+        selected = [_element_name(ax) for ax in snapshot.elements if ax.selected]
+        return {"title": snapshot.window_title or "", "focus": focused,
+                "selection": selected[0] if selected else None}
+
+    def _primitive_focus(self, **_: Any) -> dict:
+        """Bring this target to the front, so input reaches it.
+
+        Acting does not focus, deliberately: the accessibility API drives most controls in place,
+        and an agent that raises windows is one that fights the person using the computer. But
+        text entry is different — an unfocused control accepts no keystrokes, and `AXPress` on one
+        returns success while doing nothing, so the failure is silent. This is how a script says
+        "I am about to type" without the harness guessing on its behalf."""
+        def run() -> dict:
+            pid = self._last_pid
+            if pid is None:
+                return {"ok": False, "error": "Nothing to focus yet — read the target first."}
+            try:
+                from AppKit import NSRunningApplication
+
+                application = NSRunningApplication.runningApplicationWithProcessIdentifier_(pid)
+                if application is None:
+                    return {"ok": False, "error": "That application is no longer running."}
+                application.activateWithOptions_(1 << 1)  # NSApplicationActivateIgnoringOtherApps
+            except Exception as error:  # noqa: BLE001 — report, never raise out of a primitive
+                return {"ok": False, "error": f"Could not focus the target: {error}"}
+            return {"ok": True, "focused": True}
+
+        return self.guard(run)
+
     def _primitive_read(self, ref: Optional[str] = None, **_: Any) -> dict:
         """Read one element's text.
 
@@ -530,11 +572,16 @@ class NativeSurface(Surface):
         """
         def run() -> dict:
             if not ref:
-                return {
-                    "ok": False,
-                    "error": "read() needs the id of an element on this surface. Call find_one "
-                             "or find_many first and pass the id you want to read.",
-                }
+                # The whole target's text, which is what `read()` means on the browser. One name,
+                # one meaning: this used to be an error here and a page read there, so a script
+                # written against `read()` worked or failed depending on what was answering — the
+                # exact leak the single-vocabulary rule exists to close.
+                pid = self._last_pid if self._last_pid is not None else None
+                if pid is None:
+                    return {"ok": False, "error": "read() has nothing to read yet — find something first."}
+                snapshot = self._ready_snapshot(pid, "focused")
+                spoken = [text for text in (_element_name(element) for element in snapshot.elements) if text]
+                return {"ok": True, "text": "\n".join(spoken)}
             entry = self._entry(ref)
             handle = self._live_handle(entry)
             if handle is None:

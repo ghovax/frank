@@ -27,16 +27,17 @@ import traceback
 from contextlib import redirect_stdout
 from typing import Any
 
-# The primitives available inside a script — the union of what the two surfaces perform, plus the
-# two retrieval primitives (find_one, find_many) the parent services from the same surface read.
-# Web-only names (evaluate, navigate) are always bound; calling one against a native surface returns
-# the parent's error, which is the honest outcome.
-_PRIMITIVES = (
-    "find_one", "find_many",
-    "click", "type", "press", "hover", "scroll", "choose", "upload",
-    "drag", "select", "caret", "read", "evaluate", "navigate",
-    "tabs", "tab", "new_tab", "close_tab", "frames",
-)
+# The primitives a script may call, sent by the parent because only the parent knows which surface
+# is answering. A name the surface does not implement is simply not bound, so reaching for it is a
+# `NameError` at the line that used it, raised before anything else in the script has run.
+#
+# It used to be one fixed tuple — the union of both surfaces — handed out whole regardless of what
+# was on the other end. A native window implements eight of the twenty, so a script could call
+# `hover`, `evaluate` or `tabs` and learn at runtime, from a result payload, that the plan it had
+# already committed to was never possible. A result payload reads as a runtime condition worth
+# working around; an unbound name reads as what it is.
+_FALLBACK_PRIMITIVES = ("find_one", "find_many", "click", "type", "press", "scroll", "drag",
+                        "select", "caret", "read")
 
 # The request/reply pipes to the parent, opened in ``main`` so importing this module (it never
 # should be — it is a script) has no side effect.
@@ -104,7 +105,8 @@ def main() -> None:
     _apply_limits(configuration.get("limits", {}))
     script = configuration["script"]
 
-    namespace: dict[str, Any] = {name: _make_primitive(name) for name in _PRIMITIVES}
+    allowed = configuration.get("primitives") or _FALLBACK_PRIMITIVES
+    namespace: dict[str, Any] = {name: _make_primitive(name) for name in allowed}
     captured = io.StringIO()
     result: dict[str, Any] = {"ok": True}
     try:

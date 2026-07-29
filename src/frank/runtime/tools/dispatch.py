@@ -1295,7 +1295,7 @@ class _ToolsMixin:
         # surface into elements, and an acting primitive targets an element by the id a find returned
         # or by a fresh query resolved the same way. The surface does its own OS-permission preflight;
         # danger is gated at the tool call by the permission classifier, not here.
-        from frank.computer import control, retrieval
+        from frank.computer import control, retrieval, surface as surface_module
         from frank.computer.surface import message_loader
 
         from frank.computer import targets as target_registry
@@ -1334,7 +1334,7 @@ class _ToolsMixin:
 
         control_message = message_loader("control")
         known_ids: dict[str, dict[str, str]] = {}   # id -> {id, name, role, context}, from find_* results
-        acted_on: list[dict[str, str]] = []
+        changed: list[dict[str, Any]] = []
         # Not the permission classifier's mutating set, though it currently reads the same. This one
         # answers a narrower question: which verbs take an *element* as their first argument and
         # change it — those get unique-or-raise resolution and a line in `acted_on`. `evaluate`,
@@ -1434,6 +1434,47 @@ class _ToolsMixin:
             )
             return hits
 
+        def _known_elements() -> list[dict]:
+            """Every element the surface currently publishes, cheaply, for an `appeared` diff.
+
+            Scoped to what a read already produces rather than to a bespoke subtree walk: the
+            surfaces have one way of enumerating themselves and adding a second would be a second
+            thing to keep true."""
+            try:
+                raw = surface.documents(app) if surface_name == "computer" else surface.documents()
+            except Exception:  # noqa: BLE001 — an observation must never fail an action
+                return []
+            return [{"id": document.id, **document.payload} for document in raw.get("documents", [])]
+
+        # Input needs focus; nothing else does. `AXPress` on an unfocused control returns success
+        # and does nothing, so the failure is silent and only an empty diff reveals it. A click
+        # that changes nothing is usually a click that was already satisfied — an already-selected
+        # tab — so focusing on its behalf would steal the screen to repeat something done.
+        input_bearing_verbs = frozenset({"type", "press", "caret"})
+
+        async def _record_change(name: str, args: list, before: dict, before_elements: list[dict]):
+            """What one action changed: the globals that moved, and what became newly present."""
+            after = await asyncio.to_thread(surface.observe)
+            moved = surface_module.changes_between(before, after)
+            appeared = surface_module.appeared_between(before_elements, _known_elements())
+            record: dict[str, Any] = {"action": name}
+            if args and isinstance(args[0], str):
+                record.update(known_ids.get(args[0], {"id": args[0]}))
+            record.update(moved)
+            if appeared:
+                record["appeared"] = appeared
+            if not moved and not appeared:
+                record["changed"] = []
+                if name in input_bearing_verbs:
+                    focus_outcome = await asyncio.to_thread(surface.perform, "focus", [], {})
+                    if isinstance(focus_outcome, dict) and focus_outcome.get("ok"):
+                        retried = await asyncio.to_thread(surface.perform, name, list(args), {})
+                        record["focused_target"] = {"id": target_id, "reason": f"{name} requires focus"}
+                        after = await asyncio.to_thread(surface.observe)
+                        record.update(surface_module.changes_between(before, after))
+                        record.pop("changed", None) if isinstance(retried, dict) else None
+            return record
+
         def _record(hit: Any) -> dict:
             return {"id": hit.id, **hit.payload}
 
@@ -1513,13 +1554,23 @@ class _ToolsMixin:
                 return await asyncio.to_thread(find_one, *args, **keywords)
             if name in targeting_verbs:
                 args = await asyncio.to_thread(_resolve_target, name, list(args))
+            # An action is bracketed by two cheap observations, so the result can say what
+            # *changed* rather than only what was touched. `acted_on` answered "what did I aim at",
+            # which is the one thing a script already knew; it never answered "did anything
+            # happen", and a script that clicks a tab and then cannot find the field inside it
+            # could not tell a failed click from a slow pane from a differently-named field.
+            watched = name in element_mutating_verbs or name in {"press", "navigate"}
+            before = await asyncio.to_thread(surface.observe) if watched else {}
+            before_elements = _known_elements() if watched else []
             outcome = await asyncio.to_thread(surface.perform, name, list(args), keywords)
             if isinstance(outcome, dict):
                 if outcome.get("ok") is False:
                     # Surface a primitive failure into the script as a raised error it can try/except.
                     raise RuntimeError(outcome.get("error", f"{name} failed"))
-                if name in element_mutating_verbs and args and isinstance(args[0], str):
-                    acted_on.append({"action": name, **known_ids.get(args[0], {"id": args[0]})})
+                if watched:
+                    record = await _record_change(name, args, before, before_elements)
+                    if record is not None:
+                        changed.append(record)
                 # Hand the script the useful value directly: evaluate's result or read's text is the
                 # value itself (structured and queryable), an action is its confirmation minus `ok`.
                 if "result" in outcome:
@@ -1530,9 +1581,19 @@ class _ToolsMixin:
             return outcome
 
         active = tool_context.current()
+        # The baseline the target diff is reported against, taken before the script runs so the
+        # model is told what its own actions did to the world rather than a fresh full listing.
+        targets_before = target_registry.list_targets()
         result = await control.run_control_script(
             script, dispatch, profile=active.sandbox, workspace=active.workspace,
+            # Only what this surface implements, so an absent primitive is an unbound name at the
+            # line that used it rather than a runtime payload after the plan was committed to.
+            primitives=surface.primitives(),
         )
-        if acted_on and isinstance(result, dict):
-            result.setdefault("acted_on", acted_on)
+        if isinstance(result, dict):
+            moved = target_registry.difference(targets_before, target_registry.list_targets())
+            if moved:
+                result.setdefault("targets", moved)
+        if changed and isinstance(result, dict):
+            result.setdefault("changed", changed)
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)

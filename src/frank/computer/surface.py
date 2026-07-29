@@ -102,6 +102,32 @@ def resolve_range(
     raise ToolFailure({"ok": False, "error": "select needs one of: text, a from/to pair, or all."})
 
 
+def changes_between(before: dict, after: dict) -> dict:
+    """What differs between two observations, as `{field: {"from": …, "to": …}}`.
+
+    Only fields that actually moved. An action that changed nothing reports `{}`, which is the
+    signal the focus fallback reads and the signal a model needs to stop guessing: today an action
+    returns what it *touched* and never what it *changed*, so a script that clicks a tab and then
+    cannot find the field inside it has no way to tell a failed click from a slow pane from a
+    differently-named field. Four attempts at a two-step task came out of that gap."""
+    report: dict[str, Any] = {}
+    for name in sorted(set(before) | set(after)):
+        was, now = before.get(name), after.get(name)
+        if was != now:
+            report[name] = {"from": was, "to": now}
+    return report
+
+
+def appeared_between(before: list[dict], after: list[dict]) -> list[dict]:
+    """Elements present after an action and not before, in the order the surface reports them.
+
+    Uncapped. What became newly available is the most useful thing a model can learn, because it
+    is what it can act on next, and truncating it means it cannot tell "there is nothing else"
+    from "there is more I was not shown"."""
+    known = {str(element.get("id")) for element in before}
+    return [element for element in after if str(element.get("id")) not in known]
+
+
 def resolve_caret(
     content: str, *, before: Optional[str] = None, after: Optional[str] = None,
     at_offset: Optional[int] = None, to_start: bool = False, to_end: bool = False, occurrence: int = 1,
@@ -226,6 +252,31 @@ class Surface:
     def recover(self, detail: str) -> dict:
         """The payload for an unexpected failure. Overridden with a surface-specific message."""
         return {"ok": False, "error": detail}
+
+    # The retrieval primitives every surface answers, serviced by the parent rather than by a
+    # `_primitive_*` method, so they are named here instead of discovered below.
+    RETRIEVAL_PRIMITIVES = ("find_one", "find_many")
+
+    def primitives(self) -> tuple[str, ...]:
+        """Every primitive this surface implements, discovered from the surface itself.
+
+        Read off the methods rather than declared in a list, because a list is a second place to
+        state the same fact and the two drift: the script namespace was a fixed tuple of twenty
+        names while a native window implemented eight, and nothing connected the two."""
+        found = {name[len("_primitive_"):] for name in dir(self) if name.startswith("_primitive_")}
+        return tuple(sorted(self.RETRIEVAL_PRIMITIVES + tuple(sorted(found))))
+
+    def observe(self) -> dict:
+        """The cheap facts about this surface right now, for diffing an action against.
+
+        Deliberately small and deliberately global: title, focus, selection, and — where they
+        exist — url and network. A full re-read after every action is truthful and unaffordable,
+        and the acted-on subtree alone misses the consequences that matter most, which are exactly
+        the ones that happen elsewhere: a pane switching, a page navigating, focus moving.
+
+        A surface that cannot answer cheaply returns what it can. An empty observation makes the
+        diff empty, which reads as "nothing observable changed" — true, and better than a guess."""
+        return {}
 
     def preflight(self, operation: str) -> Optional[dict]:
         """An optional gate run before a read or an action (a permission the surface needs).

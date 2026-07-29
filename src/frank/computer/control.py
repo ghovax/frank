@@ -48,6 +48,7 @@ async def run_control_script(
     timeout: Optional[float] = None,
     profile: Any = None,
     workspace: str = "",
+    primitives: Optional[tuple[str, ...]] = None,
 ) -> dict:
     """Execute ``script`` in a child process, servicing its primitive calls via ``dispatch``, and
     return the child's result dict (``{ok, value?, stdout?, error?, traceback?}``). On timeout the
@@ -58,6 +59,9 @@ async def run_control_script(
 
     configuration = {
         "script": script,
+        # Which names exist in the script's namespace. The surface decides, because the surface is
+        # the only thing that knows what it can do.
+        "primitives": list(primitives or ()),
         # CPU seconds only. Address space is the confinement profile's `RLIMIT_AS` now — this
         # used to set it too, from its own constant, so two mechanisms raced for one rlimit.
         "limits": {"cpu_seconds": int(timeout) + 5},
