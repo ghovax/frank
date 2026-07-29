@@ -662,17 +662,36 @@ async def control_screen(
       find_many(query, limit=8, all=False) — the ranked matches, for reading or harvesting a whole set (act on every result). find_one(query, role="", name="", context="") — the single best match, for acting; it returns that one element, or raises if the top matches are indistinguishable (add a role/name/context discriminator and retry). Write explicit, descriptive queries — name the target, its role, and the section it sits under; a terse query spreads across every similar control. On the browser, find also searches the page's own traffic (network requests and WebSocket frames), so you can pull data from the source instead of walking the DOM.
 
     Acting — call by bare name, no prefix. On BOTH surfaces:
-      click(target, button="left", count=1) · type(target, text, submit=False, mode="replace") · press(key) — a named key, a letter, or a chord like "cmd+shift+g" · scroll(target=None, direction="down") · drag(target, to_element) · read(target=None, frame="") · select(...) · caret(...)
+      - click(target, button="left", count=1)
+      - type(target, text, submit=False, mode="replace") — fills a field without submitting unless submit=True
+      - press(key) — a named key, a letter, or a chord like "cmd+shift+g"
+      - scroll(target=None, direction="down")
+      - drag(target, to_element)
+      - read(target=None, frame="")
+      - select(target, text=None, to_text=None, select_all=False) — highlight a substring, a range from the caret up to some text, or the whole field
+      - caret(target, before=None, after=None, at_offset=None, edge="") — place the cursor before/after some text, at a character offset, or at the "start"/"end" edge
+
     Browser only — these do not exist on the computer surface, so do not reach for them there:
-      hover(target) · choose(target, option) · upload(target, paths). A ``target`` is an id a find returned (or the find_one result itself), or a plain-language query resolved the same way find_one resolves it — so for a state-changing action, never pick a find_many result by position; use find_one or a query so an unclear target is caught, not guessed. Typing fills a field without submitting unless ``submit=True``; ``press("Enter")`` and ``submit=True`` post a form, so be deliberate.
-    Selecting text within an editable field:
-      select(target, text=None, to_text=None, select_all=False) — highlight a substring, a range from the caret up to some text, or the whole field · caret(target, before=None, after=None, at_offset=None, edge="") — place the cursor before/after some text, at a character offset, or at the "start"/"end" edge
-    Browser only:
-      evaluate(javascript, argument=None, frame="") — run the given JavaScript source in the page and get its result back natively; when the source is written as a function, argument is the single value passed into it. Read, filter, or aggregate the page's data down to just what you need, or call its own signed-in API with fetch (riding the user's real session). · navigate(url="", history="") — go to a url, or "back"/"forward"/"reload"
+      - hover(target)
+      - choose(target, option)
+      - upload(target, paths)
+      - evaluate(javascript, argument=None, frame="") — run JavaScript in the page and get its result back natively; when the source is written as a function, argument is the single value passed into it. Read, filter, or aggregate the page's data down to what you need, or call its own signed-in API with fetch, riding the user's real session
+      - navigate(url="", history="") — go to a url, or "back"/"forward"/"reload"
+
+    A target is an id a find returned (or the find_one result itself), or a plain-language query resolved the way find_one resolves it. For a state-changing action, never pick a find_many result by position: use find_one or a query, so an unclear target is caught rather than guessed. press("Enter") and submit=True both post a form, so be deliberate.
+
     Tabs — the browser has more than one page, and you choose which one you are on:
-      tabs() — every open tab as {id, title, url, active} · tab(id) — switch to one and bring it to the front · new_tab(url="") — open one, make it active, and return its id · close_tab(id="") — close that tab, or the current one. These are the user's own tabs, open because they are working in them: read and switch freely, but leave a tab you did not open unless the task is about it, and remember that closing one can throw away a half-filled form with no undo.
+      - tabs() — every open tab as {id, title, url, active}
+      - tab(id) — switch to one and bring it to the front
+      - new_tab(url="") — open one, make it active, and return its id
+      - close_tab(id="") — close that tab, or the current one
+
+    These are the user's own tabs, open because they are working in them. Read and switch freely, but leave a tab you did not open unless the task is about it. Closing one can throw away a half-filled form, and there is no undo.
+
     Frames — an iframe is its own document, with its own origin and its own session:
-      frames() — every frame as {id, url, name, parent, element}. Element ids are already frame-scoped, so f1e3 is the third element of frame f1 and clicking or typing into it works with no extra step. What does need the frame named is reading or scripting one: evaluate(..., frame="f1") and read(frame="f1") run inside that document, which is the only way to reach an embedded checkout, consent screen or viewer through the credentials it actually holds.
+      - frames() — every frame as {id, url, name, parent, element}
+
+    Element ids are already frame-scoped, so f1e3 is the third element of frame f1, and clicking or typing into it needs no extra step. Reading or scripting a frame does need it named: evaluate(..., frame="f1") and read(frame="f1") run inside that document. That is the only way to reach an embedded checkout, consent screen or viewer through the credentials it holds.
 
     The script runs like a notebook cell: the value of a trailing bare expression is reported as the result, and whatever you ``print`` is returned too. The result also lists what each action touched (``acted_on``), so you can confirm you clicked and typed into the right elements. If the surface can't be read — Accessibility not granted, or the browser not connected — that comes back as an error to raise with the user, not something to route around.
 
