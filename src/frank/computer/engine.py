@@ -103,6 +103,32 @@ def _element_name(element: accessibility.Element) -> str:
     return element.title or element.description or element.help or element.role
 
 
+def _displayed_window(pid: int) -> Optional[tuple[int, int]]:
+    """The size of a real window this process is showing, or ``None`` if it is showing none.
+
+    Asked of the window server rather than of accessibility, because the whole point is to tell
+    those two apart: an app can draw a window and publish nothing about it, and only the window
+    server can say so. Menu-bar strips and other chrome are excluded by size.
+    """
+    import Quartz
+
+    try:
+        windows = Quartz.CGWindowListCopyWindowInfo(
+            Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
+            Quartz.kCGNullWindowID,
+        ) or []
+    except Exception:  # noqa: BLE001 — a diagnosis must never be the thing that fails
+        return None
+    for window in windows:
+        if window.get("kCGWindowOwnerPID") != pid or window.get("kCGWindowLayer"):
+            continue
+        bounds = window.get("kCGWindowBounds") or {}
+        width, height = int(bounds.get("Width", 0)), int(bounds.get("Height", 0))
+        if width > 200 and height > 200:
+            return width, height
+    return None
+
+
 def _is_incomplete(snapshot: accessibility.Snapshot) -> bool:
     """Whether a read produced nothing usable: an empty tree, or only window-chrome controls (a
     Chromium/Electron app whose real tree has not built yet). Such a read is not acted on."""
@@ -238,7 +264,19 @@ class NativeSurface(Surface):
             pid = self._resolve_pid(target)
             snapshot = self._ready_snapshot(pid, "focused")
             if _is_incomplete(snapshot):
-                return self.incomplete("not_ready", app=(snapshot.app_name or target or "the app"))
+                name = snapshot.app_name or target or "the app"
+                # "Not ready" and "will never be ready" are different facts and want different
+                # answers. The window server knows which: if it is showing a real window while
+                # accessibility reports nothing, the app is withholding its interface rather
+                # than still building it, and no amount of waiting or re-observing will help.
+                # Reported as "starting up", this cost three wrong theories about one app.
+                displayed = _displayed_window(pid)
+                if displayed is not None:
+                    width, height = displayed
+                    return self.incomplete(
+                        "withholds_accessibility", app=name, width=width, height=height,
+                    )
+                return self.incomplete("not_ready", app=name)
             self._last_pid = pid
             self._targets = {}
             documents: list[Document] = []

@@ -242,29 +242,61 @@ def _single(element: Any, attribute: str) -> Any:
     return value if error == 0 else None
 
 
+def _pids_showing_a_window() -> set[int]:
+    """Which processes are actually displaying something, according to the window server.
+
+    Asked because an application can be running more than once. macOS reports each instance
+    separately, and only one of them may own the window a person is looking at — the others are
+    alive with nothing on screen. Accessibility is per process, so reading the wrong instance
+    returns an empty tree that looks exactly like an app refusing to expose itself.
+    """
+    import Quartz
+
+    try:
+        windows = Quartz.CGWindowListCopyWindowInfo(
+            Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
+            Quartz.kCGNullWindowID,
+        ) or []
+    except Exception:  # noqa: BLE001 — a preference must never be the thing that fails
+        return set()
+    showing = set()
+    for window in windows:
+        bounds = window.get("kCGWindowBounds") or {}
+        # Layer 0 and a real size: a document window, not a menu-bar strip or an overlay.
+        if window.get("kCGWindowLayer") == 0 and int(bounds.get("Width", 0)) > 200 and int(bounds.get("Height", 0)) > 200:
+            showing.add(window.get("kCGWindowOwnerPID"))
+    return showing
+
+
 def find_app_pid(name: str) -> Optional[int]:
     """Resolve a running app to its PID by localized name or bundle id (case-insensitive;
-    substring on the name). Returns None if it is not running."""
+    substring on the name). Returns None if it is not running.
+
+    When several instances match, the one showing a window wins. It used to be whichever macOS
+    listed first, which for an app left running with no window and then reopened was the empty
+    one — and the empty one reads as zero elements, indistinguishable from an app that will not
+    expose itself at all. That mistake cost several wrong theories about RStudio, whose real
+    interface was 144 elements deep in the process nobody was asking.
+    """
     needle = name.strip().lower()
     running_apps = AppKit.NSWorkspace.sharedWorkspace().runningApplications()
-    exact = next(
-        (
-            app.processIdentifier()
-            for app in running_apps
-            if needle in (_string(app.bundleIdentifier()).lower(), _string(app.localizedName()).lower())
-        ),
-        None,
-    )
-    if exact is not None:
-        return exact
-    return next(
-        (
-            app.processIdentifier()
-            for app in running_apps
-            if needle and (needle in _string(app.localizedName()).lower() or needle in _string(app.bundleIdentifier()).lower())
-        ),
-        None,
-    )
+    matches = [
+        app.processIdentifier()
+        for app in running_apps
+        if needle in (_string(app.bundleIdentifier()).lower(), _string(app.localizedName()).lower())
+    ] or [
+        app.processIdentifier()
+        for app in running_apps
+        if needle in _string(app.localizedName()).lower() or needle in _string(app.bundleIdentifier()).lower()
+    ]
+    if not matches:
+        return None
+    if len(matches) > 1:
+        showing = _pids_showing_a_window()
+        for pid in matches:
+            if pid in showing:
+                return pid
+    return matches[0]
 
 
 def frontmost_pid() -> Optional[int]:
