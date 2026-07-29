@@ -832,14 +832,13 @@ export function ChatPanel({
                       around it read as one document, while user bubbles — carrying their own
                       fill — still mark the turn boundaries. */}
                   <VStack ref={scrollContentRef} gap={2.5} align="stretch" w="full" maxW="80rem" mx="auto">
-                    {/* `popLayout` takes a leaving row out of the flow the moment it starts to
-                        leave, instead of letting it hold its space for the length of the fade.
-                        In the default mode an outgoing row and its replacement are both in the
-                        layout at once, so any change of key made the transcript grow by the
-                        height of the duplicates and then snap back — a shift with no cause the
-                        reader could see. Keys are stable now; this makes the failure impossible
-                        rather than merely absent. */}
-                    <AnimatePresence initial={false} mode="popLayout">
+                    {/* Plain mode, deliberately. `popLayout` was added when the transcript
+                        grew and snapped back at the end of a turn, and it worked by taking a
+                        leaving row out of the flow so duplicates could not push the layout. But
+                        the duplicates were the bug — one tool call held two rows — and that is
+                        fixed at the source now. Keeping the containment would only hide the next
+                        one, which is exactly how this took so long to find. */}
+                    <AnimatePresence initial={false}>
                       {renderedTimeline.map((item, itemIndex) => {
                         const isLastItem = itemIndex === renderedTimeline.length - 1;
                         const key = item.kind === "tool_group" ? item.id : item.message.id;

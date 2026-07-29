@@ -150,9 +150,12 @@ export const ToolGroup = memo(function ToolGroup({
   // A tools-less group is a "thinking before acting" phase and owns the leading brain icon.
   const thinkingOnly = tools.length === 0;
   const headingText = latestLabel || (thinkingOnly ? translation("thinking") : active ? translation("working") : translation("actionsTaken"));
-  // One call is already fully represented by the summary row. The grouped body only
-  // becomes useful once it can reveal multiple calls instead of repeating that row.
-  const interactive = tools.length > 1;
+  // Any call can be opened, including a single one. The rule used to be "more than one",
+  // on the reasoning that one call is already represented by the summary row — but the row
+  // carries the call's *label*, and the body carries what it did: the script, the output, the
+  // error and its traceback. A lone failing call was therefore the one case where none of that
+  // could be reached, which is precisely when a person most wants it.
+  const interactive = tools.length > 0;
 
   // Status chips surface states that need separate attention. Running and completed calls
   // carry no chip: the live shimmer already communicates activity, while the settled line

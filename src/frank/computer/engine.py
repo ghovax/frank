@@ -55,12 +55,6 @@ class RegistryEntry:
     center: Optional[tuple[float, float]]
 
 
-# How many pieces of a container's contents to carry. A table row is a handful of columns;
-# anything longer is a container that holds a view rather than a record, and listing all of it
-# would bury the caller instead of informing them.
-_CONTAINED_PARTS_LIMIT = 12
-
-
 def _name_containers_from_their_contents(documents: list[Document]) -> None:
     """Give a container the text of what it contains, when it has none of its own.
 
@@ -75,7 +69,8 @@ def _name_containers_from_their_contents(documents: list[Document]) -> None:
     What a row contains is a record, not a sentence: a file name, a date, a size, a kind. They
     stay separate in ``contains``, and the first becomes the row's ``name``, because that is the
     one a person would call it. Flattening them into one string would ask every caller to guess
-    where a file name ends and its modification date begins.
+    where a file name ends and its modification date begins, and dropping the tail of a record
+    would lose the columns without saying which.
     """
     with_text = [document for document in documents if document.text]
     if not with_text:
@@ -86,7 +81,7 @@ def _name_containers_from_their_contents(documents: list[Document]) -> None:
         prefix = f"{document.id}."
         parts = list(dict.fromkeys(
             other.text for other in with_text if other.id.startswith(prefix)
-        ))[:_CONTAINED_PARTS_LIMIT]
+        ))
         if not parts:
             continue
         document.payload["name"] = parts[0]
