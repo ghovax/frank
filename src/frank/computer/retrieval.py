@@ -2,10 +2,16 @@
 
 The model states a goal in plain words; this ranks the elements (and, on the web, the page's
 captured network exchanges) by relevance and hands back the best matches, each carrying its
-native handle so the model can act on it. It is the same recipe ``semble`` uses for code —
-static embeddings for semantic similarity, BM25 for lexical overlap, the two fused — but with a
-**general** retrieval model rather than a code one, and with **no chunking**: the accessibility
+native handle so the model can act on it. It starts from the recipe ``semble`` uses for code, with
+a **general** retrieval model rather than a code one and with **no chunking** — the accessibility
 tree already delivers the surface as discrete elements, so one element is one document.
+
+It departs from that recipe in one way, and the departure is measured: **the two rankers are not
+fused.** Static embeddings rank; BM25 exists only as a fallback for when the embedding model
+cannot be loaded. :meth:`Index.search` records why — fusing them was worse than either alone.
+This paragraph used to say "the two fused", describing a design that had already been measured
+and removed, which is the same way the claim that ``context`` belonged in the key outlived the
+evidence against it.
 
 Two deliberate choices, both settled empirically (see the plan ``screen-search-and-control``):
 
@@ -75,13 +81,21 @@ _ROLE_IN_WORDS = {
 
 def element_text(name: str = "", description: str = "", value: Any = None, context: str = "",
                  role: str = "") -> str:
-    """The retrieval key for one element: what it is, then what it says.
+    """Join an element's words: the kind of control, in words, then what it is called and says.
 
-    The kind of control leads, in words, because that is how it is asked for. Measured across 143
-    queries sampled from eight applications, naming the role this way moves top-1 from 119 to 132
-    and MRR from 0.897 to 0.948 — several times the difference between any two embedding models
-    tried, and unlike those, far larger than the sampling noise. An unrecognised role contributes
-    nothing rather than its raw identifier, for the same reason `AXButton` is left out."""
+    Still used for the text the model *reads*, where more context is a kindness rather than a
+    cost. It is no longer what either surface *embeds* — see :func:`web_element_text`, and
+    :mod:`frank.computer.engine`, which now ranks on the name alone.
+
+    This docstring used to claim that leading with the role moved top-1 from 119 to 132 across
+    143 queries. That measurement was real but its queries were not: each was built by joining an
+    element's own name to its role, so a key containing the role was being scored against a query
+    containing the role. On queries drawn only from what an application actually wrote, ranking on
+    the name alone beats name-with-role-and-value by 2.5% (95% interval [0.8%, 4.2%]) across ten
+    live applications. The number was never wrong; the thing it measured was.
+
+    An unrecognised role contributes nothing rather than its raw identifier, so that `AXButton`
+    never reaches the text."""
     value_text = value if isinstance(value, str) else ("" if value is None else str(value))
     spoken = _ROLE_IN_WORDS.get(role, _ROLE_IN_WORDS.get(role.lower(), ""))
     return " ".join(part for part in (spoken, name, description, value_text, context) if part).strip()
@@ -126,30 +140,30 @@ def _without_repeated_words(text: str) -> str:
     return " ".join(kept)
 
 
-def web_element_text(name: str = "", role: str = "", url: str = "", title: str = "") -> str:
-    """The retrieval key for one element of a web page.
+def web_element_text(name: str = "", url: str = "", title: str = "") -> str:
+    """The retrieval key for one element of a web page: what it is called, where it goes, and
+    what it says it is for.
 
-    Four parts. The **name** leads because it is what a query usually says. The **URL words**
+    Three parts. The **name** leads because it is what a query usually says. The **URL words**
     follow, which is the change that separated this key from every alternative: on queries whose
-    wording shares no word with the visible label, they move top-1 from 8% to 39%. The **role**
-    in words helps a query that names a kind of control. The **title** is the page's own prose
-    description, present on about a quarter of elements and the only human-written statement of
-    *purpose* a page publishes.
+    wording shares no word with the visible label, they move top-1 from 8% to 39%. The **title**
+    is the page's own prose description, present on about a quarter of elements and the only
+    human-written statement of *purpose* a page publishes.
 
     What is absent is as load-bearing as what is present, and each absence was paid for.
-    ``context`` costs 14–18 points and is the largest finding in ``the-input-is-the-ceiling``.
-    ``value`` costs 1.4% (95% interval [1.2%, 1.7%]) — it was in the first cut of this function
-    despite an earlier sweep having already measured it as harmful, and the harness caught it.
-    ``landmark``, ``id``, ``class`` and ``data-*`` are machine tokens that cost 11 points of
-    exact-label accuracy and bought nothing.
+    ``context`` costs 14–19 points and is the largest finding in ``the-input-is-the-ceiling``.
+    ``value`` costs 1.4% [1.2%, 1.7%] — it was in the first cut of this function despite an
+    earlier sweep having already measured it as harmful, and the harness caught it. ``role``
+    costs 0.8% [0.3%, 1.3%]. ``landmark``, ``id``, ``class`` and ``data-*`` are machine tokens
+    that cost 11 points of exact-label accuracy and bought nothing.
 
-    ``role`` is the one part still open. Dropping it measures as *better* by 0.8% [0.3%, 1.3%],
-    but every query family in the harness is built from an element's own words — a name, a
-    fragment of one, a URL, a tooltip — and none of them ever names a kind of control, which is
-    the single thing role is for. Removing it on that evidence would be letting a benchmark's
-    blind spot make the decision, so it stays until the logged queries say otherwise."""
-    spoken = _ROLE_IN_WORDS.get(role, _ROLE_IN_WORDS.get(role.lower(), ""))
-    parts = (name, url_in_words(url), spoken, title)
+    The caveat on ``role`` is worth keeping in view rather than treating as settled: no query
+    family in the harness ever names a kind of control ("the search *button*"), which is the one
+    thing a role is for, so the measurement showing it harmful is taken on queries that could
+    never have rewarded it. The role still reaches the model — it travels in the payload, and
+    ``find_one`` can filter on it exactly. What the logged queries say about how often a real
+    query names a control kind is the evidence that should reopen this."""
+    parts = (name, url_in_words(url), title)
     return _without_repeated_words(" ".join(part for part in parts if part).strip())
 
 

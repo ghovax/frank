@@ -25,11 +25,17 @@ from tests.retrieval.evaluation import build_queries, evaluate_strategy, is_sepa
 from tests.retrieval.strategies import FIELD_SOURCES, LIVE_KEY_NAME, STRATEGIES, name_of
 
 
+# These assertions are about the browser key, so they load only browser corpora. Pooling the two
+# surfaces would score compositions on native windows that cannot supply a URL or a tooltip, which
+# would dilute exactly the fields under test.
+MEASURED_SURFACE = "web"
+
+
 @pytest.fixture(scope="module")
 def corpora():
-    loaded = load_all_corpora()
+    loaded = load_all_corpora(surface_name=MEASURED_SURFACE)
     if not loaded:
-        pytest.skip("no corpora recorded; run `uv run python -m tests.retrieval.harvest`")
+        pytest.skip("no browser corpora recorded; run `uv run python -m tests.retrieval.harvest`")
     return loaded
 
 
@@ -150,7 +156,7 @@ def test_the_live_key_has_not_fallen_behind_its_own_fields(outcomes):
     This is the drift guard: it says nothing about which composition is right, only that whatever
     the surface builds today still performs like a deliberate arrangement of the fields it uses
     rather than an accident."""
-    equivalent = name_of(("name", "url", "role", "title"))
+    equivalent = name_of(("name", "url", "title"))
     interval = paired_bootstrap_interval(hits_of(outcomes, LIVE_KEY_NAME), hits_of(outcomes, equivalent))
     difference, low, high = interval
     assert not (is_separable(interval) and difference < 0), (

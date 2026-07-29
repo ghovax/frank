@@ -1,0 +1,359 @@
+{
+ "site_name": "native-system-settings",
+ "surface_name": "native",
+ "page_url": "application:System Settings",
+ "elements": [
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Network",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Battery",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "General",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Accessibility",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Appearance",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Apple Intelligence & Siri",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Desktop & Dock",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Displays",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Menu Bar",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Spotlight",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Wallpaper",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Notifications",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Sound",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Focus",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Screen Time",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Lock Screen",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Privacy & Security",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Touch ID & Password",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Users & Groups",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXTextField",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Search",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Allow the applications below to monitor input from your keyboard even while using other applications.",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "claude",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "",
+   "value": "1",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Dictation Toolkit",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "",
+   "value": "1",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Discord",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "",
+   "value": "1",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Visual Studio Code",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "",
+   "value": "1",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Wave",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "",
+   "value": "1",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Add",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Remove",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Back",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXMenuButton",
+   "name": "Forward",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Input Monitoring",
+   "context": "",
+   "url": "",
+   "title": ""
+  }
+ ]
+}

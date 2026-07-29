@@ -97,11 +97,10 @@ LIVE_KEY_NAME = "live browser key"
 
 def live_browser_key(element: RecordedElement) -> str:
     """Whatever :func:`frank.computer.retrieval.web_element_text` currently produces."""
-    return web_element_text(name=element.name, role=element.role, url=element.url,
-                            title=element.title)
+    return web_element_text(name=element.name, url=element.url, title=element.title)
 
 
 STRATEGIES[LIVE_KEY_NAME] = live_browser_key
 # Which fields the live key draws on, so a report can mark the families that score it circularly.
 # Kept in step with `live_browser_key` above by the drift test in `test_encoding_strategies`.
-FIELDS_BY_STRATEGY[LIVE_KEY_NAME] = frozenset({"name", "url", "role", "title"})
+FIELDS_BY_STRATEGY[LIVE_KEY_NAME] = frozenset({"name", "url", "title"})

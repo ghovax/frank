@@ -1,6 +1,6 @@
 ---
 created: 2026-07-29T10:00:00Z
-updated: 2026-07-29T18:00:00Z
+updated: 2026-07-29T21:00:00Z
 commit: TBD
 ---
 
@@ -130,9 +130,26 @@ Across every non-circular strategy in Run 4, description-style queries land betw
 
 **`value` leaves the key.** It was in the first implementation of `web_element_text` despite an earlier sweep having already measured it as harmful, and the harness caught it on its first full run: removing it is worth +1.4%, 95% interval [+1.2%, +1.7%]. The lesson is not about `value` — it is that the harness earned its cost before it was even committed.
 
-**The native key is left alone.** Its candidates are all within noise of one another, and a change that cannot be distinguished from zero is not worth the risk of making.
+**The native key becomes the name alone.** This reverses the decision recorded above it, and the reversal is worth reading as a warning rather than as a correction. Native was left alone on the grounds that its candidates were within noise — a judgement resting on two runs whose queries had been built by joining an element's name to its role, which is the construction that flatters any key containing a role. Once ten live applications were recorded and queried only with what those applications actually wrote, the picture was not close: ranking on the name alone beats name-with-role-and-value by 2.5%, 95% interval [+0.8%, +4.2%], separable. `role` and `value` were weight in the embedding without being what a query asks by. Both still reach the model in the payload, and `find_one` filters on `role` exactly rather than approximately.
+
+**`role` leaves the browser key too**, at +0.8% [+0.3%, +1.3%]. The caveat stands and is deliberately not resolved: no query family ever names a kind of control, which is the one thing a role is for, so the measurement was taken on queries that could never have rewarded it. What the logged queries say about how often a real query names a control kind is the evidence that should reopen this.
 
 **`find` queries are logged so that the real query mix can be learned.** The relative weight of the four query families is currently my invention, and it is the assumption on which the choice between M and a bare name rests. Until real queries are recorded, that choice is provisional.
+
+### The native surface, measured at last
+
+Ten live applications recorded through `NativeSurface` — Finder, Photos, Terminal, System Settings, Code, RStudio, Claude, Skim, Reminders, Anki — for 1,197 elements and 518 queries. Only the literal and partial families apply, since a native window publishes neither a link destination nor a tooltip.
+
+| Composition | literal | partial | recall@5 | MRR | vs the key that shipped |
+|---|---:|---:|---:|---:|---|
+| `name` | 87% | 79% | 96% | 0.904 | **+2.5% [+0.8%, +4.2%] separable** |
+| `name + role` | 86% | 79% | 96% | 0.899 | +1.4% indistinguishable |
+| `name + role + context` | 86% | 79% | 96% | 0.899 | +1.4% indistinguishable |
+| `name + role + value` | 85% | 78% | 95% | 0.890 | +0.2% indistinguishable |
+| the key that shipped | 85% | 77% | 95% | 0.889 | — |
+| `name + value` | 85% | 65% | 95% | 0.877 | −1.9% indistinguishable |
+
+Native retrieval is a far easier problem than web retrieval — 87% against 52% on exact labels — because a native window holds a hundred elements where a page holds two thousand, and few of them share a name.
 
 ## What the implementation changed about the measurements
 

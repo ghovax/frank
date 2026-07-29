@@ -1,0 +1,543 @@
+{
+ "site_name": "native-skim",
+ "surface_name": "native",
+ "page_url": "application:Skim",
+ "elements": [
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Page 2 of 2",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "Page 1",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "1",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "Page 2",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioGroup",
+   "name": "tab option View Thumbnails 1",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "View Thumbnails",
+   "value": "1",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "View Table of Contents",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXTextField",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "search",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXPage",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "2. I understand that my scholarship may be terminated if I am found to have violated any of the articles above, including any false statements in my\napplication, been subject to disciplinary action such as expulsion or removal from the university register, or if it has been demonstrated that I will\nnot be able to graduate within the standard course term because of poor academic performance or a suspension. Furthermore, I will not lodge any\ncomplaint regarding the Minister's judgment even though it may involve the termination of my scholarship. Additionally, in the event that I receive\nany scholarship awards that are not intended for my use (such as in the situation previously described), 1 will return said awards to the Japanese\ngovernment or an organization that the government specifies.\n上 記 の 事 項 に 違 反 し た 場 合 , 申 請 書 類 の 記 載 事 項 に 虚 が 発 見 さ れ た 場 合 ､ 又 は 大 学 等 に お い て 退 学 等 の 感 戒 処 分 を 受 け た\n場 合 あ る い は 除 籍 と な っ た 場 合 ､ 若 し く は 学 業 成 績 不 良 や 停 学 等 に よ り 標 準 修 業 年 限 内 で の 卒 業 ( 若 し く は 修 了 ) が 不 可 能 で\nあ る こ と が 確 定 し た 場 合 に は ､ 文 部 科 学 大 臣 よ り 奨 学 金 の 支 給 を 取 り 止 め ら れ て も ､ 不 服 を 申 し 立 て ま せ ん ｡ ま た ｡ 前 述 の 場\n合 等 ､ 本 来 支 給 さ れ る べ き で は な い ※ 学 金 を 受 給 し た 場 合 ､ 当 該 奨 学 金 は ､ 日 本 政 府 又 は 日 本 政 府 が 指 定 す る 機 関 に 返 い た\nし ま す ｡",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "3.",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "After the period of my study in Japan is completed, I will continue to make efforts to serve as a bridge between my country and Japan by cooperating\nin events conducted by Japaneso diplomatic missions, and by positively cooperating with the conducting of surveys, questionnaires, and other follow-\nup activities.\n( 日 本 で の 蜜 学 期 間 終 了 後 は ､ 日 本 の 在 外 公 館 等 が 実 施 す る 各 事 業 に 協 力 す る な ど ､ 自 国 と 日 本 と の 架 け 橋 と な る よ う 継 続 的 に 努 め る\nと と も に ､ ｱ ﾝ ｹ ｰ ﾄ 調 査 等 の ﾌ ｫ ﾛ ｰ ｱ ｯ ﾌﾟ に も 積 極 的 に 協 力 し ま す ｡ )",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "4.",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "I understand and accept all the matters stated in the Application for Japanese Government (MEXT) Scholarship for 2026.\n( 2 0 2 6 年 度 日 本 政 府 ( 文 部 科 学 省 ) ･ 奨 学 金 留 学 生 募 集 要 項 に 記 載 さ れ て い る 事 項 を す べ て 了 解 し ま す ｡ )",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Date:\n( 日 付",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Nationality:\n( 国 籍",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Applicant's Signature:\n( 申 請 者 署 名",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Applicant's Name in Roman Block Capitals:\n( 申 請 者 氏 名",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "29",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "D a y ( 日",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "07\nM o n t h ( 月",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "2026",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Y e a r",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "( 年",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "ITALIAN",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "GRAVILI GIOVANNI",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "そ ん 気 で",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Note",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Page",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioGroup",
+   "name": "tab option View Notes 1",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "View Notes",
+   "value": "1",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "View Snapshots",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXTextField",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "search",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Previous",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Next",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXTextField",
+   "name": "Page",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Zoom Out",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Zoom To Actual Size",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Zoom In",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioGroup",
+   "name": "Tool Mode",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "Text Tool",
+   "value": "1",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "Scroll Tool",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "Magnify Tool",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "Select Tool",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "Note Tool",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Add New Text Note",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Add New Anchored Note",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Add New Circle",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Add New Box",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Add New Highlight",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Add New Underline",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Add New Strike Out",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Add New Line",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Add New Freehand",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "this button also has an action to zoom the window",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "Giovanni-Gravili_Pledge_2026.pdf",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Giovanni-Gravili_Pledge_2026.pdf – Page 2 of 2",
+   "context": "",
+   "url": "",
+   "title": ""
+  }
+ ]
+}

@@ -1,0 +1,439 @@
+{
+ "site_name": "native-photos",
+ "surface_name": "native",
+ "page_url": "application:Photos",
+ "elements": [
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Library",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Collections",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Pinned",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Favorites",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "love",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Recently Saved",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Map",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "show map",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Videos",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "video",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Screenshots",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "screenshot",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "People",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "account",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Recently Deleted",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "trash",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "lock",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": " ",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Albums",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "All Albums",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXTextField",
+   "name": "",
+   "value": "Panoramas for Desktop",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXTextField",
+   "name": "",
+   "value": "Exportations Adobe Scan",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXTextField",
+   "name": "",
+   "value": "WhatsApp",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXTextField",
+   "name": "",
+   "value": "Instagram",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXTextField",
+   "name": "",
+   "value": "Snapchat",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXTextField",
+   "name": "",
+   "value": "𝕏",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Sharing",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Shared Albums",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXDisclosureTriangle",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Activity",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "conversation",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Sidebar",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "Back",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "zoom out",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "zoom in",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "Aspect Ratio",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "Filter",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXMenuButton",
+   "name": "Action Menu",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "Info",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Slideshow",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Share",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "Favorite",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Rotate",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXTextField",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Search",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "this button also has an action to zoom the window",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Screenshots",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "651 Photos · July 2026",
+   "context": "",
+   "url": "",
+   "title": ""
+  }
+ ]
+}

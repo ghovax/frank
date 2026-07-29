@@ -1,0 +1,111 @@
+{
+ "site_name": "native-reminders",
+ "surface_name": "native",
+ "page_url": "application:Reminders",
+ "elements": [
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Urgent Reminders",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Mark a reminder as urgent and get an alarm when it’s due on your iPhone or iPad.",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Create in Spotlight",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Quickly create a reminder directly from Spotlight.",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Richer Sharing to Reminders",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Add multiple reminders to a list when sharing from an email, recipe, or other source.",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Time Zones",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Set a time zone for a reminder to get an alert aligned with that region.",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Continue",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "What’s New in Reminders",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "this button also has an action to zoom the window",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  }
+ ]
+}

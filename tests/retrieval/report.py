@@ -40,15 +40,21 @@ logger = logging.getLogger(__name__)
 RESULTS_DIRECTORY = Path(__file__).parent / "results"
 
 
-def measure_everything(recall_depths: tuple[int, ...] = DEFAULT_RECALL_DEPTHS) -> pandas.DataFrame:
+def measure_everything(recall_depths: tuple[int, ...] = DEFAULT_RECALL_DEPTHS,
+                       surface_name: str = "web") -> pandas.DataFrame:
     """One row per query per strategy, with the derived per-query columns already attached.
 
     A column is added per depth in ``recall_depths`` rather than one at a fixed depth, so the
     saved frame answers "did the strategy miss this element or merely mis-order it" without
-    anyone re-running the sweep."""
-    corpora = load_all_corpora()
+    anyone re-running the sweep.
+
+    One surface at a time. A browser page supplies link destinations and tooltips that no native
+    window has, so pooling them would credit a composition on one surface for a field the other
+    cannot provide."""
+    corpora = load_all_corpora(surface_name=surface_name)
     if not corpora:
-        raise SystemExit("no corpora recorded; run `uv run python -m tests.retrieval.harvest`")
+        raise SystemExit(f"no {surface_name} corpora recorded; run "
+                         f"`uv run python -m tests.retrieval.harvest`")
     queries = build_queries(corpora)
     rows = []
     for strategy_name, strategy in STRATEGIES.items():

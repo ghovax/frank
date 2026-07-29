@@ -1,0 +1,2799 @@
+{
+ "site_name": "native-code",
+ "surface_name": "native",
+ "page_url": "application:Code",
+ "elements": [
+  {
+   "role": "AXButton",
+   "name": "Go Back (⌃-)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Go Forward (⌃⇧-)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Open Quick Access",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Toggle Chat",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Toggle Chat",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More Actions",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Sign In",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Sign In",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Open in Agents Window (⇧⌘A)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Customize Layout...",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "Toggle Primary Side Bar (⌘B)",
+   "value": "1",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "Toggle Panel (⌘J)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "Toggle Secondary Side Bar (⌥⌘B)",
+   "value": "1",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "Explorer (⇧⌘E)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "Search (⇧⌘F)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "Source Control (⌃⇧G) - 24 pending changes",
+   "value": "1",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "24",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "Run and Debug (⇧⌘D)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "Extensions (⇧⌘X)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "Testing",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "Claude Code",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "Python",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "Mermaid Chart",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "Containers",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "GitHub",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "GitHub Actions",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "R",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "Accounts - Sign in requested",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "1",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "Manage",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "SOURCE CONTROL",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "Views and More Actions...",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Changes Section",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "CHANGES",
+   "value": "3",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "github.json",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "U",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "hackernews.json",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "U",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "mdn.json",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "U",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "nps.json",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "U",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "python.json",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "U",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "wikipedia.json",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "U",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "results",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "query_outcomes.parquet",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "U",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "__init__.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "U",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "corpus.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "U",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "evaluation.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "U",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "harvest.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Open File",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Discard Changes",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Stage Changes",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "1, U",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "query_families.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "U",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "report.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "U",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "strategies.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "U",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "test_encoding_strategies.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "U",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "__init__.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "U",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "pyproject.toml",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "M",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "uv.lock",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "M",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "fixtures",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "retrieval",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "tests",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Changes",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "24",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Graph Section",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "GRAPH",
+   "value": "3",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "All history item references",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "All",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Go to Current History Item",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Fetch From All Remotes",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Pull",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Push",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Refresh",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More Actions...",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Say what a control is, not only what it says",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Giovanni Gravili",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "main",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Ask the instance that has the window",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Giovanni Gravili",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Open Changes",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "src",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "/",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "frank",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "/",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "computer",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "accessibility.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "M",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "engine.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "M",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "messages",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "/",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "computer",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "withholds_accessibility.md",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "A",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Read the whole tree, and let the model rank it",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Giovanni Gravili",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "src",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "/",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "frank",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "base",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "tuning.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "M",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "computer",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "accessibility.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "M",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "engine.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "M",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "retrieval.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "M",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "worker",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "session_entry.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "M",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Make where an element sits a fact, not a spelling",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Giovanni Gravili",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "src",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "/",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "frank",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "/",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "computer",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "cursor.py",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "cursor.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "9+",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Close (⌘W)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "connection-settings.tsx",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "connection-settings.tsx",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "6",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Close (⌘W)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "connection.ts",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "connection.ts",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "3",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Close (⌘W)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "sessions-sidebar.tsx (Working Tree) (sessions-sidebar.tsx)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "sessions-sidebar.tsx (Working Tree)",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Close (⌘W)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "smoke.mjs",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "smoke.mjs",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Close (⌘W)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "globals.css",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "globals.css",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Close (⌘W)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "registry.py",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "registry.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "…/daemon",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Close (⌘W)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "registry.py",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "registry.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "…/tools",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "3",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Close (⌘W)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "harvest.py, preview",
+   "value": "1",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "harvest.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "1, U",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Close (⌘W)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "withholds_accessibility.md",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "withholds_accessibility.md",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Close (⌘W)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Run Python File",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "Run or Debug...",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Claude Code: Open",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Open Changes",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Split Editor Right (⌘\\) [⌥] Split Editor Down",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More Actions...",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "tests",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "retrieval",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "harvest.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "…",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXTextArea",
+   "name": "The editor is not accessible at this time. To enable screen reader optimized mode, use Shift+Option+F1",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "Chat (⌃⌘I)",
+   "value": "1",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "CHAT",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXRadioButton",
+   "name": "Additional Views",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "New Chat (⌘N)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "New Chat",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Open Customizations",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "Views and More Actions...",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "Maximize Secondary Side Bar",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Hide Secondary Side Bar (⌥⌘B)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Build with Agent",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "AI responses may be inaccurate",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Add file:harvest.py to context",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "harvest.py",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXTextArea",
+   "name": "The editor is not accessible at this time. To enable screen reader optimized mode, use Shift+Option+F1",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Add Context... (⌘/)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "Set Agent (⌘.) - Agent",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Agent",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "Models, sign in to use Copilot",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Configure Tools...",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Send [⌥] Send to New Chat (⇧⌘Enter)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "Set Session Target - Local",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Local",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "Permission picker, Default Approvals",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Default Approvals",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "remote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "frank (Git) - main*, Checkout Branch/Tag...",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " main*",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "frank (Git) - Synchronize Changes",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "notebook marimo, Click to view marimo options",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " marimo",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Errors: 24",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " 24 ",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " 0",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Notifications",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "frank (3.13.x), /Users/giovannigravili/Projects/ghovax/private/frank/.venv/bin/python",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Copilot status",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Python",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Editor Language Status: Auto-Import Completions: false, next: Diagnostics Source: Pylance, next: Language Server Mode: default, next: Type Checking: standard, next: $(copilot) No inline suggestion available, Inline suggestions",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "LF",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "UTF-8",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Spaces: 4",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Ln 1, Col 1",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Info: Mermaid Chart: Scanning staged files for diagram sync...",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "this button also has an action to zoom the window",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  }
+ ]
+}

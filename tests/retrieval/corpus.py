@@ -37,11 +37,17 @@ class RecordedElement:
 
 @dataclass(frozen=True)
 class Corpus:
-    """Every element recorded from one page, with the address it was read from."""
+    """Every element recorded from one surface, with where it was read from.
+
+    ``surface_name`` separates the two, because they are different retrieval problems and must
+    not be pooled: a web page supplies link destinations and tooltips that no native window has,
+    so a strategy scored across both would be credited on one surface for a field the other
+    cannot provide."""
 
     site_name: str
     page_url: str
     elements: tuple[RecordedElement, ...]
+    surface_name: str = "web"
 
     def __len__(self) -> int:
         return len(self.elements)
@@ -58,6 +64,7 @@ def write_corpus(corpus: Corpus) -> Path:
     destination = fixture_path(corpus.site_name)
     document = {
         "site_name": corpus.site_name,
+        "surface_name": corpus.surface_name,
         "page_url": corpus.page_url,
         "elements": [asdict(element) for element in corpus.elements],
     }
@@ -70,13 +77,20 @@ def read_corpus(path: Path) -> Corpus:
     document = json.loads(path.read_text())
     return Corpus(
         site_name=document["site_name"],
+        surface_name=document.get("surface_name", "web"),
         page_url=document["page_url"],
         elements=tuple(RecordedElement(**element) for element in document["elements"]),
     )
 
 
-def load_all_corpora() -> list[Corpus]:
-    """Every committed corpus, ordered by site name so that reports are stable between runs."""
+def load_all_corpora(surface_name: str | None = None) -> list[Corpus]:
+    """Every committed corpus, ordered by site name so that reports are stable between runs.
+
+    Pass ``surface_name`` to take only one surface's corpora — the usual case, since pooling web
+    and native measures neither."""
     if not FIXTURE_DIRECTORY.exists():
         return []
-    return [read_corpus(path) for path in sorted(FIXTURE_DIRECTORY.glob("*.json"))]
+    corpora = [read_corpus(path) for path in sorted(FIXTURE_DIRECTORY.glob("*.json"))]
+    if surface_name is None:
+        return corpora
+    return [corpus for corpus in corpora if corpus.surface_name == surface_name]
