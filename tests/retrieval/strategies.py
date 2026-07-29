@@ -18,7 +18,14 @@ from __future__ import annotations
 
 from typing import Callable, Iterable
 
-from frank.computer.retrieval import _ROLE_IN_WORDS, _without_repeated_words, url_in_words, web_element_text
+from frank.computer.retrieval import (
+    _ROLE_IN_WORDS,
+    _without_repeated_words,
+    element_text,
+    text_or_fallback,
+    url_in_words,
+    web_element_text,
+)
 
 from tests.retrieval.corpus import RecordedElement
 
@@ -93,14 +100,34 @@ FIELDS_BY_STRATEGY: dict[str, frozenset[str]] = {
 # restating it. Named for what it is — a live reference — so that nothing here has to be renamed
 # when the composition behind it changes.
 LIVE_KEY_NAME = "live browser key"
+LIVE_NATIVE_KEY_NAME = "live native key"
 
 
 def live_browser_key(element: RecordedElement) -> str:
-    """Whatever :func:`frank.computer.retrieval.web_element_text` currently produces."""
-    return web_element_text(name=element.name, url=element.url, title=element.title)
+    """Whatever :func:`frank.computer.retrieval.web_element_text` currently produces.
+
+    The `value` argument matters and was missing here: without it this measured the browser key
+    as though it had no fallback, which is not what the surface builds."""
+    return web_element_text(name=element.name, url=element.url, title=element.title,
+                            value=element.value)
+
+
+def live_native_key(element: RecordedElement) -> str:
+    """What :meth:`frank.computer.engine.NativeSurface.documents` currently builds.
+
+    Three tiers, most specific first: what an element is called, then what it says, then what the
+    system calls its kind. Present because a composition of `("name",)` is *not* the native key,
+    and measuring that as though it were reported six native elements in ten as carrying an empty
+    key — a property of the harness rather than of the product."""
+    return text_or_fallback(
+        text_or_fallback(element_text(name=element.name), element.value),
+        element.role_description,
+    )
 
 
 STRATEGIES[LIVE_KEY_NAME] = live_browser_key
-# Which fields the live key draws on, so a report can mark the families that score it circularly.
-# Kept in step with `live_browser_key` above by the drift test in `test_encoding_strategies`.
-FIELDS_BY_STRATEGY[LIVE_KEY_NAME] = frozenset({"name", "url", "title"})
+STRATEGIES[LIVE_NATIVE_KEY_NAME] = live_native_key
+# Which fields each live key draws on, so a report can mark the families that score it circularly.
+# Kept in step with the functions above by the drift test in `test_encoding_strategies`.
+FIELDS_BY_STRATEGY[LIVE_KEY_NAME] = frozenset({"name", "url", "title", "value"})
+FIELDS_BY_STRATEGY[LIVE_NATIVE_KEY_NAME] = frozenset({"name", "value", "role_description"})

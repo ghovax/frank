@@ -274,6 +274,21 @@ def _interpreter_roots() -> tuple[str, ...]:
     return tuple(roots)
 
 
+def _package_root() -> str:
+    """The directory frank itself is imported from.
+
+    A child is launched by file path — `computer/control_child.py` — so it has to be able to read
+    the package it lives in. When frank is installed into the environment that is already covered
+    by :func:`_interpreter_roots`, because the package sits under `sys.prefix`. From a source
+    checkout or an editable install it does not: the package is somewhere under the user's home,
+    and the home is denied wholesale a few lines below. The result was that screen control worked
+    when frank was installed and failed with "the sandbox refused to run it" for anyone running
+    from source, which is every embedder developing against the library.
+
+    Read-only and execute: the child needs to run the helper, never to modify it."""
+    return os.path.realpath(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 def build_sbpl(profile: Profile, *, workspace: str = "") -> str:
     """The Seatbelt profile for one child.
 
@@ -320,6 +335,8 @@ def build_sbpl(profile: Profile, *, workspace: str = "") -> str:
     # environment, `sys.base_prefix` for the interpreter and its standard library.
     for interpreter_root in _interpreter_roots():
         lines.append(f"(allow file-read* process-exec (subpath {_quote_sbpl(interpreter_root)}))")
+    # And the package itself, for the same reason: a helper that cannot be read cannot be run.
+    lines.append(f"(allow file-read* process-exec (subpath {_quote_sbpl(_package_root())}))")
 
     return "\n".join(lines)
 

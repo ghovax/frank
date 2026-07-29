@@ -150,19 +150,35 @@ def test_machine_tokens_are_not_available_as_fields():
     )
 
 
-def test_the_live_key_has_not_fallen_behind_its_own_fields(outcomes):
-    """The live key should not be separably worse than the composition of the same fields.
+def test_the_live_key_is_judged_on_reach_as_well_as_rank(outcomes, corpora):
+    """The live key may rank slightly below a composition of its own fields — but only by reaching
+    further, never by being worse at the same job.
 
-    This is the drift guard: it says nothing about which composition is right, only that whatever
-    the surface builds today still performs like a deliberate arrangement of the fields it uses
-    rather than an accident."""
+    An earlier version of this test compared top-1 alone and failed the moment the browser key
+    gained its `value` fallback, because a key with no fallback *wins* that comparison: the
+    elements it cannot reach ask no questions, so burying them lifts the average over the queries
+    that remain. Judging reach and rank together is the only honest form of the assertion, and the
+    asymmetry is deliberate — a loss is tolerated when it buys reach, and never otherwise."""
+    from tests.retrieval.strategies import live_browser_key
+
     equivalent = name_of(("name", "url", "title"))
     interval = paired_bootstrap_interval(hits_of(outcomes, LIVE_KEY_NAME), hits_of(outcomes, equivalent))
     difference, low, high = interval
-    assert not (is_separable(interval) and difference < 0), (
-        f"the live key is separably worse than {equivalent!r} by {difference:+.1%} "
-        f"[{low:+.1%}, {high:+.1%}]"
-    )
+
+    unreachable_live = unreachable_composed = 0
+    for corpus in corpora:
+        for element in corpus.elements:
+            if not (element.name.strip() or element.value.strip()):
+                continue
+            unreachable_live += int(not live_browser_key(element).strip())
+            unreachable_composed += int(not STRATEGIES[equivalent](element).strip())
+
+    if is_separable(interval) and difference < 0:
+        assert unreachable_live < unreachable_composed, (
+            f"the live key ranks {difference:+.1%} [{low:+.1%}, {high:+.1%}] below {equivalent!r} "
+            f"and reaches no further ({unreachable_live} unreachable against "
+            f"{unreachable_composed}) — a loss with nothing bought"
+        )
 
 
 def test_the_role_signal_in_the_embedding_stays_too_weak_to_act_on(corpora):

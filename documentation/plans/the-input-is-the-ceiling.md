@@ -345,3 +345,27 @@ The chain is now three tiers, most specific first: what an element is *called*, 
 | elements keyed by their kind alone | 628 | **0** | — |
 
 The first row is the only one the harness could see before the content family was added, and on that row alone the correct behaviour looks like a regression. This is the third time a reachability gain has hidden behind a top-1 average over answerable queries, and the pattern is now explicit: **an element that cannot be retrieved contributes no query, so the metric improves when it is buried.** Any change that reduces competition will look good to a measurement drawn only from the winners.
+
+## The helper that could not start
+
+`control_screen` runs the model's script in a disposable child, launched **by file path**, and confined by the session's own sandbox profile. That profile denies the user's home wholesale and grants back the interpreter roots — `sys.prefix`, `sys.base_prefix`, the resolved executable. When frank is installed into an environment its package sits under `sys.prefix` and is covered. From a **source checkout or an editable install** it does not: the package is somewhere under the home directory, and the home is closed.
+
+The result was that screen control worked when frank was installed and failed for everyone developing against the library, with the child dying on `Operation not permitted` before it could report anything. Measured directly at the library level, with no agent involved:
+
+| Configuration | Before | After |
+|---|---|---|
+| `profile=None` (unconfined) | works | works |
+| a real `Profile()` | **"the sandbox refused to run it"**, exit code 2 | works |
+| a confined child calling a primitive | never reached | works |
+
+The profile now grants read and execute on frank's own package directory, beside the interpreter roots and for the same reason: a helper that cannot be read cannot be run. `tests/computer/test_control_confinement.py` asserts it against the generated SBPL and by running a real confined child, because the failure is silent in the worst way — the child dies before it can say anything and the parent can only report that nothing came back.
+
+An end-to-end run against Finder, confined, now executes a script that issues two `find_many` calls, one of them faceted by role, and returns their results.
+
+## Judging a key on reach as well as rank
+
+Adding native coverage exposed one more instance of the pattern this document keeps recording. The drift test compared the live browser key against a composition of its own fields and failed the moment the key gained its `value` fallback — because a key **without** a fallback wins that comparison. The elements it cannot reach ask no questions, so burying them lifts the average over the queries that remain.
+
+The test now judges reach and rank together, and the asymmetry is deliberate: a small ranking loss is tolerated when it buys reach, and never otherwise. The harness also gained a `live native key` reference, because a composition of `("name",)` is not the native key and measuring it as though it were reported six native elements in ten as carrying an empty key — a property of the harness, not of the product.
+
+With both live keys mirroring what the surfaces build: **0 unreachable native elements of 1,121, and 1 of 5,132 on the browser.**
