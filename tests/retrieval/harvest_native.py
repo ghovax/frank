@@ -88,6 +88,7 @@ def harvest_application(surface: NativeSurface, application_name: str) -> Corpus
             name=str(document.payload.get("name") or ""),
             value=str(document.payload.get("value") or ""),
             context=str(document.payload.get("context") or ""),
+            title=str(document.payload.get("placeholder") or ""),
             source=declaration(document),
             path=ancestor_path(document),
         )

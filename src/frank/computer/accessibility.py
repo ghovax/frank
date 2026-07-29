@@ -50,6 +50,9 @@ DESCRIPTION = "AXDescription"
 # "increment arrow button", "close button", "disclosure triangle". Present on every element,
 # and the only words some controls have — see the fallback in `engine._element_name`.
 ROLE_DESCRIPTION = "AXRoleDescription"
+# The prompt text shown inside an empty field ("Search", "Filter"). Rare across all elements, but
+# text fields are disproportionately what a query looks for, and an empty one has nothing else.
+PLACEHOLDER = "AXPlaceholderValue"
 HELP = "AXHelp"
 VALUE = "AXValue"
 ENABLED = "AXEnabled"
@@ -79,7 +82,7 @@ NUMBER_OF_CHARACTERS = "AXNumberOfCharacters"
 # element's rectangle in one value; AXVisibleChildren/AXVisibleRows let the app report
 # what is on screen so we never descend into scrolled-away content.
 BATCH_ATTRIBUTES = [
-    ROLE, SUBROLE, TITLE, DESCRIPTION, HELP, ROLE_DESCRIPTION, VALUE, ENABLED, SELECTED,
+    ROLE, SUBROLE, TITLE, DESCRIPTION, HELP, ROLE_DESCRIPTION, PLACEHOLDER, VALUE, ENABLED, SELECTED,
     FRAME, POSITION, SIZE, VISIBLE_CHILDREN, VISIBLE_ROWS, CHILDREN,
 ]
 
@@ -143,6 +146,7 @@ class Element:
     # Defaulted because it is the newest attribute here and every existing construction site
     # predates it; it is the last fallback for a name, never a first choice.
     role_description: str = ""
+    placeholder: str = ""
     # A region is a container the shallow walk chose not to expand: it stands in for its
     # subtree and carries how many on-screen children wait inside, so the caller can drill
     # into it. None on ordinary leaf elements.
@@ -471,6 +475,7 @@ def _make_element(
         description=_string(attributes.get(DESCRIPTION)),
         help=_string(attributes.get(HELP)),
         role_description=_string(attributes.get(ROLE_DESCRIPTION)),
+        placeholder=_string(attributes.get(PLACEHOLDER)),
         value=_primitive(attributes.get(VALUE)),
         enabled=attributes.get(ENABLED),
         selected=attributes.get(SELECTED),

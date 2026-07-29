@@ -89,7 +89,7 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": "",
+   "title": "Go to file/function",
    "source": "AXTextField name=\"Filter by file or function name\"",
    "path": ""
   },
@@ -325,32 +325,32 @@
   },
   {
    "role": "AXImage",
-   "name": "Memory in use: 24% (source: MacOS System)",
+   "name": "Memory in use: 25% (source: MacOS System)",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXImage name=\"Memory in use: 24% (source: MacOS System)\"",
+   "source": "AXImage name=\"Memory in use: 25% (source: MacOS System)\"",
    "path": ""
   },
   {
    "role": "AXPopUpButton",
-   "name": "20,512 KiB used by R session (source: MacOS System)",
+   "name": "20,208 KiB used by R session (source: MacOS System)",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXPopUpButton name=\"20,512 KiB used by R session (source: MacOS System)\"",
+   "source": "AXPopUpButton name=\"20,208 KiB used by R session (source: MacOS System)\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
    "name": "text",
-   "value": "20 MiB",
+   "value": "19 MiB",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText name=\"text\" value=\"20 MiB\"",
+   "source": "AXStaticText name=\"text\" value=\"19 MiB\"",
    "path": ""
   },
   {

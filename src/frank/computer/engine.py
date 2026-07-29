@@ -102,7 +102,8 @@ def _name_containers_from_their_contents(documents: list[Document]) -> None:
 def _element_name(element: accessibility.Element) -> str:
     # The raw role (`AXButton`) is the last resort and a poor one — the embedding has never
     # usefully seen it — so the system's own prose for the role comes first.
-    return element.title or element.description or element.help or element.role_description or element.role
+    return (element.title or element.description or element.help or element.placeholder
+            or element.role_description or element.role)
 
 
 def _displayed_window(pid: int) -> Optional[tuple[int, int]]:
@@ -145,6 +146,8 @@ def _to_element(ax: accessibility.Element, token: RegistryEntry) -> Element:
         flags["enabled"] = False
     if ax.selected:
         flags["selected"] = True
+    if ax.placeholder:
+        flags["placeholder"] = ax.placeholder
     return Element(
         role=ax.role,
         # The role description last, because it is what the system calls this *kind* of control
@@ -152,7 +155,9 @@ def _to_element(ax: accessibility.Element, token: RegistryEntry) -> Element:
         # present on every element, and for the controls that publish no title, description or
         # help it is the only words they have. Without it those elements carry an empty key, and
         # an empty key cannot be reached by any query at any depth.
-        name=ax.title or ax.description or ax.help or ax.role_description,
+        # Placeholder before role description, because "Search" names *this* field while
+        # "text field" only names its kind. Both come after the real labels.
+        name=ax.title or ax.description or ax.help or ax.placeholder or ax.role_description,
         value=ax.value,
         clickable=bool(ax.actions),
         flags=flags,
@@ -310,6 +315,8 @@ class NativeSurface(Surface):
                     element.value if isinstance(element.value, str) else "",
                 )
                 payload: dict[str, Any] = {"role": element.role}
+                if ax_placeholder := element.flags.get("placeholder"):
+                    payload["placeholder"] = ax_placeholder
                 if element.name:
                     payload["name"] = element.name
                 if isinstance(element.value, str):

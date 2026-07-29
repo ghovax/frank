@@ -235,12 +235,12 @@
   },
   {
    "role": "AXTextField",
-   "name": "search text field",
+   "name": "Search",
    "value": "",
    "context": "",
    "url": "",
-   "title": "",
-   "source": "AXTextField name=\"search text field\"",
+   "title": "Search",
+   "source": "AXTextField name=\"Search\"",
    "path": ""
   },
   {
