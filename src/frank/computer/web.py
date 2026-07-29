@@ -600,7 +600,9 @@ class WebSurface(Surface):
             documents: list[Document] = []
             elements, session.frame_owners = _parse_snapshot(_snapshot(page))
             for element in elements:
-                text = element_text(name=element.name, value=element.value, context=element.context)
+                shown = element_text(name=element.name, value=element.value, context=element.context)
+                key = element_text(name=element.name, value=element.value, context=element.context,
+                                   role=element.role)
                 payload: dict[str, Any] = {"role": element.role}
                 # Which frame the element sits in, so a model meeting `f1e3` for the first time is
                 # not left to guess what `f1` is or to spend a call asking.
@@ -619,9 +621,9 @@ class WebSurface(Surface):
                 payload.update(element.flags)
                 if element.clickable:
                     payload["clickable"] = True
-                if text:
-                    payload["text"] = text
-                documents.append(Document(id=element.token or "", text=text, payload=payload))
+                if shown:
+                    payload["text"] = shown
+                documents.append(Document(id=element.token or "", text=key, payload=payload))
             for exchange in list(session.exchanges):
                 documents.append(Document(
                     id=exchange["id"], text=f"{exchange['method']} {exchange['url']}",

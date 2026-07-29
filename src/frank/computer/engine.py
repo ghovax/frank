@@ -285,7 +285,12 @@ class NativeSurface(Surface):
                 ref = ".".join(str(step) for step in ax.path) or "root"
                 self._targets[ref] = entry
                 element = _to_element(ax, entry)
-                text = element_text(name=element.name or "", value=element.value)
+                # Two strings, deliberately. `shown` is the element's own words, which is what a
+                # reader is given; `key` is what is embedded, and it leads with the kind of
+                # control because that is how one is asked for. Putting the kind into what is
+                # shown would have the model reading "text label Shared" as an element's text.
+                shown = element_text(name=element.name or "", value=element.value)
+                key = element_text(name=element.name or "", value=element.value, role=element.role)
                 payload: dict[str, Any] = {"role": element.role}
                 if element.name:
                     payload["name"] = element.name
@@ -297,12 +302,12 @@ class NativeSurface(Surface):
                 payload.update(element.flags)
                 if element.clickable:
                     payload["clickable"] = True
-                if text:
-                    payload["text"] = text
+                if shown:
+                    payload["text"] = shown
                 parent = ".".join(str(step) for step in ax.path[:-1]) if len(ax.path) > 1 else ""
                 if parent:
                     payload["parent"] = parent
-                documents.append(Document(id=ref, text=text, payload=payload, parent=parent))
+                documents.append(Document(id=ref, text=key, payload=payload, parent=parent))
             _name_containers_from_their_contents(documents)
             result: dict[str, Any] = {
                 "ok": True, "app": snapshot.app_name, "window": snapshot.window_title,
