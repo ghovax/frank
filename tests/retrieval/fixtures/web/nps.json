@@ -1,5 +1,6 @@
 {
  "site_name": "nps",
+ "surface_name": "web",
  "page_url": "https://www.nps.gov/index.htm",
  "elements": [
   {
@@ -8,7 +9,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "<span role=\"navigation\" aria-label=\"Top of page\" id=\"__topdoc__\"></span>",
+   "path": "html > body > span"
   },
   {
    "role": "region",
@@ -16,7 +19,9 @@
    "value": "",
    "context": "Top of page",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "paragraph",
@@ -24,7 +29,9 @@
    "value": "An official website of the United States government",
    "context": "Official website of the United States government",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "button",
@@ -32,7 +39,9 @@
    "value": "",
    "context": "Official website of the United States government",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "<button type=\"button\" class=\"usa-accordion__button usa-banner__button\" aria-expanded=\"false\" aria-controls=\"gov-banner-default\"> <span class=\"usa-banner__button-text\">Here's how you know</span> </button>",
+   "path": "body > section > div > header > div > button"
   },
   {
    "role": "navigation",
@@ -40,7 +49,9 @@
    "value": "",
    "context": "Official website of the United States government",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -48,7 +59,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "#GlobalNav-toggle",
-   "title": ""
+   "title": "",
+   "source": "<a href=\"#GlobalNav-toggle\" aria-label=\"Skip to global NPS navigation\">Skip to global NPS navigation</a>",
+   "path": "html > body > div > ul > li > a"
   },
   {
    "role": "link",
@@ -56,7 +69,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "#main",
-   "title": ""
+   "title": "",
+   "source": "<a href=\"#main\" aria-label=\"Skip to the main content\">Skip to the main content</a>",
+   "path": "html > body > div > ul > li > a"
   },
   {
    "role": "link",
@@ -64,7 +79,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "#GlobalFooter",
-   "title": ""
+   "title": "",
+   "source": "<a href=\"#GlobalFooter\" aria-label=\"Skip to the footer section\">Skip to the footer section</a>",
+   "path": "html > body > div > ul > li > a"
   },
   {
    "role": "link",
@@ -72,7 +89,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "/",
-   "title": ""
+   "title": "",
+   "source": "<a class=\"GlobalHeader__Branding link-white\" href=\"/\"> <img src=\"/theme/assets/dist/images/branding/logo.png\" alt=\"\" width=\"80\" height=\"106\" class=\"GlobalHeader__Branding__Arrowhead img-fluid\"> <span class=\"GlobalHeader__Branding__Text\"> National Park Service </span> </a>",
+   "path": "html > body > div > div > a"
   },
   {
    "role": "generic",
@@ -80,7 +99,9 @@
    "value": "National Park Service",
    "context": "National Park Service",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "button",
@@ -88,7 +109,9 @@
    "value": "Search",
    "context": "National Park Service",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "button",
@@ -96,7 +119,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "<button type=\"button\" id=\"GlobalNav-toggle\" class=\"usa-button usa-button--inverse-fill\" data-bs-toggle=\"collapse\" data-bs-target=\"#GlobalNavCollapse\" aria-controls=\"GlobalNavCollapse\" aria-expanded=\"false\" aria-label=\"Open Menu\"> <span class=\"GlobalNav__Toggle__Text GlobalNav__Toggle__Text--closed\"> <svg class=\"usa-icon\" role=\"presentation\" focusable=\"false\"> <use href=\"/theme/assets/vendor/npsds/packages/icons/dist/sprite.svg#menu\"></use> </svg> <span class=\"visually-hidden\">Open</span> Menu </span> <span class=\"GlobalNav__Toggle__Text GlobalNav__Toggle__Text--open\"> <svg class=\"usa-icon\" rol",
+   "path": "html > body > div > nav > div > button"
   },
   {
    "role": "generic",
@@ -104,7 +129,9 @@
    "value": "Open",
    "context": "short-cut links",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "text",
@@ -112,7 +139,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -120,7 +149,9 @@
    "value": "CELEBRATE US",
    "context": "short-cut links",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "heading",
@@ -128,7 +159,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -136,7 +169,9 @@
    "value": "",
    "context": "250th Celebration in National Parks",
    "url": "/subjects/npscelebrates/usa-250.htm",
-   "title": ""
+   "title": "",
+   "source": "<a href=\"/subjects/npscelebrates/usa-250.htm\" class=\"usa-button usa-button--inverse-fill\">Learn More</a>",
+   "path": "div > div > div > div > div > a"
   },
   {
    "role": "navigation",
@@ -144,7 +179,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "heading",
@@ -152,7 +189,9 @@
    "value": "",
    "context": "Find a Park›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -160,7 +199,9 @@
    "value": "",
    "context": "Find a Park›",
    "url": "/findapark/index.htm",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "button",
@@ -168,7 +209,9 @@
    "value": "By State...",
    "context": "Find a Park›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "text",
@@ -176,7 +219,9 @@
    "value": "",
    "context": "Find a Park›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "navigation",
@@ -184,7 +229,9 @@
    "value": "",
    "context": "Find a Park›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "heading",
@@ -192,7 +239,9 @@
    "value": "",
    "context": "Explore America's Story›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -200,7 +249,9 @@
    "value": "",
    "context": "Explore America's Story›",
    "url": "/learnandexplore/explore-by-topic.htm",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "button",
@@ -208,7 +259,9 @@
    "value": "By Topic...",
    "context": "Explore America's Story›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "heading",
@@ -216,7 +269,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -224,7 +279,9 @@
    "value": "",
    "context": "Featured Stories",
    "url": "/subjects/npscelebrates/summer-season.htm",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "img",
@@ -232,7 +289,9 @@
    "value": "",
    "context": "Kid snorkeling and giving the camera two thumbs up Fun in the Summer Sun›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -240,7 +299,9 @@
    "value": "Fun in the Summer Sun›",
    "context": "Kid snorkeling and giving the camera two thumbs up Fun in the Summer Sun›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "paragraph",
@@ -248,7 +309,9 @@
    "value": "Embrace the warmth of summer to enjoy a national park adventure!",
    "context": "Kid snorkeling and giving the camera two thumbs up Fun in the Summer Sun›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -256,7 +319,9 @@
    "value": "",
    "context": "Featured Stories",
    "url": "/inde/index.htm",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "img",
@@ -264,7 +329,9 @@
    "value": "",
    "context": "Liberty Bell in front of a window revealing Independence Hall Featured Park›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -272,7 +339,9 @@
    "value": "Featured Park›",
    "context": "Liberty Bell in front of a window revealing Independence Hall Featured Park›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "paragraph",
@@ -280,7 +349,9 @@
    "value": "Two hundred and fifty years ago, our nation was signed into creation at Independence National Historical Park.",
    "context": "Liberty Bell in front of a window revealing Independence Hall Featured Park›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -288,7 +359,9 @@
    "value": "",
    "context": "Featured Stories",
    "url": "/learnandexplore/outdoor-adventure.htm",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "img",
@@ -296,7 +369,9 @@
    "value": "",
    "context": "Person rock climbing Come Play Outside›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -304,7 +379,9 @@
    "value": "Come Play Outside›",
    "context": "Person rock climbing Come Play Outside›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "paragraph",
@@ -312,7 +389,9 @@
    "value": "Enjoy the great outdoors! Discover many different activities you can do in national parks.",
    "context": "Person rock climbing Come Play Outside›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -320,7 +399,9 @@
    "value": "",
    "context": "Featured Stories",
    "url": "/articles/heat-illness.htm",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "img",
@@ -328,7 +409,9 @@
    "value": "",
    "context": "Hiker with backpack and water bottle Sizzlin' Summer›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -336,7 +419,9 @@
    "value": "Sizzlin' Summer›",
    "context": "Hiker with backpack and water bottle Sizzlin' Summer›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "paragraph",
@@ -344,7 +429,9 @@
    "value": "Heat can be an invisible threat no matter what park you visit in the summer. Beat the heat with simple tips.",
    "context": "Hiker with backpack and water bottle Sizzlin' Summer›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -352,7 +439,9 @@
    "value": "",
    "context": "Featured Stories",
    "url": "/subjects/oceans/index.htm",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "img",
@@ -360,7 +449,9 @@
    "value": "",
    "context": "Sea lions under water Dive In›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -368,7 +459,9 @@
    "value": "Dive In›",
    "context": "Sea lions under water Dive In›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "paragraph",
@@ -376,7 +469,9 @@
    "value": "Explore the above and underwater world of complex ecosystems, maritime heritage, and exciting recreational opportunities in our oceans.",
    "context": "Sea lions under water Dive In›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -384,7 +479,9 @@
    "value": "",
    "context": "Featured Stories",
    "url": "/articles/swimming-safety.htm",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "img",
@@ -392,7 +489,9 @@
    "value": "",
    "context": "Lifeguard stand and vehicle on beach near people walking and swimming Safe Swim›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -400,7 +499,9 @@
    "value": "Safe Swim›",
    "context": "Lifeguard stand and vehicle on beach near people walking and swimming Safe Swim›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "paragraph",
@@ -408,7 +509,9 @@
    "value": "Enjoy taking a splash in the water while keeping safe with these tips.",
    "context": "Lifeguard stand and vehicle on beach near people walking and swimming Safe Swim›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -416,7 +519,9 @@
    "value": "",
    "context": "Featured Stories",
    "url": "/subjects/digital/social-media.htm",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "img",
@@ -424,7 +529,9 @@
    "value": "",
    "context": "A park's social media post viewed on a smartphone that is stetting on a stack of park brochures Social Media›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -432,7 +539,9 @@
    "value": "Social Media›",
    "context": "A park's social media post viewed on a smartphone that is stetting on a stack of park brochures Social Media›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "paragraph",
@@ -440,7 +549,9 @@
    "value": "Follow, share, and be a part of the conversation on official National Park Service social media channels.",
    "context": "A park's social media post viewed on a smartphone that is stetting on a stack of park brochures Social Media›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -448,7 +559,9 @@
    "value": "",
    "context": "Featured Stories",
    "url": "/media/multimedia-search.htm",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "img",
@@ -456,7 +569,9 @@
    "value": "",
    "context": "Close-up of woman looking through a camera viewfinder at woods Photos, Videos, Webcams & More›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -464,7 +579,9 @@
    "value": "Photos, Videos, Webcams & More›",
    "context": "Close-up of woman looking through a camera viewfinder at woods Photos, Videos, Webcams & More›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "paragraph",
@@ -472,7 +589,9 @@
    "value": "Explore the national parks through multimedia. Search for photos, videos, webcams, and audio files on any topic.",
    "context": "Close-up of woman looking through a camera viewfinder at woods Photos, Videos, Webcams & More›",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "img",
@@ -480,7 +599,9 @@
    "value": "",
    "context": "Featured Stories",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "paragraph",
@@ -488,7 +609,9 @@
    "value": "The national park community welcomes you! Together we can celebrate these special places and ensure they exist forever.",
    "context": "Featured Stories",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -496,7 +619,9 @@
    "value": "",
    "context": "Featured Stories",
    "url": "http://www.nationalparks.org/get-email-updates",
-   "title": ""
+   "title": "",
+   "source": "<a href=\"http://www.nationalparks.org/get-email-updates\" class=\"PromoLogo-cta usa-button usa-button--outline usa-button--inverse\" data-track=\"{&quot;type&quot;:&quot;event&quot;,&quot;category&quot;:&quot;Navigate&quot;,&quot;action&quot;:&quot;#&quot;,&quot;label&quot;:&quot;Promo Logo&quot;}\" data-bs-toggle=\"modal\" data-bs-target=\"#myModal\" data-toggle=\"modal\" data-target=\"#myModal\" data-remote=\"/common/commonspot/customcf/modals/modal_intercept.cfm?targetURL=http%3A%2F%2Fwww.nationalparks.org%2Fget-email-updates\">Subscribe</a>",
+   "path": "div > div > div > div > div > a"
   },
   {
    "role": "'heading",
@@ -504,7 +629,9 @@
    "value": "",
    "context": "Featured Stories",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -512,7 +639,9 @@
    "value": "",
    "context": "Featured Stories",
    "url": "/planyourvisit/index.htm",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -520,7 +649,9 @@
    "value": "Plan Your Visit",
    "context": "Plan Your Visit",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -528,7 +659,9 @@
    "value": "",
    "context": "Featured Stories",
    "url": "/learnandexplore/index.htm",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -536,7 +669,9 @@
    "value": "Learn & Explore",
    "context": "Learn & Explore",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -544,7 +679,9 @@
    "value": "",
    "context": "Featured Stories",
    "url": "/getinvolved/index.htm",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -552,7 +689,9 @@
    "value": "Get Involved",
    "context": "Get Involved",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "paragraph",
@@ -560,7 +699,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "navigation",
@@ -568,7 +709,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -576,7 +719,9 @@
    "value": "",
    "context": "Martin Luther King Jr statue",
    "url": "/history/index.htm",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -584,7 +729,9 @@
    "value": "Stories of Places & People",
    "context": "Stories of Places & People Discover History",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -592,7 +739,9 @@
    "value": "Discover History",
    "context": "Stories of Places & People Discover History",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "navigation",
@@ -600,7 +749,9 @@
    "value": "",
    "context": "Martin Luther King Jr statue",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -608,7 +759,9 @@
    "value": "",
    "context": "Yellow bird with red head-coloring standing on a thin branch with leaves",
    "url": "/nature/index.htm",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -616,7 +769,9 @@
    "value": "Protecting the Natural World",
    "context": "Protecting the Natural World Explore Nature",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -624,7 +779,9 @@
    "value": "Explore Nature",
    "context": "Protecting the Natural World Explore Nature",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "navigation",
@@ -632,7 +789,9 @@
    "value": "",
    "context": "Yellow bird with red head-coloring standing on a thin branch with leaves",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -640,7 +799,9 @@
    "value": "",
    "context": "Girl posing with junior ranger hat on",
    "url": "/kids/index.htm",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -648,7 +809,9 @@
    "value": "Every Kid Outdoors",
    "context": "Every Kid Outdoors For Kids",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -656,7 +819,9 @@
    "value": "For Kids",
    "context": "Every Kid Outdoors For Kids",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "navigation",
@@ -664,7 +829,9 @@
    "value": "",
    "context": "Girl posing with junior ranger hat on",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -672,7 +839,9 @@
    "value": "",
    "context": "Three teachers studying buds on tree",
    "url": "/teachers/index.htm",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -680,7 +849,9 @@
    "value": "America’s Classrooms",
    "context": "America’s Classrooms For Educators",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -688,7 +859,9 @@
    "value": "For Educators",
    "context": "America’s Classrooms For Educators",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -696,7 +869,9 @@
    "value": "Experience Your America.",
    "context": "short-cut links",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "paragraph",
@@ -704,7 +879,9 @@
    "value": "Download the NPS app to navigate the parks on the go.",
    "context": "short-cut links",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -712,7 +889,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "https://apps.apple.com/us/app/national-park-service/id1549226484",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "img",
@@ -720,7 +899,9 @@
    "value": "",
    "context": "Download on the App Store",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -728,7 +909,9 @@
    "value": "",
    "context": "Download on the App Store",
    "url": "https://play.google.com/store/apps/details?id=gov.nps.mobileapp",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "img",
@@ -736,7 +919,9 @@
    "value": "",
    "context": "Get it on Google Play",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "img",
@@ -744,7 +929,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -752,7 +939,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "https://www.nps.gov/",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "img",
@@ -760,7 +949,9 @@
    "value": "",
    "context": "National Park Service U.S. Department of the Interior",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -768,7 +959,9 @@
    "value": "",
    "context": "National Park Service U.S. Department of the Interior",
    "url": "https://www.facebook.com/nationalparkservice",
-   "title": ""
+   "title": "",
+   "source": "<svg class=\"usa-social-link__icon usa-icon\" aria-label=\"Facebook\" role=\"img\" focusable=\"false\"> <use href=\"/theme/assets/vendor/npsds/packages/icons/dist/sprite.svg#facebook\"></use> </svg>",
+   "path": "div > div > div > div > a > svg"
   },
   {
    "role": "img",
@@ -776,7 +969,9 @@
    "value": "",
    "context": "Facebook",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "<svg class=\"usa-social-link__icon usa-icon\" aria-label=\"Facebook\" role=\"img\" focusable=\"false\"> <use href=\"/theme/assets/vendor/npsds/packages/icons/dist/sprite.svg#facebook\"></use> </svg>",
+   "path": "div > div > div > div > a > svg"
   },
   {
    "role": "link",
@@ -784,7 +979,9 @@
    "value": "",
    "context": "Facebook",
    "url": "https://www.youtube.com/nationalparkservice",
-   "title": ""
+   "title": "",
+   "source": "<svg class=\"usa-social-link__icon usa-icon\" aria-label=\"Youtube\" role=\"img\" focusable=\"false\"> <use href=\"/theme/assets/vendor/npsds/packages/icons/dist/sprite.svg#youtube\"></use> </svg>",
+   "path": "div > div > div > div > a > svg"
   },
   {
    "role": "img",
@@ -792,7 +989,9 @@
    "value": "",
    "context": "Youtube",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "<svg class=\"usa-social-link__icon usa-icon\" aria-label=\"Youtube\" role=\"img\" focusable=\"false\"> <use href=\"/theme/assets/vendor/npsds/packages/icons/dist/sprite.svg#youtube\"></use> </svg>",
+   "path": "div > div > div > div > a > svg"
   },
   {
    "role": "link",
@@ -800,7 +999,9 @@
    "value": "",
    "context": "Youtube",
    "url": "https://www.x.com/natlparkservice",
-   "title": ""
+   "title": "",
+   "source": "<svg class=\"usa-social-link__icon usa-icon\" aria-label=\"X\" role=\"img\" focusable=\"false\"> <use href=\"/theme/assets/vendor/npsds/packages/icons/dist/sprite.svg#x\"></use> </svg>",
+   "path": "div > div > div > div > a > svg"
   },
   {
    "role": "img",
@@ -808,7 +1009,9 @@
    "value": "",
    "context": "X",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "<svg class=\"usa-social-link__icon usa-icon\" aria-label=\"X\" role=\"img\" focusable=\"false\"> <use href=\"/theme/assets/vendor/npsds/packages/icons/dist/sprite.svg#x\"></use> </svg>",
+   "path": "div > div > div > div > a > svg"
   },
   {
    "role": "link",
@@ -816,7 +1019,9 @@
    "value": "",
    "context": "X",
    "url": "https://www.instagram.com/nationalparkservice",
-   "title": ""
+   "title": "",
+   "source": "<svg class=\"usa-social-link__icon usa-icon\" aria-label=\"Instagram\" role=\"img\" focusable=\"false\"> <use href=\"/theme/assets/vendor/npsds/packages/icons/dist/sprite.svg#instagram\"></use> </svg>",
+   "path": "div > div > div > div > a > svg"
   },
   {
    "role": "img",
@@ -824,7 +1029,9 @@
    "value": "",
    "context": "Instagram",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "<svg class=\"usa-social-link__icon usa-icon\" aria-label=\"Instagram\" role=\"img\" focusable=\"false\"> <use href=\"/theme/assets/vendor/npsds/packages/icons/dist/sprite.svg#instagram\"></use> </svg>",
+   "path": "div > div > div > div > a > svg"
   },
   {
    "role": "link",
@@ -832,7 +1039,9 @@
    "value": "",
    "context": "Instagram",
    "url": "https://www.flickr.com/nationalparkservice",
-   "title": ""
+   "title": "",
+   "source": "<svg class=\"usa-social-link__icon usa-icon\" aria-label=\"Flickr\" role=\"img\" focusable=\"false\"> <use href=\"/theme/assets/vendor/npsds/packages/icons/dist/sprite.svg#flickr\"></use> </svg>",
+   "path": "div > div > div > div > a > svg"
   },
   {
    "role": "img",
@@ -840,7 +1049,9 @@
    "value": "",
    "context": "Flickr",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "<svg class=\"usa-social-link__icon usa-icon\" aria-label=\"Flickr\" role=\"img\" focusable=\"false\"> <use href=\"/theme/assets/vendor/npsds/packages/icons/dist/sprite.svg#flickr\"></use> </svg>",
+   "path": "div > div > div > div > a > svg"
   },
   {
    "role": "link",
@@ -848,7 +1059,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "//www.nps.gov/aboutus/accessibility.htm",
-   "title": ""
+   "title": "",
+   "source": "<a href=\"//www.nps.gov/aboutus/accessibility.htm\" class=\"usa-identifier__required-link usa-link\"> Accessibility </a>",
+   "path": "div > nav > div > ul > li > a"
   },
   {
    "role": "link",
@@ -856,7 +1069,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "//www.nps.gov/aboutus/privacy.htm",
-   "title": ""
+   "title": "",
+   "source": "<a href=\"//www.nps.gov/aboutus/privacy.htm\" class=\"usa-identifier__required-link usa-link\"> Privacy Policy </a>",
+   "path": "div > nav > div > ul > li > a"
   },
   {
    "role": "link",
@@ -864,7 +1079,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "//www.nps.gov/aboutus/foia/index.htm",
-   "title": ""
+   "title": "",
+   "source": "<a href=\"//www.nps.gov/aboutus/foia/index.htm\" class=\"usa-identifier__required-link usa-link\"> FOIA </a>",
+   "path": "div > nav > div > ul > li > a"
   },
   {
    "role": "link",
@@ -872,7 +1089,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "//www.nps.gov/aboutus/notices.htm",
-   "title": ""
+   "title": "",
+   "source": "<a href=\"//www.nps.gov/aboutus/notices.htm\" class=\"usa-identifier__required-link usa-link\"> Notices </a>",
+   "path": "div > nav > div > ul > li > a"
   },
   {
    "role": "link",
@@ -880,7 +1099,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "//www.nps.gov/aboutus/contactus.htm",
-   "title": ""
+   "title": "",
+   "source": "<a href=\"//www.nps.gov/aboutus/contactus.htm\" class=\"usa-identifier__required-link usa-link\"> Contact The National Park Service </a>",
+   "path": "div > nav > div > ul > li > a"
   },
   {
    "role": "link",
@@ -888,7 +1109,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "//www.nps.gov/aboutus/faqs.htm",
-   "title": "National Park Service frequently asked questions"
+   "title": "National Park Service frequently asked questions",
+   "source": "<a href=\"//www.nps.gov/aboutus/faqs.htm\" class=\"usa-identifier__required-link usa-link\" title=\"National Park Service frequently asked questions\"> NPS FAQ </a>",
+   "path": "div > nav > div > ul > li > a"
   },
   {
    "role": "link",
@@ -896,7 +1119,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "//www.doi.gov/pmb/eeo/no-fear-act",
-   "title": ""
+   "title": "",
+   "source": "<a href=\"//www.doi.gov/pmb/eeo/no-fear-act\" class=\"usa-identifier__required-link usa-link\"> No Fear Act </a>",
+   "path": "div > nav > div > ul > li > a"
   },
   {
    "role": "link",
@@ -904,7 +1129,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "//www.nps.gov/aboutus/disclaimer.htm",
-   "title": ""
+   "title": "",
+   "source": "<a href=\"//www.nps.gov/aboutus/disclaimer.htm\" class=\"usa-identifier__required-link usa-link\"> Disclaimer </a>",
+   "path": "div > nav > div > ul > li > a"
   },
   {
    "role": "link",
@@ -912,7 +1139,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "//www.nps.gov/aboutus/vulnerability-disclosure-policy.htm",
-   "title": ""
+   "title": "",
+   "source": "<a href=\"//www.nps.gov/aboutus/vulnerability-disclosure-policy.htm\" class=\"usa-identifier__required-link usa-link\"> Vulnerability Disclosure Policy </a>",
+   "path": "div > nav > div > ul > li > a"
   },
   {
    "role": "link",
@@ -920,7 +1149,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "//www.usa.gov",
-   "title": ""
+   "title": "",
+   "source": "<a href=\"//www.usa.gov\" class=\"usa-identifier__required-link usa-link\"> USA.gov </a>",
+   "path": "div > nav > div > ul > li > a"
   },
   {
    "role": "region",
@@ -928,7 +1159,9 @@
    "value": "",
    "context": "short-cut links",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "generic",
@@ -936,7 +1169,9 @@
    "value": "Looking for U.S. government information and services?",
    "context": "U.S. government information and services,",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "",
+   "path": ""
   },
   {
    "role": "link",
@@ -944,7 +1179,9 @@
    "value": "",
    "context": "U.S. government information and services,",
    "url": "https://www.usa.gov/",
-   "title": ""
+   "title": "",
+   "source": "<a href=\"https://www.usa.gov/\" class=\"usa-link\">Visit USA.gov</a>",
+   "path": "body > footer > div > section > div > a"
   }
  ]
 }

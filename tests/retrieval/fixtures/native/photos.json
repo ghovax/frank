@@ -1,5 +1,5 @@
 {
- "site_name": "native-photos",
+ "site_name": "photos",
  "surface_name": "native",
  "page_url": "application:Photos",
  "elements": [
@@ -9,7 +9,9 @@
    "value": "Library",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Library\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -17,7 +19,9 @@
    "value": "Collections",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Collections\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -25,7 +29,9 @@
    "value": "Pinned",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Pinned\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -33,7 +39,9 @@
    "value": "Favorites",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Favorites\"",
+   "path": ""
   },
   {
    "role": "AXImage",
@@ -41,7 +49,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXImage name=\"love\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -49,7 +59,9 @@
    "value": "Recently Saved",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Recently Saved\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -57,7 +69,9 @@
    "value": "Map",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Map\"",
+   "path": ""
   },
   {
    "role": "AXImage",
@@ -65,7 +79,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXImage name=\"show map\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -73,7 +89,9 @@
    "value": "Videos",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Videos\"",
+   "path": ""
   },
   {
    "role": "AXImage",
@@ -81,7 +99,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXImage name=\"video\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -89,7 +109,9 @@
    "value": "Screenshots",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Screenshots\"",
+   "path": ""
   },
   {
    "role": "AXImage",
@@ -97,7 +119,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXImage name=\"screenshot\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -105,7 +129,9 @@
    "value": "People",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"People\"",
+   "path": ""
   },
   {
    "role": "AXImage",
@@ -113,7 +139,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXImage name=\"account\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -121,7 +149,9 @@
    "value": "Recently Deleted",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Recently Deleted\"",
+   "path": ""
   },
   {
    "role": "AXImage",
@@ -129,7 +159,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXImage name=\"trash\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -137,7 +169,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"lock\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -145,7 +179,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\" \"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -153,7 +189,9 @@
    "value": "Albums",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Albums\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -161,7 +199,9 @@
    "value": "All Albums",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"All Albums\"",
+   "path": ""
   },
   {
    "role": "AXTextField",
@@ -169,7 +209,9 @@
    "value": "Panoramas for Desktop",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextField value=\"Panoramas for Desktop\"",
+   "path": ""
   },
   {
    "role": "AXTextField",
@@ -177,7 +219,9 @@
    "value": "Exportations Adobe Scan",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextField value=\"Exportations Adobe Scan\"",
+   "path": ""
   },
   {
    "role": "AXTextField",
@@ -185,7 +229,9 @@
    "value": "WhatsApp",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextField value=\"WhatsApp\"",
+   "path": ""
   },
   {
    "role": "AXTextField",
@@ -193,7 +239,9 @@
    "value": "Instagram",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextField value=\"Instagram\"",
+   "path": ""
   },
   {
    "role": "AXTextField",
@@ -201,7 +249,9 @@
    "value": "Snapchat",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextField value=\"Snapchat\"",
+   "path": ""
   },
   {
    "role": "AXTextField",
@@ -209,7 +259,9 @@
    "value": "𝕏",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextField value=\"𝕏\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -217,7 +269,9 @@
    "value": "Sharing",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Sharing\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -225,7 +279,9 @@
    "value": "Shared Albums",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Shared Albums\"",
+   "path": ""
   },
   {
    "role": "AXDisclosureTriangle",
@@ -233,7 +289,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXDisclosureTriangle",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -241,7 +299,9 @@
    "value": "Activity",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Activity\"",
+   "path": ""
   },
   {
    "role": "AXImage",
@@ -249,7 +309,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXImage name=\"conversation\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -257,7 +319,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -265,7 +329,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -273,7 +339,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -281,7 +349,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -289,7 +359,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Sidebar\"",
+   "path": ""
   },
   {
    "role": "AXRadioButton",
@@ -297,7 +369,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXRadioButton name=\"Back\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -305,7 +379,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"zoom out\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -313,7 +389,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"zoom in\"",
+   "path": ""
   },
   {
    "role": "AXCheckBox",
@@ -321,7 +399,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXCheckBox name=\"Aspect Ratio\"",
+   "path": ""
   },
   {
    "role": "AXCheckBox",
@@ -329,7 +409,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXCheckBox name=\"Filter\"",
+   "path": ""
   },
   {
    "role": "AXMenuButton",
@@ -337,7 +419,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXMenuButton name=\"Action Menu\"",
+   "path": ""
   },
   {
    "role": "AXCheckBox",
@@ -345,7 +429,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXCheckBox name=\"Info\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -353,7 +439,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Slideshow\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -361,7 +449,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Share\"",
+   "path": ""
   },
   {
    "role": "AXCheckBox",
@@ -369,7 +459,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXCheckBox name=\"Favorite\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -377,15 +469,19 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Rotate\"",
+   "path": ""
   },
   {
    "role": "AXTextField",
-   "name": "",
+   "name": "Search",
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextField name=\"Search\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -393,7 +489,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Search\"",
+   "path": "TextField"
   },
   {
    "role": "AXButton",
@@ -401,7 +499,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -409,7 +509,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"this button also has an action to zoom the window\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -417,7 +519,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -425,7 +529,9 @@
    "value": "Screenshots",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Screenshots\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -433,7 +539,9 @@
    "value": "651 Photos · July 2026",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"651 Photos · July 2026\"",
+   "path": ""
   }
  ]
 }

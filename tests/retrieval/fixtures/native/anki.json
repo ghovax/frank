@@ -1,5 +1,5 @@
 {
- "site_name": "native-anki",
+ "site_name": "anki",
  "surface_name": "native",
  "page_url": "application:Anki",
  "elements": [
@@ -9,7 +9,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXLink name=\"Decks\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -17,7 +19,9 @@
    "value": "Decks",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Decks\"",
+   "path": "Link"
   },
   {
    "role": "AXLink",
@@ -25,7 +29,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXLink name=\"Add\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -33,7 +39,9 @@
    "value": "Add",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Add\"",
+   "path": "Link"
   },
   {
    "role": "AXLink",
@@ -41,7 +49,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXLink name=\"Browse\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -49,7 +59,9 @@
    "value": "Browse",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Browse\"",
+   "path": "Link"
   },
   {
    "role": "AXLink",
@@ -57,7 +69,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXLink name=\"Stats\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -65,7 +79,9 @@
    "value": "Stats",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Stats\"",
+   "path": "Link"
   },
   {
    "role": "AXLink",
@@ -73,7 +89,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXLink name=\"Sync\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -81,7 +99,9 @@
    "value": "Sync",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Sync\"",
+   "path": "Link"
   },
   {
    "role": "AXStaticText",
@@ -89,7 +109,9 @@
    "value": "Studied ⁨0⁩ cards ⁨in ⁨0⁩ seconds⁩ today (⁨0⁩s/card)",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Studied ⁨0⁩ cards ⁨in ⁨0⁩ seconds⁩ today (⁨0⁩s/card)\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -97,7 +119,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Get Shared\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -105,7 +129,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Create Deck\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -113,7 +139,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Import File\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -121,7 +149,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -129,7 +159,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"this button also has an action to zoom the window\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -137,7 +169,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -145,7 +179,9 @@
    "value": "User 1 - Anki",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"User 1 - Anki\"",
+   "path": ""
   }
  ]
 }

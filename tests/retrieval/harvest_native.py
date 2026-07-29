@@ -39,16 +39,45 @@ def harvest_application(surface: NativeSurface, application_name: str) -> Corpus
     result = surface.documents(application_name)
     if not result.get("ok") or not result.get("documents"):
         return None
+    documents = result["documents"]
+    by_id = {document.id: document for document in documents}
+
+    def ancestor_path(document) -> str:
+        """The chain of ancestor roles, outermost first — the native analogue of a DOM path."""
+        steps, current, guard = [], by_id.get(document.parent), 0
+        while current is not None and guard < 6:
+            role = str(current.payload.get("role") or "").replace("AX", "")
+            if role:
+                steps.append(role)
+            current = by_id.get(current.parent)
+            guard += 1
+        return " > ".join(reversed(steps))
+
+    def declaration(document) -> str:
+        """The element as the accessibility API declares it, written the way the API names things.
+
+        The native counterpart of an element's markup: a role and its attributes. There is no
+        source text behind a native window the way there is behind a page, so this is as close to
+        a declaration as the surface can supply."""
+        parts = [str(document.payload.get("role") or "")]
+        for attribute in ("name", "value", "context"):
+            written = str(document.payload.get(attribute) or "")
+            if written:
+                parts.append(f'{attribute}="{written[:80]}"')
+        return " ".join(parts)
+
     recorded = tuple(
         RecordedElement(
             role=str(document.payload.get("role") or ""),
             name=str(document.payload.get("name") or ""),
             value=str(document.payload.get("value") or ""),
             context=str(document.payload.get("context") or ""),
+            source=declaration(document),
+            path=ancestor_path(document),
         )
-        for document in result["documents"]
+        for document in documents
     )
-    return Corpus(site_name=f"native-{application_name.replace(' ', '-').lower()}",
+    return Corpus(site_name=application_name.replace(" ", "-").lower(),
                   surface_name="native", page_url=f"application:{application_name}",
                   elements=recorded)
 
@@ -71,8 +100,9 @@ def main() -> int:
             continue
         destination = write_corpus(corpus)
         with_value = sum(1 for element in corpus.elements if element.value)
-        logger.info("%-18s %5d elements  %4d with a value  -> %s",
-                    application_name, len(corpus), with_value, destination.name)
+        with_path = sum(1 for element in corpus.elements if element.path)
+        logger.info("%-18s %5d elements  %4d value  %4d ancestor path  -> %s",
+                    application_name, len(corpus), with_value, with_path, destination.name)
         recorded_any = True
     return 0 if recorded_any else 1
 

@@ -1,5 +1,5 @@
 {
- "site_name": "native-skim",
+ "site_name": "skim",
  "surface_name": "native",
  "page_url": "application:Skim",
  "elements": [
@@ -9,7 +9,9 @@
    "value": "Page 2 of 2",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Page 2 of 2\"",
+   "path": ""
   },
   {
    "role": "AXImage",
@@ -17,7 +19,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXImage name=\"Page 1\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -25,7 +29,9 @@
    "value": "1",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"1\"",
+   "path": ""
   },
   {
    "role": "AXImage",
@@ -33,7 +39,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXImage name=\"Page 2\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -41,15 +49,19 @@
    "value": "2",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"2\"",
+   "path": ""
   },
   {
    "role": "AXRadioGroup",
-   "name": "tab option View Thumbnails 1",
+   "name": "View Thumbnails",
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXRadioGroup name=\"View Thumbnails\"",
+   "path": ""
   },
   {
    "role": "AXRadioButton",
@@ -57,7 +69,9 @@
    "value": "1",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXRadioButton name=\"View Thumbnails\" value=\"1\"",
+   "path": "RadioGroup"
   },
   {
    "role": "AXRadioButton",
@@ -65,15 +79,19 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXRadioButton name=\"View Table of Contents\"",
+   "path": "RadioGroup"
   },
   {
    "role": "AXTextField",
-   "name": "",
+   "name": "search",
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextField name=\"search\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -81,7 +99,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"search\"",
+   "path": "TextField"
   },
   {
    "role": "AXPage",
@@ -89,7 +109,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXPage",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -97,7 +119,9 @@
    "value": "2. I understand that my scholarship may be terminated if I am found to have violated any of the articles above, including any false statements in my\napplication, been subject to disciplinary action such as expulsion or removal from the university register, or if it has been demonstrated that I will\nnot be able to graduate within the standard course term because of poor academic performance or a suspension. Furthermore, I will not lodge any\ncomplaint regarding the Minister's judgment even though it may involve the termination of my scholarship. Additionally, in the event that I receive\nany scholarship awards that are not intended for my use (such as in the situation previously described), 1 will return said awards to the Japanese\ngovernment or an organization that the government specifies.\n上 記 の 事 項 に 違 反 し た 場 合 , 申 請 書 類 の 記 載 事 項 に 虚 が 発 見 さ れ た 場 合 ､ 又 は 大 学 等 に お い て 退 学 等 の 感 戒 処 分 を 受 け た\n場 合 あ る い は 除 籍 と な っ た 場 合 ､ 若 し く は 学 業 成 績 不 良 や 停 学 等 に よ り 標 準 修 業 年 限 内 で の 卒 業 ( 若 し く は 修 了 ) が 不 可 能 で\nあ る こ と が 確 定 し た 場 合 に は ､ 文 部 科 学 大 臣 よ り 奨 学 金 の 支 給 を 取 り 止 め ら れ て も ､ 不 服 を 申 し 立 て ま せ ん ｡ ま た ｡ 前 述 の 場\n合 等 ､ 本 来 支 給 さ れ る べ き で は な い ※ 学 金 を 受 給 し た 場 合 ､ 当 該 奨 学 金 は ､ 日 本 政 府 又 は 日 本 政 府 が 指 定 す る 機 関 に 返 い た\nし ま す ｡",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"2. I understand that my scholarship may be terminated if I am found to have viol\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -105,7 +129,9 @@
    "value": "3.",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"3.\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -113,7 +139,9 @@
    "value": "After the period of my study in Japan is completed, I will continue to make efforts to serve as a bridge between my country and Japan by cooperating\nin events conducted by Japaneso diplomatic missions, and by positively cooperating with the conducting of surveys, questionnaires, and other follow-\nup activities.\n( 日 本 で の 蜜 学 期 間 終 了 後 は ､ 日 本 の 在 外 公 館 等 が 実 施 す る 各 事 業 に 協 力 す る な ど ､ 自 国 と 日 本 と の 架 け 橋 と な る よ う 継 続 的 に 努 め る\nと と も に ､ ｱ ﾝ ｹ ｰ ﾄ 調 査 等 の ﾌ ｫ ﾛ ｰ ｱ ｯ ﾌﾟ に も 積 極 的 に 協 力 し ま す ｡ )",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"After the period of my study in Japan is completed, I will continue to make effo\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -121,7 +149,9 @@
    "value": "4.",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"4.\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -129,7 +159,9 @@
    "value": "I understand and accept all the matters stated in the Application for Japanese Government (MEXT) Scholarship for 2026.\n( 2 0 2 6 年 度 日 本 政 府 ( 文 部 科 学 省 ) ･ 奨 学 金 留 学 生 募 集 要 項 に 記 載 さ れ て い る 事 項 を す べ て 了 解 し ま す ｡ )",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"I understand and accept all the matters stated in the Application for Japanese G\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -137,7 +169,9 @@
    "value": "Date:\n( 日 付",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Date:\n( 日 付\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -145,7 +179,9 @@
    "value": "Nationality:\n( 国 籍",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Nationality:\n( 国 籍\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -153,7 +189,9 @@
    "value": "Applicant's Signature:\n( 申 請 者 署 名",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Applicant's Signature:\n( 申 請 者 署 名\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -161,7 +199,9 @@
    "value": "Applicant's Name in Roman Block Capitals:\n( 申 請 者 氏 名",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Applicant's Name in Roman Block Capitals:\n( 申 請 者 氏 名\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -169,7 +209,9 @@
    "value": "29",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"29\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -177,7 +219,9 @@
    "value": "D a y ( 日",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"D a y ( 日\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -185,7 +229,9 @@
    "value": "07\nM o n t h ( 月",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"07\nM o n t h ( 月\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -193,7 +239,9 @@
    "value": "2026",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"2026\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -201,7 +249,9 @@
    "value": "Y e a r",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Y e a r\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -209,7 +259,9 @@
    "value": "( 年",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"( 年\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -217,7 +269,9 @@
    "value": "ITALIAN",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"ITALIAN\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -225,7 +279,9 @@
    "value": "GRAVILI GIOVANNI",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"GRAVILI GIOVANNI\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -233,7 +289,9 @@
    "value": "そ ん 気 で",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"そ ん 気 で\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -241,7 +299,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -249,7 +309,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -257,7 +319,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -265,7 +329,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -273,7 +339,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Note\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -281,7 +349,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -289,15 +359,19 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Page\"",
+   "path": ""
   },
   {
    "role": "AXRadioGroup",
-   "name": "tab option View Notes 1",
+   "name": "View Notes",
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXRadioGroup name=\"View Notes\"",
+   "path": ""
   },
   {
    "role": "AXRadioButton",
@@ -305,7 +379,9 @@
    "value": "1",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXRadioButton name=\"View Notes\" value=\"1\"",
+   "path": "RadioGroup"
   },
   {
    "role": "AXRadioButton",
@@ -313,15 +389,19 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXRadioButton name=\"View Snapshots\"",
+   "path": "RadioGroup"
   },
   {
    "role": "AXTextField",
-   "name": "",
+   "name": "search",
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextField name=\"search\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -329,7 +409,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"search\"",
+   "path": "TextField"
   },
   {
    "role": "AXButton",
@@ -337,7 +419,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Previous\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -345,7 +429,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Next\"",
+   "path": ""
   },
   {
    "role": "AXTextField",
@@ -353,7 +439,9 @@
    "value": "2",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextField name=\"Page\" value=\"2\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -361,7 +449,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Zoom Out\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -369,7 +459,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Zoom To Actual Size\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -377,7 +469,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Zoom In\"",
+   "path": ""
   },
   {
    "role": "AXRadioGroup",
@@ -385,7 +479,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXRadioGroup name=\"Tool Mode\"",
+   "path": ""
   },
   {
    "role": "AXRadioButton",
@@ -393,7 +489,9 @@
    "value": "1",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXRadioButton name=\"Text Tool\" value=\"1\"",
+   "path": "RadioGroup"
   },
   {
    "role": "AXRadioButton",
@@ -401,7 +499,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXRadioButton name=\"Scroll Tool\"",
+   "path": "RadioGroup"
   },
   {
    "role": "AXRadioButton",
@@ -409,7 +509,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXRadioButton name=\"Magnify Tool\"",
+   "path": "RadioGroup"
   },
   {
    "role": "AXRadioButton",
@@ -417,7 +519,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXRadioButton name=\"Select Tool\"",
+   "path": "RadioGroup"
   },
   {
    "role": "AXRadioButton",
@@ -425,7 +529,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXRadioButton name=\"Note Tool\"",
+   "path": "RadioGroup"
   },
   {
    "role": "AXButton",
@@ -433,7 +539,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Add New Text Note\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -441,7 +549,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Add New Anchored Note\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -449,7 +559,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Add New Circle\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -457,7 +569,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Add New Box\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -465,7 +579,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Add New Highlight\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -473,7 +589,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Add New Underline\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -481,7 +599,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Add New Strike Out\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -489,7 +609,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Add New Line\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -497,7 +619,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Add New Freehand\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -505,7 +629,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -513,7 +639,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"this button also has an action to zoom the window\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -521,7 +649,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXImage",
@@ -529,7 +659,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXImage name=\"Giovanni-Gravili_Pledge_2026.pdf\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -537,7 +669,9 @@
    "value": "Giovanni-Gravili_Pledge_2026.pdf – Page 2 of 2",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Giovanni-Gravili_Pledge_2026.pdf – Page 2 of 2\"",
+   "path": ""
   }
  ]
 }

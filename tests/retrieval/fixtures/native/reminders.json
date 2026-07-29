@@ -1,5 +1,5 @@
 {
- "site_name": "native-reminders",
+ "site_name": "reminders",
  "surface_name": "native",
  "page_url": "application:Reminders",
  "elements": [
@@ -9,7 +9,9 @@
    "value": "Urgent Reminders",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Urgent Reminders\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -17,7 +19,9 @@
    "value": "Mark a reminder as urgent and get an alarm when it’s due on your iPhone or iPad.",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Mark a reminder as urgent and get an alarm when it’s due on your iPhone or iPad.\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -25,7 +29,9 @@
    "value": "Create in Spotlight",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Create in Spotlight\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -33,7 +39,9 @@
    "value": "Quickly create a reminder directly from Spotlight.",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Quickly create a reminder directly from Spotlight.\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -41,7 +49,9 @@
    "value": "Richer Sharing to Reminders",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Richer Sharing to Reminders\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -49,7 +59,9 @@
    "value": "Add multiple reminders to a list when sharing from an email, recipe, or other source.",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Add multiple reminders to a list when sharing from an email, recipe, or other so\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -57,7 +69,9 @@
    "value": "Time Zones",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Time Zones\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -65,7 +79,9 @@
    "value": "Set a time zone for a reminder to get an alert aligned with that region.",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Set a time zone for a reminder to get an alert aligned with that region.\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -73,7 +89,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Continue\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -81,7 +99,9 @@
    "value": "What’s New in Reminders",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"What’s New in Reminders\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -89,7 +109,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -97,7 +119,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"this button also has an action to zoom the window\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -105,7 +129,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   }
  ]
 }

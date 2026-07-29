@@ -1,5 +1,5 @@
 {
- "site_name": "native-terminal",
+ "site_name": "terminal",
  "surface_name": "native",
  "page_url": "application:Terminal",
  "elements": [
@@ -9,7 +9,9 @@
    "value": "Last login: Mon Jul 27 20:36:20 on ttys000\ngiovannigravili@Giovannis-MBP:~/ > ls *.nix\nzsh: no matches found: *.nix\ngiovannigravili@Giovannis-MBP:~/ > cd .config \ngiovannigravili@Giovannis-MBP:~/.config/ > ls\nbiopython\tdaisy\t\tgh\t\tmarimo\t\tnix-darwin\trstudio\ncontext7\tdirenv\t\tgit\t\tmpv\t\topencode\twaveterm\ngiovannigravili@Giovannis-MBP:~/.config/ > cd nix-darwin \ngiovannigravili@Giovannis-MBP:~/.config/nix-darwin/ > ls\nREADME.md\tdarwin.nix\tflake.lock\tflake.nix\thome.nix\tresult\t\ttemplates\ngiovannigravili@Giovannis-MBP:~/.config/nix-darwin/ > find BLACKBOARD_MODEL \nfind: BLACKBOARD_MODEL: No such file or directory\ngiovannigravili@Giovannis-MBP:~/.config/nix-darwin/ > code .\ngiovannigravili@Giovannis-MBP:~/.config/nix-darwin/ > cd\ngiovannigravili@Giovannis-MBP:~/ > open .zshrc \ngiovannigravili@Giovannis-MBP:~/ > code .zshrc\ngiovannigravili@Giovannis-MBP:~/ > cd Projects/ghovax/private \ngiovannigravili@Giovannis-MBP:~/Projects/ghovax/private/ > ls\nanthropic-openai-bridge\tbequire.com\t\tdictation-toolkit\tresearch-findings\narchived\t\tdaisy\t\t\tfinder-desc\t\ttranslate-documents\ngiovannigravili@Giovannis-MBP:~/Projects/ghovax/private/ > rm -rf daisy \nrm: daisy/web/node_modules: Directory not empty\nrm: daisy/web/src-tauri/target/release: Directory not empty\nrm: daisy/web/src-tauri/target: Directory not empty\nrm: daisy/web/src-tauri: Directory not empty\nrm: daisy/web: Directory not empty\nrm: daisy: Directory not empty\ngiovannigravili@Giovannis-MBP:~/Projects/ghovax/private/ > gh repo clone frank\nCloning into 'frank'...\nremote: Enumerating objects: 6094, done.\nremote: Counting objects: 100% (1275/1275), done.\nremote: Compressing objects: 100% (757/757), done.\nremote: Total 6094 (delta 808), reused 781 (delta 485), pack-reused 4819 (from 2)\nReceiving objects: 100% (6094/6094), 27.63 MiB | 27.49 MiB/s, done.\nResolving deltas: 100% (3796/3796), done.\ngiovannigravili@Giovannis-MBP:~/Projects/ghovax/private/ > code frank\ngiovannigravili@Giovannis-MBP:~/Projects/ghovax/private/ > 0.0.0.0\nzsh: command not found: 0.0.0.0\ngiovannigravili@Giovannis-MBP:~/Projects/ghovax/private/ > find \"$HOME/Library/Mobile Documents/com~apple~CloudDocs/MEXT\" -maxdepth 1 -mindepth 1 -print\n",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextArea name=\"shell\" value=\"Last login: Mon Jul 27 20:36:20 on ttys000\ngiovannigravili@Giovannis-MBP:~/ > ls\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -17,7 +19,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -25,7 +29,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -33,7 +39,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -41,7 +49,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXRadioButton",
@@ -49,7 +59,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXRadioButton name=\"caffeinate -d\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -57,7 +69,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Close tab\"",
+   "path": "RadioButton"
   },
   {
    "role": "AXRadioButton",
@@ -65,7 +79,9 @@
    "value": "True",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXRadioButton name=\"-zsh\" value=\"True\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -73,7 +89,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Close tab\"",
+   "path": "RadioButton"
   },
   {
    "role": "AXStaticText",
@@ -81,7 +99,9 @@
    "value": "…",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"…\"",
+   "path": "RadioButton"
   },
   {
    "role": "AXButton",
@@ -89,7 +109,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"new tab\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -97,7 +119,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -105,7 +129,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"this button also has an action to zoom the window\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -113,7 +139,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -121,7 +149,9 @@
    "value": "Terminal — -zsh — 120×34",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Terminal — -zsh — 120×34\"",
+   "path": ""
   }
  ]
 }

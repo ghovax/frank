@@ -34,6 +34,40 @@ PAGES_TO_HARVEST = {
 
 logger = logging.getLogger(__name__)
 
+# One pass over the DOM collecting what the accessibility snapshot cannot: an element's own
+# markup, its opening tag, its attributes, and its structural path. Keyed by visible label and
+# joined the same way tooltips are, with any label claimed by two different declarations dropped
+# rather than guessed at — a wrong declaration would put another element's words in this one's key.
+_DECLARATIONS_BY_LABEL = r"""() => {
+  const interesting = 'a,button,input,select,textarea,summary,label,option,[role],[onclick],[tabindex]';
+  const declarations = new Map();
+  const ambiguous = new Set();
+  const pathOf = (node) => {
+    const steps = [];
+    let current = node;
+    while (current && current.nodeType === 1 && steps.length < 6) {
+      steps.push(current.tagName.toLowerCase());
+      current = current.parentElement;
+    }
+    return steps.reverse().join(' > ');
+  };
+  for (const node of document.querySelectorAll(interesting)) {
+    const label = (node.innerText || node.getAttribute('aria-label') || node.getAttribute('alt') || '')
+      .trim().replace(/\s+/g, ' ').slice(0, 120);
+    if (!label) continue;
+    const markup = (node.outerHTML || '').replace(/\s+/g, ' ').slice(0, 600);
+    const openingTag = markup.slice(0, markup.indexOf('>') + 1);
+    const attributes = Array.from(node.attributes || [])
+      .map((attribute) => `${attribute.name}="${attribute.value}"`).join(' ').slice(0, 400);
+    const declaration = { markup, openingTag, attributes, path: pathOf(node) };
+    const seen = declarations.get(label);
+    if (seen && seen.markup !== declaration.markup) { ambiguous.add(label); continue; }
+    declarations.set(label, declaration);
+  }
+  for (const label of ambiguous) declarations.delete(label);
+  return Object.fromEntries(declarations);
+}"""
+
 PAGE_SETTLE_MILLISECONDS = 1500
 NAVIGATION_TIMEOUT_MILLISECONDS = 45_000
 
@@ -44,17 +78,22 @@ def harvest_page(page, site_name: str, page_url: str) -> Corpus:
     page.wait_for_timeout(PAGE_SETTLE_MILLISECONDS)
     parsed_elements, _frame_owners = _parse_snapshot(_snapshot(page))
     tooltips = _titles_by_label(page)
-    recorded = tuple(
-        RecordedElement(
+    declarations = page.evaluate(_DECLARATIONS_BY_LABEL)
+    by_label = {_folded_label(label): value for label, value in (declarations or {}).items()}
+    recorded = []
+    for element in parsed_elements:
+        declaration = by_label.get(_folded_label(element.name), {})
+        recorded.append(RecordedElement(
             role=element.role,
             name=element.name,
             value=element.value if isinstance(element.value, str) else "",
             context=element.context,
             url=str(element.flags.get("url") or ""),
             title=tooltips.get(_folded_label(element.name), ""),
-        )
-        for element in parsed_elements
-    )
+            source=str(declaration.get("markup", "")),
+            path=str(declaration.get("path", "")),
+        ))
+    recorded = tuple(recorded)
     return Corpus(site_name=site_name, page_url=page_url, elements=recorded)
 
 
@@ -71,8 +110,9 @@ def main() -> int:
                 destination = write_corpus(corpus)
                 with_url = sum(1 for element in corpus.elements if element.url)
                 with_title = sum(1 for element in corpus.elements if element.title)
-                logger.info("%-11s %5d elements  %4d with a url  %4d with a tooltip  -> %s",
-                            site_name, len(corpus), with_url, with_title, destination.name)
+                with_source = sum(1 for element in corpus.elements if element.source)
+                logger.info("%-11s %5d elements  %4d url  %4d tooltip  %4d markup  -> %s",
+                            site_name, len(corpus), with_url, with_title, with_source, destination.name)
             except Exception as error:  # noqa: BLE001 — one unreachable site must not stop the rest
                 failures += 1
                 logger.error("%-11s failed: %s: %s", site_name, type(error).__name__, error)

@@ -33,6 +33,13 @@ class RecordedElement:
     context: str = ""
     url: str = ""
     title: str = ""
+    source: str = ""
+    """The element as its surface declares it — markup on the web, an accessibility record on a
+    native window. This is the raw material for the code-embedding experiments: the hypothesis is
+    that a declaration carries information the derived fields have already thrown away."""
+    path: str = ""
+    """The structural route to the element: ``nav > ul > li > a`` on the web, a chain of ancestor
+    roles on a native window. Structure the flat fields cannot express."""
 
 
 @dataclass(frozen=True)
@@ -53,15 +60,19 @@ class Corpus:
         return len(self.elements)
 
 
-def fixture_path(site_name: str) -> Path:
-    """Where the fixture for one site lives."""
-    return FIXTURE_DIRECTORY / f"{site_name}.json"
+def fixture_path(surface_name: str, site_name: str) -> Path:
+    """Where the fixture for one recording lives: a directory per surface, named by the source.
+
+    The surface is a directory rather than a prefix on the filename. A prefix encodes a fact about
+    a file in its name, so every reader has to parse it back out, and adding a third surface would
+    mean renaming everything that already exists."""
+    return FIXTURE_DIRECTORY / surface_name / f"{site_name}.json"
 
 
 def write_corpus(corpus: Corpus) -> Path:
-    """Write one corpus to its fixture file, creating the fixture directory if needed."""
-    FIXTURE_DIRECTORY.mkdir(parents=True, exist_ok=True)
-    destination = fixture_path(corpus.site_name)
+    """Write one corpus to its fixture file, creating its surface's directory if needed."""
+    destination = fixture_path(corpus.surface_name, corpus.site_name)
+    destination.parent.mkdir(parents=True, exist_ok=True)
     document = {
         "site_name": corpus.site_name,
         "surface_name": corpus.surface_name,
@@ -90,7 +101,5 @@ def load_all_corpora(surface_name: str | None = None) -> list[Corpus]:
     and native measures neither."""
     if not FIXTURE_DIRECTORY.exists():
         return []
-    corpora = [read_corpus(path) for path in sorted(FIXTURE_DIRECTORY.glob("*.json"))]
-    if surface_name is None:
-        return corpora
-    return [corpus for corpus in corpora if corpus.surface_name == surface_name]
+    pattern = f"{surface_name}/*.json" if surface_name else "*/*.json"
+    return [read_corpus(path) for path in sorted(FIXTURE_DIRECTORY.glob(pattern))]

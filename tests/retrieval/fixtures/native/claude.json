@@ -1,0 +1,6547 @@
+{
+ "site_name": "claude",
+ "surface_name": "native",
+ "page_url": "application:Claude",
+ "elements": [
+  {
+   "role": "AXButton",
+   "name": "Collapse sidebar",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Collapse sidebar\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Search",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Search\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Home",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Home\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Code",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Code\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "New",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"New\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Artifacts",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Artifacts\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Customize",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Customize\"",
+   "path": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More navigation items",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More navigation items\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Recents",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Recents\"",
+   "path": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "Filter",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"Filter\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Running Latest used branch switching",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Running Latest used branch switching\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Latest used branch switching",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Latest used branch switching\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More options for Latest used branch switching",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More options for Latest used branch switching\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "#13 · Merged Daemon vs library architecture",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"#13 · Merged Daemon vs library architecture\"",
+   "path": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "#13 · Merged",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXImage name=\"#13 · Merged\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Daemon vs library architecture",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Daemon vs library architecture\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More options for Daemon vs library architecture",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More options for Daemon vs library architecture\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Idle Frank rename implementation",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Idle Frank rename implementation\"",
+   "path": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "Idle",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXImage name=\"Idle\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Frank rename implementation",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Frank rename implementation\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More options for Frank rename implementation",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More options for Frank rename implementation\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Idle Daisy dev environment setup",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Idle Daisy dev environment setup\"",
+   "path": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "Idle",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXImage name=\"Idle\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Daisy dev environment setup",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Daisy dev environment setup\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More options for Daisy dev environment setup",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More options for Daisy dev environment setup\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Idle macOS fork probe test",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Idle macOS fork probe test\"",
+   "path": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "Idle",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXImage name=\"Idle\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "macOS fork probe test",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"macOS fork probe test\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More options for macOS fork probe test",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More options for macOS fork probe test\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "#12 · Closed Cursor OAuth integration in Daisy",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"#12 · Closed Cursor OAuth integration in Daisy\"",
+   "path": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "#12 · Closed",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXImage name=\"#12 · Closed\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Cursor OAuth integration in Daisy",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Cursor OAuth integration in Daisy\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More options for Cursor OAuth integration in Daisy",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More options for Cursor OAuth integration in Daisy\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "#11 · Merged Agentic harnesses research and comparison",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"#11 · Merged Agentic harnesses research and comparison\"",
+   "path": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "#11 · Merged",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXImage name=\"#11 · Merged\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Agentic harnesses research and comparison",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Agentic harnesses research and comparison\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More options for Agentic harnesses research and comparison",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More options for Agentic harnesses research and comparison\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Idle Browser-use comparison analysis",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Idle Browser-use comparison analysis\"",
+   "path": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "Idle",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXImage name=\"Idle\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Browser-use comparison analysis",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Browser-use comparison analysis\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More options for Browser-use comparison analysis",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More options for Browser-use comparison analysis\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "#7 · Merged Daisy harness README messaging",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"#7 · Merged Daisy harness README messaging\"",
+   "path": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "#7 · Merged",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXImage name=\"#7 · Merged\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Daisy harness README messaging",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Daisy harness README messaging\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More options for Daisy harness README messaging",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More options for Daisy harness README messaging\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "#7 · Merged Security.md reach section update",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"#7 · Merged Security.md reach section update\"",
+   "path": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "#7 · Merged",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXImage name=\"#7 · Merged\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Security.md reach section update",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Security.md reach section update\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More options for Security.md reach section update",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More options for Security.md reach section update\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "#5, #6 · Merged A2A specification compliance audit",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"#5, #6 · Merged A2A specification compliance audit\"",
+   "path": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "#5, #6 · Merged",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXImage name=\"#5, #6 · Merged\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "A2A specification compliance audit",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"A2A specification compliance audit\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More options for A2A specification compliance audit",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More options for A2A specification compliance audit\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Unread response UI and agent bugs",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Unread response UI and agent bugs\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "UI and agent bugs",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"UI and agent bugs\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More options for UI and agent bugs",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More options for UI and agent bugs\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Idle fix(openai): use codex context limits for gpt-5.6",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Idle fix(openai): use codex context limits for gpt-5.6\"",
+   "path": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "Idle",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXImage name=\"Idle\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "fix(openai): use codex context limits for gpt-5.6",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"fix(openai): use codex context limits for gpt-5.6\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More options for fix(openai): use codex context limits for gpt-5.6",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More options for fix(openai): use codex context limits for gpt-5.6\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Idle Navigation hardcoded constants",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Idle Navigation hardcoded constants\"",
+   "path": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "Idle",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXImage name=\"Idle\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Navigation hardcoded constants",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Navigation hardcoded constants\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More options for Navigation hardcoded constants",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More options for Navigation hardcoded constants\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Idle WebSurface interaction bugs investigation",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Idle WebSurface interaction bugs investigation\"",
+   "path": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "Idle",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXImage name=\"Idle\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "WebSurface interaction bugs investigation",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"WebSurface interaction bugs investigation\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More options for WebSurface interaction bugs investigation",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More options for WebSurface interaction bugs investigation\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Idle Branch navigation question",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Idle Branch navigation question\"",
+   "path": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "Idle",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXImage name=\"Idle\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Branch navigation question",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Branch navigation question\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More options for Branch navigation question",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More options for Branch navigation question\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Idle Browser/computer control suite weaknesses",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Idle Browser/computer control suite weaknesses\"",
+   "path": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "Idle",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXImage name=\"Idle\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Browser/computer control suite weaknesses",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Browser/computer control suite weaknesses\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More options for Browser/computer control suite weaknesses",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More options for Browser/computer control suite weaknesses\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Error Browser control suite weaknesses analysis",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Error Browser control suite weaknesses analysis\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Browser control suite weaknesses analysis",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Browser control suite weaknesses analysis\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More options for Browser control suite weaknesses analysis",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More options for Browser control suite weaknesses analysis\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Idle App reinstall and rebuild",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Idle App reinstall and rebuild\"",
+   "path": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "Idle",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXImage name=\"Idle\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "App reinstall and rebuild",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"App reinstall and rebuild\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More options for App reinstall and rebuild",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More options for App reinstall and rebuild\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Idle Anki kanji deck example words",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Idle Anki kanji deck example words\"",
+   "path": ""
+  },
+  {
+   "role": "AXImage",
+   "name": "Idle",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXImage name=\"Idle\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Anki kanji deck example words",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Anki kanji deck example words\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "More options for Anki kanji deck example words",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"More options for Anki kanji deck example words\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Show 20 more in Recents",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Show 20 more in Recents\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Relaunch to update v1.24012.9",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Relaunch to update v1.24012.9\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Relaunch to update",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Relaunch to update\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "v1.24012.9",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"v1.24012.9\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "Giovanni Max",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"Giovanni Max\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Send feedback",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Send feedback\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Latest used branch switching",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Latest used branch switching\"",
+   "path": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "Remote Control",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"Remote Control\"",
+   "path": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "frank",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"frank\"",
+   "path": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "Terminal",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXCheckBox name=\"Terminal\"",
+   "path": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "Diff",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXCheckBox name=\"Diff\"",
+   "path": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "Browser",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXCheckBox name=\"Browser\"",
+   "path": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "Session actions, new activity",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"Session actions, new activity\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Claude is responding",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Claude is responding\"",
+   "path": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "Claude responded: Now the full verification pass — tests, lint, and a real end-to-end run through the library on live pages:",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXHeading name=\"Claude responded: Now the full verification pass — tests, lint, and a real end-t\" value=\"2\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Replace prints with logging",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Replace prints with logging\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Now the full verification pass — tests, lint, and a real end-to-end run through the library on live pages:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Now the full verification pass — tests, lint, and a real end-to-end run through \"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Ran 2 commands",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Ran 2 commands\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Ran",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Ran\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" \"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "2 commands",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"2 commands\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "The test was wrong, not the code — a Wikipedia citation link's ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"The test was wrong, not the code — a Wikipedia citation link's \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "label",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"label\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " legitimately contains the text \"government-",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" legitimately contains the text \"government-\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "data-",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"data-\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "reveals-accessible-homes\". Naive substring matching on rendered text catches innocent content. The real intent is structural, so let me assert it structurally:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"reveals-accessible-homes\". Naive substring matching on rendered text catches inn\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Edited test_encoding_strategies.py, ran a command +13 -9",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Edited test_encoding_strategies.py, ran a command +13 -9\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Edited",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Edited\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" \"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "test_encoding_strategies.py",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"test_encoding_strategies.py\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": ", ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\", \"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "ran",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"ran\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" \"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "a command",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"a command\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "+",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"+\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "13",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"13\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "-",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"-\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "9",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"9\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "All 9 pass and lint is clean. Now the real end-to-end check — driving the ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"All 9 pass and lint is clean. Now the real end-to-end check — driving the \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "library's own surface",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"library's own surface\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " against a live page, not the harness:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" against a live page, not the harness:\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "End-to-end library run against a live page",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"End-to-end library run against a live page\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Working end-to-end on a live page. Now updating the plan with what the implementation actually changed, then committing:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Working end-to-end on a live page. Now updating the plan with what the implement\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Ran 3 commands",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Ran 3 commands\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Ran",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Ran\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" \"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "3 commands",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"3 commands\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "The plan cited ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"The plan cited \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "1142c5f",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"1142c5f\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": ", the pre-amend hash, which no longer exists — a dangling reference is worse than an honest placeholder, and a commit cannot contain its own hash. Setting it back to ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\", the pre-amend hash, which no longer exists — a dangling reference is worse tha\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "TBD",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"TBD\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " keeps the history to the single commit you asked for:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" keeps the history to the single commit you asked for:\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Finalise commit and confirm tests pass",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Finalise commit and confirm tests pass\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Done — one commit (",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Done — one commit (\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "3f03b1f",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"3f03b1f\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "), clean tree, 9 tests passing, lint clean.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"), clean tree, 9 tests passing, lint clean.\"",
+   "path": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "What shipped",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXHeading name=\"What shipped\" value=\"2\"",
+   "path": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "Measurements on real pages, unsampled",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXHeading name=\"Measurements on real pages, unsampled\" value=\"2\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "8 sites, 5,125 elements, ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"8 sites, 5,125 elements, \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "6,229 queries",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"6,229 queries\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " — every query the pages support, ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" — every query the pages support, \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "none ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"none \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "invented.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"invented.\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "* scored circularly — the query is drawn from a field ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"* scored circularly — the query is drawn from a field \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "that ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"that \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "strategy ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"strategy \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "indexes.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"indexes.\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Recall curve",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Recall curve\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " (new): 45% → 62% → 66% → 71% at depths 1/3/5/10. Rising then flat, across every composition — misses are ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" (new): 45% → 62% → 66% → 71% at depths 1/3/5/10. Rising then flat, across every\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "mis-orderings",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"mis-orderings\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": ", ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\", \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "not ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"not \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "absences.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"absences.\"",
+   "path": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "What changed versus what I told you before",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXHeading name=\"What changed versus what I told you before\" value=\"2\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Three corrections came from your interventions, and each found a real defect: the query cap was silently imposing the family weighting I'd called unmeasured; ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Three corrections came from your interventions, and each found a real defect: th\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "SHIPPED",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"SHIPPED\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "/",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"/\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "PREVIOUS",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"PREVIOUS\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " naming would have made the harness expire; and the depth/resample constants hid the recall curve that shows misses are ordering problems. The harness also caught the ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" naming would have made the harness expire; and the depth/resample constants hid\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "value",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"value\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " regression before the commit landed — it paid ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" regression before the commit landed — it paid \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "for ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"for \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "itself ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"itself \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "before ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"before \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "it ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"it \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "existed.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"existed.\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "One thing I couldn't satisfy: the plan's ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"One thing I couldn't satisfy: the plan's \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "commit:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"commit:\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " field is ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" field is \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "TBD",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"TBD\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": ", because a commit cannot contain its own hash and filling it would need a second commit. Say the word and I'll add it.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\", because a commit cannot contain its own hash and filling it would need a secon\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Copy message",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Copy message\"",
+   "path": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "Pin as chapter",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXCheckBox name=\"Pin as chapter\"",
+   "path": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "Read aloud",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXCheckBox name=\"Read aloud\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "30 minutes ago",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"30 minutes ago\"",
+   "path": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "You said: So my question is Did we actually implement uh best results, you know, the that would that we that we found for uh before?",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXHeading name=\"You said: So my question is Did we actually implement uh best results, you know,\" value=\"2\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "So my question is Did we actually implement uh best results, you know, the that would that we that we found for uh before? Like did we actually implement uh those techniques in I want to ensure that we have possibly the best uh quality. Um I want to know also what is the actual recall strategy that we have or something like this. Like I I want to know if we're actually doing the right things in the you know uh currently in the code.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"So my question is Did we actually implement uh best results, you know, the that \"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Copy message",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Copy message\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Rewind to here",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Rewind to here\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Fork from here",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Fork from here\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "10 minutes ago",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"10 minutes ago\"",
+   "path": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "Claude responded: Let me verify what the code actually does rather than tell you what I think it does:",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXHeading name=\"Claude responded: Let me verify what the code actually does rather than tell you\" value=\"2\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Let me verify what the code actually does rather than tell you what I think it does:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Let me verify what the code actually does rather than tell you what I think it d\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Ran 2 commands",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Ran 2 commands\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Ran",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Ran\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" \"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "2 commands",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"2 commands\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Honest ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Honest \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "answer: ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"answer: \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "no, ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"no, \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "not ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"not \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "entirely.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"entirely.\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " Verifying ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" Verifying \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "the ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"the \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "code ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"code \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "turned ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"turned \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "up ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"up \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "four ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"four \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "gaps, ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"gaps, \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "two ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"two \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "of ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"of \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "which ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"which \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "matter.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"matter.\"",
+   "path": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "What the code actually does now",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXHeading name=\"What the code actually does now\" value=\"2\"",
+   "path": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "The recall strategy, precisely",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXHeading name=\"The recall strategy, precisely\" value=\"2\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "The 5-deep window in ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"The 5-deep window in \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "find_one",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"find_one\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " is well matched to the data: it captures 66% versus 45% at rank one. That ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" is well matched to the data: it captures 66% versus 45% at rank one. That \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "part ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"part \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "is ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"is \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "right.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"right.\"",
+   "path": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "The four gaps",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXHeading name=\"The four gaps\" value=\"2\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "1. We're knowingly leaving 0.7% on the table with ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"1. We're knowingly leaving 0.7% on the table with \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "role",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"role\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": ".",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\".\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " Dropping it measures better, separably. I kept it because no query family ever names a kind of control (\"the search ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" Dropping it measures better, separably. I kept it because no query family ever \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "button",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"button\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "\"), so the benchmark is blind to role's actual purpose. That reasoning is in the docstring — but it ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"\"), so the benchmark is blind to role's actual purpose. That reasoning is in the\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "is",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"is\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " a real measured loss, and the logged queries are what should ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" a real measured loss, and the logged queries are what should \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "settle ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"settle \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "it.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"it.\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "2. Native still embeds ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"2. Native still embeds \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "value",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"value\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": ", and we never checked it.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\", and we never checked it.\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "value",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"value\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " cost 1.4% on web, separably. Native was left alone under Q7 — but that decision rested on runs I later showed were rigged by their query construction. The native surface has no harness and no fixtures, so this is an untested carry-over, not a verified choice. ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" cost 1.4% on web, separably. Native was left alone under Q7 — but that decision\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "This ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"This \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "is ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"is \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "the ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"the \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "gap ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"gap \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "I'd ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"I'd \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "close ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"close \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "next.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"next.\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "3. The module docstring of ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"3. The module docstring of \"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "retrieval.py",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"retrieval.py\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "retrieval.py",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"retrieval.py\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " is factually wrong.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" is factually wrong.\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " Line 6 says \"BM25 for lexical overlap, ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" Line 6 says \"BM25 for lexical overlap, \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "the two fused",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"the two fused\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "\". The code does not fuse — ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"\". The code does not fuse — \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "search()",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"search()\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " uses dense scores and falls back to BM25 only when the model is absent, and its own docstring explains at length why fusion was removed after measurement. The file contradicts itself, and ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" uses dense scores and falls back to BM25 only when the model is absent, and its\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "I edited around that line ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"I edited around that line \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "without ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"without \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "fixing ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"fixing \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "it.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"it.\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "4. The index is rebuilt on every ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"4. The index is rebuilt on every \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "find",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"find\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " — 0.029s for 1,769 elements versus 0.0004s if reused. That's 70× but only 29ms absolute, and it's arguably ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" — 0.029s for 1,769 elements versus 0.0004s if reused. That's 70× but only 29ms \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "correct",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"correct\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": ": the page is re-read each call anyway, so a cached index could serve stale ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\": the page is re-read each call anyway, so a cached index could serve stale \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "elements. ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"elements. \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "I'd ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"I'd \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "leave ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"leave \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "it.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"it.\"",
+   "path": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "What I'd do",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXHeading name=\"What I'd do\" value=\"2\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Gap 3 is a one-line correction and should just be fixed — a docstring that contradicts the function beneath it is how the \"+13 ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Gap 3 is a one-line correction and should just be fixed — a docstring that contr\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "points ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"points \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "for ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"for \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "keeping ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"keeping \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "context\" ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"context\" \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "myth ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"myth \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "survived ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"survived \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "as ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"as \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "long ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"long \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "as ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"as \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "it ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"it \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "did. ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"did. \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Gap ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Gap \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "2 ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"2 \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "needs ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"needs \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "native ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"native \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "fixtures ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"fixtures \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "and ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"and \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "a ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"a \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "harvest ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"harvest \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "path ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"path \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "for ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"for \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "NativeSurface",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"NativeSurface\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": ", ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\", \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "which ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"which \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "is ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"is \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "real ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"real \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "work ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"work \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "but ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"but \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "reuses ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"reuses \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "everything ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"everything \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "already ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"already \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "built. ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"built. \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Gap ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Gap \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "1 ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"1 \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "stays ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"stays \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "open ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"open \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "until ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"until \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "real ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"real \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "queries ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"queries \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "arrive.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"arrive.\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Nothing here is broken in the sense of producing wrong results — the web path is measurably better than it was. But you asked whether we implemented the best we found, and the accurate answer is: on web, deliberately one step short of it; on native, we changed nothing and haven't checked whether we should have.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Nothing here is broken in the sense of producing wrong results — the web path is\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Copy message",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Copy message\"",
+   "path": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "Pin as chapter",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXCheckBox name=\"Pin as chapter\"",
+   "path": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "Read aloud",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXCheckBox name=\"Read aloud\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "8 minutes ago",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"8 minutes ago\"",
+   "path": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "You said: Okay, sure, fix one, two, and three, uh as the gaps that you have uh highlighted.",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXHeading name=\"You said: Okay, sure, fix one, two, and three, uh as the gaps that you have uh h\" value=\"2\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Okay, sure, fix one, two, and three, uh as the gaps that you have uh highlighted.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Okay, sure, fix one, two, and three, uh as the gaps that you have uh highlighted\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Copy message",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Copy message\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Rewind to here",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Rewind to here\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Fork from here",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Fork from here\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "7 minutes ago",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"7 minutes ago\"",
+   "path": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "Claude responded: Starting with the two quick ones, then native fixtures for gap 2:",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXHeading name=\"Claude responded: Starting with the two quick ones, then native fixtures for gap\" value=\"2\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Starting with the two quick ones, then native fixtures for gap 2:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Starting with the two quick ones, then native fixtures for gap 2:\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Ran a command, edited retrieval.py +9 -3",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Ran a command, edited retrieval.py +9 -3\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Ran",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Ran\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" \"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "a command",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"a command\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": ", ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\", \"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "edited",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"edited\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" \"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "retrieval.py",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"retrieval.py\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "+",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"+\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "9",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"9\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "-",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"-\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "3",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"3\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Now gap 1 — dropping ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Now gap 1 — dropping \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "role",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"role\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " from the web key:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" from the web key:\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Edited retrieval.py, ran a command +19 -19",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Edited retrieval.py, ran a command +19 -19\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Edited",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Edited\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" \"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "retrieval.py",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"retrieval.py\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": ", ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\", \"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "ran",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"ran\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" \"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "a command",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"a command\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "+",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"+\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "19",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"19\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "-",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"-\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "19",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"19\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Now gap 2 — native fixtures, so ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Now gap 2 — native fixtures, so \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "value",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"value\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " on the native key is measured rather than assumed:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" on the native key is measured rather than assumed:\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Added native harvester and recorded live applications",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Added native harvester and recorded live applications\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Native ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Native \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Element",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Element\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " has no ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" has no \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": ".name",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\".name\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " — that's derived later. Let me record through the product's own surface instead, which is what the earlier sweeps used:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" — that's derived later. Let me record through the product's own surface instead\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Harvest native corpora through the product surface",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Harvest native corpora through the product surface\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "1,197 native elements from 10 live applications, 738 carrying a value. Now measuring whether ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"1,197 native elements from 10 live applications, 738 carrying a value. Now measu\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "value",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"value\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " and ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" and \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "role",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"role\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " earn their place on the native key:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" earn their place on the native key:\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Ran 2 commands",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Ran 2 commands\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Ran",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Ran\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" \"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "2 commands",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"2 commands\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Native says the same thing, more strongly: ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Native says the same thing, more strongly: \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "name",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"name\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " alone is +2.5% ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" alone is +2.5% \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "[",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"[\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "+0.8%, +4.2%], separable",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"+0.8%, +4.2%], separable\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " against the live native key. Both ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" against the live native key. Both \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "value",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"value\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " and ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" and \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "role",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"role\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " are dead weight there too. Applying it:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" are dead weight there too. Applying it:\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Ran 2 commands, edited retrieval.py +14 -6",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Ran 2 commands, edited retrieval.py +14 -6\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Ran",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Ran\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" \"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "2 commands",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"2 commands\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": ", ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\", \"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "edited",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"edited\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" \"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "retrieval.py",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"retrieval.py\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "+",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"+\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "14",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"14\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "-",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"-\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "6",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"6\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "The tests now pool web and native corpora — which my own ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"The tests now pool web and native corpora — which my own \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Corpus",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Corpus\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " docstring says must never happen. Fixing that before it silently dilutes every web assertion:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" docstring says must never happen. Fixing that before it silently dilutes every \"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Separate surfaces in tests and report",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Separate surfaces in tests and report\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Bash",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Bash\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Copy",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Copy\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "cd",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"cd\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " /Users/giovannigravili/Projects/ghovax/private/frank",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" /Users/giovannigravili/Projects/ghovax/private/frank\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "python3",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"python3\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " -",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" -\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " <<",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" <<\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "'PATCH'",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"'PATCH'\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "import pathlib",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"import pathlib\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "tests = pathlib.Path(\"tests/retrieval/test_encoding_strategies.py\")",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"tests = pathlib.Path(\"tests/retrieval/test_encoding_strategies.py\")\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "text = tests.read_text()",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"text = tests.read_text()\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "text = text.replace('''@pytest.fixture(scope=\"module\")",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"text = text.replace('''@pytest.fixture(scope=\"module\")\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "def corpora():",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"def corpora():\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "    loaded = load_all_corpora()",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"    loaded = load_all_corpora()\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "    if not loaded:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"    if not loaded:\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "        pytest.skip(\"no corpora recorded; run `uv run python -m tests.retrieval.harvest`\")",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"        pytest.skip(\"no corpora recorded; run `uv run python -m tests.retrieval.\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "    return loaded''',",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"    return loaded''',\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "'''# These assertions are about the browser key, so they load only browser corpora. Pooling the two",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"'''# These assertions are about the browser key, so they load only browser corpo\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "# surfaces would score compositions on native windows that cannot supply a URL or a tooltip, which",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"# surfaces would score compositions on native windows that cannot supply a URL o\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "# would dilute exactly the fields under test.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"# would dilute exactly the fields under test.\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "MEASURED_SURFACE = \"web\"",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"MEASURED_SURFACE = \"web\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "\n",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"\n\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "\n",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"\n\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "@pytest.fixture(scope=\"module\")",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"@pytest.fixture(scope=\"module\")\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "def corpora():",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"def corpora():\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "    loaded = load_all_corpora(surface_name=MEASURED_SURFACE)",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"    loaded = load_all_corpora(surface_name=MEASURED_SURFACE)\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "    if not loaded:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"    if not loaded:\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "        pytest.skip(\"no browser corpora recorded; run `uv run python -m tests.retrieval.harvest`\")",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"        pytest.skip(\"no browser corpora recorded; run `uv run python -m tests.re\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "    return loaded''')",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"    return loaded''')\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "tests.write_text(text)",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"tests.write_text(text)\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "\n",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"\n\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "report = pathlib.Path(\"tests/retrieval/report.py\")",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"report = pathlib.Path(\"tests/retrieval/report.py\")\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "text = report.read_text()",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"text = report.read_text()\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "text = text.replace('''def measure_everything(recall_depths: tuple[int, ...] = DEFAULT_RECALL_DEPTHS) -> pandas.DataFrame:''',",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"text = text.replace('''def measure_everything(recall_depths: tuple[int, ...] = D\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "'''def measure_everything(recall_depths: tuple[int, ...] = DEFAULT_RECALL_DEPTHS,",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"'''def measure_everything(recall_depths: tuple[int, ...] = DEFAULT_RECALL_DEPTHS\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "                       surface_name: str = \"web\") -> pandas.DataFrame:''')",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"                       surface_name: str = \"web\") -> pandas.DataFrame:''')\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "text = text.replace('''    corpora = load_all_corpora()",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"text = text.replace('''    corpora = load_all_corpora()\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "    if not corpora:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"    if not corpora:\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "        raise SystemExit(\"no corpora recorded; run `uv run python -m tests.retrieval.harvest`\")''',",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"        raise SystemExit(\"no corpora recorded; run `uv run python -m tests.retri\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "'''    corpora = load_all_corpora(surface_name=surface_name)",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"'''    corpora = load_all_corpora(surface_name=surface_name)\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "    if not corpora:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"    if not corpora:\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "        raise SystemExit(f\"no {surface_name} corpora recorded; run \"",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"        raise SystemExit(f\"no {surface_name} corpora recorded; run \"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "                         f\"`uv run python -m tests.retrieval.harvest`\")''')",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"                         f\"`uv run python -m tests.retrieval.harvest`\")''')\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "text = text.replace('''    A column is added per depth in ``recall_depths`` rather than one at a fixed depth, so the",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"text = text.replace('''    A column is added per depth in ``recall_depths`` rath\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "    saved frame answers \"did the strategy miss this element or merely mis-order it\" without",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"    saved frame answers \"did the strategy miss this element or merely mis-order \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "    anyone re-running the sweep.\"\"\"''',",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"    anyone re-running the sweep.\"\"\"''',\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "'''    A column is added per depth in ``recall_depths`` rather than one at a fixed depth, so the",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"'''    A column is added per depth in ``recall_depths`` rather than one at a fix\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "    saved frame answers \"did the strategy miss this element or merely mis-order it\" without",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"    saved frame answers \"did the strategy miss this element or merely mis-order \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "    anyone re-running the sweep.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"    anyone re-running the sweep.\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "\n",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"\n\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "    One surface at a time. A browser page supplies link destinations and tooltips that no native",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"    One surface at a time. A browser page supplies link destinations and tooltip\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "    window has, so pooling them would credit a composition on one surface for a field the other",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"    window has, so pooling them would credit a composition on one surface for a \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "    cannot provide.\"\"\"''')",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"    cannot provide.\"\"\"''')\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "report.write_text(text)",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"report.write_text(text)\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "print(\"tests and report are now surface-explicit\")",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"print(\"tests and report are now surface-explicit\")\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "PATCH",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"PATCH\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "direnv",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"direnv\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " exec",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" exec\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " .",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" .\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " bash",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" bash\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " -c",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" -c\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " 'uv run ruff check tests/ && uv run pytest tests/retrieval -q 2>&1 | tail -3'",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" 'uv run ruff check tests/ && uv run pytest tests/retrieval -q 2>&1 | tail -3'\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "tests and report are now surface-explicit\n",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"tests and report are now surface-explicit\n\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "direnv: loading ~/Projects/ghovax/private/frank/.envrc\n",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"direnv: loading ~/Projects/ghovax/private/frank/.envrc\n\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "direnv: using flake\n",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"direnv: using flake\n\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "direnv: nix-direnv: Using cached dev shell\ndev env loaded: uv 0.11.19, bun 1.3.13, rustc 1.95.0 (59807616e 2026-04-14) (built from a source tarball)\nAll checks passed!\n.........                                                                [100%]\n9 passed in 44.67s",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"direnv: nix-direnv: Using cached dev shell\ndev env loaded: uv 0.11.19, bun 1.3.1\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Final verification of both live surfaces end-to-end, then commit:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Final verification of both live surfaces end-to-end, then commit:\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Verified native surface end to end",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Verified native surface end to end\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Working. Updating the plan with these findings, then committing:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Working. Updating the plan with these findings, then committing:\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Committed gap fixes",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Committed gap fixes\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "All three gaps closed in ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"All three gaps closed in \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "f62587f",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"f62587f\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": ". Clean tree, ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\". Clean tree, \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "9 ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"9 \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "tests ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"tests \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "passing, ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"passing, \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "lint ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"lint \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "clean.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"clean.\"",
+   "path": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "Gap 1 — role out of the web key",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXHeading name=\"Gap 1 — role out of the web key\" value=\"2\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "web_element_text",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"web_element_text\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " is now ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" is now \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "name + url + title",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"name + url + title\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": ", deduplicated. Worth +0.8% ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\", deduplicated. Worth +0.8% \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "[",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"[\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "+0.3%, ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"+0.3%, \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "+1.3%], ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"+1.3%], \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "separable.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"separable.\"",
+   "path": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "Gap 2 — native, measured for the first time",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXHeading name=\"Gap 2 — native, measured for the first time\" value=\"2\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "10 live applications, 1,197 elements, ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"10 live applications, 1,197 elements, \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "518 queries",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"518 queries\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": ". Only literal and partial families apply — a native window publishes no URL and ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\". Only literal and partial families apply — a native window publishes no URL and\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "no ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"no \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "tooltip.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"tooltip.\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "The native key is now the name alone. ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"The native key is now the name alone. \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "This reverses Q7",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"This reverses Q7\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": ", which I recommended and you accepted — leave native alone, its candidates are within noise. That judgement rested on the two runs whose queries were built by joining an element's name ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\", which I recommended and you accepted — leave native alone, its candidates are \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "to its role, the one construction guaranteed to flatter a role-bearing key. With real application text the gap isn't close. Native is also a far easier problem than web (87% vs 52% ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"to its role, the one construction guaranteed to flatter a role-bearing key. With\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "on exact labels), because a window holds a hundred elements where ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"on exact labels), because a window holds a hundred elements where \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "a ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"a \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "page ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"page \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "holds ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"holds \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "two ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"two \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "thousand.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"thousand.\"",
+   "path": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "Gap 3 — the self-contradicting docstring",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXHeading name=\"Gap 3 — the self-contradicting docstring\" value=\"2\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Two corrections, not one. The module docstring claimed embeddings and BM25 were \"the two fused\" when ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Two corrections, not one. The module docstring claimed embeddings and BM25 were \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Index.search",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Index.search\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " has long explained why fusion was measured and removed. And ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" has long explained why fusion was measured and removed. And \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "element_text",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"element_text\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " claimed the role moved top-1 from 119 to 132 — real number, wrong thing measured. Both now say what the code does and why the ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" claimed the role moved top-1 from 119 to 132 — real number, wrong thing measure\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "old ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"old \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "claim ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"claim \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "survived.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"survived.\"",
+   "path": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "One thing I broke and caught",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXHeading name=\"One thing I broke and caught\" value=\"2\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Adding native fixtures made ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Adding native fixtures made \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "load_all_corpora()",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"load_all_corpora()\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " pool both surfaces — so every web assertion would have been diluted by windows that can't supply a URL or tooltip, which is exactly what my own ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" pool both surfaces — so every web assertion would have been diluted by windows \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Corpus",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Corpus\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " docstring forbids. Tests and the report now name their surface explicitly. It passed tests while wrong, which is the failure mode this ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" docstring forbids. Tests and the report now name their surface explicitly. It p\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "harness ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"harness \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "exists ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"exists \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "to ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"to \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "prevent.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"prevent.\"",
+   "path": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "What is deliberately still open",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXHeading name=\"What is deliberately still open\" value=\"2\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "role",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"role\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " is gone from both keys on evidence I don't fully trust: ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" is gone from both keys on evidence I don't fully trust: \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "no query family ever names a kind of control",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"no query family ever names a kind of control\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " (\"the search ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" (\"the search \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "button",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"button\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "\"), which is the single thing a role is ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"\"), which is the single thing a role is \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "for. ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"for. \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "The ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"The \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "measurement ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"measurement \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "was ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"was \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "taken ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"taken \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "on ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"on \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "queries ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"queries \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "that ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"that \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "could ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"could \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "never ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"never \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "have ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"have \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "rewarded ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"rewarded \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "it. ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"it. \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Role ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Role \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "still ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"still \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "reaches ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"reaches \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "the ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"the \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "model ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"model \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "in ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"in \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "the ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"the \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "payload ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"payload \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "and ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"and \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "find_one",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"find_one\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " filters ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" filters \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "on ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"on \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "it ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"it \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "exactly, ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"exactly, \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "so ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"so \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "nothing ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"nothing \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "is ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"is \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "lost ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"lost \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "functionally ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"functionally \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "— ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"— \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "but ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"but \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "the ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"the \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "logged ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"logged \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "queries ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"queries \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "are ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"are \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "what ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"what \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "should ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"should \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "reopen ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"reopen \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "this, ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"this, \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "and ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"and \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "the ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"the \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "plan ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"plan \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "says ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"says \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "so ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"so \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "rather ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"rather \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "than ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"than \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "pretending ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"pretending \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "the ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"the \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "question ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"question \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "is ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"is \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "settled.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"settled.\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Both ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Both \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "commits ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"commits \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "leave ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"leave \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "commit: TBD",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"commit: TBD\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " in ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" in \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "the ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"the \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "plan ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"plan \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "frontmatter, ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"frontmatter, \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "since ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"since \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "a ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"a \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "commit ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"commit \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "can't ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"can't \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "contain ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"contain \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "its ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"its \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "own ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"own \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "hash.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"hash.\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Copy message",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Copy message\"",
+   "path": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "Pin as chapter",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXCheckBox name=\"Pin as chapter\"",
+   "path": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "Read aloud",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXCheckBox name=\"Read aloud\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "1 minute ago",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"1 minute ago\"",
+   "path": ""
+  },
+  {
+   "role": "AXHeading",
+   "name": "You said: /goal One of my questions is that like you know, currently we're using a multilingual model or something, but we could also be using a code model, technically…",
+   "value": "2",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXHeading name=\"You said: /goal One of my questions is that like you know, currently we're using\" value=\"2\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "goal",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"goal\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "  One of my questions is that like you know, currently we're using a multilingual model or something, but we could also be using a code model, technically, because like they're there they have one, you know, an embedding model like uh you know specifically for code, and we could be parsing the DOM itself with that, splitting it in some way, you know. And what happens with this technique is that we would be extra actually respecting the DOM structure, like when actually doing the queries, you know. So that will be the embedding, you know, or something like that. What do you think about this technique? Right, because right now, like uh yeah, because uh they have the the potion one, you know, they have also a code model. Uh find it, you know. What I want you to do is I want you to find it and test this theory, you know, where we actually split the DOM itself, you know, the actual code itself, and query over it, uh with the splits, you know, basically doing a code embedding of the actual HTML or whatever underlying information is there, uh, or anything else. You know, I don't know. I said HTML, but we can do it over anything. Um whatever the best fit is, you know. Maybe you can try different type of models for that, different different type of fits. I mean different type of data architectures, and do measurements to compare them with the what we have now. And the goal would be to produce again a table tabular report directly in your response that actually contains you know uh the um yeah, I mean the uh the analysis. Um I mean this would be applying both to native and web uh of course so native uh and the browser. That would be actually the uh might be maybe uh other strategy that we haven't considered yet that we should be probably considering. Uh maybe you could explore also different types of fragmentation techniques for the code, you know, so that we can we can maybe see if there is any better ones, or you know, for the embedding if it actually increases the retrieval of the right elements. I don't know, that's just a suggestion, maybe because like code definitely my idea is that code itself carries more information than the simple ones that we've extracted, so maybe that information can be retrieved better by the code embedding model that potion have. Uh but clearly this is not simple to do, like uh, so what you gotta do is that you gotta actually implement it in the harness itself in the test harness itself that we have, you know, as an additional thing, and go ahead and run extensive tests on all websites and things as such, you know, so that we ensure that we have the actual measure data. Uh do not skip any gaps, like actually ensure that we have the full, you know, the full measurement down. both for native and the browser, uh you know, before actually running the tests. I'm expecting at the end for you to produce an actual tabular report of uh you know all your findings and your recommendations and what we should do, what I should decide on, you know, separate tables and things like that. So I actually have a direct pointer for going on and also all the reported data and findings that you have. Also this tells me from what I've seen that the fixtures you organize them into like JSON files or something like that. I want you to split them into folders so that you have native folder and I don't know whatever browser web folder so that you don't have to add the prefix to the file names like native whatever you know",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"  One of my questions is that like you know, currently we're using a multilingua\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Show more",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Show more\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Copy message",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Copy message\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Rewind to here",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Rewind to here\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Fork from here",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Fork from here\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "2 minutes ago",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"2 minutes ago\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Acknowledged. Finding the code model first, then reorganising fixtures, then building DOM-source strategies into the harness for both surfaces.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Acknowledged. Finding the code model first, then reorganising fixtures, then bui\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Listed minishlab models to find the code one",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Listed minishlab models to find the code one\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Found them: ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Found them: \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "potion-code-16M",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"potion-code-16M\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " and ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" and \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "potion-code-16M-v2",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"potion-code-16M-v2\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": ". Also ",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\". Also \"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "potion-multilingual-128M",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"potion-multilingual-128M\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": ", larger than the model we run. Starting with the fixture reorganisation:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\", larger than the model we run. Starting with the fixture reorganisation:\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Reorganise fixtures into per-surface folders",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Reorganise fixtures into per-surface folders\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Now extending the recorder to capture the DOM source itself, for both surfaces:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Now extending the recorder to capture the DOM source itself, for both surfaces:\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Recorded DOM markup for web corpora",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Recorded DOM markup for web corpora\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "29% markup coverage on web — the label join drops ambiguous labels. Now the native analogue:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"29% markup coverage on web — the label join drops ambiguous labels. Now the nati\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Re-harvest native with declarations and paths running",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Re-harvest native with declarations and paths running\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Re-harvest native with declarations and paths",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Re-harvest native with declarations and paths\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "running",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"running\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "1m 56s",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"1m 56s\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "·",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"·\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "4.1k",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"4.1k\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": " tokens",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\" tokens\"",
+   "path": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "frank",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"frank\"",
+   "path": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "main",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"main\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "62,582 additions, 34 deletions",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"62,582 additions, 34 deletions\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Create PR Claude is working — wait for the turn to finish",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Create PR Claude is working — wait for the turn to finish\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Create PR",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Create PR\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Claude is working — wait for the turn to finish",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Claude is working — wait for the turn to finish\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXImage",
+   "name": "Merged",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXImage name=\"Merged\"",
+   "path": ""
+  },
+  {
+   "role": "AXLink",
+   "name": "#14",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXLink name=\"#14\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "#14",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"#14\"",
+   "path": "Link"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "frank",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"frank\"",
+   "path": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "claude/cursor-subscription-on-frank",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"claude/cursor-subscription-on-frank\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Merged",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Merged\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Dismiss",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Dismiss\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Show 6 more",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Show 6 more\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Chat mode",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Chat mode\"",
+   "path": ""
+  },
+  {
+   "role": "AXTextArea",
+   "name": "Prompt",
+   "value": "Type / for commands\n",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXTextArea name=\"Prompt\" value=\"Type / for commands\n\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Type / for commands",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Type / for commands\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Stop",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Stop\"",
+   "path": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "Bypass permissions",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"Bypass permissions\"",
+   "path": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "Add",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"Add\"",
+   "path": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "Press and hold to record",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXCheckBox name=\"Press and hold to record\"",
+   "path": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "Dictation settings",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"Dictation settings\"",
+   "path": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "Opus 5",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"Opus 5\"",
+   "path": ""
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "Effort: High",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"Effort: High\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Effort:",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Effort:\"",
+   "path": "PopUpButton"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "High",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"High\"",
+   "path": "PopUpButton"
+  },
+  {
+   "role": "AXPopUpButton",
+   "name": "Usage: context 292.4k, plan 45%",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXPopUpButton name=\"Usage: context 292.4k, plan 45%\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Fast mode off",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Fast mode off\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "",
+   "value": "Arrow keys move the tile. Perpendicular arrows preview a split; press Enter to commit or Escape to cancel.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText value=\"Arrow keys move the tile. Perpendicular arrows preview a split; press Enter to c\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "this button also has an action to zoom the window",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"this button also has an action to zoom the window\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton",
+   "path": ""
+  }
+ ]
+}

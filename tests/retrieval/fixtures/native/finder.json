@@ -1,5 +1,5 @@
 {
- "site_name": "native-finder",
+ "site_name": "finder",
  "surface_name": "native",
  "page_url": "application:Finder",
  "elements": [
@@ -9,7 +9,9 @@
    "value": "Recents",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Recents\"",
+   "path": ""
   },
   {
    "role": "AXImage",
@@ -17,7 +19,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXImage name=\"clock\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -25,7 +29,9 @@
    "value": "Shared",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Shared\"",
+   "path": ""
   },
   {
    "role": "AXImage",
@@ -33,7 +39,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXImage name=\"Shared Folder\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -41,7 +49,9 @@
    "value": "Favorites",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Favorites\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -49,7 +59,9 @@
    "value": "Applications",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Applications\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -57,7 +69,9 @@
    "value": "Desktop",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Desktop\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -65,7 +79,9 @@
    "value": "Documents",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Documents\"",
+   "path": ""
   },
   {
    "role": "AXImage",
@@ -73,7 +89,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXImage name=\"document\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -81,7 +99,9 @@
    "value": "Downloads",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Downloads\"",
+   "path": ""
   },
   {
    "role": "AXImage",
@@ -89,7 +109,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXImage name=\"Arrow Down Circle\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -97,7 +119,9 @@
    "value": "Locations",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Locations\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -105,7 +129,9 @@
    "value": "iCloud Drive",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"iCloud Drive\"",
+   "path": ""
   },
   {
    "role": "AXImage",
@@ -113,7 +139,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXImage name=\"iCloud\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -121,7 +149,9 @@
    "value": "giovannigravili",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"giovannigravili\"",
+   "path": ""
   },
   {
    "role": "AXImage",
@@ -129,7 +159,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXImage name=\"home\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -137,7 +169,9 @@
    "value": "Macintosh HD",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Macintosh HD\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -145,7 +179,9 @@
    "value": "AirDrop",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"AirDrop\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -153,7 +189,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -161,7 +199,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -169,7 +209,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -177,7 +219,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -185,7 +229,9 @@
    "value": "Name",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Name\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -193,7 +239,9 @@
    "value": "Date Modified",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Date Modified\"",
+   "path": ""
   },
   {
    "role": "AXImage",
@@ -201,7 +249,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXImage name=\"go down\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -209,7 +259,9 @@
    "value": "Size",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Size\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -217,7 +269,9 @@
    "value": "Kind",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Kind\"",
+   "path": ""
   },
   {
    "role": "AXTextField",
@@ -225,7 +279,9 @@
    "value": "Giovanni-Gravili_Pledge_2026.pdf",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextField value=\"Giovanni-Gravili_Pledge_2026.pdf\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -233,7 +289,9 @@
    "value": "Today at 11:25",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Today at 11:25\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -241,7 +299,9 @@
    "value": "762 KB",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"762 KB\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -249,7 +309,9 @@
    "value": "PDF Document",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"PDF Document\"",
+   "path": ""
   },
   {
    "role": "AXTextField",
@@ -257,7 +319,9 @@
    "value": "Documentation",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextField value=\"Documentation\"",
+   "path": ""
   },
   {
    "role": "AXDisclosureTriangle",
@@ -265,7 +329,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXDisclosureTriangle",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -273,7 +339,9 @@
    "value": "Today at 10:26",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Today at 10:26\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -281,7 +349,9 @@
    "value": "6 KB",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"6 KB\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -289,7 +359,9 @@
    "value": "Folder",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Folder\"",
+   "path": ""
   },
   {
    "role": "AXTextField",
@@ -297,7 +369,9 @@
    "value": "Pledge_261351_Gravili Giovanni.zip",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextField value=\"Pledge_261351_Gravili Giovanni.zip\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -305,7 +379,9 @@
    "value": "Today at 10:25",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Today at 10:25\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -313,7 +389,9 @@
    "value": "137 KB",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"137 KB\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -321,7 +399,9 @@
    "value": "ZIP archive",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"ZIP archive\"",
+   "path": ""
   },
   {
    "role": "AXTextField",
@@ -329,7 +409,9 @@
    "value": "Pledge_261351_Gravili Giovanni.pdf",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextField value=\"Pledge_261351_Gravili Giovanni.pdf\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -337,7 +419,9 @@
    "value": "Today at 10:25",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Today at 10:25\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -345,7 +429,9 @@
    "value": "140 KB",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"140 KB\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -353,7 +439,9 @@
    "value": "PDF Document",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"PDF Document\"",
+   "path": ""
   },
   {
    "role": "AXTextField",
@@ -361,7 +449,9 @@
    "value": "2_Certificate of Health (rev.2025 August) 2026Fall version",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextField value=\"2_Certificate of Health (rev.2025 August) 2026Fall version\"",
+   "path": ""
   },
   {
    "role": "AXDisclosureTriangle",
@@ -369,7 +459,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXDisclosureTriangle",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -377,7 +469,9 @@
    "value": "11 Jun 2026 at 11:45",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"11 Jun 2026 at 11:45\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -385,7 +479,9 @@
    "value": "1,7 MB",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"1,7 MB\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -393,7 +489,9 @@
    "value": "Folder",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"Folder\"",
+   "path": ""
   },
   {
    "role": "AXTextField",
@@ -401,7 +499,9 @@
    "value": "2_Certificate of Health (rev.2025 August) 2026Fall version.zip",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextField value=\"2_Certificate of Health (rev.2025 August) 2026Fall version.zip\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -409,7 +509,9 @@
    "value": "11 Jun 2026 at 11:44",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"11 Jun 2026 at 11:44\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -417,7 +519,9 @@
    "value": "1,7 MB",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"1,7 MB\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -425,7 +529,9 @@
    "value": "ZIP archive",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"ZIP archive\"",
+   "path": ""
   },
   {
    "role": "AXTextField",
@@ -433,7 +539,9 @@
    "value": "POD_9526751625.pdf",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextField value=\"POD_9526751625.pdf\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -441,7 +549,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Not downloaded\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -449,7 +559,9 @@
    "value": "12 Feb 2026 at 19:58",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"12 Feb 2026 at 19:58\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -457,7 +569,9 @@
    "value": "24 KB",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"24 KB\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -465,7 +579,9 @@
    "value": "PDF Document",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"PDF Document\"",
+   "path": ""
   },
   {
    "role": "AXTextField",
@@ -473,7 +589,9 @@
    "value": "DHL_Fattura_cash_56578.pdf",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextField value=\"DHL_Fattura_cash_56578.pdf\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -481,7 +599,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Not downloaded\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -489,7 +609,9 @@
    "value": "9 Feb 2026 at 11:01",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"9 Feb 2026 at 11:01\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -497,7 +619,9 @@
    "value": "258 KB",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"258 KB\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -505,7 +629,9 @@
    "value": "PDF Document",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"PDF Document\"",
+   "path": ""
   },
   {
    "role": "AXTextField",
@@ -513,7 +639,9 @@
    "value": "Letter_MEXT.pdf",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextField value=\"Letter_MEXT.pdf\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -521,7 +649,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Not downloaded\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -529,7 +659,9 @@
    "value": "8 Feb 2026 at 16:12",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"8 Feb 2026 at 16:12\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -537,7 +669,9 @@
    "value": "50 KB",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"50 KB\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -545,7 +679,9 @@
    "value": "PDF Document",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"PDF Document\"",
+   "path": ""
   },
   {
    "role": "AXTextField",
@@ -553,7 +689,9 @@
    "value": "Letter_MEXT.odt",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXTextField value=\"Letter_MEXT.odt\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -561,7 +699,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Not downloaded\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -569,7 +709,9 @@
    "value": "8 Feb 2026 at 16:11",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"8 Feb 2026 at 16:11\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -577,7 +719,9 @@
    "value": "38 KB",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"38 KB\"",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -585,7 +729,9 @@
    "value": "OpenDocument Text",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"OpenDocument Text\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -593,7 +739,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -601,7 +749,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -609,7 +759,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -617,7 +769,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -625,7 +779,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -633,7 +789,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -641,7 +799,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -649,7 +809,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -657,7 +819,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"back\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -665,15 +829,19 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"forward\"",
+   "path": ""
   },
   {
    "role": "AXRadioGroup",
-   "name": "tab option icon view 0",
+   "name": "icon view",
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXRadioGroup name=\"icon view\"",
+   "path": ""
   },
   {
    "role": "AXRadioButton",
@@ -681,7 +849,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXRadioButton name=\"icon view\"",
+   "path": "RadioGroup"
   },
   {
    "role": "AXRadioButton",
@@ -689,7 +859,9 @@
    "value": "1",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXRadioButton name=\"list view\" value=\"1\"",
+   "path": "RadioGroup"
   },
   {
    "role": "AXRadioButton",
@@ -697,7 +869,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXRadioButton name=\"column view\"",
+   "path": "RadioGroup"
   },
   {
    "role": "AXRadioButton",
@@ -705,7 +879,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXRadioButton name=\"gallery view\"",
+   "path": "RadioGroup"
   },
   {
    "role": "AXMenuButton",
@@ -713,7 +889,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXMenuButton name=\"Group\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -721,7 +899,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Share\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -729,7 +909,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Add Tags\"",
+   "path": ""
   },
   {
    "role": "AXMenuButton",
@@ -737,7 +919,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXMenuButton name=\"Action\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -745,7 +929,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"Search\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -753,7 +939,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -761,7 +949,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton name=\"this button also has an action to zoom the window\"",
+   "path": ""
   },
   {
    "role": "AXButton",
@@ -769,7 +959,9 @@
    "value": "",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXButton",
+   "path": ""
   },
   {
    "role": "AXStaticText",
@@ -777,7 +969,9 @@
    "value": "MEXT",
    "context": "",
    "url": "",
-   "title": ""
+   "title": "",
+   "source": "AXStaticText value=\"MEXT\"",
+   "path": ""
   }
  ]
 }
