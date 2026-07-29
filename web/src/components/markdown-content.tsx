@@ -210,6 +210,22 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
   // Reduced-motion readers keep the stable token structure but receive a zero-duration fade.
   const reduceMotion = useReducedMotion();
   const animating = animate && !reduceMotion;
+  // Once a message has animated, it keeps its token duration for the rest of its life.
+  //
+  // This used to be `animating ? TOKEN_DURATION : "0s"`, which meant settling a turn changed the
+  // duration on every span at the same instant the throttled text jumped to its final value. The
+  // tail of the answer therefore mounted as new spans exactly as their fade was cut to nothing,
+  // and because that jump re-parses the Markdown, a construct completing on the last token — a
+  // closing `**`, a closing fence — restructures the tree and remounts leaves that then paint
+  // from `opacity: 0`. That is the flash at the end of a stream.
+  //
+  // Holding the duration steady removes the coincidence rather than the animation: a leaf that
+  // remounts after settling fades in over the same 0.16s it would have during the stream, which
+  // is a soft appearance instead of a blink. A message that never streamed — history, a replayed
+  // session — has never animated, keeps 0s, and renders instantly as before.
+  const [everAnimated, setEverAnimated] = useState(animating);
+  if (animating && !everAnimated) setEverAnimated(true);
+  const tokenDuration = everAnimated ? TOKEN_DURATION : "0s";
   const renderedContent = useThrottledText(content, STREAMING_RENDER_INTERVAL_MS, animating);
 
   const markdownComponents = useMemo<Components>(() => ({
@@ -386,7 +402,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       fontSize={fontSize}
       // The only thing that changes when a turn settles: newly-arrived text stops fading
       // in. Everything below keeps its identity, so the answer is never rebuilt.
-      style={{ [TOKEN_DURATION_PROPERTY]: animating ? TOKEN_DURATION : "0s" } as CSSProperties}
+      style={{ [TOKEN_DURATION_PROPERTY]: tokenDuration } as CSSProperties}
       css={{
         "& > *": {
           marginBlock: 0,
