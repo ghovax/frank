@@ -1258,10 +1258,17 @@ export interface ResolveResult {
 // session's socket, where it lands as an `input_response` part and resumes the worker.
 async function sessionRespond(payload: Record<string, unknown>): Promise<ResolveResult> {
   try {
-    const data = await rpc<{ status?: unknown }>("session.respond", payload);
-    const status = String(data.status ?? "");
-    if (status === "resolved" || status === "stale") return { ok: true, status };
-    return { ok: false, status: status === "unknown" ? "unknown" : "error" };
+    // The session answers `{resolved: boolean}` — see `worker/server.py`, which is the only
+    // thing that builds this reply. This used to read a `status` string that nothing has ever
+    // sent, so `String(undefined ?? "")` matched no branch and *every* decision, including
+    // every one the session accepted, came back as an error. The person was told their
+    // approval had not been submitted while the tool it approved was already running.
+    const data = await rpc<{ resolved?: unknown }>("session.respond", payload);
+    if (data.resolved === true) return { ok: true, status: "resolved" };
+    // `false` is not a failure: the session had no such request pending, because the turn had
+    // already moved on or the gate was answered twice. Nothing is wrong and nothing is owed,
+    // so the caller settles the card quietly rather than raising an alarm.
+    return { ok: true, status: "stale" };
   } catch (error) {
     // A transport failure and a rejected request read differently to the user: one is
     // worth retrying, the other means the request is gone.
