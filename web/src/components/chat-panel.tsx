@@ -13,8 +13,9 @@ import {
   Text,
   VStack,
 } from "@chakra-ui/react";
-import { LuAppWindow, LuArrowDown, LuChevronLeft, LuChevronRight, LuClock, LuDownload, LuEllipsis, LuFile, LuFolderOpen, LuHistory, LuMaximize2, LuMinimize2, LuMessageSquare, LuMousePointerClick, LuNavigation, LuNetwork, LuPanelLeftClose, LuPanelLeftOpen, LuRotateCcw, LuRotateCw, LuSettings, LuTerminal, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
+import { LuAppWindow, LuArrowDown, LuChevronLeft, LuChevronRight, LuClock, LuDownload, LuEllipsis, LuFile, LuFolderOpen, LuHistory, LuMaximize2, LuMinimize2, LuMessageSquare, LuMousePointerClick, LuNetwork, LuPanelLeftClose, LuPanelLeftOpen, LuRotateCcw, LuRotateCw, LuSettings, LuTerminal, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
+import { FadeIn } from "@/components/ui/fade-in";
 import { useFormatter, useTranslations } from "next-intl";
 import { toaster } from "@/components/ui/toaster";
 import { PanelTiles, type TilePanel } from "./panel-tiles";
@@ -832,14 +833,16 @@ export function ChatPanel({
                       around it read as one document, while user bubbles — carrying their own
                       fill — still mark the turn boundaries. */}
                   <VStack ref={scrollContentRef} gap={2.5} align="stretch" w="full" maxW="80rem" mx="auto">
-                    {/* Plain mode, deliberately. `popLayout` was added when the transcript
-                        grew and snapped back at the end of a turn, and it worked by taking a
-                        leaving row out of the flow so duplicates could not push the layout. But
-                        the duplicates were the bug — one tool call held two rows — and that is
-                        fixed at the source now. Keeping the containment would only hide the next
-                        one, which is exactly how this took so long to find. */}
-                    <AnimatePresence initial={false}>
-                      {renderedTimeline.map((item, itemIndex) => {
+                    {/* No `AnimatePresence` around these rows, and that is the point rather than
+                        an omission. Its whole job is to keep a removed child mounted long enough
+                        to animate it out, and a transcript row must never animate out — see
+                        `FadeIn`. Left in place it would do nothing except offer the next person a
+                        working `exit` prop, which is how the transcript acquired its snap-back in
+                        the first place: `popLayout` was added to contain a jump, the jump was
+                        actually one tool call rendering as two rows, and the containment hid the
+                        real bug for weeks. A row appears when it exists and is gone when it does
+                        not. */}
+                    {renderedTimeline.map((item, itemIndex) => {
                         const isLastItem = itemIndex === renderedTimeline.length - 1;
                         const key = item.kind === "tool_group" ? item.id : item.message.id;
                         // A tools-less group is a reasoning phase; it stays in the transcript as a
@@ -876,19 +879,15 @@ export function ChatPanel({
                           );
                         }
                         return (
-                          <motion.div
+                          <FadeIn
                             key={key}
-                            initial={animatedKeys.has(key) ? { opacity: 0 } : false}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            transition={{ duration: 0.18, ease: "easeOut" }}
+                            animate={animatedKeys.has(key)}
                             style={{ display: "flex", flexDirection: "column" }}
                           >
                             {inner}
-                          </motion.div>
+                          </FadeIn>
                         );
-                      })}
-                    </AnimatePresence>
+                    })}
                     {queuedMessages.map((message, index) => (
                       <Flex key={message.id} align="flex-start" alignSelf="flex-end" maxW="80%" gap={1.5}>
                         <IconButton
@@ -912,14 +911,20 @@ export function ChatPanel({
                           flex={1}
                           minW={0}
                         >
-                          <Flex align="center" gap={1.5}>
-                            <Span display="inline-flex" alignItems="center">
-                              {message.steering ? <LuNavigation size={11} /> : <LuClock size={11} />}
-                            </Span>
-                            <Text textStyle="fieldLabel" color="fg.subtle">
-                              {message.steering ? translation("steeringNextOpening") : translation("queued")}
-                            </Text>
-                          </Flex>
+                          {/* Only a queued message needs saying so — it is waiting, and the
+                              label is the reason it has not been answered. A steering message
+                              is one the user has just typed at a running turn, which they know,
+                              so naming it told them something they had done a second earlier. */}
+                          {message.steering ? null : (
+                            <Flex align="center" gap={1.5}>
+                              <Span display="inline-flex" alignItems="center">
+                                <LuClock size={11} />
+                              </Span>
+                              <Text textStyle="fieldLabel" color="fg.subtle">
+                                {translation("queued")}
+                              </Text>
+                            </Flex>
+                          )}
                           <Text fontSize="sm" color="fg.muted">{message.text}</Text>
                         </Box>
                       </Flex>
@@ -962,13 +967,7 @@ export function ChatPanel({
             animating in as though it had just arrived. */}
         <AnimatePresence mode="wait" initial={false}>
           {pendingPrompt && (
-            <motion.div
-              key={pendingPromptId}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.15, ease: "easeOut" }}
-            >
+            <FadeIn key={pendingPromptId} seconds={0.15}>
               <Box px={4}>
                 <Box w="full" maxW="80rem" mx="auto">
                   {pendingPrompt.kind === "question" && (
@@ -986,7 +985,7 @@ export function ChatPanel({
                   )}
                 </Box>
               </Box>
-            </motion.div>
+            </FadeIn>
           )}
         </AnimatePresence>
         {/* The composer wrapper mirrors the transcript scroll container's horizontal geometry
