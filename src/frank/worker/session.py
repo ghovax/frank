@@ -549,6 +549,13 @@ class SessionExecutor(AgentExecutor):
             # reaches its peers, and the MCP connections this worker owns.
             session_access=self._peers,
             mcp_manager=self._mcp_manager,
+            # The durable job store this worker already holds. Left unpassed, the runtime built
+            # its own `MemoryJobStore` — so a background job was written to a dictionary that
+            # died with the turn, while the worker went on querying SQLite for undelivered
+            # results (see `has_undelivered_jobs` above). A daemon is precisely the thing
+            # restarts happen to, which is why it supplies a store at all; not handing it over
+            # made every background job unrecoverable and every `bash` call a `TypeError`.
+            jobs=self._job_store,
         )
         # No agent-event sink is installed on the runtime any more: `AgentRuntime` stopped
         # carrying one in the package restructure, and path-tagged activity now reaches the

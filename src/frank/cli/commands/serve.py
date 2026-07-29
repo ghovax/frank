@@ -67,6 +67,35 @@ def interface_directory() -> Optional[Path]:
     return None
 
 
+def _stale_interface_warning(directory: Path) -> str:
+    """A warning when the built interface is older than the sources it was built from, or "".
+
+    `frank serve` serves a static export, and nothing regenerates it: `web/out` is gitignored, so
+    it is neither built by a checkout nor updated by a pull. The only check was that `index.html`
+    exists, which a months-old build satisfies as well as a fresh one. The failure that produces
+    is the worst kind — the interface loads, looks right, and runs code nobody has touched in a
+    day, so a fix that has already landed in `web/src` keeps being reported as still broken and
+    keeps being "fixed" again. Silence here cost several rounds of exactly that.
+
+    Only meaningful in a checkout. A frozen bundle carries no `web/src` to compare against, and
+    its export was built by the packaging script moments before it was frozen."""
+    index = directory / "index.html"
+    sources = directory.parent / "src"
+    if not index.is_file() or not sources.is_dir():
+        return ""
+    built = index.stat().st_mtime
+    newest = max((path.stat().st_mtime for path in sources.rglob("*") if path.is_file()), default=0.0)
+    if newest <= built:
+        return ""
+    from datetime import datetime
+
+    return (
+        f"frank: the interface being served was built {datetime.fromtimestamp(built):%Y-%m-%d %H:%M} "
+        f"but web/src has changed since ({datetime.fromtimestamp(newest):%Y-%m-%d %H:%M}). "
+        f"You are looking at old code. Run `cd web && bun run build` to rebuild it."
+    )
+
+
 def build_application(daemon_url: str, token: str, directory: Path):
     """The ASGI application: the interface at the root, the daemon behind everything else."""
     import httpx
@@ -244,6 +273,10 @@ def run(arguments) -> int:
             "checkout, or install the packaged build which carries it."
         )
         return 1
+
+    stale = _stale_interface_warning(directory)
+    if stale:
+        _note(stale)
 
     # Claim the port before starting anything, because `uvicorn.run` binds last and a bind that
     # fails after `ensure_daemon` leaves a daemon running that nobody asked for and nothing is

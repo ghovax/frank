@@ -12,7 +12,6 @@ import { swallowed } from "@/lib/swallowed";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LuArrowDownUp, LuChevronDown, LuChevronRight, LuEllipsis, LuFolderOpen, LuFolderPlus, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
-import { ActivityIcon } from "@/components/ui/activity-icon";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FrankMark } from "@/components/ui/frank-mark";
 import { DropdownMenu, MenuOption } from "@/components/ui/menu";
@@ -62,8 +61,11 @@ export type SessionSort = "recent" | "active";
 //
 // A sleeping or idle session shows no dot at all — there is nothing to report, and a mark
 // against every row would say nothing while making the few that matter harder to find. The
-// slot stays (an empty `ActivityIcon`), so a quiet row still lines up with a busy one and
-// the list does not shift as sessions change state.
+// dot sits at the row's trailing edge, beside the ⋯, and takes no space when absent. It used
+// to hold a fixed slot on the leading edge so that quiet rows lined up with busy ones; that
+// alignment was bought with a permanent indent on every title in the list, for a mark most
+// rows never show. Nothing shifts as sessions change state, because the ⋯ it sits beside
+// keeps its own width whether or not it is visible.
 type SessionIndicator = "working" | "problem" | "attention" | "done";
 
 function sessionIndicator(
@@ -243,14 +245,18 @@ function SessionTreeRow({
         px={2}
         py={1}
         css={{
-          "& [data-row-actions]": { opacity: 0, pointerEvents: "none" },
-          "&:hover [data-row-actions]": { opacity: 1, pointerEvents: "auto" },
-          "&:focus-within [data-row-actions]": { opacity: 1, pointerEvents: "auto" },
+          // Hidden with `display`, not with opacity. An invisible button still occupies its
+          // width, and because the actions are laid over the row's right edge that width pushed
+          // the status dot inward — so a row with nothing to report still looked like it was
+          // holding space open on the right. Taking it out of layout entirely lets the dot sit
+          // flush against the edge, and the ⋯ pushes it aside only while the row is hovered.
+          "& [data-row-actions]": { display: "none" },
+          "&:hover [data-row-actions]": { display: "flex" },
+          "&:focus-within [data-row-actions]": { display: "flex" },
           // Same nesting problem as the title mask in globals.css: a project row contains its
           // session rows, so its `:hover` revealed every nested row's actions at once.
           "&:hover .sidebar-row:not(:hover):not(:focus-within) [data-row-actions]": {
-            opacity: 0,
-            pointerEvents: "none",
+            display: "none",
           },
         }}
       >
@@ -279,26 +285,12 @@ function SessionTreeRow({
               fill
               tone={isActive ? "active" : "muted"}
               onActivate={() => onResume(entry)}
-              // The status is the whole icon, not a badge pinned to the corner of one. Every
-              // row in this list is a conversation, so a speech bubble on each said nothing
-              // and spent the only glyph slot the row has saying it. `ActivityIcon` keeps the
-              // slot exactly the size the bubble occupied, so the titles stay on their line
-              // and an idle row lines up with a working one — which is why an idle session
-              // gets a resting dot rather than nothing at all.
-              icon={
-                <Tooltip content={statusTooltip} rich openDelay={350} positioning={{ placement: "right" }}>
-                  <ActivityIcon>
-                    {indicator ? (
-                      <Box
-                        boxSize="1.5"
-                        borderRadius="full"
-                        bg={INDICATOR_COLOR[indicator]}
-                        className={indicator === "working" ? "status-dot-pulse" : undefined}
-                      />
-                    ) : null}
-                  </ActivityIcon>
-                </Tooltip>
-              }
+              // No leading glyph. Every row here is a conversation, so a mark saying so on each
+              // of them says nothing, and the status it was replaced with is absent on most rows
+              // — an idle or sleeping session has nothing to report. Held open on the left it was
+              // a permanent indent for an occasional dot, pushing every title inward to reserve
+              // room for a mark that usually is not there. The status moved to the trailing edge
+              // instead, where it sits beside the ⋯ and costs nothing when there is none.
               title={
                 <Tooltip content={title} openDelay={350} positioning={{ placement: "right" }}>
                   <Box minW={0} color={isActive ? "blue.fg" : undefined}>
@@ -308,7 +300,22 @@ function SessionTreeRow({
               }
               actionsOverlay
               actions={
-                <Box data-row-actions opacity={0} pointerEvents="none" transition="opacity 0.12s">
+                <>
+                  {/* Always visible when there is something to say, unlike the menu beside it.
+                      The ⋯ keeps its width whether or not it is shown (it fades rather than
+                      unmounts), so the dot does not shift when the row is hovered. */}
+                  {indicator ? (
+                    <Tooltip content={statusTooltip} rich openDelay={350} positioning={{ placement: "left" }}>
+                      <Box
+                        boxSize="1.5"
+                        borderRadius="full"
+                        flexShrink={0}
+                        bg={INDICATOR_COLOR[indicator]}
+                        className={indicator === "working" ? "status-dot-pulse" : undefined}
+                      />
+                    </Tooltip>
+                  ) : null}
+                  <Box data-row-actions>
                   <DropdownMenu
                     trigger={
                       <IconButton
@@ -340,7 +347,8 @@ function SessionTreeRow({
                       {translation("deleteSession")}
                     </MenuOption>
                   </DropdownMenu>
-                </Box>
+                  </Box>
+                </>
               }
             />
           </Box>

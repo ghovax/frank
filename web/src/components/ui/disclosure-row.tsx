@@ -23,7 +23,8 @@ import { ActivityIcon } from "./activity-icon";
 export type DisclosureTone = "muted" | "active" | "attention";
 
 export interface DisclosureRowProps {
-  icon: ReactNode;
+  // Optional: a row without one spends no width on the slot. See `triggerContent`.
+  icon?: ReactNode;
   // The label. Simple callers wrap text in <DisclosureLabel>; callers with an
   // animated label (the grouped run) pass their own node.
   title: ReactNode;
@@ -125,9 +126,12 @@ export function DisclosureRow({
     tone === "attention" ? "yellow.fg" : tone === "active" ? "fg" : isOpen ? "fg" : "fg.muted";
   const triggerContent = (
     <>
-      <ActivityIcon>
-        {icon}
-      </ActivityIcon>
+      {/* The glyph slot exists only for rows that have a glyph. It used to be rendered
+          unconditionally so that rows stayed aligned with one another, which is right when every
+          row in a list has an icon and wrong when the icon is a status that most rows do not
+          have — then it is a fixed indent held open for nothing, pushing every title inward. A
+          list whose rows all pass an icon still aligns; a list where none do gets its space back. */}
+      {icon ? <ActivityIcon>{icon}</ActivityIcon> : null}
       <Box minW={0} flex={fill ? 1 : undefined} flexShrink={1}>
         {title}
       </Box>

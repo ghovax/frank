@@ -108,7 +108,10 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
   // (which would always be empty) is suppressed — only real project folders show it.
 
   return (
-    <Box w="100%" pb={4}>
+    // `minW={0}` because this sits in a centred flex column: a flex item's default minimum is
+    // the width of its content, so a long skill name or server identifier widened the whole panel
+    // past the 80rem column the chat is laid out in, instead of ellipsizing inside it.
+    <Box w="100%" minW={0} maxW="100%" pb={4}>
       {hasSkills && (
         <>
           <SectionHeader
@@ -149,6 +152,7 @@ function SkillCard({ skill }: { skill: AgentSkill }) {
   const hasBody = !!skill.description || (skill.examples?.length ?? 0) > 0;
   return (
     <DisclosureRow
+      fill
       disabled={!enabled}
       icon={<Box color="fg.muted"><LuPuzzle /></Box>}
       title={<DisclosureLabel><CapabilityTitle title={skill.title ?? skill.name} identifier={skill.id} /></DisclosureLabel>}
@@ -185,6 +189,7 @@ function McpServerGroup({ server }: { server: McpServerTools }) {
   const enabled = server.enabled !== false;
   return (
     <DisclosureRow
+      fill
       disabled={!enabled}
       icon={<Box color="fg.muted"><LuPlug /></Box>}
       title={<DisclosureLabel><CapabilityTitle identifier={server.name} /></DisclosureLabel>}

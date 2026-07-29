@@ -226,8 +226,20 @@ class JobStore(Protocol):
     implementation is a day's work, and no less, so one that satisfies this actually works.
     """
 
+    # Keyword-only throughout, and named for what the caller passes. This signature drifted from
+    # its only caller once — the protocol said `request=` while `BackgroundJobs.spawn` passed
+    # `arguments=` and `tool_call_id=` — and because `JobStore` is `@runtime_checkable`, which
+    # compares method *names* and never signatures, nothing caught it at wiring time. It surfaced
+    # as a `TypeError` on the first background job of every session, which is every `bash` call.
     def record_started(
-        self, job_id: str, *, session_id: str, agent_name: str, kind: str, request: Mapping[str, Any],
+        self,
+        *,
+        job_id: str,
+        session_id: str,
+        agent_name: str,
+        kind: str,
+        arguments: Mapping[str, Any],
+        tool_call_id: str = "",
     ) -> None: ...
 
     def record_process_group(self, job_id: str, process_group: int) -> None: ...
@@ -262,14 +274,25 @@ class MemoryJobStore:
         self._jobs: dict[str, dict[str, Any]] = {}
 
     def record_started(
-        self, job_id: str, *, session_id: str, agent_name: str, kind: str, request: Mapping[str, Any],
+        self,
+        *,
+        job_id: str,
+        session_id: str,
+        agent_name: str,
+        kind: str,
+        arguments: Mapping[str, Any],
+        tool_call_id: str = "",
     ) -> None:
+        # The same keys the SQLite store writes, so a reader cannot tell the two apart. It held
+        # `request` here and `arguments_json` there, which would have made every consumer of a job
+        # row correct against one store and wrong against the other.
         self._jobs[job_id] = {
             "job_id": job_id,
             "session_id": session_id,
             "agent_name": agent_name,
             "kind": kind,
-            "request": dict(request),
+            "arguments": dict(arguments),
+            "tool_call_id": tool_call_id,
             "status": "running",
             "result": "",
             "process_group": 0,
