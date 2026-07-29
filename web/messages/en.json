@@ -650,5 +650,17 @@
     "controlScreenScript": "Running {script}",
     "controlScreenSurface": "Controlling the {surface}",
     "controlScreenBare": "Controlling the screen"
+  },
+  "ChatErrors": {
+    "answerFailedTitle": "Couldn't submit your answer",
+    "cancelToolFailedBody": "The server did not confirm the cancellation. Check the connection and retry.",
+    "cancelToolFailedTitle": "Couldn't stop that tool call",
+    "compactFailedBody": "The server did not start compaction. Check the connection and try again.",
+    "compactFailedTitle": "Couldn't compact the context",
+    "decisionFailedTitle": "Couldn't submit your decision",
+    "inactiveBody": "This request is no longer active — the turn may have already moved on.",
+    "networkBody": "The server did not respond. Check the connection and try again.",
+    "stopFailedBody": "The server did not confirm the stop. It may still be running — check the connection and retry.",
+    "stopFailedTitle": "Couldn't stop the turn"
   }
 }

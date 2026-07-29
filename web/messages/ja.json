@@ -650,5 +650,17 @@
     "controlScreenScript": "{script} を実行中",
     "controlScreenSurface": "{surface}を操作中",
     "controlScreenBare": "画面を操作中"
+  },
+  "ChatErrors": {
+    "answerFailedTitle": "回答を送信できませんでした",
+    "cancelToolFailedBody": "サーバーは取り消しを確認しませんでした。接続を確認して、再試行してください。",
+    "cancelToolFailedTitle": "そのツール呼び出しを停止できませんでした",
+    "compactFailedBody": "サーバーは圧縮を開始しませんでした。接続を確認して、もう一度試してください。",
+    "compactFailedTitle": "コンテキストを圧縮できませんでした",
+    "decisionFailedTitle": "決定を送信できませんでした",
+    "inactiveBody": "この要求はすでに有効ではありません。ターンが次に進んだ可能性があります。",
+    "networkBody": "サーバーが応答しませんでした。接続を確認して、もう一度試してください。",
+    "stopFailedBody": "サーバーは停止を確認しませんでした。まだ実行中の可能性があります。接続を確認して、再試行してください。",
+    "stopFailedTitle": "ターンを停止できませんでした"
   }
 }

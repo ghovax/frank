@@ -25,6 +25,7 @@ import {
 import { isSameToolEvent, type QuestionAnswer, type QuestionItem, type ToolEvent, type ToolEventStatus, type ToolPermission, type ToolQuestion } from "./tool-event";
 import { toaster } from "@/components/ui/toaster";
 import { swallowed } from "@/lib/swallowed";
+import { useTranslations } from "next-intl";
 import { asArray, asRecord } from "@/lib/coerce";
 import type { WireEvent } from "@/lib/generated/events";
 
@@ -918,6 +919,10 @@ export function useChat(
   // resolves the project's locations for the agent to address per tool call.
   projectId: string = ""
 ) {
+  // Every message this hook can put in front of a person goes through here. They used to be
+  // English string literals beside the `toaster.create` that raised them — including the one
+  // that has been telling people their approval failed.
+  const translation = useTranslations("ChatErrors");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [tasks, setTasks] = useState<ChatTask[]>([]);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
@@ -1471,10 +1476,8 @@ export function useChat(
     flush();
     toaster.create({
       type: "error",
-      title: kind === "decision" ? "Couldn't submit your decision" : "Couldn't submit your answer",
-      description: status === "network"
-        ? "The server did not respond. Check the connection and try again."
-        : "This request is no longer active — the turn may have already moved on.",
+      title: translation(kind === "decision" ? "decisionFailedTitle" : "answerFailedTitle"),
+      description: translation(status === "network" ? "networkBody" : "inactiveBody"),
       closable: true,
     });
   }, [flush]);
@@ -1621,8 +1624,8 @@ export function useChat(
       if (!ok) {
         toaster.create({
           type: "error",
-          title: "Couldn't stop the turn",
-          description: "The server did not confirm the stop. It may still be running — check the connection and retry.",
+          title: translation("stopFailedTitle"),
+          description: translation("stopFailedBody"),
           closable: true,
         });
       }
@@ -1639,8 +1642,8 @@ export function useChat(
       if (!ok) {
         toaster.create({
           type: "error",
-          title: "Couldn't compact the context",
-          description: "The server did not start compaction. Check the connection and try again.",
+          title: translation("compactFailedTitle"),
+          description: translation("compactFailedBody"),
           closable: true,
         });
       }
@@ -1654,8 +1657,8 @@ export function useChat(
       if (!ok) {
         toaster.create({
           type: "error",
-          title: "Couldn't stop that tool call",
-          description: "The server did not confirm the cancellation. Check the connection and retry.",
+          title: translation("cancelToolFailedTitle"),
+          description: translation("cancelToolFailedBody"),
           closable: true,
         });
       }

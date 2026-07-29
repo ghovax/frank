@@ -55,6 +55,38 @@ class RegistryEntry:
     center: Optional[tuple[float, float]]
 
 
+def _name_containers_from_their_contents(documents: list[Document]) -> None:
+    """Give a container the text of what it contains, when it has none of its own.
+
+    A Finder row carries no title, description or help: the file name lives in the static text
+    inside it. So a listing came back as a wall of `{'id': ..., 'role': 'AXRow'}` with nothing to
+    tell one row from another, and an agent asked to list a folder could see that there were
+    eleven things and not what any of them were.
+
+    The children are already in this snapshot — the tree is flattened, and a child's id is its
+    parent's id with one more step — so this needs no second read of the screen. Only elements
+    that have no text of their own are filled in, and only from their descendants, so nothing
+    that could already speak for itself is overwritten.
+    """
+    with_text = [document for document in documents if document.text]
+    if not with_text:
+        return
+    for document in documents:
+        if document.text:
+            continue
+        prefix = f"{document.id}."
+        inner = [other.text for other in with_text if other.id.startswith(prefix)]
+        if not inner:
+            continue
+        # Nearest first, and bounded: a row wants its file name, not the whole subtree it heads.
+        combined = " ".join(dict.fromkeys(inner))[:200].strip()
+        if not combined:
+            continue
+        document.text = combined
+        document.payload["text"] = combined
+        document.payload.setdefault("name", combined)
+
+
 def _element_name(element: accessibility.Element) -> str:
     return element.title or element.description or element.help or element.role
 
@@ -218,6 +250,7 @@ class NativeSurface(Surface):
                 if text:
                     payload["text"] = text
                 documents.append(Document(id=ref, text=text, payload=payload))
+            _name_containers_from_their_contents(documents)
             result: dict[str, Any] = {
                 "ok": True, "app": snapshot.app_name, "window": snapshot.window_title,
                 "documents": documents,
