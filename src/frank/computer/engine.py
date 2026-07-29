@@ -55,6 +55,12 @@ class RegistryEntry:
     center: Optional[tuple[float, float]]
 
 
+# How many pieces of a container's contents to carry. A table row is a handful of columns;
+# anything longer is a container that holds a view rather than a record, and listing all of it
+# would bury the caller instead of informing them.
+_CONTAINED_PARTS_LIMIT = 12
+
+
 def _name_containers_from_their_contents(documents: list[Document]) -> None:
     """Give a container the text of what it contains, when it has none of its own.
 
@@ -64,9 +70,12 @@ def _name_containers_from_their_contents(documents: list[Document]) -> None:
     eleven things and not what any of them were.
 
     The children are already in this snapshot — the tree is flattened, and a child's id is its
-    parent's id with one more step — so this needs no second read of the screen. Only elements
-    that have no text of their own are filled in, and only from their descendants, so nothing
-    that could already speak for itself is overwritten.
+    parent's id with one more step — so this needs no second read of the screen.
+
+    What a row contains is a record, not a sentence: a file name, a date, a size, a kind. They
+    stay separate in ``contains``, and the first becomes the row's ``name``, because that is the
+    one a person would call it. Flattening them into one string would ask every caller to guess
+    where a file name ends and its modification date begins.
     """
     with_text = [document for document in documents if document.text]
     if not with_text:
@@ -75,16 +84,16 @@ def _name_containers_from_their_contents(documents: list[Document]) -> None:
         if document.text:
             continue
         prefix = f"{document.id}."
-        inner = [other.text for other in with_text if other.id.startswith(prefix)]
-        if not inner:
+        parts = list(dict.fromkeys(
+            other.text for other in with_text if other.id.startswith(prefix)
+        ))[:_CONTAINED_PARTS_LIMIT]
+        if not parts:
             continue
-        # Nearest first, and bounded: a row wants its file name, not the whole subtree it heads.
-        combined = " ".join(dict.fromkeys(inner))[:200].strip()
-        if not combined:
-            continue
-        document.text = combined
-        document.payload["text"] = combined
-        document.payload.setdefault("name", combined)
+        document.payload["name"] = parts[0]
+        document.payload["contains"] = parts
+        # Ranking searches `text`, so it holds every part; the structure above is what a caller
+        # reads. The two serve different readers and neither has to compromise for the other.
+        document.text = " ".join(parts)
 
 
 def _element_name(element: accessibility.Element) -> str:
