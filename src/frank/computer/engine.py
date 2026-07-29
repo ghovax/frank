@@ -63,25 +63,33 @@ def _name_containers_from_their_contents(documents: list[Document]) -> None:
     tell one row from another, and an agent asked to list a folder could see that there were
     eleven things and not what any of them were.
 
-    The children are already in this snapshot — the tree is flattened, and a child's id is its
-    parent's id with one more step — so this needs no second read of the screen.
-
     What a row contains is a record, not a sentence: a file name, a date, a size, a kind. They
     stay separate in ``contains``, and the first becomes the row's ``name``, because that is the
     one a person would call it. Flattening them into one string would ask every caller to guess
-    where a file name ends and its modification date begins, and dropping the tail of a record
-    would lose the columns without saying which.
+    where a file name ends and its modification date begins.
+
+    This walks ``parent``, which every document carries. It used to take ids apart and match on a
+    shared prefix — the same answer, but read out of how ids happen to be spelled rather than out
+    of the thing they describe.
     """
-    with_text = [document for document in documents if document.text]
-    if not with_text:
-        return
+    children: dict[str, list[Document]] = {}
     for document in documents:
-        if document.text:
+        if document.parent:
+            children.setdefault(document.parent, []).append(document)
+    if not children:
+        return
+
+    def contents_of(document: Document) -> list[str]:
+        """Every piece of text inside this element, nearest first, in the order it appears."""
+        parts: list[str] = []
+        for child in children.get(document.id, ()):
+            parts.append(child.text) if child.text else parts.extend(contents_of(child))
+        return parts
+
+    for document in documents:
+        if document.text or document.id not in children:
             continue
-        prefix = f"{document.id}."
-        parts = list(dict.fromkeys(
-            other.text for other in with_text if other.id.startswith(prefix)
-        ))
+        parts = list(dict.fromkeys(part for part in contents_of(document) if part))
         if not parts:
             continue
         document.payload["name"] = parts[0]
@@ -253,7 +261,10 @@ class NativeSurface(Surface):
                     payload["clickable"] = True
                 if text:
                     payload["text"] = text
-                documents.append(Document(id=ref, text=text, payload=payload))
+                parent = ".".join(str(step) for step in ax.path[:-1]) if len(ax.path) > 1 else ""
+                if parent:
+                    payload["parent"] = parent
+                documents.append(Document(id=ref, text=text, payload=payload, parent=parent))
             _name_containers_from_their_contents(documents)
             result: dict[str, Any] = {
                 "ok": True, "app": snapshot.app_name, "window": snapshot.window_title,

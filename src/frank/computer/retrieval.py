@@ -54,10 +54,25 @@ def element_text(name: str = "", description: str = "", value: Any = None, conte
 @dataclass
 class Document:
     """One indexed unit: a stable ``id`` (the native handle the model acts on), the ``text`` we
-    rank against, and the ``payload`` returned verbatim to the model (role, state, full text)."""
+    rank against, and the ``payload`` returned verbatim to the model (role, state, full text).
+
+    ``parent`` is the id of the element this one sits inside, empty at the top. The list stays
+    flat, because the reader is a ranked search and a tree would neither rank nor truncate — but
+    the shape of the screen is a fact about it, and a fact belongs in the data. It used to live
+    only in the *spelling* of the ids, where a child's id was its parent's plus one step, so
+    anything needing the hierarchy had to know that convention and take a string apart to use it.
+
+    The native surface fills it in, because its elements are addressed by their path through the
+    tree and it therefore knows. The browser leaves it empty: its elements are addressed by
+    aria-ref, which says nothing about where an element sits, and it carries ``context`` — a
+    trail of named ancestors — instead. That gap has never mattered, because a browser element
+    has an accessible name and does not need its children to speak for it. A reader must treat
+    an empty ``parent`` as "not known here", never as "top of the tree".
+    """
     id: str
     text: str
     payload: dict[str, Any] = field(default_factory=dict)
+    parent: str = ""
 
 
 @dataclass
