@@ -250,3 +250,44 @@ They were not, however, silent. **927 of the 999 carry a `value`**, and 923 of t
 Falling back to `value` when nothing else produced text moves those elements from **0% to 89.6%** top-1 (95% interval [+85.9%, +92.9%]) and costs 4.2% on the elements that already had a name. On the browser surface the same trade is 0% to 67.0% for 0.8%. Making two thirds of a surface reachable is worth a few points on the third that already was.
 
 The shape of the fix matters as much as the fix. Appending `value` to a name was measured as harmful twice and removed from both keys for good reason; using it *only when there is no name* is a different operation, and measurably better than the additive form even on the elements it rescues (−4.2% against −4.9% on named queries, identical on unnamed ones). A fallback and an addition are not the same thing, and conflating them is what kept this defect alive through several rounds of measurement that were all looking at the wrong average.
+
+## The elements that could not be found at all, and the attribute nobody read
+
+Seventy-two native elements out of 1,455 carried neither a name nor a value — 4.9%, a minority, but 51 of them were **buttons**, concentrated in Finder (16 of 97), Photos, Skim and System Settings. A button nobody can name is a button the model can never press.
+
+They were not silent. Asking the accessibility API for every attribute it publishes on those elements returned `AXRoleDescription` on **100%** of them, in prose the system writes itself: "increment arrow button", "decrement page button", "close button". Also `AXDescription` on 36 and `AXHelp` on 27 — attributes the surface already knew how to read, and did read, except that `engine._make_element` stopped at `title or description or help` while `_element_name` fell through to the **raw role**, so a nameless button was called `AXButton`: a token the module's own docstring says the embedding has never usefully seen.
+
+Fetching `AXRoleDescription` and using it as the last fallback before the raw role takes native elements with neither name nor value from 72 to **1**, and is worth **+6.6%** on existing queries (95% interval [+5.2%, +8.2%]) — coverage and accuracy together, which is rare enough here to be worth noting.
+
+### What else the system publishes, and why almost none of it is worth reading
+
+Twenty-one distinct attributes carry text across 921 sampled elements. The column that decides their worth is not coverage but **variation**:
+
+| Attribute | Coverage | Distinct values | Read | Why |
+|---|---:|---:|---|---|
+| `AXRoleDescription` | 100% | 28 | **now** | Prose, but only 28 kinds — a last resort, never a first choice |
+| `ChromeAXNodeId` | 70% | 639 | no | A machine token with no words in it |
+| `AXLanguage` | 70% | 2 | no | Two values cannot tell 921 elements apart |
+| `AXInvalid` | 25% | **1** | no | One value discriminates nothing at all |
+| `AXDOMIdentifier` | 10% | 91 | no | Machine token; the browser equivalent measured at −11 points |
+| `AXIdentifier` | 9% | 74 | no | Machine token, occasionally human |
+| `AXPopupValue` | 5% | 1 | no | Cannot discriminate |
+| `AXPlaceholderValue` | 0.4% | 3 | **not yet** | Real prose naming empty text fields — worth revisiting |
+
+`AXInvalid` is the cleanest statement of the rule this investigation keeps rediscovering: a quarter of all elements carry it and it can separate none of them. `landmark` failed the same way at 91% coverage, and `context` at 100%.
+
+## Structure, tested five ways
+
+The earlier finding that a flat tag chain hurts invited an obvious objection: that it tested one bad encoding rather than the idea that structure carries signal. Five encodings answer it, from the most aggressive to the most conservative.
+
+| Construction | Web top-1 | Mean pairwise cosine | vs words alone |
+|---|---:|---:|---|
+| words alone | **46.2%** | **0.142** | — |
+| words + innermost tag only | 46.0% | 0.147 | −0.3% [−0.4%, −0.0%] separable |
+| words + depth marker | 44.3% | 0.166 | −1.9% [−2.4%, −1.4%] separable |
+| words + full tag chain | 36.1% | 0.186 | −10.1% [−11.0%, −9.3%] separable |
+| words + nearest named ancestor | 31.5% | 0.249 | −14.7% [−15.7%, −13.7%] separable |
+
+Every structural encoding loses, including one that adds a single word, and the ranking is perfectly predicted by mean pairwise cosine: **every point of added inter-document similarity costs accuracy, monotonically.** Across roughly thirty constructions now measured, that relationship has not once been violated. It is the closest thing to a law this work has produced, and it explains markup, `context`, `landmark`, the ancestor path and the machine identifiers as one phenomenon rather than five coincidences.
+
+On the native surface every structural variant is indistinguishable, because structure is barely present there — only about a tenth of elements have a recorded ancestor path at all.

@@ -75,12 +75,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Filter by file or function name",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Filter by file or function name\"",
+   "source": "AXStaticText name=\"text\" value=\"Filter by file or function name\"",
    "path": ""
   },
   {
@@ -115,12 +115,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Addins",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Addins\"",
+   "source": "AXStaticText name=\"text\" value=\"Addins\"",
    "path": ""
   },
   {
@@ -145,12 +145,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Posit Assistant",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Posit Assistant\"",
+   "source": "AXStaticText name=\"text\" value=\"Posit Assistant\"",
    "path": ""
   },
   {
@@ -175,12 +175,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Project: (None)",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Project: (None)\"",
+   "source": "AXStaticText name=\"text\" value=\"Project: (None)\"",
    "path": ""
   },
   {
@@ -215,12 +215,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Environment",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Environment\"",
+   "source": "AXStaticText name=\"text\" value=\"Environment\"",
    "path": ""
   },
   {
@@ -235,12 +235,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "History",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"History\"",
+   "source": "AXStaticText name=\"text\" value=\"History\"",
    "path": ""
   },
   {
@@ -255,12 +255,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Connections",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Connections\"",
+   "source": "AXStaticText name=\"text\" value=\"Connections\"",
    "path": ""
   },
   {
@@ -275,12 +275,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Tutorial",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Tutorial\"",
+   "source": "AXStaticText name=\"text\" value=\"Tutorial\"",
    "path": ""
   },
   {
@@ -315,42 +315,42 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Import Dataset",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Import Dataset\"",
+   "source": "AXStaticText name=\"text\" value=\"Import Dataset\"",
    "path": ""
   },
   {
    "role": "AXImage",
-   "name": "Memory in use: 27% (source: MacOS System)",
+   "name": "Memory in use: 24% (source: MacOS System)",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXImage name=\"Memory in use: 27% (source: MacOS System)\"",
+   "source": "AXImage name=\"Memory in use: 24% (source: MacOS System)\"",
    "path": ""
   },
   {
    "role": "AXPopUpButton",
-   "name": "22,896 KiB used by R session (source: MacOS System)",
+   "name": "20,512 KiB used by R session (source: MacOS System)",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXPopUpButton name=\"22,896 KiB used by R session (source: MacOS System)\"",
+   "source": "AXPopUpButton name=\"20,512 KiB used by R session (source: MacOS System)\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "22 MiB",
+   "name": "text",
+   "value": "20 MiB",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"22 MiB\"",
+   "source": "AXStaticText name=\"text\" value=\"20 MiB\"",
    "path": ""
   },
   {
@@ -375,12 +375,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "List",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"List\"",
+   "source": "AXStaticText name=\"text\" value=\"List\"",
    "path": ""
   },
   {
@@ -415,12 +415,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "R",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"R\"",
+   "source": "AXStaticText name=\"text\" value=\"R\"",
    "path": ""
   },
   {
@@ -435,22 +435,22 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Global Environment",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Global Environment\"",
+   "source": "AXStaticText name=\"text\" value=\"Global Environment\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Search environment",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Search environment\"",
+   "source": "AXStaticText name=\"text\" value=\"Search environment\"",
    "path": ""
   },
   {
@@ -465,12 +465,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Environment is empty",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Environment is empty\"",
+   "source": "AXStaticText name=\"text\" value=\"Environment is empty\"",
    "path": ""
   },
   {
@@ -505,12 +505,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Files",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Files\"",
+   "source": "AXStaticText name=\"text\" value=\"Files\"",
    "path": ""
   },
   {
@@ -525,12 +525,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Plots",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Plots\"",
+   "source": "AXStaticText name=\"text\" value=\"Plots\"",
    "path": ""
   },
   {
@@ -545,12 +545,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Packages",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Packages\"",
+   "source": "AXStaticText name=\"text\" value=\"Packages\"",
    "path": ""
   },
   {
@@ -565,12 +565,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Help",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Help\"",
+   "source": "AXStaticText name=\"text\" value=\"Help\"",
    "path": ""
   },
   {
@@ -585,12 +585,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Viewer",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Viewer\"",
+   "source": "AXStaticText name=\"text\" value=\"Viewer\"",
    "path": ""
   },
   {
@@ -605,12 +605,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Presentation",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Presentation\"",
+   "source": "AXStaticText name=\"text\" value=\"Presentation\"",
    "path": ""
   },
   {
@@ -625,12 +625,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Folder",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Folder\"",
+   "source": "AXStaticText name=\"text\" value=\"Folder\"",
    "path": ""
   },
   {
@@ -645,12 +645,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "File",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"File\"",
+   "source": "AXStaticText name=\"text\" value=\"File\"",
    "path": ""
   },
   {
@@ -665,12 +665,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Delete",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Delete\"",
+   "source": "AXStaticText name=\"text\" value=\"Delete\"",
    "path": ""
   },
   {
@@ -685,12 +685,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Rename",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Rename\"",
+   "source": "AXStaticText name=\"text\" value=\"Rename\"",
    "path": ""
   },
   {
@@ -745,12 +745,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Home",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Home\"",
+   "source": "AXStaticText name=\"text\" value=\"Home\"",
    "path": "Link"
   },
   {
@@ -785,12 +785,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Name",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Name\"",
+   "source": "AXStaticText name=\"text\" value=\"Name\"",
    "path": ""
   },
   {
@@ -805,12 +805,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Size",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Size\"",
+   "source": "AXStaticText name=\"text\" value=\"Size\"",
    "path": ""
   },
   {
@@ -825,12 +825,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Modified",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Modified\"",
+   "source": "AXStaticText name=\"text\" value=\"Modified\"",
    "path": ""
   },
   {
@@ -855,32 +855,32 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": ".Rhistory",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\".Rhistory\"",
+   "source": "AXStaticText name=\"text\" value=\".Rhistory\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "18.9 KB",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"18.9 KB\"",
+   "source": "AXStaticText name=\"text\" value=\"18.9 KB\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Jul 16, 2026, 12:32 PM",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Jul 16, 2026, 12:32 PM\"",
+   "source": "AXStaticText name=\"text\" value=\"Jul 16, 2026, 12:32 PM\"",
    "path": ""
   },
   {
@@ -905,12 +905,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Applications",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Applications\"",
+   "source": "AXStaticText name=\"text\" value=\"Applications\"",
    "path": ""
   },
   {
@@ -935,12 +935,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Desktop",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Desktop\"",
+   "source": "AXStaticText name=\"text\" value=\"Desktop\"",
    "path": ""
   },
   {
@@ -965,12 +965,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Documents",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Documents\"",
+   "source": "AXStaticText name=\"text\" value=\"Documents\"",
    "path": ""
   },
   {
@@ -995,12 +995,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Downloads",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Downloads\"",
+   "source": "AXStaticText name=\"text\" value=\"Downloads\"",
    "path": ""
   },
   {
@@ -1025,12 +1025,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Library",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Library\"",
+   "source": "AXStaticText name=\"text\" value=\"Library\"",
    "path": ""
   },
   {
@@ -1055,12 +1055,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Models",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Models\"",
+   "source": "AXStaticText name=\"text\" value=\"Models\"",
    "path": ""
   },
   {
@@ -1085,12 +1085,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Movies",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Movies\"",
+   "source": "AXStaticText name=\"text\" value=\"Movies\"",
    "path": ""
   },
   {
@@ -1115,12 +1115,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Music",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Music\"",
+   "source": "AXStaticText name=\"text\" value=\"Music\"",
    "path": ""
   },
   {
@@ -1145,12 +1145,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Pictures",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Pictures\"",
+   "source": "AXStaticText name=\"text\" value=\"Pictures\"",
    "path": ""
   },
   {
@@ -1175,12 +1175,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Projects",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Projects\"",
+   "source": "AXStaticText name=\"text\" value=\"Projects\"",
    "path": ""
   },
   {
@@ -1205,12 +1205,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Public",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Public\"",
+   "source": "AXStaticText name=\"text\" value=\"Public\"",
    "path": ""
   },
   {
@@ -1235,12 +1235,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Zotero",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Zotero\"",
+   "source": "AXStaticText name=\"text\" value=\"Zotero\"",
    "path": ""
   },
   {
@@ -1265,12 +1265,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Console",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Console\"",
+   "source": "AXStaticText name=\"text\" value=\"Console\"",
    "path": ""
   },
   {
@@ -1285,12 +1285,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Terminal",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Terminal\"",
+   "source": "AXStaticText name=\"text\" value=\"Terminal\"",
    "path": ""
   },
   {
@@ -1315,12 +1315,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Background Jobs",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Background Jobs\"",
+   "source": "AXStaticText name=\"text\" value=\"Background Jobs\"",
    "path": ""
   },
   {
@@ -1335,22 +1335,22 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "R 4.6.0",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"R 4.6.0\"",
+   "source": "AXStaticText name=\"text\" value=\"R 4.6.0\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "~/",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"~/\"",
+   "source": "AXStaticText name=\"text\" value=\"~/\"",
    "path": ""
   },
   {
@@ -1385,22 +1385,22 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "\nR version 4.6.0 (2026-04-24) -- \"Because it was There\"\nCopyright (C) 2026 The R Foundation for Statistical Computing\nPlatform: aarch64-apple-darwin23\n\nR is free software and comes with ABSOLUTELY NO WARRANTY.\nYou are welcome to redistribute it under certain conditions.\nType 'license()' or 'licence()' for distribution details.\n\n  Natural language support but running in an English locale\n\nR is a collaborative project with many contributors.\nType 'contributors()' for more information and\n'citation()' on how to cite R or R packages in publications.\n\nType 'demo()' for some demos, 'help()' for on-line help, or\n'help.start()' for an HTML browser interface to help.\nType 'q()' to quit R.\n\n",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\nR version 4.6.0 (2026-04-24) -- \"Because it was There\"\nCopyright (C) 2026 The R\"",
+   "source": "AXStaticText name=\"text\" value=\"\nR version 4.6.0 (2026-04-24) -- \"Because it was There\"\nCopyright (C) 2026 The R\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "> ",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"> \"",
+   "source": "AXStaticText name=\"text\" value=\"> \"",
    "path": ""
   },
   {
@@ -1415,12 +1415,12 @@
   },
   {
    "role": "AXButton",
-   "name": "",
+   "name": "close button",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton",
+   "source": "AXButton name=\"close button\"",
    "path": ""
   },
   {
@@ -1435,12 +1435,12 @@
   },
   {
    "role": "AXButton",
-   "name": "",
+   "name": "minimize button",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton",
+   "source": "AXButton name=\"minimize button\"",
    "path": ""
   }
  ]

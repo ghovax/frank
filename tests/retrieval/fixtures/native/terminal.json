@@ -15,42 +15,42 @@
   },
   {
    "role": "AXButton",
-   "name": "",
+   "name": "increment arrow button",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton",
+   "source": "AXButton name=\"increment arrow button\"",
    "path": ""
   },
   {
    "role": "AXButton",
-   "name": "",
+   "name": "decrement arrow button",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton",
+   "source": "AXButton name=\"decrement arrow button\"",
    "path": ""
   },
   {
    "role": "AXButton",
-   "name": "",
+   "name": "increment page button",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton",
+   "source": "AXButton name=\"increment page button\"",
    "path": ""
   },
   {
    "role": "AXButton",
-   "name": "",
+   "name": "decrement page button",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton",
+   "source": "AXButton name=\"decrement page button\"",
    "path": ""
   },
   {
@@ -95,12 +95,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "…",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"…\"",
+   "source": "AXStaticText name=\"text\" value=\"…\"",
    "path": "RadioButton"
   },
   {
@@ -115,12 +115,12 @@
   },
   {
    "role": "AXButton",
-   "name": "",
+   "name": "close button",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton",
+   "source": "AXButton name=\"close button\"",
    "path": ""
   },
   {
@@ -135,22 +135,22 @@
   },
   {
    "role": "AXButton",
-   "name": "",
+   "name": "minimize button",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton",
+   "source": "AXButton name=\"minimize button\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Terminal — -zsh — 120×34",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Terminal — -zsh — 120×34\"",
+   "source": "AXStaticText name=\"text\" value=\"Terminal — -zsh — 120×34\"",
    "path": ""
   }
  ]

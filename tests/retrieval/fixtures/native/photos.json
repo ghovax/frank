@@ -5,42 +5,42 @@
  "elements": [
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Library",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Library\"",
+   "source": "AXStaticText name=\"text\" value=\"Library\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Collections",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Collections\"",
+   "source": "AXStaticText name=\"text\" value=\"Collections\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Pinned",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Pinned\"",
+   "source": "AXStaticText name=\"text\" value=\"Pinned\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Favorites",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Favorites\"",
+   "source": "AXStaticText name=\"text\" value=\"Favorites\"",
    "path": ""
   },
   {
@@ -55,22 +55,22 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Recently Saved",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Recently Saved\"",
+   "source": "AXStaticText name=\"text\" value=\"Recently Saved\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Map",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Map\"",
+   "source": "AXStaticText name=\"text\" value=\"Map\"",
    "path": ""
   },
   {
@@ -85,12 +85,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Videos",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Videos\"",
+   "source": "AXStaticText name=\"text\" value=\"Videos\"",
    "path": ""
   },
   {
@@ -105,12 +105,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Screenshots",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Screenshots\"",
+   "source": "AXStaticText name=\"text\" value=\"Screenshots\"",
    "path": ""
   },
   {
@@ -125,12 +125,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "People",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"People\"",
+   "source": "AXStaticText name=\"text\" value=\"People\"",
    "path": ""
   },
   {
@@ -145,12 +145,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Recently Deleted",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Recently Deleted\"",
+   "source": "AXStaticText name=\"text\" value=\"Recently Deleted\"",
    "path": ""
   },
   {
@@ -185,122 +185,122 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Albums",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Albums\"",
+   "source": "AXStaticText name=\"text\" value=\"Albums\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "All Albums",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"All Albums\"",
+   "source": "AXStaticText name=\"text\" value=\"All Albums\"",
    "path": ""
   },
   {
    "role": "AXTextField",
-   "name": "",
+   "name": "text field",
    "value": "Panoramas for Desktop",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXTextField value=\"Panoramas for Desktop\"",
+   "source": "AXTextField name=\"text field\" value=\"Panoramas for Desktop\"",
    "path": ""
   },
   {
    "role": "AXTextField",
-   "name": "",
+   "name": "text field",
    "value": "Exportations Adobe Scan",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXTextField value=\"Exportations Adobe Scan\"",
+   "source": "AXTextField name=\"text field\" value=\"Exportations Adobe Scan\"",
    "path": ""
   },
   {
    "role": "AXTextField",
-   "name": "",
+   "name": "text field",
    "value": "WhatsApp",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXTextField value=\"WhatsApp\"",
+   "source": "AXTextField name=\"text field\" value=\"WhatsApp\"",
    "path": ""
   },
   {
    "role": "AXTextField",
-   "name": "",
+   "name": "text field",
    "value": "Instagram",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXTextField value=\"Instagram\"",
+   "source": "AXTextField name=\"text field\" value=\"Instagram\"",
    "path": ""
   },
   {
    "role": "AXTextField",
-   "name": "",
+   "name": "text field",
    "value": "Snapchat",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXTextField value=\"Snapchat\"",
+   "source": "AXTextField name=\"text field\" value=\"Snapchat\"",
    "path": ""
   },
   {
    "role": "AXTextField",
-   "name": "",
+   "name": "text field",
    "value": "𝕏",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXTextField value=\"𝕏\"",
+   "source": "AXTextField name=\"text field\" value=\"𝕏\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Sharing",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Sharing\"",
+   "source": "AXStaticText name=\"text\" value=\"Sharing\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Shared Albums",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Shared Albums\"",
+   "source": "AXStaticText name=\"text\" value=\"Shared Albums\"",
    "path": ""
   },
   {
    "role": "AXDisclosureTriangle",
-   "name": "",
+   "name": "disclosure triangle",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXDisclosureTriangle",
+   "source": "AXDisclosureTriangle name=\"disclosure triangle\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Activity",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Activity\"",
+   "source": "AXStaticText name=\"text\" value=\"Activity\"",
    "path": ""
   },
   {
@@ -315,42 +315,42 @@
   },
   {
    "role": "AXButton",
-   "name": "",
+   "name": "increment arrow button",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton",
+   "source": "AXButton name=\"increment arrow button\"",
    "path": ""
   },
   {
    "role": "AXButton",
-   "name": "",
+   "name": "decrement arrow button",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton",
+   "source": "AXButton name=\"decrement arrow button\"",
    "path": ""
   },
   {
    "role": "AXButton",
-   "name": "",
+   "name": "increment page button",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton",
+   "source": "AXButton name=\"increment page button\"",
    "path": ""
   },
   {
    "role": "AXButton",
-   "name": "",
+   "name": "decrement page button",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton",
+   "source": "AXButton name=\"decrement page button\"",
    "path": ""
   },
   {
@@ -475,12 +475,12 @@
   },
   {
    "role": "AXTextField",
-   "name": "Search",
+   "name": "search text field",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXTextField name=\"Search\"",
+   "source": "AXTextField name=\"search text field\"",
    "path": ""
   },
   {
@@ -495,12 +495,12 @@
   },
   {
    "role": "AXButton",
-   "name": "",
+   "name": "close button",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton",
+   "source": "AXButton name=\"close button\"",
    "path": ""
   },
   {
@@ -515,32 +515,32 @@
   },
   {
    "role": "AXButton",
-   "name": "",
+   "name": "minimize button",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton",
+   "source": "AXButton name=\"minimize button\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Screenshots",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Screenshots\"",
+   "source": "AXStaticText name=\"text\" value=\"Screenshots\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "651 Photos · July 2026",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"651 Photos · July 2026\"",
+   "source": "AXStaticText name=\"text\" value=\"651 Photos · July 2026\"",
    "path": ""
   }
  ]

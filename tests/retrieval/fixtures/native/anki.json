@@ -15,12 +15,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Decks",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Decks\"",
+   "source": "AXStaticText name=\"text\" value=\"Decks\"",
    "path": "Link"
   },
   {
@@ -35,12 +35,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Add",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Add\"",
+   "source": "AXStaticText name=\"text\" value=\"Add\"",
    "path": "Link"
   },
   {
@@ -55,12 +55,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Browse",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Browse\"",
+   "source": "AXStaticText name=\"text\" value=\"Browse\"",
    "path": "Link"
   },
   {
@@ -75,12 +75,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Stats",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Stats\"",
+   "source": "AXStaticText name=\"text\" value=\"Stats\"",
    "path": "Link"
   },
   {
@@ -95,22 +95,22 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Sync",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Sync\"",
+   "source": "AXStaticText name=\"text\" value=\"Sync\"",
    "path": "Link"
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Studied ⁨0⁩ cards ⁨in ⁨0⁩ seconds⁩ today (⁨0⁩s/card)",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Studied ⁨0⁩ cards ⁨in ⁨0⁩ seconds⁩ today (⁨0⁩s/card)\"",
+   "source": "AXStaticText name=\"text\" value=\"Studied ⁨0⁩ cards ⁨in ⁨0⁩ seconds⁩ today (⁨0⁩s/card)\"",
    "path": ""
   },
   {
@@ -145,12 +145,12 @@
   },
   {
    "role": "AXButton",
-   "name": "",
+   "name": "close button",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton",
+   "source": "AXButton name=\"close button\"",
    "path": ""
   },
   {
@@ -165,22 +165,22 @@
   },
   {
    "role": "AXButton",
-   "name": "",
+   "name": "minimize button",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton",
+   "source": "AXButton name=\"minimize button\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "User 1 - Anki",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"User 1 - Anki\"",
+   "source": "AXStaticText name=\"text\" value=\"User 1 - Anki\"",
    "path": ""
   }
  ]

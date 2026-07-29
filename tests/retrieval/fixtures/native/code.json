@@ -15,12 +15,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -35,12 +35,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -75,12 +75,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -94,23 +94,13 @@
    "path": ""
   },
   {
-   "role": "AXButton",
-   "name": "Sign In",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXButton name=\"Sign In\"",
-   "path": ""
-  },
-  {
    "role": "AXStaticText",
-   "name": "",
-   "value": "Sign In",
+   "name": "text",
+   "value": "Update",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Sign In\"",
+   "source": "AXStaticText name=\"text\" value=\"Update\"",
    "path": ""
   },
   {
@@ -135,12 +125,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -155,12 +145,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -175,12 +165,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -195,12 +185,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -215,12 +205,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -235,42 +225,32 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXRadioButton",
-   "name": "Source Control (⌃⇧G) - 18 pending changes",
+   "name": "Source Control (⌃⇧G)",
    "value": "1",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXRadioButton name=\"Source Control (⌃⇧G) - 18 pending changes\" value=\"1\"",
+   "source": "AXRadioButton name=\"Source Control (⌃⇧G)\" value=\"1\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "18",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"18\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -285,32 +265,42 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXRadioButton",
-   "name": "Extensions (⇧⌘X)",
+   "name": "Extensions (⇧⌘X) - 1 requires update",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXRadioButton name=\"Extensions (⇧⌘X)\"",
+   "source": "AXRadioButton name=\"Extensions (⇧⌘X) - 1 requires update\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "1",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"1\"",
    "path": ""
   },
   {
@@ -325,12 +315,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -385,12 +375,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -425,42 +415,52 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "1",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"1\"",
+   "source": "AXStaticText name=\"text\" value=\"1\"",
    "path": ""
   },
   {
    "role": "AXPopUpButton",
-   "name": "Manage",
+   "name": "Manage - New Code update available.",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXPopUpButton name=\"Manage\"",
+   "source": "AXPopUpButton name=\"Manage - New Code update available.\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "1",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"1\"",
    "path": ""
   },
   {
@@ -495,12 +495,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -514,794 +514,114 @@
    "path": "Button"
   },
   {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "src",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"src\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "/",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"/\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "frank",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"frank\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "/",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"/\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "computer",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"computer\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "engine.py",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"engine.py\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "M",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"M\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "retrieval.py",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"retrieval.py\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "M",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"M\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "web.py",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"web.py\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "M",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"M\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "tests",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"tests\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "/",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"/\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "retrieval",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"retrieval\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "fixtures",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"fixtures\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "native-anki.json",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"native-anki.json\"",
-   "path": ""
-  },
-  {
-   "role": "AXButton",
-   "name": "Open File",
+   "role": "AXTextArea",
+   "name": "The editor is not accessible at this time. To enable screen reader optimized mode, use Shift+Option+F1",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton name=\"Open File\"",
+   "source": "AXTextArea name=\"The editor is not accessible at this time. To enable screen reader optimized mod\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "",
+   "name": "text",
+   "value": "Message (⌘Enter to commit on \"main\")",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"Message (⌘Enter to commit on \"main\")\"",
    "path": ""
   },
   {
    "role": "AXButton",
-   "name": "Discard Changes",
+   "name": "Generate Commit Message",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton name=\"Discard Changes\"",
+   "source": "AXButton name=\"Generate Commit Message\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "",
+   "name": "text",
+   "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXButton",
-   "name": "Stage Changes",
+   "name": "Push 3 commits to origin/main",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton name=\"Stage Changes\"",
+   "source": "AXButton name=\"Push 3 commits to origin/main\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "",
+   "name": "text",
+   "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "U",
+   "name": "text",
+   "value": "3",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"U\"",
+   "source": "AXStaticText name=\"text\" value=\"3\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "",
+   "name": "text",
+   "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "native-claude.json",
+   "name": "text",
+   "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"native-claude.json\"",
-   "path": ""
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": "Button"
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "U",
+   "name": "text",
+   "value": "Sync Changes 3",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"U\"",
-   "path": ""
+   "source": "AXStaticText name=\"text\" value=\"Sync Changes 3\"",
+   "path": "Button"
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "",
+   "name": "text",
+   "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "native-code.json",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"native-code.json\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "U",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"U\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "native-finder.json",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"native-finder.json\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "U",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"U\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "native-photos.json",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"native-photos.json\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "U",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"U\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "native-reminders.json",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"native-reminders.json\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "U",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"U\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "native-rstudio.json",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"native-rstudio.json\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "U",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"U\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "native-skim.json",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"native-skim.json\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "U",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"U\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "native-system-settings.json",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"native-system-settings.json\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "U",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"U\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "native-terminal.json",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"native-terminal.json\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "U",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"U\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "corpus.py",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"corpus.py\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "M",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"M\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "harvest_native.py",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"harvest_native.py\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "U",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"U\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "report.py",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"report.py\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "M",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"M\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "src",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"src\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "/",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"/\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "frank",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"frank\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "/",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"/\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "computer",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"computer\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "Changes",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"Changes\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "18",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"18\"",
-   "path": ""
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": "Button"
   },
   {
    "role": "AXButton",
@@ -1315,12 +635,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -1345,22 +665,22 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "All",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"All\"",
+   "source": "AXStaticText name=\"text\" value=\"All\"",
    "path": ""
   },
   {
@@ -1375,12 +695,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -1395,12 +715,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -1415,12 +735,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -1435,12 +755,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -1455,12 +775,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -1475,642 +795,702 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "Outgoing Changes",
+   "name": "text",
+   "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Outgoing Changes\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "main",
+   "name": "text",
+   "value": "github.json",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"main\"",
+   "source": "AXStaticText name=\"text\" value=\"github.json\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "The input is the ceiling: what a page publishes, and what we throw away",
+   "name": "text",
+   "value": "D",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"The input is the ceiling: what a page publishes, and what we throw away\"",
+   "source": "AXStaticText name=\"text\" value=\"D\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "Giovanni Gravili",
+   "name": "text",
+   "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Giovanni Gravili\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "",
+   "name": "text",
+   "value": "native-claude.json",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"native-claude.json\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "main",
+   "name": "text",
+   "value": "D",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"main\"",
+   "source": "AXStaticText name=\"text\" value=\"D\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "Say what a control is, not only what it says",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"Say what a control is, not only what it says\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "Giovanni Gravili",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"Giovanni Gravili\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "origin/main",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"origin/main\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "Ask the instance that has the window",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"Ask the instance that has the window\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "Giovanni Gravili",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"Giovanni Gravili\"",
-   "path": ""
-  },
-  {
-   "role": "AXButton",
-   "name": "Open Changes",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXButton name=\"Open Changes\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "src",
+   "name": "text",
+   "value": "native",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"src\"",
+   "source": "AXStaticText name=\"text\" value=\"native\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "/",
+   "name": "text",
+   "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"/\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "frank",
+   "name": "text",
+   "value": "anki.json",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"frank\"",
+   "source": "AXStaticText name=\"text\" value=\"anki.json\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "/",
+   "name": "text",
+   "value": "R",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"/\"",
+   "source": "AXStaticText name=\"text\" value=\"R\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "computer",
+   "name": "text",
+   "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"computer\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "",
+   "name": "text",
+   "value": "claude.json",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"claude.json\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "accessibility.py",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"accessibility.py\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "M",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"M\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "engine.py",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"engine.py\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "M",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"M\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "messages",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"messages\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "/",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"/\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "computer",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"computer\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "withholds_accessibility.md",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"withholds_accessibility.md\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "A",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"A\"",
+   "source": "AXStaticText name=\"text\" value=\"A\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "Read the whole tree, and let the model rank it",
+   "name": "text",
+   "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Read the whole tree, and let the model rank it\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "Giovanni Gravili",
+   "name": "text",
+   "value": "code.json",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Giovanni Gravili\"",
+   "source": "AXStaticText name=\"text\" value=\"code.json\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
+   "value": "R",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"R\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "finder.json",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"finder.json\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "R",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"R\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "photos.json",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"photos.json\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "R",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"R\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "reminders.json",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"reminders.json\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Open File",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Open File\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "R",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"R\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "rstudio.json",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"rstudio.json\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "R",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"R\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "skim.json",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"skim.json\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "R",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"R\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "system-settings.json",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"system-settings.json\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "R",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"R\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "terminal.json",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"terminal.json\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "R",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"R\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "src",
+   "name": "text",
+   "value": "web",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"src\"",
+   "source": "AXStaticText name=\"text\" value=\"web\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "arxiv.json",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"arxiv.json\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "R",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"R\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "bbc.json",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"bbc.json\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "R",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"R\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "github.json",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"github.json\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "A",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"A\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "hackernews.json",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"hackernews.json\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "R",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"R\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "mdn.json",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"mdn.json\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "R",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"R\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "native",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"native\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "fixtures",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"fixtures\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "tests",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"tests\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
    "value": "/",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"/\"",
+   "source": "AXStaticText name=\"text\" value=\"/\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "frank",
+   "name": "text",
+   "value": "retrieval",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"frank\"",
+   "source": "AXStaticText name=\"text\" value=\"retrieval\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "",
+   "name": "text",
+   "value": "Test the declaration against the words, with a code model to read it",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"Test the declaration against the words, with a code model to read it\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "",
+   "name": "text",
+   "value": "Giovanni Gravili",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"Giovanni Gravili\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "base",
+   "name": "text",
+   "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"base\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "",
+   "name": "text",
+   "value": "main",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "tuning.py",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"tuning.py\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "M",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"M\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "computer",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"computer\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "accessibility.py",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"accessibility.py\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "M",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"M\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "engine.py",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"engine.py\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "M",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"M\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "retrieval.py",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"retrieval.py\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "M",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"M\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "worker",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"worker\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "session_entry.py",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"session_entry.py\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "M",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"M\"",
+   "source": "AXStaticText name=\"text\" value=\"main\"",
    "path": ""
   },
   {
@@ -2125,32 +1505,32 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "cursor.py",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"cursor.py\"",
+   "source": "AXStaticText name=\"text\" value=\"cursor.py\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "9+",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"9+\"",
+   "source": "AXStaticText name=\"text\" value=\"9+\"",
    "path": ""
   },
   {
@@ -2165,12 +1545,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -2185,32 +1565,32 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "connection-settings.tsx",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"connection-settings.tsx\"",
+   "source": "AXStaticText name=\"text\" value=\"connection-settings.tsx\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "6",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"6\"",
+   "source": "AXStaticText name=\"text\" value=\"6\"",
    "path": ""
   },
   {
@@ -2225,12 +1605,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -2245,32 +1625,32 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "connection.ts",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"connection.ts\"",
+   "source": "AXStaticText name=\"text\" value=\"connection.ts\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "3",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"3\"",
+   "source": "AXStaticText name=\"text\" value=\"3\"",
    "path": ""
   },
   {
@@ -2285,12 +1665,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -2305,22 +1685,22 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "sessions-sidebar.tsx (Working Tree)",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"sessions-sidebar.tsx (Working Tree)\"",
+   "source": "AXStaticText name=\"text\" value=\"sessions-sidebar.tsx (Working Tree)\"",
    "path": ""
   },
   {
@@ -2335,12 +1715,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -2355,22 +1735,22 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "smoke.mjs",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"smoke.mjs\"",
+   "source": "AXStaticText name=\"text\" value=\"smoke.mjs\"",
    "path": ""
   },
   {
@@ -2385,12 +1765,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -2405,22 +1785,22 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "globals.css",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"globals.css\"",
+   "source": "AXStaticText name=\"text\" value=\"globals.css\"",
    "path": ""
   },
   {
@@ -2435,12 +1815,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -2455,32 +1835,32 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "registry.py",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"registry.py\"",
+   "source": "AXStaticText name=\"text\" value=\"registry.py\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "…/daemon",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"…/daemon\"",
+   "source": "AXStaticText name=\"text\" value=\"…/daemon\"",
    "path": ""
   },
   {
@@ -2495,12 +1875,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -2515,42 +1895,42 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "registry.py",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"registry.py\"",
+   "source": "AXStaticText name=\"text\" value=\"registry.py\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "…/tools",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"…/tools\"",
+   "source": "AXStaticText name=\"text\" value=\"…/tools\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "3",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"3\"",
+   "source": "AXStaticText name=\"text\" value=\"3\"",
    "path": ""
   },
   {
@@ -2565,52 +1945,52 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXRadioButton",
-   "name": "native-anki.json, preview",
+   "name": "native-reminders.json (f62587f) ↔ reminders.json (723de09) (native-reminders.json ↔ reminders.json), preview",
    "value": "1",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXRadioButton name=\"native-anki.json, preview\" value=\"1\"",
+   "source": "AXRadioButton name=\"native-reminders.json (f62587f) ↔ reminders.json (723de09) (native-reminders.jso\" value=\"1\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "native-anki.json",
+   "name": "text",
+   "value": "native-reminders.json (f62587f) ↔ reminders.json (723de09)",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"native-anki.json\"",
+   "source": "AXStaticText name=\"text\" value=\"native-reminders.json (f62587f) ↔ reminders.json (723de09)\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "U",
+   "name": "text",
+   "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"U\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -2625,12 +2005,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -2645,22 +2025,22 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "withholds_accessibility.md",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"withholds_accessibility.md\"",
+   "source": "AXStaticText name=\"text\" value=\"withholds_accessibility.md\"",
    "path": ""
   },
   {
@@ -2675,12 +2055,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -2695,22 +2075,102 @@
   },
   {
    "role": "AXButton",
-   "name": "Open Changes",
+   "name": "Open File",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton name=\"Open Changes\"",
+   "source": "AXButton name=\"Open File\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "",
+   "name": "text",
+   "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Previous Change (⇧⌥F5)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Previous Change (⇧⌥F5)\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "Next Change (⌥F5)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"Next Change (⌥F5)\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "Show Leading/Trailing Whitespace Differences",
+   "value": "1",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXCheckBox name=\"Show Leading/Trailing Whitespace Differences\" value=\"1\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXCheckBox",
+   "name": "Toggle Collapse Unchanged Regions",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXCheckBox name=\"Toggle Collapse Unchanged Regions\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -2725,12 +2185,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -2745,112 +2205,262 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
+   "value": "Users",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"Users\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "giovannigravili",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"giovannigravili\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "Projects",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"Projects\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "ghovax",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"ghovax\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "private",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"private\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "frank",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"frank\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
    "value": "tests",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"tests\"",
+   "source": "AXStaticText name=\"text\" value=\"tests\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "retrieval",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"retrieval\"",
+   "source": "AXStaticText name=\"text\" value=\"retrieval\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "fixtures",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"fixtures\"",
+   "source": "AXStaticText name=\"text\" value=\"fixtures\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
+   "value": "native",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"native\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "native-anki.json",
+   "name": "text",
+   "value": "reminders.json",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"native-anki.json\"",
+   "source": "AXStaticText name=\"text\" value=\"reminders.json\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "…",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"…\"",
+   "source": "AXStaticText name=\"text\" value=\"…\"",
+   "path": ""
+  },
+  {
+   "role": "AXTextArea",
+   "name": "The editor is not accessible at this time. To enable screen reader optimized mode, use Shift+Option+F1",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXTextArea name=\"The editor is not accessible at this time. To enable screen reader optimized mod\"",
    "path": ""
   },
   {
@@ -2875,12 +2485,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "CHAT",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"CHAT\"",
+   "source": "AXStaticText name=\"text\" value=\"CHAT\"",
    "path": ""
   },
   {
@@ -2895,12 +2505,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -2955,12 +2565,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -2975,82 +2585,82 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Build with Agent",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Build with Agent\"",
+   "source": "AXStaticText name=\"text\" value=\"Build with Agent\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "AI responses may be inaccurate",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"AI responses may be inaccurate\"",
+   "source": "AXStaticText name=\"text\" value=\"AI responses may be inaccurate\"",
    "path": ""
   },
   {
    "role": "AXButton",
-   "name": "Add file:native-anki.json to context",
+   "name": "Add file:reminders.json to context",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton name=\"Add file:native-anki.json to context\"",
+   "source": "AXButton name=\"Add file:reminders.json to context\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "native-anki.json",
+   "name": "text",
+   "value": "reminders.json",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"native-anki.json\"",
+   "source": "AXStaticText name=\"text\" value=\"reminders.json\"",
    "path": ""
   },
   {
@@ -3075,12 +2685,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -3095,22 +2705,22 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Agent",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Agent\"",
+   "source": "AXStaticText name=\"text\" value=\"Agent\"",
    "path": "PopUpButton"
   },
   {
@@ -3135,12 +2745,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -3155,12 +2765,12 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
@@ -3175,22 +2785,22 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Local",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Local\"",
+   "source": "AXStaticText name=\"text\" value=\"Local\"",
    "path": "PopUpButton"
   },
   {
@@ -3205,22 +2815,22 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "Default Approvals",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"Default Approvals\"",
+   "source": "AXStaticText name=\"text\" value=\"Default Approvals\"",
    "path": "PopUpButton"
   },
   {
@@ -3235,62 +2845,62 @@
   },
   {
    "role": "AXButton",
-   "name": "frank (Git) - main*, Checkout Branch/Tag...",
+   "name": "frank (Git) - main, Checkout Branch/Tag...",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton name=\"frank (Git) - main*, Checkout Branch/Tag...\"",
+   "source": "AXButton name=\"frank (Git) - main, Checkout Branch/Tag...\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": "",
+   "name": "text",
+   "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": "Button"
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": " main*",
+   "name": "text",
+   "value": " main",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\" main*\"",
+   "source": "AXStaticText name=\"text\" value=\" main\"",
    "path": "Button"
   },
   {
    "role": "AXButton",
-   "name": "frank (Git) - Push 1 commits to origin/main",
+   "name": "frank (Git) - Push 3 commits to origin/main",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton name=\"frank (Git) - Push 1 commits to origin/main\"",
+   "source": "AXButton name=\"frank (Git) - Push 3 commits to origin/main\"",
    "path": ""
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": "Button"
   },
   {
    "role": "AXStaticText",
-   "name": "",
-   "value": " 0↓ 1↑",
+   "name": "text",
+   "value": " 0↓ 3↑",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\" 0↓ 1↑\"",
+   "source": "AXStaticText name=\"text\" value=\" 0↓ 3↑\"",
    "path": "Button"
   },
   {
@@ -3305,22 +2915,22 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": "Button"
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": " marimo",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\" marimo\"",
+   "source": "AXStaticText name=\"text\" value=\" marimo\"",
    "path": "Button"
   },
   {
@@ -3335,42 +2945,42 @@
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": "Button"
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": " 23 ",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\" 23 \"",
+   "source": "AXStaticText name=\"text\" value=\" 23 \"",
    "path": "Button"
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\"\"",
+   "source": "AXStaticText name=\"text\" value=\"\"",
    "path": "Button"
   },
   {
    "role": "AXStaticText",
-   "name": "",
+   "name": "text",
    "value": " 0",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXStaticText value=\" 0\"",
+   "source": "AXStaticText name=\"text\" value=\" 0\"",
    "path": "Button"
   },
   {
@@ -3405,22 +3015,12 @@
   },
   {
    "role": "AXButton",
-   "name": "Editor Language Status: No schema validation, no JSON schema configured, next: $(copilot) No inline suggestion available, Inline suggestions",
+   "name": "Editor Language Status: No schema validation, no JSON schema configured",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton name=\"Editor Language Status: No schema validation, no JSON schema configured, next: $\"",
-   "path": ""
-  },
-  {
-   "role": "AXButton",
-   "name": "LF",
-   "value": "",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXButton name=\"LF\"",
+   "source": "AXButton name=\"Editor Language Status: No schema validation, no JSON schema configured\"",
    "path": ""
   },
   {
@@ -3445,32 +3045,62 @@
   },
   {
    "role": "AXButton",
-   "name": "Ln 1, Col 1",
+   "name": "Ln 2, Col 1",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton name=\"Ln 1, Col 1\"",
-   "path": ""
-  },
-  {
-   "role": "AXStaticText",
-   "name": "",
-   "value": "Info: Mermaid Chart: Scanning staged files for diagram sync...",
-   "context": "",
-   "url": "",
-   "title": "",
-   "source": "AXStaticText value=\"Info: Mermaid Chart: Scanning staged files for diagram sync...\"",
+   "source": "AXButton name=\"Ln 2, Col 1\"",
    "path": ""
   },
   {
    "role": "AXButton",
-   "name": "",
+   "name": "git-commit Giovanni Gravili (7 minutes ago)",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton",
+   "source": "AXButton name=\"git-commit Giovanni Gravili (7 minutes ago)\"",
+   "path": ""
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": " Giovanni Gravili (7 minutes ago)",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\" Giovanni Gravili (7 minutes ago)\"",
+   "path": "Button"
+  },
+  {
+   "role": "AXStaticText",
+   "name": "text",
+   "value": "expanded",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXStaticText name=\"text\" value=\"expanded\"",
+   "path": ""
+  },
+  {
+   "role": "AXButton",
+   "name": "close button",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "AXButton name=\"close button\"",
    "path": ""
   },
   {
@@ -3485,12 +3115,12 @@
   },
   {
    "role": "AXButton",
-   "name": "",
+   "name": "minimize button",
    "value": "",
    "context": "",
    "url": "",
    "title": "",
-   "source": "AXButton",
+   "source": "AXButton name=\"minimize button\"",
    "path": ""
   }
  ]

@@ -100,7 +100,9 @@ def _name_containers_from_their_contents(documents: list[Document]) -> None:
 
 
 def _element_name(element: accessibility.Element) -> str:
-    return element.title or element.description or element.help or element.role
+    # The raw role (`AXButton`) is the last resort and a poor one — the embedding has never
+    # usefully seen it — so the system's own prose for the role comes first.
+    return element.title or element.description or element.help or element.role_description or element.role
 
 
 def _displayed_window(pid: int) -> Optional[tuple[int, int]]:
@@ -145,7 +147,12 @@ def _to_element(ax: accessibility.Element, token: RegistryEntry) -> Element:
         flags["selected"] = True
     return Element(
         role=ax.role,
-        name=ax.title or ax.description or ax.help,
+        # The role description last, because it is what the system calls this *kind* of control
+        # rather than this one — "increment arrow button", "close button". It is prose, it is
+        # present on every element, and for the controls that publish no title, description or
+        # help it is the only words they have. Without it those elements carry an empty key, and
+        # an empty key cannot be reached by any query at any depth.
+        name=ax.title or ax.description or ax.help or ax.role_description,
         value=ax.value,
         clickable=bool(ax.actions),
         flags=flags,

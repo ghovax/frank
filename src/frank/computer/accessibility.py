@@ -46,6 +46,10 @@ ROLE = "AXRole"
 SUBROLE = "AXSubrole"
 TITLE = "AXTitle"
 DESCRIPTION = "AXDescription"
+# What the application calls this kind of control, in prose the system itself writes:
+# "increment arrow button", "close button", "disclosure triangle". Present on every element,
+# and the only words some controls have — see the fallback in `engine._element_name`.
+ROLE_DESCRIPTION = "AXRoleDescription"
 HELP = "AXHelp"
 VALUE = "AXValue"
 ENABLED = "AXEnabled"
@@ -75,7 +79,7 @@ NUMBER_OF_CHARACTERS = "AXNumberOfCharacters"
 # element's rectangle in one value; AXVisibleChildren/AXVisibleRows let the app report
 # what is on screen so we never descend into scrolled-away content.
 BATCH_ATTRIBUTES = [
-    ROLE, SUBROLE, TITLE, DESCRIPTION, HELP, VALUE, ENABLED, SELECTED,
+    ROLE, SUBROLE, TITLE, DESCRIPTION, HELP, ROLE_DESCRIPTION, VALUE, ENABLED, SELECTED,
     FRAME, POSITION, SIZE, VISIBLE_CHILDREN, VISIBLE_ROWS, CHILDREN,
 ]
 
@@ -135,6 +139,10 @@ class Element:
     # a clickable control from an inert label without a separate act-time round-trip. Empty
     # for text and pure containers, which are never queried for actions.
     actions: list[str] = field(default_factory=list)
+    # What the system calls this kind of control, in its own prose ("increment arrow button").
+    # Defaulted because it is the newest attribute here and every existing construction site
+    # predates it; it is the last fallback for a name, never a first choice.
+    role_description: str = ""
     # A region is a container the shallow walk chose not to expand: it stands in for its
     # subtree and carries how many on-screen children wait inside, so the caller can drill
     # into it. None on ordinary leaf elements.
@@ -462,6 +470,7 @@ def _make_element(
         title=_string(attributes.get(TITLE)),
         description=_string(attributes.get(DESCRIPTION)),
         help=_string(attributes.get(HELP)),
+        role_description=_string(attributes.get(ROLE_DESCRIPTION)),
         value=_primitive(attributes.get(VALUE)),
         enabled=attributes.get(ENABLED),
         selected=attributes.get(SELECTED),
