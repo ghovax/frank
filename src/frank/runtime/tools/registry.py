@@ -649,14 +649,13 @@ async def download_file(
 @tool
 async def control_screen(
     script: str,
-    surface: Literal["browser", "computer"] = "browser",
-    app: str = "",
+    target: str = "",
     explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
     """Read and drive the live screen by composing a short Python script — one program that both finds elements and acts on them.
 
-    The script runs against the current surface — the user's signed-in browser page, or a native macOS app — calling bare-named primitives (no prefix). Reading is in the script: ``find_many`` and ``find_one`` rank the surface by meaning and return elements, each a dict with a stable ``id``, its ``role``, its text, and its ``context``. Acting is trusted input: a click is a real click (actionability-checked, works through overlays, opens file pickers and native dropdowns), typing fires the events pages listen for. Because it is ordinary Python, a whole task — loop over rows, branch on what you find, call the page's own API in one line — is a single call, not a round trip per action.
+    The script runs against one **target** — a window or a browser tab you name — calling bare-named primitives (no prefix). Targets are listed for you; you never say which kind of thing it is, because the id already does. Reading is in the script: ``find_many`` and ``find_one`` rank the surface by meaning and return elements, each a dict with a stable ``id``, its ``role``, its text, and its ``context``. Acting is trusted input: a click is a real click (actionability-checked, works through overlays, opens file pickers and native dropdowns), typing fires the events pages listen for. Because it is ordinary Python, a whole task — loop over rows, branch on what you find, call the page's own API in one line — is a single call, not a round trip per action.
 
     Finding elements:
       find_many(query, limit=8, all=False, clickable=None, name="", context="") — the ranked matches, for reading or harvesting a whole set (act on every result). find_one(query, clickable=None, name="", context="") — the single best match, for acting; it returns that one element, or raises if the top matches are indistinguishable. **clickable is optional and you should leave it out unless you are sure.** Pass True when you want something you can act on and text would only get in the way ("the Save button"), False when you want the words on screen and controls would only get in the way ("the filename shown in the row"), and omit it entirely — the default — whenever you are unsure or want both. It is a question about your own intent, not about how the platform spells its widget names: a tab, a link and a checkbox are all clickable=True. Ranking happens *inside* whatever you narrow to, so it beats lengthening the query — similarity has no notion of what a thing *is*, and "the search button" competes against every element that merely mentions search. name and context narrow the same way and are exact: use them only with values you read off an earlier result. Write explicit, descriptive queries — name the target and the section it sits under; a terse query spreads across every similar control. On the browser, find also searches the page's own traffic (network requests and WebSocket frames), so you can pull data from the source instead of walking the DOM.
@@ -680,6 +679,8 @@ async def control_screen(
 
     A target is an id a find returned (or the find_one result itself), or a plain-language query resolved the way find_one resolves it. For a state-changing action, never pick a find_many result by position: use find_one or a query, so an unclear target is caught rather than guessed. press("Enter") and submit=True both post a form, so be deliberate.
 
+    Targets — the place a script runs. Every open window and tab has an id minted by the platform, and it is listed for you with its app and title. Pass the one you mean as `target`; there is no default, because "whatever is in front" is a race with the person using the computer. An application is not a target: two Finder windows are two places, and naming the application cannot say which. A target that has closed is reported as gone, with the current list, so you can pick another without looking it up.
+
     Tabs — the browser has more than one page, and you choose which one you are on:
       - tabs() — every open tab as {id, title, url, active}
       - tab(id) — switch to one and bring it to the front
@@ -697,7 +698,7 @@ async def control_screen(
 
     Arguments:
         script: The Python to run.
-        surface: "browser" (the user's Chrome) or "computer" (a native macOS app).
+        target: The window or tab to run it in, by the id from the target list. Required.
         app: For the computer surface — which app to look at, by name; omit to reuse the last one.
         explanation: Why this is needed.
         risk: Damage potential — higher for actions that change state.

@@ -1298,13 +1298,35 @@ class _ToolsMixin:
         from frank.computer import control, retrieval
         from frank.computer.surface import message_loader
 
-        surface_name = str(tool_arguments.get("surface", "browser") or "browser")
-        surface = self._surface_for(surface_name)
-        app = str(tool_arguments.get("app", ""))
+        from frank.computer import targets as target_registry
+
         script = str(tool_arguments.get("script", ""))
         if not script.strip():
             yield ToolResult(id=tool_call_identifier, name=tool_name, result={"ok": False, "error": "control_screen needs a script to run."})
             return
+        # A target is a window or a tab, named by the identifier its platform minted. It replaces
+        # the old `surface` + `app` pair: `surface` made the model choose an implementation, and an
+        # application's display name is not an identity — with two copies open it resolved to
+        # whichever was found first, which is a bug the model could not even describe.
+        target_id = str(tool_arguments.get("target", "") or "").strip()
+        if not target_id:
+            yield ToolResult(id=tool_call_identifier, name=tool_name, result={
+                "ok": False,
+                "error": "control_screen needs a target — the window or tab to act in.",
+                "targets": {"current": target_registry.describe_all()},
+            })
+            return
+        target = target_registry.find_target(target_id)
+        if target is None:
+            yield ToolResult(id=tool_call_identifier, name=tool_name, result={
+                "ok": False,
+                "error": f"Target {target_id!r} no longer exists — it was closed, or it never opened.",
+                "targets": {"removed": [target_id], "current": target_registry.describe_all()},
+            })
+            return
+        surface_name = target.surface
+        surface = self._surface_for(surface_name)
+        app = target.id
         gate = surface.preflight("documents")
         if gate is not None:
             yield ToolResult(id=tool_call_identifier, name=tool_name, result=gate)
@@ -1384,6 +1406,8 @@ class _ToolsMixin:
             return [document for document in documents if admits(document)]
 
         def _rank(query: str, limit: int, everything: bool, facets: dict | None = None) -> list:
+            # The window id goes to the native surface; the browser reads whichever tab is active,
+            # which `tab()` in the script selects.
             raw = surface.documents(app) if surface_name == "computer" else surface.documents()
             if not raw.get("ok"):
                 raise RuntimeError(raw.get("error", "Could not read the screen."))

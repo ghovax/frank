@@ -928,6 +928,32 @@ class WebSurface(Surface):
 
     # Tabs and frames — the browser's own structure, named.
 
+    def open_tabs(self) -> list[dict]:
+        """Every tab of an *already connected* browser, or `[]`. Never connects.
+
+        The distinction is the whole method. Targets are enumerated on every turn and on every
+        error path, and an enumeration that establishes a DevTools connection reaches into the
+        user's live Chrome as a side effect of asking a question about windows — which is both a
+        surprise for them and, because the connection is made on a thread-affine worker, a way to
+        block whoever asked. Listing is an observation; it must never be an action.
+
+        So a browser nobody has connected to yet contributes no targets. That is not a gap: until
+        something has deliberately opened a session, its tabs are not places this tool can act in,
+        and reporting them would advertise somewhere it cannot go."""
+        session = self._session
+        if session is None or not session.browser.is_connected():
+            return []
+        try:
+            active = session.page
+            return [
+                {"id": session.tab_id(page), "title": _safe_title(page), "url": _safe_url(page),
+                 "active": page is active, "app": "Chrome"}
+                for page in session.live_pages()
+            ]
+        except Exception:  # noqa: BLE001 — a listing must never be the thing that fails
+            logger.debug("Could not list tabs of the connected browser", exc_info=True)
+            return []
+
     def _primitive_tabs(self, **_: Any) -> dict:
         def run() -> dict:
             session = self.session()

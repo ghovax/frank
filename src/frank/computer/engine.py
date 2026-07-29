@@ -192,17 +192,30 @@ class NativeSurface(Surface):
     # Target and element resolution.
 
     def _resolve_pid(self, target: str) -> int:
+        """The process behind a target id, which names a *window* rather than an application.
+
+        An application's display name used to be the address here, and it is not an identity: with
+        two copies of one application open it resolved to whichever the search happened to reach
+        first, and there was no way to say which was meant. A window id is minted by the window
+        server, is unique, and dies with the window — so a target that has gone says so instead of
+        quietly becoming a different one."""
+        from frank.computer import targets as target_registry
+
         if target:
-            pid = accessibility.find_app_pid(target)
-            if pid is None:
-                raise ToolFailure({"ok": False, "error": f"App {target!r} is not running. Open it first (via the bash tool), then find it."})
-            return pid
+            # Windows only. Resolving a window number has no business connecting to a browser, and
+            # asking the full registry for one did exactly that — `list_targets` enumerates tabs,
+            # which opens a DevTools connection to the user's live Chrome and blocks the caller.
+            found = target_registry.find_window(target)
+            if found is None:
+                raise ToolFailure({
+                    "ok": False,
+                    "error": f"Target {target!r} no longer exists — the window was closed, or it never opened.",
+                    "targets": {"current": target_registry.describe_windows()},
+                })
+            return int(found.address["pid"])
         if self._last_pid is not None:
             return self._last_pid
-        pid = accessibility.frontmost_pid()
-        if pid is None:
-            raise ToolFailure({"ok": False, "error": "No target app given and no frontmost app found."})
-        return pid
+        raise ToolFailure({"ok": False, "error": "No target given. Name the window to act in."})
 
     def _entry(self, ref: str) -> RegistryEntry:
         entry = self._targets.get(ref)
