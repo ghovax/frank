@@ -9,13 +9,23 @@ tree already delivers the surface as discrete elements, so one element is one do
 
 Two deliberate choices, both settled empirically (see the plan ``screen-search-and-control``):
 
-* **The document is the element's own words.** ``element_text`` joins the standardized
-  accessibility fields — name, description, value, context — and nothing else. Role, state, and
-  the native handle travel as structured metadata on the hit, never in the embedded text: adding
-  them buys no retrieval signal and, in the pooled embedding space, collapses documents toward a
-  common centroid (measured inter-document similarity 0.60 for a JSON dump vs 0.03 for the words).
-* **Context is part of the words.** Dropping it costs ~13 points of top-1, because it is what
-  tells twenty identical "Add to Cart" buttons apart.
+* **The document is the element's own words**, and only the ones that discriminate. Everything
+  else about an element — its state, its native handle, its position — travels as structured
+  metadata on the hit rather than in the embedded text, because in a pooled embedding space
+  extra text pulls every document toward a common centroid (measured inter-document similarity
+  0.60 for a JSON dump against 0.03 for the words).
+* **Context belongs in the payload, not in the key.** This reversed an earlier finding, and the
+  reversal is the largest single result in ``the-input-is-the-ceiling``: writing the nearest
+  labelling ancestor into the key makes every child of a section look alike to a cosine, which
+  is the opposite of the disambiguation it was added for. Measured on 797 queries drawn from
+  eight live websites, dropping it moves top-1 by +16.1% (95% interval [+13.2%, +19.1%]). The
+  earlier "+13 points for keeping it" came from a query set that had been built by joining the
+  element's own name to its role, which fed the key back into the query.
+
+The two surfaces build their keys differently and deliberately. The browser has a link's
+destination and a tooltip to work with, so :func:`web_element_text` uses them; the native tree
+has neither, and :func:`element_text` is left as it was because every candidate replacement
+measured inside the noise.
 
 The dense half is optional at runtime: when the embedding model cannot be loaded (no network to
 fetch it, say), the index degrades to BM25 alone rather than failing — the model host being
@@ -30,7 +40,7 @@ from typing import Any, Optional
 
 # The general, retrieval-tuned static model (model2vec). Not the code-specialized ``potion-code-16M``
 # semble uses — a DOM/AX tree is natural-language UI labels, not code. Swappable in one place.
-DENSE_MODEL = "minishlab/potion-retrieval-32M"
+DENSE_MODEL = "minishlab/M2V_multilingual_output"
 
 # Reciprocal-rank-fusion constant. Fuses the BM25 and dense rankings without having to reconcile
 # their incomparable score scales: each document scores ``sum 1/(k + rank)`` over the rankings it
@@ -75,6 +85,72 @@ def element_text(name: str = "", description: str = "", value: Any = None, conte
     value_text = value if isinstance(value, str) else ("" if value is None else str(value))
     spoken = _ROLE_IN_WORDS.get(role, _ROLE_IN_WORDS.get(role.lower(), ""))
     return " ".join(part for part in (spoken, name, description, value_text, context) if part).strip()
+
+
+# Path segments that appear on nearly every URL and therefore tell nothing apart. Kept small on
+# purpose: a stop list that grows starts removing words a page actually meant.
+_URL_NOISE_WORDS = frozenset({
+    "www", "com", "org", "net", "http", "https", "html", "htm", "php", "aspx",
+    "index", "wiki", "page", "en", "us", "docs",
+})
+_URL_SEPARATORS = re.compile(r"[^A-Za-z]+")
+
+
+def url_in_words(url: str, *, keep_last: int = 4) -> str:
+    """The readable words of a URL — ``/eng/house/share-house`` becomes ``house share house``.
+
+    Only the tail is kept, because a path narrows left to right and the last segments are the
+    ones that name the destination. Short and boilerplate segments are dropped so that the words
+    which survive are the ones a person would use.
+
+    This is the single largest source of retrieval signal the browser surface has beyond an
+    element's own label: on 212 queries whose wording shared no word at all with the visible
+    label, including these words moved top-1 from 8% to 39%."""
+    words = [word for word in _URL_SEPARATORS.split(url or "")
+             if len(word) > 2 and word.lower() not in _URL_NOISE_WORDS]
+    return " ".join(words[-keep_last:])
+
+
+def _without_repeated_words(text: str) -> str:
+    """``text`` with later repeats of a word removed, keeping the first occurrence and the order.
+
+    A link commonly names itself the same way three times over — visible text, URL slug, and
+    tooltip — and a repeated word is weight in the embedding without being information."""
+    kept: list[str] = []
+    seen: set[str] = set()
+    for word in text.split():
+        folded = word.lower()
+        if folded not in seen:
+            seen.add(folded)
+            kept.append(word)
+    return " ".join(kept)
+
+
+def web_element_text(name: str = "", role: str = "", url: str = "", title: str = "") -> str:
+    """The retrieval key for one element of a web page.
+
+    Four parts. The **name** leads because it is what a query usually says. The **URL words**
+    follow, which is the change that separated this key from every alternative: on queries whose
+    wording shares no word with the visible label, they move top-1 from 8% to 39%. The **role**
+    in words helps a query that names a kind of control. The **title** is the page's own prose
+    description, present on about a quarter of elements and the only human-written statement of
+    *purpose* a page publishes.
+
+    What is absent is as load-bearing as what is present, and each absence was paid for.
+    ``context`` costs 14–18 points and is the largest finding in ``the-input-is-the-ceiling``.
+    ``value`` costs 1.4% (95% interval [1.2%, 1.7%]) — it was in the first cut of this function
+    despite an earlier sweep having already measured it as harmful, and the harness caught it.
+    ``landmark``, ``id``, ``class`` and ``data-*`` are machine tokens that cost 11 points of
+    exact-label accuracy and bought nothing.
+
+    ``role`` is the one part still open. Dropping it measures as *better* by 0.8% [0.3%, 1.3%],
+    but every query family in the harness is built from an element's own words — a name, a
+    fragment of one, a URL, a tooltip — and none of them ever names a kind of control, which is
+    the single thing role is for. Removing it on that evidence would be letting a benchmark's
+    blind spot make the decision, so it stays until the logged queries say otherwise."""
+    spoken = _ROLE_IN_WORDS.get(role, _ROLE_IN_WORDS.get(role.lower(), ""))
+    parts = (name, url_in_words(url), spoken, title)
+    return _without_repeated_words(" ".join(part for part in parts if part).strip())
 
 
 @dataclass

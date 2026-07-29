@@ -73,6 +73,12 @@ testpaths = ["tests"]
 [dependency-groups]
 dev = [
     "pyinstaller>=6.21.0",
+    # The retrieval harness records one row per query per strategy and pivots it. A frame is the
+    # right shape for that: the questions asked of these measurements keep changing, and a saved
+    # frame answers a new one without re-running the sweep. Test-only — nothing the daemon ships
+    # imports it.
+    "pandas>=2.2",
+    "pyarrow>=18.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     # Pinned to a minor, not left open. Ruff's *default* rule set widens between releases, so

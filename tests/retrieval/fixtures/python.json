@@ -1,0 +1,2526 @@
+{
+ "site_name": "python",
+ "page_url": "https://www.python.org/",
+ "elements": [
+  {
+   "role": "link",
+   "name": "Skip to content",
+   "value": "",
+   "context": "",
+   "url": "#content",
+   "title": "Skip to content"
+  },
+  {
+   "role": "text",
+   "name": "",
+   "value": "",
+   "context": "Skip to content",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Python",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/",
+   "title": "The Python Programming Language"
+  },
+  {
+   "role": "link",
+   "name": "PSF",
+   "value": "",
+   "context": "Skip to content",
+   "url": "https://www.python.org/psf/",
+   "title": "The Python Software Foundation"
+  },
+  {
+   "role": "link",
+   "name": "Docs",
+   "value": "",
+   "context": "Skip to content",
+   "url": "https://docs.python.org",
+   "title": "Python Documentation"
+  },
+  {
+   "role": "link",
+   "name": "PyPI",
+   "value": "",
+   "context": "Skip to content",
+   "url": "https://pypi.org/",
+   "title": "Python Package Index"
+  },
+  {
+   "role": "link",
+   "name": "Jobs",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/jobs/",
+   "title": "Python Job Board"
+  },
+  {
+   "role": "link",
+   "name": "Community",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/community/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "",
+   "value": "",
+   "context": "Skip to content",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "python™",
+   "value": "",
+   "context": "",
+   "url": "/",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "python™",
+   "value": "",
+   "context": "python™",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Donate",
+   "value": "",
+   "context": "python™",
+   "url": "https://donate.python.org/",
+   "title": ""
+  },
+  {
+   "role": "group",
+   "name": "Search Python.org",
+   "value": "",
+   "context": "Donate",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "",
+   "context": "Donate",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Search This Site",
+   "context": "Donate",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "searchbox",
+   "name": "Search This Site",
+   "value": "",
+   "context": "Donate",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "button",
+   "name": "GO",
+   "value": "",
+   "context": "Donate",
+   "url": "",
+   "title": "Submit this Search"
+  },
+  {
+   "role": "list",
+   "name": "Social Media Navigation",
+   "value": "",
+   "context": "Donate",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Socialize",
+   "value": "",
+   "context": "Donate",
+   "url": "#",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "   ",
+   "value": "",
+   "context": "Socialize",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "menubar",
+   "name": "Main Navigation",
+   "value": "",
+   "context": "python™",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "About",
+   "value": "",
+   "context": "python™",
+   "url": "/about/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Downloads",
+   "value": "",
+   "context": "python™",
+   "url": "/downloads/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Documentation",
+   "value": "",
+   "context": "python™",
+   "url": "/doc/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Community",
+   "value": "",
+   "context": "python™",
+   "url": "/community/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Success Stories",
+   "value": "",
+   "context": "python™",
+   "url": "/success-stories/",
+   "title": "success-stories"
+  },
+  {
+   "role": "link",
+   "name": "News",
+   "value": "",
+   "context": "python™",
+   "url": "/blogs/",
+   "title": "News from around the Python world"
+  },
+  {
+   "role": "link",
+   "name": "Events",
+   "value": "",
+   "context": "python™",
+   "url": "/events/",
+   "title": ""
+  },
+  {
+   "role": "code",
+   "name": "# Simple arithmetic >>> 1 / 2 0.5 >>> 2 ** 3 8 >>> 17 / 3 # true division returns a float 5.666666666666667 >>> 17 // 3 # floor division 5",
+   "value": "",
+   "context": "python™",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Intuitive Interpretation",
+   "value": "",
+   "context": "python™",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "Calculations are simple with Python, and expression syntax is straightforward: the operators",
+   "value": "",
+   "context": "Intuitive Interpretation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "code",
+   "name": "",
+   "value": "+",
+   "context": "Intuitive Interpretation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "Intuitive Interpretation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "code",
+   "name": "-",
+   "value": "",
+   "context": "Intuitive Interpretation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "Intuitive Interpretation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "code",
+   "name": "*",
+   "value": "",
+   "context": "Intuitive Interpretation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "and",
+   "value": "",
+   "context": "Intuitive Interpretation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "code",
+   "name": "",
+   "value": "/",
+   "context": "Intuitive Interpretation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "work as expected; parentheses",
+   "value": "",
+   "context": "Intuitive Interpretation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "code",
+   "name": "",
+   "value": "()",
+   "context": "Intuitive Interpretation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "can be used for grouping.",
+   "value": "",
+   "context": "Intuitive Interpretation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "More about simple math functions in Python 3",
+   "value": "",
+   "context": "Intuitive Interpretation",
+   "url": "http://docs.python.org/3/tutorial/introduction.html#using-python-as-a-calculator",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ".",
+   "value": "",
+   "context": "More about simple math functions in Python 3",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "1",
+   "value": "",
+   "context": "python™",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2",
+   "value": "",
+   "context": "python™",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "3",
+   "value": "",
+   "context": "python™",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "4",
+   "value": "",
+   "context": "python™",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "5",
+   "value": "",
+   "context": "python™",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "Python is a programming language that lets you work quickly",
+   "value": "",
+   "context": "python™",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "and integrate systems more effectively.",
+   "value": "",
+   "context": "python™",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": ">>>Learn More",
+   "value": "",
+   "context": "python™",
+   "url": "/doc/",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Get Started",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "",
+   "context": "Get Started",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "Get Started",
+   "value": "",
+   "context": "Get Started",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Whether you're new to programming or an experienced developer, it's easy to learn and use Python.",
+   "context": "Get Started",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Start with our Beginner’s Guide",
+   "value": "",
+   "context": "Get Started",
+   "url": "/about/gettingstarted/",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Download",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "",
+   "context": "Download",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "Download",
+   "value": "",
+   "context": "Download",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Python source code and installers are available for download for all versions!",
+   "context": "Download",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "Latest:",
+   "value": "",
+   "context": "Download",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Python 3.14.6",
+   "value": "",
+   "context": "Download",
+   "url": "/downloads/release/python-3146/",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Docs",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "Python Documentation"
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "",
+   "context": "Docs",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "Docs",
+   "value": "",
+   "context": "Docs",
+   "url": "",
+   "title": "Python Documentation"
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Documentation for Python's standard library, along with tutorials and guides, are available online.",
+   "context": "Docs",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "docs.python.org",
+   "value": "",
+   "context": "Docs",
+   "url": "https://docs.python.org",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Jobs",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "Python Job Board"
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "",
+   "context": "Jobs",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "Jobs",
+   "value": "",
+   "context": "Jobs",
+   "url": "",
+   "title": "Python Job Board"
+  },
+  {
+   "role": "text",
+   "name": "Looking for work or have a Python related position that you're trying to hire for? Our",
+   "value": "",
+   "context": "Jobs",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "strong",
+   "name": "",
+   "value": "relaunched community-run job board",
+   "context": "Jobs",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "is the place to go.",
+   "value": "",
+   "context": "Jobs",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "jobs.python.org",
+   "value": "",
+   "context": "Jobs",
+   "url": "//jobs.python.org",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Latest News",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "",
+   "context": "Latest News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "Latest News",
+   "value": "",
+   "context": "Latest News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": ">>>More",
+   "value": "",
+   "context": "Latest News",
+   "url": "https://blog.python.org",
+   "title": ""
+  },
+  {
+   "role": "time",
+   "name": "",
+   "value": "2026-07-28",
+   "context": "Latest News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Announcing a 2026 PSF Grants Program Funding Round",
+   "value": "",
+   "context": "Latest News",
+   "url": "https://pyfound.blogspot.com/2026/07/announcing-2026-psf-grants-program.html",
+   "title": ""
+  },
+  {
+   "role": "time",
+   "name": "",
+   "value": "2026-07-27",
+   "context": "Latest News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Announcing Python Software Foundation Fellow Members for Q2 2026! 🎉",
+   "value": "",
+   "context": "Latest News",
+   "url": "https://pyfound.blogspot.com/2026/07/announcing-python-software-foundation.html",
+   "title": ""
+  },
+  {
+   "role": "time",
+   "name": "",
+   "value": "2026-07-23",
+   "context": "Latest News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'link",
+   "name": "Get Ready: Python Packaging Council Nominations Opening Soon!",
+   "value": "",
+   "context": "Latest News",
+   "url": "https://pyfound.blogspot.com/2026/07/get-ready-python-packaging-council.html",
+   "title": ""
+  },
+  {
+   "role": "time",
+   "name": "",
+   "value": "2026-07-23",
+   "context": "Latest News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'link",
+   "name": "Get Ready: PSF Board Nominations Opening Soon!",
+   "value": "",
+   "context": "Latest News",
+   "url": "https://pyfound.blogspot.com/2026/07/get-ready-psf-board-nominations-opening.html",
+   "title": ""
+  },
+  {
+   "role": "time",
+   "name": "",
+   "value": "2026-07-23",
+   "context": "Latest News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'link",
+   "name": "Get Ready: 2026 Python Packaging Council Nominations Opening Soon!",
+   "value": "",
+   "context": "Latest News",
+   "url": "https://blog.python.org/2026/07/2026-packaging-council-nominations/",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Upcoming Events",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "",
+   "context": "Upcoming Events",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "Upcoming Events",
+   "value": "",
+   "context": "Upcoming Events",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": ">>>More",
+   "value": "",
+   "context": "Upcoming Events",
+   "url": "/events/calendars/",
+   "title": ""
+  },
+  {
+   "role": "time",
+   "name": "",
+   "value": "2026-08-08",
+   "context": "Upcoming Events",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "PyCon Indonesia 2026",
+   "value": "",
+   "context": "Upcoming Events",
+   "url": "/events/python-events/2192/",
+   "title": ""
+  },
+  {
+   "role": "time",
+   "name": "",
+   "value": "2026-08-13",
+   "context": "Upcoming Events",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Python Nordeste 2026 (PyNE 2026)",
+   "value": "",
+   "context": "Upcoming Events",
+   "url": "/events/python-events/2197/",
+   "title": ""
+  },
+  {
+   "role": "time",
+   "name": "",
+   "value": "2026-08-13",
+   "context": "Upcoming Events",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'link",
+   "name": "Python Help: Problems to Solutions",
+   "value": "",
+   "context": "Upcoming Events",
+   "url": "/events/python-user-group/2198/",
+   "title": ""
+  },
+  {
+   "role": "time",
+   "name": "",
+   "value": "2026-08-15",
+   "context": "Upcoming Events",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "PyCon Korea 2026",
+   "value": "",
+   "context": "Upcoming Events",
+   "url": "/events/python-events/2176/",
+   "title": ""
+  },
+  {
+   "role": "time",
+   "name": "",
+   "value": "2026-08-20",
+   "context": "Upcoming Events",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "PyCon Latam 2026",
+   "value": "",
+   "context": "Upcoming Events",
+   "url": "/events/python-events/2177/",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Success Stories",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "success-stories"
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "",
+   "context": "Success Stories",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "Success Stories",
+   "value": "",
+   "context": "Success Stories",
+   "url": "",
+   "title": "success-stories"
+  },
+  {
+   "role": "link",
+   "name": ">>>More",
+   "value": "",
+   "context": "Success Stories",
+   "url": "/success-stories/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "\"Python is all about automating repetitive tasks, leaving more time for your other SEO efforts.\"",
+   "value": "",
+   "context": "Success Stories",
+   "url": "/success-stories/python-seo-link-analyzer/",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "Using Python scripts to analyse SEO and broken links on your site by Marnix de Munck",
+   "value": "",
+   "context": "Success Stories",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "Using Python scripts to analyse SEO and broken links on your site by Marnix de Munck",
+   "value": "",
+   "context": "Success Stories",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Using Python scripts to analyse SEO and broken links on your site",
+   "value": "",
+   "context": "Success Stories",
+   "url": "/success-stories/python-seo-link-analyzer/",
+   "title": ""
+  },
+  {
+   "role": "emphasis",
+   "name": "",
+   "value": "by Marnix de Munck",
+   "context": "Using Python scripts to analyse SEO and broken links on your site",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Use Python for…",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "",
+   "context": "Use Python for…",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "Use Python for…",
+   "value": "",
+   "context": "Use Python for…",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": ">>>More",
+   "value": "",
+   "context": "Use Python for…",
+   "url": "/about/apps",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "Web Development:",
+   "value": "",
+   "context": "Use Python for…",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Django",
+   "value": "",
+   "context": "Use Python for…",
+   "url": "https://www.djangoproject.com/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "Django",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Pyramid",
+   "value": "",
+   "context": "Django",
+   "url": "https://trypyramid.com/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "Pyramid",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Bottle",
+   "value": "",
+   "context": "Pyramid",
+   "url": "https://bottlepy.org",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "Bottle",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Tornado",
+   "value": "",
+   "context": "Bottle",
+   "url": "https://www.tornadoweb.org/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "Tornado",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Flask",
+   "value": "",
+   "context": "Tornado",
+   "url": "https://flask.palletsprojects.com/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "Flask",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Litestar",
+   "value": "",
+   "context": "Flask",
+   "url": "https://litestar.dev/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "Litestar",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "FastAPI",
+   "value": "",
+   "context": "Litestar",
+   "url": "https://fastapi.tiangolo.com/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "GUI Development:",
+   "value": "",
+   "context": "Use Python for…",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "tkInter",
+   "value": "",
+   "context": "Use Python for…",
+   "url": "https://en.wikipedia.org/wiki/Tkinter",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "tkInter",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "PyGObject",
+   "value": "",
+   "context": "tkInter",
+   "url": "https://pygobject.gnome.org/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "PyGObject",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "PyQt",
+   "value": "",
+   "context": "PyGObject",
+   "url": "https://riverbankcomputing.com/software/pyqt/intro",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "PyQt",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "PySide",
+   "value": "",
+   "context": "PyQt",
+   "url": "https://wiki.qt.io/Qt_for_Python",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "PySide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Kivy",
+   "value": "",
+   "context": "PySide",
+   "url": "https://kivy.org/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "Kivy",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "wxPython",
+   "value": "",
+   "context": "Kivy",
+   "url": "https://www.wxpython.org/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "wxPython",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "DearPyGui",
+   "value": "",
+   "context": "wxPython",
+   "url": "https://dearpygui.readthedocs.io/en/latest/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "AI and Machine Learning:",
+   "value": "",
+   "context": "Use Python for…",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "PyTorch",
+   "value": "",
+   "context": "Use Python for…",
+   "url": "https://pytorch.org/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "PyTorch",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "TensorFlow",
+   "value": "",
+   "context": "PyTorch",
+   "url": "https://www.tensorflow.org/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "TensorFlow",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "scikit-learn",
+   "value": "",
+   "context": "TensorFlow",
+   "url": "https://scikit-learn.org/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "scikit-learn",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Transformers",
+   "value": "",
+   "context": "scikit-learn",
+   "url": "https://huggingface.co/docs/transformers/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "Transformers",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Anthropic",
+   "value": "",
+   "context": "Transformers",
+   "url": "https://docs.anthropic.com/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "Anthropic",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "LangChain",
+   "value": "",
+   "context": "Anthropic",
+   "url": "https://langchain.com/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "Scientific and Numeric:",
+   "value": "",
+   "context": "Use Python for…",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "SciPy",
+   "value": "",
+   "context": "Use Python for…",
+   "url": "https://scipy.org/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "SciPy",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Pandas",
+   "value": "",
+   "context": "SciPy",
+   "url": "https://pandas.pydata.org/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "Pandas",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "IPython",
+   "value": "",
+   "context": "Pandas",
+   "url": "https://ipython.org/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "Software Development:",
+   "value": "",
+   "context": "Use Python for…",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Buildbot",
+   "value": "",
+   "context": "Use Python for…",
+   "url": "https://buildbot.net/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "Buildbot",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Trac",
+   "value": "",
+   "context": "Buildbot",
+   "url": "https://trac.edgewall.org/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "Trac",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Roundup",
+   "value": "",
+   "context": "Trac",
+   "url": "https://www.roundup-tracker.org/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "System Administration:",
+   "value": "",
+   "context": "Use Python for…",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Ansible",
+   "value": "",
+   "context": "Use Python for…",
+   "url": "https://docs.ansible.com/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "Ansible",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Salt",
+   "value": "",
+   "context": "Ansible",
+   "url": "https://saltproject.io/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "Salt",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "OpenStack",
+   "value": "",
+   "context": "Salt",
+   "url": "https://www.openstack.org/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ",",
+   "value": "",
+   "context": "OpenStack",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "xonsh",
+   "value": "",
+   "context": "OpenStack",
+   "url": "https://xon.sh/",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": ">>> Python Software Foundation",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ">>>",
+   "value": "",
+   "context": ">>> Python Software Foundation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Python Software Foundation",
+   "value": "",
+   "context": ">>> Python Software Foundation",
+   "url": "/psf/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "The mission of the Python Software Foundation is to promote, protect, and advance the Python programming language, and to support and facilitate the growth of a diverse and international community of Python programmers.",
+   "value": "",
+   "context": ">>> Python Software Foundation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": ">>>Learn more",
+   "value": "",
+   "context": ">>> Python Software Foundation",
+   "url": "/psf/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Become a Member",
+   "value": "",
+   "context": ">>> Python Software Foundation",
+   "url": "/psf/membership/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Donate to the PSF",
+   "value": "",
+   "context": "Become a Member",
+   "url": "/psf/donations/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "About",
+   "value": "",
+   "context": "",
+   "url": "/about/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Applications",
+   "value": "",
+   "context": "About",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Applications",
+   "value": "",
+   "context": "About",
+   "url": "/about/apps/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Quotes",
+   "value": "",
+   "context": "About",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Quotes",
+   "value": "",
+   "context": "About",
+   "url": "/about/quotes/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Getting Started",
+   "value": "",
+   "context": "About",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Getting Started",
+   "value": "",
+   "context": "About",
+   "url": "/about/gettingstarted/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Help",
+   "value": "",
+   "context": "About",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Help",
+   "value": "",
+   "context": "About",
+   "url": "/about/help/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Python Brochure",
+   "value": "",
+   "context": "About",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Python Brochure",
+   "value": "",
+   "context": "About",
+   "url": "http://brochure.getpython.info/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Downloads",
+   "value": "",
+   "context": "",
+   "url": "/downloads/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "All releases",
+   "value": "",
+   "context": "Downloads",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "All releases",
+   "value": "",
+   "context": "Downloads",
+   "url": "/downloads/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Source code",
+   "value": "",
+   "context": "Downloads",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Source code",
+   "value": "",
+   "context": "Downloads",
+   "url": "/downloads/source/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Windows",
+   "value": "",
+   "context": "Downloads",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Windows",
+   "value": "",
+   "context": "Downloads",
+   "url": "/downloads/windows/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "macOS",
+   "value": "",
+   "context": "Downloads",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "macOS",
+   "value": "",
+   "context": "Downloads",
+   "url": "/downloads/macos/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Android",
+   "value": "",
+   "context": "Downloads",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Android",
+   "value": "",
+   "context": "Downloads",
+   "url": "/downloads/android/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "iOS",
+   "value": "",
+   "context": "Downloads",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "iOS",
+   "value": "",
+   "context": "Downloads",
+   "url": "/downloads/ios/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Other Platforms",
+   "value": "",
+   "context": "Downloads",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Other Platforms",
+   "value": "",
+   "context": "Downloads",
+   "url": "/download/other/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "License",
+   "value": "",
+   "context": "Downloads",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "License",
+   "value": "",
+   "context": "Downloads",
+   "url": "https://docs.python.org/3/license.html",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Alternative Implementations",
+   "value": "",
+   "context": "Downloads",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Alternative Implementations",
+   "value": "",
+   "context": "Downloads",
+   "url": "/download/alternatives",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Documentation",
+   "value": "",
+   "context": "",
+   "url": "/doc/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Docs",
+   "value": "",
+   "context": "Documentation",
+   "url": "",
+   "title": "Python Documentation"
+  },
+  {
+   "role": "link",
+   "name": "Docs",
+   "value": "",
+   "context": "Documentation",
+   "url": "/doc/",
+   "title": "Python Documentation"
+  },
+  {
+   "role": "treeitem",
+   "name": "Audio/Visual Talks",
+   "value": "",
+   "context": "Documentation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Audio/Visual Talks",
+   "value": "",
+   "context": "Documentation",
+   "url": "/doc/av",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Beginner's Guide",
+   "value": "",
+   "context": "Documentation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Beginner's Guide",
+   "value": "",
+   "context": "Documentation",
+   "url": "https://wiki.python.org/moin/BeginnersGuide",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "FAQ",
+   "value": "",
+   "context": "Documentation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "FAQ",
+   "value": "",
+   "context": "Documentation",
+   "url": "https://docs.python.org/3/faq/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Non-English Docs",
+   "value": "",
+   "context": "Documentation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Non-English Docs",
+   "value": "",
+   "context": "Documentation",
+   "url": "https://translations.python.org/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "PEP Index",
+   "value": "",
+   "context": "Documentation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "PEP Index",
+   "value": "",
+   "context": "Documentation",
+   "url": "https://peps.python.org",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Python Books",
+   "value": "",
+   "context": "Documentation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Python Books",
+   "value": "",
+   "context": "Documentation",
+   "url": "https://wiki.python.org/moin/PythonBooks",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Python Essays",
+   "value": "",
+   "context": "Documentation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Python Essays",
+   "value": "",
+   "context": "Documentation",
+   "url": "/doc/essays/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Community",
+   "value": "",
+   "context": "",
+   "url": "/community/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Diversity",
+   "value": "",
+   "context": "Community",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Diversity",
+   "value": "",
+   "context": "Community",
+   "url": "/community/diversity/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Mailing Lists",
+   "value": "",
+   "context": "Community",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Mailing Lists",
+   "value": "",
+   "context": "Community",
+   "url": "/community/lists/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "IRC",
+   "value": "",
+   "context": "Community",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "IRC",
+   "value": "",
+   "context": "Community",
+   "url": "/community/irc/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Forums",
+   "value": "",
+   "context": "Community",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Forums",
+   "value": "",
+   "context": "Community",
+   "url": "/community/forums/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "PSF Annual Impact Report",
+   "value": "",
+   "context": "Community",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "PSF Annual Impact Report",
+   "value": "",
+   "context": "Community",
+   "url": "/psf/annual-report/2024/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Python Conferences",
+   "value": "",
+   "context": "Community",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Python Conferences",
+   "value": "",
+   "context": "Community",
+   "url": "/community/workshops/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Special Interest Groups",
+   "value": "",
+   "context": "Community",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Special Interest Groups",
+   "value": "",
+   "context": "Community",
+   "url": "/community/sigs/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Python Logo",
+   "value": "",
+   "context": "Community",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Python Logo",
+   "value": "",
+   "context": "Community",
+   "url": "/community/logos/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Python Wiki",
+   "value": "",
+   "context": "Community",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Python Wiki",
+   "value": "",
+   "context": "Community",
+   "url": "https://wiki.python.org/moin/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Code of Conduct",
+   "value": "",
+   "context": "Community",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Code of Conduct",
+   "value": "",
+   "context": "Community",
+   "url": "/psf/conduct/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Community Awards",
+   "value": "",
+   "context": "Community",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Community Awards",
+   "value": "",
+   "context": "Community",
+   "url": "/community/awards",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Get Involved",
+   "value": "",
+   "context": "Community",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Get Involved",
+   "value": "",
+   "context": "Community",
+   "url": "/psf/get-involved/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Shared Stories",
+   "value": "",
+   "context": "Community",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Shared Stories",
+   "value": "",
+   "context": "Community",
+   "url": "/psf/community-stories/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Success Stories",
+   "value": "",
+   "context": "",
+   "url": "/success-stories/",
+   "title": "success-stories"
+  },
+  {
+   "role": "treeitem",
+   "name": "Arts",
+   "value": "",
+   "context": "Success Stories",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Arts",
+   "value": "",
+   "context": "Success Stories",
+   "url": "/success-stories/category/arts/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Business",
+   "value": "",
+   "context": "Success Stories",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Business",
+   "value": "",
+   "context": "Success Stories",
+   "url": "/success-stories/category/business/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Education",
+   "value": "",
+   "context": "Success Stories",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Education",
+   "value": "",
+   "context": "Success Stories",
+   "url": "/success-stories/category/education/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Engineering",
+   "value": "",
+   "context": "Success Stories",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Engineering",
+   "value": "",
+   "context": "Success Stories",
+   "url": "/success-stories/category/engineering/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Government",
+   "value": "",
+   "context": "Success Stories",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Government",
+   "value": "",
+   "context": "Success Stories",
+   "url": "/success-stories/category/government/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Scientific",
+   "value": "",
+   "context": "Success Stories",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Scientific",
+   "value": "",
+   "context": "Success Stories",
+   "url": "/success-stories/category/scientific/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Software Development",
+   "value": "",
+   "context": "Success Stories",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Software Development",
+   "value": "",
+   "context": "Success Stories",
+   "url": "/success-stories/category/software-development/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "News",
+   "value": "",
+   "context": "",
+   "url": "/blogs/",
+   "title": "News from around the Python world"
+  },
+  {
+   "role": "treeitem",
+   "name": "Python News",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "Python Insider Blog Posts"
+  },
+  {
+   "role": "link",
+   "name": "Python News",
+   "value": "",
+   "context": "News",
+   "url": "/blogs/",
+   "title": "Python Insider Blog Posts"
+  },
+  {
+   "role": "treeitem",
+   "name": "PSF Newsletter",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "Python Software Foundation Newsletter"
+  },
+  {
+   "role": "link",
+   "name": "PSF Newsletter",
+   "value": "",
+   "context": "News",
+   "url": "/psf/newsletter/",
+   "title": "Python Software Foundation Newsletter"
+  },
+  {
+   "role": "treeitem",
+   "name": "PSF News",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "PSF Blog"
+  },
+  {
+   "role": "link",
+   "name": "PSF News",
+   "value": "",
+   "context": "News",
+   "url": "http://pyfound.blogspot.com/",
+   "title": "PSF Blog"
+  },
+  {
+   "role": "treeitem",
+   "name": "PyCon US News",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "PyCon Blog"
+  },
+  {
+   "role": "link",
+   "name": "PyCon US News",
+   "value": "",
+   "context": "News",
+   "url": "http://pycon.blogspot.com/",
+   "title": "PyCon Blog"
+  },
+  {
+   "role": "treeitem",
+   "name": "News from the Community",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "Planet Python"
+  },
+  {
+   "role": "link",
+   "name": "News from the Community",
+   "value": "",
+   "context": "News",
+   "url": "http://planetpython.org/",
+   "title": "Planet Python"
+  },
+  {
+   "role": "link",
+   "name": "Events",
+   "value": "",
+   "context": "",
+   "url": "/events/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Python Events",
+   "value": "",
+   "context": "Events",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Python Events",
+   "value": "",
+   "context": "Events",
+   "url": "/events/python-events/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "User Group Events",
+   "value": "",
+   "context": "Events",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "User Group Events",
+   "value": "",
+   "context": "Events",
+   "url": "/events/python-user-group/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Python Events Archive",
+   "value": "",
+   "context": "Events",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Python Events Archive",
+   "value": "",
+   "context": "Events",
+   "url": "/events/python-events/past/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "User Group Events Archive",
+   "value": "",
+   "context": "Events",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "User Group Events Archive",
+   "value": "",
+   "context": "Events",
+   "url": "/events/python-user-group/past/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Submit an Event",
+   "value": "",
+   "context": "Events",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Submit an Event",
+   "value": "",
+   "context": "Events",
+   "url": "https://wiki.python.org/moin/PythonEventsCalendar#Submitting_an_Event",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Contributing",
+   "value": "",
+   "context": "",
+   "url": "/dev/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Developer's Guide",
+   "value": "",
+   "context": "Contributing",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Developer's Guide",
+   "value": "",
+   "context": "Contributing",
+   "url": "https://devguide.python.org/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Issue Tracker",
+   "value": "",
+   "context": "Contributing",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Issue Tracker",
+   "value": "",
+   "context": "Contributing",
+   "url": "https://github.com/python/cpython/issues",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "python-dev list",
+   "value": "",
+   "context": "Contributing",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "python-dev list",
+   "value": "",
+   "context": "Contributing",
+   "url": "https://mail.python.org/mailman/listinfo/python-dev",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Core Mentorship",
+   "value": "",
+   "context": "Contributing",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Core Mentorship",
+   "value": "",
+   "context": "Contributing",
+   "url": "/dev/core-mentorship/",
+   "title": ""
+  },
+  {
+   "role": "treeitem",
+   "name": "Report a Security Issue",
+   "value": "",
+   "context": "Contributing",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Report a Security Issue",
+   "value": "",
+   "context": "Contributing",
+   "url": "/dev/security/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Help & General Contact",
+   "value": "",
+   "context": "",
+   "url": "/about/help/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Diversity Initiatives",
+   "value": "",
+   "context": "",
+   "url": "/community/diversity/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Submit Website Bug",
+   "value": "",
+   "context": "",
+   "url": "https://github.com/python/pythondotorg/issues",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Status",
+   "value": "",
+   "context": "",
+   "url": "https://status.python.org/",
+   "title": "All Systems Operational"
+  },
+  {
+   "role": "text",
+   "name": "Status",
+   "value": "",
+   "context": "Status",
+   "url": "",
+   "title": "All Systems Operational"
+  },
+  {
+   "role": "text",
+   "name": "Copyright ©2001-2026.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Python Software Foundation",
+   "value": "",
+   "context": "",
+   "url": "/psf-landing/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Legal Statements",
+   "value": "",
+   "context": "Python Software Foundation",
+   "url": "/about/legal/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Privacy Notice",
+   "value": "",
+   "context": "Legal Statements",
+   "url": "https://policies.python.org/python.org/Privacy-Notice/",
+   "title": ""
+  }
+ ]
+}

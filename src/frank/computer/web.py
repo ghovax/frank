@@ -26,6 +26,7 @@ one worker thread.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import tempfile
@@ -34,9 +35,11 @@ from itertools import count
 from pathlib import Path
 from typing import Any, Optional
 
-from frank.computer.retrieval import Document, element_text
+from frank.computer.retrieval import Document, element_text, web_element_text
 from frank.computer.surface import Element, Surface, ToolFailure, message_loader, resolve_caret, resolve_range
 from frank.base.tuning import Tunable, active_tuning, settle
+
+logger = logging.getLogger(__name__)
 
 message = message_loader("browser")
 
@@ -287,6 +290,8 @@ _SURFACED_FLAGS = ("checked", "disabled", "expanded", "selected", "pressed", "ac
 _SNAPSHOT_LINE = re.compile(r"^(\s*)-\s+(?P<head>[^\s\[\":]+)(?P<rest>.*)$")
 _SNAPSHOT_NAME = re.compile(r'"((?:[^"\\]|\\.)*)"')
 _SNAPSHOT_ATTRS = re.compile(r"\[([a-zA-Z-]+)(?:=([^\]]*))?\]")
+# `- /url: "/wiki/Braille"` — the destination Playwright prints under a link, quoted or bare.
+_SNAPSHOT_URL = re.compile(r'^\s*-\s*/url:\s*"?(?P<url>[^"]*?)"?\s*$')
 # An aria-ref inside an iframe is prefixed with the frame it belongs to: ``f1e3`` is the third
 # element of the first frame. The prefix is Playwright's, and it is reused as the frame's id rather
 # than being paired with a second numbering of our own, which would only ever drift from it.
@@ -322,6 +327,7 @@ def _parse_snapshot(snapshot: str) -> tuple[list[Element], dict[str, str]]:
     labels: dict[int, str] = {}
     frame_owners: dict[str, str] = {}
     open_iframes: list[tuple[int, str]] = []   # (depth, the iframe element's own ref)
+    last_depth = -1                            # depth of the most recently kept element
     for line in snapshot.splitlines():
         match = _SNAPSHOT_LINE.match(line)
         if match is None:
@@ -329,7 +335,14 @@ def _parse_snapshot(snapshot: str) -> tuple[list[Element], dict[str, str]]:
         depth = len(match.group(1))
         role = match.group("head")
         rest = match.group("rest")
-        if role.startswith("/"):  # a property line like `- /url: ...`, not a node
+        if role.startswith("/"):
+            # A property line like `- /url: "/wiki/Braille"`, not a node of its own: the snapshot
+            # indents it under the element it describes. A link's destination is the only wording
+            # of a target that is written independently of the link's visible text, so it is the
+            # one thing on a page that says where a control goes rather than what it is called.
+            url_match = _SNAPSHOT_URL.match(line)
+            if url_match and elements and depth > last_depth:
+                elements[-1].flags["url"] = url_match.group("url")
             continue
         name_match = _SNAPSHOT_NAME.search(rest)
         name = name_match.group(1).replace('\\"', '"') if name_match else ""
@@ -365,12 +378,62 @@ def _parse_snapshot(snapshot: str) -> tuple[list[Element], dict[str, str]]:
             if flag in attributes:
                 element.flags[flag] = attributes[flag] if attributes[flag] else True
         elements.append(element)
+        last_depth = depth
     return elements, frame_owners
 
 
 def _snapshot(page) -> str:
     """The ref-carrying accessibility snapshot of the whole page (iframes inlined)."""
     return page.locator("body").aria_snapshot(mode="ai", timeout=active_tuning().amount(Tunable.snapshot_timeout_ms))
+
+
+# Tooltips, collected in one pass and keyed by the visible text they sit on.
+#
+# The aria snapshot cannot supply these. A `title` attribute becomes an element's accessible name
+# only when nothing else does, so the snapshot shows a title exactly when it is redundant and hides
+# it whenever the element also has visible text — which is the case where a title says something
+# new, about a fifth of all elements. Reading the DOM is therefore the only way to get at it.
+#
+# The join is by visible text rather than by aria-ref, because refs do not exist in the DOM and
+# resolving them one at a time would be a round trip per element. A label claimed by two different
+# titles is dropped rather than guessed at: a wrong tooltip is worse than none, since it would put
+# words into the key of an element that never said them.
+_TITLES_BY_LABEL = r"""() => {
+  const titles = new Map();
+  const ambiguous = new Set();
+  for (const node of document.querySelectorAll('[title]')) {
+    const title = (node.getAttribute('title') || '').trim();
+    if (!title) continue;
+    const label = (node.innerText || node.getAttribute('aria-label') || node.getAttribute('alt') || '')
+      .trim().replace(/\s+/g, ' ').slice(0, 120);
+    if (!label) continue;
+    if (titles.has(label) && titles.get(label) !== title) { ambiguous.add(label); continue; }
+    titles.set(label, title);
+  }
+  for (const label of ambiguous) titles.delete(label);
+  return Object.fromEntries(titles);
+}"""
+
+
+def _folded_label(text: str) -> str:
+    """The form a label is joined on: whitespace collapsed, truncated to the length the page script
+    also truncates to, so both sides of the join agree on what counts as the same label."""
+    return " ".join((text or "").split())[:120]
+
+
+def _titles_by_label(page) -> dict[str, str]:
+    """Every unambiguous tooltip on the page, or an empty mapping if the read fails.
+
+    Failure is tolerated rather than raised: a title is an enrichment, and a page that refuses to
+    be scripted should still be searchable by everything else it publishes."""
+    try:
+        found = page.evaluate(_TITLES_BY_LABEL)
+    except Exception:  # noqa: BLE001 — an unreadable tooltip is not a reason to fail a find
+        logger.debug("Could not read tooltips from the page", exc_info=True)
+        return {}
+    if not isinstance(found, dict):
+        return {}
+    return {_folded_label(str(label)): str(title) for label, title in found.items() if label and title}
 
 
 # Icon fonts render ligatures as Private Use Area characters that leak into a text read as garbage.
@@ -599,11 +662,20 @@ class WebSurface(Surface):
             page = self.page(session)
             documents: list[Document] = []
             elements, session.frame_owners = _parse_snapshot(_snapshot(page))
+            tooltips = _titles_by_label(page)
             for element in elements:
+                title = tooltips.get(_folded_label(element.name), "")
+                # Two texts, and the difference between them is the point. What the model *reads*
+                # keeps ``context``, because a person deciding between two "Add to Cart" buttons
+                # needs to know which section each sits in. What the embedding *ranks* leaves it
+                # out, because a section's label repeated across all its children is what makes
+                # those children indistinguishable to a cosine. See ``the-input-is-the-ceiling``.
                 shown = element_text(name=element.name, value=element.value, context=element.context)
-                key = element_text(name=element.name, value=element.value, context=element.context,
-                                   role=element.role)
+                key = web_element_text(name=element.name, role=element.role,
+                                       url=str(element.flags.get("url") or ""), title=title)
                 payload: dict[str, Any] = {"role": element.role}
+                if title:
+                    payload["title"] = title
                 # Which frame the element sits in, so a model meeting `f1e3` for the first time is
                 # not left to guess what `f1` is or to spend a call asking.
                 frame = _frame_of(element.token if isinstance(element.token, str) else None)

@@ -1,0 +1,5150 @@
+{
+ "site_name": "hackernews",
+ "page_url": "https://news.ycombinator.com/",
+ "elements": [
+  {
+   "role": "row",
+   "name": "Hacker Newsnew | past | comments | ask | show | jobs | submit login",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "Hacker Newsnew | past | comments | ask | show | jobs | submit login",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "Hacker Newsnew | past | comments | ask | show | jobs | submit login",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "https://news.ycombinator.com",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "Hacker Newsnew | past | comments | ask | show | jobs | submit",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Hacker News",
+   "value": "",
+   "context": "",
+   "url": "news",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "new",
+   "value": "",
+   "context": "Hacker News",
+   "url": "newest",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "new",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "past",
+   "value": "",
+   "context": "new",
+   "url": "front",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "past",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "comments",
+   "value": "",
+   "context": "past",
+   "url": "newcomments",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "comments",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "ask",
+   "value": "",
+   "context": "comments",
+   "url": "ask",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "ask",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "show",
+   "value": "",
+   "context": "ask",
+   "url": "show",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "show",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "jobs",
+   "value": "",
+   "context": "show",
+   "url": "jobs",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "jobs",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "submit",
+   "value": "",
+   "context": "jobs",
+   "url": "submit",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "login",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "login",
+   "value": "",
+   "context": "",
+   "url": "login?goto=news",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "1. upvote More Tailscale tricks for your jailbroken Kindle (tailscale.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "1.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49093569&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "More Tailscale tricks for your jailbroken Kindle (tailscale.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "More Tailscale tricks for your jailbroken Kindle",
+   "value": "",
+   "context": "",
+   "url": "https://tailscale.com/blog/jailbroken-kindle-proxy-tun-modes",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "More Tailscale tricks for your jailbroken Kindle",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "tailscale.com",
+   "value": "",
+   "context": "More Tailscale tricks for your jailbroken Kindle",
+   "url": "from?site=tailscale.com",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "tailscale.com",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "184 points by Error6571 5 hours ago | hide | 65 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "184 points by Error6571 5 hours ago | hide | 65 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "184 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Error6571",
+   "value": "",
+   "context": "",
+   "url": "user?id=Error6571",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-29T04:58:46 1785301126",
+   "value": "",
+   "context": "Error6571",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "5 hours ago",
+   "value": "",
+   "context": "Error6571",
+   "url": "item?id=49093569",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "Error6571",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "Error6571",
+   "url": "hide?id=49093569&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "65 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49093569",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "2. upvote User Interfaces of the Demo Scene (datagubbe.se)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "2.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49093434&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "User Interfaces of the Demo Scene (datagubbe.se)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "User Interfaces of the Demo Scene",
+   "value": "",
+   "context": "",
+   "url": "https://www.datagubbe.se/scenegui/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "User Interfaces of the Demo Scene",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "datagubbe.se",
+   "value": "",
+   "context": "User Interfaces of the Demo Scene",
+   "url": "from?site=datagubbe.se",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "datagubbe.se",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "195 points by zdw 5 hours ago | hide | 33 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "195 points by zdw 5 hours ago | hide | 33 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "195 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "zdw",
+   "value": "",
+   "context": "",
+   "url": "user?id=zdw",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-29T04:30:36 1785299436",
+   "value": "",
+   "context": "zdw",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "5 hours ago",
+   "value": "",
+   "context": "zdw",
+   "url": "item?id=49093434",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "zdw",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "zdw",
+   "url": "hide?id=49093434&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "33 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49093434",
+   "title": ""
+  },
+  {
+   "role": "'row",
+   "name": "3. upvote SQLite in Production: Optimizing WAL Mode, Concurrency, and VFS Layers (micrologics.org)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "3.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49094346&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'cell",
+   "name": "SQLite in Production: Optimizing WAL Mode, Concurrency, and VFS Layers (micrologics.org)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'link",
+   "name": "SQLite in Production: Optimizing WAL Mode, Concurrency, and VFS Layers",
+   "value": "",
+   "context": "",
+   "url": "https://micrologics.org/blog/sqlite-in-production-optimizing-wal-mode-concurrency-and-vfs-layers-for-low-latency-app-servers",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "micrologics.org",
+   "value": "",
+   "context": "",
+   "url": "from?site=micrologics.org",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "micrologics.org",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "57 points by ankitg12 3 hours ago | hide | 20 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "57 points by ankitg12 3 hours ago | hide | 20 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "57 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "ankitg12",
+   "value": "",
+   "context": "",
+   "url": "user?id=ankitg12",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-29T07:18:24 1785309504",
+   "value": "",
+   "context": "ankitg12",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "3 hours ago",
+   "value": "",
+   "context": "ankitg12",
+   "url": "item?id=49094346",
+   "title": "2026-07-29T07:18:24 1785309504"
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "ankitg12",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "ankitg12",
+   "url": "hide?id=49094346&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "20 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49094346",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "4. upvote Lisp moving Forth moving Lisp (letoverlambda.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "4.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49060363&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "Lisp moving Forth moving Lisp (letoverlambda.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Lisp moving Forth moving Lisp",
+   "value": "",
+   "context": "",
+   "url": "https://letoverlambda.com/textmode.cl/guest/chap8.html",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "Lisp moving Forth moving Lisp",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "letoverlambda.com",
+   "value": "",
+   "context": "Lisp moving Forth moving Lisp",
+   "url": "from?site=letoverlambda.com",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "letoverlambda.com",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "26 points by fallat 2 hours ago | hide | 4 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "26 points by fallat 2 hours ago | hide | 4 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "26 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "fallat",
+   "value": "",
+   "context": "",
+   "url": "user?id=fallat",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-26T17:37:33 1785087453",
+   "value": "",
+   "context": "fallat",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "2 hours ago",
+   "value": "",
+   "context": "fallat",
+   "url": "item?id=49060363",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "fallat",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "fallat",
+   "url": "hide?id=49060363&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "4 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49060363",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "5. upvote Codex Security (github.com/openai)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "5.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49089755&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "Codex Security (github.com/openai)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Codex Security",
+   "value": "",
+   "context": "",
+   "url": "https://github.com/openai/codex-security",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "Codex Security",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "github.com/openai",
+   "value": "",
+   "context": "Codex Security",
+   "url": "from?site=github.com/openai",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "github.com/openai",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "505 points by bakigul 13 hours ago | hide | 172 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "505 points by bakigul 13 hours ago | hide | 172 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "505 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "bakigul",
+   "value": "",
+   "context": "",
+   "url": "user?id=bakigul",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-28T20:52:55 1785271975",
+   "value": "",
+   "context": "bakigul",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "13 hours ago",
+   "value": "",
+   "context": "bakigul",
+   "url": "item?id=49089755",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "bakigul",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "bakigul",
+   "url": "hide?id=49089755&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "172 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49089755",
+   "title": ""
+  },
+  {
+   "role": "'row",
+   "name": "6. upvote Show HN: I was tired of opening 2 tabs for every HN link, so I made a userscript (github.com/twalichiewicz)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "6.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49090607&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'cell",
+   "name": "Show HN: I was tired of opening 2 tabs for every HN link, so I made a userscript (github.com/twalichiewicz)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'link",
+   "name": "Show HN: I was tired of opening 2 tabs for every HN link, so I made a userscript",
+   "value": "",
+   "context": "",
+   "url": "https://github.com/twalichiewicz/HNewhere",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "github.com/twalichiewicz",
+   "value": "",
+   "context": "",
+   "url": "from?site=github.com/twalichiewicz",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "github.com/twalichiewicz",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "317 points by twalichiewicz 12 hours ago | hide | 86 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "317 points by twalichiewicz 12 hours ago | hide | 86 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "317 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "twalichiewicz",
+   "value": "",
+   "context": "",
+   "url": "user?id=twalichiewicz",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-28T22:09:06 1785276546",
+   "value": "",
+   "context": "twalichiewicz",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "12 hours ago",
+   "value": "",
+   "context": "twalichiewicz",
+   "url": "item?id=49090607",
+   "title": "2026-07-28T22:09:06 1785276546"
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "twalichiewicz",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "twalichiewicz",
+   "url": "hide?id=49090607&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "86 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49090607",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "7. upvote Substack writers, you need a website (elizabethtai.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "7.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49086788&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "Substack writers, you need a website (elizabethtai.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Substack writers, you need a website",
+   "value": "",
+   "context": "",
+   "url": "https://elizabethtai.com/2026/06/10/substack-writers-you-need-a-website/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "Substack writers, you need a website",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "elizabethtai.com",
+   "value": "",
+   "context": "Substack writers, you need a website",
+   "url": "from?site=elizabethtai.com",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "elizabethtai.com",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "549 points by speckx 17 hours ago | hide | 277 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "549 points by speckx 17 hours ago | hide | 277 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "549 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "speckx",
+   "value": "",
+   "context": "",
+   "url": "user?id=speckx",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-28T16:58:31 1785257911",
+   "value": "",
+   "context": "speckx",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "17 hours ago",
+   "value": "",
+   "context": "speckx",
+   "url": "item?id=49086788",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "speckx",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "speckx",
+   "url": "hide?id=49086788&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "277 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49086788",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "8. upvote Half-Life ported to Mac OS 9 (mac-classic.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "8.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49089814&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "Half-Life ported to Mac OS 9 (mac-classic.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Half-Life ported to Mac OS 9",
+   "value": "",
+   "context": "",
+   "url": "https://mac-classic.com/news/half-life-ported-to-mac-os-9/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "Half-Life ported to Mac OS 9",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "mac-classic.com",
+   "value": "",
+   "context": "Half-Life ported to Mac OS 9",
+   "url": "from?site=mac-classic.com",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "mac-classic.com",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "248 points by freediver 13 hours ago | hide | 117 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "248 points by freediver 13 hours ago | hide | 117 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "248 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "freediver",
+   "value": "",
+   "context": "",
+   "url": "user?id=freediver",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-28T20:58:39 1785272319",
+   "value": "",
+   "context": "freediver",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "13 hours ago",
+   "value": "",
+   "context": "freediver",
+   "url": "item?id=49089814",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "freediver",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "freediver",
+   "url": "hide?id=49089814&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "117 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49089814",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "9. upvote LearnVector – Andrew Ng's AI company building one‑to‑one learning experiences (learnvector.ai)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "9.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49092499&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "LearnVector – Andrew Ng's AI company building one‑to‑one learning experiences (learnvector.ai)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "LearnVector – Andrew Ng's AI company building one‑to‑one learning experiences",
+   "value": "",
+   "context": "",
+   "url": "https://learnvector.ai/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "LearnVector – Andrew Ng's AI company building one‑to‑one learning experiences",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "learnvector.ai",
+   "value": "",
+   "context": "LearnVector – Andrew Ng's AI company building one‑to‑one learning experiences",
+   "url": "from?site=learnvector.ai",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "learnvector.ai",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "190 points by ajhai 8 hours ago | hide | 113 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "190 points by ajhai 8 hours ago | hide | 113 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "190 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "ajhai",
+   "value": "",
+   "context": "",
+   "url": "user?id=ajhai",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-29T01:49:19 1785289759",
+   "value": "",
+   "context": "ajhai",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "8 hours ago",
+   "value": "",
+   "context": "ajhai",
+   "url": "item?id=49092499",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "ajhai",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "ajhai",
+   "url": "hide?id=49092499&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "113 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49092499",
+   "title": ""
+  },
+  {
+   "role": "'row",
+   "name": "10. upvote Cracking Windows Open: Porting RADV to Win32 (collabora.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "10.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49093435&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'cell",
+   "name": "Cracking Windows Open: Porting RADV to Win32 (collabora.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'link",
+   "name": "Cracking Windows Open: Porting RADV to Win32",
+   "value": "",
+   "context": "",
+   "url": "https://www.collabora.com/news-and-blog/news-and-events/cracking-windows-open-porting-radv-to-win32.html",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "collabora.com",
+   "value": "",
+   "context": "",
+   "url": "from?site=collabora.com",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "collabora.com",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "47 points by zdw 5 hours ago | hide | 17 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "47 points by zdw 5 hours ago | hide | 17 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "47 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "zdw",
+   "value": "",
+   "context": "",
+   "url": "user?id=zdw",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-29T04:30:47 1785299447",
+   "value": "",
+   "context": "zdw",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "5 hours ago",
+   "value": "",
+   "context": "zdw",
+   "url": "item?id=49093435",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "zdw",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "zdw",
+   "url": "hide?id=49093435&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "17 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49093435",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "11. upvote Kimi K3 Architecture Overview and Notes (sebastianraschka.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "11.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49085698&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "Kimi K3 Architecture Overview and Notes (sebastianraschka.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Kimi K3 Architecture Overview and Notes",
+   "value": "",
+   "context": "",
+   "url": "https://sebastianraschka.com/blog/2026/kimi-k3-architecture-notes.html",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "Kimi K3 Architecture Overview and Notes",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "sebastianraschka.com",
+   "value": "",
+   "context": "Kimi K3 Architecture Overview and Notes",
+   "url": "from?site=sebastianraschka.com",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "sebastianraschka.com",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "427 points by ModelForge 18 hours ago | hide | 88 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "427 points by ModelForge 18 hours ago | hide | 88 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "427 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "ModelForge",
+   "value": "",
+   "context": "",
+   "url": "user?id=ModelForge",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-28T15:48:34 1785253714",
+   "value": "",
+   "context": "ModelForge",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "18 hours ago",
+   "value": "",
+   "context": "ModelForge",
+   "url": "item?id=49085698",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "ModelForge",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "ModelForge",
+   "url": "hide?id=49085698&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "88 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49085698",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "12. upvote ReFrame – The EPaper Camera (reframe.camera)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "12.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49091379&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "ReFrame – The EPaper Camera (reframe.camera)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "ReFrame – The EPaper Camera",
+   "value": "",
+   "context": "",
+   "url": "https://reframe.camera/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "ReFrame – The EPaper Camera",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "reframe.camera",
+   "value": "",
+   "context": "ReFrame – The EPaper Camera",
+   "url": "from?site=reframe.camera",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "reframe.camera",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "135 points by phil294 10 hours ago | hide | 27 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "135 points by phil294 10 hours ago | hide | 27 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "135 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "phil294",
+   "value": "",
+   "context": "",
+   "url": "user?id=phil294",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-28T23:27:09 1785281229",
+   "value": "",
+   "context": "phil294",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "10 hours ago",
+   "value": "",
+   "context": "phil294",
+   "url": "item?id=49091379",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "phil294",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "phil294",
+   "url": "hide?id=49091379&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "27 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49091379",
+   "title": ""
+  },
+  {
+   "role": "'row",
+   "name": "13. upvote Hubble: Open-source notetaking app for you and your agents (hubble.md)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "13.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49091730&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'cell",
+   "name": "Hubble: Open-source notetaking app for you and your agents (hubble.md)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'link",
+   "name": "Hubble: Open-source notetaking app for you and your agents",
+   "value": "",
+   "context": "",
+   "url": "https://www.hubble.md/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hubble.md",
+   "value": "",
+   "context": "",
+   "url": "from?site=hubble.md",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "hubble.md",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "116 points by handfuloflight 10 hours ago | hide | 42 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "116 points by handfuloflight 10 hours ago | hide | 42 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "116 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "handfuloflight",
+   "value": "",
+   "context": "",
+   "url": "user?id=handfuloflight",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-29T00:11:23 1785283883",
+   "value": "",
+   "context": "handfuloflight",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "10 hours ago",
+   "value": "",
+   "context": "handfuloflight",
+   "url": "item?id=49091730",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "handfuloflight",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "handfuloflight",
+   "url": "hide?id=49091730&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "42 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49091730",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "14. upvote Steel Bank Common Lisp version 2.6.7 (sbcl.org)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "14.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49086971&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "Steel Bank Common Lisp version 2.6.7 (sbcl.org)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Steel Bank Common Lisp version 2.6.7",
+   "value": "",
+   "context": "",
+   "url": "https://sbcl.org/all-news.html?2.6.7",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "Steel Bank Common Lisp version 2.6.7",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "sbcl.org",
+   "value": "",
+   "context": "Steel Bank Common Lisp version 2.6.7",
+   "url": "from?site=sbcl.org",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "sbcl.org",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "237 points by tmtvl 17 hours ago | hide | 105 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "237 points by tmtvl 17 hours ago | hide | 105 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "237 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "tmtvl",
+   "value": "",
+   "context": "",
+   "url": "user?id=tmtvl",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-28T17:11:54 1785258714",
+   "value": "",
+   "context": "tmtvl",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "17 hours ago",
+   "value": "",
+   "context": "tmtvl",
+   "url": "item?id=49086971",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "tmtvl",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "tmtvl",
+   "url": "hide?id=49086971&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "105 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49086971",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "15. upvote Teach yourself programming in ten years (1998) (norvig.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "15.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49055816&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "Teach yourself programming in ten years (1998) (norvig.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Teach yourself programming in ten years (1998)",
+   "value": "",
+   "context": "",
+   "url": "https://www.norvig.com/21-days.html",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "Teach yourself programming in ten years (1998)",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "norvig.com",
+   "value": "",
+   "context": "Teach yourself programming in ten years (1998)",
+   "url": "from?site=norvig.com",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "norvig.com",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "143 points by vinhnx 11 hours ago | hide | 86 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "143 points by vinhnx 11 hours ago | hide | 86 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "143 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "vinhnx",
+   "value": "",
+   "context": "",
+   "url": "user?id=vinhnx",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-26T08:06:45 1785053205",
+   "value": "",
+   "context": "vinhnx",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "11 hours ago",
+   "value": "",
+   "context": "vinhnx",
+   "url": "item?id=49055816",
+   "title": "2026-07-26T08:06:45 1785053205"
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "vinhnx",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "vinhnx",
+   "url": "hide?id=49055816&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "86 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49055816",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "16. upvote Delayed Gratification – Proud to Be 'Last to Breaking News' (slow-journalism.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "16.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49085731&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "Delayed Gratification – Proud to Be 'Last to Breaking News' (slow-journalism.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Delayed Gratification – Proud to Be 'Last to Breaking News'",
+   "value": "",
+   "context": "",
+   "url": "https://www.slow-journalism.com/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "Delayed Gratification – Proud to Be 'Last to Breaking News'",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "slow-journalism.com",
+   "value": "",
+   "context": "Delayed Gratification – Proud to Be 'Last to Breaking News'",
+   "url": "from?site=slow-journalism.com",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "slow-journalism.com",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "299 points by speerer 18 hours ago | hide | 165 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "299 points by speerer 18 hours ago | hide | 165 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "299 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "speerer",
+   "value": "",
+   "context": "",
+   "url": "user?id=speerer",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-28T15:50:38 1785253838",
+   "value": "",
+   "context": "speerer",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "18 hours ago",
+   "value": "",
+   "context": "speerer",
+   "url": "item?id=49085731",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "speerer",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "speerer",
+   "url": "hide?id=49085731&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "165 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49085731",
+   "title": ""
+  },
+  {
+   "role": "'row",
+   "name": "17. upvote Transformer Transformer: A Unified Model for Motion-Conditioned Robot Co-Design (transformer-transformer.github.io)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "17.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49093232&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'cell",
+   "name": "Transformer Transformer: A Unified Model for Motion-Conditioned Robot Co-Design (transformer-transformer.github.io)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'link",
+   "name": "Transformer Transformer: A Unified Model for Motion-Conditioned Robot Co-Design",
+   "value": "",
+   "context": "",
+   "url": "https://transformer-transformer.github.io/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "transformer-transformer.github.io",
+   "value": "",
+   "context": "",
+   "url": "from?site=transformer-transformer.github.io",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "transformer-transformer.github.io",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "53 points by ilreb 6 hours ago | hide | 3 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "53 points by ilreb 6 hours ago | hide | 3 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "53 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "ilreb",
+   "value": "",
+   "context": "",
+   "url": "user?id=ilreb",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-29T03:52:29 1785297149",
+   "value": "",
+   "context": "ilreb",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "6 hours ago",
+   "value": "",
+   "context": "ilreb",
+   "url": "item?id=49093232",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "ilreb",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "ilreb",
+   "url": "hide?id=49093232&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "3 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49093232",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "18. upvote Hooray for the Sockets Interface (apnic.net)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "18.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49092754&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "Hooray for the Sockets Interface (apnic.net)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Hooray for the Sockets Interface",
+   "value": "",
+   "context": "",
+   "url": "https://blog.apnic.net/2026/07/28/hooray-for-the-sockets-interface/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "Hooray for the Sockets Interface",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "apnic.net",
+   "value": "",
+   "context": "Hooray for the Sockets Interface",
+   "url": "from?site=apnic.net",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "apnic.net",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "40 points by jruohonen 7 hours ago | hide | 20 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "40 points by jruohonen 7 hours ago | hide | 20 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "40 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "jruohonen",
+   "value": "",
+   "context": "",
+   "url": "user?id=jruohonen",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-29T02:25:29 1785291929",
+   "value": "",
+   "context": "jruohonen",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "7 hours ago",
+   "value": "",
+   "context": "jruohonen",
+   "url": "item?id=49092754",
+   "title": "2026-07-29T02:25:29 1785291929"
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "jruohonen",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "jruohonen",
+   "url": "hide?id=49092754&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "20 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49092754",
+   "title": ""
+  },
+  {
+   "role": "'row",
+   "name": "19. upvote Ancient Rome''s version of Google Maps: how long to reach the beach (euronews.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "19.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49012754&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'cell",
+   "name": "Ancient Rome''s version of Google Maps: how long to reach the beach (euronews.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'link",
+   "name": "Ancient Rome''s version of Google Maps: how long to reach the beach",
+   "value": "",
+   "context": "",
+   "url": "https://www.euronews.com/culture/2026/07/02/ancient-romes-version-of-google-maps-how-long-to-reach-the-beach",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "euronews.com",
+   "value": "",
+   "context": "",
+   "url": "from?site=euronews.com",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "euronews.com",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "9 points by gnabgib 2 hours ago | hide | 3 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "9 points by gnabgib 2 hours ago | hide | 3 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "9 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "gnabgib",
+   "value": "",
+   "context": "",
+   "url": "user?id=gnabgib",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-22T20:14:38 1784751278",
+   "value": "",
+   "context": "gnabgib",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "2 hours ago",
+   "value": "",
+   "context": "gnabgib",
+   "url": "item?id=49012754",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "gnabgib",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "gnabgib",
+   "url": "hide?id=49012754&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "3 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49012754",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "20. upvote 60 Years Ago, a Submerged Submarine Circled the Globe for the First Time (2020) (popularmechanics.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "20.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49076450&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "60 Years Ago, a Submerged Submarine Circled the Globe for the First Time (2020) (popularmechanics.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "60 Years Ago, a Submerged Submarine Circled the Globe for the First Time (2020)",
+   "value": "",
+   "context": "",
+   "url": "https://www.popularmechanics.com/military/weapons/a32009109/operation-sandblast-sumbarine-circumnavigation/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "60 Years Ago, a Submerged Submarine Circled the Globe for the First Time (2020)",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "popularmechanics.com",
+   "value": "",
+   "context": "60 Years Ago, a Submerged Submarine Circled the Globe for the First Time (2020)",
+   "url": "from?site=popularmechanics.com",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "popularmechanics.com",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "21 points by baud147258 5 hours ago | hide | 7 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "21 points by baud147258 5 hours ago | hide | 7 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "21 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "baud147258",
+   "value": "",
+   "context": "",
+   "url": "user?id=baud147258",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-27T22:42:11 1785192131",
+   "value": "",
+   "context": "baud147258",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "5 hours ago",
+   "value": "",
+   "context": "baud147258",
+   "url": "item?id=49076450",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "baud147258",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "baud147258",
+   "url": "hide?id=49076450&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "7 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49076450",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "21. upvote Log is non-monotonic in PHP and Lua (purplesyringa.moe)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "21.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49021756&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "Log is non-monotonic in PHP and Lua (purplesyringa.moe)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Log is non-monotonic in PHP and Lua",
+   "value": "",
+   "context": "",
+   "url": "https://purplesyringa.moe/blog/log-is-non-monotonic-in-php-and-lua/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "Log is non-monotonic in PHP and Lua",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "purplesyringa.moe",
+   "value": "",
+   "context": "Log is non-monotonic in PHP and Lua",
+   "url": "from?site=purplesyringa.moe",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "purplesyringa.moe",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "57 points by ibobev 8 hours ago | hide | 39 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "57 points by ibobev 8 hours ago | hide | 39 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "57 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "ibobev",
+   "value": "",
+   "context": "",
+   "url": "user?id=ibobev",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-23T14:00:48 1784815248",
+   "value": "",
+   "context": "ibobev",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "8 hours ago",
+   "value": "",
+   "context": "ibobev",
+   "url": "item?id=49021756",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "ibobev",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "ibobev",
+   "url": "hide?id=49021756&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "39 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49021756",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "22. upvote Una GPS smart watch – Repairable, USB-C charging, developer-friendly (unawatch.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "22.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49084813&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "Una GPS smart watch – Repairable, USB-C charging, developer-friendly (unawatch.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Una GPS smart watch – Repairable, USB-C charging, developer-friendly",
+   "value": "",
+   "context": "",
+   "url": "https://unawatch.com/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "Una GPS smart watch – Repairable, USB-C charging, developer-friendly",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "unawatch.com",
+   "value": "",
+   "context": "Una GPS smart watch – Repairable, USB-C charging, developer-friendly",
+   "url": "from?site=unawatch.com",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "unawatch.com",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "220 points by pimterry 19 hours ago | hide | 139 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "220 points by pimterry 19 hours ago | hide | 139 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "220 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "pimterry",
+   "value": "",
+   "context": "",
+   "url": "user?id=pimterry",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-28T14:48:13 1785250093",
+   "value": "",
+   "context": "pimterry",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "19 hours ago",
+   "value": "",
+   "context": "pimterry",
+   "url": "item?id=49084813",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "pimterry",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "pimterry",
+   "url": "hide?id=49084813&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "139 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49084813",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "23. upvote Zig's Incremental Compilation Internals (mlugg.co.uk)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "23.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49085666&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "Zig's Incremental Compilation Internals (mlugg.co.uk)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Zig's Incremental Compilation Internals",
+   "value": "",
+   "context": "",
+   "url": "https://mlugg.co.uk/posts/incremental-compilation-internals/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "Zig's Incremental Compilation Internals",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "mlugg.co.uk",
+   "value": "",
+   "context": "Zig's Incremental Compilation Internals",
+   "url": "from?site=mlugg.co.uk",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "mlugg.co.uk",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "246 points by garyhtou 18 hours ago | hide | 174 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "246 points by garyhtou 18 hours ago | hide | 174 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "246 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "garyhtou",
+   "value": "",
+   "context": "",
+   "url": "user?id=garyhtou",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-28T15:46:45 1785253605",
+   "value": "",
+   "context": "garyhtou",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "18 hours ago",
+   "value": "",
+   "context": "garyhtou",
+   "url": "item?id=49085666",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "garyhtou",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "garyhtou",
+   "url": "hide?id=49085666&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "174 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49085666",
+   "title": ""
+  },
+  {
+   "role": "'row",
+   "name": "24. upvote Mag Computer: A Mag History of RAM (1960–2025) (magworld.pw)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "24.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49036182&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'cell",
+   "name": "Mag Computer: A Mag History of RAM (1960–2025) (magworld.pw)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'link",
+   "name": "Mag Computer: A Mag History of RAM (1960–2025)",
+   "value": "",
+   "context": "",
+   "url": "https://magworld.pw/episodes/computer/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "magworld.pw",
+   "value": "",
+   "context": "",
+   "url": "from?site=magworld.pw",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "magworld.pw",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "23 points by evakhoury 6 hours ago | hide | 3 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "23 points by evakhoury 6 hours ago | hide | 3 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "23 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "evakhoury",
+   "value": "",
+   "context": "",
+   "url": "user?id=evakhoury",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-24T14:26:09 1784903169",
+   "value": "",
+   "context": "evakhoury",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "6 hours ago",
+   "value": "",
+   "context": "evakhoury",
+   "url": "item?id=49036182",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "evakhoury",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "evakhoury",
+   "url": "hide?id=49036182&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "3 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49036182",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "25. upvote The iPhone Upgrade Program is being replaced by Apple Upgrade (apple.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "25.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49087306&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "The iPhone Upgrade Program is being replaced by Apple Upgrade (apple.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "The iPhone Upgrade Program is being replaced by Apple Upgrade",
+   "value": "",
+   "context": "",
+   "url": "https://www.apple.com/shop/iphone/iphone-upgrade-program",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "The iPhone Upgrade Program is being replaced by Apple Upgrade",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "apple.com",
+   "value": "",
+   "context": "The iPhone Upgrade Program is being replaced by Apple Upgrade",
+   "url": "from?site=apple.com",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "apple.com",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "182 points by lkurtz 16 hours ago | hide | 330 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "182 points by lkurtz 16 hours ago | hide | 330 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "182 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "lkurtz",
+   "value": "",
+   "context": "",
+   "url": "user?id=lkurtz",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-28T17:37:12 1785260232",
+   "value": "",
+   "context": "lkurtz",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "16 hours ago",
+   "value": "",
+   "context": "lkurtz",
+   "url": "item?id=49087306",
+   "title": "2026-07-28T17:37:12 1785260232"
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "lkurtz",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "lkurtz",
+   "url": "hide?id=49087306&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "330 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49087306",
+   "title": ""
+  },
+  {
+   "role": "'row",
+   "name": "26. upvote Truth is not a direction: a Tarski attack on LLM probes (abeljansma.nl)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "26.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49069033&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'cell",
+   "name": "Truth is not a direction: a Tarski attack on LLM probes (abeljansma.nl)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'link",
+   "name": "Truth is not a direction: a Tarski attack on LLM probes",
+   "value": "",
+   "context": "",
+   "url": "https://abeljansma.nl/2026/07/10/truth-is-not-a-direction.html",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "abeljansma.nl",
+   "value": "",
+   "context": "",
+   "url": "from?site=abeljansma.nl",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "abeljansma.nl",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "98 points by abelaer 9 hours ago | hide | 55 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "98 points by abelaer 9 hours ago | hide | 55 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "98 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "abelaer",
+   "value": "",
+   "context": "",
+   "url": "user?id=abelaer",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-27T12:56:36 1785156996",
+   "value": "",
+   "context": "abelaer",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "9 hours ago",
+   "value": "",
+   "context": "abelaer",
+   "url": "item?id=49069033",
+   "title": "2026-07-27T12:56:36 1785156996"
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "abelaer",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "abelaer",
+   "url": "hide?id=49069033&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "55 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49069033",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "27. upvote Beyond Greece and Rome (aeon.co)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "27.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49073357&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "Beyond Greece and Rome (aeon.co)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Beyond Greece and Rome",
+   "value": "",
+   "context": "",
+   "url": "https://aeon.co/essays/uncovering-a-global-ancient-history-beyond-greece-and-rome",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "Beyond Greece and Rome",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "aeon.co",
+   "value": "",
+   "context": "Beyond Greece and Rome",
+   "url": "from?site=aeon.co",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "aeon.co",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "36 points by diodorus 8 hours ago | hide | 38 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "36 points by diodorus 8 hours ago | hide | 38 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "36 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "diodorus",
+   "value": "",
+   "context": "",
+   "url": "user?id=diodorus",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-27T18:04:30 1785175470",
+   "value": "",
+   "context": "diodorus",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "8 hours ago",
+   "value": "",
+   "context": "diodorus",
+   "url": "item?id=49073357",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "diodorus",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "diodorus",
+   "url": "hide?id=49073357&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "38 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49073357",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "28. upvote Interview with Boris Cherny [video] (youtube.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "28.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49077040&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "Interview with Boris Cherny [video] (youtube.com)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Interview with Boris Cherny [video]",
+   "value": "",
+   "context": "",
+   "url": "https://www.youtube.com/watch?v=qyPCVqFUyDo",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "Interview with Boris Cherny [video]",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "youtube.com",
+   "value": "",
+   "context": "Interview with Boris Cherny [video]",
+   "url": "from?site=youtube.com",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "youtube.com",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "60 points by knighthacker 14 hours ago | hide | 65 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "60 points by knighthacker 14 hours ago | hide | 65 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "60 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "knighthacker",
+   "value": "",
+   "context": "",
+   "url": "user?id=knighthacker",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-27T23:33:04 1785195184",
+   "value": "",
+   "context": "knighthacker",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "14 hours ago",
+   "value": "",
+   "context": "knighthacker",
+   "url": "item?id=49077040",
+   "title": "2026-07-27T23:33:04 1785195184"
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "knighthacker",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "knighthacker",
+   "url": "hide?id=49077040&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "65 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49077040",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "29. upvote Now is the time to give LLMs access to the ACM digital library (acm.org)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "29.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49084987&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "Now is the time to give LLMs access to the ACM digital library (acm.org)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Now is the time to give LLMs access to the ACM digital library",
+   "value": "",
+   "context": "",
+   "url": "https://cacm.acm.org/opinion/now-is-the-time-to-give-llms-access-to-the-acm-digital-library/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "Now is the time to give LLMs access to the ACM digital library",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "acm.org",
+   "value": "",
+   "context": "Now is the time to give LLMs access to the ACM digital library",
+   "url": "from?site=acm.org",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "acm.org",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "163 points by rbanffy 19 hours ago | hide | 136 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "163 points by rbanffy 19 hours ago | hide | 136 comments",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "163 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "rbanffy",
+   "value": "",
+   "context": "",
+   "url": "user?id=rbanffy",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-28T15:01:12 1785250872",
+   "value": "",
+   "context": "rbanffy",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "19 hours ago",
+   "value": "",
+   "context": "rbanffy",
+   "url": "item?id=49084987",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "rbanffy",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "rbanffy",
+   "url": "hide?id=49084987&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "136 comments",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49084987",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "30. upvote ChatGPT claims rogue AI attacked more companies (bbc.co.uk)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "30.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "upvote",
+   "value": "",
+   "context": "",
+   "url": "vote?id=49094996&how=up&goto=news",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "upvote",
+   "value": "",
+   "context": "upvote",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "ChatGPT claims rogue AI attacked more companies (bbc.co.uk)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "ChatGPT claims rogue AI attacked more companies",
+   "value": "",
+   "context": "",
+   "url": "https://www.bbc.co.uk/news/articles/c2el319vzr3o",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "(",
+   "value": "",
+   "context": "ChatGPT claims rogue AI attacked more companies",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "bbc.co.uk",
+   "value": "",
+   "context": "ChatGPT claims rogue AI attacked more companies",
+   "url": "from?site=bbc.co.uk",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "bbc.co.uk",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "12 points by osrec 1 hour ago | hide | discuss",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "12 points by osrec 1 hour ago | hide | discuss",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "12 points by",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "osrec",
+   "value": "",
+   "context": "",
+   "url": "user?id=osrec",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2026-07-29T09:03:17 1785315797",
+   "value": "",
+   "context": "osrec",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "1 hour ago",
+   "value": "",
+   "context": "osrec",
+   "url": "item?id=49094996",
+   "title": "2026-07-29T09:03:17 1785315797"
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "osrec",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "hide",
+   "value": "",
+   "context": "osrec",
+   "url": "hide?id=49094996&goto=news",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "hide",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "discuss",
+   "value": "",
+   "context": "hide",
+   "url": "item?id=49094996",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "More",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "More",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "More",
+   "value": "",
+   "context": "",
+   "url": "?p=2",
+   "title": ""
+  },
+  {
+   "role": "row",
+   "name": "Guidelines | FAQ | Lists | API | Security | Legal | Apply to YC | Contact Search:",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "cell",
+   "name": "Guidelines | FAQ | Lists | API | Security | Legal | Apply to YC | Contact Search:",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Guidelines",
+   "value": "",
+   "context": "",
+   "url": "newsguidelines.html",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "Guidelines",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "FAQ",
+   "value": "",
+   "context": "Guidelines",
+   "url": "newsfaq.html",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "FAQ",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Lists",
+   "value": "",
+   "context": "FAQ",
+   "url": "lists",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "Lists",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "API",
+   "value": "",
+   "context": "Lists",
+   "url": "https://github.com/HackerNews/API",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "API",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Security",
+   "value": "",
+   "context": "API",
+   "url": "security.html",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "Security",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Legal",
+   "value": "",
+   "context": "Security",
+   "url": "https://www.ycombinator.com/legal/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "Legal",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Apply to YC",
+   "value": "",
+   "context": "Legal",
+   "url": "https://www.ycombinator.com/apply/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "|",
+   "value": "",
+   "context": "Apply to YC",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Contact",
+   "value": "",
+   "context": "Apply to YC",
+   "url": "mailto:hn@ycombinator.com",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "Search:",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "textbox",
+   "name": "",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  }
+ ]
+}

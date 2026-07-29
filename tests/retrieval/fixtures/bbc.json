@@ -1,0 +1,2838 @@
+{
+ "site_name": "bbc",
+ "page_url": "https://www.bbc.com/news",
+ "elements": [
+  {
+   "role": "link",
+   "name": "Skip to content",
+   "value": "",
+   "context": "",
+   "url": "#bbc-main",
+   "title": ""
+  },
+  {
+   "role": "button",
+   "name": "Open menu",
+   "value": "",
+   "context": "Skip to content",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "British Broadcasting Corporation",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "British Broadcasting Corporation",
+   "value": "",
+   "context": "British Broadcasting Corporation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Register",
+   "value": "",
+   "context": "British Broadcasting Corporation",
+   "url": "https://session.bbc.com/session?action=register&userOrigin=BBCS_BBC&ptrt=https%3A%2F%2Fwww.bbc.com%2Fnews",
+   "title": ""
+  },
+  {
+   "role": "button",
+   "name": "Register",
+   "value": "",
+   "context": "Register",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Register",
+   "context": "Register",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Sign In",
+   "value": "",
+   "context": "Register",
+   "url": "https://session.bbc.com/session?userOrigin=BBCS_BBC&ptrt=https%3A%2F%2Fwww.bbc.com%2Fnews",
+   "title": ""
+  },
+  {
+   "role": "button",
+   "name": "Sign In",
+   "value": "",
+   "context": "Sign In",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Sign In",
+   "context": "Sign In",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Home",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "News",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Sport",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/sport",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Business",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/business",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Technology",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/technology",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Health",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/health",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Culture",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/culture",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Arts",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/arts",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Travel",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/travel",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Earth",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/future-planet",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Audio",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/audio",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Video",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/video",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Live",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/live",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "US & Canada",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/us-canada",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "UK",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/uk",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Africa",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/world/africa",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Asia",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/world/asia",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Australia",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/world/australia",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Europe",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/world/europe",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Latin America",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/world/latin_america",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Middle East",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/world/middle_east",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "In Pictures",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/in_pictures",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "BBC InDepth",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/bbcindepth",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "BBC Verify",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/bbcverify",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "News",
+   "value": "",
+   "context": "Skip to content",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "News",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Police officers support team wear blue backpacks and hats as they board a blue helicopter with the word 'police' on it, in Tokyo on Wednesday",
+   "value": "",
+   "context": "News",
+   "url": "https://www.bbc.com/news/live/c9q2481v855t",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "Police officers support team wear blue backpacks and hats as they board a blue helicopter with the word 'police' on it, in Tokyo on Wednesday",
+   "value": "",
+   "context": "Police officers support team wear blue backpacks and hats as they board a blue helicopter with the word 'police' on it, in Tokyo on Wednesday",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "LIVE Japan PM says rescue teams in 'race against time' after earthquake kills at least 13 Rescuers are searching for survivors at the site of a collapsed shopping centre and a factory. The quake, with a magnitude of 6.8, hit south-west Japan on Tuesday.",
+   "value": "",
+   "context": "Police officers support team wear blue backpacks and hats as they board a blue helicopter with the word 'police' on it, in Tokyo on Wednesday",
+   "url": "https://www.bbc.com/news/live/c9q2481v855t",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "LIVE",
+   "context": "LIVE Japan PM says rescue teams in 'race against time' after earthquake kills at least 13 Rescuers are searching for survivors at the site of a collapsed shopping centre and a factory. The quake, with a magnitude of 6.8, hit south-west Japan on Tuesday.",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Japan PM says rescue teams in 'race against time' after earthquake kills at least 13",
+   "value": "",
+   "context": "LIVE Japan PM says rescue teams in 'race against time' after earthquake kills at least 13 Rescuers are searching for survivors at the site of a collapsed shopping centre and a factory. The quake, with a magnitude of 6.8, hit south-west Japan on Tuesday.",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Rescuers are searching for survivors at the site of a collapsed shopping centre and a factory. The quake, with a magnitude of 6.8, hit south-west Japan on Tuesday.",
+   "context": "LIVE Japan PM says rescue teams in 'race against time' after earthquake kills at least 13 Rescuers are searching for survivors at the site of a collapsed shopping centre and a factory. The quake, with a magnitude of 6.8, hit south-west Japan on Tuesday.",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'link",
+   "name": "A small brown car sits on the street beside a collapsed house ''I thought I would die'': Survivors describe the shock and horror of powerful quake Rescue operations are ongoing following the 6.8-magnitude quake, as survivors wrestle with the shock. 4 hrs ago Asia",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/cvgw52l5kyyo",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "A small brown car sits on the street beside a collapsed house",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'heading",
+   "name": "''I thought I would die'': Survivors describe the shock and horror of powerful quake",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Rescue operations are ongoing following the 6.8-magnitude quake, as survivors wrestle with the shock.",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "4 hrs ago",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Asia",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'link",
+   "name": "''Delulu'', ''Clock it'': ''Cockroach'' protest brings Gen Z slang to India''s parliament From \"delulu\" to \"FOMO\", Gen Z slang has made an unlikely journey from Instagram to parliament. 1 hr ago Asia",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/c9q90qvwe14o",
+   "title": ""
+  },
+  {
+   "role": "'heading",
+   "name": "''Delulu'', ''Clock it'': ''Cockroach'' protest brings Gen Z slang to India''s parliament",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "delulu",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "1 hr ago",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Asia",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Wildfires in south-west France flare up as region braces for new 40C heatwave Firefighters are braced for a sharp rise in temperatures on Wednesday, which could complicate the containment of wildfires in Gironde. 6 hrs ago Europe",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/c5yd8gly1ydo",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Wildfires in south-west France flare up as region braces for new 40C heatwave",
+   "value": "",
+   "context": "Wildfires in south-west France flare up as region braces for new 40C heatwave Firefighters are braced for a sharp rise in temperatures on Wednesday, which could complicate the containment of wildfires in Gironde. 6 hrs ago Europe",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Firefighters are braced for a sharp rise in temperatures on Wednesday, which could complicate the containment of wildfires in Gironde.",
+   "context": "Wildfires in south-west France flare up as region braces for new 40C heatwave",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "6 hrs ago",
+   "context": "Wildfires in south-west France flare up as region braces for new 40C heatwave",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Europe",
+   "context": "Wildfires in south-west France flare up as region braces for new 40C heatwave",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Jared Leto in 2014, wearing a white suit and satin red bow tie, poses for cameras holding up his Oscar award with one hand. He is against a white background and there is a large gold replica of the award behind him. Four women accuse Jared Leto of criminal sexual conduct when they were teenagers The actor and musician faces allegations from 10 women in total who say he mistreated them as teenagers. 5 hrs ago US & Canada",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/cd7lg2nz2x2o",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "Jared Leto in 2014, wearing a white suit and satin red bow tie, poses for cameras holding up his Oscar award with one hand. He is against a white background and there is a large gold replica of the award behind him.",
+   "value": "",
+   "context": "Jared Leto in 2014, wearing a white suit and satin red bow tie, poses for cameras holding up his Oscar award with one hand. He is against a white background and there is a large gold replica of the award behind him. Four women accuse Jared Leto of criminal sexual conduct when they were teenagers The actor and musician faces allegations from 10 women in total who say he mistreated them as teenagers. 5 hrs ago US & Canada",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Four women accuse Jared Leto of criminal sexual conduct when they were teenagers",
+   "value": "",
+   "context": "Jared Leto in 2014, wearing a white suit and satin red bow tie, poses for cameras holding up his Oscar award with one hand. He is against a white background and there is a large gold replica of the award behind him. Four women accuse Jared Leto of criminal sexual conduct when they were teenagers The actor and musician faces allegations from 10 women in total who say he mistreated them as teenagers. 5 hrs ago US & Canada",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The actor and musician faces allegations from 10 women in total who say he mistreated them as teenagers.",
+   "context": "Four women accuse Jared Leto of criminal sexual conduct when they were teenagers",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "5 hrs ago",
+   "context": "Four women accuse Jared Leto of criminal sexual conduct when they were teenagers",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "US & Canada",
+   "context": "Four women accuse Jared Leto of criminal sexual conduct when they were teenagers",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Iraqi security forces and emergency personnel work at the site of a US-Saudi air strike north of Muqdadiyah district, in Iraq's Dayala province (29 July 2026) Saudi Arabia joins US in strikes on Iran-backed militias in Iraq US Central Command says proxy groups launched attacks against US bases and Saudi energy infrastructure. 41 mins ago World",
+   "value": "",
+   "context": "Jared Leto in 2014, wearing a white suit and satin red bow tie, poses for cameras holding up his Oscar award with one hand. He is against a white background and there is a large gold replica of the award behind him. Four women accuse Jared Leto of criminal sexual conduct when they were teenagers The actor and musician faces allegations from 10 women in total who say he mistreated them as teenagers. 5 hrs ago US & Canada",
+   "url": "/news/articles/c70g6y24d76o",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "Iraqi security forces and emergency personnel work at the site of a US-Saudi air strike north of Muqdadiyah district, in Iraq's Dayala province (29 July 2026)",
+   "value": "",
+   "context": "Iraqi security forces and emergency personnel work at the site of a US-Saudi air strike north of Muqdadiyah district, in Iraq's Dayala province (29 July 2026) Saudi Arabia joins US in strikes on Iran-backed militias in Iraq US Central Command says proxy groups launched attacks against US bases and Saudi energy infrastructure. 41 mins ago World",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Saudi Arabia joins US in strikes on Iran-backed militias in Iraq",
+   "value": "",
+   "context": "Iraqi security forces and emergency personnel work at the site of a US-Saudi air strike north of Muqdadiyah district, in Iraq's Dayala province (29 July 2026) Saudi Arabia joins US in strikes on Iran-backed militias in Iraq US Central Command says proxy groups launched attacks against US bases and Saudi energy infrastructure. 41 mins ago World",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "US Central Command says proxy groups launched attacks against US bases and Saudi energy infrastructure.",
+   "context": "Saudi Arabia joins US in strikes on Iran-backed militias in Iraq",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "41 mins ago",
+   "context": "Saudi Arabia joins US in strikes on Iran-backed militias in Iraq",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "World",
+   "context": "Saudi Arabia joins US in strikes on Iran-backed militias in Iraq",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "The black and white ChatGPT logo on a phone screen OpenAI says its rogue AI tried to hack other companies The out-of-control AI found four logins which allowed it to access multiple unnamed online services. 2 hrs ago",
+   "value": "",
+   "context": "Iraqi security forces and emergency personnel work at the site of a US-Saudi air strike north of Muqdadiyah district, in Iraq's Dayala province (29 July 2026) Saudi Arabia joins US in strikes on Iran-backed militias in Iraq US Central Command says proxy groups launched attacks against US bases and Saudi energy infrastructure. 41 mins ago World",
+   "url": "/news/articles/c2el319vzr3o",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "The black and white ChatGPT logo on a phone screen",
+   "value": "",
+   "context": "The black and white ChatGPT logo on a phone screen OpenAI says its rogue AI tried to hack other companies The out-of-control AI found four logins which allowed it to access multiple unnamed online services. 2 hrs ago",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "OpenAI says its rogue AI tried to hack other companies",
+   "value": "",
+   "context": "The black and white ChatGPT logo on a phone screen OpenAI says its rogue AI tried to hack other companies The out-of-control AI found four logins which allowed it to access multiple unnamed online services. 2 hrs ago",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The out-of-control AI found four logins which allowed it to access multiple unnamed online services.",
+   "context": "OpenAI says its rogue AI tried to hack other companies",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "2 hrs ago",
+   "context": "OpenAI says its rogue AI tried to hack other companies",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "BTS at the 2022 Grammys red carpet BTS withdraw from Grammys, a month after Asian pop prize introduced All seven members of the band post a statement online, saying they will boycott the 2027 ceremony. 2 hrs ago Culture",
+   "value": "",
+   "context": "The black and white ChatGPT logo on a phone screen OpenAI says its rogue AI tried to hack other companies The out-of-control AI found four logins which allowed it to access multiple unnamed online services. 2 hrs ago",
+   "url": "/news/articles/clyjgyd0225o",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "BTS at the 2022 Grammys red carpet",
+   "value": "",
+   "context": "BTS at the 2022 Grammys red carpet BTS withdraw from Grammys, a month after Asian pop prize introduced All seven members of the band post a statement online, saying they will boycott the 2027 ceremony. 2 hrs ago Culture",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "BTS withdraw from Grammys, a month after Asian pop prize introduced",
+   "value": "",
+   "context": "BTS at the 2022 Grammys red carpet BTS withdraw from Grammys, a month after Asian pop prize introduced All seven members of the band post a statement online, saying they will boycott the 2027 ceremony. 2 hrs ago Culture",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "All seven members of the band post a statement online, saying they will boycott the 2027 ceremony.",
+   "context": "BTS withdraw from Grammys, a month after Asian pop prize introduced",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "2 hrs ago",
+   "context": "BTS withdraw from Grammys, a month after Asian pop prize introduced",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Culture",
+   "context": "BTS withdraw from Grammys, a month after Asian pop prize introduced",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Russia charges Telegram founder Durov with facilitating terrorism",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/cj4kexqkpzno",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Russia charges Telegram founder Durov with facilitating terrorism",
+   "value": "",
+   "context": "Russia charges Telegram founder Durov with facilitating terrorism",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Trump administration bans new Chinese humanoid robots",
+   "value": "",
+   "context": "Russia charges Telegram founder Durov with facilitating terrorism",
+   "url": "/news/articles/cp9e2ex3ekyo",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Trump administration bans new Chinese humanoid robots",
+   "value": "",
+   "context": "Trump administration bans new Chinese humanoid robots",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Ghana mourns its tallest man - a 'generous and popular giant'",
+   "value": "",
+   "context": "Trump administration bans new Chinese humanoid robots",
+   "url": "/news/articles/crk52jk0131o",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Ghana mourns its tallest man - a 'generous and popular giant'",
+   "value": "",
+   "context": "Ghana mourns its tallest man - a 'generous and popular giant'",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "value": "",
+   "context": "Ghana mourns its tallest man - a 'generous and popular giant'",
+   "url": "/news/videos/c4g3600xw5ko",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "value": "",
+   "context": "Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Mysterious deaths of elephants in Kenya prompts urgent inquiry",
+   "value": "",
+   "context": "Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "url": "/news/articles/c3w0d7yeqlxo",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Mysterious deaths of elephants in Kenya prompts urgent inquiry",
+   "value": "",
+   "context": "Mysterious deaths of elephants in Kenya prompts urgent inquiry",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Japan earthquake",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'link",
+   "name": "An aerial view shows a residential building on fire after an earthquake with a preliminary magnitude of 7.1 struck Japan''s southern Kumamoto prefecture, in Yatsushiro, Kumamoto prefecture, Japan, July 28, 2026 In pictures: Buildings damaged in south-west Japan A popular shopping mall in Kashima has partly collapsed, while businesses and homes across Kumamoto prefecture are damaged.",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/clyer9mdjz7o",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "An aerial view shows a residential building on fire after an earthquake with a preliminary magnitude of 7.1 struck Japan's southern Kumamoto prefecture, in Yatsushiro, Kumamoto prefecture, Japan, July 28, 2026",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'heading",
+   "name": "In pictures: Buildings damaged in south-west Japan",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "A popular shopping mall in Kashima has partly collapsed, while businesses and homes across Kumamoto prefecture are damaged.",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "A man in a blue shirt is seen on the left. On the right, workers in hard hats dig through rubble. Many missing inside shopping centre and thousands still in shelters after quake The quake was so powerful, it was felt even in South Korea.",
+   "value": "",
+   "context": "News",
+   "url": "/news/videos/c3r0pg0dgrgo",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "A man in a blue shirt is seen on the left. On the right, workers in hard hats dig through rubble.",
+   "value": "",
+   "context": "A man in a blue shirt is seen on the left. On the right, workers in hard hats dig through rubble. Many missing inside shopping centre and thousands still in shelters after quake The quake was so powerful, it was felt even in South Korea.",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Many missing inside shopping centre and thousands still in shelters after quake",
+   "value": "",
+   "context": "A man in a blue shirt is seen on the left. On the right, workers in hard hats dig through rubble. Many missing inside shopping centre and thousands still in shelters after quake The quake was so powerful, it was felt even in South Korea.",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The quake was so powerful, it was felt even in South Korea.",
+   "context": "Many missing inside shopping centre and thousands still in shelters after quake",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "A damaged temple in earthquake-hit Kumamoto prefecture in south-west Japan What we know so far Japan is reeling from a major earthquake that hit Kyushu island. Here is what we know so far.",
+   "value": "",
+   "context": "A man in a blue shirt is seen on the left. On the right, workers in hard hats dig through rubble. Many missing inside shopping centre and thousands still in shelters after quake The quake was so powerful, it was felt even in South Korea.",
+   "url": "/news/articles/cgewgxlpj3po",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "A damaged temple in earthquake-hit Kumamoto prefecture in south-west Japan",
+   "value": "",
+   "context": "A damaged temple in earthquake-hit Kumamoto prefecture in south-west Japan What we know so far Japan is reeling from a major earthquake that hit Kyushu island. Here is what we know so far.",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "What we know so far",
+   "value": "",
+   "context": "A damaged temple in earthquake-hit Kumamoto prefecture in south-west Japan What we know so far Japan is reeling from a major earthquake that hit Kyushu island. Here is what we know so far.",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Japan is reeling from a major earthquake that hit Kyushu island. Here is what we know so far.",
+   "context": "What we know so far",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "More to explore",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Anti drug officers inspect a site allegedly used as a clandestine methamphetamine laboratory - Ogun state, Nigeria - 22 July 2026.",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/crmrnxp4nllo",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "Anti drug officers inspect a site allegedly used as a clandestine methamphetamine laboratory - Ogun state, Nigeria - 22 July 2026.",
+   "value": "",
+   "context": "Anti drug officers inspect a site allegedly used as a clandestine methamphetamine laboratory - Ogun state, Nigeria - 22 July 2026.",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "How Mexican drug cartels have outsourced meth labs to Nigeria West Africa is becoming increasingly attractive to those who want to make and export illicit drugs. 11 hrs ago World",
+   "value": "",
+   "context": "Anti drug officers inspect a site allegedly used as a clandestine methamphetamine laboratory - Ogun state, Nigeria - 22 July 2026.",
+   "url": "/news/articles/crmrnxp4nllo",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "How Mexican drug cartels have outsourced meth labs to Nigeria",
+   "value": "",
+   "context": "How Mexican drug cartels have outsourced meth labs to Nigeria West Africa is becoming increasingly attractive to those who want to make and export illicit drugs. 11 hrs ago World",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "West Africa is becoming increasingly attractive to those who want to make and export illicit drugs.",
+   "context": "How Mexican drug cartels have outsourced meth labs to Nigeria",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "11 hrs ago",
+   "context": "How Mexican drug cartels have outsourced meth labs to Nigeria",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "World",
+   "context": "How Mexican drug cartels have outsourced meth labs to Nigeria",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "A young couple outdoors wearing wedding clothes. They are looking into eachothers' eyes and smiling. The bride is wearing a veil and holding a paper cone of flowers. 'Don't wait until you want revenge' - why prenups are on the rise More young couples are now signing prenups to set out who gets what in the event of divorce. 11 hrs ago",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/cgmkgvy3lv4o",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "A young couple outdoors wearing wedding clothes. They are looking into eachothers' eyes and smiling. The bride is wearing a veil and holding a paper cone of flowers.",
+   "value": "",
+   "context": "A young couple outdoors wearing wedding clothes. They are looking into eachothers' eyes and smiling. The bride is wearing a veil and holding a paper cone of flowers. 'Don't wait until you want revenge' - why prenups are on the rise More young couples are now signing prenups to set out who gets what in the event of divorce. 11 hrs ago",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "'Don't wait until you want revenge' - why prenups are on the rise",
+   "value": "",
+   "context": "A young couple outdoors wearing wedding clothes. They are looking into eachothers' eyes and smiling. The bride is wearing a veil and holding a paper cone of flowers. 'Don't wait until you want revenge' - why prenups are on the rise More young couples are now signing prenups to set out who gets what in the event of divorce. 11 hrs ago",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "More young couples are now signing prenups to set out who gets what in the event of divorce.",
+   "context": "'Don't wait until you want revenge' - why prenups are on the rise",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "11 hrs ago",
+   "context": "'Don't wait until you want revenge' - why prenups are on the rise",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'link",
+   "name": "Amelia Dimoldenberg: I wouldn''t invite Andy Burnham on Chicken Shop Date - but I''d love a chat The YouTube star on helping young creatives, and who she wants (and doesn’t want) on her show. 5 hrs ago Culture",
+   "value": "",
+   "context": "A young couple outdoors wearing wedding clothes. They are looking into eachothers' eyes and smiling. The bride is wearing a veil and holding a paper cone of flowers. 'Don't wait until you want revenge' - why prenups are on the rise More young couples are now signing prenups to set out who gets what in the event of divorce. 11 hrs ago",
+   "url": "/news/articles/c8rng7pm212o",
+   "title": ""
+  },
+  {
+   "role": "'heading",
+   "name": "Amelia Dimoldenberg: I wouldn''t invite Andy Burnham on Chicken Shop Date - but I''d love a chat",
+   "value": "",
+   "context": "A young couple outdoors wearing wedding clothes. They are looking into eachothers' eyes and smiling. The bride is wearing a veil and holding a paper cone of flowers. 'Don't wait until you want revenge' - why prenups are on the rise More young couples are now signing prenups to set out who gets what in the event of divorce. 11 hrs ago",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The YouTube star on helping young creatives, and who she wants (and doesn’t want) on her show.",
+   "context": "A young couple outdoors wearing wedding clothes. They are looking into eachothers' eyes and smiling. The bride is wearing a veil and holding a paper cone of flowers. 'Don't wait until you want revenge' - why prenups are on the rise More young couples are now signing prenups to set out who gets what in the event of divorce. 11 hrs ago",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "5 hrs ago",
+   "context": "A young couple outdoors wearing wedding clothes. They are looking into eachothers' eyes and smiling. The bride is wearing a veil and holding a paper cone of flowers. 'Don't wait until you want revenge' - why prenups are on the rise More young couples are now signing prenups to set out who gets what in the event of divorce. 11 hrs ago",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Culture",
+   "context": "A young couple outdoors wearing wedding clothes. They are looking into eachothers' eyes and smiling. The bride is wearing a veil and holding a paper cone of flowers. 'Don't wait until you want revenge' - why prenups are on the rise More young couples are now signing prenups to set out who gets what in the event of divorce. 11 hrs ago",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Brits urged to avoid dangerous plug adaptors this summer - what to watch out for Campaign group Electrical Safety First has urged those \"heading abroad this summer to think before they buy\". 11 hrs ago Technology",
+   "value": "",
+   "context": "A young couple outdoors wearing wedding clothes. They are looking into eachothers' eyes and smiling. The bride is wearing a veil and holding a paper cone of flowers. 'Don't wait until you want revenge' - why prenups are on the rise More young couples are now signing prenups to set out who gets what in the event of divorce. 11 hrs ago",
+   "url": "/news/articles/c5yeg1wegpno",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Brits urged to avoid dangerous plug adaptors this summer - what to watch out for",
+   "value": "",
+   "context": "Brits urged to avoid dangerous plug adaptors this summer - what to watch out for Campaign group Electrical Safety First has urged those \"heading abroad this summer to think before they buy\". 11 hrs ago Technology",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "heading abroad this summer to think before they buy",
+   "value": "",
+   "context": "Brits urged to avoid dangerous plug adaptors this summer - what to watch out for",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "11 hrs ago",
+   "context": "Brits urged to avoid dangerous plug adaptors this summer - what to watch out for",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Technology",
+   "context": "Brits urged to avoid dangerous plug adaptors this summer - what to watch out for",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'link",
+   "name": "Screengrabs from a video showing a teenage Israeli settler using a stick to hit a metal gate and fence during an attack on a Palestinian home in the village of al-Mughayyir, near Ramallah, in the Israeli-occupied West Bank (11 July 2026) ''Israeli settlers laid siege to our home'': Inside a Palestinian village under weekly attack A home on the edge of al-Mughayyir has become a weekly frontline in the battle for the occupied West Bank. 5 hrs ago Middle East",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/clyxgn37lg5o",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "Screengrabs from a video showing a teenage Israeli settler using a stick to hit a metal gate and fence during an attack on a Palestinian home in the village of al-Mughayyir, near Ramallah, in the Israeli-occupied West Bank (11 July 2026)",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'heading",
+   "name": "''Israeli settlers laid siege to our home'': Inside a Palestinian village under weekly attack",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "A home on the edge of al-Mughayyir has become a weekly frontline in the battle for the occupied West Bank.",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "5 hrs ago",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Middle East",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "The swimmer Katie Shanahan holding her silver Commonwealth Games medal in front of the pool. She has blond hair, is grinning with delight and is wearing a white and blue athletic/tracksuit top. I turned down Love Island and won silver at the Commonwealth Games Katie Shanahan was offered the chance to appear on the dating show last year - but decided she wanted to inspire a new generation of young swimmers. 12 hrs ago Glasgow & West Scotland",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/cg4dve90w90o",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "The swimmer Katie Shanahan holding her silver Commonwealth Games medal in front of the pool. She has blond hair, is grinning with delight and is wearing a white and blue athletic/tracksuit top.",
+   "value": "",
+   "context": "The swimmer Katie Shanahan holding her silver Commonwealth Games medal in front of the pool. She has blond hair, is grinning with delight and is wearing a white and blue athletic/tracksuit top. I turned down Love Island and won silver at the Commonwealth Games Katie Shanahan was offered the chance to appear on the dating show last year - but decided she wanted to inspire a new generation of young swimmers. 12 hrs ago Glasgow & West Scotland",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "I turned down Love Island and won silver at the Commonwealth Games",
+   "value": "",
+   "context": "The swimmer Katie Shanahan holding her silver Commonwealth Games medal in front of the pool. She has blond hair, is grinning with delight and is wearing a white and blue athletic/tracksuit top. I turned down Love Island and won silver at the Commonwealth Games Katie Shanahan was offered the chance to appear on the dating show last year - but decided she wanted to inspire a new generation of young swimmers. 12 hrs ago Glasgow & West Scotland",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Katie Shanahan was offered the chance to appear on the dating show last year - but decided she wanted to inspire a new generation of young swimmers.",
+   "context": "I turned down Love Island and won silver at the Commonwealth Games",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "12 hrs ago",
+   "context": "I turned down Love Island and won silver at the Commonwealth Games",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Glasgow & West Scotland",
+   "context": "I turned down Love Island and won silver at the Commonwealth Games",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "RSF fighters ride on an armoured truck in the city of Nyala. One of the fighters is carrying an assault rifle. All are dressed in military fatigues. 'No safe options' for thousands sheltering in key Sudan city as RSF fighters advance International leaders have issued warnings the RSF may be preparing to attack the city, raising fears of further atrocities being committed. 5 hrs ago Africa",
+   "value": "",
+   "context": "The swimmer Katie Shanahan holding her silver Commonwealth Games medal in front of the pool. She has blond hair, is grinning with delight and is wearing a white and blue athletic/tracksuit top. I turned down Love Island and won silver at the Commonwealth Games Katie Shanahan was offered the chance to appear on the dating show last year - but decided she wanted to inspire a new generation of young swimmers. 12 hrs ago Glasgow & West Scotland",
+   "url": "/news/articles/c4gx399l0wyo",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "RSF fighters ride on an armoured truck in the city of Nyala. One of the fighters is carrying an assault rifle. All are dressed in military fatigues.",
+   "value": "",
+   "context": "RSF fighters ride on an armoured truck in the city of Nyala. One of the fighters is carrying an assault rifle. All are dressed in military fatigues. 'No safe options' for thousands sheltering in key Sudan city as RSF fighters advance International leaders have issued warnings the RSF may be preparing to attack the city, raising fears of further atrocities being committed. 5 hrs ago Africa",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "'No safe options' for thousands sheltering in key Sudan city as RSF fighters advance",
+   "value": "",
+   "context": "RSF fighters ride on an armoured truck in the city of Nyala. One of the fighters is carrying an assault rifle. All are dressed in military fatigues. 'No safe options' for thousands sheltering in key Sudan city as RSF fighters advance International leaders have issued warnings the RSF may be preparing to attack the city, raising fears of further atrocities being committed. 5 hrs ago Africa",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "International leaders have issued warnings the RSF may be preparing to attack the city, raising fears of further atrocities being committed.",
+   "context": "'No safe options' for thousands sheltering in key Sudan city as RSF fighters advance",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "5 hrs ago",
+   "context": "'No safe options' for thousands sheltering in key Sudan city as RSF fighters advance",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Africa",
+   "context": "'No safe options' for thousands sheltering in key Sudan city as RSF fighters advance",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Also in news",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Jay Clayton sitting at a bench inside the Dirksen Senate Office Building in Washington, leaning into a microphone and stretching his arm out",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/c0rd1kl1825o",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "Jay Clayton sitting at a bench inside the Dirksen Senate Office Building in Washington, leaning into a microphone and stretching his arm out",
+   "value": "",
+   "context": "Jay Clayton sitting at a bench inside the Dirksen Senate Office Building in Washington, leaning into a microphone and stretching his arm out",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Trump's new spy chief Jay Clayton confirmed by US Senate Jay Clayton's confirmation comes after the US president's original choice was rejected by lawmakers due to lack of relevant experience 1 hr ago US & Canada",
+   "value": "",
+   "context": "Jay Clayton sitting at a bench inside the Dirksen Senate Office Building in Washington, leaning into a microphone and stretching his arm out",
+   "url": "/news/articles/c0rd1kl1825o",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Trump's new spy chief Jay Clayton confirmed by US Senate",
+   "value": "",
+   "context": "Trump's new spy chief Jay Clayton confirmed by US Senate Jay Clayton's confirmation comes after the US president's original choice was rejected by lawmakers due to lack of relevant experience 1 hr ago US & Canada",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Jay Clayton's confirmation comes after the US president's original choice was rejected by lawmakers due to lack of relevant experience",
+   "context": "Trump's new spy chief Jay Clayton confirmed by US Senate",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "1 hr ago",
+   "context": "Trump's new spy chief Jay Clayton confirmed by US Senate",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "US & Canada",
+   "context": "Trump's new spy chief Jay Clayton confirmed by US Senate",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Zelensky and Trump in the Oval Office Zelensky and Netanyahu meet Trump as wars in Ukraine and Iran drag on The two leaders sound encouraged after holding back-to-back bilaterals at the White House. 8 hrs ago World",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/cj4k2z8z45ro",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "Zelensky and Trump in the Oval Office",
+   "value": "",
+   "context": "Zelensky and Trump in the Oval Office Zelensky and Netanyahu meet Trump as wars in Ukraine and Iran drag on The two leaders sound encouraged after holding back-to-back bilaterals at the White House. 8 hrs ago World",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Zelensky and Netanyahu meet Trump as wars in Ukraine and Iran drag on",
+   "value": "",
+   "context": "Zelensky and Trump in the Oval Office Zelensky and Netanyahu meet Trump as wars in Ukraine and Iran drag on The two leaders sound encouraged after holding back-to-back bilaterals at the White House. 8 hrs ago World",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The two leaders sound encouraged after holding back-to-back bilaterals at the White House.",
+   "context": "Zelensky and Netanyahu meet Trump as wars in Ukraine and Iran drag on",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "8 hrs ago",
+   "context": "Zelensky and Netanyahu meet Trump as wars in Ukraine and Iran drag on",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "World",
+   "context": "Zelensky and Netanyahu meet Trump as wars in Ukraine and Iran drag on",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Ticket prices set to rise by 15p as Heathrow able to recover runway project money UK airport gets green light to charge airlines more to use the hub, which is expected to mean higher fares for flyers. 2 hrs ago Business",
+   "value": "",
+   "context": "Zelensky and Trump in the Oval Office Zelensky and Netanyahu meet Trump as wars in Ukraine and Iran drag on The two leaders sound encouraged after holding back-to-back bilaterals at the White House. 8 hrs ago World",
+   "url": "/news/articles/cdx8ke9gpnko",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Ticket prices set to rise by 15p as Heathrow able to recover runway project money",
+   "value": "",
+   "context": "Ticket prices set to rise by 15p as Heathrow able to recover runway project money UK airport gets green light to charge airlines more to use the hub, which is expected to mean higher fares for flyers. 2 hrs ago Business",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "UK airport gets green light to charge airlines more to use the hub, which is expected to mean higher fares for flyers.",
+   "context": "Ticket prices set to rise by 15p as Heathrow able to recover runway project money",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "2 hrs ago",
+   "context": "Ticket prices set to rise by 15p as Heathrow able to recover runway project money",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Business",
+   "context": "Ticket prices set to rise by 15p as Heathrow able to recover runway project money",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Pop star Madison Beer and NFL player Justin Herbert announce engagement The couple made the announcement on social media on Tuesday, including photos of the proposal. 13 hrs ago US & Canada",
+   "value": "",
+   "context": "Ticket prices set to rise by 15p as Heathrow able to recover runway project money UK airport gets green light to charge airlines more to use the hub, which is expected to mean higher fares for flyers. 2 hrs ago Business",
+   "url": "/news/articles/czxq028q99go",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Pop star Madison Beer and NFL player Justin Herbert announce engagement",
+   "value": "",
+   "context": "Pop star Madison Beer and NFL player Justin Herbert announce engagement The couple made the announcement on social media on Tuesday, including photos of the proposal. 13 hrs ago US & Canada",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The couple made the announcement on social media on Tuesday, including photos of the proposal.",
+   "context": "Pop star Madison Beer and NFL player Justin Herbert announce engagement",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "13 hrs ago",
+   "context": "Pop star Madison Beer and NFL player Justin Herbert announce engagement",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "US & Canada",
+   "context": "Pop star Madison Beer and NFL player Justin Herbert announce engagement",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Three men wearing Jewish skullcaps - kippahs - seen from behind as they embrace, with their arms around each other Report on Jewish diaspora finds biggest rise in antisemitism in UK The report also says 2025 was the deadliest year for Jews living outside Israel in more than 30 years. 2 hrs ago UK",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/c4gd240eelmo",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "Three men wearing Jewish skullcaps - kippahs - seen from behind as they embrace, with their arms around each other",
+   "value": "",
+   "context": "Three men wearing Jewish skullcaps - kippahs - seen from behind as they embrace, with their arms around each other Report on Jewish diaspora finds biggest rise in antisemitism in UK The report also says 2025 was the deadliest year for Jews living outside Israel in more than 30 years. 2 hrs ago UK",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Report on Jewish diaspora finds biggest rise in antisemitism in UK",
+   "value": "",
+   "context": "Three men wearing Jewish skullcaps - kippahs - seen from behind as they embrace, with their arms around each other Report on Jewish diaspora finds biggest rise in antisemitism in UK The report also says 2025 was the deadliest year for Jews living outside Israel in more than 30 years. 2 hrs ago UK",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The report also says 2025 was the deadliest year for Jews living outside Israel in more than 30 years.",
+   "context": "Report on Jewish diaspora finds biggest rise in antisemitism in UK",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "2 hrs ago",
+   "context": "Report on Jewish diaspora finds biggest rise in antisemitism in UK",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "UK",
+   "context": "Report on Jewish diaspora finds biggest rise in antisemitism in UK",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "US Senator Lindsey Graham, seen speaking in Washington in 2022. Lindsey Graham remembered by Trump as 'giant of the US Senate' at funeral The US president was among several dignitaries who attended the service for the late lawmaker, who died earlier this month. 13 hrs ago US & Canada",
+   "value": "",
+   "context": "Three men wearing Jewish skullcaps - kippahs - seen from behind as they embrace, with their arms around each other Report on Jewish diaspora finds biggest rise in antisemitism in UK The report also says 2025 was the deadliest year for Jews living outside Israel in more than 30 years. 2 hrs ago UK",
+   "url": "/news/articles/cwyj6xqn40lo",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "US Senator Lindsey Graham, seen speaking in Washington in 2022.",
+   "value": "",
+   "context": "US Senator Lindsey Graham, seen speaking in Washington in 2022. Lindsey Graham remembered by Trump as 'giant of the US Senate' at funeral The US president was among several dignitaries who attended the service for the late lawmaker, who died earlier this month. 13 hrs ago US & Canada",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Lindsey Graham remembered by Trump as 'giant of the US Senate' at funeral",
+   "value": "",
+   "context": "US Senator Lindsey Graham, seen speaking in Washington in 2022. Lindsey Graham remembered by Trump as 'giant of the US Senate' at funeral The US president was among several dignitaries who attended the service for the late lawmaker, who died earlier this month. 13 hrs ago US & Canada",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The US president was among several dignitaries who attended the service for the late lawmaker, who died earlier this month.",
+   "context": "Lindsey Graham remembered by Trump as 'giant of the US Senate' at funeral",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "13 hrs ago",
+   "context": "Lindsey Graham remembered by Trump as 'giant of the US Senate' at funeral",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "US & Canada",
+   "context": "Lindsey Graham remembered by Trump as 'giant of the US Senate' at funeral",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "FA chairwoman Debbie Hewitt (right) and chief executive Mark Bullingham (second right) with FIFA president Gianni Infantino (centre) at the World Cup semi-final between England and Argentina FA 'deeply concerned' by Fifa plan as Uefa to meet The Football Association says it is concerned by Fifa's proposals to sell stakes in its major competitions as Uefa's 55 member associations hold an emergency meeting to discuss the issue. 34 mins ago World Cup",
+   "value": "",
+   "context": "US Senator Lindsey Graham, seen speaking in Washington in 2022. Lindsey Graham remembered by Trump as 'giant of the US Senate' at funeral The US president was among several dignitaries who attended the service for the late lawmaker, who died earlier this month. 13 hrs ago US & Canada",
+   "url": "/sport/football/articles/cvg7vglq9wpo",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "FA chairwoman Debbie Hewitt (right) and chief executive Mark Bullingham (second right) with FIFA president Gianni Infantino (centre) at the World Cup semi-final between England and Argentina",
+   "value": "",
+   "context": "FA chairwoman Debbie Hewitt (right) and chief executive Mark Bullingham (second right) with FIFA president Gianni Infantino (centre) at the World Cup semi-final between England and Argentina FA 'deeply concerned' by Fifa plan as Uefa to meet The Football Association says it is concerned by Fifa's proposals to sell stakes in its major competitions as Uefa's 55 member associations hold an emergency meeting to discuss the issue. 34 mins ago World Cup",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "FA 'deeply concerned' by Fifa plan as Uefa to meet",
+   "value": "",
+   "context": "FA chairwoman Debbie Hewitt (right) and chief executive Mark Bullingham (second right) with FIFA president Gianni Infantino (centre) at the World Cup semi-final between England and Argentina FA 'deeply concerned' by Fifa plan as Uefa to meet The Football Association says it is concerned by Fifa's proposals to sell stakes in its major competitions as Uefa's 55 member associations hold an emergency meeting to discuss the issue. 34 mins ago World Cup",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The Football Association says it is concerned by Fifa's proposals to sell stakes in its major competitions as Uefa's 55 member associations hold an emergency meeting to discuss the issue.",
+   "context": "FA 'deeply concerned' by Fifa plan as Uefa to meet",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "34 mins ago",
+   "context": "FA 'deeply concerned' by Fifa plan as Uefa to meet",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "World Cup",
+   "context": "FA 'deeply concerned' by Fifa plan as Uefa to meet",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Most watched",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "1 Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "value": "",
+   "context": "News",
+   "url": "/news/videos/c4g3600xw5ko",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "1",
+   "value": "",
+   "context": "1 Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "value": "",
+   "context": "1 Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'link",
+   "name": "2 Watch: Trump delivers eulogy honouring Lindsey Graham",
+   "value": "",
+   "context": "1 Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "url": "/news/videos/cy45kev0709o",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2",
+   "value": "",
+   "context": "1 Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "'heading",
+   "name": "Watch: Trump delivers eulogy honouring Lindsey Graham",
+   "value": "",
+   "context": "1 Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "3 The moment Tuesday's powerful earthquake hit Japan",
+   "value": "",
+   "context": "1 Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "url": "/news/videos/cvg7v55gxnqo",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "3",
+   "value": "",
+   "context": "3 The moment Tuesday's powerful earthquake hit Japan",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "The moment Tuesday's powerful earthquake hit Japan",
+   "value": "",
+   "context": "3 The moment Tuesday's powerful earthquake hit Japan",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "4 Japan in a ‘race against time’ to rescue people trapped beneath rubble after quake",
+   "value": "",
+   "context": "3 The moment Tuesday's powerful earthquake hit Japan",
+   "url": "/news/videos/c3r0pg0dgrgo",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "4",
+   "value": "",
+   "context": "4 Japan in a ‘race against time’ to rescue people trapped beneath rubble after quake",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Japan in a ‘race against time’ to rescue people trapped beneath rubble after quake",
+   "value": "",
+   "context": "4 Japan in a ‘race against time’ to rescue people trapped beneath rubble after quake",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "5 Japan in a 'race against time' to rescue people after quake",
+   "value": "",
+   "context": "4 Japan in a ‘race against time’ to rescue people trapped beneath rubble after quake",
+   "url": "/news/videos/cn8n4088p8qo",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "5",
+   "value": "",
+   "context": "5 Japan in a 'race against time' to rescue people after quake",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Japan in a 'race against time' to rescue people after quake",
+   "value": "",
+   "context": "5 Japan in a 'race against time' to rescue people after quake",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Most read",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "1 Four women accuse Jared Leto of criminal sexual conduct",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/cd7lg2nz2x2o",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "1",
+   "value": "",
+   "context": "1 Four women accuse Jared Leto of criminal sexual conduct",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Four women accuse Jared Leto of criminal sexual conduct",
+   "value": "",
+   "context": "1 Four women accuse Jared Leto of criminal sexual conduct",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "2 Saudi Arabia joins US in strikes on Iran-backed militias in Iraq",
+   "value": "",
+   "context": "1 Four women accuse Jared Leto of criminal sexual conduct",
+   "url": "/news/articles/c70g6y24d76o",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "2",
+   "value": "",
+   "context": "2 Saudi Arabia joins US in strikes on Iran-backed militias in Iraq",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Saudi Arabia joins US in strikes on Iran-backed militias in Iraq",
+   "value": "",
+   "context": "2 Saudi Arabia joins US in strikes on Iran-backed militias in Iraq",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "3 BTS withdraw from Grammys, a month after Asian pop prize introduced",
+   "value": "",
+   "context": "2 Saudi Arabia joins US in strikes on Iran-backed militias in Iraq",
+   "url": "/news/articles/clyjgyd0225o",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "3",
+   "value": "",
+   "context": "3 BTS withdraw from Grammys, a month after Asian pop prize introduced",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "BTS withdraw from Grammys, a month after Asian pop prize introduced",
+   "value": "",
+   "context": "3 BTS withdraw from Grammys, a month after Asian pop prize introduced",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "4 OpenAI says its rogue AI tried to hack other companies",
+   "value": "",
+   "context": "3 BTS withdraw from Grammys, a month after Asian pop prize introduced",
+   "url": "/news/articles/c2el319vzr3o",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "4",
+   "value": "",
+   "context": "4 OpenAI says its rogue AI tried to hack other companies",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "OpenAI says its rogue AI tried to hack other companies",
+   "value": "",
+   "context": "4 OpenAI says its rogue AI tried to hack other companies",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "5 Ghana mourns its tallest man - a 'generous and popular giant'",
+   "value": "",
+   "context": "4 OpenAI says its rogue AI tried to hack other companies",
+   "url": "/news/articles/crk52jk0131o",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "5",
+   "value": "",
+   "context": "5 Ghana mourns its tallest man - a 'generous and popular giant'",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Ghana mourns its tallest man - a 'generous and popular giant'",
+   "value": "",
+   "context": "5 Ghana mourns its tallest man - a 'generous and popular giant'",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "6 Unauthorised airport car park grows despite stop notice",
+   "value": "",
+   "context": "5 Ghana mourns its tallest man - a 'generous and popular giant'",
+   "url": "/news/articles/cn8ngxw5195o",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "6",
+   "value": "",
+   "context": "6 Unauthorised airport car park grows despite stop notice",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Unauthorised airport car park grows despite stop notice",
+   "value": "",
+   "context": "6 Unauthorised airport car park grows despite stop notice",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "7 My 10-day headache was terminal brain cancer",
+   "value": "",
+   "context": "6 Unauthorised airport car park grows despite stop notice",
+   "url": "/news/articles/cgq502nj914o",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "7",
+   "value": "",
+   "context": "7 My 10-day headache was terminal brain cancer",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "My 10-day headache was terminal brain cancer",
+   "value": "",
+   "context": "7 My 10-day headache was terminal brain cancer",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "8 Brits urged to avoid dangerous plug adaptors this summer - what to watch out for",
+   "value": "",
+   "context": "7 My 10-day headache was terminal brain cancer",
+   "url": "/news/articles/c5yeg1wegpno",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "8",
+   "value": "",
+   "context": "8 Brits urged to avoid dangerous plug adaptors this summer - what to watch out for",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Brits urged to avoid dangerous plug adaptors this summer - what to watch out for",
+   "value": "",
+   "context": "8 Brits urged to avoid dangerous plug adaptors this summer - what to watch out for",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "9 Wildfires in south-west France flare up as region braces for new 40C heatwave",
+   "value": "",
+   "context": "8 Brits urged to avoid dangerous plug adaptors this summer - what to watch out for",
+   "url": "/news/articles/c5yd8gly1ydo",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "9",
+   "value": "",
+   "context": "9 Wildfires in south-west France flare up as region braces for new 40C heatwave",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Wildfires in south-west France flare up as region braces for new 40C heatwave",
+   "value": "",
+   "context": "9 Wildfires in south-west France flare up as region braces for new 40C heatwave",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "10 Trump administration bans new Chinese humanoid robots",
+   "value": "",
+   "context": "9 Wildfires in south-west France flare up as region braces for new 40C heatwave",
+   "url": "/news/articles/cp9e2ex3ekyo",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "10",
+   "value": "",
+   "context": "10 Trump administration bans new Chinese humanoid robots",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Trump administration bans new Chinese humanoid robots",
+   "value": "",
+   "context": "10 Trump administration bans new Chinese humanoid robots",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Sport",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "image unavailable FA chairwoman Debbie Hewitt (right) and chief executive Mark Bullingham (second right) with FIFA president Gianni Infantino (centre) at the World Cup semi-final between England and Argentina",
+   "value": "",
+   "context": "News",
+   "url": "/sport/football/articles/cvg7vglq9wpo",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "image unavailable",
+   "value": "",
+   "context": "image unavailable FA chairwoman Debbie Hewitt (right) and chief executive Mark Bullingham (second right) with FIFA president Gianni Infantino (centre) at the World Cup semi-final between England and Argentina",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "FA chairwoman Debbie Hewitt (right) and chief executive Mark Bullingham (second right) with FIFA president Gianni Infantino (centre) at the World Cup semi-final between England and Argentina",
+   "value": "",
+   "context": "image unavailable FA chairwoman Debbie Hewitt (right) and chief executive Mark Bullingham (second right) with FIFA president Gianni Infantino (centre) at the World Cup semi-final between England and Argentina",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "FA concerns over Fifa plan that could lead to Uefa World Cup boycott The Football Association says it is concerned by Fifa's proposals to sell stakes in its major competitions as Uefa's 55 member associations hold an emergency meeting to discuss the issue. 34 mins ago World Cup",
+   "value": "",
+   "context": "image unavailable FA chairwoman Debbie Hewitt (right) and chief executive Mark Bullingham (second right) with FIFA president Gianni Infantino (centre) at the World Cup semi-final between England and Argentina",
+   "url": "/sport/football/articles/cvg7vglq9wpo",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "FA concerns over Fifa plan that could lead to Uefa World Cup boycott",
+   "value": "",
+   "context": "FA concerns over Fifa plan that could lead to Uefa World Cup boycott The Football Association says it is concerned by Fifa's proposals to sell stakes in its major competitions as Uefa's 55 member associations hold an emergency meeting to discuss the issue. 34 mins ago World Cup",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The Football Association says it is concerned by Fifa's proposals to sell stakes in its major competitions as Uefa's 55 member associations hold an emergency meeting to discuss the issue.",
+   "context": "FA concerns over Fifa plan that could lead to Uefa World Cup boycott",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "34 mins ago",
+   "context": "FA concerns over Fifa plan that could lead to Uefa World Cup boycott",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "World Cup",
+   "context": "FA concerns over Fifa plan that could lead to Uefa World Cup boycott",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "image unavailable Mathys Tel LIVE Brilliant Tel free-kick gives Tottenham lead over Sydney in pre-season match Follow live as Tottenham face Sydney FC in the second match of their pre-season tour.",
+   "value": "",
+   "context": "News",
+   "url": "https://www.bbc.com/sport/football/live/c86np7j9x5jt",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "image unavailable",
+   "value": "",
+   "context": "image unavailable Mathys Tel LIVE Brilliant Tel free-kick gives Tottenham lead over Sydney in pre-season match Follow live as Tottenham face Sydney FC in the second match of their pre-season tour.",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "Mathys Tel",
+   "value": "",
+   "context": "image unavailable Mathys Tel LIVE Brilliant Tel free-kick gives Tottenham lead over Sydney in pre-season match Follow live as Tottenham face Sydney FC in the second match of their pre-season tour.",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "LIVE",
+   "context": "image unavailable Mathys Tel LIVE Brilliant Tel free-kick gives Tottenham lead over Sydney in pre-season match Follow live as Tottenham face Sydney FC in the second match of their pre-season tour.",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Brilliant Tel free-kick gives Tottenham lead over Sydney in pre-season match",
+   "value": "",
+   "context": "image unavailable Mathys Tel LIVE Brilliant Tel free-kick gives Tottenham lead over Sydney in pre-season match Follow live as Tottenham face Sydney FC in the second match of their pre-season tour.",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Follow live as Tottenham face Sydney FC in the second match of their pre-season tour.",
+   "context": "image unavailable Mathys Tel LIVE Brilliant Tel free-kick gives Tottenham lead over Sydney in pre-season match Follow live as Tottenham face Sydney FC in the second match of their pre-season tour.",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "The athlete who has never held her Olympic medal The story of Cameroon Olympic medallist Madias Ngake's remarkable journey from sleeping rough and seeking asylum to competing for England at Glasgow 2026. 5 hrs ago Commonwealth Games",
+   "value": "",
+   "context": "image unavailable Mathys Tel LIVE Brilliant Tel free-kick gives Tottenham lead over Sydney in pre-season match Follow live as Tottenham face Sydney FC in the second match of their pre-season tour.",
+   "url": "/sport/weightlifting/articles/cn8nxg5rvvko",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "The athlete who has never held her Olympic medal",
+   "value": "",
+   "context": "The athlete who has never held her Olympic medal The story of Cameroon Olympic medallist Madias Ngake's remarkable journey from sleeping rough and seeking asylum to competing for England at Glasgow 2026. 5 hrs ago Commonwealth Games",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The story of Cameroon Olympic medallist Madias Ngake's remarkable journey from sleeping rough and seeking asylum to competing for England at Glasgow 2026.",
+   "context": "The athlete who has never held her Olympic medal",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "5 hrs ago",
+   "context": "The athlete who has never held her Olympic medal",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Commonwealth Games",
+   "context": "The athlete who has never held her Olympic medal",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Grealish misses Man City tour despite training return Jack Grealish will not make his return in a Manchester City shirt after being left out of the club's pre-season tour of Asia as he continues to recover from a foot injury. 3 hrs ago Man City",
+   "value": "",
+   "context": "The athlete who has never held her Olympic medal The story of Cameroon Olympic medallist Madias Ngake's remarkable journey from sleeping rough and seeking asylum to competing for England at Glasgow 2026. 5 hrs ago Commonwealth Games",
+   "url": "/sport/football/articles/cdx8kx5941no",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Grealish misses Man City tour despite training return",
+   "value": "",
+   "context": "Grealish misses Man City tour despite training return Jack Grealish will not make his return in a Manchester City shirt after being left out of the club's pre-season tour of Asia as he continues to recover from a foot injury. 3 hrs ago Man City",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Jack Grealish will not make his return in a Manchester City shirt after being left out of the club's pre-season tour of Asia as he continues to recover from a foot injury.",
+   "context": "Grealish misses Man City tour despite training return",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "3 hrs ago",
+   "context": "Grealish misses Man City tour despite training return",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Man City",
+   "context": "Grealish misses Man City tour despite training return",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "image unavailable Yan Diomande Diomande's rapid and remarkable rise to Real Madrid Yan Diomande has quickly gone from being a relatively unknown winger to the brink of becoming Real Madrid's record signing. 4 hrs ago Football",
+   "value": "",
+   "context": "News",
+   "url": "/sport/football/articles/cm2g3dd2jxko",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "image unavailable",
+   "value": "",
+   "context": "image unavailable Yan Diomande Diomande's rapid and remarkable rise to Real Madrid Yan Diomande has quickly gone from being a relatively unknown winger to the brink of becoming Real Madrid's record signing. 4 hrs ago Football",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "Yan Diomande",
+   "value": "",
+   "context": "image unavailable Yan Diomande Diomande's rapid and remarkable rise to Real Madrid Yan Diomande has quickly gone from being a relatively unknown winger to the brink of becoming Real Madrid's record signing. 4 hrs ago Football",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Diomande's rapid and remarkable rise to Real Madrid",
+   "value": "",
+   "context": "image unavailable Yan Diomande Diomande's rapid and remarkable rise to Real Madrid Yan Diomande has quickly gone from being a relatively unknown winger to the brink of becoming Real Madrid's record signing. 4 hrs ago Football",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Yan Diomande has quickly gone from being a relatively unknown winger to the brink of becoming Real Madrid's record signing.",
+   "context": "Diomande's rapid and remarkable rise to Real Madrid",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "4 hrs ago",
+   "context": "Diomande's rapid and remarkable rise to Real Madrid",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Football",
+   "context": "Diomande's rapid and remarkable rise to Real Madrid",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "image unavailable Kimi Antonelli celebrates Five things we've learned from first half of F1 season BBC F1 correspondent Andrew Benson analyses the five key things we've learned from the 2026 season so far. 3 hrs ago Formula 1",
+   "value": "",
+   "context": "image unavailable Yan Diomande Diomande's rapid and remarkable rise to Real Madrid Yan Diomande has quickly gone from being a relatively unknown winger to the brink of becoming Real Madrid's record signing. 4 hrs ago Football",
+   "url": "/sport/formula1/articles/clyj898j2p0o",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "image unavailable",
+   "value": "",
+   "context": "image unavailable Kimi Antonelli celebrates Five things we've learned from first half of F1 season BBC F1 correspondent Andrew Benson analyses the five key things we've learned from the 2026 season so far. 3 hrs ago Formula 1",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "Kimi Antonelli celebrates",
+   "value": "",
+   "context": "image unavailable Kimi Antonelli celebrates Five things we've learned from first half of F1 season BBC F1 correspondent Andrew Benson analyses the five key things we've learned from the 2026 season so far. 3 hrs ago Formula 1",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Five things we've learned from first half of F1 season",
+   "value": "",
+   "context": "image unavailable Kimi Antonelli celebrates Five things we've learned from first half of F1 season BBC F1 correspondent Andrew Benson analyses the five key things we've learned from the 2026 season so far. 3 hrs ago Formula 1",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "BBC F1 correspondent Andrew Benson analyses the five key things we've learned from the 2026 season so far.",
+   "context": "Five things we've learned from first half of F1 season",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "3 hrs ago",
+   "context": "Five things we've learned from first half of F1 season",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Formula 1",
+   "context": "Five things we've learned from first half of F1 season",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "image unavailable Jordan Henderson clapping and Danny Welbeck Henderson nears Chelsea move as Welbeck has medical Brighton striker Danny Welbeck is given permission to have a medical at Stamford Bridge as his move to Chelsea moves closer. 14 mins ago Premier League",
+   "value": "",
+   "context": "image unavailable Kimi Antonelli celebrates Five things we've learned from first half of F1 season BBC F1 correspondent Andrew Benson analyses the five key things we've learned from the 2026 season so far. 3 hrs ago Formula 1",
+   "url": "/sport/football/articles/c935lvyeykwo",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "image unavailable",
+   "value": "",
+   "context": "image unavailable Jordan Henderson clapping and Danny Welbeck Henderson nears Chelsea move as Welbeck has medical Brighton striker Danny Welbeck is given permission to have a medical at Stamford Bridge as his move to Chelsea moves closer. 14 mins ago Premier League",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "Jordan Henderson clapping and Danny Welbeck",
+   "value": "",
+   "context": "image unavailable Jordan Henderson clapping and Danny Welbeck Henderson nears Chelsea move as Welbeck has medical Brighton striker Danny Welbeck is given permission to have a medical at Stamford Bridge as his move to Chelsea moves closer. 14 mins ago Premier League",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Henderson nears Chelsea move as Welbeck has medical",
+   "value": "",
+   "context": "image unavailable Jordan Henderson clapping and Danny Welbeck Henderson nears Chelsea move as Welbeck has medical Brighton striker Danny Welbeck is given permission to have a medical at Stamford Bridge as his move to Chelsea moves closer. 14 mins ago Premier League",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Brighton striker Danny Welbeck is given permission to have a medical at Stamford Bridge as his move to Chelsea moves closer.",
+   "context": "Henderson nears Chelsea move as Welbeck has medical",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "14 mins ago",
+   "context": "Henderson nears Chelsea move as Welbeck has medical",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Premier League",
+   "context": "Henderson nears Chelsea move as Welbeck has medical",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "image unavailable A collage of images and illustrations",
+   "value": "",
+   "context": "News",
+   "url": "https://cloud.email.bbc.com/bbcnewsignup2?&at_bbc_team=studios&at_medium=display&at_objective=acquisition&at_ptr_type=&at_ptr_name=bbc.comhp&at_format=Module&at_link_origin=intlfront&at_campaign=newsbriefing&at_campaign_type=owned",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "image unavailable",
+   "value": "",
+   "context": "image unavailable A collage of images and illustrations",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "A collage of images and illustrations",
+   "value": "",
+   "context": "image unavailable A collage of images and illustrations",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Sign up to News Briefing News and expert analysis for every schedule. Get morning and evening editions of our flagship newsletter in your inbox. Learn more",
+   "value": "",
+   "context": "image unavailable A collage of images and illustrations",
+   "url": "https://cloud.email.bbc.com/bbcnewsignup2?&at_bbc_team=studios&at_medium=display&at_objective=acquisition&at_ptr_type=&at_ptr_name=bbc.comhp&at_format=Module&at_link_origin=intlfront&at_campaign=newsbriefing&at_campaign_type=owned",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Sign up to News Briefing",
+   "value": "",
+   "context": "Sign up to News Briefing News and expert analysis for every schedule. Get morning and evening editions of our flagship newsletter in your inbox. Learn more",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "News and expert analysis for every schedule. Get morning and evening editions of our flagship newsletter in your inbox.",
+   "context": "Sign up to News Briefing",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "Learn more",
+   "value": "See more",
+   "context": "Sign up to News Briefing",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "British Broadcasting Corporation",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "British Broadcasting Corporation",
+   "value": "",
+   "context": "British Broadcasting Corporation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "navigation",
+   "name": "Footer navigation",
+   "value": "",
+   "context": "British Broadcasting Corporation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Home",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.com/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "News",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/news",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Sport",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/sport",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Business",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/business",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Technology",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/technology",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Health",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/health",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Culture",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/culture",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Arts",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/arts",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Travel",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/travel",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Earth",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/future-planet",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Audio",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/audio",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Video",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/video",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Live",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/live",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Weather",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.com/weather",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "BBC Shop",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://shop.bbc.com/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "BritBox",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.britbox.com/?utm_source=bbc.com&utm_medium=referral&utm_campaign=footer",
+   "title": ""
+  },
+  {
+   "role": "button",
+   "name": "BBC in other languages",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "BBC in other languages",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "generic",
+   "name": "Follow BBC on:",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "button",
+   "name": "Follow BBC on x",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "button",
+   "name": "Follow BBC on facebook",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "button",
+   "name": "Follow BBC on instagram",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "button",
+   "name": "Follow BBC on tiktok",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "button",
+   "name": "Follow BBC on linkedin",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "button",
+   "name": "Follow BBC on youtube",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Terms of Use",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.com/pages/terms-of-use",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Subscription Terms",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.com/pages/subscription-terms",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "About the BBC",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.co.uk/aboutthebbc",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Privacy Policy",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.com/pages/privacy-policy",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Cookies",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.com/usingthebbc/cookies/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Accessibility Help",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.co.uk/accessibility/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Contact the BBC",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.co.uk/contact",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Advertise with us",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://advertising.bbcstudios.com/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Do not share or sell my info",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.com/usingthebbc/cookies/how-can-i-change-my-bbc-cookie-settings/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "BBC.com Help & FAQs",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://help.bbc.com/hc/",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Content Index",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.com/pages/content-index",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Set Preferred Source",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.com/future/article/20260128-how-to-make-google-put-trusted-sources-up-top-when-you-search",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "Copyright 2026 BBC. All rights reserved. The BBC is not responsible for the content of external sites.",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "Read about our approach to external linking.",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.com/editorialguidelines/guidance/links-and-feeds",
+   "title": ""
+  },
+  {
+   "role": "heading",
+   "name": "Let us know you agree to cookies",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "We use",
+   "value": "",
+   "context": "Let us know you agree to cookies",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "cookies",
+   "value": "",
+   "context": "Let us know you agree to cookies",
+   "url": "https://www.bbc.com/usingthebbc/cookies/what-do-i-need-to-know-about-cookies/",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "to give you the best online experience.",
+   "value": "",
+   "context": "cookies",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Please let us know if you agree to all of these cookies.",
+   "context": "Let us know you agree to cookies",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "button",
+   "name": "Yes, I agree",
+   "value": "",
+   "context": "Let us know you agree to cookies",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "No, take me to settings",
+   "value": "",
+   "context": "Let us know you agree to cookies",
+   "url": "https://www.bbc.com/usingthebbc/cookies/how-can-i-change-my-bbc-cookie-settings/",
+   "title": ""
+  },
+  {
+   "role": "dialog",
+   "name": "SP Consent Message",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "img",
+   "name": "BBC Logo",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Let us know you agree to advertising cookies",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "We and our 54 partners use cookies and similar technologies to collect and process personal data from your device, such as your IP address and the pages you visit.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "We use this data to help us to better understand our audiences and to improve and personalise your experience. We also use this data to manage the advertising shown on our services. We make money from these ads, which in turn helps to fund our services and the creation of more BBC content.",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "strong",
+   "name": "Please let us know if you agree to:",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "button",
+   "name": "Store and/or access information on a device",
+   "value": "Store and/or access information on a device",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "button",
+   "name": "Personalised advertising and content, advertising and content measurement, audience research and services development",
+   "value": "Personalised advertising and content, advertising and content measurement, audience research and services development",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "Click “Manage Options” to set your choice for specific purposes and to view the list of our",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "partners",
+   "value": "",
+   "context": "",
+   "url": "#",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ". You can find out more on advertising cookies in our",
+   "value": "",
+   "context": "partners",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "link",
+   "name": "privacy policy",
+   "value": "",
+   "context": "partners",
+   "url": "https://www.bbc.com/pages/privacy-policy",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": ". To change your preferences at any other time (including to withdraw consent or opt out of legitimate interest processing) by clicking on",
+   "value": "",
+   "context": "privacy policy",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "strong",
+   "name": "",
+   "value": "‘Do not share or sell my info‘",
+   "context": "privacy policy",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "text",
+   "name": "at the bottom of any page. Your choice only applies to BBC.com.",
+   "value": "",
+   "context": "privacy policy",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "button",
+   "name": "I do not agree",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "button",
+   "name": "I agree",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  },
+  {
+   "role": "button",
+   "name": "Manage options",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": ""
+  }
+ ]
+}

@@ -1325,7 +1325,19 @@ class _ToolsMixin:
             raw = surface.documents(app) if surface_name == "computer" else surface.documents()
             if not raw.get("ok"):
                 raise RuntimeError(raw.get("error", "Could not read the screen."))
-            return retrieval.Index(raw.get("documents", [])).search(query, top_k=limit, everything=everything)
+            hits = retrieval.Index(raw.get("documents", [])).search(query, top_k=limit, everything=everything)
+            # What the model actually asks for, recorded so the index can be tuned against real
+            # queries instead of invented ones. Every encoding decision in
+            # ``the-input-is-the-ceiling`` rests on a guess about how often a query names a
+            # visible label, a fragment of one, or where a link goes — and that guess is the one
+            # assumption in the whole investigation with no measurement behind it. The winning
+            # element's own words are logged beside the query, because a query is only
+            # interpretable next to what it found.
+            logger.info(
+                "screen find: surface=%s query=%r results=%d top=%r",
+                surface_name, query, len(hits), (hits[0].payload.get("name", "") if hits else ""),
+            )
+            return hits
 
         def _record(hit: Any) -> dict:
             return {"id": hit.id, **hit.payload}
