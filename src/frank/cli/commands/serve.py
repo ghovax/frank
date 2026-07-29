@@ -230,8 +230,12 @@ def _port_is_taken(host: str, port: int) -> bool:
 def run(arguments) -> int:
     import uvicorn
 
-    from frank.base.paths import daemon_port_path, daemon_token_path
-    from frank.cli.client import ensure_daemon
+    import contextlib
+    import os
+    import signal
+
+    from frank.base.paths import daemon_port_path, daemon_token_path, runtime_directory
+    from frank.cli.client import daemon_is_up, ensure_daemon
 
     directory = interface_directory()
     if directory is None:
@@ -255,14 +259,35 @@ def run(arguments) -> int:
     # A browser with no daemon behind it is a blank screen with a spinner, so start one for the
     # same reason `frank app` does: the command line owns the daemon, and this is the command
     # line. `--no-daemon` opts out for pointing at something already running.
+    # Whether *this* command started the daemon. It matters because of what happens if the rest
+    # of this function fails: a daemon we started and then never served is a process nobody asked
+    # for and nothing is talking to, left behind by a command that reported an error. Claiming the
+    # port first removed the likeliest cause; owning what we start removes the rest.
+    started_the_daemon = False
     if not arguments.no_daemon:
+        started_the_daemon = not daemon_is_up()
         ensure_daemon()
+
+    def stop_the_daemon_we_started() -> None:
+        """Undo our own side effect. A daemon someone else was already running is left alone."""
+        if not started_the_daemon:
+            return
+        try:
+            pid = int((runtime_directory() / "frankd.pid").read_text().strip())
+        except (OSError, ValueError):
+            return
+        # The group, so the sessions go with it: a worker whose daemon is gone cannot persist
+        # anything. The same reasoning, and the same signal, as `frank daemon stop`.
+        with contextlib.suppress(OSError, ProcessLookupError):
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+        _note("frank: stopped the daemon this command had started.")
 
     try:
         port = int(daemon_port_path().read_text().strip())
         token = daemon_token_path().read_text().strip()
     except (OSError, ValueError):
         _note("frank: frankd is not running (start it with `frank serve`)")
+        stop_the_daemon_we_started()
         return 1
 
     application = build_application(f"http://127.0.0.1:{port}", token, directory)
@@ -277,7 +302,13 @@ def run(arguments) -> int:
     if not arguments.no_open:
         _open_when_listening(address)
 
-    uvicorn.run(application, host=arguments.host, port=arguments.port, log_level="warning")
+    try:
+        uvicorn.run(application, host=arguments.host, port=arguments.port, log_level="warning")
+    except BaseException:
+        # Anything at all — a bind that raced, a keyboard interrupt during startup, a crash in
+        # the server. If we started the daemon and never served it, it does not outlive us.
+        stop_the_daemon_we_started()
+        raise
     return 0
 
 
