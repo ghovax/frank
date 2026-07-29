@@ -1423,14 +1423,21 @@ class _ToolsMixin:
             return (record.get("name", ""), record.get("role", ""), record.get("context", ""))
 
         def _candidates(records: list) -> str:
-            lines = []
-            for record in records:
-                parts = [f"id={record.get('id')}"]
-                for field in ("name", "role", "context"):
-                    if record.get(field):
-                        parts.append(f"{field}={record[field]!r}")
-                lines.append("  - " + ", ".join(parts))
-            return "\n".join(lines)
+            """The competing elements, as data rather than as a sentence about data.
+
+            This used to hand-build `  - id=e12, name='Save', role='button'` — a format invented
+            here and nowhere else, which the model then had to parse back into fields by reading
+            punctuation. Everything else it receives from this tool is JSON through `compact`,
+            including the very `find_*` results these records came from, so the one place that
+            described elements in prose was the one place it could not simply read them.
+
+            Same key order and same field names as a `find_*` hit, so the answer to "which of
+            these did you mean" is written in the vocabulary the question arrived in."""
+            return compact([
+                {field: record.get(field) for field in ("id", "name", "role", "context")
+                 if record.get(field)}
+                for record in records
+            ])
 
         def find_many(query: Any, limit: int = 8, all: bool = False, clickable: Any = None,
                       name: str = "", context: str = "", **_: Any) -> list:
