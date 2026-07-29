@@ -20,7 +20,7 @@ from typing import Any, Optional
 import ApplicationServices as AS
 
 from frank.computer import accessibility, input_synthesis, permissions
-from frank.computer.retrieval import Document, element_text
+from frank.computer.retrieval import Document, element_text, text_or_fallback
 from frank.computer.surface import (
     Element, Surface, ToolFailure, message_loader, resolve_caret, resolve_range,
 )
@@ -295,7 +295,13 @@ class NativeSurface(Surface):
                 # embedding without being the thing a query asks by. Both still reach the model in
                 # the payload, and `find_one` filters on `role` exactly rather than approximately.
                 shown = element_text(name=element.name or "", value=element.value)
-                key = element_text(name=element.name or "")
+                # The name alone, falling back to the value when there is no name. Two thirds of
+                # native elements have no name and would otherwise carry an empty key, which no
+                # query can reach; most of those are static text whose words are in `value`.
+                key = text_or_fallback(
+                    element_text(name=element.name or ""),
+                    element.value if isinstance(element.value, str) else "",
+                )
                 payload: dict[str, Any] = {"role": element.role}
                 if element.name:
                     payload["name"] = element.name

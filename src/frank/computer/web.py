@@ -672,7 +672,8 @@ class WebSurface(Surface):
                 # those children indistinguishable to a cosine. See ``the-input-is-the-ceiling``.
                 shown = element_text(name=element.name, value=element.value, context=element.context)
                 key = web_element_text(name=element.name,
-                                       url=str(element.flags.get("url") or ""), title=title)
+                                       url=str(element.flags.get("url") or ""), title=title,
+                                       value=element.value if isinstance(element.value, str) else "")
                 payload: dict[str, Any] = {"role": element.role}
                 if title:
                     payload["title"] = title

@@ -211,3 +211,27 @@ def test_the_role_signal_in_the_embedding_stays_too_weak_to_act_on(corpora):
         f"0.02 the embedding has stopped encoding role at all; above 0.25 similarity may isolate a "
         f"role unaided and faceted narrowing deserves re-examining"
     )
+
+
+def test_no_element_carrying_words_is_left_unreachable(corpora):
+    """An element with words to offer must produce a non-empty key.
+
+    An empty key is not a bad ranking, it is an absence: no query can reach that element at any
+    depth. Two thirds of a native window and a tenth of a page were in that state until ``value``
+    became a fallback, and the failure is invisible in a top-1 average because those elements are
+    never the answer to a question anyone could successfully ask."""
+    from frank.computer.retrieval import web_element_text
+
+    unreachable = []
+    for corpus in corpora:
+        for element in corpus.elements:
+            if not (element.name.strip() or element.value.strip()):
+                continue  # genuinely has nothing to say; nothing to be done for it
+            key = web_element_text(name=element.name, url=element.url, title=element.title,
+                                   value=element.value)
+            if not key.strip():
+                unreachable.append((corpus.site_name, element.role, element.value[:40]))
+    assert not unreachable, (
+        f"{len(unreachable)} elements carry words but produce an empty key, so no query can reach "
+        f"them: {unreachable[:3]}"
+    )

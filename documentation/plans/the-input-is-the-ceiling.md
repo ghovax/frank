@@ -240,3 +240,13 @@ The embedding cannot be asked to do this itself. Same-role elements do sit close
 Mean pairwise cosine over a page's elements turns out to predict retrieval quality almost perfectly, and inversely. On the browser surface the words key sits at 0.229 with 19.4 effective dimensions; the full declaration sits at 0.691 with 10.9; the ancestor path collapses to 0.845 with 3.0, and only 12% of its values are even distinct. This is the mechanism behind the markup result: adding markup does not add discriminating information, it adds tokens shared by thousands of elements, which pulls every document toward a common centroid and destroys the space's ability to separate anything.
 
 The native surface shows the same law with the terms reversed. Names are highly distinctive there but only 32% of elements have one at all, while declarations are complete and collapsed (0.671). Neither is satisfactory, and the honest reading is that the native key is coverage-limited rather than encoding-limited.
+
+## Reachable at all, before ranked well
+
+Two thirds of the elements recorded from a native window — 999 of 1,455 — carry no name. Their key was empty, and an empty key is not a poor ranking but an absence: no query reaches that element at any depth, and no top-1 average over answerable queries can show it, because those elements are never the answer to a question anyone could successfully ask. The same held for a tenth of the elements on a page.
+
+They were not, however, silent. **927 of the 999 carry a `value`**, and 923 of them are `AXStaticText` whose words live in `value` rather than in `name`. This was a field-mapping problem wearing the costume of a data problem.
+
+Falling back to `value` when nothing else produced text moves those elements from **0% to 89.6%** top-1 (95% interval [+85.9%, +92.9%]) and costs 4.2% on the elements that already had a name. On the browser surface the same trade is 0% to 67.0% for 0.8%. Making two thirds of a surface reachable is worth a few points on the third that already was.
+
+The shape of the fix matters as much as the fix. Appending `value` to a name was measured as harmful twice and removed from both keys for good reason; using it *only when there is no name* is a different operation, and measurably better than the additive form even on the elements it rescues (−4.2% against −4.9% on named queries, identical on unnamed ones). A fallback and an addition are not the same thing, and conflating them is what kept this defect alive through several rounds of measurement that were all looking at the wrong average.

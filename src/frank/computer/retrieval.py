@@ -24,14 +24,16 @@ Two deliberate choices, both settled empirically (see the plan ``screen-search-a
   reversal is the largest single result in ``the-input-is-the-ceiling``: writing the nearest
   labelling ancestor into the key makes every child of a section look alike to a cosine, which
   is the opposite of the disambiguation it was added for. Measured on 797 queries drawn from
-  eight live websites, dropping it moves top-1 by +16.1% (95% interval [+13.2%, +19.1%]). The
+  eight live websites, dropping it moves top-1 by 14 to 19 points depending on the base it is
+  measured against, every interval well clear of zero. The
   earlier "+13 points for keeping it" came from a query set that had been built by joining the
   element's own name to its role, which fed the key back into the query.
 
 The two surfaces build their keys differently and deliberately. The browser has a link's
-destination and a tooltip to work with, so :func:`web_element_text` uses them; the native tree
-has neither, and :func:`element_text` is left as it was because every candidate replacement
-measured inside the noise.
+destination and a tooltip to work with, so :func:`web_element_text` uses them; a native window has
+neither, and ranks on the element's name alone. Both fall back to the element's ``value`` when
+that leaves nothing to rank — see :func:`text_or_fallback`, which is what makes the two thirds of
+a native window that carry no name reachable at all.
 
 The dense half is optional at runtime: when the embedding model cannot be loaded (no network to
 fetch it, say), the index degrades to BM25 alone rather than failing — the model host being
@@ -44,13 +46,15 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-# The general, retrieval-tuned static model (model2vec). Not the code-specialized ``potion-code-16M``
-# semble uses — a DOM/AX tree is natural-language UI labels, not code. Swappable in one place.
+# The general, retrieval-tuned static model (model2vec), swappable in one place.
+#
+# Not the code-specialized ``potion-code-16M`` semble uses, and this is now measured rather than
+# assumed: six static models were compared on both surfaces, and no model — code-trained or
+# otherwise — was separably better than this one on the shipped key. Indexing markup instead of an
+# element's words was measured too, and loses by 17% even when only elements that *have* markup are
+# counted. A page's controls are natural-language labels; the code around them is shared
+# boilerplate that collapses the embedding space rather than distinguishing anything in it.
 DENSE_MODEL = "minishlab/M2V_multilingual_output"
-
-# Reciprocal-rank-fusion constant. Fuses the BM25 and dense rankings without having to reconcile
-# their incomparable score scales: each document scores ``sum 1/(k + rank)`` over the rankings it
-# appears in. The standard k=60 damps the tail so a strong #1 in one ranker still leads.
 
 _TOKEN = re.compile(r"[a-z0-9]+")
 
@@ -140,7 +144,24 @@ def _without_repeated_words(text: str) -> str:
     return " ".join(kept)
 
 
-def web_element_text(name: str = "", url: str = "", title: str = "") -> str:
+def text_or_fallback(text: str, fallback: str) -> str:
+    """``text`` if it says anything, otherwise ``fallback`` — never both.
+
+    The distinction between a fallback and an addition is the whole of it, and it took two
+    measurements to see. Appending an element's ``value`` to its name costs accuracy, which is why
+    ``value`` was removed from both keys. But an element with *no* name has an empty key, and an
+    empty key cannot be retrieved by any query at all: it is not ranked badly, it is unreachable.
+
+    Two thirds of recorded native elements are in that state — 999 of 1,455, of which 927 do carry
+    a value, mostly static text whose words live in ``value`` rather than in ``name``. Falling
+    back moves those from 0% to 89.6% top-1 (95% interval [+85.9%, +92.9%]) and costs 4.2% on the
+    elements that already had a name. On the browser surface the same trade is 0% to 67.0% for
+    0.8%. Making two thirds of a surface reachable is worth a few points on the third that already
+    was."""
+    return text if text.strip() else fallback.strip()
+
+
+def web_element_text(name: str = "", url: str = "", title: str = "", value: str = "") -> str:
     """The retrieval key for one element of a web page: what it is called, where it goes, and
     what it says it is for.
 
@@ -164,7 +185,9 @@ def web_element_text(name: str = "", url: str = "", title: str = "") -> str:
     ``find_one`` can filter on it exactly. What the logged queries say about how often a real
     query names a control kind is the evidence that should reopen this."""
     parts = (name, url_in_words(url), title)
-    return _without_repeated_words(" ".join(part for part in parts if part).strip())
+    written = _without_repeated_words(" ".join(part for part in parts if part).strip())
+    # `value` is a fallback, never an addition — see `text_or_fallback`.
+    return text_or_fallback(written, value)
 
 
 @dataclass
