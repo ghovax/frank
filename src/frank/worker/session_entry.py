@@ -22,6 +22,7 @@ descriptor to be closed by it.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -102,6 +103,15 @@ def main(arguments: list[str]) -> int:
     from frank.worker.serve import run
     import frank.worker.server  # noqa: F401 — imported for its cost, not its name
     import frank.worker.session  # noqa: F401 — see above
+
+    # The embedding model that ranks screen elements, loaded here for the same reason and by
+    # the same logic: it takes about three quarters of a second, it is identical for every
+    # session, and a parked worker has nothing else to do. Left lazy, the first `control_screen`
+    # search of a session paid it while someone waited.
+    with contextlib.suppress(Exception):
+        from frank.computer.retrieval import _dense_model
+
+        _dense_model()
 
     try:
         assignment = _read_assignment(assignment_fd)

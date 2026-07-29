@@ -322,10 +322,19 @@ class Tunable(Enum):
         2_048, Scaling.NONE,
         "Longest side, in pixels, of a screenshot annotated with element labels.",
     )
-    ax_overview_depth = Default(4, Scaling.NONE, "How deep an accessibility overview of a window walks.")
-    ax_ready_probe_depth = Default(
-        2, Scaling.NONE,
-        "How deep the cheap probe walks that asks whether an application's accessibility tree exists yet.",
+    ax_walk_budget_seconds = Default(
+        3.0, Scaling.TIME,
+        "How long one read of an app's accessibility tree may take. It replaces a depth limit, "
+        "which guarded the wrong quantity: a window six levels deep can take twice as long as "
+        "one thirty-five levels deep, because the cost is how quickly the app answers, not how "
+        "far down the answer is. Anything unread when this expires is reported as a region, so "
+        "a short read says it is short.",
+    )
+    ax_ready_probe_seconds = Default(
+        0.4, Scaling.TIME,
+        "How long the readiness poll may spend deciding whether an app's tree has built yet. "
+        "Short on purpose: it runs repeatedly while an app is still starting, and it only has "
+        "to see past the window chrome.",
     )
     ax_prewarm_interval_seconds = Default(
         0.4, Scaling.NONE,

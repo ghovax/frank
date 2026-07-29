@@ -391,11 +391,20 @@ def _includes(role: str, has_name: bool, has_value: bool) -> bool:
     return True
 
 
-# The shallow overview expands this many levels before turning any still-deeper container
-# into an addressable region stand-in. A drill (observing one region) applies the same depth
-# from that region's root, so exploration stays progressive at every level rather than
-# dumping the whole tree at once.
-DEFAULT_OVERVIEW_DEPTH = 4
+# There is no depth limit. There was one — four levels — and it was measured to hide most of
+# every interface: named elements went up 3.8x in Finder, 10x in System Settings and 59x in
+# Chrome when it was removed, because the things a person names sit below the things that
+# merely contain them. A window's own rows were stubs.
+#
+# It was also a guard on the wrong quantity. Depth does not predict what a walk costs: Photos
+# bottoms out at depth 6 and takes 0.41s, while Claude reaches depth 35 in 0.19s — twice as
+# deep, half the time. Cost tracks how quickly an app answers accessibility queries, so the
+# budget below is in seconds, which is the thing actually being protected. Any fixed depth
+# would be a number that truncates some app: 16 looked generous until Claude needed 35.
+#
+# The walk is already protected from a tree that does not end: a visited set breaks reference
+# cycles, and anything off screen is skipped with its subtree.
+_WALK_BUDGET_EXCEEDED = "walk_budget_exceeded"
 
 
 def _make_element(
@@ -446,16 +455,37 @@ def _push_children(stack: list, children: list[Any], depth: int, path: tuple[int
 def _collect(
     seeds: list[tuple[Any, int, tuple[int, ...]]],
     window_rect: Any,
-    maximum_depth: int,
-) -> tuple[list[Element], int]:
-    """Walk the seed nodes into a flat element list, shallow-first. Structural containers
-    reached at or beyond ``maximum_depth`` become region stand-ins (carrying their child count)
-    instead of being expanded; everything shallower is walked as usual. Iterative traversal
-    keeps it fast and immune to deep trees; a visited set breaks AX reference cycles."""
+    budget_seconds: float,
+) -> tuple[list[Element], int, bool]:
+    """Walk the seed nodes into a flat element list, shallow-first, until the tree ends or the
+    budget does.
+
+    Shallow-first matters when the budget runs out: what is kept is the top of the tree, which
+    is what a person would name first. A structural container still holding unwalked children
+    when the walk stops becomes a region stand-in carrying its child count, so a truncated read
+    says it is truncated instead of looking merely empty. Iterative traversal keeps it fast; a
+    visited set breaks AX reference cycles."""
     elements: list[Element] = []
     seen: set[Any] = set()
+    deadline = time.perf_counter() + budget_seconds
+    exhausted = False
     stack: list[tuple[Any, int, tuple[int, ...]]] = list(reversed(seeds))
     while stack:
+        if time.perf_counter() > deadline:
+            # Everything still queued is unread. Each becomes a stand-in carrying its child
+            # count, so a truncated read is visibly truncated rather than quietly short.
+            exhausted = True
+            for pending_node, pending_depth, pending_path in reversed(stack):
+                pending = _read(pending_node)
+                if pending is None:
+                    continue
+                pending_children = _child_nodes(pending)
+                elements.append(_make_element(
+                    pending_node, pending, _string(pending.get(ROLE)), _frame_of(pending),
+                    pending_depth, pending_path,
+                    as_region=True, child_count=len(pending_children) or 1,
+                ))
+            break
         node, depth, path = stack.pop()
         if node in seen:
             continue
@@ -473,17 +503,9 @@ def _collect(
                 continue
 
         children = _child_nodes(attributes)
-        beyond_depth = depth >= maximum_depth
 
         if role in STRUCTURAL_ROLES:
-            # Deep container: stand it in for its subtree so the caller can drill instead of
-            # inlining hundreds of descendants. Shallow container: descend, as before.
-            if beyond_depth and children:
-                elements.append(_make_element(
-                    node, attributes, role, frame, depth, path,
-                    as_region=True, child_count=len(children),
-                ))
-                continue
+            # A container is not itself worth reporting — what it holds is. Descend.
             _push_children(stack, children, depth, path)
             continue
 
@@ -495,20 +517,20 @@ def _collect(
         has_value = value not in (None, "")
         if _includes(role, has_name, has_value):
             elements.append(_make_element(node, attributes, role, frame, depth, path))
-        # Text carries no control subtree; past the depth bound we also stop descending so
-        # an included leaf stands alone rather than dragging its whole subtree into view.
-        if role in TEXT_ROLES or beyond_depth:
+        # Text carries no control subtree: its content is its value, and anything nested inside
+        # is presentation. Everything else is descended into, however far down it goes.
+        if role in TEXT_ROLES:
             continue
         _push_children(stack, children, depth, path)
 
-    return elements, len(seen)
+    return elements, len(seen), exhausted
 
 
 def snapshot_app(
     pid: int,
     *,
     window: str = "focused",
-    maximum_depth: int = DEFAULT_OVERVIEW_DEPTH,
+    budget_seconds: Optional[float] = None,
     root_handle: Any = None,
     root_path: tuple[int, ...] = (),
 ) -> Snapshot:
@@ -536,7 +558,9 @@ def snapshot_app(
     else:
         seeds = [(node, 0, (index,)) for index, node in enumerate(roots) if node is not None]
 
-    elements, visited = _collect(seeds, window_rect, maximum_depth)
+    budget = budget_seconds if budget_seconds is not None else active_tuning().duration(
+        Tunable.ax_walk_budget_seconds)
+    elements, visited, exhausted = _collect(seeds, window_rect, budget)
     return Snapshot(
         pid=pid,
         app_name=app_name,

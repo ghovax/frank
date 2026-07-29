@@ -174,7 +174,7 @@ class NativeSurface(Surface):
             return rebuilt
         return None
 
-    def _ready_snapshot(self, pid: int, window: str, maximum_depth: Optional[int]) -> accessibility.Snapshot:
+    def _ready_snapshot(self, pid: int, window: str) -> accessibility.Snapshot:
         """Read the app's tree, waiting out the asynchronous build a Chromium/Electron app does the
         first time its accessibility is switched on. The pre-warm watcher means the front app's tree
         is usually already up, so the common path is a single full read. When it is not — an app just
@@ -183,27 +183,27 @@ class NativeSurface(Surface):
         taken. On timeout the last (possibly incomplete) read is returned for the caller to report."""
         accessibility.start_prewarm()
         kwargs: dict[str, Any] = {"window": window}
-        if maximum_depth is not None:
-            kwargs["maximum_depth"] = maximum_depth
         snapshot = accessibility.snapshot_app(pid, **kwargs)
         if not _is_incomplete(snapshot):
             return snapshot
-        probe_depth = active_tuning().amount(Tunable.ax_ready_probe_depth) if maximum_depth is None else min(active_tuning().amount(Tunable.ax_ready_probe_depth), maximum_depth)
         deadline = time.monotonic() + active_tuning().settle_give_up()
         delay = active_tuning().settle_poll()
         while time.monotonic() < deadline:
             time.sleep(delay)
             delay = min(delay * 2, active_tuning().duration(Tunable.ax_ready_backoff_seconds))
-            if self._tree_ready(pid, window, probe_depth):
+            if self._tree_ready(pid, window):
                 return accessibility.snapshot_app(pid, **kwargs)
         return accessibility.snapshot_app(pid, **kwargs)
 
-    def _tree_ready(self, pid: int, window: str, probe_depth: int) -> bool:
-        """A cheap, shallow read that answers one question: has the app's real tree built, or is only
-        window chrome up? It reuses the overview walk at a shallow depth so readiness is judged by
-        exactly the rule a full read uses (``_is_incomplete``), without paying for the deep walk on
-        every poll while the tree is still building."""
-        probe = accessibility.snapshot_app(pid, window=window, maximum_depth=probe_depth)
+    def _tree_ready(self, pid: int, window: str) -> bool:
+        """A cheap read that answers one question: has the app's real tree built, or is only window
+        chrome up? Bounded by a short budget rather than a shallow depth — the poll wants to be
+        quick, and time is what "quick" means. Readiness is judged by exactly the rule a full read
+        uses (``_is_incomplete``)."""
+        probe = accessibility.snapshot_app(
+            pid, window=window,
+            budget_seconds=active_tuning().duration(Tunable.ax_ready_probe_seconds),
+        )
         return not _is_incomplete(probe)
 
     def _environment(self, pid: int) -> dict:
@@ -236,7 +236,7 @@ class NativeSurface(Surface):
 
         def run() -> dict:
             pid = self._resolve_pid(target)
-            snapshot = self._ready_snapshot(pid, "focused", None)
+            snapshot = self._ready_snapshot(pid, "focused")
             if _is_incomplete(snapshot):
                 return self.incomplete("not_ready", app=(snapshot.app_name or target or "the app"))
             self._last_pid = pid

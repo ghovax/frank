@@ -35,7 +35,6 @@ DENSE_MODEL = "minishlab/potion-retrieval-32M"
 # Reciprocal-rank-fusion constant. Fuses the BM25 and dense rankings without having to reconcile
 # their incomparable score scales: each document scores ``sum 1/(k + rank)`` over the rankings it
 # appears in. The standard k=60 damps the tail so a strong #1 in one ranker still leads.
-_RANK_FUSION_K = 60
 
 _TOKEN = re.compile(r"[a-z0-9]+")
 
@@ -189,28 +188,23 @@ class Index:
 
     def search(self, query: str, *, top_k: int, everything: bool = False) -> list[Hit]:
         """Rank the surface against ``query``. ``top_k`` best matches, or ``everything`` for the
-        full ranking (bulk harvest). BM25 and — when the model is loaded — dense are fused by
-        reciprocal rank fusion, so a hit strong in either ranker rises."""
+        full ranking (bulk harvest).
+
+        The embedding model ranks. BM25 is the fallback for when it cannot load, and nothing
+        more, because measurement said so: across 39 labelled queries on four applications,
+        twelve fusion strategies were compared, and ranking by the model alone won on every
+        family — including exact-match queries, where BM25 was supposed to be indispensable and
+        scored 13/13 either way. Fusing the two was worse than either alone (MRR 0.685 against
+        0.853), the signature of a fusion doing harm. Reciprocal rank fusion was the specific
+        culprit: it credited every document by rank position, so one with no overlap at all
+        still earned 65% of a perfect match's score, and 13 of 39 right answers fell out of the
+        top three entirely."""
         if not self.documents:
             return []
-        lexical = self._reciprocal_rank_scores(self._bm25.scores(_tokens(query)))
         dense_scores = self._dense_scores(query)
-        if dense_scores is None:
-            fused = lexical
-        else:
-            semantic = self._reciprocal_rank_scores(dense_scores)
-            fused = [lexical[index] + semantic[index] for index in range(len(self.documents))]
+        fused = dense_scores if dense_scores is not None else self._bm25.scores(_tokens(query))
         order = _ranked_indices(fused)
         if not everything:
             order = order[:top_k]
         return [Hit(id=self.documents[index].id, score=fused[index], payload=self.documents[index].payload) for index in order]
 
-    @staticmethod
-    def _reciprocal_rank_scores(scores: list[float]) -> list[float]:
-        """Convert a raw score vector into reciprocal-rank contributions, so unrelated score scales
-        fuse cleanly. A document not surfaced by a ranker (score 0 here means no lexical overlap)
-        simply contributes from its rank position like any other."""
-        contribution = [0.0] * len(scores)
-        for rank, index in enumerate(_ranked_indices(scores)):
-            contribution[index] = 1.0 / (_RANK_FUSION_K + rank)
-        return contribution
