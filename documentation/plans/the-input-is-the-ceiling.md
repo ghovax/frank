@@ -323,3 +323,25 @@ The last idea standing was to give an element a description without paying a lan
 The reason is the law again. A description borrowed from a neighbour is by construction *shared* text — the popular descriptions get borrowed by many elements at once — so it adds inter-document similarity without adding anything that distinguishes one element from another. It is `context` and `landmark` wearing a third costume.
 
 **The oracle row is the more important result, and it corrects an earlier claim in this document.** Giving every element its own real, human-written tooltip — perfect generation, free — is worth **+9.6%** on description queries (95% interval [+6.1%, +13.6%]) and **nothing at all** on label queries. The gap between heuristic composition and real descriptions was earlier quoted as 23 points; measured properly, against queries rather than against a circular index, it is about ten, and it exists on only one query family. Any future proposal to generate descriptions with a language model should be judged against ten points on a minority of queries, not against twenty-three.
+
+## A fixture records what a surface said, not what we made of it
+
+The native fixtures carried a `source` column holding strings like `AXStaticText name="text" value="Recents"`. That is not a recording. It was assembled at harvest time by pasting `role`, `name` and `value` back together, so it contained no information the other columns did not already hold, it could only ever be read back in the one shape it was written, and every measurement taken against it on the native surface was comparing three fields with themselves in an unusual format rather than comparing a declaration with words. The browser side was genuine — `outerHTML` is what the page published — which is what disguised the problem.
+
+Fixtures now store the attributes a surface actually published, `subrole`, `placeholder` and `role_description` among them, and the record is assembled in :mod:`tests.retrieval.model_sweep` at analysis time. The shape of a declaration is now a variable like any other: changing it costs a re-run rather than re-recording every live application, on a screen that will never be in the same state twice.
+
+### The regression it was hiding
+
+Reading a real fixture exposed something worse. `AXRoleDescription` had been placed in the name chain *ahead* of the value fallback, and because it is present on every element it always produced something — which meant the value fallback never fired again. Forty-seven rows in Finder alone were keyed `"text"`, identically, while `Recents`, `Shared`, `Favorites`, `Applications`, `Desktop` and `Documents` sat unused in their `value`. Across the native corpora, 628 elements were keyed by the name of their kind.
+
+The accuracy drop this caused had already been observed and misattributed, in this document, to the corpora having changed.
+
+The chain is now three tiers, most specific first: what an element is *called*, then what it *says*, then — only where the key would otherwise be empty — what the system calls its *kind*.
+
+| Query family | Kind ahead of content | Content ahead of kind | Difference |
+|---|---:|---:|---|
+| drawn from element names (521) | **85.2%** | 81.4% | −3.8% [−5.6%, −2.3%] |
+| drawn from displayed content (629) | **0.0%** | **65.5%** | **+65.5% [+61.7%, +69.2%]** |
+| elements keyed by their kind alone | 628 | **0** | — |
+
+The first row is the only one the harness could see before the content family was added, and on that row alone the correct behaviour looks like a regression. This is the third time a reachability gain has hidden behind a top-1 average over answerable queries, and the pattern is now explicit: **an element that cannot be retrieved contributes no query, so the metric improves when it is buried.** Any change that reduces competition will look good to a measurement drawn only from the winners.

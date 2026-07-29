@@ -77,8 +77,20 @@ def markup_text_only(element: RecordedElement) -> str:
 
 
 def source_declaration(element: RecordedElement) -> str:
-    """The element exactly as its surface declares it, untouched."""
-    return element.source
+    """The element as a declaration: its own markup where the surface published one, otherwise a
+    record assembled here from the attributes it did publish.
+
+    Assembled at analysis time rather than at harvest time. A fixture that stored this string
+    could only ever be read back one way; built here, the shape of the record is a variable like
+    any other, and changing it costs a re-run instead of re-recording every live application."""
+    if element.source:
+        return element.source
+    parts = [element.role]
+    for field_name in ("subrole", "name", "value", "context", "placeholder", "role_description"):
+        written = getattr(element, field_name, "")
+        if written:
+            parts.append(f'{field_name}="{written[:80]}"')
+    return " ".join(parts)
 
 
 def structural_path(element: RecordedElement) -> str:

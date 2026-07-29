@@ -33,10 +33,20 @@ class RecordedElement:
     context: str = ""
     url: str = ""
     title: str = ""
+    subrole: str = ""
+    placeholder: str = ""
+    role_description: str = ""
     source: str = ""
-    """The element as its surface declares it — markup on the web, an accessibility record on a
-    native window. This is the raw material for the code-embedding experiments: the hypothesis is
-    that a declaration carries information the derived fields have already thrown away."""
+    """What the surface itself published, verbatim and unprocessed: an element's markup on the
+    web. Empty on a native window, which has no source text behind it.
+
+    It held a *synthesised* record on the native side until this was noticed — a string built at
+    harvest time by pasting `role`, `name` and `value` back together. That is stored derivation,
+    not stored data: it carried no information the other columns did not already have, it could
+    not be reassembled a different way without re-recording every application, and every
+    measurement taken against it was comparing the same fields to themselves in an odd format.
+    A fixture records what a surface said. Anything built out of that belongs to analysis, where
+    it can be rebuilt for free and questioned afterwards."""
     path: str = ""
     """The structural route to the element: ``nav > ul > li > a`` on the web, a chain of ancestor
     roles on a native window. Structure the flat fields cannot express."""

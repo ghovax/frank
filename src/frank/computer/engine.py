@@ -102,8 +102,9 @@ def _name_containers_from_their_contents(documents: list[Document]) -> None:
 def _element_name(element: accessibility.Element) -> str:
     # The raw role (`AXButton`) is the last resort and a poor one — the embedding has never
     # usefully seen it — so the system's own prose for the role comes first.
+    value = element.value if isinstance(element.value, str) else ""
     return (element.title or element.description or element.help or element.placeholder
-            or element.role_description or element.role)
+            or value or element.role_description or element.role)
 
 
 def _displayed_window(pid: int) -> Optional[tuple[int, int]]:
@@ -148,6 +149,8 @@ def _to_element(ax: accessibility.Element, token: RegistryEntry) -> Element:
         flags["selected"] = True
     if ax.placeholder:
         flags["placeholder"] = ax.placeholder
+    if ax.role_description:
+        flags["role_description"] = ax.role_description
     return Element(
         role=ax.role,
         # The role description last, because it is what the system calls this *kind* of control
@@ -155,9 +158,12 @@ def _to_element(ax: accessibility.Element, token: RegistryEntry) -> Element:
         # present on every element, and for the controls that publish no title, description or
         # help it is the only words they have. Without it those elements carry an empty key, and
         # an empty key cannot be reached by any query at any depth.
-        # Placeholder before role description, because "Search" names *this* field while
-        # "text field" only names its kind. Both come after the real labels.
-        name=ax.title or ax.description or ax.help or ax.placeholder or ax.role_description,
+        # Only the labels that name *this* element. The role description is deliberately absent:
+        # it names the element's *kind* ("text", "button"), and putting it here made it shadow the
+        # element's own content — every Finder sidebar row became "text" while "Recents",
+        # "Desktop" and "Documents" sat unused in `value`. It is applied in `documents()` as the
+        # last resort, after the value, where it can only fill a key that would be empty.
+        name=ax.title or ax.description or ax.help or ax.placeholder,
         value=ax.value,
         clickable=bool(ax.actions),
         flags=flags,
@@ -310,9 +316,16 @@ class NativeSurface(Surface):
                 # The name alone, falling back to the value when there is no name. Two thirds of
                 # native elements have no name and would otherwise carry an empty key, which no
                 # query can reach; most of those are static text whose words are in `value`.
+                # Three tiers, most specific first: what this element is called, then what it
+                # says, then — only if it would otherwise have no key at all — what the system
+                # calls its kind. The order is the whole of it. With the kind ahead of the value,
+                # 47 Finder rows were all keyed "text" while their real labels went unread.
                 key = text_or_fallback(
-                    element_text(name=element.name or ""),
-                    element.value if isinstance(element.value, str) else "",
+                    text_or_fallback(
+                        element_text(name=element.name or ""),
+                        element.value if isinstance(element.value, str) else "",
+                    ),
+                    str(element.flags.get("role_description") or ""),
                 )
                 payload: dict[str, Any] = {"role": element.role}
                 if ax_placeholder := element.flags.get("placeholder"):

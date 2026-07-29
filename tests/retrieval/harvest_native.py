@@ -69,27 +69,15 @@ def harvest_application(surface: NativeSurface, application_name: str) -> Corpus
             guard += 1
         return " > ".join(reversed(steps))
 
-    def declaration(document) -> str:
-        """The element as the accessibility API declares it, written the way the API names things.
-
-        The native counterpart of an element's markup: a role and its attributes. There is no
-        source text behind a native window the way there is behind a page, so this is as close to
-        a declaration as the surface can supply."""
-        parts = [str(document.payload.get("role") or "")]
-        for attribute in ("name", "value", "context"):
-            written = str(document.payload.get(attribute) or "")
-            if written:
-                parts.append(f'{attribute}="{written[:80]}"')
-        return " ".join(parts)
-
     recorded = tuple(
         RecordedElement(
             role=str(document.payload.get("role") or ""),
             name=str(document.payload.get("name") or ""),
             value=str(document.payload.get("value") or ""),
             context=str(document.payload.get("context") or ""),
-            title=str(document.payload.get("placeholder") or ""),
-            source=declaration(document),
+            placeholder=str(document.payload.get("placeholder") or ""),
+            role_description=str(document.payload.get("role_description") or ""),
+            subrole=str(document.payload.get("subrole") or ""),
             path=ancestor_path(document),
         )
         for document in documents
