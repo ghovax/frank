@@ -221,7 +221,6 @@ export function DisclosureRow({
         <Box
           ref={containerRef}
           onScroll={onScroll}
-          className="disclosure-enter"
           py={1}
           ml={1.5}
           pl={3.5}

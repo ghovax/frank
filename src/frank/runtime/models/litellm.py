@@ -367,7 +367,12 @@ class ChatLiteLLMModel(BaseChatModel):
             })
         message = AIMessage(
             content_blocks=ChatLiteLLMModel._standard_content_blocks(content, reasoning),
-            tool_calls=tool_calls if tool_calls else None,
+            # An empty list, never `None`. `AIMessage.tool_calls` is a list with a default,
+            # and a default applies to an *omitted* key — passing `None` explicitly fails
+            # validation before any caller can look at it. Most turns carry tool calls so
+            # this stayed hidden; the one that reliably does not is titling, which is why
+            # every conversation was named "Untitled conversation".
+            tool_calls=list(tool_calls or []),
             usage_metadata=ChatLiteLLMModel._usage_metadata(getattr(response, "usage", None)),
         )
         return ChatResult(generations=[ChatGeneration(message=message)])

@@ -205,6 +205,8 @@ export const ToolGroup = memo(function ToolGroup({
 
   // The heading's chip cluster: prior-tool tallies, any file-change chip, the remote
   // badge, and status chips — all animated in/out.
+  const hasBadges = tally.order.length > 0 || statusChips.length > 0
+    || fileChanges.length > 0 || !!groupLocation;
   const badgeSlot = (
     <>
       <AnimatePresence initial={false}>
@@ -281,7 +283,10 @@ export const ToolGroup = memo(function ToolGroup({
         followTailKey={tools.length}
         icon={<Box color={headingIconColor}><HeadingIcon /></Box>}
         title={titleSlot}
-        badges={badgeSlot}
+        // `undefined`, not an empty fragment, when the group has nothing to badge. A fragment is
+        // truthy, so `DisclosureRow` rendered its badge Flex — which carries a gap — and the
+        // chevron sat a few pixels right of where it does on a row that genuinely has no badges.
+        badges={hasBadges ? badgeSlot : undefined}
       >
         {interactive ? (
           <Flex direction="column" gap={1}>

@@ -766,7 +766,12 @@ class ChatCursorModel(BaseChatModel):
         chunk_message = cast(AIMessageChunk, aggregate.message)
         message = AIMessage(
             content=chunk_message.content,
-            tool_calls=list(chunk_message.tool_calls) if chunk_message.tool_calls else None,
+            # An empty list, never `None`. `AIMessage.tool_calls` is a list with a default,
+            # and a default applies to an *omitted* key — passing `None` explicitly fails
+            # validation before any caller can look at it. Most turns carry tool calls so
+            # this stayed hidden; the one that reliably does not is titling, which is why
+            # every conversation was named "Untitled conversation".
+            tool_calls=list(chunk_message.tool_calls or []),
             additional_kwargs=chunk_message.additional_kwargs,
             usage_metadata=chunk_message.usage_metadata,
         )

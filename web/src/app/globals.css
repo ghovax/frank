@@ -161,19 +161,14 @@ samp {
 }
 
 /* Disclosure content enters directly beneath its trigger with a simple local fade. */
-.disclosure-enter {
-  animation: disclosure-enter 0.12s ease-out;
-}
+/* A disclosure body appears at once, with no fade.
 
-@keyframes disclosure-enter {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
+   It used to fade in over 0.12s. Opening a tool call is a deliberate act — you clicked the row
+   because you want to read what is inside it — and an animation between the click and the text
+   is time spent not reading, every single time. It also arrives *while* the body is already
+   pushing the rows below it down, so the two are easy to confuse: the content is still fading up
+   as the layout settles, which reads as the page being unsettled rather than as a panel opening.
+   The expansion itself is the feedback that the click landed. */
 
 /* Streaming markdown uses opacity only. Flowtoken's wrapper layout is normalized by
    MarkdownContent, so this animation cannot alter wrapping, metrics, or glyph positions. */
@@ -274,8 +269,7 @@ samp {
     animation: none;
   }
 
-  .reveal-enter,
-  .disclosure-enter {
+  .reveal-enter {
     animation: none;
   }
 

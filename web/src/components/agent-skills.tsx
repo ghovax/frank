@@ -152,7 +152,6 @@ function SkillCard({ skill }: { skill: AgentSkill }) {
   const hasBody = !!skill.description || (skill.examples?.length ?? 0) > 0;
   return (
     <DisclosureRow
-      fill
       disabled={!enabled}
       icon={<Box color="fg.muted"><LuPuzzle /></Box>}
       title={<DisclosureLabel><CapabilityTitle title={skill.title ?? skill.name} identifier={skill.id} /></DisclosureLabel>}
@@ -189,7 +188,6 @@ function McpServerGroup({ server }: { server: McpServerTools }) {
   const enabled = server.enabled !== false;
   return (
     <DisclosureRow
-      fill
       disabled={!enabled}
       icon={<Box color="fg.muted"><LuPlug /></Box>}
       title={<DisclosureLabel><CapabilityTitle identifier={server.name} /></DisclosureLabel>}

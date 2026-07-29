@@ -285,12 +285,23 @@ function SessionTreeRow({
               fill
               tone={isActive ? "active" : "muted"}
               onActivate={() => onResume(entry)}
-              // No leading glyph. Every row here is a conversation, so a mark saying so on each
-              // of them says nothing, and the status it was replaced with is absent on most rows
-              // — an idle or sleeping session has nothing to report. Held open on the left it was
-              // a permanent indent for an occasional dot, pushing every title inward to reserve
-              // room for a mark that usually is not there. The status moved to the trailing edge
-              // instead, where it sits beside the ⋯ and costs nothing when there is none.
+              // The status leads the row, and only when there is one. `DisclosureRow` renders no
+              // glyph slot at all for a row that passes no icon, so a quiet session spends
+              // nothing on the left and its title starts at the row's edge — which is what the
+              // fixed slot got wrong before, holding an indent open on every row for a mark most
+              // of them never show. Leading rather than trailing because it belongs to the
+              // conversation, not to the controls: pinned to the right it read as another button
+              // and sat hard against the edge.
+              icon={indicator ? (
+                <Tooltip content={statusTooltip} rich openDelay={350} positioning={{ placement: "right" }}>
+                  <Box
+                    boxSize="1.5"
+                    borderRadius="full"
+                    bg={INDICATOR_COLOR[indicator]}
+                    className={indicator === "working" ? "status-dot-pulse" : undefined}
+                  />
+                </Tooltip>
+              ) : undefined}
               title={
                 <Tooltip content={title} openDelay={350} positioning={{ placement: "right" }}>
                   <Box minW={0} color={isActive ? "blue.fg" : undefined}>
@@ -300,22 +311,7 @@ function SessionTreeRow({
               }
               actionsOverlay
               actions={
-                <>
-                  {/* Always visible when there is something to say, unlike the menu beside it.
-                      The ⋯ keeps its width whether or not it is shown (it fades rather than
-                      unmounts), so the dot does not shift when the row is hovered. */}
-                  {indicator ? (
-                    <Tooltip content={statusTooltip} rich openDelay={350} positioning={{ placement: "left" }}>
-                      <Box
-                        boxSize="1.5"
-                        borderRadius="full"
-                        flexShrink={0}
-                        bg={INDICATOR_COLOR[indicator]}
-                        className={indicator === "working" ? "status-dot-pulse" : undefined}
-                      />
-                    </Tooltip>
-                  ) : null}
-                  <Box data-row-actions>
+                <Box data-row-actions>
                   <DropdownMenu
                     trigger={
                       <IconButton
@@ -347,8 +343,7 @@ function SessionTreeRow({
                       {translation("deleteSession")}
                     </MenuOption>
                   </DropdownMenu>
-                  </Box>
-                </>
+                </Box>
               }
             />
           </Box>
