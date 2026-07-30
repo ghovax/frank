@@ -662,9 +662,9 @@ async def control_screen(
 
     **You are writing Python, and it is a real program.** Not a macro, not a step list — a module body, executed with the standard library available and one object, `screen`, already bound to the target you named. Everything Python gives you is on the table: loops, conditionals, comprehensions, `try`/`except`, functions, data structures, computing over what a find returned. `screen.wait_for(query, seconds=...)` blocks until something matches, which is how you say "once the pane has loaded" instead of hoping; `screen.sleep(seconds)` is there for the rest. The failure mode to avoid is three timid lines and another round trip to learn what the fourth should be — nothing carries between calls but element ids, so each new one starts blind. Write the program the task actually needs.
 
-    **A workflow can be a file, and files live in `workflows/` at the project root.** `screen` is an instance of the importable `frank.screen.Screen`, so the same calls work in a saved module as they do inline. The shape is ordinary Python and nothing about it is special to any one task:
+    **A workflow can be a file.** `screen` is an instance of the importable `frank.screen.Screen`, so the same calls work in a saved module as they do inline. The shape is ordinary Python and nothing about it is special to any one task:
 
-        # workflows/<name>.py
+        # .agents/workflows/<name>.py
         from frank.screen import Screen
 
         def <what_it_does>(screen: Screen, <what_varies>: str) -> <what_it_gives_back>:
@@ -672,7 +672,9 @@ async def control_screen(
             ...
             return ...
 
-    That generalises to anything: `screen` comes first, whatever changes between runs becomes a parameter, and it *returns* what the caller needs rather than printing it. No `__init__.py` is needed. The project root is on the import path, so `from workflows.<name> import <what_it_does>` reaches it and you call it like any other function. When you work something out that is worth having again, write it there with `write_file` — the `ran` trace in your result is exactly what happened, so you are recording rather than reconstructing. A script that imports a workflow cannot be read statically, so its first run asks the user; that is the honest cost of running code the harness did not write.
+    That generalises to anything: `screen` comes first, whatever changes between runs becomes a parameter, and it *returns* what the caller needs rather than printing it. Two directories hold them and both import as `workflows` — `.agents/workflows/` in the project for work about *this* codebase's application, versioned with it; `~/.agents/workflows/` for the person's own tools, available everywhere and committed nowhere. That second distinction matters: a workflow driving somebody's mail carries their account names and habits, and does not belong in a shared repository. Ask which they want when it is genuinely ambiguous, and say which you chose when it is not.
+
+    Whatever exists arrives in your context under `workflows`, with the import line, the call, and what each one does — so reach for one before writing what it already does. When you work something out worth having again, save it with `write_file`; the `ran` trace is exactly what happened, so you are recording rather than reconstructing. A script that imports a workflow cannot be read statically, so its first run asks the user.
 
     **There are two places to compose, and they are peers.** In the script, Python composes the primitives: loop over what a find returned, branch on it, wait for what an action reveals, compute the answer, report once. On a page, `evaluate` composes inside the document: one expression can filter a table to the rows that matter, aggregate a list into a number, read the page's own state, or call its signed-in API with `fetch` through the user's real session. Neither is the fallback for the other, and the strongest scripts use both — `evaluate` to work out *what* to act on, the element primitives to act on it. `evaluate` is classified state-changing, because nothing reading a script can tell a query from a mutation, so it is absent under a read-only policy where `find` and `read` are the way.
 

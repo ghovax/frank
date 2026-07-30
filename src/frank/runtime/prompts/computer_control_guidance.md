@@ -6,19 +6,19 @@
 
 **The script is Python, and it is a real program.** Not a macro or a step list — a module body with the standard library available and one object, `screen`, bound to the target. Loops, conditionals, `try`/`except`, functions, comprehensions: all of it applies, and the point of the tool is that a whole task fits in one call. `screen.wait_for(query, seconds=...)` blocks until something matches, which is how to say "once the pane has loaded" rather than hoping. Avoid three timid lines followed by another round trip to discover the fourth: nothing carries between calls but element ids, so each new one starts blind.
 
-**A workflow can be a file, and files live in `workflows/` at the project root.** `screen` is an instance of the importable `frank.screen.Screen`, so the same calls work in a saved module as they do inline:
+**A workflow can be a file.** `screen` is an instance of the importable `frank.screen.Screen`, so the same calls work in a saved module as inline:
 
 ```python
-# workflows/<name>.py
+# .agents/workflows/<name>.py
 from frank.screen import Screen
 
 def <what_it_does>(screen: Screen, <what_varies>: str) -> <what_it_gives_back>:
-    """One sentence saying what this does."""
+    # One sentence saying what this does — a real docstring here, in the file itself.
     ...
     return ...
 ```
 
-That shape generalises to anything — `screen` first, whatever changes between runs as a parameter, and a return value rather than a print. No `__init__.py` is needed; the project root is on the import path, so `from workflows.<name> import <what_it_does>` reaches it. Something worked out once and worth having again belongs in a file written with `write_file` rather than re-derived next time — the `ran` trace is what actually happened, so it is a record rather than a reconstruction. A script that imports one cannot be read statically, so its first run asks the user.
+That shape generalises: `screen` first, whatever varies as a parameter, a return value rather than a print. Two directories hold them and both import as `workflows` — `.agents/workflows/` in the project, versioned with it, for work about this codebase's application; `~/.agents/workflows/` for the person's own tools, available everywhere and committed nowhere. The second matters: a workflow driving somebody's mail carries their accounts and habits and does not belong in a shared repository, so ask which they want when it is ambiguous and say which you chose when it is not. Whatever exists arrives in context under `workflows` with its import line and what it does — reach for one before writing what it already does, and save new ones with `write_file` rather than re-deriving them. A script that imports one cannot be read statically, so its first run asks the user.
 
 **There are two places to compose, and they are peers.** In the script, Python composes the primitives: loop over what a find returned, branch on it, wait for what an action reveals, compute the answer, report once. On a page, `evaluate` composes inside the document — one expression can filter a table to the rows that matter, aggregate a list into a number, read the page's own state, or call its signed-in API with `fetch` through the user's real session. Neither is a fallback for the other, and the strongest scripts use both: `evaluate` to work out *what* to act on, the element primitives to act on it. `evaluate` is state-changing by classification, so it is absent under a read-only policy.
 

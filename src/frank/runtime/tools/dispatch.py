@@ -1335,7 +1335,7 @@ class _ToolsMixin:
         from frank.computer import control, retrieval, surface as surface_module
         from frank.computer.surface import message_loader
 
-        from frank.computer import targets as target_registry
+        from frank.computer import targets as target_registry, workflows as workflow_registry
 
         script = str(tool_arguments.get("script", ""))
         if not script.strip():
@@ -1706,6 +1706,8 @@ class _ToolsMixin:
             primitives=surface.primitives(),
             # The place the script drives, so the child binds a `screen` already pointed at it.
             target=target_id,
+            # Where saved workflows live, so `from workflows.x import y` reaches them.
+            import_roots=workflow_registry.import_roots(self._project_directory or active.workspace or ""),
         )
         if isinstance(result, dict):
             moved = target_registry.difference(targets_before, target_registry.list_targets())

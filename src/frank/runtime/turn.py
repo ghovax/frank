@@ -199,10 +199,19 @@ class _TurnLoopMixin:
             # the permission layer will refuse advertises a capability and then denies it, which
             # is the same defect as any other promise the code does not keep.
             from frank.base.permission_mode import PermissionMode
+            from frank.computer import workflows
 
-            return target_registry.context_block(
+            block = target_registry.context_block(
                 mutating_allowed=self._agent_configuration.permission_policy != PermissionMode.READ_ONLY,
             )
+            # What somebody has already worked out and saved, so a task that has been solved once
+            # is imported rather than derived again. Read off the files without importing them —
+            # this runs every turn, and importing user code to find out its name would run that
+            # code every turn.
+            saved = workflows.available(self._project_directory or self._working_directory or "")
+            if saved:
+                block["workflows"] = saved
+            return block
         except Exception:  # noqa: BLE001 — context is an aid, never the thing that fails a turn
             logger.debug("Could not enumerate screen targets for the turn context", exc_info=True)
             return {}

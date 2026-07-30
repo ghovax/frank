@@ -45,7 +45,7 @@ _request: Any = None
 _reply: Any = None
 
 
-def _script_namespace(allowed: tuple, target: str, workspace: str) -> dict[str, Any]:
+def _script_namespace(allowed: tuple, target: str, workspace: list) -> dict[str, Any]:
     """What a script starts with: a bound ``screen``, and its own workflows on the import path.
 
     One calling form, here and in a saved file. The primitives used to be injected as bare names,
@@ -61,10 +61,19 @@ def _script_namespace(allowed: tuple, target: str, workspace: str) -> dict[str, 
 
     screen_module.install_bridge(lambda name, arguments, keywords: _perform(name, arguments, keywords))
     place = screen_module.Screen(target)
-    # A project's own workflows are importable by name, so `from workflows.invoice import run`
-    # reaches the file the person wrote rather than needing its text pasted into the script.
-    if workspace and workspace not in sys.path:
-        sys.path.insert(0, workspace)
+    # The child is launched by file path, so Python puts its own directory on `sys.path` — which
+    # makes every module sitting beside it importable by a bare name, and shadows anything of the
+    # same name further along. A sibling called `workflows.py` is exactly that collision. The
+    # child needs none of them: it imports `frank.screen` from the installed package and nothing
+    # else, so its own directory comes off the path before anything is added to it.
+    here = os.path.dirname(os.path.abspath(__file__))
+    sys.path[:] = [entry for entry in sys.path if os.path.abspath(entry or os.getcwd()) != here]
+    # A project's and a person's workflow directories, in precedence order, so
+    # `from workflows.invoice import run` reaches whichever wrote it. They are namespace
+    # packages, so Python merges the two into one `workflows` and the project wins a collision.
+    for root in reversed(list(workspace or ())):
+        if root and root not in sys.path:
+            sys.path.insert(0, root)
     namespace: dict[str, Any] = {"screen": place, "Screen": screen_module.Screen}
     # The names a surface implements are still reported, so an attribute the place does not have
     # fails against the live surface, which can say what it does have.
@@ -132,7 +141,7 @@ def main() -> None:
 
     allowed = configuration.get("primitives") or _FALLBACK_PRIMITIVES
     namespace: dict[str, Any] = _script_namespace(allowed, configuration.get("target", ""),
-                                                  configuration.get("workspace", ""))
+                                                  configuration.get("import_roots", []))
     captured = io.StringIO()
     result: dict[str, Any] = {"ok": True}
     try:
