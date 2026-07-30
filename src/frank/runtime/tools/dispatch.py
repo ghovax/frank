@@ -1360,11 +1360,22 @@ class _ToolsMixin:
             # the current Space, so on an ordinary machine fifty-six of seventy-four open windows
             # were pronounced dead. A cause nobody checked is worse than no cause: the model
             # passed it on to the user as fact.
-            yield ToolResult(id=tool_call_identifier, name=tool_name, result={
-                "ok": False,
-                "error": f"Target {target_id!r} is not among the windows and tabs I can see.",
-                "targets": {"missing": [target_id], "current": target_registry.describe_all()},
-            })
+            # When the name is an application's rather than a window's, say which windows that
+            # application has instead of leaving the whole list to be re-read. A model that asked
+            # for "RStudio" is one word away from the right answer, and handing back twenty rows
+            # invites it to guess again.
+            listing = target_registry.list_targets()
+            same_app = [place for place in listing if place.app.lower() == target_id.strip().lower()]
+            if same_app:
+                described = target_registry.describe_all(sorted(same_app, key=target_registry._worth_naming))
+                error = (f"{target_id!r} is an application, not a window — an application has no single "
+                         f"place to act in. Its windows are listed under 'candidates', likeliest first.")
+                payload = {"ok": False, "error": error, "targets": {"candidates": described}}
+            else:
+                error = f"Target {target_id!r} is not among the windows and tabs I can see."
+                payload = {"ok": False, "error": error,
+                           "targets": {"missing": [target_id], "current": target_registry.describe_all(listing)}}
+            yield ToolResult(id=tool_call_identifier, name=tool_name, result=payload)
             return
         surface_name = target.surface
         surface = self._surface_for(surface_name)

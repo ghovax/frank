@@ -388,6 +388,7 @@
     "controlScreenDied": "The screen-control script stopped before it finished. Its last output is below.",
     "controlScreenNoResult": "The screen-control script ended without returning anything. This usually means it stopped early — the agent can try again with a smaller step.",
     "controlScript": "Script",
+    "controlTarget": "Target",
     "controlTraceback": "Traceback",
     "count": "Count",
     "created": "Created",
@@ -464,7 +465,6 @@
     "riskMedium": "Medium",
     "searchFailed": "Search failed",
     "searchScore": "Score",
-    "searchSurface": "Surface",
     "secondsValue": "{value}s",
     "size": "Size",
     "skill": "Skill",
@@ -476,8 +476,6 @@
     "statusPending": "Pending",
     "statusUnknown": "Unknown",
     "summary": "Summary",
-    "surfaceBrowser": "Browser",
-    "surfaceComputer": "Computer",
     "timeout": "Timeout",
     "title": "Title",
     "truncated": "Truncated",
@@ -485,7 +483,6 @@
     "untitled": "Untitled",
     "url": "URL",
     "validation": "Validation",
-    "writtenTo": "written to {file}",
     "yes": "Yes"
   },
   "ChatGPTAuthControl": {

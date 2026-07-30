@@ -102,10 +102,8 @@ function ControlScreenCallView({ args }: { args: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   return (
     <FieldList>
-      {asString(args.surface) && (
-        <InlineField label={translation("searchSurface")}>
-          {asString(args.surface) === "computer" ? translation("surfaceComputer") : translation("surfaceBrowser")}
-        </InlineField>
+      {asString(args.target) && (
+        <InlineField label={translation("controlTarget")}><Mono>{asString(args.target)}</Mono></InlineField>
       )}
       <Field label={translation("controlScript")}>
         <MonoBlock>{asString(args.script)}</MonoBlock>
@@ -196,7 +194,7 @@ function UpdateTasksCallView({ args }: { args: Record<string, unknown> }) {
           key={index}
           label={taskHashLabel(asString(update.task_id))}
           status={asString(update.status)}
-          body={asString(update.result)}
+          body=""
         />
       ))}
     </FieldList>
@@ -833,7 +831,7 @@ function BashResultView({ data }: { data: Record<string, unknown> }) {
           <MonoBlock>{output}</MonoBlock>
         </Field>
       ) : outputFile ? (
-        <InlineField label={translation("output")}>{translation("writtenTo", { file: outputFile })}</InlineField>
+        <InlineField label={translation("output")}><Mono>{outputFile}</Mono></InlineField>
       ) : null}
       {output && outputFile ? <InlineField label={translation("fullOutput")}><Mono>{outputFile}</Mono></InlineField> : null}
       {asString(data.full_output_file) ? <InlineField label={translation("fullOutput")}><Mono>{asString(data.full_output_file)}</Mono></InlineField> : null}

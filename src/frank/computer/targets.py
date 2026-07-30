@@ -360,9 +360,24 @@ def vocabularies(mutating_allowed: bool = True) -> dict[str, dict[str, str]]:
     }
 
 
+def _worth_naming(target: Target) -> tuple:
+    """Sort key: the window a person would mean, first.
+
+    Two windows of one application are not equally likely to be the one meant. The visible one
+    beats the hidden one, the application's own main window beats a secondary, a window that holds
+    a document beats one that holds nothing, and a big window beats a small one — a model shown
+    two entries called "RStudio" was picking between them on nothing at all."""
+    width, height = target.bounds[2], target.bounds[3]
+    return (not target.focused, not target.visible, not target.main, not target.document,
+            -(width * height), target.app.lower())
+
+
 def list_windows() -> list[Target]:
-    """Native windows only, from accessibility and the window server. Never touches a browser."""
-    return _native_targets()
+    """Native windows only, from accessibility and the window server. Never touches a browser.
+
+    Ordered so the likeliest window is first: a listing is read top-down, and an arbitrary order
+    makes the reader guess where a random one does not."""
+    return sorted(_native_targets(), key=_worth_naming)
 
 
 def list_tabs() -> list[Target]:

@@ -388,6 +388,7 @@
     "controlScreenDied": "画面操作スクリプトは完了する前に停止しました。最後の出力を以下に示します。",
     "controlScreenNoResult": "画面操作スクリプトは何も返さずに終了しました。通常は途中で停止したことを意味します。エージェントはより小さな手順で再試行できます。",
     "controlScript": "スクリプト",
+    "controlTarget": "対象",
     "controlTraceback": "トレースバック",
     "count": "件数",
     "created": "作成",
@@ -464,7 +465,6 @@
     "riskMedium": "中",
     "searchFailed": "検索に失敗しました",
     "searchScore": "スコア",
-    "searchSurface": "対象",
     "secondsValue": "{value}秒",
     "size": "サイズ",
     "skill": "スキル",
@@ -476,8 +476,6 @@
     "statusPending": "保留中",
     "statusUnknown": "不明",
     "summary": "概要",
-    "surfaceBrowser": "ブラウザ",
-    "surfaceComputer": "コンピュータ",
     "timeout": "タイムアウト",
     "title": "タイトル",
     "truncated": "切り詰め",
@@ -485,7 +483,6 @@
     "untitled": "無題",
     "url": "URL",
     "validation": "検証",
-    "writtenTo": "{file} に書き込み",
     "yes": "はい"
   },
   "ChatGPTAuthControl": {

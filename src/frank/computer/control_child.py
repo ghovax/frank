@@ -45,6 +45,31 @@ _request: Any = None
 _reply: Any = None
 
 
+class _LocalScreen:
+    """The same object `frank.screen.Screen` provides, for when the package cannot be imported.
+
+    Attributes are forwarded rather than enumerated, exactly as there: which primitives exist
+    depends on the target and the session's permissions, and the surface is the only thing that
+    knows. A saved workflow that says `from frank.screen import Screen` still needs the real
+    module — but an inline script needs nothing but this."""
+
+    def __init__(self, target: str = "") -> None:
+        self.target = target
+
+    def __repr__(self) -> str:
+        return f"Screen({self.target!r})" if self.target else "Screen()"
+
+    def __getattr__(self, name: str):
+        if name.startswith("_"):
+            raise AttributeError(name)
+
+        def call(*arguments: Any, **keywords: Any) -> Any:
+            return _perform(name, list(arguments), keywords)
+
+        call.__name__ = name
+        return call
+
+
 def _script_namespace(allowed: tuple, target: str, workspace: list) -> dict[str, Any]:
     """What a script starts with: a bound ``screen``, and its own workflows on the import path.
 
@@ -57,24 +82,42 @@ def _script_namespace(allowed: tuple, target: str, workspace: list) -> dict[str,
     ``frank.screen`` is the single Frank module this child imports. It carries no surface state and
     no configuration — just the object and the hook this installs — so the child stays the thin,
     disposable thing it was built to be."""
-    from frank import screen as screen_module
-
-    screen_module.install_bridge(lambda name, arguments, keywords: _perform(name, arguments, keywords))
-    place = screen_module.Screen(target)
-    # The child is launched by file path, so Python puts its own directory on `sys.path` — which
-    # makes every module sitting beside it importable by a bare name, and shadows anything of the
-    # same name further along. A sibling called `workflows.py` is exactly that collision. The
-    # child needs none of them: it imports `frank.screen` from the installed package and nothing
-    # else, so its own directory comes off the path before anything is added to it.
+    # The path is settled *before* anything is imported, because the import below depends on it.
+    # It was written the other way round — `from frank import screen` first, the repair after —
+    # so the repair could never run in the one situation it existed for, and every script died
+    # with `ModuleNotFoundError: No module named 'frank'`.
+    #
+    # The child is launched by file path, so Python puts its own directory on `sys.path`, which
+    # makes every module beside it importable by a bare name and shadows anything of the same
+    # name further along; a sibling called `workflows.py` is exactly that collision. Removing it
+    # also removes the only route to `frank` when the package is not installed where this
+    # interpreter looks, so the package root goes on explicitly:
+    # `.../src/frank/computer` -> `.../src`.
     here = os.path.dirname(os.path.abspath(__file__))
     sys.path[:] = [entry for entry in sys.path if os.path.abspath(entry or os.getcwd()) != here]
+    package_root = os.path.dirname(os.path.dirname(here))
+    if package_root not in sys.path:
+        sys.path.insert(0, package_root)
+
+    # `frank.screen` if it can be reached, and an equivalent built here if it cannot. This child
+    # is meant to hold no Frank code — that is what makes it disposable — and making it depend on
+    # importing the package put the whole tool behind a question about `sys.path` and what the
+    # sandbox will let this process read. It lost that bet twice. The object is a dozen lines; a
+    # dependency that can fail is worse than a duplicate that cannot.
+    try:
+        from frank import screen as screen_module
+
+        screen_module.install_bridge(lambda name, arguments, keywords: _perform(name, arguments, keywords))
+        place: Any = screen_module.Screen(target)
+    except Exception:
+        place = _LocalScreen(target)
     # A project's and a person's workflow directories, in precedence order, so
     # `from workflows.invoice import run` reaches whichever wrote it. They are namespace
     # packages, so Python merges the two into one `workflows` and the project wins a collision.
     for root in reversed(list(workspace or ())):
         if root and root not in sys.path:
             sys.path.insert(0, root)
-    namespace: dict[str, Any] = {"screen": place, "Screen": screen_module.Screen}
+    namespace: dict[str, Any] = {"screen": place, "Screen": type(place)}
     # The names a surface implements are still reported, so an attribute the place does not have
     # fails against the live surface, which can say what it does have.
     namespace["__primitives__"] = tuple(allowed)
@@ -139,12 +182,17 @@ def main() -> None:
     _apply_limits(configuration.get("limits", {}))
     script = configuration["script"]
 
-    allowed = configuration.get("primitives") or _FALLBACK_PRIMITIVES
-    namespace: dict[str, Any] = _script_namespace(allowed, configuration.get("target", ""),
-                                                  configuration.get("import_roots", []))
     captured = io.StringIO()
     result: dict[str, Any] = {"ok": True}
     try:
+        # Building the namespace is inside the guard, because it can fail: it imports
+        # `frank.screen` and rewrites `sys.path`, and when it raised, this whole process died
+        # before writing anything — so the parent had no result to read and could only say the
+        # helper "stopped before it could do anything", which tells a model nothing it can act
+        # on. Everything that can go wrong now comes back as an error the script can be fixed by.
+        allowed = configuration.get("primitives") or _FALLBACK_PRIMITIVES
+        namespace: dict[str, Any] = _script_namespace(allowed, configuration.get("target", ""),
+                                                      configuration.get("import_roots", []))
         with redirect_stdout(captured):
             result["value"] = _run(script, namespace)
     except SyntaxError as error:

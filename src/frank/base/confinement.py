@@ -285,8 +285,16 @@ def _package_root() -> str:
     when frank was installed and failed with "the sandbox refused to run it" for anyone running
     from source, which is every embedder developing against the library.
 
+    The directory the package is imported *from*, not the package directory itself — one level
+    further up than it looks. `import frank` has to read the parent to find `frank` in it, and
+    granting only `.../src/frank` left the child able to read every file in the package and
+    unable to discover that the package was there: `ModuleNotFoundError: No module named 'frank'`,
+    from a process standing inside it. The name and the docstring were right and the code was one
+    `dirname` short.
+
     Read-only and execute: the child needs to run the helper, never to modify it."""
-    return os.path.realpath(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    package = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.realpath(os.path.dirname(package))
 
 
 def build_sbpl(profile: Profile, *, workspace: str = "") -> str:

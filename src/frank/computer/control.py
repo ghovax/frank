@@ -190,7 +190,12 @@ def _explain_silent_exit(complaint: str) -> str:
             "The screen-control helper stopped before it could report anything, and said "
             "nothing about why — it was most likely killed as it started."
         )
-    return "The screen-control helper stopped before it could do anything. The daemon log says why."
+    # The child's own words, not a summary of them. This used to point at a log the model cannot
+    # read, discarding the one thing that would have let it fix its script: a `NameError` naming
+    # the undefined primitive arrived as "the daemon log says why", so a model that had simply
+    # written a name wrong was told its screen access had failed, and concluded it lacked
+    # permissions it had all along.
+    return f"The screen-control helper stopped before it could report a result. It said:\n{complaint}"
 
 
 def _parse_result(stdout: Optional[bytes], stderr: Optional[bytes] = None, exit_code: Optional[int] = None) -> dict:
