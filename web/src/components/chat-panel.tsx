@@ -466,15 +466,12 @@ export function ChatPanel({
   }, [initialSessionId]);
 
   // New content is followed by the layout effect above (only while pinned); this
-  // surfaces the streaming flag to the parent and plays the turn-end chime on the
-  // live→settled transition (never on mount, so loading a finished session is
-  // silent). The initial jump-to-bottom is also handled there: pinned starts
-  // true, so the first post-load pass lands at the bottom instantly.
-  const wasStreamingRef = useRef(false);
+  // surfaces the streaming flag to the parent. The initial jump-to-bottom is also
+  // handled there: pinned starts true, so the first post-load pass lands at the
+  // bottom instantly. The turn-end chime lives further down, where it can see
+  // whether anything is waiting on the user.
   useEffect(() => {
     onStreamingChangeRef.current?.(isStreaming);
-    if (wasStreamingRef.current && !isStreaming) playTurnEndSound();
-    wasStreamingRef.current = isStreaming;
   }, [isStreaming]);
 
   // The mode is fixed when the session is created, so this only ever configures the
@@ -639,13 +636,26 @@ export function ChatPanel({
   const attentionSoundPlayedRef = useRef(false);
   const pendingPromptId = pendingPermissionId || pendingQuestionId;
   useEffect(() => {
-    if (!isStreaming) {
+    if (!isStreaming && !pendingPromptId) {
       attentionSoundPlayedRef.current = false;
       return;
     }
     if (!pendingPromptId || attentionSoundPlayedRef.current) return;
     attentionSoundPlayedRef.current = true;
     playAttentionSound();
+  }, [isStreaming, pendingPromptId]);
+
+  // The turn-end chime, on the transition to *actually finished* — the moment the composer
+  // goes back from Stop to Send. A turn that pauses for a permission or a question is not a
+  // turn that ended: `isStreaming` drops while it waits, so this used to fire the end cue and
+  // then the attention cue a beat later, two sounds for one event, several times a turn.
+  // Waiting counts as still running, so the transition is still there to catch when the answer
+  // comes and the turn really does finish.
+  const wasRunningRef = useRef(false);
+  useEffect(() => {
+    const running = isStreaming || !!pendingPromptId;
+    if (wasRunningRef.current && !running) playTurnEndSound();
+    wasRunningRef.current = running;
   }, [isStreaming, pendingPromptId]);
   useEffect(() => {
     const previous = notifiedPermissionRef.current;
