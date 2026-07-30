@@ -275,7 +275,21 @@ def rectangle(frame: Any) -> Optional[dict[str, int]]:
     Whole points, because the question this answers is "which of these two is the one I meant" and
     no one distinguishes controls by a third of a pixel. An empty rect answers ``None`` rather than
     four zeros: an element the application never laid out has no position, and saying so as
-    ``0, 0, 0, 0`` would read as the top-left corner of the screen."""
+    ``0, 0, 0, 0`` would read as the top-left corner of the screen.
+
+    **No Retina scaling is applied, and none should be.** Every coordinate this harness touches
+    lives in one global *points* space: accessibility frames, ``CGWindowListCopyWindowInfo``
+    bounds, and the points ``CGEventCreateMouseEvent`` is posted at. The backing scale factor is
+    applied below all of them, by the window server, so multiplying here would land a click at
+    twice its intended offset on a Retina display and leave it correct on an external one.
+
+    Measured on a machine with both, rather than reasoned about: 22 of 22 windows agreed exactly
+    between accessibility and the window server — including one on the 1× external display —
+    and a cursor warped to a named point landed on it exactly at 2×, at 1×, and near the origin.
+
+    The trap, if somebody later goes looking: ``CGDisplayPixelsWide`` returns **points** despite
+    its name (1728 on the display whose real panel is 3456 wide). ``CGDisplayModeGetPixelWidth``
+    is the one that returns pixels. Neither belongs in this path."""
     if frame is None or Quartz.CGRectIsEmpty(frame):
         return None
     return {

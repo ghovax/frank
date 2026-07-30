@@ -64,10 +64,23 @@ class _Bound:
 
 message = message_loader("browser")
 
-# The DOM selection helper Playwright has no native API for (selecting an arbitrary substring or
-# placing the caret at an offset). Kept as a real .js file and loaded at runtime, bundled by the
-# freeze spec.
-_APPLY_SELECTION_JS = (Path(__file__).parent / "scripts" / "apply_selection.js").read_text()
+def _page_script(name: str) -> str:
+    """A script this tool runs in the page, read from ``scripts/`` at import.
+
+    Kept as real ``.js`` files rather than string literals: they are the one part of this module
+    another language reads, so an editor should be able to highlight them, a linter should be able
+    to see them, and a reviewer should not have to count quotes to find where one ends. Bundled by
+    the freeze spec alongside the messages and prompts."""
+    return (Path(__file__).parent / "scripts" / f"{name}.js").read_text()
+
+
+# The DOM selection Playwright has no native API for: an arbitrary substring, or the caret at an
+# offset.
+_APPLY_SELECTION_JS = _page_script("apply_selection")
+# Tooltips keyed by the visible text that carries them, so a `title` can enrich an element's key.
+_TITLES_BY_LABEL = _page_script("titles_by_label")
+# What the page has focus on, in whatever words it publishes — one half of a glance's diff.
+_FOCUSED_ELEMENT = _page_script("focused_element")
 
 
 def _decode_body(text: str, content_type: str = "") -> Any:
@@ -425,31 +438,18 @@ def _snapshot(page) -> str:
 # it whenever the element also has visible text — which is the case where a title says something
 # new, about a fifth of all elements. Reading the DOM is therefore the only way to get at it.
 #
-# The join is by visible text rather than by aria-ref, because refs do not exist in the DOM and
-# resolving them one at a time would be a round trip per element. A label claimed by two different
-# titles is dropped rather than guessed at: a wrong tooltip is worse than none, since it would put
-# words into the key of an element that never said them.
-_TITLES_BY_LABEL = r"""() => {
-  const titles = new Map();
-  const ambiguous = new Set();
-  for (const node of document.querySelectorAll('[title]')) {
-    const title = (node.getAttribute('title') || '').trim();
-    if (!title) continue;
-    const label = (node.innerText || node.getAttribute('aria-label') || node.getAttribute('alt') || '')
-      .trim().replace(/\s+/g, ' ').slice(0, 120);
-    if (!label) continue;
-    if (titles.has(label) && titles.get(label) !== title) { ambiguous.add(label); continue; }
-    titles.set(label, title);
-  }
-  for (const label of ambiguous) titles.delete(label);
-  return Object.fromEntries(titles);
-}"""
 
 
 def _folded_label(text: str) -> str:
-    """The form a label is joined on: whitespace collapsed, truncated to the length the page script
-    also truncates to, so both sides of the join agree on what counts as the same label."""
-    return " ".join((text or "").split())[:120]
+    """The form a label is joined on: whitespace collapsed, and nothing else.
+
+    Both sides of the join come through here — the keys the page script returns and the element
+    name looked up against them — so agreement is a property of there being one function rather
+    than of two places choosing the same number. There used to be a `[:120]` here and a matching
+    `.slice(0, 120)` in the script, which is that same agreement written twice; it also meant two
+    long labels differing only after their 120th character were treated as one, and given the same
+    tooltip."""
+    return " ".join((text or "").split())
 
 
 def _titles_by_label(page) -> dict[str, str]:
@@ -1095,9 +1095,7 @@ class WebSurface(Surface):
         except Exception:  # noqa: BLE001 — an observation must never be the thing that fails
             return Glance()
         try:
-            focused = page.evaluate(
-                "() => { const a = document.activeElement;"
-                " return a ? (a.getAttribute('aria-label') || a.innerText || a.tagName) : null; }")
+            focused = page.evaluate(_FOCUSED_ELEMENT)
         except Exception:  # noqa: BLE001
             focused = None
         try:
