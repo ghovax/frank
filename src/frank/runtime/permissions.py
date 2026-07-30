@@ -66,6 +66,20 @@ _SCRIPT_FORBIDDEN_NAMES = frozenset({
 })
 
 
+def _screen_primitive(func: ast.expr) -> str:
+    """The primitive a call node names, however the script spells it.
+
+    ``screen.click(...)`` and a bare ``click(...)`` are the same act, and this scan only ever saw
+    the second. The calling form is a real Python object now, so a walk that matched on
+    ``ast.Name`` alone would read a script that clicks as read-only — the whole assessment
+    silently inverted by a change of syntax."""
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    if isinstance(func, ast.Name):
+        return func.id
+    return ""
+
+
 def _control_script_assessment(script: str) -> tuple[str, str]:
     """Classify a control_screen script as ``read_only``, ``mutating``, or ``unknown``.
 
@@ -106,10 +120,10 @@ def _control_script_assessment(script: str) -> tuple[str, str]:
             return "unknown", f"reaches for {node.attr}"
         elif isinstance(node, ast.Name) and node.id in _SCRIPT_FORBIDDEN_NAMES:
             return "unknown", f"uses {node.id}"
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in MUTATING_SCREEN_PRIMITIVES:
+        elif isinstance(node, ast.Call) and _screen_primitive(node.func) in MUTATING_SCREEN_PRIMITIVES:
             # Recorded rather than returned: a later node may still prove the script `unknown`,
             # which is the stricter verdict and must win however the walk happens to be ordered.
-            mutating_detail = mutating_detail or f"calls {node.func.id}()"
+            mutating_detail = mutating_detail or f"calls {_screen_primitive(node.func)}()"
     return ("mutating", mutating_detail) if mutating_detail else ("read_only", "")
 
 

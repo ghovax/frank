@@ -1701,9 +1701,11 @@ class _ToolsMixin:
         targets_before = target_registry.list_targets()
         result = await control.run_control_script(
             script, dispatch, profile=active.sandbox, workspace=active.workspace,
-            # Only what this surface implements, so an absent primitive is an unbound name at the
-            # line that used it rather than a runtime payload after the plan was committed to.
+            # Only what this surface implements, so a name it does not have fails against the
+            # surface — which can say what it does have — rather than silently doing nothing.
             primitives=surface.primitives(),
+            # The place the script drives, so the child binds a `screen` already pointed at it.
+            target=target_id,
         )
         if isinstance(result, dict):
             moved = target_registry.difference(targets_before, target_registry.list_targets())

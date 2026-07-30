@@ -45,6 +45,33 @@ _request: Any = None
 _reply: Any = None
 
 
+def _script_namespace(allowed: tuple, target: str, workspace: str) -> dict[str, Any]:
+    """What a script starts with: a bound ``screen``, and its own workflows on the import path.
+
+    One calling form, here and in a saved file. The primitives used to be injected as bare names,
+    which reads pleasantly and cannot be written down anywhere else — a script saved to disk was
+    not a Python program, because nothing defined ``click``. Now the same call is
+    ``screen.click(...)`` whether it is typed into a tool argument or imported from a module a
+    person wrote last month, and there is one vocabulary rather than one for each situation.
+
+    ``frank.screen`` is the single Frank module this child imports. It carries no surface state and
+    no configuration — just the object and the hook this installs — so the child stays the thin,
+    disposable thing it was built to be."""
+    from frank import screen as screen_module
+
+    screen_module.install_bridge(lambda name, arguments, keywords: _perform(name, arguments, keywords))
+    place = screen_module.Screen(target)
+    # A project's own workflows are importable by name, so `from workflows.invoice import run`
+    # reaches the file the person wrote rather than needing its text pasted into the script.
+    if workspace and workspace not in sys.path:
+        sys.path.insert(0, workspace)
+    namespace: dict[str, Any] = {"screen": place, "Screen": screen_module.Screen}
+    # The names a surface implements are still reported, so an attribute the place does not have
+    # fails against the live surface, which can say what it does have.
+    namespace["__primitives__"] = tuple(allowed)
+    return namespace
+
+
 def _apply_limits(limits: dict[str, int]) -> None:
     """Bound CPU seconds, best effort — a runaway computation dies on its own even
     before the parent's wall-clock kill, and a memory bomb cannot take the host down."""
@@ -73,12 +100,10 @@ def _call(name: str, arguments: tuple, keywords: dict) -> Any:
     return reply.get("value")
 
 
-def _make_primitive(name: str):
-    def primitive(*arguments: Any, **keywords: Any) -> Any:
-        return _call(name, arguments, keywords)
-
-    primitive.__name__ = name
-    return primitive
+def _perform(name: str, arguments: list, keywords: dict) -> Any:
+    """One screen call, bridged to the parent. Installed into `frank.screen` so every call a
+    script makes — inline or through an imported workflow — travels the same wire."""
+    return _call(name, tuple(arguments), keywords)
 
 
 def _run(script: str, namespace: dict[str, Any]) -> Any:
@@ -106,7 +131,8 @@ def main() -> None:
     script = configuration["script"]
 
     allowed = configuration.get("primitives") or _FALLBACK_PRIMITIVES
-    namespace: dict[str, Any] = {name: _make_primitive(name) for name in allowed}
+    namespace: dict[str, Any] = _script_namespace(allowed, configuration.get("target", ""),
+                                                  configuration.get("workspace", ""))
     captured = io.StringIO()
     result: dict[str, Any] = {"ok": True}
     try:
