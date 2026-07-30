@@ -279,14 +279,21 @@ class Surface:
         """The payload for an unexpected failure. Overridden with a surface-specific message."""
         return {"ok": False, "error": detail}
 
-    # The retrieval primitives every surface answers, serviced by the dispatcher rather than by a
-    # `_primitive_*` method, so their shapes are written here instead of discovered below. These
-    # two are the only hand-written signatures left in the system.
-    RETRIEVAL_SIGNATURES = {
+    # The primitives the dispatcher services rather than the surface, so their shapes are written
+    # here instead of discovered below. These four are the only hand-written signatures left.
+    #
+    # `wait_for` and `sleep` are here because a script could not previously wait for anything at
+    # all: `import time` is outside the safe set, so any script that polled classified `unknown`
+    # and was refused. That made "click, wait for the pane, then find" — the commonest shape in
+    # this whole domain — unwritable, and left splitting the work across tool calls as the only
+    # option. Scripts were short because the environment made them short.
+    PROVIDED_SIGNATURES = {
         "find_one": 'find_one(query, clickable=None, name="", context="")',
         "find_many": 'find_many(query, limit=8, all=False, clickable=None, name="", context="")',
+        "wait_for": 'wait_for(query, seconds=5, clickable=None, name="", context="")',
+        "sleep": "sleep(seconds)",
     }
-    RETRIEVAL_PRIMITIVES = tuple(RETRIEVAL_SIGNATURES)
+    RETRIEVAL_PRIMITIVES = tuple(PROVIDED_SIGNATURES)
 
     def signatures(self) -> dict[str, str]:
         """Every primitive this surface implements, with the shape it is actually called in.
@@ -301,7 +308,7 @@ class Surface:
             name[len("_primitive_"):]: self.spoken_signature(name[len("_primitive_"):], getattr(self, name))
             for name in dir(self) if name.startswith("_primitive_")
         }
-        return dict(sorted({**self.RETRIEVAL_SIGNATURES, **found}.items()))
+        return dict(sorted({**self.PROVIDED_SIGNATURES, **found}.items()))
 
     def primitives(self) -> tuple[str, ...]:
         """Every primitive this surface implements, discovered from the surface itself.

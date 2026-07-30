@@ -1377,6 +1377,12 @@ class _ToolsMixin:
         known_ids: dict[str, dict[str, str]] = {}   # id -> {id, name, role, context}, from find_* results
         changed: list[dict[str, Any]] = []
         read_failures: list[dict[str, Any]] = []    # structured payloads a failed read produced
+        # Everything the script actually did, in order. A script that fails on its fourth line
+        # used to come back with one error and nothing else, so the model could not tell which of
+        # the first three had happened — and rewrote from the top, re-typing into a field it had
+        # already filled. The dispatcher watches every call go past to compute `changed`; it was
+        # keeping the last entry and discarding the rest.
+        ran: list[dict[str, Any]] = []
         # One place, three questions, so they cannot disagree. They used to be three literals, and
         # they did disagree: `caret` was listed as needing focus and never listed as watched, so
         # the branch that would have focused it was unreachable from the day it was written.
@@ -1579,6 +1585,11 @@ class _ToolsMixin:
             records = [_record(hit) for hit in _rank(str(query), int(limit), bool(all), facets)]
             for record in records:
                 _register(record)
+            # Recorded whether or not the script does anything with the return value. A model that
+            # wanted these in its result had to wrap the call in `print`, which stringifies a list
+            # of dicts into a Python repr it then has to parse back out of stdout — records handed
+            # to it as records, returned to it as prose.
+            ran.append({"find_many": str(query), "matched": records})
             return records
 
         def find_one(query: Any, clickable: Any = None, name: str = "", context: str = "",
@@ -1595,7 +1606,32 @@ class _ToolsMixin:
             if twins:
                 raise RuntimeError(control_message("ambiguous_match", query=str(query), candidates=_candidates([top, *twins])))
             _register(top)
+            ran.append({"find_one": str(query), "matched": top})
             return top
+
+        async def wait_for(query: Any, seconds: float = 5.0, clickable: Any = None, name: str = "",
+                           context: str = "", **_: Any) -> dict:
+            """Poll a find until it matches, and return the element. Raise if it never does.
+
+            A screen is not a data structure — it builds, it animates, a pane arrives a beat after
+            the click that asked for it. Every real script needs to say "once this exists", and
+            until now none could: `import time` falls outside the safe module set, so any script
+            that polled was classified `unknown` and refused. The shape had to be split across
+            tool calls, which is why scripts were three lines long."""
+            deadline = time.monotonic() + max(0.0, float(seconds))
+            interval = active_tuning().settle_poll()
+            while True:
+                hits = await asyncio.to_thread(find_many, query, 1, False, clickable, name, context)
+                if hits:
+                    return hits[0]
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(control_message("waited_in_vain", query=str(query), seconds=f"{seconds:g}"))
+                await asyncio.sleep(interval)
+
+        async def sleep(seconds: float = 0.0) -> None:
+            """Wait, without holding the event loop. Bounded by the script's own ceiling, so a
+            script cannot sleep past the deadline it is already running against."""
+            await asyncio.sleep(min(max(0.0, float(seconds)), active_tuning().duration(Tunable.control_script_seconds)))
 
         def _resolve_target(verb: str, args: list) -> list:
             if not args:
@@ -1621,6 +1657,10 @@ class _ToolsMixin:
                 return await asyncio.to_thread(find_many, *args, **keywords)
             if name == "find_one":
                 return await asyncio.to_thread(find_one, *args, **keywords)
+            if name == "wait_for":
+                return await wait_for(*args, **keywords)
+            if name == "sleep":
+                return await sleep(*args, **keywords)
             if name in targeting_verbs:
                 args = await asyncio.to_thread(_resolve_target, name, list(args))
             # An action is bracketed by two cheap observations, so the result can say what
@@ -1636,12 +1676,16 @@ class _ToolsMixin:
             outcome = await asyncio.to_thread(surface.perform, target_id, name, list(args), keywords)
             if isinstance(outcome, dict):
                 if outcome.get("ok") is False:
+                    ran.append({name: args[0] if args else "", "failed": outcome.get("error", "")})
                     # Surface a primitive failure into the script as a raised error it can try/except.
                     raise RuntimeError(outcome.get("error", f"{name} failed"))
+                step: dict[str, Any] = {name: args[0] if args and isinstance(args[0], str) else ""}
                 if watched:
                     record = await _record_change(name, args, before)
                     if record is not None:
                         changed.append(record)
+                        step.update({key: value for key, value in record.items() if key != "action"})
+                ran.append(step)
                 # Hand the script the useful value directly: evaluate's result or read's text is the
                 # value itself (structured and queryable), an action is its confirmation minus `ok`.
                 if "result" in outcome:
@@ -1672,4 +1716,8 @@ class _ToolsMixin:
                     result.setdefault(key, value)
         if changed and isinstance(result, dict):
             result.setdefault("changed", changed)
+        # What ran, in order, whether the script finished or stopped part-way. On a failure this
+        # is the difference between "start over and hope" and "carry on from here".
+        if ran and isinstance(result, dict):
+            result.setdefault("ran", ran)
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
