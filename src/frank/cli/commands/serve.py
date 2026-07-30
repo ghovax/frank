@@ -23,6 +23,8 @@ rather than optional extras, so all three are here.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import sys
 from pathlib import Path
 from typing import Optional
@@ -47,6 +49,12 @@ RUNTIME_PATH = "/__frank/runtime.json"
 
 def _note(message: str) -> None:
     print(message, file=sys.stderr)
+
+
+# How long a stop waits for connections that do not end on their own before closing them anyway.
+# Long enough that a stream in the middle of a message finishes it; short enough that Ctrl-C is
+# answered rather than ignored.
+GRACEFUL_SHUTDOWN_SECONDS = 3
 
 
 def interface_directory() -> Optional[Path]:
@@ -140,6 +148,30 @@ def build_application(daemon_url: str, token: str, directory: Path):
 
     client = httpx.AsyncClient(base_url=daemon_url, timeout=None, follow_redirects=False)
     root = directory.resolve()
+    # Set when the server begins shutting down, so a stream that would otherwise stay open for
+    # the life of a session ends itself instead of being severed. Without it, stopping the server
+    # force-cancelled every open `/events` stream and uvicorn logged each one as "Exception in
+    # ASGI application" with a full traceback — a page of alarming output describing nothing
+    # worse than a server closing on request.
+    stopping = asyncio.Event()
+
+    async def ending(stream):
+        """Relay an upstream stream, and stop cleanly when the server is asked to stop."""
+        upstream = stream.__aiter__()
+        while True:
+            reading = asyncio.ensure_future(anext(upstream))
+            waiting = asyncio.ensure_future(stopping.wait())
+            done, _ = await asyncio.wait({reading, waiting}, return_when=asyncio.FIRST_COMPLETED)
+            waiting.cancel()
+            if reading not in done:
+                # Shutting down. Abandon the read rather than waiting for a stream that has no
+                # reason to end on its own; the background close below drops the connection.
+                reading.cancel()
+                return
+            try:
+                yield reading.result()
+            except StopAsyncIteration:
+                return
 
     async def runtime(_request) -> JSONResponse:
         # An empty base is the whole message: address the daemon relative to this origin, which
@@ -198,7 +230,7 @@ def build_application(daemon_url: str, token: str, directory: Path):
         # Streamed rather than read: `/events` is a server-sent event stream that stays open for
         # the life of a session, and buffering it would mean the transcript never arrives.
         return StreamingResponse(
-            response.aiter_raw(),
+            ending(response.aiter_raw()),
             status_code=response.status_code,
             headers=passed,
             background=_closing(response),
@@ -266,7 +298,27 @@ def build_application(daemon_url: str, token: str, directory: Path):
                 # Already closed by whichever side went first.
                 pass
 
-    return Starlette(routes=[
+    @contextlib.asynccontextmanager
+    async def lifespan(running):
+        """Watch for the server being asked to stop, so open streams end before they are severed.
+
+        A watcher rather than the shutdown hook: uvicorn runs lifespan shutdown *after* it has
+        already waited out and force-closed every connection, which is exactly too late to be
+        useful. Its `should_exit` flag is raised the moment the signal arrives, so that is what
+        this reads."""
+        async def watch() -> None:
+            while not running.state.should_stop():
+                await asyncio.sleep(0.05)
+            stopping.set()
+
+        watcher = asyncio.ensure_future(watch())
+        try:
+            yield
+        finally:
+            stopping.set()
+            watcher.cancel()
+
+    application = Starlette(lifespan=lifespan, routes=[
         Route(RUNTIME_PATH, runtime),
         # Named explicitly rather than caught by the wildcard: an ASGI application dispatches
         # websockets by route, so an HTTP catch-all would never see it.
@@ -276,6 +328,10 @@ def build_application(daemon_url: str, token: str, directory: Path):
             methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
         ),
     ])
+    # Replaced by `run` with the real server's flag; a caller that builds the application without
+    # one simply never stops early.
+    application.state.should_stop = lambda: False
+    return application
 
 
 def _port_is_taken(host: str, port: int) -> bool:
@@ -378,12 +434,26 @@ def run(arguments) -> int:
         _open_when_listening(address)
 
     try:
-        uvicorn.run(application, host=arguments.host, port=arguments.port, log_level="warning")
-    except BaseException:
-        # Anything at all — a bind that raced, a keyboard interrupt during startup, a crash in
-        # the server. If we started the daemon and never served it, it does not outlive us.
+        configuration = uvicorn.Config(
+            application, host=arguments.host, port=arguments.port, log_level="warning",
+            # Ctrl-C used to hang. This server holds connections that never end on their own — the
+            # event stream the interface subscribes to, and a terminal websocket — and uvicorn's
+            # graceful shutdown waits for every open connection with no deadline unless it is
+            # given one. So the first interrupt appeared to do nothing, and it took a second one,
+            # which force-quits and prints a page of tracebacks on the way out. Waiting a few
+            # seconds for a stream to notice is courteous; waiting forever is a hang.
+            timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_SECONDS,
+        )
+        server = uvicorn.Server(configuration)
+        # The application can now see the same flag the signal handler raises.
+        application.state.should_stop = lambda: server.should_exit
+        server.run()
+    finally:
+        # `finally`, not `except`. Uvicorn installs its own signal handlers and returns *normally*
+        # on Ctrl-C, so nothing was ever raised for an `except` to catch — and the daemon this
+        # command had started outlived the command every single time somebody stopped it the
+        # ordinary way. The guard inside means a daemon somebody else was running is left alone.
         stop_the_daemon_we_started()
-        raise
     return 0
 
 
