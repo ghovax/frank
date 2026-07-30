@@ -416,6 +416,21 @@ class WindowRecord:
     minimized: bool
 
 
+def application_root(pid: int) -> Any:
+    """An application's AX root, with the messaging timeout set and its rich tree asked for.
+
+    Every read of an application goes through here, because every read needs the same three
+    things and the one path that skipped the third was wrong in a way nothing caught: a fresh
+    ``windows_of`` asked Electron apps for their windows *before* setting ``AXManualAccessibility``,
+    and an Electron app publishes nothing until it is asked. RStudio — eleven real windows — came
+    back with none, was reported as "does not publish its windows to accessibility", and became
+    unaddressable, which is the exact opposite of true."""
+    root = AS.AXUIElementCreateApplication(pid)
+    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.ax_messaging_seconds))
+    enable_rich_accessibility(root)
+    return root
+
+
 def windows_of(pid: int) -> list[WindowRecord]:
     """Every real window an application publishes, with the id the window server minted for it.
 
@@ -427,13 +442,13 @@ def windows_of(pid: int) -> list[WindowRecord]:
 
     An empty list means the app publishes nothing readable *or* Accessibility is not granted.
     The caller distinguishes them; this function does not guess."""
-    root = AS.AXUIElementCreateApplication(pid)
-    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.ax_messaging_seconds))
     records: list[WindowRecord] = []
-    for window in _single(root, WINDOWS) or []:
+    seen: set[int] = set()
+    for window in _published_windows(application_root(pid)):
         window_id = _window_id_of(window)
-        if window_id is None:
+        if window_id is None or window_id in seen:
             continue
+        seen.add(window_id)
         records.append(WindowRecord(
             window_id=window_id,
             title=_string(_single(window, TITLE)) or _string(_single(window, VALUE)),
@@ -442,11 +457,31 @@ def windows_of(pid: int) -> list[WindowRecord]:
     return records
 
 
+def _published_windows(root: Any) -> list[Any]:
+    """Every window an application exposes, however it chooses to expose them.
+
+    ``AXWindows`` is the usual answer and it is not the only one: RStudio does not publish that
+    attribute at all — its application element offers ``AXChildren``, ``AXMainWindow`` and
+    ``AXFocusedWindow`` instead. Reading the one attribute and treating its absence as *this
+    application has no windows* turned five real windows into a row saying RStudio "does not
+    publish its windows to accessibility", which was both wrong and the reason a whole task could
+    not be started. Ask every way, keep whatever answers, and let the window-server id decide
+    what is a duplicate."""
+    candidates: list[Any] = list(_single(root, WINDOWS) or [])
+    candidates.extend(
+        child for child in (_single(root, CHILDREN) or [])
+        if _string(_single(child, ROLE)) == "AXWindow"
+    )
+    candidates.extend(
+        window for window in (_single(root, MAIN_WINDOW), _single(root, FOCUSED_WINDOW))
+        if window is not None
+    )
+    return candidates
+
+
 def window_handle(pid: int, window_id: int) -> Optional[Any]:
     """The live AX element for one window of an app, found by the id the window server minted."""
-    root = AS.AXUIElementCreateApplication(pid)
-    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.ax_messaging_seconds))
-    for window in _single(root, WINDOWS) or []:
+    for window in _published_windows(application_root(pid)):
         if _window_id_of(window) == window_id:
             return window
     return None
@@ -477,15 +512,29 @@ _MENU_VIRTUAL_KEYS = {
 }
 
 
-def _menu_chord(item: dict[str, Any]) -> str:
-    """The chord a menu item advertises, spelled the way ``press`` accepts it, or ``""``."""
-    character = _string(item.get(MENU_ITEM_CHARACTER)).lower()
+def _menu_chord(item: Any) -> str:
+    """The chord a menu item advertises, spelled the way ``press`` accepts it, or ``""``.
+
+    Read attribute by attribute rather than out of :func:`_read`'s batch. The batch exists to make
+    a tree walk one round-trip per node and its attribute list is fixed; the menu-command
+    attributes are not in it, so every item looked like it had no shortcut and the whole menu
+    pruned itself to nothing — an empty answer that looked exactly like an application with no
+    shortcuts to advertise.
+
+    A character in the private-use range is AppKit's glyph for a key that has no character at all
+    (the arrows, the function keys, Home, Page Up). Spelling it verbatim would hand back
+    ``cmd+``, which ``press`` cannot parse and no one can read, so the virtual key code is
+    the answer for those."""
+    character = _string(_single(item, MENU_ITEM_CHARACTER))
+    if len(character) == 1 and 0xF700 <= ord(character) <= 0xF8FF:
+        character = ""
+    character = character.lower()
     if not character:
-        virtual_key = item.get(MENU_ITEM_VIRTUAL_KEY)
+        virtual_key = _single(item, MENU_ITEM_VIRTUAL_KEY)
         character = _MENU_VIRTUAL_KEYS.get(int(virtual_key), "") if virtual_key is not None else ""
     if not character:
         return ""
-    raw = item.get(MENU_ITEM_MODIFIERS)
+    raw = _single(item, MENU_ITEM_MODIFIERS)
     bits = int(raw) if raw is not None else 0
     modifiers = [name for bit, name in _MENU_MODIFIER_BITS if bits & bit]
     if not bits & 8:      # the inverted Command bit: unset means Command *is* held
@@ -512,8 +561,7 @@ def shortcuts_of(pid: int, *, limit: int = 400) -> list[dict[str, Any]]:
     items, and what makes this answerable is that only a fraction of them advertise a chord. Each
     ``keys`` is spelled the way ``press`` accepts it, so acting on one needs no translation step
     where a mistake could enter."""
-    root = AS.AXUIElementCreateApplication(pid)
-    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.ax_messaging_seconds))
+    root = application_root(pid)
     menu_bar = _single(root, MENU_BAR)
     if menu_bar is None:
         return []
@@ -527,9 +575,8 @@ def shortcuts_of(pid: int, *, limit: int = 400) -> list[dict[str, Any]]:
         for child in _single(element, CHILDREN) or []:
             if counted >= limit:
                 break
-            attributes = _read(child) or {}
-            title = _string(attributes.get(TITLE))
-            chord = _menu_chord(attributes)
+            title = _string(_single(child, TITLE))
+            chord = _menu_chord(child)
             if chord:
                 counted += 1
             # A submenu is a child *menu* holding the items, so the walk goes through it either
@@ -797,9 +844,7 @@ def snapshot_app(
     "all"); ``root_handle``/``root_path`` re-root the walk at a previously-seen region so the
     model can drill into it."""
     started = time.perf_counter()
-    root = AS.AXUIElementCreateApplication(pid)
-    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.ax_messaging_seconds))
-    enable_rich_accessibility(root)
+    root = application_root(pid)
     app_name = app_name_for_pid(pid)
 
     roots = _window_roots(root, window)
@@ -844,8 +889,7 @@ def resolve_from_path(pid: int, path: tuple[int, ...]) -> Any:
     stale when an app relayouts or relaunches; this rebuilds a live handle so an action a
     beat after the observe still lands on the right control. Uses the same visible-child
     traversal that produced the path."""
-    root = AS.AXUIElementCreateApplication(pid)
-    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.ax_messaging_seconds))
+    root = application_root(pid)
     if not path:
         return root
     windows = _single(root, WINDOWS) or []
