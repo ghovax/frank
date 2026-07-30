@@ -376,29 +376,46 @@ class NativeSurface(Surface):
                 state.elements[ref] = entry
                 element = _to_element(ax, entry)
                 # Two strings, deliberately. `shown` is the element's own words, which is what a
-                # reader is given; `key` is what is embedded, and it leads with the kind of
-                # control because that is how one is asked for. Putting the kind into what is
-                # shown would have the model reading "text label Shared" as an element's text.
-                # As on the browser surface: what the model reads is generous, what the embedding
-                # ranks is not. The name alone beats name-with-role-and-value by 2.5% (95% interval
-                # [0.8%, 4.2%]) across ten live applications — `role` and `value` are weight in the
-                # embedding without being the thing a query asks by. Both still reach the model in
-                # the payload, and `find_one` filters on `role` exactly rather than approximately.
+                # reader is given; `key` is what is embedded. Putting the kind into what is shown
+                # would have the model reading "text label Shared" as an element's text. As on the
+                # browser surface: what the model reads is generous, what the embedding ranks is
+                # not.
                 shown = element_text(name=element.name or "", value=element.value)
-                # The name alone, falling back to the value when there is no name. Two thirds of
-                # native elements have no name and would otherwise carry an empty key, which no
-                # query can reach; most of those are static text whose words are in `value`.
-                # Three tiers, most specific first: what this element is called, then what it
-                # says, then — only if it would otherwise have no key at all — what the system
-                # calls its kind. The order is the whole of it. With the kind ahead of the value,
-                # 47 Finder rows were all keyed "text" while their real labels went unread.
-                key = text_or_fallback(
-                    text_or_fallback(
-                        element_text(name=element.name or ""),
-                        element.value if isinstance(element.value, str) else "",
-                    ),
-                    str(element.flags.get("role_description") or ""),
+                # What the element is called, falling back to what it says. Two thirds of native
+                # elements have no name and would otherwise carry an empty key, which no query can
+                # reach; most of those are static text whose words are in `value`. The order is
+                # the whole of it — with the kind ahead of the value, 47 Finder rows were all keyed
+                # "text" while their real labels went unread.
+                said = text_or_fallback(
+                    element_text(name=element.name or ""),
+                    element.value if isinstance(element.value, str) else "",
                 )
+                # And then the kind of control, in the application's own words.
+                #
+                # This reverses a finding, on the evidence that finding asked for. The key was the
+                # name alone because name-with-role-and-value measured 2.5% [0.8%, 4.2%] better
+                # that way — but the caveat recorded beside it was that no query in that harness
+                # ever named a kind of control, which is the one thing a role is for, so the
+                # measurement was taken on queries that could never have rewarded it. What settles
+                # it is what real queries ask by, and 137 of them logged from live sessions say
+                # **56% name a kind** ("Help search text field", "Plots tab in the sidebar").
+                #
+                # Measured against that: on 1,972 queries scored on the specific element rather
+                # than the kind, prepending `role_description` is +9.6 points on queries that name
+                # a kind and −2.3 on queries that name only a label — +5.4 overall, and it wins or
+                # ties on eleven of the twelve applications sampled. Weighted by the real 56/44
+                # split it is +4.4.
+                #
+                # `role_description` rather than a role→words table of our own: it is the prose the
+                # application already publishes ("text entry area", "switch"), so it says what that
+                # application calls the thing, and it costs half the dilution of a synonym table
+                # (−2.3 against −5.3) for nearly all of the gain.
+                #
+                # It is appended rather than led with, and only where the element already says
+                # something, because a bare kind is not an identity: keying an unnamed control on
+                # "switch" alone is what leaves ten of them indistinguishable.
+                kind = str(element.flags.get("role_description") or "")
+                key = f"{said} {kind}".strip() if said and kind else text_or_fallback(said, kind)
                 payload: dict[str, Any] = {"role": element.role}
                 if ax_placeholder := element.flags.get("placeholder"):
                     payload["placeholder"] = ax_placeholder
@@ -425,6 +442,26 @@ class NativeSurface(Surface):
                 parent = ".".join(str(step) for step in ax.path[:-1]) if len(ax.path) > 1 else ""
                 if parent:
                     payload["parent"] = parent
+                # Where it is. Computed for every element already — it is how a click knows where
+                # to land — and then dropped before the model saw any of it.
+                #
+                # It is here because it disambiguates, and it is the same `bounds` a window
+                # carries in the target listing — one fact, one name, at both scales. Of the
+                # elements no query can separate, position tells 87% of them apart and `parent`
+                # tells apart a different 87%: measured across twelve applications the two agree
+                # on 87% and each resolves a further 13% the other cannot, so neither replaces the
+                # other. Which one answers depends on how the application is built rather than on
+                # anything a caller can predict — a list laid out down the screen is separated by
+                # position and not by structure, while repeated controls an application collapses
+                # to a single point are separated by structure and not by position. Carrying both
+                # is what makes the pair reliable when neither alone is.
+                #
+                # Reported, never ranked. Fusing a second signal into the score is the experiment
+                # this module already ran and lost, and geometry is not what a query says. It is
+                # here for the model to *read* when two candidates look alike.
+                where = accessibility.rectangle(ax.frame)
+                if where is not None:
+                    payload["bounds"] = where
                 documents.append(Document(id=ref, text=key, payload=payload, parent=parent))
             _name_containers_from_their_contents(documents)
             result: dict[str, Any] = {

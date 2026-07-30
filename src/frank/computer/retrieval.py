@@ -31,9 +31,10 @@ Two deliberate choices, both settled empirically (see the plan ``screen-search-a
 
 The two surfaces build their keys differently and deliberately. The browser has a link's
 destination and a tooltip to work with, so :func:`web_element_text` uses them; a native window has
-neither, and ranks on the element's name alone. Both fall back to the element's ``value`` when
-that leaves nothing to rank — see :func:`text_or_fallback`, which is what makes the two thirds of
-a native window that carry no name reachable at all.
+neither, and ranks on the element's own words followed by the kind of control the application
+says it is. Both fall back to the element's ``value`` when that leaves nothing to rank — see
+:func:`text_or_fallback`, which is what makes the two thirds of a native window that carry no name
+reachable at all.
 
 The dense half is optional at runtime: when the embedding model cannot be loaded (no network to
 fetch it, say), the index degrades to BM25 alone rather than failing — the model host being
@@ -41,10 +42,13 @@ unreachable must never take the tool down.
 """
 from __future__ import annotations
 
+import logging
 import math
 import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 # The general, retrieval-tuned static model (model2vec), swappable in one place.
 #
@@ -89,17 +93,24 @@ def element_text(name: str = "", description: str = "", value: Any = None, conte
 
     Still used for the text the model *reads*, where more context is a kindness rather than a
     cost. It is no longer what either surface *embeds* — see :func:`web_element_text`, and
-    :mod:`frank.computer.engine`, which now ranks on the name alone.
+    :mod:`frank.computer.engine`, which builds its key from the element's own words and the kind
+    of control the application says it is.
 
     This docstring used to claim that leading with the role moved top-1 from 119 to 132 across
     143 queries. That measurement was real but its queries were not: each was built by joining an
     element's own name to its role, so a key containing the role was being scored against a query
     containing the role. On queries drawn only from what an application actually wrote, ranking on
-    the name alone beats name-with-role-and-value by 2.5% (95% interval [0.8%, 4.2%]) across ten
+    the name alone beat name-with-role-and-value by 2.5% (95% interval [0.8%, 4.2%]) across ten
     live applications. The number was never wrong; the thing it measured was.
 
-    An unrecognised role contributes nothing rather than its raw identifier, so that `AXButton`
-    never reaches the text."""
+    That second measurement had a caveat of its own, and the caveat has since been paid: those
+    queries never named a kind of control either, so they could no more reward a role than the
+    first set could fail to. 137 queries logged from live sessions settle it — **56% name a kind**
+    — and :mod:`frank.computer.engine` now appends ``role_description`` to the native key on the
+    strength of it. What survives here is the narrower claim this function still makes true: an
+    unrecognised *role identifier* contributes nothing rather than its raw spelling, because
+    ``AXButton`` is a token no embedding has usefully seen. The application's own prose for the
+    kind is a different thing from the platform's identifier for it."""
     value_text = value if isinstance(value, str) else ("" if value is None else str(value))
     spoken = _ROLE_IN_WORDS.get(role, _ROLE_IN_WORDS.get(role.lower(), ""))
     return " ".join(part for part in (spoken, name, description, value_text, context) if part).strip()
@@ -221,6 +232,70 @@ class Hit:
     payload: dict[str, Any]
 
 
+class WeakAnchor(Exception):
+    """Raised when the element a caller anchored to could not itself be found confidently.
+
+    An anchored search is two searches, and the second one can miss. When it does, joining on it
+    is worse than not anchoring at all: the ranking is then organised around whatever the anchor
+    words happened to hit, and the answer comes back with the same confident face as a correct
+    one. Measured on 284 anchored cases, refusing when the anchor's own margin falls below 2%
+    catches a third of the failures and costs one correct answer in 242."""
+
+    def __init__(self, anchor: str, margin: float) -> None:
+        super().__init__(f"the anchor {anchor!r} matched nothing clearly (margin {margin:.3f})")
+        self.anchor = anchor
+        self.margin = margin
+
+
+def _tree_path(identifier: str) -> tuple[str, ...]:
+    """An element id as a path through the tree, or ``()`` when it is not one.
+
+    The native surface addresses elements by their route from the window, so its ids *are* the
+    structure. The browser addresses them by aria-ref, which says nothing about where a thing
+    sits — so proximity is simply unavailable there, and an anchored search degrades to an
+    ordinary one rather than to a wrong one."""
+    parts = identifier.split(".")
+    return tuple(parts) if len(parts) > 1 and all(part.isdigit() for part in parts) else ()
+
+
+def intent(query: str) -> Any:
+    """A query as a unit vector, for asking whether a later one restates it.
+
+    Comparing the *words* of two queries answers nothing: restating something means changing the
+    words, and two attempts at one idea shared as little as two tokens out of five in a recorded
+    session. The model already holds the notion of sameness this needs, so the comparison happens
+    where it lives. Returns ``None`` when the model is unavailable, and callers treat that as "no
+    opinion" rather than falling back to a text test that is known not to work."""
+    model = _dense_model()
+    if model is None:
+        return None
+    import numpy as np
+
+    vector = np.asarray(model.encode([query], show_progress_bar=False)[0], dtype=np.float32)
+    return vector / max(float(np.linalg.norm(vector)), 1e-9)
+
+
+def _closeness(candidate: str, anchor: str) -> float:
+    """How near two elements sit in the tree, from 0 (only the window in common) to 1 (siblings).
+
+    Shared prefix over the *longer* of the two paths. Dividing by the candidate's own depth was
+    the obvious reading — "how much of this element's position is explained by the anchor" — and
+    it is wrong in a way only a real window showed: a shallow element shares the root with
+    everything, so at depth two it scores 0.5 against every anchor on the surface and outranks the
+    deep siblings that are actually beside it. In VS Code that handed the same toolbar button back
+    for five different anchors. Over the longer path, a shallow element scores near zero against a
+    deep anchor, which is the truth — they are not near each other in any sense a person means."""
+    first, second = _tree_path(candidate), _tree_path(anchor)
+    if not first or not second:
+        return 0.0
+    shared = 0
+    for left, right in zip(first, second):
+        if left != right:
+            break
+        shared += 1
+    return shared / max(len(first), len(second))
+
+
 class _BM25:
     """Okapi BM25. Pure Python, no dependency — this is the lexical half and the offline fallback.
 
@@ -311,6 +386,33 @@ class Index:
         self.documents = documents
         self._bm25 = _BM25([_tokens(document.text) for document in documents])
         self._dense_matrix: Any = None  # computed on first search if the model loads
+        #: Indices the ranker cannot represent — see :meth:`_unrepresentable_indices`. Filled in
+        #: when the matrix is built, because zero-ness is a fact about the encoding rather than
+        #: about the text, and only the model knows it.
+        self._unreachable: set[int] = set()
+
+    def _unrepresentable_indices(self, vectors: Any) -> set[int]:
+        """Documents whose key encodes to the zero vector, and are therefore reachable by nothing.
+
+        An icon font draws its glyphs from the Unicode private use area — VS Code's ``\\uea9b``,
+        and 129 of its 377 elements. Those codepoints mean nothing to any tokenizer, so the key
+        encodes to all zeros: cosine against *every* query is exactly 0.000, including against the
+        glyph itself, which ranked 256th of 260 when asked for by its own text. This is not a
+        ranking failure to be tuned. There is no query, in any wording, that reaches such an
+        element, and keeping it in the listing offers the model something to aim at that can never
+        be found again.
+
+        Measured across twelve live applications: 149 of 1,135 elements (13.1%), concentrated
+        entirely in the Chromium ones — 34% of VS Code, 40% of Wave, 1% of Photos, none anywhere
+        else. Removing them takes exact-text retrieval from 93% to **100%**, because every one of
+        the 7% that failed was one of these.
+
+        They remain perfectly actionable through their id, which is what ``parent`` and the
+        element's position are for. What they are not is *searchable*."""
+        import numpy as np
+
+        norms = np.linalg.norm(vectors, axis=1)
+        return {index for index in range(len(self.documents)) if float(norms[index]) < 1e-6}
 
     def _dense_scores(self, query: str) -> Optional[list[float]]:
         model = _dense_model()
@@ -320,6 +422,10 @@ class Index:
 
         if self._dense_matrix is None:
             vectors = np.asarray(model.encode([document.text for document in self.documents], show_progress_bar=False), dtype=np.float32)
+            self._unreachable = self._unrepresentable_indices(vectors)
+            if self._unreachable:
+                logger.info("screen index: %d of %d keys encode to nothing and are unsearchable",
+                            len(self._unreachable), len(self.documents))
             norms = np.linalg.norm(vectors, axis=1, keepdims=True)
             self._dense_matrix = vectors / np.clip(norms, 1e-9, None)
         query_vector = np.asarray(model.encode([query], show_progress_bar=False)[0], dtype=np.float32)
@@ -338,13 +444,68 @@ class Index:
         0.853), the signature of a fusion doing harm. Reciprocal rank fusion was the specific
         culprit: it credited every document by rank position, so one with no overlap at all
         still earned 65% of a perfect match's score, and 13 of 39 right answers fell out of the
-        top three entirely."""
+        top three entirely.
+
+        Keys the ranker cannot represent are dropped rather than ranked — see
+        :meth:`_unrepresentable_indices`. They would otherwise sit at a flat 0.0 against every
+        query and be ordered by nothing but their position in the tree."""
         if not self.documents:
             return []
         dense_scores = self._dense_scores(query)
-        fused = dense_scores if dense_scores is not None else self._bm25.scores(_tokens(query))
-        order = _ranked_indices(fused)
+        if dense_scores is not None:
+            fused, unreachable = dense_scores, self._unreachable
+        else:
+            # Without the model, BM25 carries retrieval — and there the same elements are
+            # unreachable for the same reason by a different route: a private-use glyph yields no
+            # tokens at all, so it can never share one with a query.
+            fused = self._bm25.scores(_tokens(query))
+            unreachable = {index for index, document in enumerate(self.documents)
+                           if not _tokens(document.text)}
+        order = [index for index in _ranked_indices(fused) if index not in unreachable]
         if not everything:
             order = order[:top_k]
         return [Hit(id=self.documents[index].id, score=fused[index], payload=self.documents[index].payload) for index in order]
+
+    def anchored(self, query: str, near: str, *, top_k: int, weight: float,
+                 anchor_margin: float) -> list[Hit]:
+        """Rank against ``query``, preferring elements that sit near whatever ``near`` matches.
+
+        Two searches over the same index, joined by structure rather than by words — which is the
+        only thing that separates elements whose words are identical. Fourteen buttons all reading
+        "Close" are one query and fourteen answers; "the close button near dispatch.py" is one.
+
+        **Both halves of the score are kept, and that is the whole design.** Ranking by proximity
+        alone scores 21.5% on the cases this exists for — barely above the 20.8% of not anchoring
+        at all — because the elements nearest an anchor are mostly its own siblings rather than
+        the thing being asked for. Relevance alone is that same 20.8%. Together they are **85.2%**
+        with a realistically-searched anchor, measured over 284 anchored cases on ten live
+        applications.
+
+        Added rather than multiplied. Both forms reach 89.4% on the cases they are for, but a
+        caller will sometimes anchor a query that did not need it, and there the additive form
+        costs 2.6 points where the multiplicative costs 6.0 (87.0% against 83.6%). The gentler
+        failure is worth the identical success.
+
+        The anchor is never returned as its own answer: it is the thing being pointed *from*."""
+        if not self.documents:
+            return []
+        anchor_scores = self._dense_scores(near) or self._bm25.scores(_tokens(near))
+        ranked = _ranked_indices(anchor_scores)
+        best = ranked[0]
+        top = anchor_scores[best]
+        runner_up = anchor_scores[ranked[1]] if len(ranked) > 1 else 0.0
+        margin = (top - runner_up) / top if top > 0 else 0.0
+        if margin < anchor_margin:
+            raise WeakAnchor(near, margin)
+        relevance = self._dense_scores(query) or self._bm25.scores(_tokens(query))
+        ceiling = max(relevance) or 1.0
+        anchor_id = self.documents[best].id
+        combined = [
+            relevance[index] / ceiling + weight * _closeness(document.id, anchor_id)
+            for index, document in enumerate(self.documents)
+        ]
+        order = [index for index in _ranked_indices(combined)
+                 if index not in self._unreachable and index != best][:top_k]
+        return [Hit(id=self.documents[index].id, score=combined[index],
+                    payload=self.documents[index].payload) for index in order]
 

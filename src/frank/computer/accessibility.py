@@ -269,6 +269,21 @@ def _frame_of(attributes: dict[str, Any]) -> Any:
     return None
 
 
+def rectangle(frame: Any) -> Optional[dict[str, int]]:
+    """A CGRect as plain integers, or ``None`` when there is no rectangle worth reporting.
+
+    Whole points, because the question this answers is "which of these two is the one I meant" and
+    no one distinguishes controls by a third of a pixel. An empty rect answers ``None`` rather than
+    four zeros: an element the application never laid out has no position, and saying so as
+    ``0, 0, 0, 0`` would read as the top-left corner of the screen."""
+    if frame is None or Quartz.CGRectIsEmpty(frame):
+        return None
+    return {
+        "x": round(Quartz.CGRectGetMinX(frame)), "y": round(Quartz.CGRectGetMinY(frame)),
+        "width": round(Quartz.CGRectGetWidth(frame)), "height": round(Quartz.CGRectGetHeight(frame)),
+    }
+
+
 def _child_nodes(attributes: dict[str, Any]) -> list[Any]:
     """The descendants the app considers on screen. AXVisibleRows (tables/outlines) and
     AXVisibleChildren (scroll areas) collapse huge scrolled lists to what is shown; the

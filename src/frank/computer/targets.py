@@ -425,6 +425,23 @@ def describe_windows() -> list[dict[str, Any]]:
     return [target.described() for target in list_windows()]
 
 
+# The keys of a listed target whose meaning cannot be read off the name. `id`, `app` and `title`
+# say what they are, and explaining them would bury the two that genuinely mislead: `visible`,
+# which is written only when false and therefore reads as a warning, and `can`, which is the one
+# word deciding what a script may call at all. Each is a file under `messages/computer/`, like
+# every other sentence this package puts in front of a model — prose belongs where prose is
+# edited, not in a dict literal wrapped to eighty columns.
+LEGEND_KEYS = ("visible", "can", "main", "addressable")
+
+
+def legend() -> dict[str, str]:
+    """What the non-obvious keys of a listing mean, for the model that has to read them."""
+    from frank.computer.surface import message_loader
+
+    message = message_loader("computer")
+    return {key: message(f"legend_{key}") for key in LEGEND_KEYS}
+
+
 def describe_all(targets: Optional[list[Target]] = None) -> list[dict[str, Any]]:
     """The whole listing, as the model reads it."""
     return [target.described() for target in (targets if targets is not None else list_targets())]
@@ -439,11 +456,23 @@ def context_block(mutating_allowed: bool = True) -> dict[str, Any]:
     over, so the first call of every screen task had to fail to find them out.
 
     The signatures come with the names. A description that lists them separately is a second
-    statement of the same fact, and it drifted three times over before anyone noticed."""
+    statement of the same fact, and it drifted three times over before anyone noticed.
+
+    The legend travels with the listing for the same reason. ``visible`` is a fact rather than a
+    filter — that is stated at the top of this module and again where the dispatcher notes an
+    off-screen action, and both times in a comment nobody reading the listing can see. A model
+    shown a bare ``visible: false`` on the one window it needed concluded the application
+    "does not expose an open window I can address", ran an `open -a` against an application that
+    had been running for nineteen hours, and then acted on that very window. A key written only
+    when it is false reads as a defect flag unless something says otherwise."""
     from frank.computer.surface import message_loader
 
     targets = list_targets()
-    block: dict[str, Any] = {"targets": describe_all(targets), "primitives": vocabularies(mutating_allowed)}
+    block: dict[str, Any] = {
+        "targets": describe_all(targets),
+        "primitives": vocabularies(mutating_allowed),
+        "legend": legend(),
+    }
     # Said once, as a condition, at the top. It used to be said only as a note repeated on every
     # collapsed row — twenty-five identical sentences hanging off twenty-five entries that
     # otherwise looked like places to act. A fact stated that way reads as a footnote about each

@@ -1078,7 +1078,6 @@ class BashToolConfiguration(BaseModel):
         return segment == pattern
 
 
-
 class ToolsConfiguration(BaseModel):
     """Which of the harness's tools an agent has, and how the ones with settings behave.
 
@@ -1412,7 +1411,6 @@ class _SidecarBash(BaseModel):
     enabled: Optional[bool] = None
     background_allowed: Optional[bool] = Field(default=None, alias="backgroundAllowed")
     permissions: Optional[dict[str, str]] = None
-
 
 
 class _SidecarTools(BaseModel):

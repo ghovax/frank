@@ -61,7 +61,6 @@ logger = logging.getLogger(__name__)
 _PROMPTS = PromptLoader(Path(__file__).resolve().parent.parent / "runtime" / "prompts")
 
 
-
 @dataclass
 class _ContextState:
     """The session's live execution state, with one explicit lifecycle: created on its first

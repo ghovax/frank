@@ -91,8 +91,6 @@ def _merged_sandbox(current, posted: dict):
         raise HTTPException(status_code=400, detail=f"invalid sandbox settings: {error}") from error
 
 
-
-
 @router.get("/system/full-disk-access")
 async def full_disk_access_status():
     """Whether the daemon process can read Full-Disk-Access-protected data (Screen Time,

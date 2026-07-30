@@ -33,7 +33,6 @@ from pydantic import BaseModel, Field
 # Shared building blocks
 
 
-
 class ToolStatus(str, Enum):
     RUNNING = "running"  # accepted / in flight (a backgrounded command, a live search)
     OK = "ok"            # finished successfully
@@ -136,8 +135,6 @@ class CumulativeUsage(BaseModel):
     cache_read_tokens: int = 0
     reasoning_tokens: int = 0
     model_calls: int = 0
-
-
 
 
 class DoneEvent(_EventBase):

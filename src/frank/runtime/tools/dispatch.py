@@ -62,8 +62,6 @@ from frank.base.serialization import compact
 logger = logging.getLogger(__name__)
 
 
-
-
 def _with_schema_defaults(schema: Any, arguments: dict) -> dict:
     """The call's arguments, with every omitted key filled from the schema's own default.
 
@@ -87,7 +85,13 @@ def _with_schema_defaults(schema: Any, arguments: dict) -> dict:
     return filled
 
 
-class _ToolsMixin:
+class _DispatchesTools:
+    """Everything the runtime does with a tool call: resolve it, gate it, run it, report it.
+
+    One of the four halves of :class:`AgentRuntime`, kept in its own file because a turn loop and
+    a tool dispatcher are separate concerns that happen to share state. It was called
+    ``_ToolsMixin``, which named the Python mechanism rather than the work — and the mechanism is
+    the least interesting thing about it."""
 
     async def _run_one_tool(
         self,
@@ -1151,11 +1155,6 @@ class _ToolsMixin:
         result_data = _maybe_json(result)
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
 
-
-
-
-
-
     async def _tool_set_tasks(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
         decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
@@ -1444,11 +1443,24 @@ class _ToolsMixin:
             lookups failed that way, and the model, given only "Nothing on the current surface
             matched", concluded that the application's accessibility labels were unstable.
 
-            `clickable` replaces it. It asks about the caller's own intent — am I after something
-            I can press, or after text — rather than about a vocabulary they were never given,
-            and it is a fact the platform reports rather than a taxonomy anyone invented. Measured
-            live across six applications and 338 queries it is worth +4.7% [+2.7%, +7.1%], which
-            is 84% of what an oracle-perfect role facet achieves, from a single yes or no.
+            `clickable` replaces it, and it is worth +4.7% [+2.7%, +7.1%] across six applications
+            and 338 queries — 84% of what an oracle-perfect role facet achieves, from a single
+            yes or no. It asks about the caller's own intent rather than about a vocabulary they
+            were never given, and it is a fact the platform reports rather than a taxonomy anyone
+            invented. **It is deliberately the only facet of its kind, and a role-shaped one is
+            not to be reintroduced.**
+
+            What `clickable` does not do is name a control. This docstring used to claim it asks
+            "am I after something I can press, or after text", and on a native window that is
+            untrue: a text area reports `clickable: true` exactly like a button, so `True` admits
+            both and `False` admits neither — it selects static labels. That gap is real and is
+            accepted rather than patched. A `kind`/`role` facet was tried again here and removed
+            again: it is a hard set-membership filter that runs *before* the ranker and never
+            reaches the embedding, so a caller who spells the taxonomy wrong is told the screen
+            does not contain the thing it is plainly showing — the exact failure that withdrew
+            `role`, and one a synonym table postpones rather than fixes. When a query cannot
+            reach an element, the answer is a better key or a better ranker, not a filter in
+            front of them.
             """
             if not facets:
                 return documents
@@ -1469,7 +1481,51 @@ class _ToolsMixin:
 
             return [document for document in documents if admits(document)]
 
-        def _rank(query: str, limit: int, everything: bool, facets: dict | None = None) -> list:
+        # What has already been asked of the screen and what each ask turned up, as (intent
+        # vector, element id). Kept on the runtime rather than in this call, because the behaviour
+        # it catches happens *between* calls.
+        asked: list[tuple[Any, str]] = getattr(self, "_screen_queries_asked", [])
+        setattr(self, "_screen_queries_asked", asked)
+        rephrased: list[str] = []
+
+        def _note_if_rephrasing(query: str, hits: list) -> None:
+            """Notice a search going in circles, and say so once.
+
+            The failure this exists for is not a retrieval failure. In one recorded session, eight
+            screen calls to draw a single plot, four of them the same request in other words — "R
+            console input", "R prompt input area", "Cursor at row", "text entry area" — each
+            landing on the element the one before it had already found. The guidance said not to
+            do this and the guidance did not reach it, so the observation is made where the
+            behaviour happens rather than in a paragraph read once at the start.
+
+            Two conditions, and it took measuring to learn that neither alone will do. **Likeness
+            of intent** is necessary — comparing the words themselves catches nothing, because a
+            rephrasing is by definition new words, while in the model's own space one intent
+            restated scores well clear of two different steps. It is also nowhere near sufficient:
+            on 113 sequences that were simply a task moving from one control to the next, likeness
+            alone fired on 76% of them, and no threshold repairs that. **Landing on the same
+            element** is what makes it true rather than plausible: the same answer from two
+            wordings is the model demonstrating that its wordings were interchangeable, not a
+            guess about what it meant.
+
+            Together, across 127 rephrasing sequences and 113 honest ones: everything caught, 4%
+            false, and noticed by the second query rather than the fourth."""
+            top = hits[0].id if hits else ""
+            if not top or rephrased:
+                return
+            vector = retrieval.intent(query)
+            if vector is None:
+                return
+            alike = active_tuning().ratio(Tunable.find_rephrasing_similarity)
+            for earlier, found in asked:
+                if found == top and float(earlier @ vector) >= alike:
+                    rephrased.append(control_message("rephrasing", query=query))
+                    return
+            asked.append((vector, top))
+            del asked[:-12]
+
+        def _rank(query: str, limit: int, everything: bool, facets: dict | None = None,
+                  near: str = "") -> list:
             # One call, one meaning, both surfaces: the target says where to read.
             raw = surface.documents(target_id)
             if not raw.get("ok"):
@@ -1488,7 +1544,21 @@ class _ToolsMixin:
             if not candidates and documents:
                 logger.info("screen find: facets %r admitted nothing; ranking the whole surface", facets)
                 candidates = documents
-            hits = retrieval.Index(candidates).search(query, top_k=limit, everything=everything)
+            index = retrieval.Index(candidates)
+            if near:
+                tuning = active_tuning()
+                try:
+                    hits = index.anchored(
+                        query, near, top_k=limit,
+                        weight=tuning.ratio(Tunable.find_near_weight),
+                        anchor_margin=tuning.ratio(Tunable.find_anchor_margin),
+                    )
+                except retrieval.WeakAnchor as weak:
+                    raise RuntimeError(control_message(
+                        "weak_anchor", query=str(query), anchor=weak.anchor,
+                    )) from None
+            else:
+                hits = index.search(query, top_k=limit, everything=everything)
             # What the model actually asks for, recorded so the index can be tuned against real
             # queries instead of invented ones. Every encoding decision in
             # ``the-input-is-the-ceiling`` rests on a guess about how often a query names a
@@ -1500,6 +1570,7 @@ class _ToolsMixin:
                 "screen find: surface=%s query=%r results=%d top=%r",
                 surface_name, query, len(hits), (hits[0].payload.get("name", "") if hits else ""),
             )
+            _note_if_rephrasing(query, hits)
             return hits
 
         # How much of what appeared is spelled out. Everything new is the most useful thing a
@@ -1583,17 +1654,22 @@ class _ToolsMixin:
             described elements in prose was the one place it could not simply read them.
 
             Same key order and same field names as a `find_*` hit, so the answer to "which of
-            these did you mean" is written in the vocabulary the question arrived in."""
+            these did you mean" is written in the vocabulary the question arrived in.
+
+            `parent` and `bounds` are carried because they are the fields that actually separate these
+            candidates. Elements reach this function precisely when their *words* do not tell them
+            apart, so answering with name and role alone poses the question in the one vocabulary
+            already known to be useless here."""
             return compact([
-                {field: record.get(field) for field in ("id", "name", "role", "context")
+                {field: record.get(field) for field in ("id", "name", "role", "context", "parent", "bounds")
                  if record.get(field)}
                 for record in records
             ])
 
         def find_many(query: Any, limit: int = 8, all: bool = False, clickable: Any = None,
-                      name: str = "", context: str = "", **_: Any) -> list:
+                      near: str = "", name: str = "", context: str = "", **_: Any) -> list:
             facets = _facets(clickable, name, context)
-            records = [_record(hit) for hit in _rank(str(query), int(limit), bool(all), facets)]
+            records = [_record(hit) for hit in _rank(str(query), int(limit), bool(all), facets, str(near))]
             for record in records:
                 _register(record)
             # Recorded whether or not the script does anything with the return value. A model that
@@ -1603,25 +1679,53 @@ class _ToolsMixin:
             ran.append({"find_many": str(query), "matched": records})
             return records
 
-        def find_one(query: Any, clickable: Any = None, name: str = "", context: str = "",
-                     **_: Any) -> dict:
+        def find_one(query: Any, clickable: Any = None, near: str = "", name: str = "",
+                     context: str = "", **_: Any) -> dict:
             facets = _facets(clickable, name, context)
-            scored = [(_record(hit), float(hit.score or 0.0)) for hit in _rank(str(query), 8, False, facets)]
+            scored = [(_record(hit), float(hit.score or 0.0))
+                      for hit in _rank(str(query), 8, False, facets, str(near))]
             if not scored:
                 raise RuntimeError(control_message("no_match", query=str(query)))
             top, top_score = scored[0]
-            # Score-competitive: within the top five and at least 90% of the top score. Among those,
+            # How many rivals the top match is weighed against, and how many come back when it
+            # cannot be chosen between them. One number, because they are one question — the
+            # shortlist a caller would have to read — and it was written as a bare 5 in two places
+            # that had no way to disagree yet.
+            shortlist = active_tuning().amount(Tunable.find_candidates)
+            # Score-competitive: within the shortlist and at least 90% of the top score. Among those,
             # a twin of the top by (name, role, context) means the query cannot pick one — raise.
-            competitive = [record for record, score in scored[:5] if top_score <= 0 or score >= 0.9 * top_score]
+            competitive = [record for record, score in scored[:shortlist] if top_score <= 0 or score >= 0.9 * top_score]
             twins = [record for record in competitive[1:] if _identity(record) == _identity(top)]
             if twins:
                 raise RuntimeError(control_message("ambiguous_match", query=str(query), candidates=_candidates([top, *twins])))
+            # Twins caught the case where two elements are *written* the same. This catches the
+            # larger one: the ranker had no real preference and the answer is a coin toss the
+            # caller would never hear about. The signal is the gap between first and second as a
+            # fraction of the first — measured over 2,263 queries on twelve live applications, a
+            # gap below the margin catches 65% of all wrong answers while costing 5.4% of the
+            # right ones, taking precision from 76.3% to 89.8%. The absolute score is the weaker
+            # test: at the same cost it catches a third as many, because what a score means varies
+            # by surface while a margin does not.
+            #
+            # It answers with the candidates rather than a sentence, because the answer is almost
+            # always among them: recall at eight is 95–99% on every degraded query family, so the
+            # element wanted is nearly certainly in this list and the caller has only to say which.
+            # Reaching for a different wording instead is the one wrong move here, which is why the
+            # message says so.
+            runner_up = scored[1][1] if len(scored) > 1 else 0.0
+            if top_score > 0 and (top_score - runner_up) / top_score < active_tuning().ratio(
+                Tunable.find_one_margin
+            ):
+                raise RuntimeError(control_message(
+                    "unsure_match", query=str(query),
+                    candidates=_candidates([record for record, _ in scored[:shortlist]]),
+                ))
             _register(top)
             ran.append({"find_one": str(query), "matched": top})
             return top
 
-        async def wait_for(query: Any, seconds: float = 5.0, clickable: Any = None, name: str = "",
-                           context: str = "", **_: Any) -> dict:
+        async def wait_for(query: Any, seconds: float = 5.0, clickable: Any = None, near: str = "",
+                           name: str = "", context: str = "", **_: Any) -> dict:
             """Poll a find until it matches, and return the element. Raise if it never does.
 
             A screen is not a data structure — it builds, it animates, a pane arrives a beat after
@@ -1632,7 +1736,11 @@ class _ToolsMixin:
             deadline = time.monotonic() + max(0.0, float(seconds))
             interval = active_tuning().settle_poll()
             while True:
-                hits = await asyncio.to_thread(find_many, query, 1, False, clickable, name, context)
+                # By keyword, because these are the caller's facets and the order they sit in is
+                # `find_many`'s business, not this function's. Passed positionally, adding one
+                # parameter there silently re-aimed every one of them here.
+                hits = await asyncio.to_thread(find_many, query, 1, False, clickable=clickable,
+                                               near=near, name=name, context=context)
                 if hits:
                     return hits[0]
                 if time.monotonic() >= deadline:
@@ -1735,4 +1843,9 @@ class _ToolsMixin:
         # is the difference between "start over and hope" and "carry on from here".
         if ran and isinstance(result, dict):
             result.setdefault("ran", ran)
+        # Said once per call, however many times it was noticed, and only alongside whatever the
+        # script actually returned — this is an observation about how the work is going, not a
+        # failure, and it must not read like one.
+        if rephrased and isinstance(result, dict):
+            result.setdefault("note", rephrased[0])
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)

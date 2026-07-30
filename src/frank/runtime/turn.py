@@ -55,11 +55,12 @@ import uuid
 from frank.base.serialization import compact
 
 
-
-
 logger = logging.getLogger(__name__)
 
-class _TurnLoopMixin:
+class _RunsTurns:
+    """The turn itself: what the model is told, what comes back, and when it is over.
+
+    The loop the other three serve."""
 
     def _locations_summary(self) -> list[dict]:
         """The project's locations as the model sees them: the `location` URI to pass,

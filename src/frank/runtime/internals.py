@@ -23,8 +23,6 @@ import json
 from frank.base.serialization import compact
 
 
-
-
 class Observation(BaseModel):
     """One entry in the conversation-memory log (Observational Memory)."""
 

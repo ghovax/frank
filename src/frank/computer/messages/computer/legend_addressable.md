@@ -1,0 +1,1 @@
+Written only when false, and the one flag here that genuinely blocks a script: this place publishes nothing readable, so there is nothing to find and nothing to act on. Say which place it is and ask the user to do the step themselves.

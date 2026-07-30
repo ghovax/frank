@@ -139,8 +139,6 @@ def _ensure_session_workspace(
     return workspace
 
 
-
-
 def _set_session_title(session_id: str, title: str) -> bool:
     assert state.session_factory is not None
     with sqlite_write_lock():

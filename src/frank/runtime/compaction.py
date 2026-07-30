@@ -12,9 +12,11 @@ from typing import AsyncIterator
 from frank.base.serialization import compact
 
 
+class _CompactsContext:
+    """Keeping a long conversation inside its context window.
 
-
-class _CompactionMixin:
+    Observational memory — the Observer and Reflector — plus the token arithmetic that decides
+    when either runs."""
 
     @staticmethod
     def _estimate_tokens(text: str) -> int:

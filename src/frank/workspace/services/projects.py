@@ -132,9 +132,6 @@ def _open_full_disk_access_settings() -> None:
         )
 
 
-
-
-
 def _delete_project(project_id: str) -> bool:
     """Delete a project and everything under it: its locations, its sessions, and the
     per-(session, location) worktree records. (Remote worktree teardown over SSH is a

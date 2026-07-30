@@ -70,7 +70,6 @@ message = message_loader("browser")
 _APPLY_SELECTION_JS = (Path(__file__).parent / "scripts" / "apply_selection.js").read_text()
 
 
-
 def _decode_body(text: str, content_type: str = "") -> Any:
     """Represent a captured body as structured data when it is JSON — so the model reads it as an
     object it can navigate rather than an escaped string — and otherwise as the plain string."""

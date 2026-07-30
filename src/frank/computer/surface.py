@@ -288,9 +288,9 @@ class Surface:
     # this whole domain — unwritable, and left splitting the work across tool calls as the only
     # option. Scripts were short because the environment made them short.
     PROVIDED_SIGNATURES = {
-        "find_one": 'screen.find_one(query, clickable=None, name="", context="")',
-        "find_many": 'screen.find_many(query, limit=8, all=False, clickable=None, name="", context="")',
-        "wait_for": 'screen.wait_for(query, seconds=5, clickable=None, name="", context="")',
+        "find_one": 'screen.find_one(query, clickable=None, near="", name="", context="")',
+        "find_many": 'screen.find_many(query, limit=8, all=False, clickable=None, near="", name="", context="")',
+        "wait_for": 'screen.wait_for(query, seconds=5, clickable=None, near="", name="", context="")',
         "sleep": "screen.sleep(seconds)",
     }
     RETRIEVAL_PRIMITIVES = tuple(PROVIDED_SIGNATURES)

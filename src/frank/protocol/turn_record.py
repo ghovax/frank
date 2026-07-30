@@ -126,7 +126,6 @@ class PendingInteraction(BaseModel):
         return bool(self.gates) and all(gate.request_id in self.answers for gate in self.gates)
 
 
-
 class TurnRecord(BaseModel):
     """A turn's durable control-state, as one typed value. Constructed from (and serialized back
     into) an A2A ``Task.metadata`` dict via :meth:`from_metadata` / :meth:`apply_to`, preserving

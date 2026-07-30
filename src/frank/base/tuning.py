@@ -318,6 +318,44 @@ class Tunable(Enum):
         2, Scaling.NONE,
         "Identical consecutive reads that count a surface as having stopped changing.",
     )
+    find_rephrasing_similarity = Default(
+        0.45, Scaling.NONE,
+        "How alike two screen queries must be, as a cosine in the retrieval model's own space, "
+        "before a second one landing on the same element counts as the first asked again. Both "
+        "halves are required: across 127 rephrasing sequences and 113 legitimate ones, likeness "
+        "alone caught everything and cried wolf on 76% of honest work, while the same element "
+        "reached from three wordings never cried wolf but missed 12% and noticed a call and a "
+        "half later. Together: everything caught, 4% false, and noticed by the second query.",
+    )
+    find_near_weight = Default(
+        0.5, Scaling.NONE,
+        "How much sitting beside the anchor is worth against matching the query, when a find "
+        "names one with near=. Measured over 284 anchored cases on ten applications: relevance "
+        "alone answers 20.8% of them and proximity alone 21.5%, while the two together answer "
+        "85.2%. Neither half carries this on its own.",
+    )
+    find_anchor_margin = Default(
+        0.02, Scaling.NONE,
+        "How far ahead of its own runner-up a near= anchor must score before a find will join on "
+        "it. Below this the anchor is a guess, and organising a ranking around a guess is worse "
+        "than not anchoring: it catches a third of the failures for one correct answer in 242.",
+    )
+    find_candidates = Default(
+        5, Scaling.RESULTS,
+        "Elements find_one weighs against its best match, and offers back when it cannot choose "
+        "between them.",
+    )
+    find_one_margin = Default(
+        0.03, Scaling.NONE,
+        "How far ahead of the runner-up find_one's best match must score, as a fraction of that "
+        "best score, before it answers with one element instead of asking which was meant. "
+        "Measured over 2,263 queries on twelve live applications: at 0.03 it catches 65% of wrong "
+        "answers for 5.4% of right ones, taking precision from 76.3% to 89.8% and asking on 19.7% "
+        "of calls. Raising it asks more often and is more nearly always right when it does not — "
+        "0.05 buys 91.5% precision but defers twice as many correct answers. This was fitted at "
+        "0.05 against a key that did not yet carry the kind of control; adding that clustered the "
+        "scores, so re-fit this whenever the key changes rather than carrying the number across.",
+    )
     click_interval_seconds = Default(0.01, Scaling.NONE, "Pause between successive synthesized clicks.")
     drag_step_interval_seconds = Default(0.01, Scaling.NONE, "Pause between the interpolated steps of a drag.")
     type_chunk_interval_seconds = Default(0.005, Scaling.NONE, "Pause between typed chunks.")
@@ -515,6 +553,17 @@ class Tuning:
     def duration(self, tunable: Tunable, window: Optional[int] = None) -> float:
         """A limit as a float of seconds — a timeout or a physical input-pacing interval."""
         return self._raw(tunable, window)
+
+    def ratio(self, tunable: Tunable) -> float:
+        """A limit as a bare fraction — a margin or a share, in neither seconds nor items.
+
+        Separate from `duration`, which returns the same number: a threshold read through a method
+        called "duration" is a unit error waiting to be copied, and this file exists so that the
+        name of a value says what the value is.
+
+        No window argument, unlike the others: a fraction does not grow with a context window, and
+        offering the parameter would invite somebody to pass one."""
+        return self._raw(tunable, None)
 
     def scale_timeout(self, seconds: float) -> float:
         """Apply the timeout knob to a caller-supplied or baseline IO timeout — the one place a

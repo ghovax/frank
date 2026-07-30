@@ -13,7 +13,6 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel, SecretStr
 
 
-
 from frank.base.configuration import (
     AgentConfiguration,
     Configuration,
@@ -68,19 +67,19 @@ from frank.runtime.turn_events import (
 )
 
 from frank.runtime.tools.dispatch import (
-    _ToolsMixin,
+    _DispatchesTools,
 )
 
 from frank.runtime.turn import (
-    _TurnLoopMixin,
+    _RunsTurns,
 )
 
 from frank.runtime.permissions import (
-    _PermissionsMixin,
+    _DecidesPermissions,
 )
 
 from frank.runtime.compaction import (
-    _CompactionMixin,
+    _CompactsContext,
 )
 from frank.base.serialization import compact
 from frank.runtime.internals import (
@@ -121,7 +120,6 @@ async def _drain_observation(pending) -> None:
         await pending
     except Exception:  # noqa: BLE001 — an audit sink must never fail a turn
         logger.debug("An asynchronous observer raised", exc_info=True)
-
 
 
 def build_chat_model(
@@ -439,7 +437,7 @@ class TaskManager:
         self._next_identifier = int(snapshot.get("next_identifier", len(self._tasks) + 1))
 
 
-class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMixin):
+class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _RunsTurns):
     # A turn runs until the model is done or the user interrupts it — there is no tool-call
     # ceiling and no heuristic stuck-detector. The model owns progress: it ends its own turn
     # when finished, uses ``wait_for`` to poll rather than spinning, and re-reads a tool's
@@ -956,8 +954,6 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         """The permission mode the agent's own card declares (its ceiling before a
         caller's grant tightens it)."""
         return self._agent_configuration.permission_policy
-
-
 
     def set_a2a_turn_id(self, turn_id: str) -> None:
         """Record the A2A task id of the current turn, so work raised during it can name the

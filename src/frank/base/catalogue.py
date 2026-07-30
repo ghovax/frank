@@ -238,7 +238,6 @@ class Catalogue:
         return PromptLoader(directory).load(name, dict(variables))
 
 
-
 def packaged_prompts_directory() -> Path:
     """Where the harness's own prompt templates live."""
     return Path(__file__).resolve().parent.parent / "runtime" / "prompts"

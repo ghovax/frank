@@ -15,6 +15,7 @@ from frank.runtime.background import current_background_jobs, current_tool_call_
 from frank.base.tuning import Tunable, active_tuning, clip_to_tokens
 from frank.base.serialization import compact
 from frank.runtime.tools import context as tool_context
+from frank.base.configuration import PromptLoader
 
 # bash is synchronous by default: the model chooses whether a command backgrounds
 # (background=true), so backgrounding is never a surprise it has to reason about.
@@ -48,27 +49,7 @@ async def bash(
     background: bool = False,
     timeout: float = Tunable.bash_sync_window_seconds.default,
 ) -> str:
-    """Execute a bash command and return its output.
-
-    Synchronous by default: the command runs to completion and its real output is returned directly, so you always see the result of the action you took.
-
-    Set background=True only for genuinely long-running work you do NOT need the result of before your turn can continue — a build, a test suite, a dev server, a broad scan. A backgrounded command returns immediately with a task identifier; its result is auto-injected into the conversation when it finishes, and the harness re-engages you then. Do NOT background a command whose output you need next (and never background then re-run the same command — it is already running).
-
-    Always provide a clear explanation and risk assessment for the command. Set read_only=True only for commands that provably just read state (cat, head, tail, ls, grep, find, etc.). Omitted, the command is treated as potentially mutating.
-
-    **Prefer specialized tools** for file discovery, content search, file reads, edits, writes, URL fetching, and downloads. Use bash for tests, builds, Git, process and package management, pipelines, and work without a dedicated tool.
-
-    **Work efficiently:** batch independent read-only commands, do not repeat a search whose answer is already available, and never run a broad recursive search over a user's home directory. Use ``background=True`` for managed long-running work instead of starting unmanaged ``&`` or ``nohup`` jobs.
-
-    Arguments:
-      - command: The shell command to execute.
-      - location: The project location to run the command on — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
-      - read_only: Whether this command only reads state without modifying it. Defaults to False (treated as mutating) when omitted.
-      - explanation: Explain why this command is needed for the task.
-      - risk: One of "low", "medium", "high" — assess the potential damage. Low for read-only commands, medium for modifications, high for destructive operations.
-      - background: Run the command in the background instead of waiting for it. Use for long-running work whose result is not needed immediately.
-      - timeout: How many seconds to wait synchronously for the command before it auto-backgrounds (its result is then delivered when it finishes). Raise it for a command you want to wait longer for; it does not kill the command.
-    """
+    """Dispatched by AgentRuntime._execute_tool; described in descriptions/bash.md."""
     from frank.base import confinement as _confinement
 
     active = tool_context.current()
@@ -240,17 +221,7 @@ async def search_web(
     explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     result_count: int = 5,
 ) -> str:
-    """Search the web using Exa. Returns a ranked list of results with titles, URLs, and a summary of each — so you can often answer directly without fetching the page.
-
-    Most searches finish quickly and return their ``web_search_completed`` results directly from this call. A slow search returns a ``web_search_started`` acknowledgement instead; its results are then delivered to you automatically as a separate ``web_search_completed`` message carrying the same ``job_id`` — never call ``read_turn`` on the identifier and never poll for it. Just keep working (you can start several searches at once); pending results appear on their own.
-
-    Use this when you need current information from the internet, recent events, changing documentation, standards, prices, schedules, or external knowledge not available in the training data. Use ``fetch_url`` when the URL is already known instead of searching for it.
-
-    Arguments:
-      - query: The search query.
-      - explanation: A concise, user-facing description of why this search is needed.
-      - result_count: Number of results to return (1-10, default 5).
-    """
+    """Dispatched by AgentRuntime._execute_tool; described in descriptions/search_web.md."""
     client = tool_context.current().exa_client
     if client is None:
         return compact({"code": "web_search_error", "status": "error", "message": "Web search is not configured."})
@@ -323,14 +294,7 @@ async def search_web(
 
 @tool
 async def list_mcp_tools(server: str = "", explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
-    """List tools exposed by configured MCP servers.
-
-    Use this to discover the exact tool name and input schema before calling ``call_mcp_tool``. Pass a server name to inspect one configured server or leave it empty to inspect every enabled server.
-
-    Arguments:
-      - server: Optional configured MCP server name. Leave empty to list every enabled server.
-      - explanation: A concise, user-facing reason for inspecting MCP tools.
-    """
+    """Dispatched by AgentRuntime._execute_tool; described in descriptions/list_mcp_tools.md."""
     try:
         result = await _require_mcp_client_manager().list_tools(server)
         return compact(result)
@@ -347,18 +311,7 @@ async def call_mcp_tool(
     explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
-    """Call a tool exposed by a configured MCP server.
-
-    Discover the exact ``tool_name`` and ``arguments`` schema with ``list_mcp_tools`` first. Treat safety exactly like ``bash``: set ``read_only=True`` explicitly only for inspection-only calls; omitted means potentially mutating. For state-changing calls, set an appropriate medium or high risk.
-
-    Arguments:
-      - server: Configured MCP server name.
-      - tool_name: Tool name as advertised by list_mcp_tools.
-      - arguments: JSON object matching the MCP tool input schema.
-      - read_only: Whether this MCP tool call only reads state. Defaults to False (treated as mutating) when omitted.
-      - explanation: A concise, user-facing reason for the tool call.
-      - risk: One of "low", "medium", "high" for non-read-only calls.
-    """
+    """Dispatched by AgentRuntime._execute_tool; described in descriptions/call_mcp_tool.md."""
     try:
         result = await _require_mcp_client_manager().call_tool(server, tool_name, arguments or {})
         return compact(result)
@@ -382,14 +335,7 @@ async def call_mcp_tool_with_events(
 
 @tool
 async def list_mcp_resources(server: str = "", explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
-    """List resources exposed by configured MCP servers.
-
-    Use this to discover resource URIs before calling ``read_mcp_resource``. Pass a server name to inspect one configured server or leave it empty to inspect every enabled server.
-
-    Arguments:
-      - server: Optional configured MCP server name. Leave empty to list every enabled server.
-      - explanation: A concise, user-facing reason for inspecting resources.
-    """
+    """Dispatched by AgentRuntime._execute_tool; described in descriptions/list_mcp_resources.md."""
     try:
         result = await _require_mcp_client_manager().list_resources(server)
         return compact(result)
@@ -399,15 +345,7 @@ async def list_mcp_resources(server: str = "", explanation: str = Field(..., des
 
 @tool
 async def read_mcp_resource(server: str, uri: str, explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
-    """Read a resource exposed by a configured MCP server.
-
-    Discover the exact URI with ``list_mcp_resources`` first.
-
-    Arguments:
-      - server: Configured MCP server name.
-      - uri: Resource URI as advertised by list_mcp_resources.
-      - explanation: A concise, user-facing reason for reading the resource.
-    """
+    """Dispatched by AgentRuntime._execute_tool; described in descriptions/read_mcp_resource.md."""
     try:
         result = await _require_mcp_client_manager().read_resource(server, uri)
         return compact(result)
@@ -415,69 +353,30 @@ async def read_mcp_resource(server: str, uri: str, explanation: str = Field(...,
         return compact({"code": "mcp_read_resource_error", "status": "error", "message": str(exception)})
 
 
-
-
 @tool
 async def wait_for(
     seconds: float,
     explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
 ) -> str:
-    """Pause for a fixed number of seconds, then continue — a cheap, intentional wait with no model round-trip while it runs.
-
-    Use this to POLL instead of hammering: when you are waiting on something to become ready (a server to come up, a file to appear, a background job you started), do the check, and if it is not ready, wait_for a few seconds and check again — rather than re-issuing the same call back-to-back and expecting a different result. To tell whether a repeated action changed anything, re-read the prior call's ``output_file``.
-
-    Prefer short waits and re-check over one long sleep; a Stop interrupts the wait immediately. Do NOT use wait_for to pass time when you have nothing to check — end your turn instead, and the harness re-engages you when background work completes.
-
-    Arguments:
-      - seconds: How long to wait before continuing. Prefer small values (a few seconds) and re-check.
-      - explanation: A concise, user-facing reason for the wait.
-    """
+    """Dispatched by AgentRuntime._execute_tool; described in descriptions/wait_for.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
-
-
-
 
 
 @tool
 def read_turn(turn_id: str = "", explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
-    """Read a sibling turn in this session by its id, returning its current status and artifact (deliverable).
-
-    Use this to coordinate with externally supplied sibling A2A task ids: check whether a sibling has finished and read what it produced, then build on it.
-
-    This is NOT how you retrieve background results, and it is not how you read a peer session. A search_web ("search-…") or background-bash ("bg-…") handle is not a readable task — those results are delivered to you automatically when ready, so never call read_turn on one and never use it to poll. To look at a peer session, use read_session; a peer's answer arrives on its own as a message.
-
-    Arguments:
-      - turn_id: The id of an externally supplied sibling turn to read.
-      - explanation: A concise, user-facing description of why you are reading this task — shown as the label for this call.
-    """
+    """Dispatched by AgentRuntime._execute_tool; described in descriptions/read_turn.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
 def set_tasks(tasks: list[dict]) -> str:
-    """Create new tasks in the task list. Tasks can depend on each other.
-
-    Use this to break down complex work into steps that can run in parallel or sequentially. Tasks with no dependencies can be worked on immediately. Tasks with dependencies must wait for their dependencies to complete first. Keep tasks short, factual, and tied to observable work. Skip the list for work the next response can plainly finish; once created, keep it reconciled with reality through ``update_tasks``.
-
-    Arguments:
-      - tasks: List of task objects. Each object has:
-            - description (required): What needs to be done.
-            - dependencies (optional): List of task identifiers this task depends on (e.g. ["task-...", ...]).
-    """
+    """Dispatched by AgentRuntime._execute_tool; described in descriptions/set_tasks.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
 def update_tasks(updates: list[dict]) -> str:
-    """Update the status of one or more tasks at once.
-
-    Mark a task ``in_progress`` when work starts, ``completed`` only when it is actually done, and ``blocked`` when reality prevents progress. Update on real state changes—not as busy-work—and never end with completed work still shown as unresolved.
-
-    Arguments:
-      - updates: List of update objects. Each object has:
-            - task_id (required): The task identifier (e.g. "task-...").
-            - status (required): One of 'pending', 'in_progress', 'completed', 'blocked'.
-    """
+    """Dispatched by AgentRuntime._execute_tool; described in descriptions/update_tasks.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
@@ -487,15 +386,7 @@ def update_goal(
     status: Literal["active", "satisfied", "cleared"] = "active",
     explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
 ) -> str:
-    """Set, replace, satisfy, or clear the single active goal for this turn.
-
-    A goal is not a task list. It is the top-level completion contract the harness injects back into your context until you explicitly satisfy or clear it. Use it when a user request has a concrete outcome that must not be lost while you run tools, hand work to a peer session, or continue across multiple model passes. Do not set a goal for a tiny one-shot answer. While a goal is active, keep working until it is satisfied, explicitly clear it if it becomes obsolete, or leave it active only when work genuinely remains.
-
-    Arguments:
-      - goal: The goal text to set when status is "active". Leave empty when marking the current goal as "satisfied" or "cleared".
-      - status: "active" sets/replaces the goal, "satisfied" removes it because the requested outcome is done, and "cleared" removes it because it is obsolete or no longer applicable.
-      - explanation: A concise, user-facing reason for this update.
-    """
+    """Dispatched by AgentRuntime._execute_tool; described in descriptions/update_goal.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
@@ -507,17 +398,7 @@ def read_file(
     limit: int | None = 2048,
     explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
 ) -> str:
-    """Read a file, returning its lines in cat -n format. Image files (.png/.jpg/.jpeg/.gif/.webp) are ingested natively instead: the result is structured metadata, and on a vision model the image itself follows.
-
-    Text lines carry 1-indexed line numbers for orientation. Exclude that prefix when copying exact text into ``edit_file``. Large files can be read in windows with ``offset`` and ``limit``; lines over the inline ceiling are reported as truncated and must not be copied into an exact-match edit. Reads record a content hash so later edits can reject stale state. Use ``search_code`` to find code by meaning, and ``bash`` with ripgrep/fd for exact names or content; do not use this on a directory. Batch independent file reads in one response.
-
-    Arguments:
-      - file_path: Absolute path (or path relative to the working directory).
-      - location: The project location to read from — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
-      - offset: 1-indexed line number to start reading from.
-      - limit: Maximum number of lines to return (defaults to 2048).
-      - explanation: A concise, user-facing reason for this read.
-    """
+    """Dispatched by AgentRuntime._execute_tool; described in descriptions/read_file.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
@@ -528,16 +409,7 @@ def search_code(
     reindex: bool = False,
     explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
 ) -> str:
-    """Search the codebase by meaning, in plain language.
-
-    Ranks the project's code against a natural-language query (semantic similarity plus lexical overlap) and returns just the best-matching chunks with their file and line range — a fraction of the tokens of grepping and reading whole files — finding code by what it does, not its exact name. Use ``bash`` with ripgrep for an exact string or filename; use this to find code by meaning. This tool is read-only.
-
-    Arguments:
-      - query: What you are looking for, in plain language.
-      - top_k: How many matching chunks to return (default 10).
-      - reindex: Rebuild the code index first — pass this after you have edited files and need fresh results.
-      - explanation: A concise, user-facing reason for this search.
-    """
+    """Dispatched by AgentRuntime._execute_tool; described in descriptions/search_code.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
@@ -551,21 +423,7 @@ def edit_file(
     explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
-    """Replace exact text in a file, staged and validated before commit.
-
-    ``find`` must occur verbatim in the file. Unless ``replace_all`` is set, it must be unique. Copy it character-for-character from ``read_file`` without its line-number prefix. A prior read supplies a content hash so stale edits are rejected if the file changes externally.
-
-    The prospective result is syntax-checked before writing: Python uses its AST and supported languages use tree-sitter. On validation failure, the file on disk remains unchanged and the returned diagnostic describes the prospective broken state; correct the edit without rereading unchanged disk content.
-
-    Arguments:
-      - file_path: Absolute path (or path relative to the working directory).
-      - find: The exact text to find, copied verbatim from the file.
-      - replace_with: The text to replace it with.
-      - location: The project location to edit in — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
-      - replace_all: Replace every occurrence instead of requiring a unique match.
-      - explanation: A concise, user-facing reason for this edit.
-      - risk: "low" for targeted edits, "medium" broad, "high" hard to reverse.
-    """
+    """Dispatched by AgentRuntime._execute_tool; described in descriptions/edit_file.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
@@ -577,17 +435,7 @@ def write_file(
     explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
-    """Write content to a file, overwriting it if it exists.
-
-    Prefer ``edit_file`` for a targeted change to an existing file. Read an existing file first when its current content must be preserved; the recorded hash lets the harness reject a stale overwrite. Do not create documentation files proactively unless the user asked for them. This tool modifies files.
-
-    Arguments:
-      - file_path: Absolute path (or path relative to the working directory).
-      - content: The full text to write to the file.
-      - location: The project location to write to — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
-      - explanation: A concise, user-facing reason for this write.
-      - risk: "low" new file, "medium" broad rewrite, "high" hard to reconstruct.
-    """
+    """Dispatched by AgentRuntime._execute_tool; described in descriptions/write_file.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
@@ -600,20 +448,7 @@ async def fetch_url(
     background: bool = False,
     explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
 ) -> str:
-    """Fetch content from a URL and convert it to the requested format.
-
-    Use this for a specific URL already known; use ``search_web`` to discover one. It returns page text and handles JavaScript-rendered pages and common anti-bot walls through rendering fallbacks. Very large responses are truncated inline and include an ``output_file`` containing the full conversion. Use ``download_file`` for raw binary files. This tool is read-only.
-
-    Sync-if-fast: it waits up to ``timeout`` seconds for the fetch inline and returns the content directly; a fetch still running past ``timeout`` moves to the background and its result is injected when it lands, so a slow page never blocks your turn. ``timeout`` is that inline-wait window (the same meaning as bash's ``timeout``) — raise it to wait longer, or set ``background=true`` to background immediately. ``hard_deadline`` is the separate network cutoff that actually aborts the request.
-
-    Arguments:
-      - url: A fully-formed http or https URL. It is fetched exactly as given — nothing rewrites the scheme, so pass https yourself when you mean https.
-      - format: "markdown" (default), "text", or "html".
-      - timeout: Inline-wait window in seconds before the fetch backgrounds (does not abort it).
-      - hard_deadline: Network deadline in seconds that aborts the request itself.
-      - background: Skip the inline wait and background the fetch immediately.
-      - explanation: A concise, user-facing reason for this fetch.
-    """
+    """Dispatched by AgentRuntime._execute_tool; described in descriptions/fetch_url.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
@@ -627,21 +462,7 @@ async def download_file(
     background: bool = False,
     explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
 ) -> str:
-    """Download a file from a URL to a path, defeating typical bot/TLS blocks.
-
-    Uses full browser TLS/HTTP2 fingerprint impersonation (and the configured proxy), so files that a plain download gets blocked from still come through. For reading a page's text, use fetch_url instead — this saves raw bytes (PDFs, archives, data). It cannot pass an interactive JavaScript challenge or CAPTCHA. This tool writes a file and is unavailable to read-only agents.
-
-    Sync-if-fast: it waits up to ``timeout`` seconds for the download inline; one still running past ``timeout`` moves to the background and completes on its own (the destination path is held against concurrent edits until it finishes). ``timeout`` is that inline-wait window (the same meaning as bash's ``timeout``); ``hard_deadline`` is the separate network cutoff that aborts the transfer; ``background=true`` backgrounds immediately.
-
-    Arguments:
-      - url: Fully-formed http(s) URL of the file to download.
-      - path: Destination path (relative to the working directory, or absolute).
-      - location: The project location to save into — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
-      - timeout: Inline-wait window in seconds before the download backgrounds (does not abort it).
-      - hard_deadline: Network deadline in seconds that aborts the transfer itself.
-      - background: Skip the inline wait and background the download immediately.
-      - explanation: A concise, user-facing reason for this download.
-    """
+    """Dispatched by AgentRuntime._execute_tool; described in descriptions/download_file.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
@@ -652,60 +473,7 @@ async def control_screen(
     explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
-    """Read and drive the live screen by composing a short Python script — one program that both finds elements and acts on them.
-
-    The script runs against one **target** — a window or a browser tab you name — calling everything through `screen`, an object already bound to that place. Targets are listed for you; you never say which kind of thing it is, because the id already does. Only the primitives that target supports exist in the script — reaching for one it does not have is a NameError on that line, before anything else runs. Reading is in the script: ``find_many`` and ``find_one`` rank the surface by meaning and return elements, each a dict with a stable ``id``, its ``role``, its text, and its ``context``. Acting is trusted input: a click is a real click (actionability-checked, works through overlays, opens file pickers and native dropdowns), typing fires the events pages listen for. Because it is ordinary Python, a whole task — loop over rows, branch on what you find, call the page's own API in one line — is a single call, not a round trip per action.
-
-    Finding elements. `find_many` returns the ranked matches, for reading or harvesting a whole set; `find_one` returns the single best match and raises when the top matches are indistinguishable, which is what makes it the one to use before acting. **`clickable` is optional and you should leave it out unless you are sure.** Pass True when you want something you can act on and text would only get in the way ("the Save button"), False when you want the words on screen and controls would only get in the way ("the filename shown in the row"), and omit it — the default — whenever you are unsure or want both. It asks about your own intent, not about how the platform spells its widget names: a tab, a link and a checkbox are all clickable=True. Ranking happens *inside* whatever you narrow to, so narrowing beats lengthening the query — similarity has no notion of what a thing *is*, and "the search button" competes against every element that merely mentions search. `name` matches exactly; `context` matches by containment, and exists only on a page — a window carries no context, so that facet admits nothing there and the search quietly widens to everything. Write explicit, descriptive queries: name the target and the section it sits under. On a page, find also searches the page's own traffic (network requests and WebSocket frames), so you can pull data from the source instead of walking the DOM.
-
-    The primitives, and their exact signatures, arrive in your context each turn under `primitives`, keyed by what each place `can` do. Read them from there rather than from memory: they are generated from the code, so they cannot be out of date, and a place is only ever offered what it may actually run — under a read-only policy the acting primitives are simply absent. Reaching for something a place does not have fails **on the line that uses it**, with the surface naming what it does have — so everything above that line has already happened. Check the vocabulary before committing to a plan rather than after.
-
-    **Every screen call goes through `screen`.** Write `screen.click(...)`, `screen.find_one(...)`, `screen.type(...)` — never the bare name. There are no bare-named primitives: `click(...)` on its own is an undefined name and that line fails. `screen` is already bound to the target you named, so it costs one word and never a lookup. The signatures in your context are written the same way, and they are the authority.
-
-    **You are writing Python, and it is a real program.** Not a macro, not a step list — a module body, executed with the standard library available and one object, `screen`, already bound to the target you named. Everything Python gives you is on the table: loops, conditionals, comprehensions, `try`/`except`, functions, data structures, computing over what a find returned. `screen.wait_for(query, seconds=...)` blocks until something matches, which is how you say "once the pane has loaded" instead of hoping; `screen.sleep(seconds)` is there for the rest. The failure mode to avoid is three timid lines and another round trip to learn what the fourth should be — nothing carries between calls but element ids, so each new one starts blind. Write the program the task actually needs.
-
-    **A workflow can be a file.** `screen` is an instance of the importable `frank.screen.Screen`, so the same calls work in a saved module as they do inline. The shape is ordinary Python and nothing about it is special to any one task:
-
-        # .agents/workflows/<name>.py
-        from frank.screen import Screen
-
-        def <what_it_does>(screen: Screen, <what_varies>: str) -> <what_it_gives_back>:
-            # One sentence saying what this does — a real docstring here, in the file itself.
-            ...
-            return ...
-
-    That generalises to anything: `screen` comes first, whatever changes between runs becomes a parameter, and it *returns* what the caller needs rather than printing it. Two directories hold them and both import as `workflows` — `.agents/workflows/` in the project for work about *this* codebase's application, versioned with it; `~/.agents/workflows/` for the person's own tools, available everywhere and committed nowhere. That second distinction matters: a workflow driving somebody's mail carries their account names and habits, and does not belong in a shared repository. Ask which they want when it is genuinely ambiguous, and say which you chose when it is not.
-
-    Whatever exists arrives in your context under `workflows`, with the import line, the call, and what each one does — so reach for one before writing what it already does. When you work something out worth having again, save it with `write_file`; the `ran` trace is exactly what happened, so you are recording rather than reconstructing. A script that imports a workflow cannot be read statically, so its first run asks the user.
-
-    **There are two places to compose, and they are peers.** In the script, Python composes the primitives: loop over what a find returned, branch on it, wait for what an action reveals, compute the answer, report once. On a page, `evaluate` composes inside the document: one expression can filter a table to the rows that matter, aggregate a list into a number, read the page's own state, or call its signed-in API with `fetch` through the user's real session. Neither is the fallback for the other, and the strongest scripts use both — `evaluate` to work out *what* to act on, the element primitives to act on it. `evaluate` is classified state-changing, because nothing reading a script can tell a query from a mutation, so it is absent under a read-only policy where `find` and `read` are the way.
-
-    `element` — the first argument of an acting primitive — is an id a find returned, the find result itself, or a plain-language query. It is never the `target`, which names the *place* the script runs in and is fixed for the whole script. How a query is resolved depends on the verb: `click`, `type`, `choose`, `upload` and `drag` resolve it the way `find_one` does, so an unclear one is caught rather than guessed, while `read`, `hover`, `scroll`, `caret`, `select` and `focus` take the top match without that check. For anything that changes state, prefer an id you already hold. `screen.press("Enter")` and `submit=True` both post a form, so be deliberate.
-
-    Targets — the place a script runs. Every window and tab has an id minted by the platform, and the current list arrives in your context each turn. Pass the one you mean as `target`; there is no default, because "whatever is in front" is a race with the person using the computer. An application is not a target: two Finder windows are two places, and naming the application cannot say which. A target you name that is not on the list comes back with the current list, so you can pick another without looking it up. Tabs appear in that list only once a browser session exists — until then a browser contributes its *windows*, which are addressable exactly as any other place, and listing them never opens a connection or puts a consent prompt in front of the user.
-
-    Each entry carries what it takes to tell one place from another, so read it before choosing:
-      - `app` and `title` — who owns it and what it calls itself. Neither is unique: two Finder windows are both "Applications"
-      - `can` — the vocabulary this place answers to, keying into the `primitives` map beside the list
-      - `document` — the file or page it holds, as a plain path or url. The strongest discriminator there is, and usually the honest way to name a window to the user ("the window showing report.pdf")
-      - `main` — the application's main window, when it says which
-      - `bounds` — where it is and how big, in screen points. What separates two windows that agree on everything else
-      - `visible: false` — behind others, minimized, or on another desktop. You can act in it exactly as in any other; say so to the user when you do, because they cannot see it happen
-      - `addressable: false` — an application publishing no windows to accessibility. It names the app, not a place, and cannot be acted in
-      - `focused` — where the user's keyboard is right now. Somebody is working there
-
-    What changed. The primitives that alter something — `click`, `type`, `choose`, `upload`, `drag`, `press`, `navigate`, `caret`, `select` — each answer with what they *changed*, not merely what they touched: the globals that moved (`title` and `focus` everywhere, `selection` on a window, `url` on a page) and what became newly present (`appeared`, with `appeared_total` when there was more than a sample's worth). One that replaced the whole document reports `navigated` — the new title, url and element count — instead of listing a page's worth of elements at you. One that changed nothing says so with `changed: []`, which is your signal that the click missed or the pane had not loaded, rather than that the element was named differently. The reading primitives report no such record, so their silence means nothing either way.
-
-    Tabs and frames. The browser has more than one page and you choose which one you are on; `tabs`, `tab`, `new_tab` and `close_tab` are in the page vocabulary with their signatures. These are the user's own tabs, open because they are working in them: read and switch freely, but leave one you did not open unless the task is about it, because closing it can throw away a half-filled form and there is no undo. An iframe is its own document with its own origin and session; `frames` lists them. Element ids are already frame-scoped, so `f1e3` is the third element of frame `f1` and acting on it needs no extra step — but reading or scripting a frame does need it named, which is the only way to reach an embedded checkout, consent screen or viewer through the credentials it holds.
-
-    The script runs like a notebook cell: the value of a trailing bare expression is reported as the result, and whatever you ``print`` is returned too. The result lists what each action *changed* (``changed``), so you can confirm the click landed rather than only that it was aimed. If the surface can't be read — Accessibility not granted, or the browser not connected — that comes back as an error to raise with the user, not something to route around.
-
-    Arguments:
-      - script: The Python to run.
-      - target: The window or tab to run it in, by the id from the target list. Required.
-      - explanation: Why this is needed.
-      - risk: Damage potential — higher for actions that change state.
-    """
+    """Dispatched by AgentRuntime._execute_tool; described in descriptions/control_screen.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
@@ -714,27 +482,13 @@ def ask_user(
     questions: list[dict],
     explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
 ) -> str:
-    """Ask the user one or more questions and receive their answers.
-
-    Ask only when the answer genuinely changes the work. If there is a clear safe default, choose it, state the choice, and continue. When recommending an option, place it first and append ``(Recommended)`` to its label. Custom answers are enabled by default, so never add a redundant Other or catch-all option. An answer comes back as the selected label, a bare string — including free text the user typed instead of choosing. Only a question marked `multiple` answers with an array.
-
-    Arguments:
-      - questions: List of question objects, each with "question" (full text), "header" (short label, max ~30 chars), "options" (list of {"label", "description"}), and optional "multiple" (bool) and "custom" (bool, default true).
-      - explanation: A concise, user-facing reason for asking.
-    """
+    """Dispatched by AgentRuntime._execute_tool; described in descriptions/ask_user.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
 def load_skill(name: str, explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
-    """Load a specialized skill's instructions into the conversation.
-
-    When a task matches a skill listed in ``Available skills``, load that skill before acting rather than guessing its workflow. The result injects the full instructions and references to any scripts, files, or resources it provides.
-
-    Arguments:
-      - name: The skill name, matching one listed in "Available skills".
-      - explanation: A concise, user-facing reason for loading this skill.
-    """
+    """Dispatched by AgentRuntime._execute_tool; described in descriptions/load_skill.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
@@ -744,3 +498,48 @@ def load_skill(name: str, explanation: str = Field(..., description="A concise, 
 # at import — which made importing the harness enough to seize a host program's signals, and
 # killed a forked child the moment it was signalled. A library configures nothing it was not
 # asked to configure.
+
+
+# What each tool tells the model it does, read from `descriptions/*.md` at import.
+#
+# It used to be the function's docstring, which put a document written *for the model* inside a
+# construct meant for whoever reads the code — 11,507 characters of it in `control_screen`'s
+# case, wrapped in quotes, re-indented by every formatter, and unreviewable beside the prose it
+# belongs with. Every other thing this harness says to a model already lives in a `.md` under
+# `prompts/` or `messages/`, loaded through `PromptLoader`; there was no reason for the tool
+# descriptions to be the exception except that a decorator happened to read `__doc__`.
+#
+# The function keeps a one-line docstring saying where its description lives and who dispatches
+# it, because that is what a reader of the code needs and it is not the same fact.
+_DESCRIPTIONS = PromptLoader(Path(__file__).parent / "descriptions")
+
+_DESCRIBED = (
+    bash, search_web, list_mcp_tools, call_mcp_tool, list_mcp_resources, read_mcp_resource,
+    wait_for, read_turn, set_tasks, update_tasks, update_goal, read_file, search_code,
+    edit_file, write_file, fetch_url, download_file, control_screen, ask_user, load_skill,
+)
+
+
+def _apply_descriptions() -> None:
+    """Give every tool the description written for it, and refuse to ship one that has none.
+
+    Loudly, at import, rather than silently: `PromptLoader.load` answers "" for a file that is not
+    there, and a tool whose description is the empty string is offered to the model as a name with
+    no explanation — which it will still call, and then guess at. A missing file is a packaging
+    mistake, and the moment to hear about it is the build rather than the first turn that reaches
+    for that tool."""
+    missing = []
+    for entity in _DESCRIBED:
+        text = _DESCRIPTIONS.load(entity.name, {}).strip()
+        if not text:
+            missing.append(entity.name)
+            continue
+        entity.description = text
+    if missing:
+        raise RuntimeError(
+            "These tools have no description file in runtime/tools/descriptions: "
+            + ", ".join(sorted(missing))
+        )
+
+
+_apply_descriptions()

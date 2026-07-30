@@ -127,12 +127,10 @@ def _control_script_assessment(script: str) -> tuple[str, str]:
     return ("mutating", mutating_detail) if mutating_detail else ("read_only", "")
 
 
+class _DecidesPermissions:
+    """Whether a call is allowed, asked about, or refused.
 
-
-class _PermissionsMixin:
-
-
-
+    Composed into :class:`AgentRuntime` beside the dispatcher it answers for."""
 
     def _evaluate_bash_permission(self, command: str) -> str:
         unmatched = "ask" if self._interactive_manual_mode else "allow"

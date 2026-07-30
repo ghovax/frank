@@ -174,8 +174,6 @@ class DeniedInjection(TurnEvent):
     id: str = ""
 
 
-
-
 @dataclass(frozen=True)
 class Steering(TurnEvent):
     TYPE = EventType.STEERING
