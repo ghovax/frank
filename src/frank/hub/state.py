@@ -1,4 +1,4 @@
-"""What the workspace layer shares: the database, the configuration, and the shared clients.
+"""What the hub layer shares: the database, the configuration, and the shared clients.
 
 This is the half of the daemon's singletons that has nothing to do with supervising agents.
 Projects, locations, settings, agent profiles, terminals and the MCP and remote-agent
@@ -26,7 +26,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Awaitable, Callable, Optional
 
-from frank.workspace.broadcast_bus import Broadcaster
+from frank.hub.broadcast_bus import Broadcaster
 
 # The database the workspace reads and writes, and the machine's configuration.
 session_factory: Any = None
@@ -55,7 +55,7 @@ agent_cards: dict = {}
 # The rest of the shared machinery the browser surface reaches.
 file_url_signer: Any = None
 file_lease_manager: Any = None
-workspace_manager: Any = None
+worktree_manager: Any = None
 push_configuration_store: Any = None
 push_sender: Any = None
 terminal_manager: Any = None
@@ -136,5 +136,5 @@ __all__ = [
     "session_factory",
     "turn_store",
     "terminal_manager",
-    "workspace_manager",
+    "worktree_manager",
 ]

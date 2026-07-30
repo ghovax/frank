@@ -358,7 +358,7 @@ class Session:
         location at the working directory, which is right for a session with no project."""
         return self._locations
 
-    async def prepare_workspace(self, strategy: str = "worktree") -> str:
+    async def prepare_worktree(self, strategy: str = "worktree") -> str:
         """Give this session its own git worktree, and run its tools there.
 
         Opt-in, and it must be: it writes to disk, where every other default here is chosen so
@@ -372,9 +372,9 @@ class Session:
         """
         manager = self._workspace
         if manager is None:
-            from frank.base.workspaces import SessionWorkspaceManager
+            from frank.base.worktrees import SessionWorktreeManager
 
-            manager = SessionWorkspaceManager()
+            manager = SessionWorktreeManager()
         prepared = await manager.prepare(self._session_id, self._directory, strategy)
         self._runtime_directory = prepared.runtime_working_directory or self._directory
         return self._runtime_directory

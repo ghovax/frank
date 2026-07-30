@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from frank.base.configuration import Configuration
 from frank.base.mcp_client import MCPClientManager
-from frank.workspace import state
+from frank.hub import state
 
 
 async def _reload_mcp() -> None:

@@ -163,7 +163,7 @@ async def _session_claim_work_habits(params: dict) -> dict:
 
     Here rather than in the worker because a worker is per activation now, and "once per
     session" has to outlive one."""
-    from frank.workspace.services.sessions import claim_work_habits_acknowledgement
+    from frank.hub.services.sessions import claim_work_habits_acknowledgement
 
     session_id = str(params.get("session_id") or "")
     claimed = await asyncio.to_thread(claim_work_habits_acknowledgement, session_id)
@@ -229,7 +229,7 @@ async def _session_title(params: dict) -> dict:
 
     Produced in the worker because producing it means calling a model, which is the runtime's
     job and not the control plane's. Written here because the daemon is the sole writer."""
-    from frank.workspace.services.sessions import _set_session_title
+    from frank.hub.services.sessions import _set_session_title
 
     session_id = str(params.get("session_id") or "")
     title = str(params.get("title") or "").strip()

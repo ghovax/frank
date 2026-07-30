@@ -14,9 +14,9 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from frank.workspace import state
-from frank.workspace.services.broadcast import _publish_broadcast
-from frank.workspace.brokers.remote_agents import _reload_remote_agents
+from frank.hub import state
+from frank.hub.services.broadcast import _publish_broadcast
+from frank.hub.brokers.remote_agents import _reload_remote_agents
 
 router = APIRouter()
 

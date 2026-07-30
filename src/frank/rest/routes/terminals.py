@@ -1,13 +1,13 @@
 """Terminals routes."""
 
 from __future__ import annotations
-from frank.workspace.brokers.terminals import TerminalSession, _delete_terminal_state, _list_terminal_states, _terminal_context_for_request, _terminal_directory
+from frank.hub.brokers.terminals import TerminalSession, _delete_terminal_state, _list_terminal_states, _terminal_context_for_request, _terminal_directory
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from contextlib import suppress
 from pathlib import Path
 import asyncio
 import json
-from frank.workspace import state
+from frank.hub import state
 
 router = APIRouter()
 

@@ -3,15 +3,15 @@ reloading the configuration file."""
 
 from __future__ import annotations
 
-from frank.workspace.brokers.composio import composio_mcp_servers
+from frank.hub.brokers.composio import composio_mcp_servers
 from frank.base.configuration import Configuration, save_api_keys
 from frank.base.paths import configuration_file_path
 from frank.base.mcp_client import MCPClientManager
 from typing import Optional
 import asyncio
 import hashlib
-from frank.workspace import state
-from frank.workspace.services.sessions import _reset_work_habits_acknowledgements
+from frank.hub import state
+from frank.hub.services.sessions import _reset_work_habits_acknowledgements
 
 
 async def _apply_live_credentials() -> None:

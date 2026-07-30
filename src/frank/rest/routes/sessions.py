@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 from fastapi import APIRouter
-from frank.workspace.database import SessionRecord
+from frank.hub.database import SessionRecord
 from frank.base.paths import uploads_directory
 import asyncio
 import re
 from frank.protocol.dtos import (
     SessionDraftRequest,
 )
-from frank.workspace import state
-from frank.workspace.services.broadcast import _publish_broadcast
-from frank.workspace.services.sessions import _remove_upload_file, _session_draft, _sessions_payload, _update_session_draft
+from frank.hub import state
+from frank.hub.services.broadcast import _publish_broadcast
+from frank.hub.services.sessions import _remove_upload_file, _session_draft, _sessions_payload, _update_session_draft
 
 router = APIRouter()
 

@@ -1,6 +1,6 @@
 """Value types for tool-call location resolution and permission decisions.
 
-A tool call may target a project *location* (the local machine or a configured SSH
+A tool call may target a workspace *location* (the local machine or a configured SSH
 remote); these types capture the resolved location, the per-call execution policy threaded
 through as an immutable value (so concurrent calls never cross working directories or
 permission flags), and the structured decisions the bash permission classifier emits.
@@ -19,7 +19,7 @@ from frank.locations.executor import LocationExecutor
 
 @dataclass
 class ResolvedLocation:
-    """A project location resolved for execution: its identity (uri/name), the executor
+    """A workspace location resolved for execution: its identity (uri/name), the executor
     that runs tools against it (local subprocess or multiplexed SSH), the base directory
     tools treat as cwd, and its effective execution policy."""
 

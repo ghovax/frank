@@ -68,7 +68,7 @@ class SessionEventBus:
 
 # The supervision singletons: what a session's *existence* depends on. Everything the browser
 # surface needs — the database handle, the configuration, the shared clients — lives in
-# `frank.workspace.state` instead, which is what lets `rest` stop importing this package.
+# `frank.hub.state` instead, which is what lets `rest` stop importing this package.
 
 registry: Any = None            # SessionRegistry
 prototype: Any = None           # PrototypeClient
@@ -89,10 +89,10 @@ def __getattr__(name: str) -> Any:
     module is imported, so a bound name would capture `None` and keep it forever. A module-level
     `__getattr__` (PEP 562) resolves on each access, which is the behaviour every reader already
     assumes `state.session_factory` has."""
-    from frank.workspace import state as workspace_state
+    from frank.hub import state as hub_state
 
-    if hasattr(workspace_state, name):
-        return getattr(workspace_state, name)
+    if hasattr(hub_state, name):
+        return getattr(hub_state, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 # `_running_contexts` and `_awaiting_input_contexts` live on the workspace module and reach

@@ -105,7 +105,7 @@ def save_api_keys(
     web_fetch_proxy_url: str | None = None,
     permission_mode: str | None = None,
     sandbox: dict | None = None,
-    workspace_strategy: str | None = None,
+    worktree_strategy: str | None = None,
     compaction: dict | None = None,
     user_context_enabled: bool | None = None,
     computer_control_enabled: bool | None = None,
@@ -134,8 +134,8 @@ def save_api_keys(
         data.setdefault("web_fetch", {})["proxy_url"] = web_fetch_proxy_url
     if sandbox is not None:
         data.setdefault("sandbox", {}).update(sandbox)
-    if workspace_strategy is not None:
-        data.setdefault("workspace", {})["strategy"] = workspace_strategy
+    if worktree_strategy is not None:
+        data.setdefault("workspace", {})["strategy"] = worktree_strategy
     if compaction is not None:
         data.setdefault("compaction", {}).update(compaction)
     if tuning is not None:

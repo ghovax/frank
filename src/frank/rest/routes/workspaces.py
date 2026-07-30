@@ -1,4 +1,4 @@
-"""Projects routes."""
+"""Workspace routes."""
 
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException
@@ -8,20 +8,20 @@ from pathlib import Path
 import asyncio
 from frank.protocol.dtos import (
     LocationInput,
-    ProjectCreateRequest,
+    WorkspaceCreateRequest,
 )
-from frank.workspace.services import projects as _projects
-from frank.workspace.services.broadcast import _publish_broadcast
-from frank.workspace.services.projects import _create_location, _create_project, _delete_location, _delete_project, _hosts_payload, _project_name, _project_payload, _projects_payload, _update_location
+from frank.hub.services import workspaces as _workspaces
+from frank.hub.services.broadcast import _publish_broadcast
+from frank.hub.services.workspaces import _create_location, _create_workspace, _delete_location, _delete_workspace, _hosts_payload, _workspace_name, _workspace_payload, _workspaces_payload, _update_location
 
 router = APIRouter()
 
 @router.get("/home")
 async def home_directory():
-    """The daemon user's home directory and its folder name — the default project
+    """The daemon user's home directory and its folder name — the default workspace
     the UI selects before anything else is chosen."""
     home = str(Path.home())
-    return {"path": home, "name": _project_name(home)}
+    return {"path": home, "name": _workspace_name(home)}
 
 
 @router.get("/hosts")
@@ -47,52 +47,52 @@ async def host_home_directory(alias: str):
     return {"alias": alias, "path": await asyncio.to_thread(_resolve)}
 
 
-@router.get("/projects")
-async def list_projects():
-    return await asyncio.to_thread(_projects_payload)
+@router.get("/workspaces")
+async def list_workspaces():
+    return await asyncio.to_thread(_workspaces_payload)
 
 
-@router.post("/projects")
-async def create_project(request: ProjectCreateRequest):
+@router.post("/workspaces")
+async def create_project(request: WorkspaceCreateRequest):
     try:
-        project = await asyncio.to_thread(_create_project, request)
+        workspace = await asyncio.to_thread(_create_workspace, request)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    _publish_broadcast({"type": "projects_changed"})
-    return project
+    _publish_broadcast({"type": "workspaces_changed"})
+    return workspace
 
 
-@router.get("/projects/{project_id}")
-async def get_project(project_id: str):
-    project = await asyncio.to_thread(_project_payload, project_id)
-    if project is None:
+@router.get("/workspaces/{workspace_id}")
+async def get_project(workspace_id: str):
+    workspace = await asyncio.to_thread(_workspace_payload, workspace_id)
+    if workspace is None:
         raise HTTPException(status_code=404, detail="Project not found.")
-    return project
+    return workspace
 
 
-@router.delete("/projects/{project_id}")
-async def delete_project(project_id: str):
-    # There is always exactly one active project in the UI, so the last one can't be
+@router.delete("/workspaces/{workspace_id}")
+async def delete_project(workspace_id: str):
+    # There is always exactly one active workspace in the UI, so the last one can't be
     # deleted — that would leave an empty state the redesigned app no longer has.
-    if await asyncio.to_thread(_projects._project_count) <= 1:
-        raise HTTPException(status_code=400, detail="Can't delete the only project.")
-    deleted = await asyncio.to_thread(_delete_project, project_id)
+    if await asyncio.to_thread(_workspaces._workspace_count) <= 1:
+        raise HTTPException(status_code=400, detail="Can't delete the only workspace.")
+    deleted = await asyncio.to_thread(_delete_workspace, workspace_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Project not found.")
-    _publish_broadcast({"type": "projects_changed"})
+    _publish_broadcast({"type": "workspaces_changed"})
     _publish_broadcast({"type": "sessions_changed"})
     return {"ok": True}
 
 
-@router.post("/projects/{project_id}/locations")
-async def create_location(project_id: str, request: LocationInput):
+@router.post("/workspaces/{workspace_id}/locations")
+async def create_location(workspace_id: str, request: LocationInput):
     try:
-        location = await asyncio.to_thread(_create_location, project_id, request)
+        location = await asyncio.to_thread(_create_location, workspace_id, request)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     if location is None:
         raise HTTPException(status_code=404, detail="Project not found.")
-    _publish_broadcast({"type": "projects_changed"})
+    _publish_broadcast({"type": "workspaces_changed"})
     return location
 
 
@@ -104,7 +104,7 @@ async def update_location(location_id: str, request: LocationInput):
         raise HTTPException(status_code=400, detail=str(error)) from error
     if location is None:
         raise HTTPException(status_code=404, detail="Location not found.")
-    _publish_broadcast({"type": "projects_changed"})
+    _publish_broadcast({"type": "workspaces_changed"})
     return location
 
 
@@ -113,5 +113,5 @@ async def delete_location(location_id: str):
     deleted = await asyncio.to_thread(_delete_location, location_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Location not found.")
-    _publish_broadcast({"type": "projects_changed"})
+    _publish_broadcast({"type": "workspaces_changed"})
     return {"ok": True}

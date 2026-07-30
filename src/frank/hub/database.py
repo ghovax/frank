@@ -9,7 +9,7 @@ handlers.
 
 from __future__ import annotations
 
-from sqlalchemy import Index, String, Text, inspect, text
+from sqlalchemy import Boolean, Index, String, Text, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -55,22 +55,22 @@ class SessionRecord(Base):
     # otherwise show it again every time it woke.
     work_habits_acknowledged_at: Mapped[str] = mapped_column(String, default="")
     updated_at: Mapped[str] = mapped_column(String, default="")
-    # The project this session belongs to; the agent may address any of the project's
+    # The workspace this session belongs to; the agent may address any of the workspace's
     # locations per tool call.
-    project_id: Mapped[str] = mapped_column(String, default="")
+    workspace_id: Mapped[str] = mapped_column(String, default="")
     # Source path selected in the UI. Project-local agents/skills/instructions
     # are resolved from here.
     working_directory: Mapped[str] = mapped_column(Text, default="")
     # Actual path where shell and file tools run. For Git projects this is a
     # per-session worktree; for non-Git directories it falls back to the source.
     runtime_working_directory: Mapped[str] = mapped_column(Text, default="")
-    workspace_strategy: Mapped[str] = mapped_column(Text, default="none")
-    workspace_path: Mapped[str] = mapped_column(Text, default="")
-    workspace_branch: Mapped[str] = mapped_column(Text, default="")
+    worktree_strategy: Mapped[str] = mapped_column(Text, default="none")
+    worktree_path: Mapped[str] = mapped_column(Text, default="")
+    worktree_branch: Mapped[str] = mapped_column(Text, default="")
     source_repository_root: Mapped[str] = mapped_column(Text, default="")
     runtime_repository_root: Mapped[str] = mapped_column(Text, default="")
-    workspace_head: Mapped[str] = mapped_column(Text, default="")
-    workspace_error: Mapped[str] = mapped_column(Text, default="")
+    worktree_head: Mapped[str] = mapped_column(Text, default="")
+    worktree_error: Mapped[str] = mapped_column(Text, default="")
     title: Mapped[str] = mapped_column(Text, default="")
     # Per-session permission mode for future turns and frontend hydration.
     permission_mode: Mapped[str] = mapped_column(Text, default="default")
@@ -79,26 +79,66 @@ class SessionRecord(Base):
 
     __table_args__ = (
         Index("idx_sessions_created_at", "created_at"),
-        Index("idx_sessions_project", "project_id"),
+        Index("idx_sessions_workspace", "workspace_id"),
         Index("idx_sessions_lifecycle", "lifecycle"),
     )
 
 
-class ProjectRecord(Base):
-    """The internal grouping key for a set of locations and their sessions.
+class WorkspaceRecord(Base):
+    """A set of locations, and the sessions that run against them.
 
-    Locations carry the user-facing identity; a project has no separate editable metadata.
+    Locations carry the user-facing identity; a workspace has no separate editable metadata.
     """
 
-    __tablename__ = "projects"
+    __tablename__ = "workspaces"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)  # generated uuid
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class ScheduleRecord(Base):
+    """A prompt to run in a workspace on a recurring schedule, with nobody watching.
+
+    The unattended part is the whole of the design. A schedule states its own
+    ``permission_mode`` and never inherits one, because inheriting would mean a job written
+    against a read-only workspace quietly gaining write access the day someone loosens the
+    workspace — and the person who would have noticed is asleep. For the same reason a run
+    that hits a permission gate fails rather than waiting: there is no one to approve it, and
+    a job that blocks forever is worse than one that reports it could not proceed.
+
+    ``timezone`` is stored beside the cron line rather than assumed, because "nine every
+    weekday" means nine *where the person is*, and a machine that moves or observes daylight
+    saving would otherwise drift by an hour twice a year without anything looking wrong.
+
+    ``last_session_id`` points at what the last firing produced, so a schedule can be read
+    backwards into the conversation it started rather than only forwards into the next one."""
+
+    __tablename__ = "schedules"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    cron: Mapped[str] = mapped_column(String, nullable=False)
+    timezone: Mapped[str] = mapped_column(String, nullable=False)
+    agent: Mapped[str] = mapped_column(String, nullable=False)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    permission_mode: Mapped[str] = mapped_column(String, nullable=False)
+    working_directory: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # When the scheduler last acted on this, so a daemon that was down over a firing does not
+    # replay every one it missed on the next start — one catch-up run, not a stampede.
+    last_fired_at: Mapped[str] = mapped_column(String, nullable=False, default="")
+    last_session_id: Mapped[str] = mapped_column(String, nullable=False, default="")
+    last_error: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+    __table_args__ = (Index("idx_schedules_workspace", "workspace_id"),)
+
+
 class LocationRecord(Base):
-    """A named place a project runs tools in: the home server's own filesystem
+    """A named place a workspace runs tools in: the home server's own filesystem
     (``kind="local"``) or a remote reached over SSH (``kind="remote"``, referencing a
     ``~/.ssh/config`` host alias). ``permission_mode`` is the one execution policy a
     location carries (``read_only`` etc. is enforced per tool call); ``name`` is derived
@@ -108,15 +148,15 @@ class LocationRecord(Base):
     __tablename__ = "locations"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)  # generated uuid
-    project_id: Mapped[str] = mapped_column(String, nullable=False)
-    name: Mapped[str] = mapped_column(Text, nullable=False)  # derived project-scoped label
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)  # derived workspace-scoped label
     kind: Mapped[str] = mapped_column(Text, nullable=False)  # "local" | "remote"
     host_alias: Mapped[str] = mapped_column(Text, default="")  # SSH alias for remotes
     base_directory: Mapped[str] = mapped_column(Text, nullable=False)
     permission_mode: Mapped[str] = mapped_column(Text, default="default")
     created_at: Mapped[str] = mapped_column(String, nullable=False)
 
-    __table_args__ = (Index("idx_locations_project", "project_id"),)
+    __table_args__ = (Index("idx_locations_workspace", "workspace_id"),)
 
 
 class ModelHistoryRecord(Base):

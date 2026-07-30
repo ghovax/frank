@@ -7,7 +7,7 @@ Sync-if-fast: it waits up to ``timeout`` seconds for the download inline; one st
 Arguments:
   - url: Fully-formed http(s) URL of the file to download.
   - path: Destination path (relative to the working directory, or absolute).
-  - location: The project location to save into — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
+  - location: The workspace location to save into — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
   - timeout: Inline-wait window in seconds before the download backgrounds (does not abort it).
   - hard_deadline: Network deadline in seconds that aborts the transfer itself.
   - background: Skip the inline wait and background the download immediately.

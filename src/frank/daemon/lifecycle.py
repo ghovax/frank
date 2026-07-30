@@ -43,12 +43,12 @@ def _daemon_token() -> str:
 
 
 def _resolve_locations(session_id: str):
-    """The project's locations, in the shape the runtime builds executors from.
+    """The workspace's locations, in the shape the runtime builds executors from.
 
     Best effort: a session with no project has none, and a lookup that fails must not stop the
     session from starting — the runtime falls back to a single local location at its working
     directory, which is exactly right for a session that has no project."""
-    from frank.workspace.services.locations import _resolve_session_locations
+    from frank.hub.services.locations import _resolve_session_locations
 
     try:
         return _resolve_session_locations(session_id)
@@ -121,7 +121,7 @@ class SessionLifecycle:
             # every child it spawns and never widens it, so it travels with the session rather
             # than being read again from a configuration file that may have changed since.
             "sandbox": record.sandbox,
-            "project_id": record.project_id,
+            "workspace_id": record.workspace_id,
             # Resolved once, here, rather than by the session asking back. A project's
             # locations are fixed for a session's life in the same way its sandbox and its
             # permission mode are, and the injection that was supposed to let a worker resolve

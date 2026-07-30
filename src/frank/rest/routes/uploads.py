@@ -12,7 +12,7 @@ from frank.protocol.dtos import (
     AttachmentReference,
 )
 from fastapi.responses import FileResponse
-from frank.workspace import state
+from frank.hub import state
 
 router = APIRouter()
 

@@ -228,7 +228,7 @@ def _model_result_status(content: str, *, ok: bool, backgrounded: bool) -> tuple
 
 
 def _detect_workspace(working_directory: str) -> tuple[str, bool]:
-    """Return ``(workspace_root, is_git_repo)``. Walks up from the working
+    """Return ``(worktree_root, is_git_repo)``. Walks up from the working
     directory for a ``.git`` marker; if found the workspace root is the repo
     top level, otherwise it falls back to the working directory itself."""
     base = Path(working_directory).expanduser().resolve() if working_directory else Path.cwd().resolve()

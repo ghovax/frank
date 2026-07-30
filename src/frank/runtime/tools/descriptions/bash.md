@@ -18,7 +18,7 @@ Always provide a clear explanation and risk assessment for the command. Set read
 
 Arguments:
   - command: The shell command to execute.
-  - location: The project location to run the command on — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
+  - location: The workspace location to run the command on — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
   - read_only: Whether this command only reads state without modifying it. Defaults to False (treated as mutating) when omitted.
   - explanation: Explain why this command is needed for the task.
   - risk: One of "low", "medium", "high" — assess the potential damage. Low for read-only commands, medium for modifications, high for destructive operations.

@@ -132,7 +132,7 @@ def _resolve_sandbox(agent: str, working_directory: str, parent) -> dict:
     the last moment it can be reported to whoever asked for the session rather than surfacing later
     as a tool that mysteriously fails."""
     from frank.base import confinement
-    from frank.workspace.services.agents import _agent_configuration_for_request
+    from frank.hub.services.agents import _agent_configuration_for_request
 
     configured = getattr(state.global_configuration, "sandbox", None)
     profile = configured.to_profile() if configured is not None else confinement.Profile()
@@ -200,7 +200,7 @@ async def _session_create(params: dict) -> dict:
         working_directory=working_directory,
         permission_mode=str(mode),
         sandbox=sandbox,
-        project_id=str(params.get("project_id") or (parent.project_id if parent else "")),
+        workspace_id=str(params.get("workspace_id") or (parent.workspace_id if parent else "")),
         parent=parent_id,
         title=str(params.get("title") or ""),
         created_at=_now(),
@@ -210,7 +210,7 @@ async def _session_create(params: dict) -> dict:
     # its first turn: the workspace strategy can put a session in its own git worktree, and a
     # session whose tools do not yet know which directory they operate on is not a session
     # anyone can safely message. It is also the row the title and the draft later land on.
-    from frank.workspace.services.sessions import _ensure_session_workspace
+    from frank.hub.services.sessions import _ensure_session_workspace
 
     try:
         workspace = await asyncio.to_thread(
@@ -218,9 +218,9 @@ async def _session_create(params: dict) -> dict:
             record.id,
             record.agent,
             record.working_directory,
-            str(params.get("workspace_strategy") or ""),
+            str(params.get("worktree_strategy") or ""),
             record.permission_mode,
-            record.project_id,
+            record.workspace_id,
         )
         state.registry.mark(record.id, runtime_working_directory=workspace.runtime_working_directory)
     except Exception:  # noqa: BLE001 — a workspace that cannot be prepared is not a fatal
@@ -535,6 +535,93 @@ def _daemon_argv() -> list[str]:
     return ["-m", "frank", "frankd"]
 
 
+async def _workspace_list(params: dict) -> dict:
+    """Every workspace and its locations. On the control plane because the CLI needs to turn a
+    path into a workspace id, and the CLI does not speak to the REST app."""
+    from frank.hub.services.workspaces import _workspaces_payload
+
+    return await asyncio.to_thread(_workspaces_payload)
+
+
+async def _schedule_create(params: dict) -> dict:
+    """Write down a recurring prompt. Validated here rather than at the first firing, because
+    the first firing may be days away and unattended."""
+    from frank.hub.services import schedules
+
+    try:
+        return await asyncio.to_thread(
+            schedules.create,
+            workspace_id=str(params.get("workspace_id") or ""),
+            name=_require(params, "name"),
+            cron=_require(params, "cron"),
+            prompt=_require(params, "prompt"),
+            agent=_require(params, "agent"),
+            permission_mode=str(params.get("permission_mode") or ""),
+            timezone_name=str(params.get("timezone") or ""),
+            working_directory=str(params.get("working_directory") or ""),
+        )
+    except schedules.ScheduleError as error:
+        raise RpcError(str(error), code="invalid_schedule") from None
+
+
+async def _schedule_list(params: dict) -> dict:
+    from frank.hub.services import schedules
+
+    listing = await asyncio.to_thread(schedules.listing, str(params.get("workspace_id") or ""))
+    return {"schedules": listing}
+
+
+async def _schedule_get(params: dict) -> dict:
+    from frank.hub.services import schedules
+
+    try:
+        return await asyncio.to_thread(schedules.get, _require(params, "id"))
+    except schedules.ScheduleError as error:
+        raise RpcError(str(error), status_code=404, code="no_such_schedule") from None
+
+
+async def _schedule_enable(params: dict) -> dict:
+    from frank.hub.services import schedules
+
+    try:
+        return await asyncio.to_thread(
+            schedules.set_enabled, _require(params, "id"), bool(params.get("enabled", True)))
+    except schedules.ScheduleError as error:
+        raise RpcError(str(error), status_code=404, code="no_such_schedule") from None
+
+
+async def _schedule_delete(params: dict) -> dict:
+    from frank.hub.services import schedules
+
+    schedule_id = _require(params, "id")
+    try:
+        await asyncio.to_thread(schedules.delete, schedule_id)
+    except schedules.ScheduleError as error:
+        raise RpcError(str(error), status_code=404, code="no_such_schedule") from None
+    return {"deleted": schedule_id}
+
+
+async def _schedule_run(params: dict) -> dict:
+    """Fire one now without moving its window — the only way to find out the agent name was
+    wrong before six tomorrow morning."""
+    from frank.daemon import scheduler
+    from frank.hub import state as hub_state
+    from frank.hub.database import ScheduleRecord
+    from frank.hub.services import schedules
+
+    schedule_id = _require(params, "id")
+    database_session = hub_state.session_factory()
+    try:
+        record = database_session.get(ScheduleRecord, schedule_id)
+        if record is None:
+            raise RpcError(f"No schedule {schedule_id!r}.", status_code=404, code="no_such_schedule")
+        database_session.expunge(record)
+    finally:
+        database_session.close()
+    await scheduler._fire(record)
+    return await asyncio.to_thread(schedules.get, schedule_id)
+
+
 METHODS: dict[str, Callable[[dict], Awaitable[dict]]] = {
     "session.create": _session_create,
     "session.list": _session_list,
@@ -553,6 +640,13 @@ METHODS: dict[str, Callable[[dict], Awaitable[dict]]] = {
     "turn.get": _turn_get,
     "daemon.status": _daemon_status,
     "daemon.restart": _daemon_restart,
+    "workspace.list": _workspace_list,
+    "schedule.create": _schedule_create,
+    "schedule.list": _schedule_list,
+    "schedule.get": _schedule_get,
+    "schedule.enable": _schedule_enable,
+    "schedule.delete": _schedule_delete,
+    "schedule.run": _schedule_run,
 }
 
 

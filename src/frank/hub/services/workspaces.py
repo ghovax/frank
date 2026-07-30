@@ -1,4 +1,4 @@
-"""Project domain: project and location CRUD, the SSH host registry, and the macOS
+"""Workspace domain: workspace and location CRUD, the SSH host registry, and the macOS
 permission probes (full-disk-access, accessibility)."""
 
 from __future__ import annotations
@@ -6,42 +6,42 @@ from __future__ import annotations
 from contextlib import suppress
 from frank.base.sqlite_lock import sqlite_write_lock
 from frank.locations import ssh_hosts as _ssh_hosts
-from frank.protocol.dtos import LocationInput, ProjectCreateRequest
+from frank.protocol.dtos import LocationInput, WorkspaceCreateRequest
 from pathlib import Path
 from typing import Any
 import subprocess
 import uuid
-from frank.workspace import state
-from frank.workspace.database import LocationRecord, ProjectRecord, SessionRecord
-from frank.workspace.services.locations import _add_location_row, _derive_location_name, _existing_location_entries, _iso_now, _locations_conflict_message, _serialize_location, _serialize_project
+from frank.hub import state
+from frank.hub.database import LocationRecord, WorkspaceRecord, SessionRecord
+from frank.hub.services.locations import _add_location_row, _derive_location_name, _existing_location_entries, _iso_now, _locations_conflict_message, _serialize_location, _serialize_workspace
 
 
-def _project_name(path: str) -> str:
+def _workspace_name(path: str) -> str:
     normalized = path.rstrip("/\\")
     return Path(normalized).name or normalized or path
 
 
-def _projects_payload() -> dict[str, list[dict[str, Any]]]:
+def _workspaces_payload() -> dict[str, list[dict[str, Any]]]:
     assert state.session_factory is not None
     database_session = state.session_factory()
     try:
-        rows = database_session.query(ProjectRecord).order_by(ProjectRecord.updated_at.desc()).all()
-        return {"projects": [_serialize_project(row, database_session) for row in rows]}
+        rows = database_session.query(WorkspaceRecord).order_by(WorkspaceRecord.updated_at.desc()).all()
+        return {"workspaces": [_serialize_workspace(row, database_session) for row in rows]}
     finally:
         database_session.close()
 
 
-def _project_payload(project_id: str) -> dict[str, Any] | None:
+def _workspace_payload(workspace_id: str) -> dict[str, Any] | None:
     assert state.session_factory is not None
     database_session = state.session_factory()
     try:
-        record = database_session.get(ProjectRecord, project_id)
-        return _serialize_project(record, database_session) if record is not None else None
+        record = database_session.get(WorkspaceRecord, workspace_id)
+        return _serialize_workspace(record, database_session) if record is not None else None
     finally:
         database_session.close()
 
 
-def _create_project(request: ProjectCreateRequest) -> dict[str, Any]:
+def _create_workspace(request: WorkspaceCreateRequest) -> dict[str, Any]:
     assert state.session_factory is not None
     conflict = _locations_conflict_message([(location.kind, location.host_alias, location.base_directory) for location in request.locations])
     if conflict:
@@ -50,16 +50,16 @@ def _create_project(request: ProjectCreateRequest) -> dict[str, Any]:
         database_session = state.session_factory()
         try:
             now = _iso_now()
-            project = ProjectRecord(
+            workspace = WorkspaceRecord(
                 id=str(uuid.uuid4()),
                 created_at=now,
                 updated_at=now,
             )
-            database_session.add(project)
+            database_session.add(workspace)
             for location in request.locations:
-                _add_location_row(database_session, project.id, location)
+                _add_location_row(database_session, workspace.id, location)
             database_session.commit()
-            return _serialize_project(project, database_session)
+            return _serialize_workspace(workspace, database_session)
         except Exception:
             database_session.rollback()
             raise
@@ -71,23 +71,23 @@ def _ensure_default_project() -> None:
     """Guarantee the app has a location-backed grouping on a fresh install.
 
     The initial location targets the daemon user's home directory. This is a no-op once any
-    project exists, so it never changes user-created groupings.
+    workspace exists, so it never changes user-created groupings.
     """
     assert state.session_factory is not None
     with sqlite_write_lock():
         database_session = state.session_factory()
         try:
-            if database_session.query(ProjectRecord).count() > 0:
+            if database_session.query(WorkspaceRecord).count() > 0:
                 return
             now = _iso_now()
-            project = ProjectRecord(
+            workspace = WorkspaceRecord(
                 id=str(uuid.uuid4()),
                 created_at=now,
                 updated_at=now,
             )
-            database_session.add(project)
+            database_session.add(workspace)
             _add_location_row(
-                database_session, project.id,
+                database_session, workspace.id,
                 LocationInput(kind="local", base_directory=str(Path.home())),
             )
             database_session.commit()
@@ -98,11 +98,11 @@ def _ensure_default_project() -> None:
             database_session.close()
 
 
-def _project_count() -> int:
+def _workspace_count() -> int:
     assert state.session_factory is not None
     database_session = state.session_factory()
     try:
-        return database_session.query(ProjectRecord).count()
+        return database_session.query(WorkspaceRecord).count()
     finally:
         database_session.close()
 
@@ -132,20 +132,20 @@ def _open_full_disk_access_settings() -> None:
         )
 
 
-def _delete_project(project_id: str) -> bool:
-    """Delete a project and everything under it: its locations, its sessions, and the
+def _delete_workspace(workspace_id: str) -> bool:
+    """Delete a workspace and everything under it: its locations, its sessions, and the
     per-(session, location) worktree records. (Remote worktree teardown over SSH is a
     follow-up — the DB rows go now.)"""
     assert state.session_factory is not None
     with sqlite_write_lock():
         database_session = state.session_factory()
         try:
-            project = database_session.get(ProjectRecord, project_id)
-            if project is None:
+            workspace = database_session.get(WorkspaceRecord, workspace_id)
+            if workspace is None:
                 return False
-            database_session.query(LocationRecord).filter(LocationRecord.project_id == project_id).delete()
-            database_session.query(SessionRecord).filter(SessionRecord.project_id == project_id).delete()
-            database_session.delete(project)
+            database_session.query(LocationRecord).filter(LocationRecord.workspace_id == workspace_id).delete()
+            database_session.query(SessionRecord).filter(SessionRecord.workspace_id == workspace_id).delete()
+            database_session.delete(workspace)
             database_session.commit()
             return True
         except Exception:
@@ -155,21 +155,21 @@ def _delete_project(project_id: str) -> bool:
             database_session.close()
 
 
-def _create_location(project_id: str, request: LocationInput) -> dict[str, Any] | None:
+def _create_location(workspace_id: str, request: LocationInput) -> dict[str, Any] | None:
     assert state.session_factory is not None
     with sqlite_write_lock():
         database_session = state.session_factory()
         try:
-            project = database_session.get(ProjectRecord, project_id)
-            if project is None:
+            workspace = database_session.get(WorkspaceRecord, workspace_id)
+            if workspace is None:
                 return None
             conflict = _locations_conflict_message(
-                _existing_location_entries(database_session, project_id) + [(request.kind, request.host_alias, request.base_directory)]
+                _existing_location_entries(database_session, workspace_id) + [(request.kind, request.host_alias, request.base_directory)]
             )
             if conflict:
                 raise ValueError(conflict)
-            record = _add_location_row(database_session, project_id, request)
-            project.updated_at = _iso_now()
+            record = _add_location_row(database_session, workspace_id, request)
+            workspace.updated_at = _iso_now()
             database_session.commit()
             return _serialize_location(record)
         except Exception:
@@ -191,7 +191,7 @@ def _update_location(location_id: str, request: LocationInput) -> dict[str, Any]
             next_base_directory = request.base_directory.strip() or record.base_directory
             next_host_alias = (request.host_alias or "").strip()
             conflict = _locations_conflict_message(
-                _existing_location_entries(database_session, record.project_id, exclude_id=location_id)
+                _existing_location_entries(database_session, record.workspace_id, exclude_id=location_id)
                 + [(next_kind, next_host_alias, next_base_directory)]
             )
             if conflict:
@@ -203,13 +203,13 @@ def _update_location(location_id: str, request: LocationInput) -> dict[str, Any]
             # The name follows the connection, so re-derive it (deduped, excluding this row)
             # whenever the connection changes.
             record.name = _derive_location_name(
-                database_session, record.project_id, record.kind, record.base_directory, record.host_alias, exclude_id=record.id
+                database_session, record.workspace_id, record.kind, record.base_directory, record.host_alias, exclude_id=record.id
             )
-            project = database_session.get(ProjectRecord, record.project_id)
-            if project is not None:
-                project.updated_at = _iso_now()
+            workspace = database_session.get(WorkspaceRecord, record.workspace_id)
+            if workspace is not None:
+                workspace.updated_at = _iso_now()
             database_session.commit()
-            return _serialize_location(record) if project is not None else None
+            return _serialize_location(record) if workspace is not None else None
         except Exception:
             database_session.rollback()
             raise

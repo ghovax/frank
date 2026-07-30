@@ -11,7 +11,7 @@ from frank.protocol.dtos import (
     DirectoryRevealRequest,
     DirectoryValidationRequest,
 )
-from frank.workspace import state
+from frank.hub import state
 from frank.rest.services.filesystem import _GIT_STATUS_WATCH_FILTER, _git_status_changes_relevant, _git_status_key, _git_status_watch_paths, _open_folder_picker, _validate_directory_payload
 from frank.base.serialization import compact
 

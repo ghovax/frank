@@ -8,7 +8,7 @@ Arguments:
   - file_path: Absolute path (or path relative to the working directory).
   - find: The exact text to find, copied verbatim from the file.
   - replace_with: The text to replace it with.
-  - location: The project location to edit in — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
+  - location: The workspace location to edit in — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
   - replace_all: Replace every occurrence instead of requiring a unique match.
   - explanation: A concise, user-facing reason for this edit.
   - risk: "low" for targeted edits, "medium" broad, "high" hard to reverse.

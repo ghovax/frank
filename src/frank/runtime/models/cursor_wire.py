@@ -311,7 +311,7 @@ def request_context_env(workspace: str, shell: str, os_version: str, time_zone: 
     """agent.v1.RequestContextEnv — what the client's machine looks like."""
     return (
         text(1, os_version)
-        + text(2, workspace)  # workspace_paths is repeated; one entry
+        + text(2, workspace)  # worktree_paths is repeated; one entry
         + text(3, shell)
         + text(10, time_zone)
         + text(11, workspace)  # project_folder

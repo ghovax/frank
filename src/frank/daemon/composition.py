@@ -32,35 +32,35 @@ from frank.base.configuration import (
 )
 from frank.base.file_leases import FileLeaseManager
 from frank.base.paths import data_directory
-from frank.base.workspaces import SessionWorkspaceManager
+from frank.base.worktrees import SessionWorktreeManager
 from frank.daemon import state
-from frank.workspace import state as workspace_state
-from frank.workspace.services.agents import _reload_agent_cards
-from frank.workspace.services.broadcast import _notify_filesystem_lease_state
-from frank.workspace.services.projects import _ensure_default_project
-from frank.workspace.services.settings import _configuration_digest, _reload_configuration_from_disk
+from frank.hub import state as hub_state
+from frank.hub.services.agents import _reload_agent_cards
+from frank.hub.services.broadcast import _notify_filesystem_lease_state
+from frank.hub.services.workspaces import _ensure_default_project
+from frank.hub.services.settings import _configuration_digest, _reload_configuration_from_disk
 
 logger = logging.getLogger(__name__)
 
 async def open_shared_resources() -> None:
     """Build what the daemon holds for everyone, in dependency order."""
-    from frank.workspace.brokers.composio import composio_mcp_servers
+    from frank.hub.brokers.composio import composio_mcp_servers
     from frank.base.mcp_client import MCPClientManager
-    from frank.workspace.brokers.remote_agents import _remote_agent_dataclasses
+    from frank.hub.brokers.remote_agents import _remote_agent_dataclasses
     from frank.daemon.persistence.push_store import (
         PersistentPushNotificationConfigurationStore,
         PinnedPushNotificationSender,
     )
     from frank.protocol.files import FileUrlSigner, load_or_create_secret
-    from frank.workspace.brokers.terminals import TerminalSessionManager
+    from frank.hub.brokers.terminals import TerminalSessionManager
 
-    assert workspace_state.global_configuration is not None
-    configuration = workspace_state.global_configuration
+    assert hub_state.global_configuration is not None
+    configuration = hub_state.global_configuration
 
-    workspace_state.main_loop = asyncio.get_running_loop()
-    workspace_state.file_lease_manager = FileLeaseManager(on_change=_notify_filesystem_lease_state)
-    workspace_state.workspace_manager = SessionWorkspaceManager()
-    workspace_state.terminal_manager = TerminalSessionManager()
+    hub_state.main_loop = asyncio.get_running_loop()
+    hub_state.file_lease_manager = FileLeaseManager(on_change=_notify_filesystem_lease_state)
+    hub_state.worktree_manager = SessionWorktreeManager()
+    hub_state.terminal_manager = TerminalSessionManager()
 
     # Seed the home layer (~/.agents) with editable copies of the shipped agents and skills,
     # non-destructively. This is what makes the bundled profiles appear in a packaged build
@@ -72,39 +72,39 @@ async def open_shared_resources() -> None:
     # Seed the digest with the file as just loaded, so the bootstrap write that
     # `Configuration.load` may have performed is not mistaken for a manual edit by the
     # watcher below and echoed straight back.
-    workspace_state.last_written_configuration_digest = await asyncio.to_thread(_configuration_digest)
+    hub_state.last_written_configuration_digest = await asyncio.to_thread(_configuration_digest)
 
     # There is no landing page, so the app always opens into a project: guarantee one exists.
     await asyncio.to_thread(_ensure_default_project)
 
     # Composio's hosted endpoint is folded into the ordinary MCP set rather than being a
     # second path, so tool gating and the client manager both see it as just another server.
-    workspace_state.composio_servers = composio_mcp_servers(configuration.composio)
-    configuration.mcp.servers.update(workspace_state.composio_servers)
+    hub_state.composio_servers = composio_mcp_servers(configuration.composio)
+    configuration.mcp.servers.update(hub_state.composio_servers)
     mcp_servers = configuration.mcp.enabled_servers()
-    workspace_state.mcp_manager = MCPClientManager(mcp_servers) if mcp_servers else None
-    if workspace_state.mcp_manager is not None:
+    hub_state.mcp_manager = MCPClientManager(mcp_servers) if mcp_servers else None
+    if hub_state.mcp_manager is not None:
         # Connected in the background: a slow or hung server — a cold `uvx` spawn, a stalled
         # endpoint — must never delay the daemon's boot. Tool gating keys on the manager
         # existing, not on live connections, so each server's tools appear as it finishes.
-        state._mcp_start_task = asyncio.create_task(workspace_state.mcp_manager.start())
+        state._mcp_start_task = asyncio.create_task(hub_state.mcp_manager.start())
 
     signing_root = data_directory()
-    workspace_state.file_url_signer = FileUrlSigner(
+    hub_state.file_url_signer = FileUrlSigner(
         load_or_create_secret(signing_root),
-        f"http://127.0.0.1:{workspace_state.daemon_port}",
+        f"http://127.0.0.1:{hub_state.daemon_port}",
         allowed_root=signing_root / "uploads",
     )
 
-    workspace_state.push_configuration_store = PersistentPushNotificationConfigurationStore(workspace_state.async_engine)
-    await workspace_state.push_configuration_store.initialize()
+    hub_state.push_configuration_store = PersistentPushNotificationConfigurationStore(hub_state.async_engine)
+    await hub_state.push_configuration_store.initialize()
     import httpx
 
     state._push_client = httpx.AsyncClient(timeout=30.0, follow_redirects=False)
-    workspace_state.push_sender = PinnedPushNotificationSender(
+    hub_state.push_sender = PinnedPushNotificationSender(
         state._push_client,
-        workspace_state.push_configuration_store,
-        allow_private=workspace_state.push_configuration_store.allow_private_webhooks,
+        hub_state.push_configuration_store,
+        allow_private=hub_state.push_configuration_store.allow_private_webhooks,
     )
 
     # Outbound A2A to peers declared in remote-agents.json. Card resolution is best effort
@@ -113,14 +113,19 @@ async def open_shared_resources() -> None:
     if remote_configurations:
         from frank.protocol.client import RemoteAgentManager
 
-        workspace_state.remote_agent_manager = RemoteAgentManager(remote_configurations)
-        state._remote_start_task = asyncio.create_task(workspace_state.remote_agent_manager.start())
+        hub_state.remote_agent_manager = RemoteAgentManager(remote_configurations)
+        state._remote_start_task = asyncio.create_task(hub_state.remote_agent_manager.start())
 
     _reload_agent_cards()
+    from frank.daemon import scheduler
+
     state._watchers = [
         asyncio.create_task(_watch_agents_and_skills()),
         asyncio.create_task(_watch_configuration()),
         asyncio.create_task(_watch_ssh_hosts()),
+        # Recurring prompts. Alongside the watchers because it is the same kind of thing — a
+        # task that outlives every request and is cancelled with them on shutdown.
+        asyncio.create_task(scheduler.run()),
     ]
 
 
@@ -133,12 +138,12 @@ async def close_shared_resources() -> None:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await task
-    if workspace_state.terminal_manager is not None:
+    if hub_state.terminal_manager is not None:
         with contextlib.suppress(Exception):
-            await workspace_state.terminal_manager.close_all()
-    if workspace_state.mcp_manager is not None:
+            await hub_state.terminal_manager.close_all()
+    if hub_state.mcp_manager is not None:
         with contextlib.suppress(Exception):
-            await workspace_state.mcp_manager.aclose()
+            await hub_state.mcp_manager.aclose()
     for client in (state.__dict__.get("_push_client"), state.proxy_client):
         if client is not None:
             with contextlib.suppress(Exception):
@@ -151,11 +156,11 @@ def _watched_agent_paths() -> list[str]:
     The `.agents` roots are watched recursively so `mcp.json` and `remote-agents.json` are
     picked up alongside the profiles themselves — all three are live, and the only thing that
     needs a restart is a change to the harness itself."""
-    assert workspace_state.global_configuration is not None
+    assert hub_state.global_configuration is not None
     candidates = [
-        *workspace_state.global_configuration.agents_root_directories(),
-        *workspace_state.global_configuration.agent_directories(),
-        *workspace_state.global_configuration.skill_directories(),
+        *hub_state.global_configuration.agents_root_directories(),
+        *hub_state.global_configuration.agent_directories(),
+        *hub_state.global_configuration.skill_directories(),
     ]
     watched: list[str] = []
     seen: set[Path] = set()
@@ -174,8 +179,8 @@ async def _watch_agents_and_skills() -> None:
     """Pick up agents, skills, MCP servers, and remote peers as they change on disk."""
     from watchfiles import awatch
 
-    from frank.workspace.brokers.mcp_servers import _reload_mcp
-    from frank.workspace.brokers.remote_agents import _reload_remote_agents
+    from frank.hub.brokers.mcp_servers import _reload_mcp
+    from frank.hub.brokers.remote_agents import _reload_remote_agents
 
     watched = _watched_agent_paths()
     if not watched:
@@ -203,7 +208,7 @@ async def _watch_configuration() -> None:
     skipped, so a save made in the UI does not echo round as an external edit."""
     from watchfiles import awatch
 
-    from frank.workspace.services.settings import _configuration_digest as digest_of
+    from frank.hub.services.settings import _configuration_digest as digest_of
 
     path = configuration_file_path()
     try:
@@ -214,11 +219,11 @@ async def _watch_configuration() -> None:
         ):
             # Serialised against UI-driven saves, and the digest is re-checked *inside* the
             # lock so a save that landed while we waited is recognised as ours.
-            async with workspace_state.configuration_lock:
+            async with hub_state.configuration_lock:
                 digest = await asyncio.to_thread(digest_of)
-                if digest is not None and digest == workspace_state.last_written_configuration_digest:
+                if digest is not None and digest == hub_state.last_written_configuration_digest:
                     continue
-                workspace_state.last_written_configuration_digest = digest
+                hub_state.last_written_configuration_digest = digest
                 await _reload_configuration_from_disk()
     except asyncio.CancelledError:
         pass
@@ -251,8 +256,8 @@ async def _watch_ssh_hosts() -> None:
 
 def known_agent_names() -> list[str]:
     """Every agent profile a session could be created with, from the configured roots."""
-    assert workspace_state.global_configuration is not None
-    return list_agent_route_names(workspace_state.global_configuration.agent_directories())
+    assert hub_state.global_configuration is not None
+    return list_agent_route_names(hub_state.global_configuration.agent_directories())
 
 
 __all__ = [

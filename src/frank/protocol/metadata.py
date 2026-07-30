@@ -39,15 +39,15 @@ REPORT_REMINDER_KIND = "report_reminder"
 class Metadata:
     """Field names inside the turn-metadata object stored under :data:`FRANK_METADATA_KEY`.
 
-    A client sets only ``WORKING_DIRECTORY``/``PERMISSION_MODE``/``PROJECT_ID`` at session
+    A client sets only ``WORKING_DIRECTORY``/``PERMISSION_MODE``/``WORKSPACE_ID`` at session
     creation; the rest are set internally once the daemon has resolved the session's runtime
     checkout."""
 
     WORKING_DIRECTORY = "workingDirectory"
-    WORKSPACE_STRATEGY = "workspaceStrategy"
+    WORKSPACE_STRATEGY = "worktreeStrategy"
     RUNTIME_WORKING_DIRECTORY = "runtimeWorkingDirectory"
     PROJECT_DIRECTORY = "projectDirectory"
-    PROJECT_ID = "projectId"
+    WORKSPACE_ID = "workspaceId"
     PERMISSION_MODE = "permissionMode"
     # Marks a harness-initiated turn (not user input): an autonomous background wake, or an
     # on-demand compaction pass.

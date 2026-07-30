@@ -3,13 +3,13 @@
 import { Box, Button, Dialog, Portal, Text } from "@chakra-ui/react";
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { createProject, type Project, type LocationInput, type SshHost } from "@/lib/api";
+import { createWorkspace, type Workspace, type LocationInput, type SshHost } from "@/lib/api";
 import { LocationEditorList, emptyLocation, locationConflict } from "./location-form";
 import { toaster } from "./ui/toaster";
 
-// A project is an internal grouping of one or more folders, so creation only asks
+// A workspace is an internal grouping of one or more folders, so creation only asks
 // where the agent will work. Mount this only while open so its initializers give fresh state.
-export function NewProjectDialog({
+export function NewWorkspaceDialog({
   hosts,
   hostsLoaded,
   open,
@@ -20,9 +20,9 @@ export function NewProjectDialog({
   hostsLoaded: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreated: (project: Project) => void;
+  onCreated: (workspace: Workspace) => void;
 }) {
-  const translation = useTranslations("NewProjectDialog");
+  const translation = useTranslations("NewWorkspaceDialog");
   const tc = useTranslations("Common");
   const [locations, setLocations] = useState<LocationInput[]>([emptyLocation()]);
   const [saving, setSaving] = useState(false);
@@ -40,8 +40,8 @@ export function NewProjectDialog({
   async function handleCreate() {
     setSaving(true);
     try {
-      const project = await createProject({ locations });
-      onCreated(project);
+      const workspace = await createWorkspace({ locations });
+      onCreated(workspace);
       onOpenChange(false);
     } catch (error) {
       toaster.create({ type: "error", title: translation("createError"), description: error instanceof Error ? error.message : "", closable: true });

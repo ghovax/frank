@@ -48,7 +48,7 @@ export function locationConflict(
   return null;
 }
 
-// The reusable folder editor — used during creation and in project-folder settings.
+// The reusable folder editor — used during creation and in workspace-folder settings.
 // `hosts` come from ~/.ssh/config (remote only). `showPermission` reveals the permission
 // mode control (shown when editing an existing location, hidden in the create wizard so
 // creation stays about *where*, not policy). `onRemove` (optional) puts a remove control in

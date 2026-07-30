@@ -97,15 +97,15 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
 
   // Split each list into the global capabilities (from ~/.agents) and the ones the
   // selected folder contributes itself, so the two scopes can be shown apart. The
-  // scope labels only appear once the folder actually adds something project-local;
+  // scope labels only appear once the folder actually adds something workspace-local;
   // a plain folder (only globals, e.g. home) stays an unlabelled flat list.
-  const globalSkills = skills.filter((skill) => skill.scope !== "project");
-  const projectSkills = skills.filter((skill) => skill.scope === "project");
-  const globalServers = toolServers.filter((server) => server.scope !== "project");
-  const projectServers = toolServers.filter((server) => server.scope === "project");
+  const globalSkills = skills.filter((skill) => skill.scope !== "workspace");
+  const workspaceSkills = skills.filter((skill) => skill.scope === "workspace");
+  const globalServers = toolServers.filter((server) => server.scope !== "workspace");
+  const workspaceServers = toolServers.filter((server) => server.scope === "workspace");
 
-  // The home folder has no project scope of its own, so its "This project" group
-  // (which would always be empty) is suppressed — only real project folders show it.
+  // The home folder has no workspace scope of its own, so its "This workspace" group
+  // (which would always be empty) is suppressed — only real workspace folders show it.
 
   return (
     // `minW={0}` because this sits in a centred flex column: a flex item's default minimum is
@@ -123,7 +123,7 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
             {/* One list, not two. Where a skill is defined is how it got here, not something
                 anyone picks it by — splitting on it made every capability one level deeper
                 and asked the reader to care about the filesystem. */}
-            {[...globalSkills, ...projectSkills].map((skill) => <SkillCard key={skill.id} skill={skill} />)}
+            {[...globalSkills, ...workspaceSkills].map((skill) => <SkillCard key={skill.id} skill={skill} />)}
           </Flex>
         </>
       )}
@@ -136,7 +136,7 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
             description={translation("toolsDescription")}
           />
           <Flex direction="column" gap={2}>
-            {[...globalServers, ...projectServers].map((server) => <McpServerGroup key={server.name} server={server} />)}
+            {[...globalServers, ...workspaceServers].map((server) => <McpServerGroup key={server.name} server={server} />)}
           </Flex>
         </Box>
       )}

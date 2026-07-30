@@ -4,7 +4,7 @@ Text lines carry 1-indexed line numbers for orientation. Exclude that prefix whe
 
 Arguments:
   - file_path: Absolute path (or path relative to the working directory).
-  - location: The project location to read from — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
+  - location: The workspace location to read from — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
   - offset: 1-indexed line number to start reading from.
   - limit: Maximum number of lines to return (defaults to 2048).
   - explanation: A concise, user-facing reason for this read.

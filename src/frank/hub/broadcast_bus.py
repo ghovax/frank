@@ -1,6 +1,6 @@
 """Process-wide pub/sub for "something you are looking at changed".
 
-In the workspace layer rather than the daemon's because everything that publishes to it is a
+In the hub layer rather than the daemon's because everything that publishes to it is a
 workspace change — a project created, an agent edited, a setting saved — and because the
 browser surface subscribes to it. The daemon publishes too (a session appeared, a session
 ended), which is composition rather than ownership: it imports the workspace, the workspace

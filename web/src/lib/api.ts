@@ -314,7 +314,7 @@ export async function referenceAttachment(path: string): Promise<Attachment> {
   return await response.json() as Attachment;
 }
 
-// Projects, locations, and the SSH host registry.
+// Workspaces, locations, and the SSH host registry.
 
 // A connectable SSH host from ~/.ssh/config (the source of truth for remotes).
 export interface SshHost {
@@ -325,12 +325,12 @@ export interface SshHost {
   identity_files: string[];
 }
 
-// A named place a project runs tools in. `name` is derived from the connection (host
+// A named place a workspace runs tools in. `name` is derived from the connection (host
 // alias / folder), not user-entered. `permission_mode` is the one execution policy a
 // location carries. `uri` is the fully-qualified identifier the agent addresses.
 export interface Location {
   id: string;
-  project_id: string;
+  workspace_id: string;
   name: string;
   kind: "local" | "remote";
   host_alias: string;
@@ -341,7 +341,7 @@ export interface Location {
   created_at: string;
 }
 
-export interface Project {
+export interface Workspace {
   id: string;
   created_at: string;
   updated_at: string;
@@ -357,7 +357,7 @@ export interface LocationInput {
   permission_mode?: string;
 }
 
-export interface ProjectCreateInput {
+export interface WorkspaceCreateInput {
   locations: LocationInput[];
 }
 
@@ -368,35 +368,35 @@ export async function listSshHosts(): Promise<SshHost[]> {
   return Array.isArray(data.hosts) ? (data.hosts as SshHost[]) : [];
 }
 
-export async function listProjects(): Promise<Project[]> {
-  const response = await apiFetch(`/projects`);
+export async function listWorkspaces(): Promise<Workspace[]> {
+  const response = await apiFetch(`/workspaces`);
   if (!response.ok) return [];
   const data = await response.json();
-  return Array.isArray(data.projects) ? (data.projects as Project[]) : [];
+  return Array.isArray(data.workspaces) ? (data.workspaces as Workspace[]) : [];
 }
 
-export async function getProject(projectId: string): Promise<Project | null> {
-  const response = await apiFetch(`/projects/${encodeURIComponent(projectId)}`);
+export async function getWorkspace(workspaceId: string): Promise<Workspace | null> {
+  const response = await apiFetch(`/workspaces/${encodeURIComponent(workspaceId)}`);
   if (!response.ok) return null;
-  return await response.json() as Project;
+  return await response.json() as Workspace;
 }
 
-export async function createProject(input: ProjectCreateInput): Promise<Project> {
-  const response = await apiFetch(`/projects`, {
+export async function createWorkspace(input: WorkspaceCreateInput): Promise<Workspace> {
+  const response = await apiFetch(`/workspaces`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!response.ok) throw new Error(`Failed to create project (${response.status})`);
-  return await response.json() as Project;
+  if (!response.ok) throw new Error(`Failed to create workspace (${response.status})`);
+  return await response.json() as Workspace;
 }
 
-export async function deleteProject(projectId: string): Promise<void> {
-  await apiFetch(`/projects/${encodeURIComponent(projectId)}`, { method: "DELETE" });
+export async function deleteWorkspace(workspaceId: string): Promise<void> {
+  await apiFetch(`/workspaces/${encodeURIComponent(workspaceId)}`, { method: "DELETE" });
 }
 
-export async function createLocation(projectId: string, input: LocationInput): Promise<Location> {
-  const response = await apiFetch(`/projects/${encodeURIComponent(projectId)}/locations`, {
+export async function createLocation(workspaceId: string, input: LocationInput): Promise<Location> {
+  const response = await apiFetch(`/workspaces/${encodeURIComponent(workspaceId)}/locations`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -495,7 +495,7 @@ export const FRANK_METADATA_KEY = "urn:frank:ext:turn:v1";
 export const CONTENT_BLOCK_METADATA_KEY = "urn:frank:ext:content-block:v1";
 
 export type PermissionMode = "default" | "auto" | "read_only";
-export type WorkspaceStrategy = "none" | "branch" | "worktree";
+export type WorktreeStrategy = "none" | "branch" | "worktree";
 
 export interface AgentSummary {
   id: string;
@@ -577,8 +577,8 @@ export interface AgentSkill {
   tags?: string[];
   examples?: string[];
   enabled?: boolean;
-  // "global" (from ~/.agents) or "project" (from the selected folder's .agents).
-  scope?: "global" | "project";
+  // "global" (from ~/.agents) or "workspace" (from the selected folder's .agents).
+  scope?: "global" | "workspace";
 }
 
 export interface AgentCard {
@@ -591,7 +591,7 @@ export interface AgentCard {
 }
 
 // Discovery: every served agent's A2A AgentCard (with its skills). Skills are
-// scoped to the selected project path — the home globals plus that folder's own
+// scoped to the selected workspace path — the home globals plus that folder's own
 // `.agents` skills, deduped — so passing `workingDirectory` is what makes the
 // listed skills match the chosen folder rather than the server's launch directory.
 export async function fetchAgentCards(workingDirectory?: string): Promise<AgentCard[]> {
@@ -639,7 +639,7 @@ export interface Settings {
   user_context_enabled: boolean;
   // Opt-in: let the agent control macOS apps via the computer-use tool. Off by default.
   computer_control_enabled: boolean;
-  workspace_strategy: "none" | "branch" | "worktree";
+  worktree_strategy: "none" | "branch" | "worktree";
   compaction: CompactionSettings;
   providers: Record<string, ProviderCredential>;
 }
@@ -778,7 +778,7 @@ export interface ModelsResponse {
 export async function fetchSettings(): Promise<Settings> {
   const response = await apiFetch(`/settings`);
   if (!response.ok) {
-    return { permission_mode: "default", exa_api_key: "", composio_api_key: "", jina_api_key: "", firecrawl_api_key: "", web_fetch_proxy_url: "", sandbox: DEFAULT_SANDBOX, sandbox_backend: { backend: "", detail: "" }, user_context_enabled: false, computer_control_enabled: false, workspace_strategy: "none", compaction: DEFAULT_COMPACTION, providers: {} };
+    return { permission_mode: "default", exa_api_key: "", composio_api_key: "", jina_api_key: "", firecrawl_api_key: "", web_fetch_proxy_url: "", sandbox: DEFAULT_SANDBOX, sandbox_backend: { backend: "", detail: "" }, user_context_enabled: false, computer_control_enabled: false, worktree_strategy: "none", compaction: DEFAULT_COMPACTION, providers: {} };
   }
   return (await response.json()) as Settings;
 }
@@ -793,7 +793,7 @@ export interface SaveSettingsPayload {
   web_fetch_proxy_url?: string;
   provider_keys?: Record<string, string>;
   provider_base_urls?: Record<string, string>;
-  workspace_strategy?: "none" | "branch" | "worktree";
+  worktree_strategy?: "none" | "branch" | "worktree";
 }
 
 export async function saveSettings(settings: SaveSettingsPayload): Promise<void> {
@@ -812,7 +812,7 @@ export async function fetchModels(): Promise<ModelsResponse> {
   return response.json();
 }
 
-// Recently selected models (newest first), mirroring the project history — so the
+// Recently selected models (newest first), mirroring the workspace history — so the
 // picker can surface the models a user actually switches between at the top.
 export interface RecentModel {
   id: string;
@@ -941,9 +941,9 @@ export interface McpServerTools {
   name: string;
   tools: McpTool[];
   enabled?: boolean;
-  // "global" (from ~/.agents or the Composio integration) or "project" (from the
+  // "global" (from ~/.agents or the Composio integration) or "workspace" (from the
   // selected folder's own mcp.json).
-  scope?: "global" | "project";
+  scope?: "global" | "workspace";
 }
 
 // Discovery: tools exposed by each configured MCP server, for the capabilities panel.
@@ -1020,7 +1020,7 @@ export function subscribeEvents(onEvent: (event: { type: string }) => void): () 
   };
 }
 
-// The default project shown before the user picks anything — the server provides
+// The default workspace shown before the user picks anything — the server provides
 // its folder name so the selector never has to derive one.
 export async function fetchHomeDirectory(): Promise<{ path: string; name: string }> {
   const response = await apiFetch(`/home`);
@@ -1062,7 +1062,7 @@ export interface SessionSummary {
   awaiting_input: boolean;
   title: string;
   working_directory: string;
-  project_id: string;
+  workspace_id: string;
   permission_mode: PermissionMode;
   pid: number;
   created_at: string;
@@ -1115,9 +1115,9 @@ export interface SessionCreateInput {
   workingDirectory?: string;
   // The workspace a session runs in (in place, on a branch, or in a worktree) is chosen
   // once here, like every other piece of its configuration.
-  workspaceStrategy?: WorkspaceStrategy;
+  worktreeStrategy?: WorktreeStrategy;
   permissionMode?: PermissionMode;
-  projectId?: string;
+  workspaceId?: string;
   parent?: string;
 }
 
@@ -1137,9 +1137,9 @@ export async function sessionCreate(input: SessionCreateInput, options?: ApiRequ
   return rpc<SessionCreated>("session.create", {
     agent: input.agent,
     working_directory: input.workingDirectory ?? "",
-    workspace_strategy: input.workspaceStrategy ?? "none",
+    worktree_strategy: input.worktreeStrategy ?? "none",
     permission_mode: input.permissionMode ?? "default",
-    project_id: input.projectId ?? "",
+    workspace_id: input.workspaceId ?? "",
     ...(input.parent ? { parent: input.parent } : {}),
   }, options);
 }

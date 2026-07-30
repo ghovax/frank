@@ -21,8 +21,8 @@ import pwd
 import signal
 import struct
 import termios
-from frank.workspace import state
-from frank.workspace.database import SessionRecord, TerminalStateRecord
+from frank.hub import state
+from frank.hub.database import SessionRecord, TerminalStateRecord
 
 
 def _terminal_directory(session_id: str, working_directory: str) -> Path:

@@ -68,7 +68,7 @@ def _command_create(arguments: argparse.Namespace) -> int:
         agent=arguments.agent,
         working_directory=arguments.directory or "",
         permission_mode=arguments.mode or "",
-        project_id=arguments.project or "",
+        workspace_id=arguments.workspace or "",
         # Run from inside a session's shell, this command creates a *child* of that session by
         # default. Without it a session that reached for the CLI created an orphan: outside the
         # tree, outside the reaper, and outside the permission clamp, which is skipped entirely
@@ -531,6 +531,94 @@ def _command_open(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _local_timezone() -> str:
+    """This machine's IANA zone, so a cron line means what a person meant by it.
+
+    Read from where the system keeps it rather than from ``datetime``: an aware datetime carries
+    a fixed *offset*, not a zone, so `astimezone().tzinfo` answers "+02:00" and has no name to
+    give — which silently produced UTC for everybody, and a schedule an hour or two off.
+
+    Defaulted rather than required because "nine every weekday" almost always means nine where
+    the person typing it is. Written into the record either way, so a machine that later moves
+    or changes its own zone does not quietly take the schedule with it."""
+    from pathlib import Path
+
+    localtime = Path("/etc/localtime")
+    if localtime.is_symlink():
+        parts = localtime.resolve().parts
+        if "zoneinfo" in parts:
+            return "/".join(parts[parts.index("zoneinfo") + 1:]) or "UTC"
+    return "UTC"
+
+
+def _resolve_workspace(reference: str) -> str:
+    """A workspace id, or the id of the workspace owning a path.
+
+    Taking a path is what lets `--workspace ~/code/thing` read the way somebody would say it.
+    Resolved here rather than in the daemon because it is a convenience of *this* interface —
+    the RPC takes an id, as every other caller does."""
+    reference = (reference or "").strip()
+    if not reference:
+        return ""
+    if not ("/" in reference or reference.startswith("~") or reference == "."):
+        return reference
+    import os
+
+    wanted = os.path.realpath(os.path.expanduser(reference))
+    for workspace in call("workspace.list").get("workspaces", []):
+        for location in workspace.get("locations", []):
+            base = location.get("base_directory") or location.get("path") or ""
+            if base and os.path.realpath(os.path.expanduser(base)) == wanted:
+                return str(workspace.get("id") or "")
+    raise DaemonError(f"No workspace has a location at {reference}.")
+
+
+def _command_schedule_create(arguments: argparse.Namespace) -> int:
+    result = call(
+        "schedule.create",
+        workspace_id=_resolve_workspace(arguments.workspace),
+        name=arguments.name,
+        cron=arguments.cron,
+        prompt=arguments.prompt,
+        agent=arguments.agent,
+        permission_mode=arguments.mode,
+        timezone=arguments.timezone,
+        working_directory=arguments.directory or "",
+    )
+    _emit_line(result.get("id", ""))
+    return 0
+
+
+def _command_schedule_list(arguments: argparse.Namespace) -> int:
+    _emit(call("schedule.list", workspace_id=_resolve_workspace(arguments.workspace or "")))
+    return 0
+
+
+def _command_schedule_show(arguments: argparse.Namespace) -> int:
+    _emit(call("schedule.get", id=arguments.schedule))
+    return 0
+
+
+def _command_schedule_pause(arguments: argparse.Namespace) -> int:
+    _emit(call("schedule.enable", id=arguments.schedule, enabled=False))
+    return 0
+
+
+def _command_schedule_resume(arguments: argparse.Namespace) -> int:
+    _emit(call("schedule.enable", id=arguments.schedule, enabled=True))
+    return 0
+
+
+def _command_schedule_delete(arguments: argparse.Namespace) -> int:
+    _emit(call("schedule.delete", id=arguments.schedule))
+    return 0
+
+
+def _command_schedule_run(arguments: argparse.Namespace) -> int:
+    _emit(call("schedule.run", id=arguments.schedule))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="frank", description="Drive Frank sessions.")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -542,10 +630,55 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("-C", "--directory", help="working directory")
     create.add_argument("-m", "--mode", choices=["default", "auto", "read_only"],
                         help="permission mode, fixed for the session's life")
-    create.add_argument("-p", "--project", help="project identifier")
+    create.add_argument("-w", "--workspace", help="workspace the session belongs to — the set of locations it may act in")
     create.add_argument("-P", "--parent", help="parent session; the child is clamped to no looser a mode")
     create.add_argument("-t", "--title", help="a human label for the session list")
     create.set_defaults(handler=_command_create)
+
+    schedule = add("schedule", help="run a prompt on a recurring schedule, unattended")
+    schedule_actions = schedule.add_subparsers(dest="schedule_command", required=True)
+
+    schedule_create = schedule_actions.add_parser("create", help="write down a recurring prompt")
+    schedule_create.add_argument("name", help="how you will recognise it in the list")
+    schedule_create.add_argument("--cron", required=True,
+                                 help='when to run, as cron — e.g. "0 9 * * MON-FRI"')
+    schedule_create.add_argument("--prompt", required=True, help="what to ask, each time it fires")
+    schedule_create.add_argument("-a", "--agent", required=True, help="agent profile to run")
+    schedule_create.add_argument("-w", "--workspace", required=True,
+                                 help="workspace id, or a path inside one")
+    schedule_create.add_argument("-m", "--mode", required=True,
+                                 choices=["default", "auto", "read_only"],
+                                 help="permission mode; required, because nobody is watching when "
+                                      "this runs and an unstated mode is one nobody chose")
+    schedule_create.add_argument("--timezone", default=_local_timezone(),
+                                 help="IANA timezone the cron line is read in (default: this machine's)")
+    schedule_create.add_argument("-C", "--directory", help="working directory for the session")
+    schedule_create.set_defaults(handler=_command_schedule_create)
+
+    schedule_list = schedule_actions.add_parser("list", help="every schedule, and when each next fires")
+    schedule_list.add_argument("-w", "--workspace", help="only this workspace (id or a path inside one)")
+    schedule_list.set_defaults(handler=_command_schedule_list)
+
+    schedule_show = schedule_actions.add_parser("show", help="one schedule, including its last run")
+    schedule_show.add_argument("schedule")
+    schedule_show.set_defaults(handler=_command_schedule_show)
+
+    schedule_pause = schedule_actions.add_parser("pause", help="stop it firing, without deleting it")
+    schedule_pause.add_argument("schedule")
+    schedule_pause.set_defaults(handler=_command_schedule_pause)
+
+    schedule_resume = schedule_actions.add_parser("resume", help="let it fire again")
+    schedule_resume.add_argument("schedule")
+    schedule_resume.set_defaults(handler=_command_schedule_resume)
+
+    schedule_delete = schedule_actions.add_parser("delete", help="remove it")
+    schedule_delete.add_argument("schedule")
+    schedule_delete.set_defaults(handler=_command_schedule_delete)
+
+    schedule_run = schedule_actions.add_parser(
+        "run", help="fire it now, without moving its next window — for trying it out")
+    schedule_run.add_argument("schedule")
+    schedule_run.set_defaults(handler=_command_schedule_run)
 
     send = add("send", help="send a message to a session")
     send.add_argument("session")

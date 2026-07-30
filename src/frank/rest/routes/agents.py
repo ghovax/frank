@@ -10,9 +10,9 @@ from frank.protocol.dtos import (
     AgentInfo,
     AgentsList,
 )
-from frank.workspace import state
-from frank.workspace.services.broadcast import _publish_broadcast
-from frank.workspace.services.agents import _agent_configuration_for_request, _agent_configuration_payload, _apply_agent_configuration_update, _card_for, _load_agent_sidecar, _path_scope, _record_model_selection, _reload_agent_cards, _save_agent_sidecar
+from frank.hub import state
+from frank.hub.services.broadcast import _publish_broadcast
+from frank.hub.services.agents import _agent_configuration_for_request, _agent_configuration_payload, _apply_agent_configuration_update, _card_for, _load_agent_sidecar, _path_scope, _record_model_selection, _reload_agent_cards, _save_agent_sidecar
 
 router = APIRouter()
 

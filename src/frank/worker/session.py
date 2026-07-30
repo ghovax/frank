@@ -30,7 +30,7 @@ from frank.base.file_leases import FileLeaseManager
 from frank.base.configuration import Configuration
 from frank.base.background_store import get_background_job_store
 from frank.base.ports import JobStore
-from frank.base.workspaces import SessionWorkspace
+from frank.base.worktrees import SessionWorktree
 from frank.protocol.metadata import (
     AUTONOMOUS_RESUME_KIND,
     COMPACTION_KIND,
@@ -67,7 +67,7 @@ class SessionExecutor(AgentExecutor):
         global_configuration: Configuration,
         sandbox: Optional[dict] = None,
         runtime_working_directory: str = "",
-        project_id: str = "",
+        workspace_id: str = "",
         locations: Optional[list[dict]] = None,
         parent: str = "",
         token: str = "",
@@ -91,7 +91,7 @@ class SessionExecutor(AgentExecutor):
         from frank.base.confinement import Profile
 
         self._sandbox = Profile.from_dict(sandbox)
-        self._project_id = project_id
+        self._workspace_id = workspace_id
         self._parent = parent
         self._token = token
         self._global_configuration = global_configuration
@@ -578,7 +578,7 @@ class SessionExecutor(AgentExecutor):
             return task.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"}) if task else None
         return read_turn
 
-    async def _runtime_for(self, session_id: str, workspace: SessionWorkspace) -> AgentRuntime:
+    async def _runtime_for(self, session_id: str, workspace: SessionWorktree) -> AgentRuntime:
         # Apply any reset that was deferred while this context had background work in
         # flight: if the runtime has since gone idle, drop it now so this turn rebuilds
         # it with the new configuration rather than reusing the stale one.
@@ -657,7 +657,7 @@ class SessionExecutor(AgentExecutor):
             self._startup_resume_tasks.add(wake_task)
             wake_task.add_done_callback(self._startup_resume_tasks.discard)
 
-    def _workspace(self, requested_working_directory: str = "") -> SessionWorkspace:
+    def _workspace(self, requested_working_directory: str = "") -> SessionWorktree:
         """Where this session's work happens.
 
         The daemon resolved this when the session was created — a worktree strategy puts the
@@ -666,7 +666,7 @@ class SessionExecutor(AgentExecutor):
         session *is*, fixed at creation alongside its agent and its permission mode."""
         source = requested_working_directory or self._working_directory or ""
         runtime = self._runtime_working_directory or source
-        return SessionWorkspace(
+        return SessionWorktree(
             source_working_directory=source,
             runtime_working_directory=runtime,
             strategy="worktree" if runtime and runtime != source else "none",

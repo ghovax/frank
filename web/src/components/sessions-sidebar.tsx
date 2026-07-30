@@ -1,7 +1,7 @@
 "use client";
 
-// The chat-history sidebar as a self-contained unit: the projects list, a new-session
-// row, and each project's sorted sessions (status dot + marquee title + options menu),
+// The chat-history sidebar as a self-contained unit: the workspaces list, a new-session
+// row, and each workspace's sorted sessions (status dot + marquee title + options menu),
 // nested as a tree so the sessions a session creates sit under the one that created them.
 // It owns nothing about layout (the
 // page wraps it in the resizable panel, and the collapsed state wraps the very same component
@@ -17,9 +17,9 @@ import { FrankMark } from "@/components/ui/frank-mark";
 import { DropdownMenu, MenuOption } from "@/components/ui/menu";
 import { PanelBody, PanelCard } from "@/components/ui/panel";
 import { Tooltip } from "@/components/ui/tooltip";
-import { deleteProject, listProjects, listSshHosts, revealInFinder, subscribeEvents, type PermissionMode, type Project, type SshHost } from "@/lib/api";
+import { deleteWorkspace, listWorkspaces, listSshHosts, revealInFinder, subscribeEvents, type PermissionMode, type Workspace, type SshHost } from "@/lib/api";
 import { locationTargetAddress, locationTargetLabel } from "./location-status";
-import { NewProjectDialog } from "./new-project-dialog";
+import { NewWorkspaceDialog } from "./new-workspace-dialog";
 import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
 import { toaster } from "./ui/toaster";
 
@@ -35,7 +35,7 @@ export interface SessionEntry {
   // composes by creating peers, so its children are ordinary sessions that would land
   // flat in this list unless they are nested under the row that created them.
   parentSessionId: string;
-  projectId: string;
+  workspaceId: string;
   agent: string;
   title: string;
   createdAt: string;
@@ -108,7 +108,7 @@ function buildSessionTree(entries: SessionEntry[]): SessionTreeNode[] {
   const roots: SessionTreeNode[] = [];
   for (const node of nodes.values()) {
     // A child whose parent is not in this list (filtered out by the search, or living in
-    // another project) is promoted to a root rather than dropped — a session is never
+    // another workspace) is promoted to a root rather than dropped — a session is never
     // unreachable because of where its parent happens to be.
     const parent = node.entry.parentSessionId ? nodes.get(node.entry.parentSessionId) : undefined;
     if (parent && parent !== node) parent.children.push(node);
@@ -171,7 +171,7 @@ function MarqueeTitle({ text }: { text: string }) {
       className="sidebar-title"
       // The sidebar sits one step below the app's default text size: it is a list to scan,
       // not prose to read, and a smaller face fits more of a title before the marquee has to
-      // do any work. The project row above matches this deliberately, so a name and the
+      // do any work. The workspace row above matches this deliberately, so a name and the
       // conversations under it read as one list rather than two.
       textStyle="xs"
       data-overflow={overflow > 0 ? "true" : undefined}
@@ -221,7 +221,7 @@ function SessionTreeRow({
   const hiddenAttention = hidden.some((child) => child.awaitingInput);
   const hiddenProblem = hidden.some((child) => child.failed);
   const statusLabel = translation(
-    (entry.failed ? "statusFailed" : ACTIVITY_LABEL_KEY[entry.activity] ?? "statusIdle") as Parameters<typeof translation>[0]
+    (entry.failed ? "statusFailed" : ACTIVITY_LABEL_KEY[entry.activity]) as Parameters<typeof translation>[0]
   );
   const statusTooltip = (
     <Box>
@@ -253,7 +253,7 @@ function SessionTreeRow({
           "& [data-row-actions]": { display: "none" },
           "&:hover [data-row-actions]": { display: "flex" },
           "&:focus-within [data-row-actions]": { display: "flex" },
-          // Same nesting problem as the title mask in globals.css: a project row contains its
+          // Same nesting problem as the title mask in globals.css: a workspace row contains its
           // session rows, so its `:hover` revealed every nested row's actions at once.
           "&:hover .sidebar-row:not(:hover):not(:focus-within) [data-row-actions]": {
             display: "none",
@@ -381,9 +381,9 @@ export function SessionsSidebar({
   sessionSort,
   onSessionSortChange,
   unseenCompletions,
-  currentProjectId,
-  onSwitchProject,
-  onOpenProjectSettings,
+  currentWorkspaceId,
+  onSwitchWorkspace,
+  onOpenWorkspaceSettings,
   onNewChat,
   onResume,
   onDeleteSession,
@@ -394,21 +394,21 @@ export function SessionsSidebar({
   sessionSort: SessionSort;
   onSessionSortChange: (sort: SessionSort) => void;
   unseenCompletions: Set<string>;
-  currentProjectId: string;
-  onSwitchProject: (projectId: string) => void;
-  onOpenProjectSettings: (projectId: string) => void;
+  currentWorkspaceId: string;
+  onSwitchWorkspace: (workspaceId: string) => void;
+  onOpenWorkspaceSettings: (workspaceId: string) => void;
   onNewChat: () => void;
   onResume: (entry: SessionEntry) => void;
   onDeleteSession: (entry: SessionEntry) => void;
 }) {
   const translation = useTranslations("SessionsSidebar");
   const [pendingDelete, setPendingDelete] = useState<SessionEntry | null>(null);
-  const [pendingProjectDelete, setPendingProjectDelete] = useState<Project | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [pendingWorkspaceDelete, setPendingWorkspaceDelete] = useState<Workspace | null>(null);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [sshHosts, setSshHosts] = useState<SshHost[]>([]);
   const [sshHostsLoaded, setSshHostsLoaded] = useState(false);
-  const [newProjectOpen, setNewProjectOpen] = useState(false);
-  const [projectOpenOverrides, setProjectOpenOverrides] = useState<Record<string, boolean>>({});
+  const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
+  const [workspaceOpenOverrides, setWorkspaceOpenOverrides] = useState<Record<string, boolean>>({});
   // Which parents have their child sessions showing. Collapsed is the default and the
   // state is additive (an id is present only once opened), so a session that fans out
   // mid-view never expands the list under the reader.
@@ -426,8 +426,8 @@ export function SessionsSidebar({
     ? sessions.filter((entry) => (entry.title || "").toLowerCase().includes(searchQuery))
     : sessions;
 
-  const refreshProjects = useCallback(() => {
-    listProjects().then(setProjects).catch((caught) => swallowed("sessions sidebar: a background load failed", caught));
+  const refreshWorkspaces = useCallback(() => {
+    listWorkspaces().then(setWorkspaces).catch((caught) => swallowed("sessions sidebar: a background load failed", caught));
   }, []);
 
   useEffect(() => {
@@ -443,49 +443,49 @@ export function SessionsSidebar({
           if (!cancelled) setSshHostsLoaded(true);
         });
     };
-    refreshProjects();
+    refreshWorkspaces();
     refreshSshHosts();
     const unsubscribe = subscribeEvents((event) => {
-      if (event.type === "projects_changed") refreshProjects();
+      if (event.type === "workspaces_changed") refreshWorkspaces();
       if (event.type === "hosts_changed") refreshSshHosts();
     });
     return () => {
       cancelled = true;
       unsubscribe();
     };
-  }, [refreshProjects]);
+  }, [refreshWorkspaces]);
 
-  async function confirmProjectDelete() {
-    if (!pendingProjectDelete) return;
-    const deletedProjectId = pendingProjectDelete.id;
+  async function confirmWorkspaceDelete() {
+    if (!pendingWorkspaceDelete) return;
+    const deletedWorkspaceId = pendingWorkspaceDelete.id;
     try {
-      await deleteProject(deletedProjectId);
-      const remainingProjects = projects.filter((project) => project.id !== deletedProjectId);
-      setProjects(remainingProjects);
-      if (deletedProjectId === currentProjectId && remainingProjects[0]) {
-        onSwitchProject(remainingProjects[0].id);
+      await deleteWorkspace(deletedWorkspaceId);
+      const remainingWorkspaces = workspaces.filter((workspace) => workspace.id !== deletedWorkspaceId);
+      setWorkspaces(remainingWorkspaces);
+      if (deletedWorkspaceId === currentWorkspaceId && remainingWorkspaces[0]) {
+        onSwitchWorkspace(remainingWorkspaces[0].id);
       }
     } catch (error) {
       toaster.create({
         type: "error",
-        title: translation("deleteProjectError"),
+        title: translation("deleteWorkspaceError"),
         description: error instanceof Error ? error.message : "",
         closable: true,
       });
     }
   }
 
-  function projectLabel(project: Project): string {
-    const primaryLocation = project.locations?.[0];
-    return primaryLocation ? locationTargetLabel(primaryLocation) : translation("untitledProject");
+  function workspaceLabel(workspace: Workspace): string {
+    const primaryLocation = workspace.locations?.[0];
+    return primaryLocation ? locationTargetLabel(primaryLocation) : translation("untitledWorkspace");
   }
 
-  const visibleProjects = projects
-    .map((project) => ({
-      project,
-      sessions: shownSessions.filter((session) => session.projectId === project.id),
+  const visibleWorkspaces = workspaces
+    .map((workspace) => ({
+      workspace,
+      sessions: shownSessions.filter((session) => session.workspaceId === workspace.id),
     }))
-    .filter(({ sessions: projectSessions }) => !searchQuery || projectSessions.length > 0);
+    .filter(({ sessions: workspaceSessions }) => !searchQuery || workspaceSessions.length > 0);
 
   return (
     <PanelCard flex={1}>
@@ -532,12 +532,12 @@ export function SessionsSidebar({
           px={2}
           justifyContent="flex-start"
           textAlign="left"
-          onClick={() => setNewProjectOpen(true)}
+          onClick={() => setNewWorkspaceOpen(true)}
         >
           <Flex w={LEADING_SLOT} flexShrink={0} align="center" justify="center">
             <LuFolderPlus size={14} />
           </Flex>
-          <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">{translation("newProject")}</Text>
+          <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">{translation("newWorkspace")}</Text>
         </Button>
       </Box>
 
@@ -561,7 +561,7 @@ export function SessionsSidebar({
 
       <PanelBody pt={1}>
         <Flex align="center" gap={1.5} mb={1} color="fg.muted">
-          <Text textStyle="sectionLabel" flex={1}>{translation("projects")}</Text>
+          <Text textStyle="sectionLabel" flex={1}>{translation("workspaces")}</Text>
           <Box>
             <DropdownMenu
               trigger={
@@ -597,29 +597,29 @@ export function SessionsSidebar({
             </DropdownMenu>
           </Box>
         </Flex>
-        {!sessionsLoaded || projects.length === 0 ? null : visibleProjects.length === 0 ? (
+        {!sessionsLoaded || workspaces.length === 0 ? null : visibleWorkspaces.length === 0 ? (
           <Text fontSize="xs" color="fg.muted" px={2} py={2}>{translation("noMatches", { query: search })}</Text>
         ) : (
           <VStack gap={1} align="stretch">
-            {visibleProjects.map(({ project, sessions: projectSessions }) => {
-              const primaryLocation = project.locations?.[0];
+            {visibleWorkspaces.map(({ workspace, sessions: workspaceSessions }) => {
+              const primaryLocation = workspace.locations?.[0];
               const address = primaryLocation ? locationTargetAddress(primaryLocation) : "";
-              const label = projectLabel(project);
-              const projectOpenKey = searchQuery ? `${project.id}:${searchQuery}` : project.id;
-              const projectOpen = projectOpenOverrides[projectOpenKey]
-                ?? (searchQuery ? projectSessions.length > 0 : project.id === currentProjectId);
+              const label = workspaceLabel(workspace);
+              const workspaceOpenKey = searchQuery ? `${workspace.id}:${searchQuery}` : workspace.id;
+              const workspaceOpen = workspaceOpenOverrides[workspaceOpenKey]
+                ?? (searchQuery ? workspaceSessions.length > 0 : workspace.id === currentWorkspaceId);
               const tooltipContent = address ? (
                 <Box>
                   <Text fontWeight="semibold" color="fg" mb={1}>{label}</Text>
                   <Text color="fg.muted" fontFamily="mono" wordBreak="break-all">{address}</Text>
                 </Box>
               ) : label;
-              const projectActions = (
+              const workspaceActions = (
                 <Box>
                   <DropdownMenu
                     trigger={
                       <IconButton
-                        aria-label={translation("projectOptions")}
+                        aria-label={translation("workspaceOptions")}
                         variant="plain"
                         boxSize={5}
                         color="fg.subtle"
@@ -634,17 +634,17 @@ export function SessionsSidebar({
                     minW="180px"
                     positioning={{ placement: "bottom-end" }}
                   >
-                    <MenuOption value="settings" icon={<LuSettings size={14} />} onClick={() => onOpenProjectSettings(project.id)}>
-                      {translation("projectSettings")}
+                    <MenuOption value="settings" icon={<LuSettings size={14} />} onClick={() => onOpenWorkspaceSettings(workspace.id)}>
+                      {translation("workspaceSettings")}
                     </MenuOption>
                     <Menu.Item
-                      value="delete-project"
+                      value="delete-workspace"
                       color="red.fg"
-                      disabled={projects.length <= 1}
-                      onClick={() => setPendingProjectDelete(project)}
+                      disabled={workspaces.length <= 1}
+                      onClick={() => setPendingWorkspaceDelete(workspace)}
                     >
                       <LuTrash2 size={14} />
-                      <Box flex={1}>{translation("deleteProject")}</Box>
+                      <Box flex={1}>{translation("deleteWorkspace")}</Box>
                     </Menu.Item>
                   </DropdownMenu>
                 </Box>
@@ -652,7 +652,7 @@ export function SessionsSidebar({
 
               return (
                 <Box
-                  key={project.id}
+                  key={workspace.id}
                   className="sidebar-row"
                   borderRadius={ROW_RADIUS}
                   px={2}
@@ -660,29 +660,29 @@ export function SessionsSidebar({
                 >
                   <DisclosureRow
                     fill
-                    open={projectOpen}
+                    open={workspaceOpen}
                     onOpenChange={(nextOpen) => {
-                      setProjectOpenOverrides((current) => ({ ...current, [projectOpenKey]: nextOpen }));
-                      if (nextOpen) onSwitchProject(project.id);
+                      setWorkspaceOpenOverrides((current) => ({ ...current, [workspaceOpenKey]: nextOpen }));
+                      if (nextOpen) onSwitchWorkspace(workspace.id);
                     }}
-                    onActivate={() => onSwitchProject(project.id)}
+                    onActivate={() => onSwitchWorkspace(workspace.id)}
                     icon={<Box color="fg.muted"><LuFolderOpen /></Box>}
                     title={
                       <Tooltip content={tooltipContent} rich={Boolean(address)} openDelay={350} positioning={{ placement: "right" }}>
                         <Box minW={0}><DisclosureLabel>{label}</DisclosureLabel></Box>
                       </Tooltip>
                     }
-                    actions={projectActions}
+                    actions={workspaceActions}
                   >
-                    {projectSessions.length > 0 ? (
-                      // The project row pads itself by 2 so its own highlight clears the label,
+                    {workspaceSessions.length > 0 ? (
+                      // The workspace row pads itself by 2 so its own highlight clears the label,
                       // but that padding also inset this list — which then adds its own 2 on
                       // each row. The result was a conversation's ⋯ sitting 8px inside the
-                      // project's ⋯, reading as two columns that nearly line up. Give the
+                      // workspace's ⋯, reading as two columns that nearly line up. Give the
                       // right-hand padding back to the nested rows so the trailing controls
                       // share one edge; the left inset is the disclosure rail and stays.
                       <VStack gap={1} align="stretch" mr={-2}>
-                        {buildSessionTree(projectSessions).map((node) => (
+                        {buildSessionTree(workspaceSessions).map((node) => (
                           <SessionTreeRow
                             key={node.entry.sessionId}
                             node={node}
@@ -715,28 +715,28 @@ export function SessionsSidebar({
         {translation("deleteBody", { title: pendingDelete?.title || translation("untitledConversation") })}
       </ConfirmDialog>
 
-      {newProjectOpen ? (
-        <NewProjectDialog
+      {newWorkspaceOpen ? (
+        <NewWorkspaceDialog
           open
           hosts={sshHosts}
           hostsLoaded={sshHostsLoaded}
-          onOpenChange={setNewProjectOpen}
-          onCreated={(project) => {
-            setProjects((current) => [project, ...current.filter((entry) => entry.id !== project.id)]);
-            onSwitchProject(project.id);
+          onOpenChange={setNewWorkspaceOpen}
+          onCreated={(workspace) => {
+            setWorkspaces((current) => [workspace, ...current.filter((entry) => entry.id !== workspace.id)]);
+            onSwitchWorkspace(workspace.id);
           }}
         />
       ) : null}
 
       <ConfirmDialog
-        open={pendingProjectDelete !== null}
-        onOpenChange={(open) => { if (!open) setPendingProjectDelete(null); }}
-        title={translation("deleteProjectTitle")}
-        confirmLabel={translation("deleteProjectConfirm")}
+        open={pendingWorkspaceDelete !== null}
+        onOpenChange={(open) => { if (!open) setPendingWorkspaceDelete(null); }}
+        title={translation("deleteWorkspaceTitle")}
+        confirmLabel={translation("deleteWorkspaceConfirm")}
         danger
-        onConfirm={() => void confirmProjectDelete()}
+        onConfirm={() => void confirmWorkspaceDelete()}
       >
-        {translation("deleteProjectBody", { project: pendingProjectDelete ? projectLabel(pendingProjectDelete) : "" })}
+        {translation("deleteWorkspaceBody", { workspace: pendingWorkspaceDelete ? workspaceLabel(pendingWorkspaceDelete) : "" })}
       </ConfirmDialog>
     </PanelCard>
   );

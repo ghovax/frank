@@ -24,7 +24,7 @@ import logging
 from typing import Any
 
 from frank.base.sqlite_lock import sqlite_write_lock
-from frank.workspace.database import SessionRecord as SessionRow
+from frank.hub.database import SessionRecord as SessionRow
 from frank.daemon.registry import LIVE, SessionRecord
 
 logger = logging.getLogger(__name__)
@@ -64,7 +64,7 @@ class SqliteSessionStore:
                     runtime_working_directory=row.runtime_working_directory or "",
                     permission_mode=row.permission_mode or "default",
                     sandbox=_decode_sandbox(row.sandbox or ""),
-                    project_id=row.project_id or "",
+                    workspace_id=row.workspace_id or "",
                     parent=row.parent or "",
                     title=row.title or "",
                     created_at=row.created_at or "",
@@ -97,7 +97,7 @@ class SqliteSessionStore:
                     database_session.add(row)
                 row.agent = record.agent
                 row.parent = record.parent
-                row.project_id = record.project_id
+                row.workspace_id = record.workspace_id
                 row.working_directory = record.working_directory
                 row.runtime_working_directory = record.runtime_working_directory
                 row.permission_mode = record.permission_mode

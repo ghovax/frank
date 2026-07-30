@@ -7,7 +7,7 @@ import { LuBadgeCheck, LuBox, LuCircleSlash, LuEye, LuGitBranch, LuGitFork, LuGl
 import type { PermissionMode } from "@/lib/api";
 import { Tooltip } from "./ui/tooltip";
 
-export type WorkspaceStrategyValue = "none" | "branch" | "worktree";
+export type WorktreeStrategyValue = "none" | "branch" | "worktree";
 
 // One house control size (xs / 32px, owned by the theme recipe). `layout` only decides
 // whether the control hugs its content (a chip) or fills its field column.
@@ -58,12 +58,12 @@ function permissionAppearance(permissionMode: PermissionMode) {
   };
 }
 
-function workspaceAppearance(workspaceStrategy: WorkspaceStrategyValue) {
+function worktreeAppearance(worktreeStrategy: WorktreeStrategyValue) {
   return {
     none: { icon: <LuHardDrive size={13} />, color: "fg.subtle", background: "bg", borderColor: "border", colorPalette: undefined },
     branch: { icon: <LuGitBranch size={13} />, color: "purple.fg", background: "purple.subtle", borderColor: "purple.muted", colorPalette: "purple" },
     worktree: { icon: <LuGitFork size={13} />, color: "teal.fg", background: "teal.subtle", borderColor: "teal.muted", colorPalette: "teal" },
-  }[workspaceStrategy];
+  }[worktreeStrategy];
 }
 
 // The permission mode is fixed when a session is created and never changes over its
@@ -339,40 +339,40 @@ export function ComputerControlToggleControl({
   return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
 }
 
-export function WorkspaceStrategyControl({
+export function WorktreeStrategyControl({
   value,
   onChange,
   layout = "chip",
   disabled = false,
-  gitWorkspaceAvailable = true,
+  gitWorktreeAvailable = true,
   title,
 }: {
-  value: WorkspaceStrategyValue;
-  onChange: (strategy: WorkspaceStrategyValue) => void | Promise<void>;
+  value: WorktreeStrategyValue;
+  onChange: (strategy: WorktreeStrategyValue) => void | Promise<void>;
   size?: "xs" | "sm";
   layout?: "chip" | "field";
   disabled?: boolean;
-  gitWorkspaceAvailable?: boolean;
+  gitWorktreeAvailable?: boolean;
   title?: string;
 }) {
   const translation = useTranslations("SessionControls");
-  const workspaceChoices: { value: WorkspaceStrategyValue; label: string; description: string; title: string; icon: ReactNode; colorPalette?: "purple" | "teal" }[] = [
-    { value: "none", label: translation("workspaceNoneLabel"), description: translation("workspaceNoneDescription"), title: translation("workspaceNoneTitle"), icon: <LuHardDrive size={13} /> },
-    { value: "branch", label: translation("workspaceBranchLabel"), description: translation("workspaceBranchDescription"), title: translation("workspaceBranchTitle"), icon: <LuGitBranch size={13} />, colorPalette: "purple" },
-    { value: "worktree", label: translation("workspaceWorktreeLabel"), description: translation("workspaceWorktreeDescription"), title: translation("workspaceWorktreeTitle"), icon: <LuGitFork size={13} />, colorPalette: "teal" },
+  const worktreeChoices: { value: WorktreeStrategyValue; label: string; description: string; title: string; icon: ReactNode; colorPalette?: "purple" | "teal" }[] = [
+    { value: "none", label: translation("worktreeNoneLabel"), description: translation("worktreeNoneDescription"), title: translation("worktreeNoneTitle"), icon: <LuHardDrive size={13} /> },
+    { value: "branch", label: translation("worktreeBranchLabel"), description: translation("worktreeBranchDescription"), title: translation("worktreeBranchTitle"), icon: <LuGitBranch size={13} />, colorPalette: "purple" },
+    { value: "worktree", label: translation("worktreeCopyLabel"), description: translation("worktreeCopyDescription"), title: translation("worktreeCopyTitle"), icon: <LuGitFork size={13} />, colorPalette: "teal" },
   ];
-  const workspaceItems = workspaceChoices.map(({ value: itemValue, label }) => ({ value: itemValue, label }));
+  const worktreeItems = worktreeChoices.map(({ value: itemValue, label }) => ({ value: itemValue, label }));
   const metrics = controlMetrics(layout);
-  const collection = createListCollection({ items: workspaceItems });
-  const selectedAppearance = workspaceAppearance(value);
-  const selectedChoice = workspaceChoices.find((choice) => choice.value === value);
+  const collection = createListCollection({ items: worktreeItems });
+  const selectedAppearance = worktreeAppearance(value);
+  const selectedChoice = worktreeChoices.find((choice) => choice.value === value);
 
   return (
     <Select.Root
       collection={collection}
       value={[value]}
       onValueChange={(details) => {
-        const nextStrategy = details.value[0] as WorkspaceStrategyValue | undefined;
+        const nextStrategy = details.value[0] as WorktreeStrategyValue | undefined;
         if (nextStrategy) void onChange(nextStrategy);
       }}
       size="xs"
@@ -399,7 +399,7 @@ export function WorkspaceStrategyControl({
           whiteSpace="nowrap"
           fontWeight="medium"
           disabled={disabled}
-          title={title ?? selectedChoice?.title ?? translation("workspaceStrategyFallbackTitle")}
+          title={title ?? selectedChoice?.title ?? translation("worktreeStrategyFallbackTitle")}
           lineHeight="1"
         >
           <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color={selectedAppearance.color} flexShrink={0}>
@@ -415,8 +415,8 @@ export function WorkspaceStrategyControl({
         <Select.Positioner>
           <Select.Content minW="max-content" w="max-content">
             {collection.items.map((item) => {
-              const gitModeUnavailable = item.value !== "none" && !gitWorkspaceAvailable;
-              const choice = workspaceChoices.find((candidate) => candidate.value === item.value);
+              const gitModeUnavailable = item.value !== "none" && !gitWorktreeAvailable;
+              const choice = worktreeChoices.find((candidate) => candidate.value === item.value);
               return (
                 <Select.Item item={item} key={item.value} aria-disabled={gitModeUnavailable || undefined} data-disabled={gitModeUnavailable ? "" : undefined} opacity={gitModeUnavailable ? 0.4 : undefined} pointerEvents={gitModeUnavailable ? "none" : undefined}>
                   <Flex align="center" gap={metrics.gap} minW={0}>

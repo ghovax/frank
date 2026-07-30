@@ -8,7 +8,7 @@ learns what a session is doing the same way it learns everything else about it.
 
 from __future__ import annotations
 
-from frank.workspace import state
+from frank.hub import state
 
 
 def _notify_filesystem_lease_state() -> None:

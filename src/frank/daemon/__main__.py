@@ -305,7 +305,7 @@ async def _serve() -> int:
     from frank.base.background_store import reap_orphaned_process_groups
     from frank.base.configuration import Configuration
     from frank.daemon import state
-    from frank.workspace import state as workspace_state
+    from frank.hub import state as hub_state
     from frank.daemon.composition import close_shared_resources, open_shared_resources
     from frank.daemon.lifecycle import SessionLifecycle
     from frank.daemon.peer_identity import unix_peer_protocol
@@ -317,7 +317,7 @@ async def _serve() -> int:
         return await _defer_to_running_daemon()
     _reclaim_socket()
 
-    workspace_state.global_configuration = Configuration.load()
+    hub_state.global_configuration = Configuration.load()
     # Ask once, at boot, whether this machine can enforce a profile — and on macOS ask by running
     # one, because `sandbox-exec` being on disk and Apple still honouring it are different
     # questions, and the interface is deprecated. Sessions refuse individually when they must; this
@@ -332,7 +332,7 @@ async def _serve() -> int:
         )
     state.daemon_token = secrets.token_urlsafe(32)
     state.daemon_socket = str(daemon_socket_path())
-    workspace_state.daemon_port = _free_port()
+    hub_state.daemon_port = _free_port()
 
     await _open_stores()
 
@@ -346,9 +346,9 @@ async def _serve() -> int:
 
     # The registry is durable now: a daemon restart ends every session's *process*, not every
     # session. Live records come back asleep, and the first message to one forks it a worker.
-    workspace_state.session_store = SqliteSessionStore(workspace_state.session_factory)
-    state.registry = SessionRegistry(store=workspace_state.session_store)
-    restored = await asyncio.to_thread(workspace_state.session_store.load_all)
+    hub_state.session_store = SqliteSessionStore(hub_state.session_factory)
+    state.registry = SessionRegistry(store=hub_state.session_store)
+    restored = await asyncio.to_thread(hub_state.session_store.load_all)
     state.registry.restore(restored)
     live = [record for record in restored if record.is_live]
     if live:
@@ -371,8 +371,8 @@ async def _serve() -> int:
     # goes on working.
     from frank.daemon.pending_input import settle_and_reap
 
-    workspace_state.on_session_deleted = settle_and_reap
-    workspace_state.reset_live_session_runtimes = state.reset_live_session_runtimes
+    hub_state.on_session_deleted = settle_and_reap
+    hub_state.reset_live_session_runtimes = state.reset_live_session_runtimes
 
     # Best effort: a machine that cannot start the prototype still serves the browser surface
     # and every read, and says so in `daemon.status`, rather than refusing to boot.
@@ -403,7 +403,7 @@ async def _serve() -> int:
     )
     tcp_server = announcing(
         uvicorn.Config(
-            app, host=LOOPBACK_HOST, port=workspace_state.daemon_port,
+            app, host=LOOPBACK_HOST, port=hub_state.daemon_port,
             log_level="warning", access_log=False, log_config=None,
         )
     )
@@ -451,14 +451,14 @@ async def _serve() -> int:
         both_ready.cancel()
         await serving
         return 1
-    _write_handshake(state.daemon_token, workspace_state.daemon_port)
+    _write_handshake(state.daemon_token, hub_state.daemon_port)
     # One line on stdout, then close it: whoever started the daemon is waiting to read exactly
     # this, and leaving the pipe open would let later output block on a reader that has gone.
     with contextlib.suppress(OSError, ValueError):
-        sys.stdout.write(json.dumps({"ready": True, "pid": os.getpid(), "port": workspace_state.daemon_port}) + "\n")
+        sys.stdout.write(json.dumps({"ready": True, "pid": os.getpid(), "port": hub_state.daemon_port}) + "\n")
         sys.stdout.flush()
         sys.stdout.close()
-    logger.info("frankd listening on %s and %s:%d", state.daemon_socket, LOOPBACK_HOST, workspace_state.daemon_port)
+    logger.info("frankd listening on %s and %s:%d", state.daemon_socket, LOOPBACK_HOST, hub_state.daemon_port)
 
     try:
         await serving
@@ -484,8 +484,8 @@ async def _open_stores() -> None:
 
     from frank.base.paths import database_file_path
     from frank.base.sqlite_lock import configure_sqlite_lock, sqlite_write_lock
-    from frank.workspace import state as workspace_state
-    from frank.workspace.database import _apply_history_schema
+    from frank.hub import state as hub_state
+    from frank.hub.database import _apply_history_schema
     from frank.daemon.persistence.turn_store import AppendOnlyTaskStore
 
     database_path = database_file_path()
@@ -505,10 +505,10 @@ async def _open_stores() -> None:
             _apply_history_schema(sync_engine)
 
     await asyncio.to_thread(_initialize)
-    workspace_state.session_factory = sessionmaker(bind=sync_engine)
-    workspace_state.async_engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}", connect_args={"timeout": 30})
+    hub_state.session_factory = sessionmaker(bind=sync_engine)
+    hub_state.async_engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}", connect_args={"timeout": 30})
 
-    @event.listens_for(workspace_state.async_engine.sync_engine, "connect")
+    @event.listens_for(hub_state.async_engine.sync_engine, "connect")
     def _async_pragmas(dbapi_connection, _record):  # noqa: ANN001
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
@@ -516,11 +516,11 @@ async def _open_stores() -> None:
         cursor.execute("PRAGMA busy_timeout=30000")
         cursor.close()
 
-    workspace_state.turn_store = AppendOnlyTaskStore(workspace_state.async_engine)
-    await workspace_state.turn_store.initialize()
+    hub_state.turn_store = AppendOnlyTaskStore(hub_state.async_engine)
+    await hub_state.turn_store.initialize()
     # A turn that was mid-execution when the daemon last stopped cannot be resurrected — its
     # worker is gone — so it is marked interrupted rather than left claiming to be running.
-    interrupted = await workspace_state.turn_store.reconcile_orphaned_turns()
+    interrupted = await hub_state.turn_store.reconcile_orphaned_turns()
     if interrupted:
         logger.warning("Marked %d interrupted turn(s) from a previous run.", len(interrupted))
 

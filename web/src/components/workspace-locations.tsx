@@ -5,7 +5,7 @@ import { swallowed } from "@/lib/swallowed";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
-  createLocation, deleteLocation, getProject, listSshHosts, updateLocation,
+  createLocation, deleteLocation, getWorkspace, listSshHosts, updateLocation,
   type Location, type LocationInput, type SshHost, subscribeEvents,
 } from "@/lib/api";
 import { LocationEditorList, emptyLocation, locationConflict } from "./location-form";
@@ -26,54 +26,54 @@ function draftsFrom(locations: Location[]): LocationDraft[] {
   return locations.map((location) => ({ id: location.id, value: locationToInput(location) }));
 }
 
-// The project-folder manager inside Settings. Each folder is an inline editable form stacked
+// The workspace-folder manager inside Settings. Each folder is an inline editable form stacked
 // above the next, with an "Add folder" button below — no list-then-edit view. Edits are
 // batched and persisted on Save (create new, update changed, delete removed).
-export function ProjectLocationsPanel({ projectId }: { projectId: string }) {
-  const translation = useTranslations("ProjectLocationsPanel");
+export function WorkspaceLocationsPanel({ workspaceId }: { workspaceId: string }) {
+  const translation = useTranslations("WorkspaceLocationsPanel");
   const [hosts, setHosts] = useState<SshHost[]>([]);
   const [original, setOriginal] = useState<Location[]>([]);
   const [drafts, setDrafts] = useState<LocationDraft[]>([]);
   const [saving, setSaving] = useState(false);
-  const [loadedProjectId, setLoadedProjectId] = useState("");
-  const [failedProjectId, setFailedProjectId] = useState("");
+  const [loadedWorkspaceId, setLoadedWorkspaceId] = useState("");
+  const [failedWorkspaceId, setFailedWorkspaceId] = useState("");
 
-  const loadProject = useCallback(async () => {
-    const project = await getProject(projectId);
-    const locations = project?.locations ?? [];
+  const loadWorkspace = useCallback(async () => {
+    const workspace = await getWorkspace(workspaceId);
+    const locations = workspace?.locations ?? [];
     setOriginal(locations);
     setDrafts(draftsFrom(locations));
-  }, [projectId]);
+  }, [workspaceId]);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([getProject(projectId), listSshHosts()])
-      .then(([project, nextHosts]) => {
+    Promise.all([getWorkspace(workspaceId), listSshHosts()])
+      .then(([workspace, nextHosts]) => {
         if (cancelled) return;
-        const locations = project?.locations ?? [];
+        const locations = workspace?.locations ?? [];
         setOriginal(locations);
         setDrafts(draftsFrom(locations));
         setHosts(nextHosts);
-        setFailedProjectId("");
-        setLoadedProjectId(projectId);
+        setFailedWorkspaceId("");
+        setLoadedWorkspaceId(workspaceId);
       })
       .catch(() => {
         if (cancelled) return;
-        setFailedProjectId(projectId);
-        setLoadedProjectId(projectId);
+        setFailedWorkspaceId(workspaceId);
+        setLoadedWorkspaceId(workspaceId);
       });
     // Only re-read hosts live — never clobber in-progress location edits from a
-    // projects_changed event (a save reloads explicitly).
+    // workspaces_changed event (a save reloads explicitly).
     const unsubscribe = subscribeEvents((event) => {
       if (event.type === "hosts_changed") {
-        listSshHosts().then((nextHosts) => { if (!cancelled) setHosts(nextHosts); }).catch((caught) => swallowed("project locations: a background load failed", caught));
+        listSshHosts().then((nextHosts) => { if (!cancelled) setHosts(nextHosts); }).catch((caught) => swallowed("workspace locations: a background load failed", caught));
       }
     });
     return () => {
       cancelled = true;
       unsubscribe();
     };
-  }, [projectId]);
+  }, [workspaceId]);
 
   const updateDraft = (index: number, value: LocationInput) =>
     setDrafts((current) => current.map((draft, position) => (position === index ? { ...draft, value } : draft)));
@@ -95,7 +95,7 @@ export function ProjectLocationsPanel({ projectId }: { projectId: string }) {
       }
       for (const draft of drafts) {
         if (draft.id === null) {
-          await createLocation(projectId, draft.value);
+          await createLocation(workspaceId, draft.value);
         } else {
           const before = original.find((location) => location.id === draft.id);
           if (before && JSON.stringify(locationToInput(before)) !== JSON.stringify(draft.value)) {
@@ -103,7 +103,7 @@ export function ProjectLocationsPanel({ projectId }: { projectId: string }) {
           }
         }
       }
-      await loadProject();
+      await loadWorkspace();
     } catch (error) {
       toaster.create({ type: "error", title: translation("saveError"), description: error instanceof Error ? error.message : "", closable: true });
     } finally {
@@ -113,7 +113,7 @@ export function ProjectLocationsPanel({ projectId }: { projectId: string }) {
 
   return (
     <Flex direction="column" gap={3} w="100%">
-      {failedProjectId === projectId ? (
+      {failedWorkspaceId === workspaceId ? (
         <Text fontSize="sm" color="red.fg">{translation("loadError")}</Text>
       ) : (
         <>
@@ -124,9 +124,9 @@ export function ProjectLocationsPanel({ projectId }: { projectId: string }) {
             onAdd={addDraft}
             onRemove={removeDraft}
             showPermission
-            loading={loadedProjectId !== projectId}
+            loading={loadedWorkspaceId !== workspaceId}
           />
-          {loadedProjectId === projectId ? (
+          {loadedWorkspaceId === workspaceId ? (
       <Flex justify="flex-end" mt={1}>
               <Button colorPalette="blue" disabled={!canSave || saving} loading={saving} onClick={handleSave}>
                 {translation("saveChanges")}

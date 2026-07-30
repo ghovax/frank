@@ -582,13 +582,13 @@ def temporary_directory(profile: Optional[Profile], *, workspace: str = "") -> s
         resolved = expand(entry, workspace=workspace)
         return resolved if resolved and os.path.isdir(resolved) and os.access(resolved, os.W_OK) else ""
 
-    workspace_root = os.path.realpath(workspace) if workspace else ""
+    worktree_root = os.path.realpath(workspace) if workspace else ""
 
     def inside_workspace(path: str) -> bool:
-        if not workspace_root:
+        if not worktree_root:
             return False
         real = os.path.realpath(path)
-        return real == workspace_root or real.startswith(workspace_root + os.sep)
+        return real == worktree_root or real.startswith(worktree_root + os.sep)
 
     candidates = [usable(entry) for entry in profile.filesystem.writable]
     outside = [path for path in candidates if path and not inside_workspace(path)]

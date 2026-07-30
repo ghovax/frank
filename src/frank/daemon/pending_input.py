@@ -44,13 +44,13 @@ async def settle_and_reap(session_id: str) -> None:
     are removed by the caller either way — a session whose process cannot be reached is still
     a session the user asked to delete.
     """
-    from frank.workspace import state as workspace_state
+    from frank.hub import state as hub_state
 
     await _abort_pending_input(session_id)
     state._awaiting_input_contexts.discard(session_id)
     if state.lifecycle is not None:
         await state.lifecycle.reap(session_id, reason="session deleted")
-    workspace_state.broadcaster.publish({"type": "sessions_changed"})
+    hub_state.broadcaster.publish({"type": "sessions_changed"})
 
 
 __all__ = ["settle_and_reap"]

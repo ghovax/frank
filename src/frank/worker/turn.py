@@ -105,7 +105,7 @@ class _Ingested:
     peer_sender: str
     permission_mode: str
     requested_working_directory: str
-    requested_workspace_strategy: str
+    requested_worktree_strategy: str
     structured_payloads: list
 
 
@@ -289,7 +289,7 @@ class _TurnRunner:
             self._structured_payloads.append({PART_KIND: "attachments", "attachments": ingested_attachments})
         self._metadata = turn_metadata(message)
         self._requested_working_directory = str(self._metadata.get(Metadata.WORKING_DIRECTORY, ""))
-        self._requested_workspace_strategy = str(self._metadata.get(Metadata.WORKSPACE_STRATEGY, ""))
+        self._requested_worktree_strategy = str(self._metadata.get(Metadata.WORKSPACE_STRATEGY, ""))
         self._permission_mode = str(self._metadata.get(Metadata.PERMISSION_MODE, ""))
         self._autonomous = bool(self._metadata.get(Metadata.AUTONOMOUS_RESUME))
         self._compaction = bool(self._metadata.get(Metadata.COMPACTION))
@@ -305,7 +305,7 @@ class _TurnRunner:
             peer_sender=self._peer_sender,
             permission_mode=self._permission_mode,
             requested_working_directory=self._requested_working_directory,
-            requested_workspace_strategy=self._requested_workspace_strategy,
+            requested_worktree_strategy=self._requested_worktree_strategy,
             structured_payloads=self._structured_payloads,
         )
 

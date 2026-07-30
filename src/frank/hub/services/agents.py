@@ -23,8 +23,8 @@ from pathlib import Path
 from typing import Any
 import frank.base.configuration as _configuration
 import json
-from frank.workspace import state
-from frank.workspace.database import ModelHistoryRecord
+from frank.hub import state
+from frank.hub.database import ModelHistoryRecord
 
 
 def _catalogue_base_url() -> str:

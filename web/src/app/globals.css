@@ -234,15 +234,15 @@ samp {
   transition: transform var(--marquee-duration, 0s) linear;
 }
 
-/* A project row *contains* its session rows, and the rules above are descendant selectors —
-   so hovering one conversation matched every title inside that project and faded all of them
+/* A workspace row *contains* its session rows, and the rules above are descendant selectors —
+   so hovering one conversation matched every title inside that workspace and faded all of them
    at once, which read as the whole list reacting to one row. These put the nested rows back:
    a row inside a hovered row that is not itself hovered is not the row being pointed at.
 
    A row that is not being pointed at must go back to how it looks at rest — which for an
    overflowing title is the idle right-edge fade, not no mask at all. Removing the mask
    outright meant that pointing anywhere in the sidebar stripped the fade from every other
-   title at once (a project row contains them all), so the list appeared to lose its fades
+   title at once (a workspace row contains them all), so the list appeared to lose its fades
    the moment the cursor entered it and regain them one row at a time on hover. */
 .sidebar-row:hover .sidebar-row:not(:hover):not(:focus-within) .sidebar-title[data-overflow="true"],
 .sidebar-row:focus-within .sidebar-row:not(:hover):not(:focus-within) .sidebar-title[data-overflow="true"] {

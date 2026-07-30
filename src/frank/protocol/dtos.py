@@ -102,7 +102,7 @@ class SettingsUpdateRequest(BaseModel):
     provider_keys: dict[str, str] | None = None
     # Base URLs for the OpenAI-compatible providers (opencode, custom).
     provider_base_urls: dict[str, str] | None = None
-    workspace_strategy: Literal["none", "branch", "worktree"] | None = None
+    worktree_strategy: Literal["none", "branch", "worktree"] | None = None
 
 
 class SandboxUpdateRequest(BaseModel):
@@ -150,7 +150,7 @@ class LocationInput(BaseModel):
     permission_mode: str = "default"
 
 
-class ProjectCreateRequest(BaseModel):
+class WorkspaceCreateRequest(BaseModel):
     locations: list[LocationInput] = Field(min_length=1)
 
 

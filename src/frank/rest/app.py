@@ -20,7 +20,7 @@ from fastapi import FastAPI
 # `from .routes import settings` would shadow it.
 ROUTE_MODULES = (
     "agents", "filesystem", "mcp",
-    "projects", "remote_agents", "sessions", "settings", "terminals", "uploads",
+    "workspaces", "schedules", "remote_agents", "sessions", "settings", "terminals", "uploads",
 )
 
 

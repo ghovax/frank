@@ -7,8 +7,8 @@ from frank.protocol.dtos import (
     MCPResourceReadRequest,
     MCPToolCallRequest,
 )
-from frank.workspace import state
-from frank.workspace.brokers.mcp_servers import _ensure_mcp_servers_for
+from frank.hub import state
+from frank.hub.brokers.mcp_servers import _ensure_mcp_servers_for
 
 router = APIRouter()
 

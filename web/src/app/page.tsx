@@ -9,7 +9,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Point
 // animate its open/close (opacity + slide) without losing its flex-layout props.
 const MotionFlex = motion.create(Flex);
 import { useRouter, useSearchParams } from "next/navigation";
-import { deleteSession, fetchAccessibility, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchSessionDraft, fetchSessions, fetchSettings, getProject, listProjects, saveAgentConfiguration, saveSettings, setSandboxEnforce, subscribeEvents, updateComputerControlSetting, type AgentCard, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
+import { deleteSession, fetchAccessibility, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchSessionDraft, fetchSessions, fetchSettings, getWorkspace, listWorkspaces, saveAgentConfiguration, saveSettings, setSandboxEnforce, subscribeEvents, updateComputerControlSetting, type AgentCard, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
 import { useTray } from "@/lib/use-tray";
 import { playAttentionSound, playTurnEndSound, primeSounds } from "@/lib/sounds";
@@ -18,15 +18,15 @@ import { swallowed } from "@/lib/swallowed";
 // SessionEntry and the sessions-sidebar UI live in the SessionsSidebar component (the
 // chat history is its own unit); this page owns the data + the notification tracking.
 
-// The last project the user was in, remembered so a fresh launch reopens it (there is no
+// The last workspace the user was in, remembered so a fresh launch reopens it (there is no
 // landing page to pick from). Best-effort localStorage — a cleared/absent value just falls
-// back to the first available project.
-const LAST_PROJECT_KEY = "frank:lastProject";
-function readLastProject(): string | null {
-  try { return localStorage.getItem(LAST_PROJECT_KEY); } catch { return null; }
+// back to the first available workspace.
+const LAST_WORKSPACE_KEY = "frank:lastWorkspace";
+function readLastWorkspace(): string | null {
+  try { return localStorage.getItem(LAST_WORKSPACE_KEY); } catch { return null; }
 }
-function writeLastProject(projectId: string): void {
-  try { localStorage.setItem(LAST_PROJECT_KEY, projectId); } catch { /* ignore */ }
+function writeLastWorkspace(workspaceId: string): void {
+  try { localStorage.setItem(LAST_WORKSPACE_KEY, workspaceId); } catch { /* ignore */ }
 }
 
 
@@ -37,15 +37,15 @@ function isSessionBusy(session: SessionEntry): boolean {
   return session.activity === "working";
 }
 
-function ProjectWorkspace() {
+function Workspace() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // The app opens straight into a project workspace — there is no landing page. The project
-  // is addressed by `?project=` (deep-linkable, static-export friendly). When none is given
-  // (a fresh open), resolve one: the last project used, else the first available. The server
-  // always seeds at least one project, so there is always a target. Whenever a project is
+  // The app opens straight into a workspace workspace — there is no landing page. The workspace
+  // is addressed by `?workspace=` (deep-linkable, static-export friendly). When none is given
+  // (a fresh open), resolve one: the last workspace used, else the first available. The server
+  // always seeds at least one workspace, so there is always a target. Whenever a workspace is
   // active, its id is remembered so the next launch reopens it.
-  const projectId = searchParams.get("project") ?? "";
+  const workspaceId = searchParams.get("workspace") ?? "";
 
   // After the user grants Accessibility and the app relaunches, turn computer control on
   // automatically once. The grant flow set this flag before restarting; macOS only exposes
@@ -63,24 +63,24 @@ function ProjectWorkspace() {
   }, []);
 
   useEffect(() => {
-    if (projectId) {
-      writeLastProject(projectId);
+    if (workspaceId) {
+      writeLastWorkspace(workspaceId);
       return;
     }
     let cancelled = false;
-    listProjects()
-      .then((projects) => {
+    listWorkspaces()
+      .then((workspaces) => {
         if (cancelled) return;
-        const last = readLastProject();
-        const target = last && projects.some((project) => project.id === last) ? last : projects[0]?.id;
+        const last = readLastWorkspace();
+        const target = last && workspaces.some((workspace) => workspace.id === last) ? last : workspaces[0]?.id;
         if (!target) return;
         const params = new URLSearchParams(window.location.search);
-        params.set("project", target);
+        params.set("workspace", target);
         router.replace(`?${params.toString()}`, { scroll: false });
       })
       .catch((caught) => swallowed("page: a background load failed", caught));
     return () => { cancelled = true; };
-  }, [projectId, router]);
+  }, [workspaceId, router]);
 
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [agentCards, setAgentCards] = useState<AgentCard[]>([]);
@@ -103,7 +103,7 @@ function ProjectWorkspace() {
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
   }, [activeSessionId]);
-  // `?settings=<section>` (from the Projects home cog) opens the workspace with that
+  // `?settings=<section>` (from the Workspaces home cog) opens the workspace with that
   // Settings section already showing. The param is the source of truth (no extra state);
   // once ChatPanel has opened on it, the param is dropped so a later new chat / remount
   // doesn't reopen Settings.
@@ -114,13 +114,13 @@ function ProjectWorkspace() {
     params.delete("settings");
     router.replace(`?${params.toString()}`, { scroll: false });
   }, [settingsSectionParam, router]);
-  // The working directory is derived from the project's first local location (for the
+  // The working directory is derived from the workspace's first local location (for the
   // workspace/agent-resolution that still keys off a path).
   const [workingDirectory, setWorkingDirectory] = useState("");
-  const [homeProject, setHomeProject] = useState<{ path: string; name: string } | null>(null);
+  const [homeWorkspace, setHomeWorkspace] = useState<{ path: string; name: string } | null>(null);
   const [sandboxEnforceState, setSandboxEnforceState] = useState<SandboxEnforce>("required");
   const [sandboxBackend, setSandboxBackend] = useState({ backend: "", detail: "" });
-  const [workspaceStrategy, setWorkspaceStrategy] = useState<"none" | "branch" | "worktree">("none");
+  const [worktreeStrategy, setWorktreeStrategy] = useState<"none" | "branch" | "worktree">("none");
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelProviders, setModelProviders] = useState<ProviderOption[]>([]);
   const [recentModels, setRecentModels] = useState<{ id: string; name: string; provider: string }[]>([]);
@@ -178,18 +178,18 @@ function ProjectWorkspace() {
   const mapSessions = useCallback((serverSessions: Awaited<ReturnType<typeof fetchSessions>>): SessionEntry[] => {
     return serverSessions.map((session) => ({
       sessionId: session.id,
-      parentSessionId: session.parent ?? "",
-      projectId: session.project_id ?? "",
+      parentSessionId: session.parent,
+      workspaceId: session.workspace_id,
       agent: session.agent,
       title: session.title,
       createdAt: session.created_at,
-      workingDirectory: session.working_directory ?? "",
+      workingDirectory: session.working_directory,
       activity: (session.activity || "idle") as SessionActivity,
       ended: session.lifecycle === "ended",
       failed: session.outcome === "failed",
       awaitingInput: session.awaiting_input ?? false,
-      exitReason: session.exit_reason ?? "",
-      permissionMode: session.permission_mode ?? "default",
+      exitReason: session.exit_reason,
+      permissionMode: session.permission_mode,
     }));
   }, []);
 
@@ -276,10 +276,10 @@ function ProjectWorkspace() {
     const loadSettings = () => {
       fetchSettings()
         .then((settings) => {
-          setSelectedPermissionMode(settings.permission_mode ?? "default");
-          setSandboxEnforceState(settings.sandbox?.enforce ?? "required");
-          setSandboxBackend(settings.sandbox_backend ?? { backend: "", detail: "" });
-          setWorkspaceStrategy(settings.workspace_strategy ?? "none");
+          setSelectedPermissionMode(settings.permission_mode);
+          setSandboxEnforceState(settings.sandbox.enforce);
+          setSandboxBackend(settings.sandbox_backend);
+          setWorktreeStrategy(settings.worktree_strategy);
           setCompactionKeepRecentTurns(settings.compaction?.keep_recent_turns ?? 6);
         })
         .catch((caught) => swallowed("page: a background load failed", caught));
@@ -295,11 +295,11 @@ function ProjectWorkspace() {
     fetchRecentModels()
       .then(setRecentModels)
       .catch((caught) => swallowed("page: a background load failed", caught));
-    // Home is the default project for a brand-new chat; the restoration effect
+    // Home is the default workspace for a brand-new chat; the restoration effect
     // below applies it (or the active session's own folder) — we don't force it
     // here, or it would clobber a session opened directly via ?session=.
     fetchHomeDirectory()
-      .then(setHomeProject)
+      .then(setHomeWorkspace)
       .catch((caught) => swallowed("page: a background load failed", caught));
 
     // Live reload: refresh agents when they change on disk, and the session list
@@ -324,7 +324,7 @@ function ProjectWorkspace() {
 
   // Reload the agents and their cards whenever the selected folder changes (and
   // on first render): the available agents, skills and MCP servers are all
-  // path-scoped, so picking a different project must re-derive what's actually
+  // path-scoped, so picking a different workspace must re-derive what's actually
   // available there rather than showing the launch directory's capabilities.
   useEffect(() => {
     loadAgents();
@@ -343,16 +343,16 @@ function ProjectWorkspace() {
         const session = sessions.find((entry) => entry.sessionId === activeSessionId);
         if (session) {
           setRestoredContext(contextKey);
-          setWorkingDirectory(session.workingDirectory || homeProject?.path || "");
+          setWorkingDirectory(session.workingDirectory || homeWorkspace?.path || "");
           setSelectedPermissionMode(session.permissionMode);
         }
-    } else if (workingDirectory || homeProject) {
+    } else if (workingDirectory || homeWorkspace) {
       // A brand-new chat inherits the working directory the user was just in —
       // no jarring folder reset when starting a new conversation. Only fall back
       // to home if there's no directory yet (first load).
       setRestoredContext(contextKey);
       if (!workingDirectory) {
-        setWorkingDirectory(homeProject?.path || "");
+        setWorkingDirectory(homeWorkspace?.path || "");
       }
     }
   }
@@ -388,8 +388,8 @@ function ProjectWorkspace() {
 
   // Sidebar sort: "recent" (newest first, the load order) or "active" (sessions
   // needing attention or running float to the top, then newest). The sidebar groups
-  // these conversations under every project; the filtered subset remains useful to
-  // the native tray, which intentionally follows the current project.
+  // these conversations under every workspace; the filtered subset remains useful to
+  // the native tray, which intentionally follows the current workspace.
   const [sessionSort, setSessionSort] = useState<SessionSort>("recent");
   const sortedSessions = useMemo(() => {
     if (sessionSort !== "active") return sessions;
@@ -397,9 +397,9 @@ function ProjectWorkspace() {
       session.awaitingInput ? 0 : isSessionBusy(session) ? 1 : 2;
     return [...sessions].sort((left, right) => rank(left) - rank(right) || right.createdAt.localeCompare(left.createdAt));
   }, [sessions, sessionSort]);
-  const projectSessions = useMemo(
-    () => sortedSessions.filter((session) => session.projectId === projectId),
-    [sortedSessions, projectId],
+  const workspaceSessions = useMemo(
+    () => sortedSessions.filter((session) => session.workspaceId === workspaceId),
+    [sortedSessions, workspaceId],
   );
 
   const refreshSessions = useCallback(() => {
@@ -435,38 +435,38 @@ function ProjectWorkspace() {
     if (isCompactViewport()) setHistoryOpen(false);
   }
 
-  // Switch the active project from its sidebar row: remember it, start a fresh chat in
-  // it, and swap the `?project=` param (which re-derives the session list, agents, and working
-  // directory for that project). A no-op when it's already the current project.
-  function handleSwitchProject(nextProjectId: string) {
-    if (!nextProjectId || nextProjectId === projectId) return;
-    writeLastProject(nextProjectId);
+  // Switch the active workspace from its sidebar row: remember it, start a fresh chat in
+  // it, and swap the `?workspace=` param (which re-derives the session list, agents, and working
+  // directory for that workspace). A no-op when it's already the current workspace.
+  function handleSwitchWorkspace(nextWorkspaceId: string) {
+    if (!nextWorkspaceId || nextWorkspaceId === workspaceId) return;
+    writeLastWorkspace(nextWorkspaceId);
     setActiveSessionId(null);
     setChatKey((current) => current + 1);
     setWorkingDirectory("");
     setRestoredContext(null);
     const params = new URLSearchParams(window.location.search);
-    params.set("project", nextProjectId);
+    params.set("workspace", nextWorkspaceId);
     params.delete("session");
     router.replace(`?${params.toString()}`, { scroll: false });
     if (isCompactViewport()) setHistoryOpen(false);
   }
 
-  // Open a project's real Settings dialog from its sidebar menu. Keep the current chat intact
-  // when its own project is selected; only reset the workspace when settings belongs to a
-  // different project. The query-param signal is consumed by ChatPanel after navigation.
-  function openProjectSettings(nextProjectId: string, section: string = "locations") {
-    const switchingProjects = nextProjectId !== projectId;
-    writeLastProject(nextProjectId);
-    if (switchingProjects) {
+  // Open a workspace's real Settings dialog from its sidebar menu. Keep the current chat intact
+  // when its own workspace is selected; only reset the workspace when settings belongs to a
+  // different workspace. The query-param signal is consumed by ChatPanel after navigation.
+  function openWorkspaceSettings(nextWorkspaceId: string, section: string = "locations") {
+    const switchingWorkspaces = nextWorkspaceId !== workspaceId;
+    writeLastWorkspace(nextWorkspaceId);
+    if (switchingWorkspaces) {
       setActiveSessionId(null);
       setChatKey((current) => current + 1);
       setWorkingDirectory("");
       setRestoredContext(null);
     }
     const params = new URLSearchParams(window.location.search);
-    params.set("project", nextProjectId);
-    if (switchingProjects) params.delete("session");
+    params.set("workspace", nextWorkspaceId);
+    if (switchingWorkspaces) params.delete("session");
     params.set("settings", section);
     router.replace(`?${params.toString()}`, { scroll: false });
     if (isCompactViewport()) setHistoryOpen(false);
@@ -498,9 +498,9 @@ function ProjectWorkspace() {
     setActiveSessionId(entry.sessionId);
     setChatKey((current) => current + 1);
     const params = new URLSearchParams(window.location.search);
-    if (entry.projectId) {
-      writeLastProject(entry.projectId);
-      params.set("project", entry.projectId);
+    if (entry.workspaceId) {
+      writeLastWorkspace(entry.workspaceId);
+      params.set("workspace", entry.workspaceId);
       setWorkingDirectory("");
       setRestoredContext(null);
     }
@@ -513,11 +513,11 @@ function ProjectWorkspace() {
   // and recent-conversation entries drive the app (desktop only).
   const trayRecents = useMemo(
     () =>
-      projectSessions.slice(0, 10).map((entry) => ({
+      workspaceSessions.slice(0, 10).map((entry) => ({
         id: entry.sessionId,
         title: entry.title || "New conversation",
       })),
-    [projectSessions]
+    [workspaceSessions]
   );
   useTray({
     recents: trayRecents,
@@ -581,22 +581,22 @@ function ProjectWorkspace() {
     }
   }
 
-  async function handleWorkspaceStrategyChange(strategy: "none" | "branch" | "worktree") {
+  async function handleWorktreeStrategyChange(strategy: "none" | "branch" | "worktree") {
     if (activeSessionId) return;
-    const previous = workspaceStrategy;
-    setWorkspaceStrategy(strategy);
+    const previous = worktreeStrategy;
+    setWorktreeStrategy(strategy);
     try {
       const settings = await fetchSettings();
       await saveSettings({
-        exa_api_key: settings.exa_api_key ?? "",
-        composio_api_key: settings.composio_api_key ?? "",
+        exa_api_key: settings.exa_api_key,
+        composio_api_key: settings.composio_api_key,
         provider_keys: {},
         provider_base_urls: {},
-        workspace_strategy: strategy,
+        worktree_strategy: strategy,
       });
     } catch (caught) {
       swallowed("could not change the workspace strategy", caught);
-      setWorkspaceStrategy(previous);
+      setWorktreeStrategy(previous);
     }
   }
 
@@ -634,24 +634,24 @@ function ProjectWorkspace() {
     window.addEventListener("pointerup", handlePointerUp, { once: true });
   }, [historyWidth]);
 
-  // Derive the working directory from the project's first local location (the
-  // workspace/agent-resolution still keys off a path). A deep-link to a project that
-  // no longer exists bounces back to the Projects home rather than rendering an empty
+  // Derive the working directory from the workspace's first local location (the
+  // workspace/agent-resolution still keys off a path). A deep-link to a workspace that
+  // no longer exists bounces back to the Workspaces home rather than rendering an empty
   // workspace. A thrown request (e.g. mid connection-switch) is left alone.
   useEffect(() => {
-    if (!projectId) return;
+    if (!workspaceId) return;
     let cancelled = false;
-    getProject(projectId).then((project) => {
+    getWorkspace(workspaceId).then((workspace) => {
       if (cancelled) return;
-      if (!project) {
+      if (!workspace) {
         router.replace("/");
         return;
       }
-      const local = (project.locations ?? []).find((location) => location.kind === "local");
-      setWorkingDirectory(local?.base_directory || homeProject?.path || "");
+      const local = (workspace.locations ?? []).find((location) => location.kind === "local");
+      setWorkingDirectory(local?.base_directory || homeWorkspace?.path || "");
     }).catch((caught) => swallowed("page: a background load failed", caught));
     return () => { cancelled = true; };
-  }, [projectId, homeProject, router]);
+  }, [workspaceId, homeWorkspace, router]);
 
   return (
     // Floating-panel shell: the chat is the base surface — plain white (bg) that fills the
@@ -709,9 +709,9 @@ function ProjectWorkspace() {
             sessionSort={sessionSort}
             onSessionSortChange={setSessionSort}
             unseenCompletions={unseenCompletions}
-            currentProjectId={projectId}
-            onSwitchProject={handleSwitchProject}
-            onOpenProjectSettings={openProjectSettings}
+            currentWorkspaceId={workspaceId}
+            onSwitchWorkspace={handleSwitchWorkspace}
+            onOpenWorkspaceSettings={openWorkspaceSettings}
             onNewChat={handleNewChat}
             onResume={(entry) => void handleResumeSession(entry)}
             onDeleteSession={(entry) => void handleDeleteSession(entry.sessionId)}
@@ -748,13 +748,13 @@ function ProjectWorkspace() {
           onSessionCreated={handleSessionCreated}
           onSlashCommand={handleSlashCommand}
           workingDirectory={workingDirectory}
-          projectId={projectId}
-          homeDirectory={homeProject?.path ?? ""}
+          workspaceId={workspaceId}
+          homeDirectory={homeWorkspace?.path ?? ""}
           sandboxEnforce={sandboxEnforceState}
           sandboxBackend={sandboxBackend}
           onSandboxEnforceChange={handleSandboxEnforceChange}
-          workspaceStrategy={workspaceStrategy}
-          onWorkspaceStrategyChange={handleWorkspaceStrategyChange}
+          worktreeStrategy={worktreeStrategy}
+          onWorktreeStrategyChange={handleWorktreeStrategyChange}
           isConnected={isConnected && activeSessionConnectionReady}
           onStreamingChange={handleStreamingChange}
           historyOpen={historyOpen}
@@ -771,10 +771,10 @@ function ProjectWorkspace() {
   );
 }
 
-export default function ProjectWorkspacePage() {
+export default function WorkspacePage() {
   return (
     <Suspense fallback={<Flex h="100dvh" />}>
-      <ProjectWorkspace />
+      <Workspace />
     </Suspense>
   );
 }

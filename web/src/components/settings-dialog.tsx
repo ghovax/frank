@@ -8,7 +8,7 @@ import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetch
 import { ModelSelect } from "./model-select";
 import { ChatGPTAuthControl } from "./chatgpt-auth";
 import { CursorAuthControl } from "./cursor-auth";
-import { ProjectLocationsPanel } from "./project-locations";
+import { WorkspaceLocationsPanel } from "./workspace-locations";
 import { RemoteAgentsPanel } from "./remote-agents-panel";
 import { SimpleSelect } from "./ui/simple-select";
 import { useColorMode } from "./ui/color-mode";
@@ -16,7 +16,7 @@ import { ConfirmDialog } from "./ui/confirm-dialog";
 import { useTranslations } from "next-intl";
 import { useLocale } from "@/lib/i18n/locale-provider";
 import { LOCALES, type Locale } from "@/lib/i18n/messages";
-import { CompactionToggleControl, ComputerControlToggleControl, PermissionModeControl, SandboxToggleControl, UserContextToggleControl, WorkspaceStrategyControl, type WorkspaceStrategyValue } from "./session-controls";
+import { CompactionToggleControl, ComputerControlToggleControl, PermissionModeControl, SandboxToggleControl, UserContextToggleControl, WorktreeStrategyControl, type WorktreeStrategyValue } from "./session-controls";
 import { useScrollEdgeFade } from "@/lib/scroll-fade";
 import { Section } from "./ui/semantic";
 
@@ -70,7 +70,7 @@ export function SettingsDialog({
   onOpenChange,
   section,
   onSectionChange,
-  projectId = "",
+  workspaceId = "",
   workingDirectory = "",
   models = [],
   modelProviders = [],
@@ -81,16 +81,16 @@ export function SettingsDialog({
   livePermissionMode = "default",
   liveSandboxEnforce = "required" as SandboxEnforce,
   sandboxBackend = { backend: "", detail: "" },
-  liveWorkspaceStrategy = "none",
+  liveWorktreeStrategy = "none",
   onPermissionModeChange,
   onSandboxEnforceChange,
-  onWorkspaceStrategyChange,
+  onWorktreeStrategyChange,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   section: SettingsSection;
   onSectionChange: (section: SettingsSection) => void;
-  projectId?: string;
+  workspaceId?: string;
   workingDirectory?: string;
   models?: ModelOption[];
   modelProviders?: ProviderOption[];
@@ -101,10 +101,10 @@ export function SettingsDialog({
   livePermissionMode?: PermissionMode;
   liveSandboxEnforce?: SandboxEnforce;
   sandboxBackend?: { backend: string; detail: string };
-  liveWorkspaceStrategy?: WorkspaceStrategyValue;
+  liveWorktreeStrategy?: WorktreeStrategyValue;
   onPermissionModeChange?: (mode: PermissionMode) => void;
   onSandboxEnforceChange?: (enforce: SandboxEnforce) => void | Promise<void>;
-  onWorkspaceStrategyChange?: (strategy: WorkspaceStrategyValue) => void | Promise<void>;
+  onWorktreeStrategyChange?: (strategy: WorktreeStrategyValue) => void | Promise<void>;
 }) {
   const translation = useTranslations("SettingsDialog");
   const tc = useTranslations("Common");
@@ -112,8 +112,8 @@ export function SettingsDialog({
   const [savedPermissionMode, setSavedPermissionMode] = useState<PermissionMode>(livePermissionMode);
   const [sandboxEnforce, setSandboxEnforce] = useState<SandboxEnforce>(liveSandboxEnforce);
   const [savedSandboxEnforce, setSavedSandboxEnforce] = useState<SandboxEnforce>(liveSandboxEnforce);
-  const [workspaceStrategy, setWorkspaceStrategy] = useState<WorkspaceStrategyValue>(liveWorkspaceStrategy);
-  const [savedWorkspaceStrategy, setSavedWorkspaceStrategy] = useState<WorkspaceStrategyValue>(liveWorkspaceStrategy);
+  const [worktreeStrategy, setWorktreeStrategy] = useState<WorktreeStrategyValue>(liveWorktreeStrategy);
+  const [savedWorktreeStrategy, setSavedWorktreeStrategy] = useState<WorktreeStrategyValue>(liveWorktreeStrategy);
   const [autoCompaction, setAutoCompaction] = useState(false);
   const [savedAutoCompaction, setSavedAutoCompaction] = useState(false);
   const [userContextEnabled, setUserContextEnabled] = useState(false);
@@ -159,7 +159,7 @@ export function SettingsDialog({
     || webFetchProxyUrl !== savedWebFetchProxyUrl
     || permissionMode !== savedPermissionMode
     || sandboxEnforce !== savedSandboxEnforce
-    || workspaceStrategy !== savedWorkspaceStrategy
+    || worktreeStrategy !== savedWorktreeStrategy
     || autoCompaction !== savedAutoCompaction
     || userContextEnabled !== savedUserContextEnabled
     || computerControlEnabled !== savedComputerControlEnabled;
@@ -176,28 +176,28 @@ export function SettingsDialog({
     fetchSettings()
       .then((settings) => {
         if (cancelled) return;
-        setPermissionMode(settings.permission_mode ?? "default");
-        setSavedPermissionMode(settings.permission_mode ?? "default");
-        setSandboxEnforce(settings.sandbox?.enforce ?? "required");
-        setSavedSandboxEnforce(settings.sandbox?.enforce ?? "required");
-        setWorkspaceStrategy(settings.workspace_strategy ?? "none");
-        setSavedWorkspaceStrategy(settings.workspace_strategy ?? "none");
+        setPermissionMode(settings.permission_mode);
+        setSavedPermissionMode(settings.permission_mode);
+        setSandboxEnforce(settings.sandbox.enforce);
+        setSavedSandboxEnforce(settings.sandbox.enforce);
+        setWorktreeStrategy(settings.worktree_strategy);
+        setSavedWorktreeStrategy(settings.worktree_strategy);
         setAutoCompaction(settings.compaction?.auto ?? false);
         setSavedAutoCompaction(settings.compaction?.auto ?? false);
-        setUserContextEnabled(settings.user_context_enabled ?? false);
-        setSavedUserContextEnabled(settings.user_context_enabled ?? false);
-        setComputerControlEnabled(settings.computer_control_enabled ?? false);
-        setSavedComputerControlEnabled(settings.computer_control_enabled ?? false);
-        setExaApiKey(settings.exa_api_key ?? "");
-        setSavedExaApiKey(settings.exa_api_key ?? "");
-        setComposioApiKey(settings.composio_api_key ?? "");
-        setSavedComposioApiKey(settings.composio_api_key ?? "");
-        setJinaApiKey(settings.jina_api_key ?? "");
-        setSavedJinaApiKey(settings.jina_api_key ?? "");
-        setFirecrawlApiKey(settings.firecrawl_api_key ?? "");
-        setSavedFirecrawlApiKey(settings.firecrawl_api_key ?? "");
-        setWebFetchProxyUrl(settings.web_fetch_proxy_url ?? "");
-        setSavedWebFetchProxyUrl(settings.web_fetch_proxy_url ?? "");
+        setUserContextEnabled(settings.user_context_enabled);
+        setSavedUserContextEnabled(settings.user_context_enabled);
+        setComputerControlEnabled(settings.computer_control_enabled);
+        setSavedComputerControlEnabled(settings.computer_control_enabled);
+        setExaApiKey(settings.exa_api_key);
+        setSavedExaApiKey(settings.exa_api_key);
+        setComposioApiKey(settings.composio_api_key);
+        setSavedComposioApiKey(settings.composio_api_key);
+        setJinaApiKey(settings.jina_api_key);
+        setSavedJinaApiKey(settings.jina_api_key);
+        setFirecrawlApiKey(settings.firecrawl_api_key);
+        setSavedFirecrawlApiKey(settings.firecrawl_api_key);
+        setWebFetchProxyUrl(settings.web_fetch_proxy_url);
+        setSavedWebFetchProxyUrl(settings.web_fetch_proxy_url);
       })
       .catch((caught) => swallowed("settings: a background load failed", caught));
     return () => {
@@ -255,7 +255,7 @@ export function SettingsDialog({
   // read them without re-subscribing on every keystroke.
   const fieldsRef = useRef({
     permissionMode, savedPermissionMode, sandboxEnforce, savedSandboxEnforce,
-    workspaceStrategy, savedWorkspaceStrategy, autoCompaction, savedAutoCompaction,
+    worktreeStrategy, savedWorktreeStrategy, autoCompaction, savedAutoCompaction,
     userContextEnabled, savedUserContextEnabled,
     computerControlEnabled, savedComputerControlEnabled,
     exaApiKey, savedExaApiKey, composioApiKey, savedComposioApiKey,
@@ -265,7 +265,7 @@ export function SettingsDialog({
   useEffect(() => {
     fieldsRef.current = {
       permissionMode, savedPermissionMode, sandboxEnforce, savedSandboxEnforce,
-      workspaceStrategy, savedWorkspaceStrategy, autoCompaction, savedAutoCompaction,
+      worktreeStrategy, savedWorktreeStrategy, autoCompaction, savedAutoCompaction,
       userContextEnabled, savedUserContextEnabled,
       computerControlEnabled, savedComputerControlEnabled,
       exaApiKey, savedExaApiKey, composioApiKey, savedComposioApiKey,
@@ -290,17 +290,17 @@ export function SettingsDialog({
             setSaved(next);
             if (current === saved) setCurrent(next);
           };
-          reconcile(settings.permission_mode ?? "default", fields.permissionMode, fields.savedPermissionMode, setPermissionMode, setSavedPermissionMode);
-          reconcile(settings.sandbox?.enforce ?? "required", fields.sandboxEnforce, fields.savedSandboxEnforce, setSandboxEnforce, setSavedSandboxEnforce);
-          reconcile((settings.workspace_strategy ?? "none") as WorkspaceStrategyValue, fields.workspaceStrategy, fields.savedWorkspaceStrategy, setWorkspaceStrategy, setSavedWorkspaceStrategy);
+          reconcile(settings.permission_mode, fields.permissionMode, fields.savedPermissionMode, setPermissionMode, setSavedPermissionMode);
+          reconcile(settings.sandbox.enforce, fields.sandboxEnforce, fields.savedSandboxEnforce, setSandboxEnforce, setSavedSandboxEnforce);
+          reconcile(settings.worktree_strategy, fields.worktreeStrategy, fields.savedWorktreeStrategy, setWorktreeStrategy, setSavedWorktreeStrategy);
           reconcile(settings.compaction?.auto ?? false, fields.autoCompaction, fields.savedAutoCompaction, setAutoCompaction, setSavedAutoCompaction);
-          reconcile(settings.user_context_enabled ?? false, fields.userContextEnabled, fields.savedUserContextEnabled, setUserContextEnabled, setSavedUserContextEnabled);
-          reconcile(settings.computer_control_enabled ?? false, fields.computerControlEnabled, fields.savedComputerControlEnabled, setComputerControlEnabled, setSavedComputerControlEnabled);
-          reconcile(settings.exa_api_key ?? "", fields.exaApiKey, fields.savedExaApiKey, setExaApiKey, setSavedExaApiKey);
-          reconcile(settings.composio_api_key ?? "", fields.composioApiKey, fields.savedComposioApiKey, setComposioApiKey, setSavedComposioApiKey);
-          reconcile(settings.jina_api_key ?? "", fields.jinaApiKey, fields.savedJinaApiKey, setJinaApiKey, setSavedJinaApiKey);
-          reconcile(settings.firecrawl_api_key ?? "", fields.firecrawlApiKey, fields.savedFirecrawlApiKey, setFirecrawlApiKey, setSavedFirecrawlApiKey);
-          reconcile(settings.web_fetch_proxy_url ?? "", fields.webFetchProxyUrl, fields.savedWebFetchProxyUrl, setWebFetchProxyUrl, setSavedWebFetchProxyUrl);
+          reconcile(settings.user_context_enabled, fields.userContextEnabled, fields.savedUserContextEnabled, setUserContextEnabled, setSavedUserContextEnabled);
+          reconcile(settings.computer_control_enabled, fields.computerControlEnabled, fields.savedComputerControlEnabled, setComputerControlEnabled, setSavedComputerControlEnabled);
+          reconcile(settings.exa_api_key, fields.exaApiKey, fields.savedExaApiKey, setExaApiKey, setSavedExaApiKey);
+          reconcile(settings.composio_api_key, fields.composioApiKey, fields.savedComposioApiKey, setComposioApiKey, setSavedComposioApiKey);
+          reconcile(settings.jina_api_key, fields.jinaApiKey, fields.savedJinaApiKey, setJinaApiKey, setSavedJinaApiKey);
+          reconcile(settings.firecrawl_api_key, fields.firecrawlApiKey, fields.savedFirecrawlApiKey, setFirecrawlApiKey, setSavedFirecrawlApiKey);
+          reconcile(settings.web_fetch_proxy_url, fields.webFetchProxyUrl, fields.savedWebFetchProxyUrl, setWebFetchProxyUrl, setSavedWebFetchProxyUrl);
         })
         .catch((caught) => swallowed("settings: a background load failed", caught));
     });
@@ -388,7 +388,7 @@ export function SettingsDialog({
           web_fetch_proxy_url: nextWebFetchProxyUrl,
           provider_keys: {},
           provider_base_urls: {},
-          workspace_strategy: workspaceStrategy,
+          worktree_strategy: worktreeStrategy,
         });
         setExaApiKey(nextExaApiKey);
         setSavedExaApiKey(nextExaApiKey);
@@ -402,10 +402,10 @@ export function SettingsDialog({
         setSavedWebFetchProxyUrl(nextWebFetchProxyUrl);
         setSavedPermissionMode(permissionMode);
         setSavedSandboxEnforce(sandboxEnforce);
-        setSavedWorkspaceStrategy(workspaceStrategy);
+        setSavedWorktreeStrategy(worktreeStrategy);
         onPermissionModeChange?.(permissionMode);
         void onSandboxEnforceChange?.(sandboxEnforce);
-        void onWorkspaceStrategyChange?.(workspaceStrategy);
+        void onWorktreeStrategyChange?.(worktreeStrategy);
       }
       if (autoCompaction !== savedAutoCompaction) {
         await updateCompactionSettings({ auto: autoCompaction });
@@ -458,7 +458,7 @@ export function SettingsDialog({
     setWebFetchProxyUrl(savedWebFetchProxyUrl);
     setPermissionMode(savedPermissionMode);
     setSandboxEnforce(savedSandboxEnforce);
-    setWorkspaceStrategy(savedWorkspaceStrategy);
+    setWorktreeStrategy(savedWorktreeStrategy);
     setAutoCompaction(savedAutoCompaction);
     setUserContextEnabled(savedUserContextEnabled);
     setComputerControlEnabled(savedComputerControlEnabled);
@@ -532,7 +532,7 @@ export function SettingsDialog({
           rows: [
             { key: "approvalMode", title: translation("approvalMode"), control: <PermissionModeControl value={permissionMode} onChange={setPermissionMode} /> },
             { key: "filesystemProtection", title: translation("filesystemProtection"), description: sandboxBackend.backend ? undefined : translation("filesystemProtectionUnavailable"), control: <SandboxToggleControl enforce={sandboxEnforce} backend={sandboxBackend.backend} onChange={setSandboxEnforce} /> },
-            { key: "gitWorkspace", title: translation("gitWorkspace"), control: <WorkspaceStrategyControl value={workspaceStrategy} onChange={setWorkspaceStrategy} /> },
+            { key: "gitWorktree", title: translation("gitWorktree"), control: <WorktreeStrategyControl value={worktreeStrategy} onChange={setWorktreeStrategy} /> },
             { key: "compaction", title: translation("compaction"), control: <CompactionToggleControl enabled={autoCompaction} onChange={setAutoCompaction} /> },
             { key: "userContext", title: translation("userContext"), description: translation("userContextHint"), control: <UserContextToggleControl enabled={userContextEnabled} onChange={setUserContextEnabled} /> },
             { key: "computerControl", title: translation("computerControl"), description: translation("computerControlHint"), control: <ComputerControlToggleControl enabled={computerControlEnabled} onChange={accessibilityGranted ? setComputerControlEnabled : undefined} /> },
@@ -563,9 +563,9 @@ export function SettingsDialog({
         { title: translation("modelProviders"), rows: [], block: <Flex direction="column" gap={5} w="100%"><ChatGPTAuthControl /><CursorAuthControl /></Flex> },
       ],
     },
-    ...(projectId ? [{
+    ...(workspaceId ? [{
       id: "locations" as SettingsSection, label: translation("tabLocations"), icon: <LuServer size={14} />,
-      sections: [{ title: translation("locations"), rows: [], block: <ProjectLocationsPanel projectId={projectId} /> }],
+      sections: [{ title: translation("locations"), rows: [], block: <WorkspaceLocationsPanel workspaceId={workspaceId} /> }],
     }] : []),
     {
       id: "agents", label: translation("tabAgents"), icon: <LuUsers size={14} />,

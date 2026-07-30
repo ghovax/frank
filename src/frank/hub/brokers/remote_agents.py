@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from frank.base.configuration import Configuration
 from frank.protocol.client import RemoteAgentAuth, RemoteAgentConfiguration, RemoteAgentManager
-from frank.workspace import state
+from frank.hub import state
 
 
 def _remote_agent_dataclasses() -> dict[str, RemoteAgentConfiguration]:

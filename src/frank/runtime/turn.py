@@ -63,7 +63,7 @@ class _RunsTurns:
     The loop the other three serve."""
 
     def _locations_summary(self) -> list[dict]:
-        """The project's locations as the model sees them: the `location` URI to pass,
+        """The workspace's locations as the model sees them: the `location` URI to pass,
         plus name/kind/base_directory/permission so it can choose the right one per tool call."""
         return [
             {
@@ -91,7 +91,7 @@ class _RunsTurns:
             all_skills = enabled_skills(list(self._catalogue.skills()))
             agent_skills = skills_for_agent(all_skills, self._agent_configuration.skills)
             memories = list(self._catalogue.memories())
-            workspace_root, is_git_repo = _detect_workspace(self._working_directory)
+            worktree_root, is_git_repo = _detect_workspace(self._working_directory)
             context_json = compact({
                 "session": self._session_id,
                 # Present only when another session created this one. Its presence is the
@@ -100,12 +100,12 @@ class _RunsTurns:
                 **({"parent_session": self._parent_session} if self._parent_session else {}),
                 "working_directory": self._working_directory,
                 "project_directory": self._project_directory,
-                "workspace_root": workspace_root,
+                "worktree_root": worktree_root,
                 "is_git_repo": is_git_repo,
-                "session_workspace_strategy": self._global_configuration.workspace.strategy,
+                "session_worktree_strategy": self._global_configuration.workspace.strategy,
                 "platform": platform.system(),
                 "today_date": datetime.now().strftime("%Y-%m-%d"),
-                # The project's locations. Filesystem/shell tools take a `location` (its
+                # The workspace's locations. Filesystem/shell tools take a `location` (its
                 # URI); it is required when there is more than one, optional when one.
                 "locations": self._locations_summary(),
             })

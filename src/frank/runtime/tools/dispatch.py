@@ -549,7 +549,7 @@ class _DispatchesTools:
             yield Error(id=tool_call_identifier, code=error_code, message=error_message, tool=tool_name)
             return
 
-        # Filesystem/shell tools run against a specific project location. Resolve it
+        # Filesystem/shell tools run against a specific workspace location. Resolve it
         # here and derive this call's execution policy as a value — the location's
         # executor carries the IO (local subprocess or multiplexed SSH) through one
         # shared code path. Nothing location-specific is written to runtime state, so

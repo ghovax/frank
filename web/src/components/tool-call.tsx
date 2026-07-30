@@ -16,7 +16,7 @@ import { asRecord } from "@/lib/coerce";
 // The location a filesystem/shell tool ran against, as a compact badge — but only when it
 // is *remote*. Local runs (`file://…`) get no badge: the absence of a badge already reads as
 // "here", so a "Local" tag would be pure noise, and a remote badge only ever appears in a
-// project that actually spans machines. A remote (`ssh://host/path`) shows just the host
+// workspace that actually spans machines. A remote (`ssh://host/path`) shows just the host
 // authority (everything after `ssh://` up to the path) — enough to name the machine.
 function toolLocationBadge(value: unknown): { label: string; palette: "blue" } | null {
   if (typeof value !== "string" || !value.startsWith("ssh://")) return null;

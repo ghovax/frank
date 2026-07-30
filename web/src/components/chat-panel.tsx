@@ -42,7 +42,7 @@ import { AgentSkills } from "./agent-skills";
 import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-display";
 import type { ToolPermission, ToolQuestion } from "@/lib/tool-event";
 
-import { fetchSettings, getProject, revealInFinder, saveSessionDraft, saveSettings, subscribeEvents, type AgentCard, type AgentSummary, type Location, type PermissionMode, type SandboxEnforce, type WorkspaceStrategy } from "@/lib/api";
+import { fetchSettings, getWorkspace, revealInFinder, saveSessionDraft, saveSettings, subscribeEvents, type AgentCard, type AgentSummary, type Location, type PermissionMode, type SandboxEnforce, type WorktreeStrategy } from "@/lib/api";
 import { PdfDocumentView } from "./pdf-view";
 import { scrollFade, scrollFadeTopBottom } from "@/lib/scroll-fade";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -66,7 +66,7 @@ interface ChatPanelProps {
   agentCard?: AgentCard | null;
   onAgentChange: (agent: string) => void;
   // When set, the workspace opens with the Settings dialog already showing this section
-  // (the Projects-home cog links here via `?settings=…`).
+  // (the Workspaces-home cog links here via `?settings=…`).
   initialSettingsSection?: string;
   initialSessionId: string | null;
   // The session's display title (LLM-generated once the conversation has one),
@@ -82,13 +82,13 @@ interface ChatPanelProps {
   onSessionCreated: (sessionId: string) => void;
   onSlashCommand?: (command: string) => void;
   workingDirectory?: string;
-  projectId?: string;
+  workspaceId?: string;
   homeDirectory?: string;
   sandboxEnforce?: SandboxEnforce;
   sandboxBackend?: { backend: string; detail: string };
   onSandboxEnforceChange?: (enforce: SandboxEnforce) => void;
-  workspaceStrategy?: WorkspaceStrategy;
-  onWorkspaceStrategyChange?: (strategy: WorkspaceStrategy) => void | Promise<void>;
+  worktreeStrategy?: WorktreeStrategy;
+  onWorktreeStrategyChange?: (strategy: WorktreeStrategy) => void | Promise<void>;
   isConnected?: boolean;
   onStreamingChange?: (isStreaming: boolean) => void;
   historyOpen?: boolean;
@@ -206,13 +206,13 @@ export function ChatPanel({
   sessionRunning = false,
   onSessionCreated,
   workingDirectory,
-  projectId = "",
+  workspaceId = "",
   homeDirectory,
   sandboxEnforce = "required" as SandboxEnforce,
   sandboxBackend = { backend: "", detail: "" },
   onSandboxEnforceChange,
-  workspaceStrategy = "none",
-  onWorkspaceStrategyChange,
+  worktreeStrategy = "none",
+  onWorktreeStrategyChange,
   isConnected = false,
   onStreamingChange,
   historyOpen = false,
@@ -229,7 +229,7 @@ export function ChatPanel({
   const format = useFormatter();
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(initialPermissionMode);
   const { messages, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, abort, dequeueMessage, handlePermission, handleQuestion, declineQuestion, compact } =
-    useChat(agent, initialSessionId, workingDirectory, workspaceStrategy, permissionMode, sessionRunning, projectId);
+    useChat(agent, initialSessionId, workingDirectory, worktreeStrategy, permissionMode, sessionRunning, workspaceId);
 
   // Single source of truth for the working directory's validity and Git status —
   // consumed by the workspace status bar (branch/dirty/ahead-behind) and passed to the
@@ -238,27 +238,27 @@ export function ChatPanel({
   // Whether the chat body has resolved enough to render without flashing: connected,
   // and the working directory's validity determined (not mid-check). Until then we show
   // a neutral placeholder instead of the empty welcome and a disabled→enabled input, so
-  // opening a project doesn't flicker.
+  // opening a workspace doesn't flicker.
   const trimmedWorkingDirectory = (workingDirectory ?? "").trim();
   const directoryPending = !!trimmedWorkingDirectory && (directoryStatus.checking || directoryStatus.path !== trimmedWorkingDirectory);
   const chatReady = isConnected && !directoryPending;
 
-  // The project's locations, for the terminal location picker (and any location-aware
-  // panels). Refreshed live when the project config changes.
-  const [projectLocations, setProjectLocations] = useState<Location[]>([]);
+  // The workspace's locations, for the terminal location picker (and any location-aware
+  // panels). Refreshed live when the workspace config changes.
+  const [workspaceLocations, setWorkspaceLocations] = useState<Location[]>([]);
   useEffect(() => {
     let cancelled = false;
-    // Resolving through a promise (even for the empty-project case) keeps the state
-    // update off the synchronous effect path, so an empty project clears locations
+    // Resolving through a promise (even for the empty-workspace case) keeps the state
+    // update off the synchronous effect path, so an empty workspace clears locations
     // on the next microtask rather than mid-render.
     const load = () => {
-      const request = projectId ? getProject(projectId) : Promise.resolve(null);
-      request.then((project) => { if (!cancelled) setProjectLocations(project?.locations ?? []); }).catch((caught) => swallowed("chat panel: a background load failed", caught));
+      const request = workspaceId ? getWorkspace(workspaceId) : Promise.resolve(null);
+      request.then((workspace) => { if (!cancelled) setWorkspaceLocations(workspace?.locations ?? []); }).catch((caught) => swallowed("chat panel: a background load failed", caught));
     };
     load();
-    const unsubscribe = subscribeEvents((event) => { if (event.type === "projects_changed") load(); });
+    const unsubscribe = subscribeEvents((event) => { if (event.type === "workspaces_changed") load(); });
     return () => { cancelled = true; unsubscribe(); };
-  }, [projectId]);
+  }, [workspaceId]);
 
   // On mount, fetch the stored permission mode from the server settings. This
   // overrides the "default" fallback when no session is active, so the user's
@@ -812,21 +812,21 @@ export function ChatPanel({
                       far outside the chat. No `px` of its own either: the scroller already pads,
                       and a second inset put this list 10px inside the composer instead of flush. */}
                   <Flex direction="column" align="center" gap={8} w="full" maxW="80rem" mx="auto" pt={{ base: 10, md: 20 }} pb={{ base: 8, md: 12 }}>
-                    {/* The blank-conversation state inside a project: no brand lockup (that lives
-                        on the Projects home) — the build prompt, the project's locations (dotted
+                    {/* The blank-conversation state inside a workspace: no brand lockup (that lives
+                        on the Workspaces home) — the build prompt, the workspace's locations (dotted
                         by connection status), then the folder's skills. */}
                     <Flex direction="column" align="center" gap={4}>
                       <Heading as="h2" fontSize="3xl" fontWeight="semibold" textAlign="center">
                         {translation("buildPrompt", { folder: currentFolderName })}
                       </Heading>
-                      {projectLocations.length > 0 && (
+                      {workspaceLocations.length > 0 && (
                         <Flex direction="column" align="center" gap={2}>
                           <Flex align="center" justify="center" gap={1.5} color="fg.muted">
                             <LuNetwork size={14} />
                             <Text textStyle="panelTitle">{translation("locationsAvailable")}</Text>
                           </Flex>
                           <Flex align="center" gap={2.5} wrap="wrap" justify="center">
-                            {projectLocations.map((location) => (
+                            {workspaceLocations.map((location) => (
                               <LocationChip key={location.id} location={location} />
                             ))}
                           </Flex>
@@ -1090,7 +1090,7 @@ export function ChatPanel({
                       messages={messages}
                       sessionId={sessionId}
                       workingDirectory={workingDirectory || homeDirectory || ""}
-                      locations={projectLocations}
+                      locations={workspaceLocations}
                     />
                   ),
                 },
@@ -1105,7 +1105,7 @@ export function ChatPanel({
         onOpenChange={setSettingsOpen}
         section={settingsSection}
         onSectionChange={setSettingsSection}
-        projectId={projectId}
+        workspaceId={workspaceId}
         workingDirectory={workingDirectory}
         models={models}
         modelProviders={modelProviders}
@@ -1118,8 +1118,8 @@ export function ChatPanel({
         liveSandboxEnforce={sandboxEnforce}
         sandboxBackend={sandboxBackend}
         onSandboxEnforceChange={onSandboxEnforceChange}
-        liveWorkspaceStrategy={workspaceStrategy}
-        onWorkspaceStrategyChange={onWorkspaceStrategyChange}
+        liveWorktreeStrategy={worktreeStrategy}
+        onWorktreeStrategyChange={onWorktreeStrategyChange}
       />
 
       <ConfirmDialog

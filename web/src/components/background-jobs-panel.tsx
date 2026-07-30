@@ -28,7 +28,10 @@ interface ShellJob {
   toolCallId: string;
   name: string;
   arguments: Record<string, unknown>;
-  status: ToolEventStatus;
+  // Absent when the event carried none. Not defaulted to `completed` here: a job whose
+  // status is unknown is not a job that finished, and the display layer decides how to
+  // render an absence — inventing one at the parse site made every such job look done.
+  status?: ToolEventStatus;
   result: unknown;
   timestamp: string;
   running: boolean;
@@ -43,7 +46,7 @@ function shellJobsFromMessages(messages: ChatMessage[]): ShellJob[] {
   for (const message of messages) {
     if (message.role !== "tool_call" || message.content !== "bash") continue;
     const meta = message.meta ?? {};
-    const status = String(meta.status ?? "completed") as ToolEventStatus;
+    const status = meta.status ? (String(meta.status) as ToolEventStatus) : undefined;
     const running = status === "running" || status === "input_required";
     tasks.push({
       toolCallId: String(meta.toolCallId ?? message.id),
@@ -201,7 +204,7 @@ export function BackgroundJobsPanel({
   // canonical key for the first terminal created in an empty context.
   const [terminals, setTerminals] = useState<string[]>(["main"]);
   const [activeTerminal, setActiveTerminal] = useState<string>("main");
-  // The location each terminal targets (by id); defaults to the project's first location.
+  // The location each terminal targets (by id); defaults to the workspace's first location.
   const [terminalLocations, setTerminalLocations] = useState<Record<string, string>>({});
   const locationForTerminal = (key: string): Location | undefined => {
     const chosen = locations.find((location) => location.id === terminalLocations[key]);

@@ -113,7 +113,7 @@ class SessionRecord:
     # workspace strategy put the session in its own worktree or branch, which is decided once
     # when the session is created — the same moment everything else about it is fixed.
     runtime_working_directory: str = ""
-    project_id: str = ""
+    workspace_id: str = ""
     parent: str = ""
     title: str = ""
     created_at: str = ""
@@ -187,7 +187,7 @@ class SessionRecord:
             "title": self.title,
             "working_directory": self.working_directory,
             "runtime_working_directory": self.runtime_working_directory,
-            "project_id": self.project_id,
+            "workspace_id": self.workspace_id,
             "permission_mode": self.permission_mode,
             "sandbox": self.sandbox,
             "pid": self.pid,
@@ -271,7 +271,7 @@ class SessionRegistry:
         working_directory: str,
         permission_mode: str,
         sandbox: Optional[dict] = None,
-        project_id: str = "",
+        workspace_id: str = "",
         parent: str = "",
         title: str = "",
         created_at: str = "",
@@ -290,7 +290,7 @@ class SessionRegistry:
             runtime_working_directory=runtime_working_directory or working_directory,
             permission_mode=permission_mode,
             sandbox=dict(sandbox or {}),
-            project_id=project_id,
+            workspace_id=workspace_id,
             parent=parent,
             title=title,
             created_at=created_at,

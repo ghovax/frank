@@ -20,7 +20,7 @@ import {
   type A2APart,
   type A2ATurn as A2ATurnWire,
   type PermissionMode,
-  type WorkspaceStrategy,
+  type WorktreeStrategy,
 } from "./api";
 import { isSameToolEvent, type QuestionAnswer, type QuestionItem, type ToolEvent, type ToolEventStatus, type ToolPermission, type ToolQuestion } from "./tool-event";
 import { toaster } from "@/components/ui/toaster";
@@ -909,15 +909,15 @@ export function useChat(
   agent: string,
   initialSessionId: string | null = null,
   workingDirectory?: string,
-  workspaceStrategy: WorkspaceStrategy = "none",
+  worktreeStrategy: WorktreeStrategy = "none",
   permissionMode: PermissionMode = "default",
   // Whether a turn is currently running on this session (from the server-tracked
   // running set). Drives the live subscribe stream when we are viewing — but not
   // driving — it.
   sessionRunning: boolean = false,
-  // The project this session belongs to; rides in the turn metadata so the server
-  // resolves the project's locations for the agent to address per tool call.
-  projectId: string = ""
+  // The workspace this session belongs to; rides in the turn metadata so the server
+  // resolves the workspace's locations for the agent to address per tool call.
+  workspaceId: string = ""
 ) {
   // Every message this hook can put in front of a person goes through here. They used to be
   // English string literals beside the `toaster.create` that raised them — including the one
@@ -1392,9 +1392,9 @@ export function useChat(
             const created = await sessionCreate({
               agent,
               workingDirectory,
-              workspaceStrategy,
+              worktreeStrategy,
               permissionMode,
-              projectId,
+              workspaceId,
             });
             sessionIdentifier = created.id;
             sessionIdRef.current = created.id;
@@ -1422,7 +1422,7 @@ export function useChat(
         }
       })();
     },
-    [agent, workingDirectory, workspaceStrategy, permissionMode, projectId, flush, setQueue, acknowledgeSteering, notifyTurnError]
+    [agent, workingDirectory, worktreeStrategy, permissionMode, workspaceId, flush, setQueue, acknowledgeSteering, notifyTurnError]
   );
 
   useEffect(() => {

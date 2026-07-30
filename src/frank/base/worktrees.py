@@ -20,16 +20,16 @@ from typing import Literal
 from frank.base.paths import workspaces_directory
 
 
-WorkspaceStrategy = Literal["none", "branch", "worktree"]
+WorktreeStrategy = Literal["none", "branch", "worktree"]
 
 
 @dataclass(frozen=True)
-class SessionWorkspace:
+class SessionWorktree:
     source_working_directory: str
     runtime_working_directory: str
-    strategy: WorkspaceStrategy
-    workspace_path: str = ""
-    workspace_branch: str = ""
+    strategy: WorktreeStrategy
+    worktree_path: str = ""
+    worktree_branch: str = ""
     source_repository_root: str = ""
     runtime_repository_root: str = ""
     head: str = ""
@@ -43,32 +43,32 @@ class SessionWorkspace:
         return {
             "source_working_directory": self.source_working_directory,
             "runtime_working_directory": self.runtime_working_directory,
-            "workspace_strategy": self.strategy,
-            "workspace_path": self.workspace_path,
-            "workspace_branch": self.workspace_branch,
+            "worktree_strategy": self.strategy,
+            "worktree_path": self.worktree_path,
+            "worktree_branch": self.worktree_branch,
             "source_repository_root": self.source_repository_root,
             "runtime_repository_root": self.runtime_repository_root,
-            "workspace_head": self.head,
-            "workspace_error": self.error,
+            "worktree_head": self.head,
+            "worktree_error": self.error,
             "isolated": self.isolated,
         }
 
 
-class SessionWorkspaceManager:
+class SessionWorktreeManager:
     def __init__(self, root_directory: Path | None = None):
         self._root_directory = root_directory or workspaces_directory()
         self._root_directory.mkdir(parents=True, exist_ok=True)
         self._lock_path = self._root_directory / ".lock"
 
-    async def prepare(self, session_id: str, source_working_directory: str, strategy: WorkspaceStrategy) -> SessionWorkspace:
+    async def prepare(self, session_id: str, source_working_directory: str, strategy: WorktreeStrategy) -> SessionWorktree:
         return await asyncio.to_thread(self.prepare_sync, session_id, source_working_directory, strategy)
 
-    def prepare_sync(self, session_id: str, source_working_directory: str, strategy: WorkspaceStrategy) -> SessionWorkspace:
+    def prepare_sync(self, session_id: str, source_working_directory: str, strategy: WorktreeStrategy) -> SessionWorktree:
         source = Path(source_working_directory or Path.home()).expanduser().resolve(strict=False)
         if not source.is_dir():
             raise FileNotFoundError(f"Working directory does not exist: {source}")
         if strategy == "none":
-            return SessionWorkspace(
+            return SessionWorktree(
                 source_working_directory=str(source),
                 runtime_working_directory=str(source),
                 strategy="none",
@@ -76,7 +76,7 @@ class SessionWorkspaceManager:
 
         repository_root_text = self._git_text(source, "rev-parse", "--show-toplevel")
         if not repository_root_text:
-            return SessionWorkspace(
+            return SessionWorktree(
                 source_working_directory=str(source),
                 runtime_working_directory=str(source),
                 strategy="none",
@@ -95,12 +95,12 @@ class SessionWorkspaceManager:
         if strategy == "branch":
             with self._process_lock():
                 self._checkout_branch(source_repository_root, branch, head)
-            return SessionWorkspace(
+            return SessionWorktree(
                 source_working_directory=str(source),
                 runtime_working_directory=str(source),
                 strategy="branch",
-                workspace_path=str(source_repository_root),
-                workspace_branch=branch,
+                worktree_path=str(source_repository_root),
+                worktree_branch=branch,
                 source_repository_root=str(source_repository_root),
                 runtime_repository_root=str(source_repository_root),
                 head=head,
@@ -117,12 +117,12 @@ class SessionWorkspaceManager:
                 worktree_root.parent.mkdir(parents=True, exist_ok=True)
                 self._add_worktree(source_repository_root, worktree_root, branch, head)
 
-        return SessionWorkspace(
+        return SessionWorktree(
             source_working_directory=str(source),
             runtime_working_directory=str(runtime_directory),
             strategy="worktree",
-            workspace_path=str(worktree_root),
-            workspace_branch=branch,
+            worktree_path=str(worktree_root),
+            worktree_branch=branch,
             source_repository_root=str(source_repository_root),
             runtime_repository_root=str(worktree_root),
             head=head,

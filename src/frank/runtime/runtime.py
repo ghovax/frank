@@ -530,7 +530,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         self._global_configuration = global_configuration
         self._working_directory = working_directory or str(Path.home())
         self._project_directory = project_directory or self._working_directory
-        # The project's locations the agent may address per tool call (keyed by URI, and
+        # The workspace's locations the agent may address per tool call (keyed by URI, and
         # by name for friendlier errors). When none are supplied (agents built without
         # an explicit set, or a bare runtime), a single local location is synthesized from
         # the working directory so the single-location default still works.
@@ -686,11 +686,11 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         )
 
     def _build_locations(self, locations: list[dict] | None, *, permission_mode_default: PermissionMode) -> None:
-        """Build the resolved-location map from the project's location records. Each entry
+        """Build the resolved-location map from the workspace's location records. Each entry
         carries an executor (local subprocess or multiplexed SSH) and its effective policy."""
         entries = locations or []
         if not entries:
-            # No project locations supplied — synthesize a single local location at the
+            # No workspace locations supplied — synthesize a single local location at the
             # working directory, so a bare/agent runtime still has exactly one location
             # (and the single-location default applies).
             entries = [{
@@ -718,7 +718,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
 
     def _resolve_location(self, location_value: str | None) -> ResolvedLocation:
         """Resolve a tool call's ``location`` (a URI, or a location name) to its executor +
-        policy. Omitted defaults to the project's local filesystem — so a call never has to
+        policy. Omitted defaults to the workspace's local filesystem — so a call never has to
         repeat `location`, and an omission can never silently run on a remote host; the model
         passes `location` only to target a non-default (remote) one. An unknown value errors."""
         if not location_value:
@@ -733,7 +733,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             # explicit choice rather than picking a remote host on the model's behalf.
             names = ", ".join(sorted(self._locations_by_name)) or "(none configured)"
             raise ToolLocationError(
-                f"This project has only remote locations and no local default — specify `location` (one of: {names})."
+                f"This workspace has only remote locations and no local default — specify `location` (one of: {names})."
             )
         if location_value in self._locations:
             return self._locations[location_value]

@@ -31,14 +31,14 @@ from frank.protocol.dtos import (
     SettingsUpdateRequest,
     UserContextUpdateRequest,
 )
-from frank.workspace.services import projects as _projects
+from frank.hub.services import workspaces as _workspaces
 from frank.rest.services import filesystem as _system
-from frank.workspace import state
-from frank.workspace.services.broadcast import _publish_broadcast
-from frank.workspace.services.sessions import _normalize_permission_mode, _reset_work_habits_acknowledgements
-from frank.workspace.services.agents import _recent_models
-from frank.workspace.services.settings import _apply_live_credentials, _persist_configuration
-from frank.workspace.services.projects import _reset_all_runtimes
+from frank.hub import state
+from frank.hub.services.broadcast import _publish_broadcast
+from frank.hub.services.sessions import _normalize_permission_mode, _reset_work_habits_acknowledgements
+from frank.hub.services.agents import _recent_models
+from frank.hub.services.settings import _apply_live_credentials, _persist_configuration
+from frank.hub.services.workspaces import _reset_all_runtimes
 
 router = APIRouter()
 
@@ -95,13 +95,13 @@ def _merged_sandbox(current, posted: dict):
 async def full_disk_access_status():
     """Whether the daemon process can read Full-Disk-Access-protected data (Screen Time,
     Safari history). Drives the Settings banner + button for the user-context feature."""
-    return {"granted": await asyncio.to_thread(_projects._full_disk_access_granted)}
+    return {"granted": await asyncio.to_thread(_workspaces._full_disk_access_granted)}
 
 
 @router.post("/system/full-disk-access/open")
 async def open_full_disk_access_settings():
     """Open System Settings to the Full Disk Access pane so the user can add Frank."""
-    await asyncio.to_thread(_projects._open_full_disk_access_settings)
+    await asyncio.to_thread(_workspaces._open_full_disk_access_settings)
     return {"ok": True}
 
 
@@ -344,7 +344,7 @@ async def get_settings():
         "web_fetch_proxy_url": state.global_configuration.web_fetch.proxy_url,
         "sandbox": state.global_configuration.sandbox.model_dump(mode="json"),
         "sandbox_backend": _confinement.probe(),
-        "workspace_strategy": state.global_configuration.workspace.strategy,
+        "worktree_strategy": state.global_configuration.workspace.strategy,
         "compaction": state.global_configuration.compaction.model_dump(),
         "user_context_enabled": state.global_configuration.user_context.enabled,
         "computer_control_enabled": state.global_configuration.computer_control.enabled,
@@ -373,7 +373,7 @@ async def update_settings(request: SettingsUpdateRequest):
             sandbox=request.sandbox,
             provider_keys=request.provider_keys,
             provider_base_urls=request.provider_base_urls,
-            workspace_strategy=request.workspace_strategy,
+            worktree_strategy=request.worktree_strategy,
             permission_mode=(
                 _normalize_permission_mode(request.permission_mode)
                 if request.permission_mode is not None else None
@@ -397,8 +397,8 @@ async def update_settings(request: SettingsUpdateRequest):
             configuration.web_fetch.proxy_url = request.web_fetch_proxy_url
         if request.sandbox is not None:
             configuration.sandbox = _merged_sandbox(configuration.sandbox, request.sandbox)
-        if request.workspace_strategy is not None:
-            configuration.workspace.strategy = request.workspace_strategy
+        if request.worktree_strategy is not None:
+            configuration.workspace.strategy = request.worktree_strategy
         # Rebuild the providers map from the posted keys/base URLs, merging so a
         # provider the dialog did not render keeps its stored credential.
         merged_providers = {

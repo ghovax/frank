@@ -134,7 +134,7 @@ function providerPlaceholder(providerId: string): string {
 
 function keyByProvider(settings: Settings): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(settings.providers ?? {}).map(([identifier, credential]) => [identifier, credential.api_key ?? ""])
+    Object.entries(settings.providers).map(([identifier, credential]) => [identifier, credential.api_key ?? ""])
   );
 }
 
@@ -261,15 +261,15 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
     try {
       if (settings) {
         await saveSettings({
-          exa_api_key: settings.exa_api_key ?? "",
-          composio_api_key: settings.composio_api_key ?? "",
+          exa_api_key: settings.exa_api_key,
+          composio_api_key: settings.composio_api_key,
           // A subscription provider has no API key — its credential is the OAuth
           // sign-in, saved out-of-band — so never write a provider key for one.
           provider_keys: selectedProviderIsSubscription
             ? {}
             : { [selectedProvider]: selectedProviderKey.trim() },
           provider_base_urls: selectedProviderIsCustom ? { custom: customBaseUrl.trim() } : {},
-          workspace_strategy: settings.workspace_strategy ?? "none",
+          worktree_strategy: settings.worktree_strategy,
         });
       }
       onChange(activeSelectedModel);
