@@ -61,13 +61,13 @@ async def bash(
     **Work efficiently:** batch independent read-only commands, do not repeat a search whose answer is already available, and never run a broad recursive search over a user's home directory. Use ``background=True`` for managed long-running work instead of starting unmanaged ``&`` or ``nohup`` jobs.
 
     Arguments:
-        command: The shell command to execute.
-        location: The project location to run the command on — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
-        read_only: Whether this command only reads state without modifying it. Defaults to False (treated as mutating) when omitted.
-        explanation: Explain why this command is needed for the task.
-        risk: One of "low", "medium", "high" — assess the potential damage. Low for read-only commands, medium for modifications, high for destructive operations.
-        background: Run the command in the background instead of waiting for it. Use for long-running work whose result is not needed immediately.
-        timeout: How many seconds to wait synchronously for the command before it auto-backgrounds (its result is then delivered when it finishes). Raise it for a command you want to wait longer for; it does not kill the command.
+      - command: The shell command to execute.
+      - location: The project location to run the command on — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
+      - read_only: Whether this command only reads state without modifying it. Defaults to False (treated as mutating) when omitted.
+      - explanation: Explain why this command is needed for the task.
+      - risk: One of "low", "medium", "high" — assess the potential damage. Low for read-only commands, medium for modifications, high for destructive operations.
+      - background: Run the command in the background instead of waiting for it. Use for long-running work whose result is not needed immediately.
+      - timeout: How many seconds to wait synchronously for the command before it auto-backgrounds (its result is then delivered when it finishes). Raise it for a command you want to wait longer for; it does not kill the command.
     """
     from frank.base import confinement as _confinement
 
@@ -247,9 +247,9 @@ async def search_web(
     Use this when you need current information from the internet, recent events, changing documentation, standards, prices, schedules, or external knowledge not available in the training data. Use ``fetch_url`` when the URL is already known instead of searching for it.
 
     Arguments:
-        query: The search query.
-        explanation: A concise, user-facing description of why this search is needed.
-        result_count: Number of results to return (1-10, default 5).
+      - query: The search query.
+      - explanation: A concise, user-facing description of why this search is needed.
+      - result_count: Number of results to return (1-10, default 5).
     """
     client = tool_context.current().exa_client
     if client is None:
@@ -328,8 +328,8 @@ async def list_mcp_tools(server: str = "", explanation: str = Field(..., descrip
     Use this to discover the exact tool name and input schema before calling ``call_mcp_tool``. Pass a server name to inspect one configured server or leave it empty to inspect every enabled server.
 
     Arguments:
-        server: Optional configured MCP server name. Leave empty to list every enabled server.
-        explanation: A concise, user-facing reason for inspecting MCP tools.
+      - server: Optional configured MCP server name. Leave empty to list every enabled server.
+      - explanation: A concise, user-facing reason for inspecting MCP tools.
     """
     try:
         result = await _require_mcp_client_manager().list_tools(server)
@@ -352,12 +352,12 @@ async def call_mcp_tool(
     Discover the exact ``tool_name`` and ``arguments`` schema with ``list_mcp_tools`` first. Treat safety exactly like ``bash``: set ``read_only=True`` explicitly only for inspection-only calls; omitted means potentially mutating. For state-changing calls, set an appropriate medium or high risk.
 
     Arguments:
-        server: Configured MCP server name.
-        tool_name: Tool name as advertised by list_mcp_tools.
-        arguments: JSON object matching the MCP tool input schema.
-        read_only: Whether this MCP tool call only reads state. Defaults to False (treated as mutating) when omitted.
-        explanation: A concise, user-facing reason for the tool call.
-        risk: One of "low", "medium", "high" for non-read-only calls.
+      - server: Configured MCP server name.
+      - tool_name: Tool name as advertised by list_mcp_tools.
+      - arguments: JSON object matching the MCP tool input schema.
+      - read_only: Whether this MCP tool call only reads state. Defaults to False (treated as mutating) when omitted.
+      - explanation: A concise, user-facing reason for the tool call.
+      - risk: One of "low", "medium", "high" for non-read-only calls.
     """
     try:
         result = await _require_mcp_client_manager().call_tool(server, tool_name, arguments or {})
@@ -387,8 +387,8 @@ async def list_mcp_resources(server: str = "", explanation: str = Field(..., des
     Use this to discover resource URIs before calling ``read_mcp_resource``. Pass a server name to inspect one configured server or leave it empty to inspect every enabled server.
 
     Arguments:
-        server: Optional configured MCP server name. Leave empty to list every enabled server.
-        explanation: A concise, user-facing reason for inspecting resources.
+      - server: Optional configured MCP server name. Leave empty to list every enabled server.
+      - explanation: A concise, user-facing reason for inspecting resources.
     """
     try:
         result = await _require_mcp_client_manager().list_resources(server)
@@ -404,9 +404,9 @@ async def read_mcp_resource(server: str, uri: str, explanation: str = Field(...,
     Discover the exact URI with ``list_mcp_resources`` first.
 
     Arguments:
-        server: Configured MCP server name.
-        uri: Resource URI as advertised by list_mcp_resources.
-        explanation: A concise, user-facing reason for reading the resource.
+      - server: Configured MCP server name.
+      - uri: Resource URI as advertised by list_mcp_resources.
+      - explanation: A concise, user-facing reason for reading the resource.
     """
     try:
         result = await _require_mcp_client_manager().read_resource(server, uri)
@@ -429,8 +429,8 @@ async def wait_for(
     Prefer short waits and re-check over one long sleep; a Stop interrupts the wait immediately. Do NOT use wait_for to pass time when you have nothing to check — end your turn instead, and the harness re-engages you when background work completes.
 
     Arguments:
-        seconds: How long to wait before continuing. Prefer small values (a few seconds) and re-check.
-        explanation: A concise, user-facing reason for the wait.
+      - seconds: How long to wait before continuing. Prefer small values (a few seconds) and re-check.
+      - explanation: A concise, user-facing reason for the wait.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -447,8 +447,8 @@ def read_turn(turn_id: str = "", explanation: str = Field(..., description="A co
     This is NOT how you retrieve background results, and it is not how you read a peer session. A search_web ("search-…") or background-bash ("bg-…") handle is not a readable task — those results are delivered to you automatically when ready, so never call read_turn on one and never use it to poll. To look at a peer session, use read_session; a peer's answer arrives on its own as a message.
 
     Arguments:
-        turn_id: The id of an externally supplied sibling turn to read.
-        explanation: A concise, user-facing description of why you are reading this task — shown as the label for this call.
+      - turn_id: The id of an externally supplied sibling turn to read.
+      - explanation: A concise, user-facing description of why you are reading this task — shown as the label for this call.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -460,7 +460,7 @@ def set_tasks(tasks: list[dict]) -> str:
     Use this to break down complex work into steps that can run in parallel or sequentially. Tasks with no dependencies can be worked on immediately. Tasks with dependencies must wait for their dependencies to complete first. Keep tasks short, factual, and tied to observable work. Skip the list for work the next response can plainly finish; once created, keep it reconciled with reality through ``update_tasks``.
 
     Arguments:
-        tasks: List of task objects. Each object has:
+      - tasks: List of task objects. Each object has:
             - description (required): What needs to be done.
             - dependencies (optional): List of task identifiers this task depends on (e.g. ["task-...", ...]).
     """
@@ -474,7 +474,7 @@ def update_tasks(updates: list[dict]) -> str:
     Mark a task ``in_progress`` when work starts, ``completed`` only when it is actually done, and ``blocked`` when reality prevents progress. Update on real state changes—not as busy-work—and never end with completed work still shown as unresolved.
 
     Arguments:
-        updates: List of update objects. Each object has:
+      - updates: List of update objects. Each object has:
             - turn_id (required): The task identifier (e.g. "task-...").
             - status (required): One of 'pending', 'in_progress', 'completed', 'blocked'.
             - result (optional): Summary of what was accomplished when marking as completed.
@@ -493,9 +493,9 @@ def update_goal(
     A goal is not a task list. It is the top-level completion contract the harness injects back into your context until you explicitly satisfy or clear it. Use it when a user request has a concrete outcome that must not be lost while you run tools, hand work to a peer session, or continue across multiple model passes. Do not set a goal for a tiny one-shot answer. While a goal is active, keep working until it is satisfied, explicitly clear it if it becomes obsolete, or leave it active only when work genuinely remains.
 
     Arguments:
-        goal: The goal text to set when status is "active". Leave empty when marking the current goal as "satisfied" or "cleared".
-        status: "active" sets/replaces the goal, "satisfied" removes it because the requested outcome is done, and "cleared" removes it because it is obsolete or no longer applicable.
-        explanation: A concise, user-facing reason for this update.
+      - goal: The goal text to set when status is "active". Leave empty when marking the current goal as "satisfied" or "cleared".
+      - status: "active" sets/replaces the goal, "satisfied" removes it because the requested outcome is done, and "cleared" removes it because it is obsolete or no longer applicable.
+      - explanation: A concise, user-facing reason for this update.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -513,11 +513,11 @@ def read_file(
     Text lines carry 1-indexed line numbers for orientation. Exclude that prefix when copying exact text into ``edit_file``. Large files can be read in windows with ``offset`` and ``limit``; lines over the inline ceiling are reported as truncated and must not be copied into an exact-match edit. Reads record a content hash so later edits can reject stale state. Use ``search_code`` to find code by meaning, and ``bash`` with ripgrep/fd for exact names or content; do not use this on a directory. Batch independent file reads in one response.
 
     Arguments:
-        file_path: Absolute path (or path relative to the working directory).
-        location: The project location to read from — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
-        offset: 1-indexed line number to start reading from.
-        limit: Maximum number of lines to return (defaults to 2048).
-        explanation: A concise, user-facing reason for this read.
+      - file_path: Absolute path (or path relative to the working directory).
+      - location: The project location to read from — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
+      - offset: 1-indexed line number to start reading from.
+      - limit: Maximum number of lines to return (defaults to 2048).
+      - explanation: A concise, user-facing reason for this read.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -534,10 +534,10 @@ def search_code(
     Ranks the project's code against a natural-language query (semantic similarity plus lexical overlap) and returns just the best-matching chunks with their file and line range — a fraction of the tokens of grepping and reading whole files — finding code by what it does, not its exact name. Use ``bash`` with ripgrep for an exact string or filename; use this to find code by meaning. This tool is read-only.
 
     Arguments:
-        query: What you are looking for, in plain language.
-        top_k: How many matching chunks to return (default 10).
-        reindex: Rebuild the code index first — pass this after you have edited files and need fresh results.
-        explanation: A concise, user-facing reason for this search.
+      - query: What you are looking for, in plain language.
+      - top_k: How many matching chunks to return (default 10).
+      - reindex: Rebuild the code index first — pass this after you have edited files and need fresh results.
+      - explanation: A concise, user-facing reason for this search.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -559,13 +559,13 @@ def edit_file(
     The prospective result is syntax-checked before writing: Python uses its AST and supported languages use tree-sitter. On validation failure, the file on disk remains unchanged and the returned diagnostic describes the prospective broken state; correct the edit without rereading unchanged disk content.
 
     Arguments:
-        file_path: Absolute path (or path relative to the working directory).
-        find: The exact text to find, copied verbatim from the file.
-        replace_with: The text to replace it with.
-        location: The project location to edit in — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
-        replace_all: Replace every occurrence instead of requiring a unique match.
-        explanation: A concise, user-facing reason for this edit.
-        risk: "low" for targeted edits, "medium" broad, "high" hard to reverse.
+      - file_path: Absolute path (or path relative to the working directory).
+      - find: The exact text to find, copied verbatim from the file.
+      - replace_with: The text to replace it with.
+      - location: The project location to edit in — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
+      - replace_all: Replace every occurrence instead of requiring a unique match.
+      - explanation: A concise, user-facing reason for this edit.
+      - risk: "low" for targeted edits, "medium" broad, "high" hard to reverse.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -583,11 +583,11 @@ def write_file(
     Prefer ``edit_file`` for a targeted change to an existing file. Read an existing file first when its current content must be preserved; the recorded hash lets the harness reject a stale overwrite. Do not create documentation files proactively unless the user asked for them. This tool modifies files.
 
     Arguments:
-        file_path: Absolute path (or path relative to the working directory).
-        content: The full text to write to the file.
-        location: The project location to write to — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
-        explanation: A concise, user-facing reason for this write.
-        risk: "low" new file, "medium" broad rewrite, "high" hard to reconstruct.
+      - file_path: Absolute path (or path relative to the working directory).
+      - content: The full text to write to the file.
+      - location: The project location to write to — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
+      - explanation: A concise, user-facing reason for this write.
+      - risk: "low" new file, "medium" broad rewrite, "high" hard to reconstruct.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -608,12 +608,12 @@ async def fetch_url(
     Sync-if-fast: it waits up to ``timeout`` seconds for the fetch inline and returns the content directly; a fetch still running past ``timeout`` moves to the background and its result is injected when it lands, so a slow page never blocks your turn. ``timeout`` is that inline-wait window (the same meaning as bash's ``timeout``) — raise it to wait longer, or set ``background=true`` to background immediately. ``hard_deadline`` is the separate network cutoff that actually aborts the request.
 
     Arguments:
-        url: Fully-formed https URL (http is upgraded to https automatically).
-        format: "markdown" (default), "text", or "html".
-        timeout: Inline-wait window in seconds before the fetch backgrounds (does not abort it).
-        hard_deadline: Network deadline in seconds that aborts the request itself.
-        background: Skip the inline wait and background the fetch immediately.
-        explanation: A concise, user-facing reason for this fetch.
+      - url: Fully-formed https URL (http is upgraded to https automatically).
+      - format: "markdown" (default), "text", or "html".
+      - timeout: Inline-wait window in seconds before the fetch backgrounds (does not abort it).
+      - hard_deadline: Network deadline in seconds that aborts the request itself.
+      - background: Skip the inline wait and background the fetch immediately.
+      - explanation: A concise, user-facing reason for this fetch.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -635,13 +635,13 @@ async def download_file(
     Sync-if-fast: it waits up to ``timeout`` seconds for the download inline; one still running past ``timeout`` moves to the background and completes on its own (the destination path is held against concurrent edits until it finishes). ``timeout`` is that inline-wait window (the same meaning as bash's ``timeout``); ``hard_deadline`` is the separate network cutoff that aborts the transfer; ``background=true`` backgrounds immediately.
 
     Arguments:
-        url: Fully-formed http(s) URL of the file to download.
-        path: Destination path (relative to the working directory, or absolute).
-        location: The project location to save into — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
-        timeout: Inline-wait window in seconds before the download backgrounds (does not abort it).
-        hard_deadline: Network deadline in seconds that aborts the transfer itself.
-        background: Skip the inline wait and background the download immediately.
-        explanation: A concise, user-facing reason for this download.
+      - url: Fully-formed http(s) URL of the file to download.
+      - path: Destination path (relative to the working directory, or absolute).
+      - location: The project location to save into — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
+      - timeout: Inline-wait window in seconds before the download backgrounds (does not abort it).
+      - hard_deadline: Network deadline in seconds that aborts the transfer itself.
+      - background: Skip the inline wait and background the download immediately.
+      - explanation: A concise, user-facing reason for this download.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -713,10 +713,10 @@ async def control_screen(
     The script runs like a notebook cell: the value of a trailing bare expression is reported as the result, and whatever you ``print`` is returned too. The result lists what each action *changed* (``changed``), so you can confirm the click landed rather than only that it was aimed. If the surface can't be read — Accessibility not granted, or the browser not connected — that comes back as an error to raise with the user, not something to route around.
 
     Arguments:
-    - script: The Python to run.
-    - target: The window or tab to run it in, by the id from the target list. Required.
-    - explanation: Why this is needed.
-    - risk: Damage potential — higher for actions that change state.
+      - script: The Python to run.
+      - target: The window or tab to run it in, by the id from the target list. Required.
+      - explanation: Why this is needed.
+      - risk: Damage potential — higher for actions that change state.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -731,8 +731,8 @@ def ask_user(
     Ask only when the answer genuinely changes the work. If there is a clear safe default, choose it, state the choice, and continue. When recommending an option, place it first and append ``(Recommended)`` to its label. Custom answers are enabled by default, so never add a redundant Other or catch-all option. Answers are returned as arrays of selected labels.
 
     Arguments:
-        questions: List of question objects, each with "question" (full text), "header" (short label, max ~30 chars), "options" (list of {"label", "description"}), and optional "multiple" (bool) and "custom" (bool, default true).
-        explanation: A concise, user-facing reason for asking.
+      - questions: List of question objects, each with "question" (full text), "header" (short label, max ~30 chars), "options" (list of {"label", "description"}), and optional "multiple" (bool) and "custom" (bool, default true).
+      - explanation: A concise, user-facing reason for asking.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -744,8 +744,8 @@ def load_skill(name: str, explanation: str = Field(..., description="A concise, 
     When a task matches a skill listed in ``Available skills``, load that skill before acting rather than guessing its workflow. The result injects the full instructions and references to any scripts, files, or resources it provides.
 
     Arguments:
-        name: The skill name, matching one listed in "Available skills".
-        explanation: A concise, user-facing reason for loading this skill.
+      - name: The skill name, matching one listed in "Available skills".
+      - explanation: A concise, user-facing reason for loading this skill.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
