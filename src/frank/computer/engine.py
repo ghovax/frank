@@ -112,6 +112,46 @@ def _name_containers_from_their_contents(documents: list[Document]) -> None:
         document.text = " ".join(parts)
 
 
+# Roles that name a *region* rather than a control: the thing a person points at when they say
+# "the one in the sidebar" or "under Help". A control's own name is not context for itself, and a
+# row's name is not context for its cells, so only these contribute.
+_SECTION_ROLES = frozenset({
+    "AXWindow", "AXGroup", "AXToolbar", "AXTabGroup", "AXSplitGroup", "AXScrollArea",
+    "AXOutline", "AXTable", "AXList", "AXHeading", "AXRadioGroup", "AXDrawer", "AXSheet",
+    "AXPopover", "AXDisclosureTriangle", "AXTabPanel",
+})
+
+
+def _sections_in(snapshot: accessibility.Snapshot) -> dict[tuple[int, ...], str]:
+    """Every element in this tree that names a region, by its path.
+
+    Read from the accessibility names the application actually publishes, before
+    ``_name_containers_from_their_contents`` gives unnamed containers the words of what they hold:
+    a Finder row borrowing its first cell's filename is a useful *name* for that row and a
+    nonsense *context* for the cells inside it."""
+    named: dict[tuple[int, ...], str] = {}
+    for element in snapshot.elements:
+        if element.role not in _SECTION_ROLES:
+            continue
+        label = element.title or element.description or element.help
+        if label:
+            named[tuple(element.path)] = label
+    return named
+
+
+def _context_for(path: tuple[int, ...], sections: dict[tuple[int, ...], str]) -> str:
+    """The nearest named region enclosing this element, or ``""``.
+
+    Nearest rather than a whole trail: the browser reports one label for the same reason, and a
+    section's name repeated down every descendant is what makes those descendants
+    indistinguishable to a cosine."""
+    for depth in range(len(path) - 1, 0, -1):
+        label = sections.get(tuple(path[:depth]))
+        if label:
+            return label
+    return ""
+
+
 def _element_name(element: accessibility.Element) -> str:
     # The raw role (`AXButton`) is the last resort and a poor one — the embedding has never
     # usefully seen it — so the system's own prose for the role comes first.
@@ -329,6 +369,7 @@ class NativeSurface(Surface):
                 return self.incomplete("not_ready", app=name)
             state.elements = {}
             documents: list[Document] = []
+            sections = _sections_in(snapshot)
             for ax in snapshot.elements:
                 entry = RegistryEntry(pid=pid, name=_element_name(ax), handle=ax.handle, path=ax.path, center=ax.center)
                 ref = ".".join(str(step) for step in ax.path) or "root"
@@ -373,6 +414,14 @@ class NativeSurface(Surface):
                     payload["clickable"] = True
                 if shown:
                     payload["text"] = shown
+                # Which region of the window this sits in, from the nearest ancestor that names
+                # one. The browser has always reported this and a window never did, so a caller
+                # who narrowed with `context=` on a window matched nothing and the search silently
+                # widened to the whole tree — a facet that looked like it worked and did not.
+                context = _context_for(ax.path, sections)
+                if context:
+                    payload["context"] = context
+                    element.context = context
                 parent = ".".join(str(step) for step in ax.path[:-1]) if len(ax.path) > 1 else ""
                 if parent:
                     payload["parent"] = parent

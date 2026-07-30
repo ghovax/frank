@@ -551,22 +551,40 @@ def spawn_recipe(
 
 
 def temporary_directory(profile: Optional[Profile], *, workspace: str = "") -> str:
-    """A directory this profile actually permits writing to, or ``""`` when it permits none.
+    """A directory this profile permits writing *scratch* to, or ``""`` when it permits none.
 
     The bash tool writes its own log, and a log written outside the profile would make the tool
     fail on its own bookkeeping rather than on anything the user asked for — so the answer is
     drawn from the profile rather than from the system.
+
+    The workspace is considered last, and that is the whole point of the ordering. This used to
+    return the first writable entry in declaration order, and ``$WORKSPACE`` is first in every
+    default profile — so every command dropped a ``bash-<id>.log`` into the user's source tree,
+    where it turned up in ``git status``, invited an accidental commit, and had to be swept by
+    hand. Scratch belongs somewhere scratch is thrown away; the tree the agent is editing is the
+    one place it must not accumulate.
 
     Empty rather than `tempfile.gettempdir()` when nothing qualifies, deliberately. Falling back
     to the system temporary directory would hand a caller a path the profile denies, and every
     caller would then be confined to less than the directory it had just been told to use."""
     if profile is None or profile.enforce == ENFORCE_OFF:
         return tempfile.gettempdir()
-    for entry in profile.filesystem.writable:
+
+    def usable(entry: str) -> str:
         resolved = expand(entry, workspace=workspace)
-        if resolved and os.path.isdir(resolved) and os.access(resolved, os.W_OK):
-            return resolved
-    return ""
+        return resolved if resolved and os.path.isdir(resolved) and os.access(resolved, os.W_OK) else ""
+
+    workspace_root = os.path.realpath(workspace) if workspace else ""
+
+    def inside_workspace(path: str) -> bool:
+        if not workspace_root:
+            return False
+        real = os.path.realpath(path)
+        return real == workspace_root or real.startswith(workspace_root + os.sep)
+
+    candidates = [usable(entry) for entry in profile.filesystem.writable]
+    outside = [path for path in candidates if path and not inside_workspace(path)]
+    return outside[0] if outside else next((path for path in candidates if path), "")
 
 
 def resolve_command(command: str, spawn: Spawn) -> list[str]:
