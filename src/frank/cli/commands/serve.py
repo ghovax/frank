@@ -148,31 +148,6 @@ def build_application(daemon_url: str, token: str, directory: Path):
 
     client = httpx.AsyncClient(base_url=daemon_url, timeout=None, follow_redirects=False)
     root = directory.resolve()
-    # Set when the server begins shutting down, so a stream that would otherwise stay open for
-    # the life of a session ends itself instead of being severed. Without it, stopping the server
-    # force-cancelled every open `/events` stream and uvicorn logged each one as "Exception in
-    # ASGI application" with a full traceback — a page of alarming output describing nothing
-    # worse than a server closing on request.
-    stopping = asyncio.Event()
-
-    async def ending(stream):
-        """Relay an upstream stream, and stop cleanly when the server is asked to stop."""
-        upstream = stream.__aiter__()
-        while True:
-            reading = asyncio.ensure_future(anext(upstream))
-            waiting = asyncio.ensure_future(stopping.wait())
-            done, _ = await asyncio.wait({reading, waiting}, return_when=asyncio.FIRST_COMPLETED)
-            waiting.cancel()
-            if reading not in done:
-                # Shutting down. Abandon the read rather than waiting for a stream that has no
-                # reason to end on its own; the background close below drops the connection.
-                reading.cancel()
-                return
-            try:
-                yield reading.result()
-            except StopAsyncIteration:
-                return
-
     async def runtime(_request) -> JSONResponse:
         # An empty base is the whole message: address the daemon relative to this origin, which
         # is what makes the proxy invisible to the page.
@@ -230,7 +205,7 @@ def build_application(daemon_url: str, token: str, directory: Path):
         # Streamed rather than read: `/events` is a server-sent event stream that stays open for
         # the life of a session, and buffering it would mean the transcript never arrives.
         return StreamingResponse(
-            ending(response.aiter_raw()),
+            response.aiter_raw(),
             status_code=response.status_code,
             headers=passed,
             background=_closing(response),
@@ -247,7 +222,6 @@ def build_application(daemon_url: str, token: str, directory: Path):
         The terminal is a websocket, and a handshake cannot carry an Authorization header —
         which is why the daemon also accepts the token as a query parameter. That is the form
         used here, and it never leaves this process either."""
-        import asyncio
 
         import websockets as websockets_client
 
@@ -298,27 +272,7 @@ def build_application(daemon_url: str, token: str, directory: Path):
                 # Already closed by whichever side went first.
                 pass
 
-    @contextlib.asynccontextmanager
-    async def lifespan(running):
-        """Watch for the server being asked to stop, so open streams end before they are severed.
-
-        A watcher rather than the shutdown hook: uvicorn runs lifespan shutdown *after* it has
-        already waited out and force-closed every connection, which is exactly too late to be
-        useful. Its `should_exit` flag is raised the moment the signal arrives, so that is what
-        this reads."""
-        async def watch() -> None:
-            while not running.state.should_stop():
-                await asyncio.sleep(0.05)
-            stopping.set()
-
-        watcher = asyncio.ensure_future(watch())
-        try:
-            yield
-        finally:
-            stopping.set()
-            watcher.cancel()
-
-    application = Starlette(lifespan=lifespan, routes=[
+    return Starlette(routes=[
         Route(RUNTIME_PATH, runtime),
         # Named explicitly rather than caught by the wildcard: an ASGI application dispatches
         # websockets by route, so an HTTP catch-all would never see it.
@@ -328,10 +282,6 @@ def build_application(daemon_url: str, token: str, directory: Path):
             methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
         ),
     ])
-    # Replaced by `run` with the real server's flag; a caller that builds the application without
-    # one simply never stops early.
-    application.state.should_stop = lambda: False
-    return application
 
 
 def _port_is_taken(host: str, port: int) -> bool:
@@ -350,7 +300,6 @@ def _port_is_taken(host: str, port: int) -> bool:
 def run(arguments) -> int:
     import uvicorn
 
-    import contextlib
     import os
     import signal
 
@@ -444,10 +393,7 @@ def run(arguments) -> int:
             # seconds for a stream to notice is courteous; waiting forever is a hang.
             timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_SECONDS,
         )
-        server = uvicorn.Server(configuration)
-        # The application can now see the same flag the signal handler raises.
-        application.state.should_stop = lambda: server.should_exit
-        server.run()
+        uvicorn.Server(configuration).run()
     finally:
         # `finally`, not `except`. Uvicorn installs its own signal handlers and returns *normally*
         # on Ctrl-C, so nothing was ever raised for an `except` to catch — and the daemon this

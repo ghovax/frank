@@ -175,10 +175,7 @@ def _native_targets() -> list[Target]:
         return []
     frontmost = _frontmost_process_id()
     if not permissions.accessibility_granted():
-        return _collapsed(numbered, visible_ids, frontmost, note=(
-            "Accessibility is not granted, so this application's windows cannot be named or "
-            "addressed individually."
-        ))
+        return _collapsed(numbered, visible_ids, frontmost, note="")
 
     targets: list[Target] = []
     silent_pids: set[int] = set()
@@ -286,7 +283,7 @@ def _collapsed(numbered: dict[int, dict[str, Any]], visible_ids: set[int],
             focused=seen["pid"] == frontmost,
             visible=seen["visible"],
             addressable=False,
-            note=f"{seen['count']} window(s). {note}",
+            note=f"{seen['count']} window(s). {note}".strip() if note else f"{seen['count']} window(s)",
             address={"window_number": seen["number"], "pid": seen["pid"]},
         )
         for app, seen in sorted(by_app.items())
@@ -428,8 +425,18 @@ def context_block(mutating_allowed: bool = True) -> dict[str, Any]:
 
     The signatures come with the names. A description that lists them separately is a second
     statement of the same fact, and it drifted three times over before anyone noticed."""
+    from frank.computer.surface import message_loader
+
     targets = list_targets()
-    return {"targets": describe_all(targets), "primitives": vocabularies(mutating_allowed)}
+    block: dict[str, Any] = {"targets": describe_all(targets), "primitives": vocabularies(mutating_allowed)}
+    # Said once, as a condition, at the top. It used to be said only as a note repeated on every
+    # collapsed row — twenty-five identical sentences hanging off twenty-five entries that
+    # otherwise looked like places to act. A fact stated that way reads as a footnote about each
+    # application rather than as the state of the whole screen, and it was ignored: a model saw a
+    # list of targets and tried to use one.
+    if not permissions.accessibility_granted():
+        block["blocked"] = message_loader("computer")("screen_blocked")
+    return block
 
 
 def difference(before: list[Target], after: list[Target]) -> dict[str, Any]:
