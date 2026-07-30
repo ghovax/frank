@@ -4,6 +4,12 @@ Synchronous by default: the command runs to completion and its real output is re
 
 Set background=True only for genuinely long-running work you do NOT need the result of before your turn can continue — a build, a test suite, a dev server, a broad scan. A backgrounded command returns immediately with a task identifier; its result is auto-injected into the conversation when it finishes, and the harness re-engages you then. Do NOT background a command whose output you need next (and never background then re-run the same command — it is already running).
 
+**Nothing you run may ask a question.** There is no terminal attached and nobody can type into it: a command that waits for input waits until its timeout, then auto-backgrounds still waiting, holding a process that will never finish. The user cannot rescue it and will not even see the prompt.
+
+So say up front what an interactive command would have asked. Pass the flag that assumes the answer — `-y`, `--yes`, `--non-interactive`, `--no-input`, `--force-yes` where the tool offers it. Stop a pager before it starts: `git --no-pager log`, or pipe through `cat`. Never open an editor, a REPL, or a shell — no bare `python`, `node`, `psql`, `ssh host` without a command, no `git rebase -i` or `git add -i`, no `$EDITOR`. Feed input rather than waiting for it: `printf 'y\n' | …`, or `< /dev/null` to make the silence explicit. Never run anything that prompts for a password, `sudo` included — it cannot be answered here.
+
+When a step genuinely needs a person — a credential, a decision only they can make, a confirmation the tool insists on — do not try to run it anyway. Ask with `ask_user`, or tell them what to run themselves.
+
 Always provide a clear explanation and risk assessment for the command. Set read_only=True only for commands that provably just read state (cat, head, tail, ls, grep, find, etc.). Omitted, the command is treated as potentially mutating.
 
 **Prefer specialized tools** for file discovery, content search, file reads, edits, writes, URL fetching, and downloads. Use bash for tests, builds, Git, process and package management, pipelines, and work without a dedicated tool.
