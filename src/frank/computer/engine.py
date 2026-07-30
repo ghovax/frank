@@ -14,7 +14,7 @@ leaves perceiving (retrieval) and composing (the control sandbox) to their own l
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import ApplicationServices as AS
@@ -22,7 +22,7 @@ import ApplicationServices as AS
 from frank.computer import accessibility, input_synthesis, permissions
 from frank.computer.retrieval import Document, element_text, text_or_fallback
 from frank.computer.surface import (
-    Element, Surface, ToolFailure, message_loader, resolve_caret, resolve_range,
+    Element, Glance, Surface, ToolFailure, message_loader, resolve_caret, resolve_range,
 )
 from frank.base.tuning import Tunable, active_tuning
 
@@ -42,7 +42,8 @@ _OPEN_ACTIONS = ("AXOpen", "AXConfirm", "AXPick")
 
 # Every action reads the tree or synthesizes input, and so needs the Accessibility grant.
 _NEEDS_ACCESSIBILITY = frozenset({
-    "documents", "click", "type", "press", "scroll", "select", "caret", "drag", "read",
+    "documents", "click", "type", "press", "scroll", "select", "caret", "drag", "read", "focus",
+    "shortcuts",
 })
 
 
@@ -53,6 +54,18 @@ class RegistryEntry:
     handle: Any
     path: tuple[int, ...]
     center: Optional[tuple[float, float]]
+
+
+@dataclass
+class _WindowState:
+    """Everything the surface knows about one target window, keyed by that target's id.
+
+    Per target rather than per surface. The elements map is rebuilt by a ``documents`` read of
+    *this* window, so a read of another window cannot silently re-point ids a script is holding."""
+
+    pid: int
+    window_id: int
+    elements: dict[str, RegistryEntry] = field(default_factory=dict)
 
 
 def _name_containers_from_their_contents(documents: list[Document]) -> None:
@@ -179,11 +192,11 @@ class NativeSurface(Surface):
 
     def __init__(self) -> None:
         super().__init__("frank-accessibility", message)
-        self._last_pid: Optional[int] = None
-        # id → element, rebuilt on every ``documents`` read. The id is the element's path in the
-        # tree (``0.3.1``) — the platform's own address, stable within a snapshot and re-resolvable
-        # afterwards — so ``control_screen`` acts on exactly what a ``find`` returned.
-        self._targets: dict[str, RegistryEntry] = {}
+        # One entry per target, not one slot for whichever was read last. The id→element map is
+        # the element's path in the tree (``0.3.1``) — the platform's own address, stable within a
+        # snapshot and re-resolvable afterwards — so ``control_screen`` acts on exactly what a
+        # ``find`` returned, in the window it was found in.
+        self._windows: dict[str, _WindowState] = {}
 
     def recover(self, detail: str) -> dict:
         return {"ok": False, "error": message("action_failed", detail=detail)}
@@ -191,34 +204,39 @@ class NativeSurface(Surface):
 
     # Target and element resolution.
 
-    def _resolve_pid(self, target: str) -> int:
-        """The process behind a target id, which names a *window* rather than an application.
+    def _state_for(self, target: str) -> _WindowState:
+        """The live state of one window, resolving the target if this is the first touch.
 
-        An application's display name used to be the address here, and it is not an identity: with
-        two copies of one application open it resolved to whichever the search happened to reach
-        first, and there was no way to say which was meant. A window id is minted by the window
-        server, is unique, and dies with the window — so a target that has gone says so instead of
-        quietly becoming a different one."""
+        There is no "current" window and no fallback to the last one. A single ``_last_pid``
+        lived here, set by whichever read ran last anywhere in the process, and everything that
+        did not take a ref read it: ``press`` sent keys to it, ``focus`` raised it, ``read()``
+        refused with "nothing to read yet" when it happened to be unset. Two scripts running
+        concurrently shared it. A target is an argument now, all the way down."""
         from frank.computer import targets as target_registry
 
-        if target:
-            # Windows only. Resolving a window number has no business connecting to a browser, and
-            # asking the full registry for one did exactly that — `list_targets` enumerates tabs,
-            # which opens a DevTools connection to the user's live Chrome and blocks the caller.
-            found = target_registry.find_window(target)
-            if found is None:
-                raise ToolFailure({
-                    "ok": False,
-                    "error": f"Target {target!r} no longer exists — the window was closed, or it never opened.",
-                    "targets": {"current": target_registry.describe_windows()},
-                })
-            return int(found.address["pid"])
-        if self._last_pid is not None:
-            return self._last_pid
-        raise ToolFailure({"ok": False, "error": "No target given. Name the window to act in."})
+        state = self._windows.get(target)
+        if state is not None:
+            return state
+        found = target_registry.find_window(target)
+        if found is None:
+            raise ToolFailure({
+                "ok": False,
+                "error": message("no_such_window", target=target),
+                "targets": {"current": target_registry.describe_windows()},
+            })
+        if not found.addressable:
+            raise ToolFailure({
+                "ok": False,
+                "error": message("not_a_window", app=found.app, target=target, detail=found.note),
+                "targets": {"current": target_registry.describe_windows()},
+            })
+        state = _WindowState(pid=int(found.address["pid"]), window_id=int(found.address["window_number"]))
+        self._windows[target] = state
+        return state
 
-    def _entry(self, ref: str) -> RegistryEntry:
-        entry = self._targets.get(ref)
+    @staticmethod
+    def _entry(state: _WindowState, ref: str) -> RegistryEntry:
+        entry = state.elements.get(ref)
         if entry is None:
             raise ToolFailure({"ok": False, "error": f"No element {ref!r}. Find the element first (find_one or find_many) to get current element ids."})
         return entry
@@ -292,7 +310,8 @@ class NativeSurface(Surface):
         the element's own words. Rebuilds the id→element map that ``perform`` acts through."""
 
         def run() -> dict:
-            pid = self._resolve_pid(target)
+            state = self._state_for(target)
+            pid = state.pid
             snapshot = self._ready_snapshot(pid, "focused")
             if _is_incomplete(snapshot):
                 name = snapshot.app_name or target or "the app"
@@ -308,13 +327,12 @@ class NativeSurface(Surface):
                         "withholds_accessibility", app=name, width=width, height=height,
                     )
                 return self.incomplete("not_ready", app=name)
-            self._last_pid = pid
-            self._targets = {}
+            state.elements = {}
             documents: list[Document] = []
             for ax in snapshot.elements:
                 entry = RegistryEntry(pid=pid, name=_element_name(ax), handle=ax.handle, path=ax.path, center=ax.center)
                 ref = ".".join(str(step) for step in ax.path) or "root"
-                self._targets[ref] = entry
+                state.elements[ref] = entry
                 element = _to_element(ax, entry)
                 # Two strings, deliberately. `shown` is the element's own words, which is what a
                 # reader is given; `key` is what is embedded, and it leads with the kind of
@@ -373,18 +391,25 @@ class NativeSurface(Surface):
 
     # Acting — control_screen. ``perform`` routes one primitive call to its handler.
 
-    def perform(self, operation: str, arguments: list, keywords: dict) -> dict:
+    def perform(self, target: str, operation: str, arguments: list, keywords: dict) -> dict:
         handler = getattr(self, f"_primitive_{operation}", None)
         if handler is None:
-            return {"ok": False, "error": f"The computer surface has no '{operation}' action."}
+            from frank.computer import targets as target_registry
+
+            available = ", ".join(target_registry.vocabularies()[target_registry.WINDOW_VOCABULARY])
+            return {"ok": False, "error": f"A window has no {operation!r} action. It has: {available}."}
         gate = self.preflight(operation)
         if gate is not None:
             return gate
-        return handler(*arguments, **keywords)
+        try:
+            state = self._state_for(target)
+        except ToolFailure as failure:
+            return failure.payload
+        return self.call_primitive(operation, handler, state, arguments, keywords)
 
-    def _primitive_click(self, ref: str, *, button: str = "left", count: int = 1, **_: Any) -> dict:
+    def _primitive_click(self, state: _WindowState, element: str, *, button: str = "left", count: int = 1, **_: Any) -> dict:
         def run() -> dict:
-            entry = self._entry(ref)
+            entry = self._entry(state, element)
             handle = self._live_handle(entry)
             if handle is not None:
                 available_actions = set(accessibility.action_names(handle))
@@ -404,55 +429,78 @@ class NativeSurface(Surface):
 
         return self.guard(run)
 
-    def _primitive_type(self, ref: str, text: str, *, mode: str = "replace", **_: Any) -> dict:
+    def _primitive_type(self, state: _WindowState, element: str, text: str, *, submit: bool = False,
+                        mode: str = "replace", **_: Any) -> dict:
+        """Put text into a field, and — with ``submit`` — post the Return that commits it.
+
+        ``submit`` exists here because it exists on a page, and a script is written against
+        ``type``, not against whichever surface happens to be answering. It used to be accepted
+        and silently dropped into ``**_``: the call returned ``ok`` with a cheerful ``did``, the
+        form was never submitted, and nothing anywhere said so. The model that hit this diagnosed
+        a focus race that had never happened."""
         def run() -> dict:
-            entry = self._entry(ref)
+            entry = self._entry(state, element)
             handle = self._live_handle(entry)
             if handle is None:
                 return {"ok": False, "error": f"Element {entry.name!r} is no longer available; search again."}
-            if mode == "insert":
-                if accessibility.set_selected_text(handle, text):
-                    return {"ok": True, "did": f"Inserted {len(text)} chars", "via": "ax"}
+            result = self._enter_text(entry, handle, text, mode=mode)
+            if result.get("ok") and submit:
+                # Return goes to the process, not to the element: a form is committed by the
+                # focused control, which typing has just made this one.
                 AS.AXUIElementSetAttributeValue(handle, accessibility.FOCUSED, True)
                 time.sleep(active_tuning().duration(Tunable.focus_settle_seconds))
-                input_synthesis.type_text(entry.pid, text)
-                return {"ok": True, "did": f"Typed {len(text)} chars", "via": "synthesized"}
-            if accessibility.attribute_settable(handle, accessibility.VALUE) \
-                    and AS.AXUIElementSetAttributeValue(handle, accessibility.VALUE, text) == 0:
-                landed = accessibility.text_value(handle)
-                result: dict[str, Any] = {"ok": True, "did": f"Set {entry.name!r}", "via": "ax"}
-                if landed is not None:
-                    result["value"] = landed
-                    if landed != text:
-                        result["note"] = message("type_clamped")
-                return result
-            AS.AXUIElementSetAttributeValue(handle, accessibility.FOCUSED, True)
-            time.sleep(active_tuning().duration(Tunable.focus_settle_seconds))
-            input_synthesis.type_text(entry.pid, text)
-            return {"ok": True, "did": f"Typed into {entry.name!r}", "via": "synthesized"}
+                if input_synthesis.press_key(entry.pid, "return", []):
+                    result["did"] = f"{result.get('did', 'Typed')}, then submitted"
+                    result["submitted"] = True
+                else:
+                    result["submitted"] = False
+                    result["note"] = "The text went in but Return could not be posted, so nothing was submitted."
+            return result
 
         return self.guard(run)
 
-    def _primitive_press(self, key: str, *, modifiers: Optional[list[str]] = None, **_: Any) -> dict:
+    def _enter_text(self, entry: RegistryEntry, handle: Any, text: str, *, mode: str) -> dict:
+        """The text itself: set through accessibility where the field allows it, typed where not."""
+        if mode == "insert":
+            if accessibility.set_selected_text(handle, text):
+                return {"ok": True, "did": f"Inserted {len(text)} chars", "via": "ax"}
+            AS.AXUIElementSetAttributeValue(handle, accessibility.FOCUSED, True)
+            time.sleep(active_tuning().duration(Tunable.focus_settle_seconds))
+            input_synthesis.type_text(entry.pid, text)
+            return {"ok": True, "did": f"Typed {len(text)} chars", "via": "synthesized"}
+        if accessibility.attribute_settable(handle, accessibility.VALUE) \
+                and AS.AXUIElementSetAttributeValue(handle, accessibility.VALUE, text) == 0:
+            landed = accessibility.text_value(handle)
+            result: dict[str, Any] = {"ok": True, "did": f"Set {entry.name!r}", "via": "ax"}
+            if landed is not None:
+                result["value"] = landed
+                if landed != text:
+                    result["note"] = message("type_clamped")
+            return result
+        AS.AXUIElementSetAttributeValue(handle, accessibility.FOCUSED, True)
+        time.sleep(active_tuning().duration(Tunable.focus_settle_seconds))
+        input_synthesis.type_text(entry.pid, text)
+        return {"ok": True, "did": f"Typed into {entry.name!r}", "via": "synthesized"}
+
+    def _primitive_press(self, state: _WindowState, key: str, *, modifiers: Optional[list[str]] = None, **_: Any) -> dict:
         def run() -> dict:
-            pid = self._last_pid if self._last_pid is not None else self._resolve_pid("")
             keys = modifiers or []
-            if not input_synthesis.press_key(pid, key, keys):
+            if not input_synthesis.press_key(state.pid, key, keys):
                 return {"ok": False, "error": f"{key!r} is not a key. Use a named key, a letter, or a chord: press(\"cmd+shift+g\")."}
             return {"ok": True, "did": f"Pressed {' '.join([*keys, key])}"}
 
         return self.guard(run)
 
-    def _primitive_scroll(self, ref: Optional[str] = None, *, direction: str = "", **_: Any) -> dict:
+    def _primitive_scroll(self, state: _WindowState, element: Optional[str] = None, *, direction: str = "", **_: Any) -> dict:
         def run() -> dict:
-            if ref is not None:
-                entry = self._entry(ref)
+            if element is not None:
+                entry = self._entry(state, element)
                 handle = self._live_handle(entry)
                 if handle is not None and AS.AXUIElementPerformAction(handle, "AXScrollToVisible") == 0:
                     return {"ok": True, "did": f"Scrolled {entry.name!r} into view", "via": "ax"}
                 pid = entry.pid
             else:
-                pid = self._last_pid if self._last_pid is not None else self._resolve_pid("")
+                pid = state.pid
             step = active_tuning().amount(Tunable.scroll_amount_pixels)
             vectors = {"up": (0, step), "down": (0, -step), "left": (step, 0), "right": (-step, 0)}
             if direction not in vectors:
@@ -463,10 +511,10 @@ class NativeSurface(Surface):
 
         return self.guard(run)
 
-    def _primitive_select(self, ref: str, *, text: Optional[str] = None, to_text: Optional[str] = None,
+    def _primitive_select(self, state: _WindowState, element: str, *, text: Optional[str] = None, to_text: Optional[str] = None,
                    select_all: bool = False, occurrence: int = 1, **_: Any) -> dict:
         def run() -> dict:
-            entry = self._entry(ref)
+            entry = self._entry(state, element)
             handle = self._live_handle(entry)
             if handle is None:
                 return {"ok": False, "error": f"Element {entry.name!r} is no longer available; search again."}
@@ -485,10 +533,10 @@ class NativeSurface(Surface):
 
         return self.guard(run)
 
-    def _primitive_caret(self, ref: str, *, before: Optional[str] = None, after: Optional[str] = None,
+    def _primitive_caret(self, state: _WindowState, element: str, *, before: Optional[str] = None, after: Optional[str] = None,
                   at_offset: Optional[int] = None, edge: str = "", occurrence: int = 1, **_: Any) -> dict:
         def run() -> dict:
-            entry = self._entry(ref)
+            entry = self._entry(state, element)
             handle = self._live_handle(entry)
             if handle is None:
                 return {"ok": False, "error": f"Element {entry.name!r} is no longer available; search again."}
@@ -505,12 +553,12 @@ class NativeSurface(Surface):
 
         return self.guard(run)
 
-    def _primitive_drag(self, ref: str, to_element: Optional[str] = None, *, button: str = "left", **_: Any) -> dict:
+    def _primitive_drag(self, state: _WindowState, element: str, onto: Optional[str] = None, *, button: str = "left", **_: Any) -> dict:
         def run() -> dict:
-            if to_element is None:
-                return {"ok": False, "error": "drag needs to_element — the element to drop onto."}
-            source = self._entry(ref)
-            target = self._entry(to_element)
+            if onto is None:
+                return {"ok": False, "error": "drag needs onto — the element to drop onto."}
+            source = self._entry(state, element)
+            target = self._entry(state, onto)
             if source.center is None or target.center is None:
                 return {"ok": False, "error": "Both elements need an on-screen position to drag between."}
             input_synthesis.drag(source.pid, source.center[0], source.center[1], target.center[0], target.center[1], button=button)
@@ -518,52 +566,75 @@ class NativeSurface(Surface):
 
         return self.guard(run)
 
-    def observe(self) -> dict:
-        """Title, focus and selection — the three cheap facts a native window can answer.
+    def glance(self, target: str) -> Glance:
+        """Title, focus and selection, plus which elements are present — from one walk.
 
         No url and no network here, because a window has neither. The keys a surface cannot fill
-        are absent rather than null, so the model learns one shape and reads whatever is present."""
-        pid = self._last_pid
-        if pid is None:
-            return {}
+        are absent rather than null, so the model learns one shape and reads whatever is present.
+        The element ids ride along from the same snapshot rather than costing a second read, and
+        deliberately do not go through ``documents``: that rebuilds the id→element map, so merely
+        looking at a window used to re-point every id a script was already holding."""
         try:
+            state = self._windows.get(target)
+            pid = state.pid if state is not None else self._state_for(target).pid
             snapshot = accessibility.snapshot_app(pid, budget_seconds=1.0)
         except Exception:  # noqa: BLE001 — an observation must never be the thing that fails
-            return {}
+            return Glance()
         focused = next((_element_name(ax) for ax in snapshot.elements if getattr(ax, "focused", False)), None)
         selected = [_element_name(ax) for ax in snapshot.elements if ax.selected]
-        return {"title": snapshot.window_title or "", "focus": focused,
-                "selection": selected[0] if selected else None}
+        return Glance(
+            facts={"title": snapshot.window_title or "", "focus": focused,
+                   "selection": selected[0] if selected else None},
+            ids=frozenset(".".join(str(step) for step in ax.path) or "root" for ax in snapshot.elements),
+        )
 
-    def _primitive_focus(self, **_: Any) -> dict:
-        """Bring this target to the front, so input reaches it.
+    def _primitive_focus(self, state: _WindowState, element: Optional[str] = None, **_: Any) -> dict:
+        """Give keyboard focus to this window, or to one control inside it.
 
-        Acting does not focus, deliberately: the accessibility API drives most controls in place,
-        and an agent that raises windows is one that fights the person using the computer. But
-        text entry is different — an unfocused control accepts no keystrokes, and `AXPress` on one
-        returns success while doing nothing, so the failure is silent. This is how a script says
-        "I am about to type" without the harness guessing on its behalf."""
+        It sets ``AXFocused`` and nothing else. It used to call
+        ``activateWithOptions_(NSApplicationActivateIgnoringOtherApps)``, which raises the
+        application over whatever the user is doing — and directly contradicts the promise the
+        rest of the input layer makes and keeps: *we never warp the real cursor and never
+        force-activate the target*. It was also redundant, since typing already focuses the field
+        it is about to type into. Input reaches an unfocused, off-screen, other-Space window
+        perfectly well; every event goes to the process, not to the screen."""
         def run() -> dict:
-            pid = self._last_pid
-            if pid is None:
-                return {"ok": False, "error": "Nothing to focus yet — read the target first."}
-            try:
-                from AppKit import NSRunningApplication
-
-                application = NSRunningApplication.runningApplicationWithProcessIdentifier_(pid)
-                if application is None:
-                    return {"ok": False, "error": "That application is no longer running."}
-                application.activateWithOptions_(1 << 1)  # NSApplicationActivateIgnoringOtherApps
-            except Exception as error:  # noqa: BLE001 — report, never raise out of a primitive
-                return {"ok": False, "error": f"Could not focus the target: {error}"}
+            if element:
+                entry = self._entry(state, element)
+                handle = self._live_handle(entry)
+                if handle is None:
+                    return {"ok": False, "error": f"Element {entry.name!r} is no longer available; search again."}
+                if AS.AXUIElementSetAttributeValue(handle, accessibility.FOCUSED, True) != 0:
+                    return {"ok": False, "error": f"{entry.name!r} does not accept keyboard focus."}
+                return {"ok": True, "focused": entry.name}
+            window = accessibility.window_handle(state.pid, state.window_id)
+            if window is None:
+                return {"ok": False, "error": "That window is no longer available."}
+            AS.AXUIElementSetAttributeValue(window, "AXMain", True)
+            AS.AXUIElementSetAttributeValue(window, accessibility.FOCUSED, True)
             return {"ok": True, "focused": True}
 
         return self.guard(run)
 
-    def _primitive_read(self, ref: Optional[str] = None, **_: Any) -> dict:
+    def _primitive_shortcuts(self, state: _WindowState, **_: Any) -> dict:
+        """Every keyboard shortcut this application publishes, from its own menu bar.
+
+        A shortcut recalled from memory is a guess about a version of an application you are not
+        looking at, and the cost of a wrong one is not nothing: `Control+3` selected RStudio's
+        Environment pane instead of Help, changing the user's workspace on the way to a task that
+        never needed it. The application already publishes the answer; nothing asked it."""
+        def run() -> dict:
+            found = accessibility.shortcuts_of(state.pid)
+            if not found:
+                return {"ok": True, "shortcuts": [], "note": message("no_shortcuts")}
+            return {"ok": True, "shortcuts": found}
+
+        return self.guard(run)
+
+    def _primitive_read(self, state: _WindowState, element: Optional[str] = None, **_: Any) -> dict:
         """Read one element's text.
 
-        `ref` is optional here because it is optional on the browser surface, and a script is
+        `element` is optional here because it is optional on the browser surface, and a script is
         written against `read()` — not against whichever surface happens to be answering. It
         used to be required, so `read()` on this surface raised a bare
         `TypeError: missing 1 required positional argument` out of the primitive dispatcher and
@@ -571,22 +642,24 @@ class NativeSurface(Surface):
         function. A surface that cannot do something says so in words.
         """
         def run() -> dict:
-            if not ref:
+            if not element:
                 # The whole target's text, which is what `read()` means on the browser. One name,
                 # one meaning: this used to be an error here and a page read there, so a script
                 # written against `read()` worked or failed depending on what was answering — the
                 # exact leak the single-vocabulary rule exists to close.
-                pid = self._last_pid if self._last_pid is not None else None
-                if pid is None:
-                    return {"ok": False, "error": "read() has nothing to read yet — find something first."}
-                snapshot = self._ready_snapshot(pid, "focused")
-                spoken = [text for text in (_element_name(element) for element in snapshot.elements) if text]
-                return {"ok": True, "text": "\n".join(spoken)}
-            entry = self._entry(ref)
+                snapshot = self._ready_snapshot(state.pid, "focused")
+                # Every line the window says, as a list. A window's text is not a document — it is
+                # a set of discrete labels, one per control — and joining them with newlines threw
+                # away the one piece of structure the tree actually gives you, leaving the script
+                # to split a blob back into the lines it was built from.
+                return {"ok": True, "lines": [
+                    text for text in (_element_name(element) for element in snapshot.elements) if text
+                ]}
+            entry = self._entry(state, element)
             handle = self._live_handle(entry)
             if handle is None:
                 return {"ok": False, "error": f"Element {entry.name!r} is no longer available; search again."}
-            return {"ok": True, "text": accessibility.text_value(handle) or ""}
+            return {"ok": True, "lines": (accessibility.text_value(handle) or "").splitlines()}
 
         return self.guard(run)
 

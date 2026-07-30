@@ -600,6 +600,9 @@
           "default": "",
           "type": "string"
         },
+        "screen": {
+          "tsType": "Record<string, unknown>"
+        },
         "tasks": {
           "items": {
             "tsType": "Record<string, unknown>"

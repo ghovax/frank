@@ -1318,15 +1318,19 @@ class _ToolsMixin:
             return
         target = target_registry.find_target(target_id)
         if target is None:
+            # What is *not* said here matters. This used to assert "it was closed, or it never
+            # opened" about any target it could not find — and the enumeration behind it only saw
+            # the current Space, so on an ordinary machine fifty-six of seventy-four open windows
+            # were pronounced dead. A cause nobody checked is worse than no cause: the model
+            # passed it on to the user as fact.
             yield ToolResult(id=tool_call_identifier, name=tool_name, result={
                 "ok": False,
-                "error": f"Target {target_id!r} no longer exists — it was closed, or it never opened.",
-                "targets": {"removed": [target_id], "current": target_registry.describe_all()},
+                "error": f"Target {target_id!r} is not among the windows and tabs I can see.",
+                "targets": {"missing": [target_id], "current": target_registry.describe_all()},
             })
             return
         surface_name = target.surface
         surface = self._surface_for(surface_name)
-        app = target.id
         gate = surface.preflight("documents")
         if gate is not None:
             yield ToolResult(id=tool_call_identifier, name=tool_name, result=gate)
@@ -1335,13 +1339,19 @@ class _ToolsMixin:
         control_message = message_loader("control")
         known_ids: dict[str, dict[str, str]] = {}   # id -> {id, name, role, context}, from find_* results
         changed: list[dict[str, Any]] = []
-        # Not the permission classifier's mutating set, though it currently reads the same. This one
-        # answers a narrower question: which verbs take an *element* as their first argument and
-        # change it — those get unique-or-raise resolution and a line in `acted_on`. `evaluate`,
-        # `navigate` and the tab verbs change state without naming an element, so they belong in the
-        # classifier's set and not in this one.
+        read_failures: list[dict[str, Any]] = []    # structured payloads a failed read produced
+        # One place, three questions, so they cannot disagree. They used to be three literals, and
+        # they did disagree: `caret` was listed as needing focus and never listed as watched, so
+        # the branch that would have focused it was unreachable from the day it was written.
+        # Verbs that take an element as their first argument and change it. `evaluate`, `navigate`
+        # and the tab verbs change state without naming an element, so they are not here.
         element_mutating_verbs = frozenset({"click", "type", "choose", "upload", "drag"})
-        targeting_verbs = element_mutating_verbs | frozenset({"read", "hover", "scroll"})
+        # Verbs whose first argument is an element to resolve, changed or not.
+        targeting_verbs = element_mutating_verbs | frozenset({"read", "hover", "scroll", "caret", "select", "focus"})
+        # Verbs worth bracketing with a glance, because they can change what is on screen.
+        watched_verbs = element_mutating_verbs | frozenset({"press", "navigate", "caret", "select"})
+        # Verbs that replace the document wholesale, whose diff is a summary rather than a list.
+        navigating_verbs = frozenset({"navigate"})
 
         def _facets(clickable: Any, name: str, context: str) -> dict:
             """The narrowing a caller asked for. Omitted means *no opinion*, never `False`.
@@ -1406,10 +1416,14 @@ class _ToolsMixin:
             return [document for document in documents if admits(document)]
 
         def _rank(query: str, limit: int, everything: bool, facets: dict | None = None) -> list:
-            # The window id goes to the native surface; the browser reads whichever tab is active,
-            # which `tab()` in the script selects.
-            raw = surface.documents(app) if surface_name == "computer" else surface.documents()
+            # One call, one meaning, both surfaces: the target says where to read.
+            raw = surface.documents(target_id)
             if not raw.get("ok"):
+                # The script sees a raisable error, and the *structure* survives to the result.
+                # This used to be `RuntimeError(raw["error"])`, which threw away everything but
+                # the sentence — including, when a window had gone, the current target list that
+                # was the one thing the model needed in order to recover.
+                read_failures.append({key: value for key, value in raw.items() if key != "ok"})
                 raise RuntimeError(raw.get("error", "Could not read the screen."))
             documents = raw.get("documents", [])
             candidates = _matching(documents, facets or {})
@@ -1434,45 +1448,63 @@ class _ToolsMixin:
             )
             return hits
 
-        def _known_elements() -> list[dict]:
-            """Every element the surface currently publishes, cheaply, for an `appeared` diff.
+        # How much of what appeared is spelled out. Everything new is the most useful thing a
+        # model can learn, and "everything new, in full" is a whole document when the action
+        # happened to navigate — one Enter key returned an entire help page, truncated mid-payload.
+        # The count is always exact; this is only how many are described.
+        appeared_detail_limit = 12
 
-            Scoped to what a read already produces rather than to a bespoke subtree walk: the
-            surfaces have one way of enumerating themselves and adding a second would be a second
-            thing to keep true."""
-            try:
-                raw = surface.documents(app) if surface_name == "computer" else surface.documents()
-            except Exception:  # noqa: BLE001 — an observation must never fail an action
-                return []
-            return [{"id": document.id, **document.payload} for document in raw.get("documents", [])]
+        def _hydrate(ids: frozenset[str]) -> dict:
+            """Newly-present elements as a count plus a readable sample, never as a wall."""
+            if not ids:
+                return {}
+            known = [known_ids[identifier] for identifier in ids if identifier in known_ids]
+            sample = known[:appeared_detail_limit] or [{"id": identifier} for identifier in sorted(ids)[:appeared_detail_limit]]
+            report: dict[str, Any] = {"appeared": sample}
+            if len(ids) > len(sample):
+                report["appeared_total"] = len(ids)
+            return report
 
-        # Input needs focus; nothing else does. `AXPress` on an unfocused control returns success
-        # and does nothing, so the failure is silent and only an empty diff reveals it. A click
-        # that changes nothing is usually a click that was already satisfied — an already-selected
-        # tab — so focusing on its behalf would steal the screen to repeat something done.
-        input_bearing_verbs = frozenset({"type", "press", "caret"})
+        async def _record_change(name: str, args: list, before: surface_module.Glance):
+            """What one action changed. It observes and it does not act.
 
-        async def _record_change(name: str, args: list, before: dict, before_elements: list[dict]):
-            """What one action changed: the globals that moved, and what became newly present."""
-            after = await asyncio.to_thread(surface.observe)
-            moved = surface_module.changes_between(before, after)
-            appeared = surface_module.appeared_between(before_elements, _known_elements())
+            It used to do both. An action that reported no change was silently retried — after
+            force-activating the application, stealing the user's screen — with `keywords` dropped
+            on the floor, so a retried `type(mode="insert")` became a *replace* and a retried
+            `press` lost its modifiers. Then it deleted the `changed: []` it had just written,
+            whether or not the retry accomplished anything, because the test was `isinstance(
+            retried, dict)` and `perform` always returns a dict. A failed fallback reported as
+            success. Focus now lives in the primitive that needs it, where it can be honest about
+            what it did, and this function's only job is to say what moved."""
+            after = await asyncio.to_thread(surface.glance, target_id)
+            moved = surface_module.changes_between(before.facts, after.facts)
+            appeared = surface_module.appeared_between(before, after)
             record: dict[str, Any] = {"action": name}
             if args and isinstance(args[0], str):
                 record.update(known_ids.get(args[0], {"id": args[0]}))
             record.update(moved)
-            if appeared:
-                record["appeared"] = appeared
+            navigated = name in navigating_verbs or "url" in moved
+            if navigated:
+                # The document was replaced, so "everything new" is the whole of it. Reporting the
+                # new place and its size is what a person would say; listing every element in it
+                # is what the general rule would do, and it is absurd here.
+                record["navigated"] = {
+                    "title": after.facts.get("title", ""),
+                    "url": after.facts.get("url", ""),
+                    "elements": len(after.ids),
+                }
+                record.pop("appeared", None)
+            elif appeared:
+                record.update(_hydrate(appeared))
             if not moved and not appeared:
+                # The one honest answer when nothing observable happened, and the signal the model
+                # needs: the click missed, or the pane had not loaded — rather than the element
+                # being named something else.
                 record["changed"] = []
-                if name in input_bearing_verbs:
-                    focus_outcome = await asyncio.to_thread(surface.perform, "focus", [], {})
-                    if isinstance(focus_outcome, dict) and focus_outcome.get("ok"):
-                        retried = await asyncio.to_thread(surface.perform, name, list(args), {})
-                        record["focused_target"] = {"id": target_id, "reason": f"{name} requires focus"}
-                        after = await asyncio.to_thread(surface.observe)
-                        record.update(surface_module.changes_between(before, after))
-                        record.pop("changed", None) if isinstance(retried, dict) else None
+            if not target.visible:
+                # Acting off-screen works (every event is posted to the process, not the screen),
+                # but a person deserves to be told their other desktop just moved.
+                record["visible"] = False
             return record
 
         def _record(hit: Any) -> dict:
@@ -1559,24 +1591,26 @@ class _ToolsMixin:
             # which is the one thing a script already knew; it never answered "did anything
             # happen", and a script that clicks a tab and then cannot find the field inside it
             # could not tell a failed click from a slow pane from a differently-named field.
-            watched = name in element_mutating_verbs or name in {"press", "navigate"}
-            before = await asyncio.to_thread(surface.observe) if watched else {}
-            before_elements = _known_elements() if watched else []
-            outcome = await asyncio.to_thread(surface.perform, name, list(args), keywords)
+            watched = name in watched_verbs
+            # One glance on each side, not two full reads. Bracketing an action used to cost four
+            # accessibility walks, two of which went through `documents` — which rebuilds the
+            # id→element map, so merely observing re-pointed every id the script was holding.
+            before = await asyncio.to_thread(surface.glance, target_id) if watched else surface_module.Glance()
+            outcome = await asyncio.to_thread(surface.perform, target_id, name, list(args), keywords)
             if isinstance(outcome, dict):
                 if outcome.get("ok") is False:
                     # Surface a primitive failure into the script as a raised error it can try/except.
                     raise RuntimeError(outcome.get("error", f"{name} failed"))
                 if watched:
-                    record = await _record_change(name, args, before, before_elements)
+                    record = await _record_change(name, args, before)
                     if record is not None:
                         changed.append(record)
                 # Hand the script the useful value directly: evaluate's result or read's text is the
                 # value itself (structured and queryable), an action is its confirmation minus `ok`.
                 if "result" in outcome:
                     return outcome["result"]
-                if "text" in outcome:
-                    return outcome["text"]
+                if "lines" in outcome:
+                    return outcome["lines"]
                 return {key: value for key, value in outcome.items() if key != "ok"}
             return outcome
 
@@ -1594,6 +1628,11 @@ class _ToolsMixin:
             moved = target_registry.difference(targets_before, target_registry.list_targets())
             if moved:
                 result.setdefault("targets", moved)
+            # Whatever a failed read knew, carried out alongside the message the script saw. The
+            # last one wins: it is the state the script actually ended in.
+            for failure in read_failures[-1:]:
+                for key, value in failure.items():
+                    result.setdefault(key, value)
         if changed and isinstance(result, dict):
             result.setdefault("changed", changed)
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)

@@ -658,30 +658,34 @@ async def control_screen(
     The script runs against one **target** — a window or a browser tab you name — calling bare-named primitives (no prefix). Targets are listed for you; you never say which kind of thing it is, because the id already does. Only the primitives that target supports exist in the script — reaching for one it does not have is a NameError on that line, before anything else runs. Reading is in the script: ``find_many`` and ``find_one`` rank the surface by meaning and return elements, each a dict with a stable ``id``, its ``role``, its text, and its ``context``. Acting is trusted input: a click is a real click (actionability-checked, works through overlays, opens file pickers and native dropdowns), typing fires the events pages listen for. Because it is ordinary Python, a whole task — loop over rows, branch on what you find, call the page's own API in one line — is a single call, not a round trip per action.
 
     Finding elements:
-      find_many(query, limit=8, all=False, clickable=None, name="", context="") — the ranked matches, for reading or harvesting a whole set (act on every result). find_one(query, clickable=None, name="", context="") — the single best match, for acting; it returns that one element, or raises if the top matches are indistinguishable. **clickable is optional and you should leave it out unless you are sure.** Pass True when you want something you can act on and text would only get in the way ("the Save button"), False when you want the words on screen and controls would only get in the way ("the filename shown in the row"), and omit it entirely — the default — whenever you are unsure or want both. It is a question about your own intent, not about how the platform spells its widget names: a tab, a link and a checkbox are all clickable=True. Ranking happens *inside* whatever you narrow to, so it beats lengthening the query — similarity has no notion of what a thing *is*, and "the search button" competes against every element that merely mentions search. name and context narrow the same way and are exact: use them only with values you read off an earlier result. Write explicit, descriptive queries — name the target and the section it sits under; a terse query spreads across every similar control. On the browser, find also searches the page's own traffic (network requests and WebSocket frames), so you can pull data from the source instead of walking the DOM.
+      - find_many(query, limit=8, all=False, clickable=None, name="", context="") — the ranked matches, for reading or harvesting a whole set (act on every result). find_one(query, clickable=None, name="", context="") — the single best match, for acting; it returns that one element, or raises if the top matches are indistinguishable. **clickable is optional and you should leave it out unless you are sure.** Pass True when you want something you can act on and text would only get in the way ("the Save button"), False when you want the words on screen and controls would only get in the way ("the filename shown in the row"), and omit it entirely — the default — whenever you are unsure or want both. It is a question about your own intent, not about how the platform spells its widget names: a tab, a link and a checkbox are all clickable=True. Ranking happens *inside* whatever you narrow to, so it beats lengthening the query — similarity has no notion of what a thing *is*, and "the search button" competes against every element that merely mentions search. name and context narrow the same way and are exact: use them only with values you read off an earlier result. Write explicit, descriptive queries — name the target and the section it sits under; a terse query spreads across every similar control. On the browser, find also searches the page's own traffic (network requests and WebSocket frames), so you can pull data from the source instead of walking the DOM.
 
     Acting — call by bare name, no prefix. On BOTH surfaces:
-      - click(target, button="left", count=1)
-      - type(target, text, submit=False, mode="replace") — fills a field without submitting unless submit=True
+      - click(element, button="left", count=1)
+      - type(element, text, submit=False, mode="replace") — fills a field, and with submit=True presses Return after
       - press(key) — a named key, a letter, or a chord like "cmd+shift+g"
-      - scroll(target=None, direction="down")
-      - drag(target, to_element)
-      - read(target=None, frame="")
-      - select(target, text=None, to_text=None, select_all=False) — highlight a substring, a range from the caret up to some text, or the whole field
-      - caret(target, before=None, after=None, at_offset=None, edge="") — place the cursor before/after some text, at a character offset, or at the "start"/"end" edge
+      - focus(element=None) — give keyboard focus to this place, or to one control in it. It never raises a window over what the user is doing; input reaches a window that is minimized, behind others, or on another desktop, because every event goes to the process rather than to the screen
+      - scroll(element=None, direction="down")
+      - drag(element, onto)
+      - read(element=None) — the lines this place says, or one element's, as a list
+      - select(element, text=None, to_text=None, select_all=False) — highlight a substring, a range from the caret up to some text, or the whole field
+      - caret(element, before=None, after=None, at_offset=None, edge="") — place the cursor before/after some text, at a character offset, or at the "start"/"end" edge
+
+    Windows also have:
+      - shortcuts() — the application's own menu bar as a tree, with the chord each item advertises, spelled the way press() takes it. **Never press a shortcut you remembered.** A remembered chord belongs to some version of some application you are not looking at; asking costs one call and the application's answer is authoritative. Guessing cost a task four attempts and changed a pane nobody asked to change.
 
     Browser targets also have — these names are simply absent when the target is a window, so a NameError tells you at once rather than after the plan is committed:
-      - hover(target)
-      - choose(target, option)
-      - upload(target, paths)
+      - hover(element)
+      - choose(element, option)
+      - upload(element, paths)
       - evaluate(javascript, argument=None, frame="") — run JavaScript in the page and get its result back natively; when the source is written as a function, argument is the single value passed into it. Read, filter, or aggregate the page's data down to what you need, or call its own signed-in API with fetch, riding the user's real session
       - navigate(url="", history="") — go to a url, or "back"/"forward"/"reload"
 
-    A target is an id a find returned (or the find_one result itself), or a plain-language query resolved the way find_one resolves it. For a state-changing action, never pick a find_many result by position: use find_one or a query, so an unclear target is caught rather than guessed. press("Enter") and submit=True both post a form, so be deliberate.
+    `element` is an id a find returned (or the find_one result itself), or a plain-language query resolved the way find_one resolves it. It is never the `target` — that names the *place* the script runs in, and is fixed for the whole script. For a state-changing action, never pick a find_many result by position: use find_one or a query, so an unclear target is caught rather than guessed. press("Enter") and submit=True both post a form, so be deliberate.
 
-    Targets — the place a script runs. Every open window and tab has an id minted by the platform, and it is listed for you with its app and title. Pass the one you mean as `target`; there is no default, because "whatever is in front" is a race with the person using the computer. An application is not a target: two Finder windows are two places, and naming the application cannot say which. A target that has closed is reported as gone, with the current list, so you can pick another without looking it up.
+    Targets — the place a script runs. Every window and tab has an id minted by the platform, and the current list arrives in your context each turn, with each entry's `app`, `title`, and `can` — the vocabulary that place answers to. Pass the one you mean as `target`; there is no default, because "whatever is in front" is a race with the person using the computer. An application is not a target: two Finder windows are two places, and naming the application cannot say which. Every window is listed, including ones behind others, minimized, or on another desktop — `visible: false` marks those, and you can act in them exactly as in any other, which is worth mentioning to the user when you do. An entry marked `addressable: false` is an application that publishes no windows to accessibility; it names the app, not a place. A target you name that is not on the list comes back with the current list, so you can pick another without looking it up.
 
-    What changed — every action answers with what it did, not merely what it touched: the globals that moved (``title``, ``focus``, ``selection``, and on a page ``url``), and everything that became newly present (``appeared``). An action that changed nothing says so with ``changed: []`` — your signal that the click missed, or the pane had not loaded yet, rather than that the element was named differently. ``focus(target)`` brings a target forward; acting never does so on its own, and when typing needed focus the result carries ``focused_target`` so you know the screen moved and can say so.
+    What changed — every action answers with what it did, not merely what it touched: the globals that moved (``title``, ``focus``, ``selection``, and on a page ``url``), and what became newly present (``appeared``, with ``appeared_total`` when there was more than a sample's worth). An action that replaced the whole document reports ``navigated`` — the new title, url and element count — instead of listing a page's worth of elements at you. An action that changed nothing says so with ``changed: []`` — your signal that the click missed, or the pane had not loaded yet, rather than that the element was named differently.
 
     Tabs — the browser has more than one page, and you choose which one you are on:
       - tabs() — every open tab as {id, title, url, active}
@@ -699,11 +703,10 @@ async def control_screen(
     The script runs like a notebook cell: the value of a trailing bare expression is reported as the result, and whatever you ``print`` is returned too. The result lists what each action *changed* (``changed``), so you can confirm the click landed rather than only that it was aimed. If the surface can't be read — Accessibility not granted, or the browser not connected — that comes back as an error to raise with the user, not something to route around.
 
     Arguments:
-        script: The Python to run.
-        target: The window or tab to run it in, by the id from the target list. Required.
-        app: For the computer surface — which app to look at, by name; omit to reuse the last one.
-        explanation: Why this is needed.
-        risk: Damage potential — higher for actions that change state.
+    - script: The Python to run.
+    - target: The window or tab to run it in, by the id from the target list. Required.
+    - explanation: Why this is needed.
+    - risk: Damage potential — higher for actions that change state.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 

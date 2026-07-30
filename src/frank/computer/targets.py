@@ -7,15 +7,26 @@ by its application's display name resolved to the wrong process the first time t
 application were open, and cost an investigation before anybody suspected the address rather than
 the thing addressed.
 
-Neither platform makes us invent an identifier. macOS assigns every window a ``kCGWindowNumber``
-— system-generated, unique, stable for as long as the window lives — and Chrome assigns every tab
-a DevTools target id, which :mod:`frank.computer.web` already keeps a registry of. Using the
-platform's own identity is what makes two windows of one application as distinguishable as two
-windows of different ones.
+**Accessibility says what exists; the window server says what it is called and whether you can see
+it.** Both halves are needed and neither is sufficient. CoreGraphics numbers every compositing
+layer — title bars, shadows, sheet backdrops — so it reported nineteen entries for RStudio's single
+window and twenty-one for Finder's five; no size or layer filter separates those from real windows,
+which is why the pixel floor this module used to apply removed nothing on screen and a hundred and
+forty-four nameless strips off it. Accessibility publishes exactly the real windows, one entry each.
+So AX decides what exists, and :func:`accessibility.windows_of` carries the window-server id across
+for identity.
+
+**Every window, on every Space.** ``kCGWindowListOptionOnScreenOnly`` means *on the current Space
+and not minimized*, which made fifty-six of seventy-four windows unaddressable and reported them as
+closed — a window on the next desktop is not a window that never opened. Synthesized input has never
+needed a window to be on screen (every event goes through ``CGEventPostToPid``), so the restriction
+bought nothing and cost the model most of the machine. What survives is ``visible``, a fact rather
+than a filter.
 
 The model never sees which surface a target belongs to. That is the point: ``win-10337`` and
 ``tab-3`` are both places to act, and choosing the machinery behind them is this module's job
-rather than the model's.
+rather than the model's. What it does see is ``can`` — the vocabulary a place answers to, which is
+a fact about the place rather than about the implementation underneath it.
 """
 
 from __future__ import annotations
@@ -24,18 +35,25 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from frank.computer import accessibility, permissions
+
 logger = logging.getLogger(__name__)
 
 NATIVE_PREFIX = "win"
 BROWSER_PREFIX = "tab"
 
-# A window smaller than this in either direction is furniture — a menu-bar extra, a shadow, a
-# tooltip. The same threshold `engine._displayed_window` already applies, for the same reason:
-# twenty-two on-screen windows on an ordinary machine are mostly Control Center items nobody
-# means when they say "that window".
-MINIMUM_WINDOW_EDGE = 120
+# The two vocabularies a place can answer to. A window and a page differ in what they can be told
+# to do — a page can be navigated and scripted, a window cannot — and a script cannot be written
+# without knowing which. This is not the surface name: it says what this place *is*, which is why
+# it is safe to show where "computer" and "browser" were not.
+WINDOW_VOCABULARY = "window"
+PAGE_VOCABULARY = "page"
 
-# Processes that own on-screen windows nobody addresses. Named rather than inferred, because the
+# Applications whose windows are pages: their real interface is reachable over the DevTools
+# protocol, which reads structure the accessibility tree flattens or omits entirely.
+BROWSER_OWNERS = frozenset({"Google Chrome", "Chromium", "Google Chrome Canary", "Google Chrome Beta"})
+
+# Processes that own windows nobody addresses. Named rather than inferred, because the
 # alternative — guessing from size alone — also hides small real windows.
 FURNITURE_OWNERS = frozenset({"Control Center", "Window Server", "Dock", "Spotlight", "Notification Center"})
 
@@ -52,62 +70,70 @@ class Target:
     app: str
     title: str
     surface: str                      # "computer" or "browser" — for routing, never for the model
+    can: str = WINDOW_VOCABULARY
     focused: bool = False
+    visible: bool = True
+    addressable: bool = True
     url: str = ""
+    note: str = ""
     address: dict[str, Any] = field(default_factory=dict)   # how the surface finds it again
 
     def described(self) -> dict[str, Any]:
-        """The form handed to the model: a place, its owner, what it says, and whether it is live."""
-        described: dict[str, Any] = {"id": self.id, "app": self.app, "title": self.title}
+        """The form handed to the model: a place, its owner, what it says, what it answers to.
+
+        A key is absent when there is nothing to say rather than present and false, so the model
+        learns one shape and reads whatever it finds. ``visible`` is the exception and is always
+        stated when false, because a window on another Space is a thing worth telling a person
+        about before acting in it."""
+        described: dict[str, Any] = {"id": self.id, "app": self.app, "title": self.title, "can": self.can}
         if self.focused:
             described["focused"] = True
+        if not self.visible:
+            described["visible"] = False
+        if not self.addressable:
+            described["addressable"] = False
         if self.url:
             described["url"] = self.url
+        if self.note:
+            described["note"] = self.note
         return described
 
 
-def _native_targets() -> list[Target]:
-    """Every on-screen window worth addressing, from the window server rather than accessibility.
+def _window_server_windows() -> tuple[dict[int, dict[str, Any]], set[int]]:
+    """Every window the system has numbered, and the subset currently on screen.
 
-    The window server is asked because it is the only thing that knows what is actually *shown*:
-    an application can publish an accessibility tree for a window it is not displaying, and can
-    display one it publishes nothing about."""
+    Two listings rather than one: ``kCGWindowListOptionAll`` is the world, and the on-screen
+    listing is what ``visible`` means. Asking for the world and marking the difference is the
+    whole change from filtering the world down to whatever happens to be in front."""
     try:
         import Quartz
     except Exception:  # noqa: BLE001 — a machine without Quartz simply has no native targets
-        return []
+        return {}, set()
     try:
-        windows = Quartz.CGWindowListCopyWindowInfo(
+        everything = Quartz.CGWindowListCopyWindowInfo(
+            Quartz.kCGWindowListOptionAll | Quartz.kCGWindowListExcludeDesktopElements,
+            Quartz.kCGNullWindowID,
+        ) or []
+        on_screen = Quartz.CGWindowListCopyWindowInfo(
             Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
             Quartz.kCGNullWindowID,
         ) or []
     except Exception:  # noqa: BLE001 — never let enumeration take the tool down
         logger.debug("Could not enumerate windows", exc_info=True)
-        return []
+        return {}, set()
 
-    frontmost = _frontmost_process_id()
-    targets: list[Target] = []
-    for window in windows:
+    numbered: dict[int, dict[str, Any]] = {}
+    for window in everything:
         owner = str(window.get("kCGWindowOwnerName") or "")
-        if owner in FURNITURE_OWNERS:
+        number, process_id = window.get("kCGWindowNumber"), window.get("kCGWindowOwnerPID")
+        if owner in FURNITURE_OWNERS or number is None or process_id is None:
             continue
-        bounds = window.get("kCGWindowBounds") or {}
-        width, height = float(bounds.get("Width", 0)), float(bounds.get("Height", 0))
-        if width < MINIMUM_WINDOW_EDGE or height < MINIMUM_WINDOW_EDGE:
-            continue
-        number = window.get("kCGWindowNumber")
-        process_id = window.get("kCGWindowOwnerPID")
-        if number is None or process_id is None:
-            continue
-        targets.append(Target(
-            id=f"{NATIVE_PREFIX}-{int(number)}",
-            app=owner,
-            title=str(window.get("kCGWindowName") or ""),
-            surface="computer",
-            focused=int(process_id) == frontmost,
-            address={"window_number": int(number), "pid": int(process_id)},
-        ))
-    return targets
+        numbered[int(number)] = {"app": owner, "pid": int(process_id)}
+    visible = {
+        int(window["kCGWindowNumber"]) for window in on_screen
+        if window.get("kCGWindowNumber") is not None
+    }
+    return numbered, visible
 
 
 def _frontmost_process_id() -> int:
@@ -121,12 +147,97 @@ def _frontmost_process_id() -> int:
         return 0
 
 
-def _browser_targets() -> list[Target]:
-    """Every open tab in the browser frank is connected to, or none if it is not connected.
+def _native_targets() -> list[Target]:
+    """Every window worth addressing, named by accessibility and numbered by the window server.
 
-    Not connecting on demand: enumerating targets is something that happens on every turn, and a
-    listing must never be the thing that starts a browser session or raises because one is not
-    running."""
+    When Accessibility is not granted there is nothing to join against, and the honest answer is
+    neither an empty list — which reads as "you have no windows open" — nor the raw window-server
+    listing, which is nineteen nameless rows for one RStudio. Each application collapses to a
+    single unaddressable entry carrying the reason, so the model can see what is running, cannot
+    pretend to address a window it has no name for, and knows which permission would fix it."""
+    numbered, visible_ids = _window_server_windows()
+    if not numbered:
+        return []
+    frontmost = _frontmost_process_id()
+    if not permissions.accessibility_granted():
+        return _collapsed(numbered, visible_ids, frontmost, note=(
+            "Accessibility is not granted, so this application's windows cannot be named or "
+            "addressed individually."
+        ))
+
+    targets: list[Target] = []
+    silent_pids: set[int] = set()
+    for pid in sorted({entry["pid"] for entry in numbered.values()}):
+        try:
+            published = accessibility.windows_of(pid)
+        except Exception:  # noqa: BLE001 — one unresponsive application must not empty the list
+            logger.debug("Could not read the windows of pid %s", pid, exc_info=True)
+            published = []
+        if not published:
+            # Running, and publishing nothing addressable: a menu-bar agent, or a window it draws
+            # without describing. Kept as one row so it is seen rather than silently missing.
+            silent_pids.add(pid)
+            continue
+        for record in published:
+            entry = numbered.get(record.window_id)
+            app = entry["app"] if entry else accessibility.app_name_for_pid(pid)
+            on_screen = record.window_id in visible_ids
+            is_page = app in BROWSER_OWNERS
+            targets.append(Target(
+                id=f"{NATIVE_PREFIX}-{record.window_id}",
+                app=app,
+                title=record.title,
+                surface="browser" if is_page else "computer",
+                can=PAGE_VOCABULARY if is_page else WINDOW_VOCABULARY,
+                focused=pid == frontmost and on_screen,
+                visible=on_screen and not record.minimized,
+                note="minimized" if record.minimized else "",
+                address={"window_number": record.window_id, "pid": pid},
+            ))
+    if silent_pids:
+        targets.extend(_collapsed(
+            {number: entry for number, entry in numbered.items() if entry["pid"] in silent_pids},
+            visible_ids, frontmost, note=(
+                "This application does not publish its windows to accessibility, so they cannot "
+                "be addressed individually."
+            ),
+        ))
+    return targets
+
+
+def _collapsed(numbered: dict[int, dict[str, Any]], visible_ids: set[int],
+               frontmost: int, *, note: str) -> list[Target]:
+    """One row per application, for windows that cannot be named. Never addressable, always seen."""
+    by_app: dict[str, dict[str, Any]] = {}
+    for number, entry in sorted(numbered.items()):
+        seen = by_app.setdefault(entry["app"], {"pid": entry["pid"], "count": 0, "visible": False, "number": number})
+        seen["count"] += 1
+        seen["visible"] = seen["visible"] or number in visible_ids
+    return [
+        Target(
+            id=f"{NATIVE_PREFIX}-{seen['number']}",
+            app=app,
+            title="",
+            surface="browser" if app in BROWSER_OWNERS else "computer",
+            can=PAGE_VOCABULARY if app in BROWSER_OWNERS else WINDOW_VOCABULARY,
+            focused=seen["pid"] == frontmost,
+            visible=seen["visible"],
+            addressable=False,
+            note=f"{seen['count']} window(s). {note}",
+            address={"window_number": seen["number"], "pid": seen["pid"]},
+        )
+        for app, seen in sorted(by_app.items())
+    ]
+
+
+def _browser_targets() -> list[Target]:
+    """Every open tab of an already-connected browser.
+
+    Not connecting on demand: enumerating targets happens on every turn, and a listing must never
+    be the thing that starts a browser session — Chrome asks the user to approve a debugging
+    connection, so an enumeration that connected would put a consent dialog in front of them once
+    per turn. Until something has deliberately opened a session, a browser contributes its
+    *windows*, which the window server knows about for free, and not its tabs."""
     try:
         from frank.computer import web
     except Exception:  # noqa: BLE001
@@ -149,20 +260,37 @@ def _browser_targets() -> list[Target]:
             app=str(tab.get("app") or "Browser"),
             title=str(tab.get("title") or ""),
             surface="browser",
+            can=PAGE_VOCABULARY,
             focused=bool(tab.get("active")),
             url=str(tab.get("url") or ""),
-            address={"tab_id": identifier},
+            address={"tab_id": identifier, "window_number": tab.get("window_number")},
         ))
     return targets
 
 
+def vocabularies() -> dict[str, list[str]]:
+    """What each kind of place can be told to do, read off the surfaces themselves.
+
+    Computed rather than written down, because a written list is a second statement of a fact the
+    code already holds, and the two drift: the model was handed a description promising ``hover``
+    on every target while a window implemented eleven primitives, and the only thing that knew the
+    difference used it to raise ``NameError`` on the line that tried. One source, so the promise
+    and the enforcement cannot disagree."""
+    from frank.computer import engine, web
+
+    return {
+        WINDOW_VOCABULARY: list(engine.SURFACE.primitives()),
+        PAGE_VOCABULARY: list(web.SURFACE.primitives()),
+    }
+
+
 def list_windows() -> list[Target]:
-    """Native windows only, from the window server. Never touches a browser."""
+    """Native windows only, from accessibility and the window server. Never touches a browser."""
     return _native_targets()
 
 
 def list_tabs() -> list[Target]:
-    """Browser tabs only. Connects to the browser, so it is not on any native path."""
+    """Browser tabs only, and only for a browser something has already connected to."""
     return _browser_targets()
 
 
@@ -170,12 +298,7 @@ def list_targets() -> list[Target]:
     """Every place a script can be pointed at, windows and tabs together, in one list.
 
     Order is stable — browser tabs after native windows, each in the platform's own order — so
-    that a diff between two listings reflects the world changing rather than the enumeration.
-
-    Enumerating tabs means *connecting to the browser*, which is why the two halves are also
-    available separately and why anything on a native path must use :func:`list_windows`. Asking
-    for the whole world in order to resolve one window number reached into the user's live Chrome
-    over the DevTools protocol, and hung the process that asked."""
+    that a diff between two listings reflects the world changing rather than the enumeration."""
     return _native_targets() + _browser_targets()
 
 
@@ -214,6 +337,17 @@ def describe_windows() -> list[dict[str, Any]]:
 def describe_all(targets: Optional[list[Target]] = None) -> list[dict[str, Any]]:
     """The whole listing, as the model reads it."""
     return [target.described() for target in (targets if targets is not None else list_targets())]
+
+
+def context_block() -> dict[str, Any]:
+    """What the model is told about the screen, once per turn.
+
+    Structured rather than prose, and carrying the vocabularies beside the places, because those
+    are the two questions a script must answer before it can be written at all: *where am I
+    acting*, and *what may I call there*. Both were already computed; neither was ever handed
+    over, so the first call of every screen task had to fail to find them out."""
+    targets = list_targets()
+    return {"targets": describe_all(targets), "primitives": vocabularies()}
 
 
 def difference(before: list[Target], after: list[Target]) -> dict[str, Any]:

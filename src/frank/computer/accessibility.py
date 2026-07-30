@@ -41,6 +41,40 @@ from Foundation import NSMakeRange
 
 from frank.base.tuning import Tunable, active_tuning
 
+
+def _resolve_symbols_before_any_thread_exists() -> None:
+    """Touch every AX function this module calls, once, at import — on one thread.
+
+    ``ApplicationServices`` is a pyobjc *lazy* module: an attribute is looked up in a metadata map
+    and cached into the module on first access, and that path is not thread-safe. Two threads
+    first-touching the same symbol race, and the loser gets ``KeyError`` — which surfaces as
+    ``The action failed ('AXUIElementCreateApplication')``, because ``str(KeyError('X'))`` is
+    ``"'X'"``, quotes and all.
+
+    This module builds exactly that race and builds it once per process: ``_ready_snapshot`` calls
+    ``start_prewarm()``, which spawns a thread that immediately calls ``prime_accessibility`` ->
+    ``AXUIElementCreateApplication``, and then walks into ``snapshot_app`` -> the same symbol. It
+    is a first-use-only failure, which is why it struck once in a recorded session and never
+    again, and why it looked like the application was not ready — it had nothing to do with the
+    application. Measured at 2 failures in 60 fresh processes.
+
+    Resolving here means the cache is warm before any thread exists, so there is no first touch
+    left to race."""
+    for symbol in (
+        "AXUIElementCreateApplication", "AXUIElementCreateSystemWide",
+        "AXUIElementCopyAttributeValue", "AXUIElementCopyAttributeValues",
+        "AXUIElementCopyMultipleAttributeValues", "AXUIElementCopyAttributeNames",
+        "AXUIElementSetAttributeValue", "AXUIElementIsAttributeSettable",
+        "AXUIElementPerformAction", "AXUIElementCopyActionNames",
+        "AXUIElementSetMessagingTimeout", "AXUIElementGetPid",
+        "AXIsProcessTrusted", "AXIsProcessTrustedWithOptions", "AXValueGetValue",
+    ):
+        with suppress(AttributeError, KeyError):
+            getattr(AS, symbol)
+
+
+_resolve_symbols_before_any_thread_exists()
+
 # Attribute names. The kAX* symbols resolve to exactly these strings.
 ROLE = "AXRole"
 SUBROLE = "AXSubrole"
@@ -333,15 +367,193 @@ def running_app_names() -> list[str]:
     return [name for name in names if name]
 
 
-def window_titles(pid: int) -> list[str]:
-    """Every window title of an app — so the model can tell one window from another (a document
-    or reader window vs. the main window) and target it by name, instead of assuming the focused
-    window is the one it wants."""
+# The only bridge between the two things that describe a window. Accessibility knows what a
+# window *is* — apps publish exactly their real windows, one entry each — while CoreGraphics
+# knows what the system has *numbered*, which includes every compositing layer: title bars,
+# shadows, sheet backdrops. Measured on one ordinary machine, CoreGraphics reported 19 layers
+# for RStudio's single window and 21 for Finder's five. So AX decides what exists and CG
+# supplies the identity, and `_AXUIElementGetWindow` is the only call that joins them. It is
+# unprefixed-private but ABI-stable and has been the standard answer for a decade; there is no
+# public equivalent, and the alternative — matching by frame — breaks on two stacked windows.
+_WINDOW_ID_SIGNATURE = b"i^{__AXUIElement=}o^I"
+_window_id_lock = threading.Lock()
+_window_id_function: Optional[Any] = None
+
+
+def _window_id_of(window: Any) -> Optional[int]:
+    """The window-server id of an AX window, or ``None`` when the bridge is unavailable."""
+    global _window_id_function
+    if _window_id_function is None:
+        with _window_id_lock:
+            if _window_id_function is None:
+                try:
+                    import objc
+
+                    bundle = objc.loadBundle(
+                        "ApplicationServices", {},
+                        bundle_path="/System/Library/Frameworks/ApplicationServices.framework",
+                    )
+                    loaded: dict[str, Any] = {}
+                    objc.loadBundleFunctions(bundle, loaded, [("_AXUIElementGetWindow", _WINDOW_ID_SIGNATURE)])
+                    _window_id_function = loaded.get("_AXUIElementGetWindow", False)
+                except Exception:  # noqa: BLE001 — no bridge means no ids, never a crash
+                    _window_id_function = False
+    if not _window_id_function:
+        return None
+    try:
+        error, identifier = _window_id_function(window, None)
+    except Exception:  # noqa: BLE001
+        return None
+    return int(identifier) if error == 0 and identifier else None
+
+
+@dataclass(frozen=True)
+class WindowRecord:
+    """One window an application publishes, as accessibility describes it."""
+
+    window_id: int
+    title: str
+    minimized: bool
+
+
+def windows_of(pid: int) -> list[WindowRecord]:
+    """Every real window an application publishes, with the id the window server minted for it.
+
+    This is what makes a window addressable. The title comes from ``AXTitle`` rather than from
+    ``kCGWindowName`` deliberately: the CoreGraphics name requires the Screen Recording grant,
+    which this harness has never asked for, while ``AXTitle`` needs only Accessibility — the
+    grant computer control already requires and already checks. One permission instead of two,
+    for the same words.
+
+    An empty list means the app publishes nothing readable *or* Accessibility is not granted.
+    The caller distinguishes them; this function does not guess."""
     root = AS.AXUIElementCreateApplication(pid)
     AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.ax_messaging_seconds))
-    windows = _single(root, WINDOWS) or []
-    titles = [_string(_single(window, TITLE)) for window in windows]
-    return [title for title in titles if title]
+    records: list[WindowRecord] = []
+    for window in _single(root, WINDOWS) or []:
+        window_id = _window_id_of(window)
+        if window_id is None:
+            continue
+        records.append(WindowRecord(
+            window_id=window_id,
+            title=_string(_single(window, TITLE)) or _string(_single(window, VALUE)),
+            minimized=bool(_single(window, "AXMinimized")),
+        ))
+    return records
+
+
+def window_handle(pid: int, window_id: int) -> Optional[Any]:
+    """The live AX element for one window of an app, found by the id the window server minted."""
+    root = AS.AXUIElementCreateApplication(pid)
+    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.ax_messaging_seconds))
+    for window in _single(root, WINDOWS) or []:
+        if _window_id_of(window) == window_id:
+            return window
+    return None
+
+
+def window_titles(pid: int) -> list[str]:
+    """Every window title of an app, for the situational-awareness block."""
+    return [record.title for record in windows_of(pid) if record.title]
+
+
+MENU_BAR = "AXMenuBar"
+MENU_ITEM_CHARACTER = "AXMenuItemCmdChar"
+MENU_ITEM_MODIFIERS = "AXMenuItemCmdModifiers"
+MENU_ITEM_VIRTUAL_KEY = "AXMenuItemCmdVirtualKey"
+
+# AXMenuItemCmdModifiers is a bitfield, and Command is inverted: the bit means *not* Command,
+# because Command is the default for a menu shortcut. Everything downstream reads a chord string,
+# so the inversion is undone exactly here rather than being a fact every caller has to remember.
+_MENU_MODIFIER_BITS = ((1, "shift"), (2, "option"), (4, "control"))
+
+# The virtual key codes macOS uses for menu items that have no character (function keys, arrows).
+_MENU_VIRTUAL_KEYS = {
+    0x7A: "f1", 0x78: "f2", 0x63: "f3", 0x76: "f4", 0x60: "f5", 0x61: "f6",
+    0x62: "f7", 0x64: "f8", 0x65: "f9", 0x6D: "f10", 0x67: "f11", 0x6F: "f12",
+    0x7B: "left", 0x7C: "right", 0x7D: "down", 0x7E: "up",
+    0x24: "return", 0x30: "tab", 0x33: "delete", 0x35: "escape", 0x31: "space",
+    0x73: "home", 0x77: "end", 0x74: "pageup", 0x79: "pagedown",
+}
+
+
+def _menu_chord(item: dict[str, Any]) -> str:
+    """The chord a menu item advertises, spelled the way ``press`` accepts it, or ``""``."""
+    character = _string(item.get(MENU_ITEM_CHARACTER)).lower()
+    if not character:
+        virtual_key = item.get(MENU_ITEM_VIRTUAL_KEY)
+        character = _MENU_VIRTUAL_KEYS.get(int(virtual_key), "") if virtual_key is not None else ""
+    if not character:
+        return ""
+    raw = item.get(MENU_ITEM_MODIFIERS)
+    bits = int(raw) if raw is not None else 0
+    modifiers = [name for bit, name in _MENU_MODIFIER_BITS if bits & bit]
+    if not bits & 8:      # the inverted Command bit: unset means Command *is* held
+        modifiers.insert(0, "cmd")
+    return "+".join([*modifiers, character])
+
+
+def shortcuts_of(pid: int, *, limit: int = 400) -> list[dict[str, Any]]:
+    """The application's menu bar, as a tree, with the chord each item advertises.
+
+    This exists because a model asked to reach RStudio's Help pane pressed ``Control+3`` from
+    memory, got the Environment pane, and had no way to find out what the real shortcut was — the
+    menu bar was never part of what a read returned, so the application's own published answer to
+    "how do I get there" was the one thing it could not see. Guessing was not carelessness; it was
+    the only option on offer.
+
+    A menu *is* a tree, so it is returned as one: ``{"title": "View", "items": [{"title": "Panes",
+    "items": [{"title": "Help", "keys": "cmd+shift+3"}]}]}``. Flattening it to ``"View > Panes >
+    Help"`` would invent a path syntax nobody else here speaks and make the caller parse it back
+    out of punctuation to learn what contains what — the same trade that turned a window's list of
+    lines into one newline-joined blob.
+
+    Branches with no shortcut anywhere beneath them are dropped: the whole menu bar is hundreds of
+    items, and what makes this answerable is that only a fraction of them advertise a chord. Each
+    ``keys`` is spelled the way ``press`` accepts it, so acting on one needs no translation step
+    where a mistake could enter."""
+    root = AS.AXUIElementCreateApplication(pid)
+    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.ax_messaging_seconds))
+    menu_bar = _single(root, MENU_BAR)
+    if menu_bar is None:
+        return []
+    counted = 0
+
+    def branch(element: Any, depth: int) -> list[dict[str, Any]]:
+        nonlocal counted
+        if depth > 6 or counted >= limit:
+            return []
+        nodes: list[dict[str, Any]] = []
+        for child in _single(element, CHILDREN) or []:
+            if counted >= limit:
+                break
+            attributes = _read(child) or {}
+            title = _string(attributes.get(TITLE))
+            chord = _menu_chord(attributes)
+            if chord:
+                counted += 1
+            # A submenu is a child *menu* holding the items, so the walk goes through it either
+            # way; an item with neither a chord nor a chord below it is not an answer to anything.
+            items = branch(child, depth + 1)
+            if not chord and not items:
+                continue
+            node: dict[str, Any] = {"title": title} if title else {}
+            if chord:
+                node["keys"] = chord
+            if items:
+                node["items"] = items
+            nodes.append(node if node.get("title") or node.get("keys") else {"items": items})
+        # An untitled wrapper (the anonymous AXMenu under every menu-bar item) is not a level
+        # anybody means; lift its contents so the tree matches the menus a person sees.
+        lifted: list[dict[str, Any]] = []
+        for node in nodes:
+            if set(node) == {"items"}:
+                lifted.extend(node["items"])
+            else:
+                lifted.append(node)
+        return lifted
+
+    return branch(menu_bar, 0)
 
 
 def enable_rich_accessibility(root: Any) -> None:

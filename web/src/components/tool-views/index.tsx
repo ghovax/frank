@@ -423,6 +423,35 @@ function SearchCodeResultView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
+// One line describing what an action changed: where it landed, then what moved. A record that
+// changed nothing says so — that is the whole point of reporting changes rather than intentions.
+// What one action changed, as elements rather than as a sentence assembled in TypeScript.
+//
+// This was a string built with `·` and `—` glue and a `.replace("{count}", …)` done by hand — which
+// is not a translation, it is English word order and Latin typography shipped to every locale, with
+// the plural rule silently assumed to be English's. Layout separates the parts now, each part is
+// its own message, and the count goes through ICU so a locale decides its own plural.
+function ChangeRow({ entry }: { entry: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  const where = asString(entry.name) || asString(entry.role) || asString(entry.id);
+  const navigated = asRecord(entry.navigated);
+  const destination = asString(navigated.title) || asString(navigated.url);
+  const appearedCount = Number(entry.appeared_total) || asArray(entry.appeared).length;
+  const nothingChanged = Array.isArray(entry.changed) && entry.changed.length === 0;
+  return (
+    <Flex align="baseline" gap={2} wrap="wrap">
+      <Text fontSize="2xs" color="fg.muted">{asString(entry.action)}</Text>
+      {where && <Mono fontSize="2xs" color="fg.subtle">{where}</Mono>}
+      {destination && <Text fontSize="2xs" color="fg.muted">{destination}</Text>}
+      {appearedCount > 0 && (
+        <Text fontSize="2xs" color="fg.subtle">{translation("controlAppeared", { count: appearedCount })}</Text>
+      )}
+      {nothingChanged && <Text fontSize="2xs" color="fg.subtle">{translation("controlNoChange")}</Text>}
+      {entry.visible === false && <Text fontSize="2xs" color="fg.subtle">{translation("controlOffScreen")}</Text>}
+    </Flex>
+  );
+}
+
 // control_screen runs a script and reports its value / stdout, or an error with
 // an optional traceback. Debugging-off / missing grants render as their fix-it flow.
 function ControlScreenResultView({ data }: { data: Record<string, unknown> }) {
@@ -430,6 +459,12 @@ function ControlScreenResultView({ data }: { data: Record<string, unknown> }) {
   if (data.ok === false) {
     if (asString(data.code) === "browser_remote_debugging_off") {
       return <BrowserRemoteDebuggingAlert address={asString(data.enable_url)} />;
+    }
+    // Chrome is showing its own consent box and nobody has answered it yet. This is a state to
+    // wait in, not a failure to route around — and emphatically not one to "fix" by toggling
+    // remote debugging, which dismisses the very prompt being waited on.
+    if (asString(data.awaiting) === "browser_authorization") {
+      return <BrowserAuthorizationPending />;
     }
     if (asString(data.needs_permission)) return <PermissionGrantAlert />;
     const traceback = asString(data.traceback);
@@ -447,21 +482,16 @@ function ControlScreenResultView({ data }: { data: Record<string, unknown> }) {
   const resultValue = data.value;
   const resultText = resultValue == null ? "" : typeof resultValue === "object" ? JSON.stringify(resultValue, null, 2) : asString(resultValue);
   const stdout = asString(data.stdout);
-  const actedOn = asArray(data.acted_on).map(asRecord);
-  if (!resultText && !stdout && actedOn.length === 0) return null;
+  // What each action *changed*, not what it was aimed at. `acted_on` answered the one question a
+  // script already knew the answer to; this answers whether anything happened.
+  const changed = asArray(data.changed).map(asRecord);
+  if (!resultText && !stdout && changed.length === 0) return null;
   return (
     <FieldList>
-      {actedOn.length > 0 && (
-        <Field label={translation("controlActedOn")}>
+      {changed.length > 0 && (
+        <Field label={translation("controlChanged")}>
           <Flex direction="column" gap={1}>
-            {actedOn.map((entry, index) => {
-              const detail = asString(entry.name) || asString(entry.role);
-              return (
-                <Text key={index} fontSize="2xs" color="fg.muted">
-                  {asString(entry.action)}{detail ? ` · ${detail}` : ""}
-                </Text>
-              );
-            })}
+            {changed.map((entry, index) => <ChangeRow key={index} entry={entry} />)}
           </Flex>
         </Field>
       )}
@@ -893,6 +923,20 @@ function ErrorView({ message }: { message: string }) {
 
 // Shown when the browser tool can't reach Chrome because remote debugging is off: a brief message,
 // the exact address, and a one-click button that opens that settings page in the user's browser.
+// Chrome asks the user to approve a debugging connection, in the browser window rather than
+// here, and until now nothing in this interface said so: attaching waited ten seconds and then
+// reported a stale endpoint, advising a toggle that dismisses the prompt. Waiting is a state,
+// and it is the user who ends it.
+function BrowserAuthorizationPending() {
+  const translation = useTranslations("ToolViews");
+  return (
+    <AlertBox colorPalette="blue">
+      <Text textStyle="fieldLabel">{translation("browserAuthorizationTitle")}</Text>
+      <Text fontSize="xs" color="fg.muted" mt={0.5}>{translation("browserAuthorizationBody")}</Text>
+    </AlertBox>
+  );
+}
+
 function BrowserRemoteDebuggingAlert({ address, browserName }: { address: string; browserName?: string }) {
   const translation = useTranslations("ToolViews");
   const [opened, setOpened] = useState(false);

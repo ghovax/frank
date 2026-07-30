@@ -80,7 +80,11 @@ It also surfaces the page's own **network and API requests**. The agent can ther
 
 **Acting — a composed script of trusted-input primitives.** The same script drives the elements that a find returned. It addresses them by `id`, or by a query resolved the same way. It uses **trusted input**: click, type, scroll, `evaluate`, and the like. The script is ordinary Python, so a whole task is a single call. It can loop over rows, branch on what it finds, and call the page's own API in one line.
 
-It does not need a round trip for each action. On the browser, `evaluate` can **replay the page's own authenticated API in-page**, reusing the logged-in session instead of re-authenticating. Actions run against the real surface. Browser clicks go through Playwright's actionability checks. The result reports what each action touched, in `acted_on`, so the agent sees what changed.
+It does not need a round trip for each action. On the browser, `evaluate` can **replay the page's own authenticated API in-page**, reusing the logged-in session instead of re-authenticating. Actions run against the real surface. Browser clicks go through Playwright's actionability checks.
+
+**Targets — the place a script runs.** Every window and tab has an id minted by the platform, and the current list is carried into the agent's context each turn, so there is no listing tool and no round trip to discover them. An application is not a target: two Finder windows are two places, and naming the application cannot say which. Every window is listed, including ones behind others, minimized, or on another Space — synthesized input is posted to the process rather than the screen, so an off-screen window is as drivable as any other, and `visible: false` marks it so the agent can say so. Each entry also carries `can`, the vocabulary that place answers to, read off the surface that implements it.
+
+**What changed.** The result reports what each action *changed*, in `changed` — the globals that moved (`title`, `focus`, `selection`, and on a page `url`) and what became newly present. An action that replaced the document reports `navigated` instead of listing a page's worth of elements. An action that changed nothing says `changed: []`, which is the signal that a click missed or a pane had not loaded, rather than that an element was named differently.
 
 **Tabs.** The browser has more than one page, and the script chooses which one it is on:
 

@@ -240,6 +240,7 @@ export interface TurnContext {
   background?: Record<string, unknown>;
   now?: string;
   pwd?: string;
+  screen?: Record<string, unknown>;
   tasks?: Record<string, unknown>[];
 }
 /**

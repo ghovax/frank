@@ -31,15 +31,36 @@ import os
 import re
 import tempfile
 from collections import deque
+from dataclasses import dataclass
 from itertools import count
 from pathlib import Path
 from typing import Any, Optional
 
 from frank.computer.retrieval import Document, element_text, web_element_text
-from frank.computer.surface import Element, Surface, ToolFailure, message_loader, resolve_caret, resolve_range
+from frank.computer.surface import (
+    Element, Glance, Surface, ToolFailure, message_loader, resolve_caret, resolve_range,
+)
 from frank.base.tuning import Tunable, active_tuning, settle
 
 logger = logging.getLogger(__name__)
+
+# How a target id is spelled. A browser window is numbered by the window server like any other
+# window; a tab is numbered by DevTools. Both are places, and `_page_for` tells them apart here
+# rather than making the model do it.
+WINDOW_PREFIX = "win"
+TAB_PREFIX = "tab"
+
+
+@dataclass
+class _Bound:
+    """The session and page one primitive call acts through, resolved from its target.
+
+    Passed rather than remembered, for the same reason a window's state is: "the current page"
+    was a single slot on a process-wide surface, so naming one of six Chrome windows could act in
+    whichever page was last touched — by another script, in another turn."""
+
+    session: "_Session"
+    page: Any
 
 message = message_loader("browser")
 
@@ -87,11 +108,22 @@ def _not_connected_payload() -> dict:
     }
 
 
-def _stale_endpoint_payload() -> dict:
+def _awaiting_authorization_payload(seconds: float) -> dict:
+    """The structured result when Chrome is asking the user to approve the debugging connection.
+
+    This replaces a message that was not merely wrong but actively harmful. Attaching waited ten
+    seconds; Chrome, meanwhile, puts a consent box in front of the user, and a person who takes
+    longer than ten seconds to find and click *Allow* was told the endpoint had gone stale and
+    that they should toggle remote debugging **off and back on** — which destroys the very box
+    they were about to approve. It is a loop that cannot be escaped by following the advice.
+
+    Waiting is now the expected state rather than a failure, it is named, and the UI can say so.
+    """
     return {
         "ok": False,
-        "error": message("endpoint_stale", enable_url=REMOTE_DEBUGGING_URL),
-        "code": "browser_endpoint_stale",
+        "awaiting": "browser_authorization",
+        "error": message("awaiting_authorization", seconds=f"{seconds:g}"),
+        "code": "browser_awaiting_authorization",
         "enable_url": REMOTE_DEBUGGING_URL,
     }
 
@@ -551,10 +583,13 @@ class WebSurface(Surface):
         websocket_url = _devtools_websocket_url(browser)
         if websocket_url is None:
             raise ToolFailure(_not_connected_payload())
+        # Long enough for a person to notice Chrome's consent box, find it, and click Allow —
+        # which is a human reaction time, not a network timeout, and was budgeted as one.
+        budget = active_tuning().amount(Tunable.browser_authorization_ms)
         try:
-            connected = self._playwright.chromium.connect_over_cdp(websocket_url, timeout=active_tuning().amount(Tunable.connect_timeout_ms))
+            connected = self._playwright.chromium.connect_over_cdp(websocket_url, timeout=budget)
         except PlaywrightTimeout:
-            raise ToolFailure(_stale_endpoint_payload())
+            raise ToolFailure(_awaiting_authorization_payload(budget / 1000.0))
         except PlaywrightError:
             raise ToolFailure(_not_connected_payload())
         context = connected.contexts[0] if connected.contexts else connected.new_context()
@@ -582,9 +617,48 @@ class WebSurface(Surface):
             session.page = self._pick_page(session)
         return session.page
 
-    def _live(self) -> tuple[_Session, Any]:
+    def _window_of(self, session: _Session, page) -> Optional[int]:
+        """The window-server id of the browser window a page is displayed in, or ``None``.
+
+        ``Browser.getWindowForTarget`` is the only thing that knows. DevTools numbers pages and
+        the window server numbers windows, and a Chrome window target is meaningless without the
+        join: without it, naming one of six Chrome windows would silently act in whichever page
+        happened to be active, which is the same class of mistake as addressing an application
+        and getting whichever copy was found first."""
+        try:
+            device = session.context.new_cdp_session(page)
+            try:
+                return int(device.send("Browser.getWindowForTarget").get("windowId"))
+            finally:
+                device.detach()
+        except Exception:  # noqa: BLE001 — a browser that will not say leaves the page unplaced
+            logger.debug("Could not resolve the window of a page", exc_info=True)
+            return None
+
+    def _page_for(self, session: _Session, target: str):
+        """The page a target names: a tab by its DevTools id, or the front page of a window.
+
+        A window holds several tabs and only one is in front; that is the one a person means when
+        they name the window, and the one a script acts in unless it calls ``tab()``."""
+        if target.startswith(f"{TAB_PREFIX}-") or not target.startswith(f"{WINDOW_PREFIX}-"):
+            wanted = target.split("-", 1)[-1]
+            for page in session.live_pages():
+                if session.tab_id(page) in (target, wanted):
+                    return page
+            raise ToolFailure({"ok": False, "error": f"Tab {target!r} is no longer open."})
+        window_id = int(target.split("-", 1)[1])
+        in_window = [page for page in session.live_pages() if self._window_of(session, page) == window_id]
+        if not in_window:
+            # The window is real (the target registry found it) but Chrome reports no page in it:
+            # a browser window showing only its own interface, or one that closed since the list.
+            return self.page(session)
+        return next((page for page in in_window if page is session.page), in_window[0])
+
+    def _bind(self, target: str) -> _Bound:
         session = self.session()
-        return session, self.page(session)
+        page = self._page_for(session, target)
+        session.page = page
+        return _Bound(session=session, page=page)
 
     def shutdown(self) -> None:
         def stop() -> dict:
@@ -652,14 +726,14 @@ class WebSurface(Surface):
 
     # Perceiving — find.
 
-    def documents(self, browser: str = "chrome") -> dict:
+    def documents(self, target: str = "") -> dict:
         """Read the page into retrieval documents: one per element (its own words, keyed by its
         aria-ref), plus one per recent network exchange (method + url, keyed by its id, with the
         full request/response as payload), so the model can find a control or an API endpoint."""
 
         def run() -> dict:
-            session = self.session(browser)
-            page = self.page(session)
+            bound = self._bind(target)
+            session, page = bound.session, bound.page
             documents: list[Document] = []
             elements, session.frame_owners = _parse_snapshot(_snapshot(page))
             tooltips = _titles_by_label(page)
@@ -713,29 +787,36 @@ class WebSurface(Surface):
 
     # Acting — control_screen. ``perform`` routes one primitive call to its handler.
 
-    def perform(self, operation: str, arguments: list, keywords: dict) -> dict:
+    def perform(self, target: str, operation: str, arguments: list, keywords: dict) -> dict:
         handler = getattr(self, f"_primitive_{operation}", None)
         if handler is None:
-            return {"ok": False, "error": f"The browser surface has no '{operation}' action."}
-        return handler(*arguments, **keywords)
+            from frank.computer import targets as target_registry
 
-    def _primitive_click(self, ref: str, *, button: str = "left", count: int = 1, dialog: str = "", **_: Any) -> dict:
+            available = ", ".join(target_registry.vocabularies()[target_registry.PAGE_VOCABULARY])
+            return {"ok": False, "error": f"A page has no {operation!r} action. It has: {available}."}
+        try:
+            bound = self._bind(target)
+        except ToolFailure as failure:
+            return failure.payload
+        return self.call_primitive(operation, handler, bound, arguments, keywords)
+
+    def _primitive_click(self, bound: _Bound, element: str, *, button: str = "left", count: int = 1, dialog: str = "", **_: Any) -> dict:
         def run() -> dict:
-            session, page = self._live()
+            session, page = bound.session, bound.page
             session.pending_dialog = dialog or None
             try:
-                self._locator(page, ref).click(button=button, click_count=count)
+                self._locator(page, element).click(button=button, click_count=count)
             except Exception as error:
-                raise ToolFailure({"ok": False, "error": f"Could not click {ref}: {_actionability_error(error)}"})
+                raise ToolFailure({"ok": False, "error": f"Could not click {element}: {_actionability_error(error)}"})
             _await_quiet(page)
-            return self._acted(session, page, f"Clicked {ref}")
+            return self._acted(session, page, f"Clicked {element}")
 
         return self.guard(run)
 
-    def _primitive_type(self, ref: str, text: str, *, submit: bool = False, mode: str = "replace", **_: Any) -> dict:
+    def _primitive_type(self, bound: _Bound, element: str, text: str, *, submit: bool = False, mode: str = "replace", **_: Any) -> dict:
         def run() -> dict:
-            session, page = self._live()
-            locator = self._locator(page, ref)
+            session, page = bound.session, bound.page
+            locator = self._locator(page, element)
             try:
                 if mode == "insert":
                     locator.focus()
@@ -743,25 +824,25 @@ class WebSurface(Surface):
                 else:
                     locator.fill(text)
             except Exception as error:
-                raise ToolFailure({"ok": False, "error": f"Could not type into {ref}: {_actionability_error(error)}"})
+                raise ToolFailure({"ok": False, "error": f"Could not type into {element}: {_actionability_error(error)}"})
             landed = self._field_text(locator)
             if not submit:
-                result: dict[str, Any] = {"ok": True, "did": f"Typed into {ref}", "value": landed}
+                result: dict[str, Any] = {"ok": True, "did": f"Typed into {element}", "value": landed}
                 if mode == "replace" and landed != text:
                     result["note"] = message("type_clamped")
                 return result
             session.pending_dialog = None
             locator.press("Enter")
             _await_quiet(page)
-            result = self._acted(session, page, f"Typed into {ref} and pressed Enter")
+            result = self._acted(session, page, f"Typed into {element} and pressed Enter")
             result["value"] = landed
             return result
 
         return self.guard(run)
 
-    def _primitive_press(self, key: str, **_: Any) -> dict:
+    def _primitive_press(self, bound: _Bound, key: str, **_: Any) -> dict:
         def run() -> dict:
-            session, page = self._live()
+            session, page = bound.session, bound.page
             resolved = _KEY_ALIASES.get(key.strip().lower(), key.strip())
             try:
                 page.keyboard.press(resolved)
@@ -772,30 +853,30 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _primitive_hover(self, ref: str, **_: Any) -> dict:
+    def _primitive_hover(self, bound: _Bound, element: str, **_: Any) -> dict:
         def run() -> dict:
-            session, page = self._live()
+            session, page = bound.session, bound.page
             try:
-                self._locator(page, ref).hover()
+                self._locator(page, element).hover()
             except Exception as error:
-                raise ToolFailure({"ok": False, "error": f"Could not hover {ref}: {_actionability_error(error)}"})
+                raise ToolFailure({"ok": False, "error": f"Could not hover {element}: {_actionability_error(error)}"})
             settle(lambda: _element_signature(page))
-            return self._acted(session, page, f"Hovered {ref}")
+            return self._acted(session, page, f"Hovered {element}")
 
         return self.guard(run)
 
-    def _primitive_scroll(self, ref: Optional[str] = None, *, direction: str = "down", **_: Any) -> dict:
+    def _primitive_scroll(self, bound: _Bound, element: Optional[str] = None, *, direction: str = "down", **_: Any) -> dict:
         normalized_direction = direction.strip().lower()
         if normalized_direction not in _SCROLL_DIRECTIONS:
             return {"ok": False, "error": f"Unknown scroll direction {direction!r}. Use down, up, left, right, top, or bottom."}
 
         def run() -> dict:
-            session, page = self._live()
+            session, page = bound.session, bound.page
             size = page.viewport_size or {"width": 1280, "height": 720}
-            if ref is not None:
-                box = self._locator(page, ref).bounding_box()
+            if element is not None:
+                box = self._locator(page, element).bounding_box()
                 if box is None:
-                    raise ToolFailure({"ok": False, "error": f"Element {ref!r} has no on-screen position to scroll at. Search again."})
+                    raise ToolFailure({"ok": False, "error": f"Element {element!r} has no on-screen position to scroll at. Search again."})
                 point_x = min(max(box["x"] + box["width"] / 2, 1), size["width"] - 1)
                 point_y = min(max(box["y"] + box["height"] / 2, 1), size["height"] - 1)
                 page.mouse.move(point_x, point_y)
@@ -813,27 +894,27 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _primitive_choose(self, ref: str, option: str, **_: Any) -> dict:
+    def _primitive_choose(self, bound: _Bound, element: str, option: str, **_: Any) -> dict:
         def run() -> dict:
-            session, page = self._live()
+            session, page = bound.session, bound.page
             try:
-                chosen = self._locator(page, ref).select_option(option)
+                chosen = self._locator(page, element).select_option(option)
             except Exception as error:
-                raise ToolFailure({"ok": False, "error": f"Could not choose {option!r} in {ref}: {_actionability_error(error)}"})
-            result = self._acted(session, page, f"Chose {option!r} in {ref}")
+                raise ToolFailure({"ok": False, "error": f"Could not choose {option!r} in {element}: {_actionability_error(error)}"})
+            result = self._acted(session, page, f"Chose {option!r} in {element}")
             result["chosen"] = chosen
             return result
 
         return self.guard(run)
 
-    def _primitive_upload(self, ref: str, paths: Any, **_: Any) -> dict:
+    def _primitive_upload(self, bound: _Bound, element: str, paths: Any, **_: Any) -> dict:
         def run() -> dict:
             resolved = [str(Path(path).expanduser()) for path in ([paths] if isinstance(paths, str) else paths)]
             missing = [path for path in resolved if not os.path.isfile(path)]
             if missing:
                 return {"ok": False, "error": f"No such file: {', '.join(missing)}"}
-            session, page = self._live()
-            locator = self._locator(page, ref)
+            session, page = bound.session, bound.page
+            locator = self._locator(page, element)
             try:
                 locator.set_input_files(resolved)
             except Exception:
@@ -842,29 +923,29 @@ class WebSurface(Surface):
                         locator.click()
                     chooser.value.set_files(resolved)
                 except Exception as error:
-                    raise ToolFailure({"ok": False, "error": f"Could not upload to {ref}: {_actionability_error(error)}"})
-            return self._acted(session, page, f"Attached {len(resolved)} file(s) to {ref}")
+                    raise ToolFailure({"ok": False, "error": f"Could not upload to {element}: {_actionability_error(error)}"})
+            return self._acted(session, page, f"Attached {len(resolved)} file(s) to {element}")
 
         return self.guard(run)
 
-    def _primitive_drag(self, ref: str, to_element: Optional[str] = None, **_: Any) -> dict:
+    def _primitive_drag(self, bound: _Bound, element: str, onto: Optional[str] = None, **_: Any) -> dict:
         def run() -> dict:
-            if to_element is None:
-                return {"ok": False, "error": "drag needs to_element — the element to drop onto."}
-            session, page = self._live()
+            if onto is None:
+                return {"ok": False, "error": "drag needs onto — the element to drop onto."}
+            session, page = bound.session, bound.page
             try:
-                self._locator(page, ref).drag_to(self._locator(page, to_element), timeout=active_tuning().amount(Tunable.drag_timeout_ms))
+                self._locator(page, element).drag_to(self._locator(page, onto), timeout=active_tuning().amount(Tunable.drag_timeout_ms))
             except Exception as error:
-                raise ToolFailure({"ok": False, "error": f"Could not drag {ref} to {to_element}: {_actionability_error(error)}"})
-            return self._acted(session, page, f"Dragged {ref} onto {to_element}")
+                raise ToolFailure({"ok": False, "error": f"Could not drag {element} to {onto}: {_actionability_error(error)}"})
+            return self._acted(session, page, f"Dragged {element} onto {onto}")
 
         return self.guard(run)
 
-    def _primitive_select(self, ref: str, *, text: Optional[str] = None, to_text: Optional[str] = None,
+    def _primitive_select(self, bound: _Bound, element: str, *, text: Optional[str] = None, to_text: Optional[str] = None,
                    select_all: bool = False, occurrence: int = 1, **_: Any) -> dict:
         def run() -> dict:
-            _, page = self._live()
-            locator = self._locator(page, ref)
+            page = bound.page
+            locator = self._locator(page, element)
             content = self._field_text(locator)
             if select_all:
                 start, length = resolve_range(content, select_all=True)
@@ -878,11 +959,11 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _primitive_caret(self, ref: str, *, before: Optional[str] = None, after: Optional[str] = None,
+    def _primitive_caret(self, bound: _Bound, element: str, *, before: Optional[str] = None, after: Optional[str] = None,
                   at_offset: Optional[int] = None, edge: str = "", occurrence: int = 1, **_: Any) -> dict:
         def run() -> dict:
-            _, page = self._live()
-            locator = self._locator(page, ref)
+            page = bound.page
+            locator = self._locator(page, element)
             content = self._field_text(locator)
             offset = resolve_caret(content, before=before, after=after, at_offset=at_offset,
                                    to_start=edge == "start", to_end=edge == "end", occurrence=occurrence)
@@ -892,22 +973,24 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _primitive_read(self, ref: Optional[str] = None, *, frame: str = "", **_: Any) -> dict:
+    def _primitive_read(self, bound: _Bound, element: Optional[str] = None, *, frame: str = "", **_: Any) -> dict:
         def run() -> dict:
-            session, page = self._live()
+            session, page = bound.session, bound.page
             timeout = active_tuning().amount(Tunable.read_text_timeout_ms)
-            if ref is not None:
+            if element is not None:
                 # An element id already names its own frame, so `frame` adds nothing here.
-                source = self._locator(page, ref).inner_text(timeout=timeout)
+                source = self._locator(page, element).inner_text(timeout=timeout)
             else:
                 source = self._frame_or_page(session, page, frame).inner_text("body", timeout=timeout)
-            return {"ok": True, "text": _clean_page_text(source), "url": _safe_url(page)}
+            # Lines, like a window's read: one name, one shape, on both surfaces. A script that
+            # wants the whole thing joins it; a script that wants the third row cannot unjoin it.
+            return {"ok": True, "lines": _clean_page_text(source).splitlines(), "url": _safe_url(page)}
 
         return self.guard(run)
 
-    def _primitive_evaluate(self, expression: str, argument: Any = None, *, frame: str = "", **_: Any) -> dict:
+    def _primitive_evaluate(self, bound: _Bound, expression: str, argument: Any = None, *, frame: str = "", **_: Any) -> dict:
         def run() -> dict:
-            session, page = self._live()
+            session, page = bound.session, bound.page
             expression_text = expression.strip()
             if not expression_text:
                 return {"ok": False, "error": "evaluate needs a JavaScript expression to run."}
@@ -947,41 +1030,61 @@ class WebSurface(Surface):
             active = session.page
             return [
                 {"id": session.tab_id(page), "title": _safe_title(page), "url": _safe_url(page),
-                 "active": page is active, "app": "Chrome"}
+                 "active": page is active, "app": "Chrome",
+                 # Which browser window this tab lives in, so the target list can nest it under
+                 # the window the user actually sees rather than presenting a flat pile of tabs.
+                 "window_number": self._window_of(session, page)}
                 for page in session.live_pages()
             ]
         except Exception:  # noqa: BLE001 — a listing must never be the thing that fails
             logger.debug("Could not list tabs of the connected browser", exc_info=True)
             return []
 
-    def observe(self) -> dict:
-        """Title, url and focus — what a page can say about itself without a full read.
+    def glance(self, target: str) -> Glance:
+        """Title, url and focus, plus which elements are present — what a page says cheaply.
 
         `url` is here and absent on a window, which is the whole design: one shape, and a key
-        appears when the surface has something to put in it."""
+        appears when the surface has something to put in it. The element ids come from the same
+        accessibility snapshot the page already builds, so a glance costs one read rather than
+        the full `documents` pass an `appeared` diff used to take."""
         session = self._session
-        if session is None or not session.browser.is_connected() or session.page is None:
-            return {}
-        page = session.page
+        if session is None or not session.browser.is_connected():
+            return Glance()
+        try:
+            page = self._page_for(session, target)
+        except Exception:  # noqa: BLE001 — an observation must never be the thing that fails
+            return Glance()
         try:
             focused = page.evaluate(
                 "() => { const a = document.activeElement;"
                 " return a ? (a.getAttribute('aria-label') || a.innerText || a.tagName) : null; }")
         except Exception:  # noqa: BLE001
             focused = None
-        return {"title": _safe_title(page), "url": _safe_url(page),
-                "focus": (str(focused)[:80] if focused else None)}
+        try:
+            elements, _ = _parse_snapshot(_snapshot(page))
+            ids = frozenset(str(element.token) for element in elements if element.token)
+        except Exception:  # noqa: BLE001
+            ids = frozenset()
+        return Glance(
+            facts={"title": _safe_title(page), "url": _safe_url(page),
+                   "focus": (str(focused)[:80] if focused else None)},
+            ids=ids,
+        )
 
-    def _primitive_focus(self, **_: Any) -> dict:
-        """Bring this tab to the front. The browser's answer to the same question a window asks."""
+    def _primitive_focus(self, bound: _Bound, element: Optional[str] = None, **_: Any) -> dict:
+        """Bring this tab to the front, or put the caret in one control. Same two meanings a
+        window gives the word, so a script written against `focus` runs on either."""
         def run() -> dict:
-            session, page = self._live()
+            session, page = bound.session, bound.page
+            if element:
+                self._locator(page, element).focus()
+                return {"ok": True, "focused": element}
             page.bring_to_front()
             return {"ok": True, "focused": True, "tab": session.tab_id(page)}
 
         return self.guard(run)
 
-    def _primitive_tabs(self, **_: Any) -> dict:
+    def _primitive_tabs(self, bound: _Bound, **_: Any) -> dict:
         def run() -> dict:
             session = self.session()
             active = self.page(session)
@@ -995,7 +1098,7 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _primitive_tab(self, tab: str, **_: Any) -> dict:
+    def _primitive_tab(self, bound: _Bound, tab: str, **_: Any) -> dict:
         def run() -> dict:
             session = self.session()
             session.live_pages()
@@ -1014,7 +1117,7 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _primitive_new_tab(self, url: str = "", **_: Any) -> dict:
+    def _primitive_new_tab(self, bound: _Bound, url: str = "", **_: Any) -> dict:
         def run() -> dict:
             session = self.session()
             page = session.context.new_page()
@@ -1039,7 +1142,7 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _primitive_close_tab(self, tab: str = "", **_: Any) -> dict:
+    def _primitive_close_tab(self, bound: _Bound, tab: str = "", **_: Any) -> dict:
         def run() -> dict:
             session = self.session()
             session.live_pages()
@@ -1058,9 +1161,9 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _primitive_frames(self, **_: Any) -> dict:
+    def _primitive_frames(self, bound: _Bound, **_: Any) -> dict:
         def run() -> dict:
-            session, page = self._live()
+            session, page = bound.session, bound.page
             _, session.frame_owners = _parse_snapshot(_snapshot(page))
             listing: list[dict] = []
             for identifier in sorted(session.frame_owners, key=lambda name: int(name[1:])):
@@ -1070,7 +1173,7 @@ class WebSurface(Surface):
                 try:
                     frame = self._frame(session, page, identifier)
                 except ToolFailure:
-                    # One iframe that has gone must not cost the listing; a dead ref does not error,
+                    # One iframe that has gone must not cost the listing; a dead element does not error,
                     # it waits out its timeout, which is why this one is short.
                     record["unavailable"] = True
                 else:
@@ -1082,12 +1185,13 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _primitive_navigate(self, url: str = "", *, history: str = "", browser: str = "chrome", **_: Any) -> dict:
+    def _primitive_navigate(self, bound: _Bound, url: str = "", *, history: str = "", **_: Any) -> dict:
         # Opening a tab is not a way of navigating, so it is `new_tab` that does it and says what it
         # made. This used to carry a `new_tab` flag that created a page and told the caller nothing.
+        # It also took a `browser` argument, which the target already answers — and which the model
+        # would now see in the signature, inviting it to name a browser it was never choosing.
         def run() -> dict:
-            session = self.session(browser)
-            page = self.page(session)
+            page = bound.page
             try:
                 if history == "back":
                     page.go_back(wait_until="domcontentloaded")

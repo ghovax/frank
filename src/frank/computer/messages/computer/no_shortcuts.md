@@ -1,0 +1,1 @@
+This application publishes no menu bar to accessibility, so it advertises no keyboard shortcuts. Drive it through its controls instead of guessing a chord — a remembered shortcut belongs to a version of an application you are not looking at, and a wrong one changes something the task never asked you to change.

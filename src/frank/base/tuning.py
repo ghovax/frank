@@ -162,6 +162,12 @@ class Tunable(Enum):
     navigation_timeout_ms = Default(20_000, Scaling.TIME, "How long a page load or navigation waits.")
     snapshot_timeout_ms = Default(10_000, Scaling.TIME, "How long an accessibility snapshot of a page waits.")
     connect_timeout_ms = Default(10_000, Scaling.TIME, "How long attaching to a browser waits.")
+    # A person's reaction time, not a network one: Chrome shows a consent box when a debugging
+    # client attaches, and this is how long we wait for somebody to find it and click Allow. It
+    # was ten seconds, budgeted as if the browser were the slow party, and anyone slower than
+    # that was told their endpoint had gone stale and advised to toggle the switch — dismissing
+    # the prompt they were on their way to approving.
+    browser_authorization_ms = Default(90_000, Scaling.TIME, "How long attaching waits for the user to approve Chrome's prompt.")
     drag_timeout_ms = Default(8_000, Scaling.TIME, "How long a drag between two elements waits.")
     screenshot_timeout_ms = Default(20_000, Scaling.TIME, "How long capturing a page screenshot waits.")
     read_text_timeout_ms = Default(10_000, Scaling.TIME, "How long reading a page's text waits.")

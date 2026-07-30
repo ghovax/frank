@@ -22,6 +22,8 @@ other prompt in the harness.
 from __future__ import annotations
 
 import concurrent.futures
+import inspect
+import logging
 import queue
 import threading
 from dataclasses import dataclass, field
@@ -30,6 +32,8 @@ from typing import Any, Callable, Optional
 
 from frank.base.configuration import PromptLoader
 from frank.base.tuning import Tunable, active_tuning
+
+logger = logging.getLogger(__name__)
 
 
 def machinery_ceiling() -> float:
@@ -102,14 +106,28 @@ def resolve_range(
     raise ToolFailure({"ok": False, "error": "select needs one of: text, a from/to pair, or all."})
 
 
+@dataclass
+class Glance:
+    """One cheap look at a surface: the globals that can move, and which elements are present.
+
+    Both from a single read, deliberately. Bracketing an action used to cost four full tree walks
+    — an ``observe`` and a full ``documents`` on each side — and the ``documents`` half was worse
+    than slow: it rebuilds the surface's id→element map, so every id the model was already holding
+    silently re-pointed at whatever now sat at that tree path. One walk, ids only, no registry
+    touched."""
+
+    facts: dict[str, Any] = field(default_factory=dict)
+    ids: frozenset[str] = frozenset()
+
+
 def changes_between(before: dict, after: dict) -> dict:
     """What differs between two observations, as `{field: {"from": …, "to": …}}`.
 
-    Only fields that actually moved. An action that changed nothing reports `{}`, which is the
-    signal the focus fallback reads and the signal a model needs to stop guessing: today an action
-    returns what it *touched* and never what it *changed*, so a script that clicks a tab and then
-    cannot find the field inside it has no way to tell a failed click from a slow pane from a
-    differently-named field. Four attempts at a two-step task came out of that gap."""
+    Only fields that actually moved. An action that changed nothing reports `{}` — the signal a
+    model needs to stop guessing: an action used to return what it *touched* and never what it
+    *changed*, so a script that clicks a tab and then cannot find the field inside it had no way
+    to tell a failed click from a slow pane from a differently-named field. Four attempts at a
+    two-step task came out of that gap."""
     report: dict[str, Any] = {}
     for name in sorted(set(before) | set(after)):
         was, now = before.get(name), after.get(name)
@@ -118,14 +136,15 @@ def changes_between(before: dict, after: dict) -> dict:
     return report
 
 
-def appeared_between(before: list[dict], after: list[dict]) -> list[dict]:
-    """Elements present after an action and not before, in the order the surface reports them.
+def appeared_between(before: Glance, after: Glance) -> frozenset[str]:
+    """The ids present after an action and not before. Ids only; hydration is the caller's call.
 
-    Uncapped. What became newly available is the most useful thing a model can learn, because it
-    is what it can act on next, and truncating it means it cannot tell "there is nothing else"
-    from "there is more I was not shown"."""
-    known = {str(element.get("id")) for element in before}
-    return [element for element in after if str(element.get("id")) not in known]
+    What became newly available is the most useful thing a model can learn, because it is what it
+    can act on next — but "everything new, uncapped, with full payloads" is a page of elements
+    when the action happened to navigate, and that is exactly what one Enter key produced. The
+    count is always truthful; how much of it is spelled out is decided where the budget is
+    known."""
+    return frozenset(after.ids - before.ids)
 
 
 def resolve_caret(
@@ -237,11 +256,18 @@ class Surface:
         try:
             return self.worker.submit(guarded, timeout=timeout)
         except Exception as error:  # substrate errors, timeouts, a dead target
+            # Logged with its traceback before anything narrows it. What reaches the model is one
+            # sentence, and one sentence cannot say where a failure came from: an
+            # `AttributeError: 'AXUIElementCreateApplication'` — a Python symbol that failed to
+            # resolve — arrived as "The action failed … Observe the app again and retry", and the
+            # model spent a turn theorising about the application's readiness. The traceback that
+            # would have named it was discarded here, so nobody could do better afterwards.
+            logger.exception("A %s operation failed", type(self).__name__)
             first_line = str(error).splitlines()[0] if str(error) else error.__class__.__name__
             try:
                 self.worker.submit(self.on_recover, timeout=5.0)
             except Exception:
-                pass
+                logger.debug("Recovery after a failed operation also failed", exc_info=True)
             return self.recover(first_line)
 
     def on_recover(self) -> dict:
@@ -266,17 +292,62 @@ class Surface:
         found = {name[len("_primitive_"):] for name in dir(self) if name.startswith("_primitive_")}
         return tuple(sorted(self.RETRIEVAL_PRIMITIVES + tuple(sorted(found))))
 
-    def observe(self) -> dict:
-        """The cheap facts about this surface right now, for diffing an action against.
+    def glance(self, target: str) -> Glance:
+        """One cheap look at a target, for diffing an action against.
 
         Deliberately small and deliberately global: title, focus, selection, and — where they
-        exist — url and network. A full re-read after every action is truthful and unaffordable,
-        and the acted-on subtree alone misses the consequences that matter most, which are exactly
-        the ones that happen elsewhere: a pane switching, a page navigating, focus moving.
+        exist — url; plus the set of element ids present. A full re-read after every action is
+        truthful and unaffordable, and the acted-on subtree alone misses the consequences that
+        matter most, which are exactly the ones that happen elsewhere: a pane switching, a page
+        navigating, focus moving.
 
-        A surface that cannot answer cheaply returns what it can. An empty observation makes the
-        diff empty, which reads as "nothing observable changed" — true, and better than a guess."""
-        return {}
+        A surface that cannot answer cheaply returns what it can. An empty glance makes the diff
+        empty, which reads as "nothing observable changed" — true, and better than a guess."""
+        return Glance()
+
+    def spoken_signature(self, name: str, handler: Callable) -> str:
+        """A primitive's call shape, in the vocabulary the script is written in.
+
+        Not ``NativeSurface._primitive_type(self, state, ref, text, *, submit=False)``. The model
+        never wrote that name, cannot see that class, and did not pass those first two arguments;
+        showing it a Python signature it never called is the same failure as showing it a
+        traceback and calling it an explanation."""
+        rendered = []
+        for index, parameter in enumerate(inspect.signature(handler).parameters.values()):
+            if index == 0 or parameter.kind is inspect.Parameter.VAR_KEYWORD:
+                continue                       # the bound state, and the **_ catch-all
+            if parameter.default is inspect.Parameter.empty:
+                rendered.append(parameter.name)
+            else:
+                rendered.append(f"{parameter.name}={parameter.default!r}")
+        return f"{name}({', '.join(rendered)})"
+
+    def call_primitive(self, name: str, handler: Callable, bound: Any, arguments: list, keywords: dict) -> dict:
+        """Call one primitive, turning a wrong call into words instead of a Python exception.
+
+        The arguments are checked against the signature *before* the call, so a mismatch is
+        answered and anything the body itself raises still propagates to the guard. A model that
+        wrote ``type("DateTimeClasses", submit=True)`` — forgetting that a field comes first — was
+        told ``_primitive_type() missing 1 required positional argument: 'text'``, and had to
+        reverse-engineer a private method's signature to find out what it should have written."""
+        try:
+            inspect.signature(handler).bind(bound, *arguments, **keywords)
+        except TypeError as mismatch:
+            return {"ok": False, "error": self.message(
+                "wrong_arguments", primitive=name, detail=str(mismatch),
+                signature=self.spoken_signature(name, handler),
+            )}
+        return handler(bound, *arguments, **keywords)
+
+    def perform(self, target: str, operation: str, arguments: list, keywords: dict) -> dict:
+        """Run one primitive against one target. Every surface answers this shape.
+
+        ``target`` is a parameter rather than remembered state. It used to be neither: the tool
+        boundary took a target and the surface underneath kept a single ``_last_pid``, set by
+        whichever read happened last anywhere in the process — so ``press`` and ``focus`` and
+        ``read`` all acted on "the last one", two concurrent scripts shared it, and ``read()``
+        failed with "nothing to read yet" for reasons no script could see."""
+        raise NotImplementedError
 
     def preflight(self, operation: str) -> Optional[dict]:
         """An optional gate run before a read or an action (a permission the surface needs).

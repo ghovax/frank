@@ -268,6 +268,11 @@ class TurnContext(BaseModel):
     active_goal: str = ""
     tasks: list[dict[str, Any]] = Field(default_factory=list)
     background: dict[str, Any] = Field(default_factory=dict)
+    # Where a screen script can be pointed, and what may be called there. Present only when the
+    # screen tool is enabled. It is here rather than in the system prompt because the system
+    # prompt is cached for the session and windows open and close within one: a cached list of
+    # places is a list of places that were open once.
+    screen: dict[str, Any] = Field(default_factory=dict)
 
 
 MODEL_ENVELOPE_MODELS: tuple[type[BaseModel], ...] = (

@@ -153,8 +153,30 @@ class _TurnLoopMixin:
                 "active_count": self._background.active_count(),
                 "recent_events": self._execution_history[-20:],
             },
+            screen=self._screen_context(),
         )
         return context.model_dump_json(exclude_defaults=True)
+
+    def _screen_context(self) -> dict:
+        """Every place a screen script can be pointed at, and what may be called in each.
+
+        The cold-start problem this solves was designed away on paper and then left in the code:
+        `control_screen` requires a target, target ids are minted by the platform, and nothing
+        ever told the model what they were — so the first call of every screen task had to fail in
+        order to read the list out of the error. It guessed an application name, which is not an
+        address, and burned two calls before it could begin.
+
+        Enumerating windows is window-server and accessibility work only; it never connects to a
+        browser, so carrying this every turn cannot put a consent dialog in front of anybody."""
+        if not self._global_configuration.computer_control.enabled:
+            return {}
+        try:
+            from frank.computer import targets as target_registry
+
+            return target_registry.context_block()
+        except Exception:  # noqa: BLE001 — context is an aid, never the thing that fails a turn
+            logger.debug("Could not enumerate screen targets for the turn context", exc_info=True)
+            return {}
 
     def _record_turn(self, user_message: str, tool_calls: list, tool_results: list, final_response: str):
         self._record_message("human", user_message)
