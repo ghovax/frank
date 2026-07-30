@@ -288,10 +288,10 @@ class Surface:
     # this whole domain — unwritable, and left splitting the work across tool calls as the only
     # option. Scripts were short because the environment made them short.
     PROVIDED_SIGNATURES = {
-        "find_one": 'find_one(query, clickable=None, name="", context="")',
-        "find_many": 'find_many(query, limit=8, all=False, clickable=None, name="", context="")',
-        "wait_for": 'wait_for(query, seconds=5, clickable=None, name="", context="")',
-        "sleep": "sleep(seconds)",
+        "find_one": 'screen.find_one(query, clickable=None, name="", context="")',
+        "find_many": 'screen.find_many(query, limit=8, all=False, clickable=None, name="", context="")',
+        "wait_for": 'screen.wait_for(query, seconds=5, clickable=None, name="", context="")',
+        "sleep": "screen.sleep(seconds)",
     }
     RETRIEVAL_PRIMITIVES = tuple(PROVIDED_SIGNATURES)
 
@@ -347,7 +347,11 @@ class Surface:
                 rendered.append(parameter.name)
             else:
                 rendered.append(f"{parameter.name}={parameter.default!r}")
-        return f"{name}({', '.join(rendered)})"
+        # Spelled the way it is called. The signatures went into the model's context as bare
+        # names — `find_many(query, …)` — while the runner bound only `screen`, so a script
+        # written from exactly what it had been handed hit an unbound name and the whole helper
+        # appeared to die before doing anything. One statement of the calling convention.
+        return f"screen.{name}({', '.join(rendered)})"
 
     def call_primitive(self, name: str, handler: Callable, bound: Any, arguments: list, keywords: dict) -> dict:
         """Call one primitive, turning a wrong call into words instead of a Python exception.
