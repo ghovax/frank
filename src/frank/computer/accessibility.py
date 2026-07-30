@@ -409,11 +409,20 @@ def _window_id_of(window: Any) -> Optional[int]:
 
 @dataclass(frozen=True)
 class WindowRecord:
-    """One window an application publishes, as accessibility describes it."""
+    """One window an application publishes, as accessibility describes it.
+
+    ``document`` and ``main`` are here because a title is not an identity: two Finder windows
+    were both called "Applications", neither was main, and nothing else was reported — so the
+    model had no way to choose between them and no way to say which one it had chosen. A window
+    that holds a file says which file, and an application says which of its windows is the main
+    one; both are free, and together they separate almost everything a title cannot."""
 
     window_id: int
     title: str
     minimized: bool
+    document: str = ""
+    main: bool = False
+    bounds: tuple[int, int, int, int] = (0, 0, 0, 0)   # x, y, width, height
 
 
 def application_root(pid: int) -> Any:
@@ -449,10 +458,19 @@ def windows_of(pid: int) -> list[WindowRecord]:
         if window_id is None or window_id in seen:
             continue
         seen.add(window_id)
+        rectangle = _frame_of(_read(window) or {})
+        bounds = (0, 0, 0, 0)
+        if rectangle is not None:
+            with suppress(Exception):
+                bounds = (int(rectangle.origin.x), int(rectangle.origin.y),
+                          int(rectangle.size.width), int(rectangle.size.height))
         records.append(WindowRecord(
             window_id=window_id,
             title=_string(_single(window, TITLE)) or _string(_single(window, VALUE)),
             minimized=bool(_single(window, "AXMinimized")),
+            document=_string(_single(window, "AXDocument")),
+            main=bool(_single(window, "AXMain")),
+            bounds=bounds,
         ))
     return records
 

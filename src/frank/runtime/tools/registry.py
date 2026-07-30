@@ -683,7 +683,17 @@ async def control_screen(
 
     `element` is an id a find returned (or the find_one result itself), or a plain-language query resolved the way find_one resolves it. It is never the `target` — that names the *place* the script runs in, and is fixed for the whole script. For a state-changing action, never pick a find_many result by position: use find_one or a query, so an unclear target is caught rather than guessed. press("Enter") and submit=True both post a form, so be deliberate.
 
-    Targets — the place a script runs. Every window and tab has an id minted by the platform, and the current list arrives in your context each turn, with each entry's `app`, `title`, and `can` — the vocabulary that place answers to. Pass the one you mean as `target`; there is no default, because "whatever is in front" is a race with the person using the computer. An application is not a target: two Finder windows are two places, and naming the application cannot say which. Every window is listed, including ones behind others, minimized, or on another desktop — `visible: false` marks those, and you can act in them exactly as in any other, which is worth mentioning to the user when you do. An entry marked `addressable: false` is an application that publishes no windows to accessibility; it names the app, not a place. A target you name that is not on the list comes back with the current list, so you can pick another without looking it up.
+    Targets — the place a script runs. Every window and tab has an id minted by the platform, and the current list arrives in your context each turn. Pass the one you mean as `target`; there is no default, because "whatever is in front" is a race with the person using the computer. An application is not a target: two Finder windows are two places, and naming the application cannot say which. A target you name that is not on the list comes back with the current list, so you can pick another without looking it up.
+
+    Each entry carries what it takes to tell one place from another, so read it before choosing:
+      - `app` and `title` — who owns it and what it calls itself. Neither is unique: two Finder windows are both "Applications"
+      - `can` — the vocabulary this place answers to, keying into the `primitives` map beside the list
+      - `document` — the file or page it holds, as a plain path or url. The strongest discriminator there is, and usually the honest way to name a window to the user ("the window showing report.pdf")
+      - `main` — the application's main window, when it says which
+      - `bounds` — where it is and how big, in screen points. What separates two windows that agree on everything else
+      - `visible: false` — behind others, minimized, or on another desktop. You can act in it exactly as in any other; say so to the user when you do, because they cannot see it happen
+      - `addressable: false` — an application publishing no windows to accessibility. It names the app, not a place, and cannot be acted in
+      - `focused` — where the user's keyboard is right now. Somebody is working there
 
     What changed — every action answers with what it did, not merely what it touched: the globals that moved (``title``, ``focus``, ``selection``, and on a page ``url``), and what became newly present (``appeared``, with ``appeared_total`` when there was more than a sample's worth). An action that replaced the whole document reports ``navigated`` — the new title, url and element count — instead of listing a page's worth of elements at you. An action that changed nothing says so with ``changed: []`` — your signal that the click missed, or the pane had not loaded yet, rather than that the element was named differently.
 

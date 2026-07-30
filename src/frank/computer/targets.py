@@ -74,6 +74,9 @@ class Target:
     focused: bool = False
     visible: bool = True
     addressable: bool = True
+    main: bool = False
+    document: str = ""
+    bounds: tuple[int, int, int, int] = (0, 0, 0, 0)
     url: str = ""
     note: str = ""
     address: dict[str, Any] = field(default_factory=dict)   # how the surface finds it again
@@ -88,12 +91,24 @@ class Target:
         described: dict[str, Any] = {"id": self.id, "app": self.app, "title": self.title, "can": self.can}
         if self.focused:
             described["focused"] = True
+        if self.main:
+            described["main"] = True
+        # What this window holds, when it holds a file or a page. The strongest discriminator
+        # there is: two Finder windows called "Applications" are told apart by nothing else, and
+        # a window showing a PDF is better named by the PDF than by its own title.
+        if self.document:
+            described["document"] = self.document
         if not self.visible:
             described["visible"] = False
         if not self.addressable:
             described["addressable"] = False
         if self.url:
             described["url"] = self.url
+        # Where it is and how big, so two otherwise identical windows can still be told apart —
+        # and so "the one on the left" is a thing the model can answer rather than guess at.
+        if self.bounds and any(self.bounds):
+            left, top, width, height = self.bounds
+            described["bounds"] = {"x": left, "y": top, "width": width, "height": height}
         if self.note:
             described["note"] = self.note
         return described
@@ -191,18 +206,66 @@ def _native_targets() -> list[Target]:
                 can=PAGE_VOCABULARY if is_page else WINDOW_VOCABULARY,
                 focused=pid == frontmost and on_screen,
                 visible=on_screen and not record.minimized,
+                main=record.main,
+                document=_readable_document(record.document),
+                bounds=record.bounds,
                 note="minimized" if record.minimized else "",
                 address={"window_number": record.window_id, "pid": pid},
             ))
     if silent_pids:
+        # Two things are deliberately not reported.
+        #
+        # Background services, because they are not places anybody means. Twelve of twenty-eight
+        # rows were `coreautha`, `loginwindow`, `TextInputSwitcher`, `PressAndHold` and their
+        # kind, each carrying a twenty-word note about accessibility — nearly half the listing
+        # spent on windows no task will ever address. Dock-visible applications are the ones a
+        # person would name, and that is a fact the system reports rather than one we guess.
+        #
+        # And an application that already has addressable windows, because its silent *other*
+        # process is not news. RStudio runs several: one publishes the real window, another
+        # publishes nothing, and both were listed as "RStudio" — the second saying this
+        # application does not publish its windows to accessibility, which was flatly untrue of
+        # the application the model had just been told it could drive.
+        answered_apps = {target.app for target in targets}
+        withheld = {
+            number: entry for number, entry in numbered.items()
+            if entry["pid"] in silent_pids
+            and entry["app"] not in answered_apps
+            and _is_ordinary_application(entry["pid"])
+        }
         targets.extend(_collapsed(
-            {number: entry for number, entry in numbered.items() if entry["pid"] in silent_pids},
-            visible_ids, frontmost, note=(
+            withheld, visible_ids, frontmost, note=(
                 "This application does not publish its windows to accessibility, so they cannot "
                 "be addressed individually."
             ),
         ))
     return targets
+
+
+def _is_ordinary_application(pid: int) -> bool:
+    """Whether this process is a Dock-visible application rather than a background service."""
+    try:
+        from AppKit import NSApplicationActivationPolicyRegular, NSRunningApplication
+
+        application = NSRunningApplication.runningApplicationWithProcessIdentifier_(pid)
+        return application is not None and application.activationPolicy() == NSApplicationActivationPolicyRegular
+    except Exception:  # noqa: BLE001 — an unanswerable question is not a reason to hide a window
+        return True
+
+
+def _readable_document(document: str) -> str:
+    """A window's document as a person would write it: a plain path, or the url as it stands.
+
+    ``AXDocument`` gives a ``file://`` URL, percent-encoded. Handing that to a model that is about
+    to compare it against a path it read from the filesystem makes it do URL decoding to answer
+    "is this the same file", which is a question the answer should not depend on."""
+    if not document:
+        return ""
+    if document.startswith("file://"):
+        from urllib.parse import unquote, urlparse
+
+        return unquote(urlparse(document).path)
+    return document
 
 
 def _collapsed(numbered: dict[int, dict[str, Any]], visible_ids: set[int],
