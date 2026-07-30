@@ -1,1 +1,3 @@
-This application publishes no menu bar to accessibility, so it advertises no keyboard shortcuts. Drive it through its controls instead of guessing a chord — a remembered shortcut belongs to a version of an application you are not looking at, and a wrong one changes something the task never asked you to change.
+{{ app }} advertises no keyboard shortcuts — either it publishes no menu bar to accessibility, or its menus carry no chords. Either way there is nothing here to look up.
+
+Drive it through its controls instead. Don't fall back on a remembered chord: one belongs to some version of some application you are not looking at, and a wrong one changes something the task never asked you to change.

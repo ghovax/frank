@@ -64,6 +64,29 @@ logger = logging.getLogger(__name__)
 
 
 
+def _with_schema_defaults(schema: Any, arguments: dict) -> dict:
+    """The call's arguments, with every omitted key filled from the schema's own default.
+
+    Only *omitted* keys: a key the model passed explicitly is left exactly as it sent it, including
+    an explicit ``None``, because "I mean nothing here" and "I said nothing here" are different
+    statements and a tool is entitled to tell them apart.
+
+    Defaults declared on a schema and never applied are worse than no defaults, because everything
+    downstream — the signature, the description, the JSON schema the model reads — advertises them.
+    """
+    fields = getattr(schema, "model_fields", None)
+    if not fields:
+        return arguments
+    filled = dict(arguments)
+    for name, field in fields.items():
+        if name in filled:
+            continue
+        default = getattr(field, "default", None)
+        if default is not None and default is not Ellipsis and repr(default) != "PydanticUndefined":
+            filled[name] = default
+    return filled
+
+
 class _ToolsMixin:
 
     async def _run_one_tool(
@@ -289,6 +312,10 @@ class _ToolsMixin:
                     schema_validator(arguments)
             except ValidationError as exception:
                 return ("invalid_tool_arguments", str(exception))
+            # The validated model is not thrown away — see `_with_schema_defaults`. It used to be
+            # validated purely for its exception, so every default the schema declared was
+            # invisible to the handler, which read the raw arguments and invented its own
+            # fallback: `read_file` documented "defaults to 2048 lines" and returned whole files.
         if tool_name in ("bash", "call_mcp_tool"):
             risk = arguments.get("risk", "low")
             if risk not in ("low", "medium", "high"):
@@ -496,6 +523,12 @@ class _ToolsMixin:
         schema = self._tool_schemas.get(tool_name)
         if schema is not None:
             tool_arguments = _coerce_structured_arguments(schema, tool_arguments)
+            # And fill in whatever the schema declares a default for, so a documented default is
+            # the one that actually applies. A schema whose defaults never reach the handler is a
+            # contract nobody honours: `read_file(limit=2048)` said 2048 in its signature, in its
+            # description, and in the tool schema the model was shown — and returned the whole
+            # file, because the omitted key arrived as `None` and the handler read that.
+            tool_arguments = _with_schema_defaults(schema, tool_arguments)
 
         try:
             self._permissions.check_tool(tool_name, **tool_arguments)
@@ -1152,20 +1185,24 @@ class _ToolsMixin:
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         updates = tool_arguments.get("updates", [])
-        updated_ids = self._task_manager.update_tasks(updates)
+        updated_ids, complaints = self._task_manager.update_tasks(updates)
         if updated_ids:
             self._session_dirty = True
             result_message = f"Updated {len(updated_ids)} task{'s' if len(updated_ids) != 1 else ''}."
         else:
-            result_message = "No matching tasks found."
-        yield ToolResult(id=tool_call_identifier,
-            name=tool_name,
-            result={
-                "code": "tasks_updated",
-                "message": result_message,
-                "tasks": self._task_manager.to_dict_list(),
-            },
-        )
+            result_message = "Nothing was updated."
+        result: dict[str, Any] = {
+            "code": "tasks_updated",
+            "message": result_message,
+            "tasks": self._task_manager.to_dict_list(),
+        }
+        # What went wrong, per update, rather than one sentence about the task list. An update
+        # naming a key this does not read used to be indistinguishable from one naming a task that
+        # does not exist, and both read as "No matching tasks found."
+        if complaints:
+            result["rejected"] = complaints
+            result["status"] = ToolStatus.ERROR.value if not updated_ids else result.get("status", "")
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
 
 
     async def _tool_update_goal(

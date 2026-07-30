@@ -372,11 +372,32 @@ class TaskManager:
         self._recalculate_statuses()
         return created
 
-    def update_tasks(self, updates: list[dict]) -> list[str]:
-        updated_ids = []
+    #: What an update may say. A key outside this set is reported rather than ignored: the tool
+    #: documented `turn_id` while this read `task_id`, so every well-formed-looking update matched
+    #: nothing and came back as "No matching tasks found" — a message that describes the task list
+    #: rather than the mistake, and gives a model no way to find the difference.
+    UPDATE_KEYS = frozenset({"task_id", "status"})
+    STATUSES = ("pending", "in_progress", "completed", "blocked")
+
+    def update_tasks(self, updates: list[dict]) -> tuple[list[str], list[str]]:
+        """Apply each update, returning the ids that changed and a complaint for each that did not."""
+        updated_ids: list[str] = []
+        complaints: list[str] = []
+        known = {task.identifier for task in self._tasks}
         for update in updates:
+            unknown = sorted(set(update) - self.UPDATE_KEYS)
+            if unknown:
+                complaints.append(
+                    f"{', '.join(unknown)} is not part of an update; use {', '.join(sorted(self.UPDATE_KEYS))}."
+                )
             task_id = update.get("task_id", "")
             status = update.get("status", "")
+            if status not in self.STATUSES:
+                complaints.append(f"{status!r} is not a status; use one of {', '.join(self.STATUSES)}.")
+                continue
+            if task_id not in known:
+                complaints.append(f"There is no task {task_id!r}. Current ids: {', '.join(sorted(known)) or 'none'}.")
+                continue
             for task in self._tasks:
                 if task.identifier == task_id:
                     task.status = status
@@ -384,7 +405,7 @@ class TaskManager:
                     break
         if updated_ids:
             self._recalculate_statuses()
-        return updated_ids
+        return updated_ids, complaints
 
     def _recalculate_statuses(self) -> None:
         for task in self._tasks:

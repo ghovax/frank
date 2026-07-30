@@ -491,7 +491,7 @@ class NativeSurface(Surface):
 
         return self.guard(run)
 
-    def _primitive_scroll(self, state: _WindowState, element: Optional[str] = None, *, direction: str = "", **_: Any) -> dict:
+    def _primitive_scroll(self, state: _WindowState, element: Optional[str] = None, *, direction: str = "down", **_: Any) -> dict:
         def run() -> dict:
             if element is not None:
                 entry = self._entry(state, element)
@@ -626,7 +626,8 @@ class NativeSurface(Surface):
         def run() -> dict:
             found = accessibility.shortcuts_of(state.pid)
             if not found:
-                return {"ok": True, "shortcuts": [], "note": message("no_shortcuts")}
+                return {"ok": True, "shortcuts": [],
+                        "note": message("no_shortcuts", app=accessibility.app_name_for_pid(state.pid) or "This application")}
             return {"ok": True, "shortcuts": found}
 
         return self.guard(run)

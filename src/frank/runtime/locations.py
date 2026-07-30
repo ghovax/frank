@@ -71,7 +71,7 @@ class CallExecutionPolicy:
 # The tools that operate on a location's filesystem/shell and therefore resolve against a location
 # (``search_code`` indexes the location's root; it is local-only, so a remote root simply yields no
 # results).
-_LOCATION_TOOLS = frozenset({"bash", "read_file", "write_file", "edit_file", "search_code"})
+_LOCATION_TOOLS = frozenset({"bash", "read_file", "write_file", "edit_file", "search_code", "download_file"})
 
 
 class PermissionDecision(BaseModel):

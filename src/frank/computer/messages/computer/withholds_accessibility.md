@@ -1,5 +1,5 @@
-{{ app }} is displaying a window ({{ width }}, {{ height }}) in size but does not publish it to macOS accessibility, so there are no controls to read or act on. This is the app's own choice and nothing here can change it while it runs: both accessibility handshakes were tried and refused.
+{{ app }} is showing a window {{ width }}×{{ height }} points in size and publishes nothing about it to macOS accessibility, so there are no controls here to read or act on. The window server can see it; the application declines to describe it.
 
-It is an Electron application, so it can expose its interface a second way — relaunching it with `--remote-debugging-port` makes it readable through the browser surface instead. That discards whatever is open in it, so ask the user before suggesting it.
+This is the application's own choice, and the one handshake that sometimes changes it — `AXManualAccessibility` — has already been sent. The other, `AXEnhancedUserInterface`, is deliberately never sent, because it makes some applications move their windows out from under the person using them.
 
-Until then, take a screenshot to see the window and ask the user to do the step. Don't act blind.
+Tell the user which window it is and ask them to do the step themselves. Don't act blind.

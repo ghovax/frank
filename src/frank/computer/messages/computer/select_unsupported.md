@@ -1,1 +1,3 @@
-This field does not expose an accessible caret or selection, so text can't be placed or selected by content here. It is likely a custom or canvas-drawn editor (e.g. a web canvas); screenshot it and act by clicking at a position, or drive it with the app's own keyboard shortcuts.
+This field exposes no accessible caret or selection, so text cannot be placed or selected by content here. It is most likely a custom or canvas-drawn editor.
+
+Try the application's own keyboard shortcuts instead — `shortcuts()` lists what it advertises, and `press` sends them. If nothing there reaches it, say so and ask the user to do the step.

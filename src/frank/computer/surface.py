@@ -279,9 +279,29 @@ class Surface:
         """The payload for an unexpected failure. Overridden with a surface-specific message."""
         return {"ok": False, "error": detail}
 
-    # The retrieval primitives every surface answers, serviced by the parent rather than by a
-    # `_primitive_*` method, so they are named here instead of discovered below.
-    RETRIEVAL_PRIMITIVES = ("find_one", "find_many")
+    # The retrieval primitives every surface answers, serviced by the dispatcher rather than by a
+    # `_primitive_*` method, so their shapes are written here instead of discovered below. These
+    # two are the only hand-written signatures left in the system.
+    RETRIEVAL_SIGNATURES = {
+        "find_one": 'find_one(query, clickable=None, name="", context="")',
+        "find_many": 'find_many(query, limit=8, all=False, clickable=None, name="", context="")',
+    }
+    RETRIEVAL_PRIMITIVES = tuple(RETRIEVAL_SIGNATURES)
+
+    def signatures(self) -> dict[str, str]:
+        """Every primitive this surface implements, with the shape it is actually called in.
+
+        This is what the model is handed, and it is read off the code rather than restated beside
+        it. A hand-written list drifts the moment a parameter is renamed, and it did: the
+        description promised ``evaluate(javascript, …)``, ``tab(id)`` and ``close_tab(id="")``
+        while the implementations took ``expression`` and ``tab`` — so a script written from the
+        documentation failed the signature check that exists to catch exactly that mistake. The
+        list cannot disagree with the code if there is only one of them."""
+        found = {
+            name[len("_primitive_"):]: self.spoken_signature(name[len("_primitive_"):], getattr(self, name))
+            for name in dir(self) if name.startswith("_primitive_")
+        }
+        return dict(sorted({**self.RETRIEVAL_SIGNATURES, **found}.items()))
 
     def primitives(self) -> tuple[str, ...]:
         """Every primitive this surface implements, discovered from the surface itself.

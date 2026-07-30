@@ -108,7 +108,14 @@ class _TurnLoopMixin:
                 # URI); it is required when there is more than one, optional when one.
                 "locations": self._locations_summary(),
             })
-            agent_context = self._prompt_loader.load("agent_context", {})
+            # Also conditional: it opens by asserting "you are running as a session… another
+            # session may have created you", and tells the model to answer its parent with
+            # `message_session`. A library-embedded runtime is none of those things and has no
+            # such tool.
+            agent_context = (
+                self._prompt_loader.load("agent_context", {})
+                if "message_session" in {tool.name for tool in self._tools} else ""
+            )
             # The opt-in user-context section is its own template, rendered into the prompt's
             # `user_environment` slot only when enabled and the probe found something — so the
             # section (heading and all) simply is not there when off.
@@ -125,6 +132,19 @@ class _TurnLoopMixin:
             computer_control_guidance = ""
             if self._global_configuration.computer_control.enabled:
                 computer_control_guidance = self._prompt_loader.load("computer_control_guidance", {})
+            # Guidance for tools this session does not have is guidance to call something that
+            # is not there. Peer sessions and MCP were stated unconditionally, so a session
+            # embedded as a library — no control plane, no MCP server — was told at length how to
+            # `create_session` and `message_session`, and had neither.
+            available = {tool.name for tool in self._tools}
+            peer_sessions = (
+                self._prompt_loader.load("peer_sessions", {})
+                if "create_session" in available or "message_session" in available else ""
+            )
+            mcp_servers = (
+                self._prompt_loader.load("mcp_servers", {})
+                if "call_mcp_tool" in available else ""
+            )
             self._cached_system_prompt = self._prompt_loader.load("system_prompt", {
                 "system_prompt": self._system_prompt,
                 "context": context_json,
@@ -135,6 +155,8 @@ class _TurnLoopMixin:
                 "memories": compact(memories_payload(memories)),
                 "agent_context": agent_context,
                 "computer_control_guidance": computer_control_guidance,
+                "peer_sessions": peer_sessions,
+                "mcp_servers": mcp_servers,
             })
         return self._cached_system_prompt
 
@@ -173,7 +195,14 @@ class _TurnLoopMixin:
         try:
             from frank.computer import targets as target_registry
 
-            return target_registry.context_block()
+            # A read-only session is shown only the primitives it may actually run. Listing one
+            # the permission layer will refuse advertises a capability and then denies it, which
+            # is the same defect as any other promise the code does not keep.
+            from frank.base.permission_mode import PermissionMode
+
+            return target_registry.context_block(
+                mutating_allowed=self._agent_configuration.permission_policy != PermissionMode.READ_ONLY,
+            )
         except Exception:  # noqa: BLE001 — context is an aid, never the thing that fails a turn
             logger.debug("Could not enumerate screen targets for the turn context", exc_info=True)
             return {}

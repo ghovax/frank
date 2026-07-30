@@ -1,1 +1,3 @@
-frank can't reach your Chrome yet. Turn on its remote-debugging switch once: open {{ enable_url }} in Chrome, enable "Allow remote debugging for this browser instance", approve the permission prompt, then try again. frank only connects to your browser — it never opens, closes, copies, or deletes it.
+frank can't reach your Chrome. Its remote-debugging switch has to be on once: open {{ enable_url }} in Chrome, enable "Allow remote debugging for this browser instance", and approve the prompt Chrome shows.
+
+frank only ever connects to your browser — it never opens, closes, copies, or deletes it.

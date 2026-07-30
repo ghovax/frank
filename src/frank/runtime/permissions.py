@@ -36,7 +36,7 @@ from frank.base.serialization import compact
 #
 # Switching tabs and listing tabs or frames are reads, and stay out: moving attention to a tab the
 # user already had open changes nothing about it.
-_MUTATING_SCREEN_PRIMITIVES = frozenset({
+MUTATING_SCREEN_PRIMITIVES = frozenset({
     "click", "type", "choose", "upload", "drag",
     "evaluate", "press", "navigate",
     "new_tab", "close_tab",
@@ -103,7 +103,7 @@ def _control_script_assessment(script: str) -> tuple[str, str]:
             return "unknown", f"reaches for {node.attr}"
         elif isinstance(node, ast.Name) and node.id in _SCRIPT_FORBIDDEN_NAMES:
             return "unknown", f"uses {node.id}"
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _MUTATING_SCREEN_PRIMITIVES:
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in MUTATING_SCREEN_PRIMITIVES:
             # Recorded rather than returned: a later node may still prove the script `unknown`,
             # which is the stricter verdict and must win however the walk happens to be ordered.
             mutating_detail = mutating_detail or f"calls {node.func.id}()"

@@ -482,7 +482,38 @@ _KEY_ALIASES = {
     "delete": "Delete", "arrowdown": "ArrowDown", "arrowup": "ArrowUp",
     "arrowleft": "ArrowLeft", "arrowright": "ArrowRight", "pagedown": "PageDown",
     "pageup": "PageUp", "home": "Home", "end": "End", "space": "Space",
+    "up": "ArrowUp", "down": "ArrowDown", "left": "ArrowLeft", "right": "ArrowRight",
+    "return": "Enter", "esc": "Escape", "forwarddelete": "Delete",
+    # Playwright capitalises the function keys; a menu bar advertises them lowercase.
+    **{f"f{number}": f"F{number}" for number in range(1, 13)},
 }
+
+# What a chord's modifiers are called here, in Playwright, and on a window. One vocabulary reaches
+# all three: a script writes `press("cmd+shift+g")` and it works wherever it is pointed.
+_MODIFIER_NAMES = {
+    "cmd": "Meta", "command": "Meta", "meta": "Meta", "super": "Meta", "win": "Meta", "⌘": "Meta",
+    "ctrl": "Control", "control": "Control", "⌃": "Control",
+    "opt": "Alt", "option": "Alt", "alt": "Alt", "⌥": "Alt",
+    "shift": "Shift", "⇧": "Shift",
+}
+
+
+def _playwright_chord(key: str) -> str:
+    """A chord written the way the whole harness writes chords, in the spelling Playwright wants.
+
+    A window splits `cmd+shift+g` into modifiers and a key; this surface used to lowercase the
+    entire string, look it up in an alias table containing no modifier names at all, and hand
+    `"cmd+shift+g"` to Playwright verbatim — which fails. So a chord worked on one kind of target
+    and not the other, while the description promised both. The vocabulary is one thing or it is
+    not a vocabulary."""
+    parts = [part.strip() for part in key.strip().split("+") if part.strip()]
+    if len(parts) <= 1:
+        single = key.strip()
+        return _KEY_ALIASES.get(single.lower(), single)
+    *modifiers, final = parts
+    named = [_MODIFIER_NAMES.get(modifier.lower(), modifier.capitalize()) for modifier in modifiers]
+    resolved = _KEY_ALIASES.get(final.lower(), final if len(final) > 1 else final.lower())
+    return "+".join([*named, resolved])
 
 _SCROLL_DIRECTIONS = frozenset({"down", "up", "left", "right", "top", "bottom"})
 _SCROLL_JUMP = 1_000_000
@@ -590,8 +621,18 @@ class WebSurface(Surface):
             connected = self._playwright.chromium.connect_over_cdp(websocket_url, timeout=budget)
         except PlaywrightTimeout:
             raise ToolFailure(_awaiting_authorization_payload(budget / 1000.0))
-        except PlaywrightError:
-            raise ToolFailure(_not_connected_payload())
+        except PlaywrightError as error:
+            # The switch is demonstrably on — `websocket_url` came out of the port file a few
+            # lines above — so "turn on remote debugging" is the one thing this cannot be, and
+            # saying it invites the user to toggle a switch that would dismiss any approval
+            # prompt still waiting. That advice was also tagged `browser_remote_debugging_off`,
+            # so the interface offered the very button that does the harm.
+            raise ToolFailure({
+                "ok": False,
+                "error": message("connection_refused", detail=str(error).splitlines()[0]),
+                "code": "browser_connection_refused",
+                "enable_url": REMOTE_DEBUGGING_URL,
+            })
         context = connected.contexts[0] if connected.contexts else connected.new_context()
         context.set_default_timeout(active_tuning().amount(Tunable.action_timeout_ms))
         context.set_default_navigation_timeout(active_tuning().amount(Tunable.navigation_timeout_ms))
@@ -843,7 +884,7 @@ class WebSurface(Surface):
     def _primitive_press(self, bound: _Bound, key: str, **_: Any) -> dict:
         def run() -> dict:
             session, page = bound.session, bound.page
-            resolved = _KEY_ALIASES.get(key.strip().lower(), key.strip())
+            resolved = _playwright_chord(key)
             try:
                 page.keyboard.press(resolved)
             except Exception as error:

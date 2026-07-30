@@ -1310,7 +1310,14 @@ class PromptLoader:
                 raise ValueError(
                     f"Unresolved placeholder '{{{{ {variable_name} }}}}'{where}: no value was provided (given: {sorted(variables)})."
                 )
-            return variables[variable_name]
+            # Rendered rather than required to already be a string. A caller that passed a window's
+            # width as the `int` it is raised `TypeError: sequence item 2: expected str instance,
+            # int found` out of `re.sub` — which the surface guard then swallowed, so the model was
+            # handed "The action failed (sequence item 2: expected str instance, int found)" in
+            # place of the message explaining that the application withholds its interface. A
+            # message that cannot render is worse than one that says the wrong thing, because the
+            # failure looks like it came from the application rather than from the template.
+            return str(variables[variable_name])
 
         # Accept both the spaced ({{ name }}) and unspaced ({{name}}) forms.
         return placeholder.sub(replacer, template)
