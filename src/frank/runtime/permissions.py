@@ -16,11 +16,14 @@ from frank.runtime.locations import (
     ResolvedLocation,
     ToolLocationError,
 )
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from typing import Any, Optional
 import ast
+import logging
 import uuid
 from frank.base.serialization import compact
+
+logger = logging.getLogger(__name__)
 
 # The state-changing control_screen primitives. A script that calls any of them is mutating; one that
 # only reads (find_one/find_many/read/hover/scroll/tabs/tab/frames) is read-only. This is the
@@ -151,11 +154,18 @@ class _PermissionsMixin:
                 "allowed_actions": ["auto_approve", "escalate"],
             },
         )
-        prompt = self._prompt_loader.load("permission_classifier", {"context": context})
+        prompt = self._prompt_loader.load("permission_classifier", {})
         try:
             model = self._llm.bind_tools([PermissionDecision], tool_choice="auto")
+            # Instructions and subject as separate messages. Folding the call being judged into
+            # the system prompt left the request with no input at all, which some providers
+            # reject outright — the ChatGPT Codex endpoint answers `400: One of "input" … must be
+            # provided`. On those the classifier never ran: every ambiguous call fell to the
+            # exception path below and escalated, so the permission system quietly degraded to
+            # "ask about everything" and reported an API error as its reason for asking.
             response = await model.ainvoke([
                 SystemMessage(content=prompt),
+                HumanMessage(content=context),
             ])
             if not response.tool_calls:
                 return PermissionDecision(action="escalate", explanation="Classifier returned no structured decision.", risk="medium")
@@ -165,8 +175,18 @@ class _PermissionsMixin:
             if not decision.explanation.strip():
                 return PermissionDecision(action="escalate", explanation="Classifier did not provide a explanation.", risk="medium")
             return decision
-        except Exception as exception:
-            return PermissionDecision(action="escalate", explanation=f"{exception}", risk="medium")
+        except Exception:
+            # Fail closed — a classifier that cannot answer must not approve anything. But its
+            # failure is not a reason, and this used to hand the raw exception to the person as
+            # the explanation for the gate, so they were shown a provider's 400 where they
+            # expected to read why their approval was needed. The detail goes to the log, where
+            # somebody can act on it.
+            logger.warning("The permission classifier could not decide; escalating", exc_info=True)
+            return PermissionDecision(
+                action="escalate",
+                explanation="The safety check could not run, so this needs your decision.",
+                risk="medium",
+            )
 
     def _needs_a_second_opinion(self, rule: str, model_risk: str) -> bool:
         """The barrier. Does this call need the classifier, or is the answer already known?
