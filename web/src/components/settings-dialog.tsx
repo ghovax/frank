@@ -3,13 +3,14 @@
 import { Alert, Box, Button, Dialog, EmptyState, Flex, IconButton, Input, Portal, Spinner, Text, VStack } from "@chakra-ui/react";
 import { swallowed } from "@/lib/swallowed";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { LuEye, LuEyeOff, LuKeyRound, LuPlug, LuPlus, LuSearch, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
+import { LuClock, LuEye, LuEyeOff, LuKeyRound, LuPlug, LuPlus, LuSearch, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
 import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, restartDaemon, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel, type SandboxEnforce } from "@/lib/api";
 import { ModelSelect } from "./model-select";
 import { ChatGPTAuthControl } from "./chatgpt-auth";
 import { CursorAuthControl } from "./cursor-auth";
 import { WorkspaceLocationsPanel } from "./workspace-locations";
 import { RemoteAgentsPanel } from "./remote-agents-panel";
+import { SchedulesPanel } from "./schedules-panel";
 import { SimpleSelect } from "./ui/simple-select";
 import { useColorMode } from "./ui/color-mode";
 import { ConfirmDialog } from "./ui/confirm-dialog";
@@ -20,7 +21,7 @@ import { CompactionToggleControl, ComputerControlToggleControl, PermissionModeCo
 import { useScrollEdgeFade } from "@/lib/scroll-fade";
 import { Section } from "./ui/semantic";
 
-export type SettingsSection = "general" | "locations" | "agents" | "connection";
+export type SettingsSection = "general" | "locations" | "schedules" | "agents" | "connection";
 
 // One setting modeled as data (so the search box can match it): a title + optional
 // description that renders on the left, and a `control` that renders on the right. `stacked`
@@ -566,6 +567,12 @@ export function SettingsDialog({
     ...(workspaceId ? [{
       id: "locations" as SettingsSection, label: translation("tabLocations"), icon: <LuServer size={14} />,
       sections: [{ title: translation("locations"), rows: [], block: <WorkspaceLocationsPanel workspaceId={workspaceId} /> }],
+    }] : []),
+    // Only with a workspace, like the folders tab and for the same reason: a schedule belongs
+    // to one, and there is nothing to show or create without it.
+    ...(workspaceId ? [{
+      id: "schedules" as SettingsSection, label: translation("tabSchedules"), icon: <LuClock size={14} />,
+      sections: [{ title: translation("tabSchedules"), rows: [], block: <SchedulesPanel workspaceId={workspaceId} agents={agents} /> }],
     }] : []),
     {
       id: "agents", label: translation("tabAgents"), icon: <LuUsers size={14} />,

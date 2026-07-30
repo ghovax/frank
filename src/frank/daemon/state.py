@@ -20,6 +20,8 @@ from typing import Any
 
 import httpx
 
+from frank.base.serialization import upstream_detail
+
 logger = logging.getLogger(__name__)
 
 
@@ -230,6 +232,6 @@ async def relay_to_session(record, method: str, params: dict) -> dict:
         # can tell "no worker" apart from "the worker refused this", and act on it.
         raise SessionUnreachable(f"Session {record.id} is not reachable ({error}).") from error
     if response.status_code >= 400:
-        raise RuntimeError(f"Session {record.id} rejected {method}: {response.text[:400]}")
+        raise RuntimeError(f"Session {record.id} rejected {method}: {upstream_detail(response.text)}")
     body = response.json()
     return body.get("result", body)

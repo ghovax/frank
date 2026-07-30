@@ -1106,8 +1106,12 @@ class WebSurface(Surface):
         except Exception:  # noqa: BLE001
             ids = frozenset()
         return Glance(
+            # Whole, because these are compared for equality to decide whether anything moved.
+            # `str(focused)[:80]` made two different focused elements identical whenever they
+            # agreed for eighty characters — which is exactly what two rows of one table do —
+            # and a diff that cannot see a change reports that nothing happened.
             facts={"title": _safe_title(page), "url": _safe_url(page),
-                   "focus": (str(focused)[:80] if focused else None)},
+                   "focus": (str(focused) if focused else None)},
             ids=ids,
         )
 

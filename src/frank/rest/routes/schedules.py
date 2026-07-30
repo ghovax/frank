@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -33,13 +35,16 @@ def _fail(error: Exception) -> HTTPException:
 
 @router.get("/schedules")
 async def list_schedules(workspace_id: str = ""):
-    return {"schedules": _schedules.listing(workspace_id)}
+    # The services are synchronous by convention here, and the write lock refuses to run on
+    # the event loop rather than deadlocking quietly. Dispatched off it, like every other route.
+    return {"schedules": await asyncio.to_thread(_schedules.listing, workspace_id)}
 
 
 @router.post("/schedules")
 async def create_schedule(request: ScheduleCreateRequest):
     try:
-        return _schedules.create(
+        return await asyncio.to_thread(
+            _schedules.create,
             workspace_id=request.workspace_id, name=request.name, cron=request.cron,
             prompt=request.prompt, agent=request.agent,
             permission_mode=request.permission_mode, timezone_name=request.timezone,
@@ -52,7 +57,7 @@ async def create_schedule(request: ScheduleCreateRequest):
 @router.get("/schedules/{schedule_id}")
 async def read_schedule(schedule_id: str):
     try:
-        return _schedules.get(schedule_id)
+        return await asyncio.to_thread(_schedules.get, schedule_id)
     except _schedules.ScheduleError as error:
         raise HTTPException(status_code=404, detail=str(error)) from None
 
@@ -60,7 +65,7 @@ async def read_schedule(schedule_id: str):
 @router.patch("/schedules/{schedule_id}")
 async def set_schedule_enabled(schedule_id: str, request: ScheduleEnabledRequest):
     try:
-        return _schedules.set_enabled(schedule_id, request.enabled)
+        return await asyncio.to_thread(_schedules.set_enabled, schedule_id, request.enabled)
     except _schedules.ScheduleError as error:
         raise HTTPException(status_code=404, detail=str(error)) from None
 
@@ -68,7 +73,7 @@ async def set_schedule_enabled(schedule_id: str, request: ScheduleEnabledRequest
 @router.delete("/schedules/{schedule_id}")
 async def delete_schedule(schedule_id: str):
     try:
-        _schedules.delete(schedule_id)
+        await asyncio.to_thread(_schedules.delete, schedule_id)
     except _schedules.ScheduleError as error:
         raise HTTPException(status_code=404, detail=str(error)) from None
     return {"deleted": schedule_id}
@@ -84,13 +89,18 @@ async def run_schedule(schedule_id: str):
     from frank.hub.database import ScheduleRecord
     from frank.hub import state as hub_state
 
-    database_session = hub_state.session_factory()
-    try:
-        record = database_session.get(ScheduleRecord, schedule_id)
-        if record is None:
-            raise HTTPException(status_code=404, detail=f"No schedule {schedule_id!r}.")
-        database_session.expunge(record)
-    finally:
-        database_session.close()
+    def _detached():
+        database_session = hub_state.session_factory()
+        try:
+            found = database_session.get(ScheduleRecord, schedule_id)
+            if found is not None:
+                database_session.expunge(found)
+            return found
+        finally:
+            database_session.close()
+
+    record = await asyncio.to_thread(_detached)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"No schedule {schedule_id!r}.")
     await scheduler._fire(record)
-    return _schedules.get(schedule_id)
+    return await asyncio.to_thread(_schedules.get, schedule_id)

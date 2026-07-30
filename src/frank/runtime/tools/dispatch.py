@@ -697,7 +697,11 @@ class _DispatchesTools:
                 lease_token = await self._acquire_filesystem_lease(
                     scope="worktree",
                     path=self._canonical_working_directory(policy.working_directory),
-                    description=f"mutating bash: {raw_command[:160]}",
+                    # Whole. This said `raw_command[:160]`, and the description is what another
+                    # session is shown when it collides with this lease — so the one thing it is
+                    # for is telling somebody what is holding their path, and a command cut at
+                    # 160 characters is one whose interesting half is a pipeline away.
+                    description=f"mutating bash: {raw_command}",
                     working_directory=policy.working_directory,
                 )
             except FileLeaseConflict as exception:

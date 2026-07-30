@@ -712,18 +712,37 @@ async def telemetry_faults(request: Request) -> JSONResponse:
         return JSONResponse({"accepted": False}, status_code=202)
     if not isinstance(payload, dict):
         return JSONResponse({"accepted": False}, status_code=202)
-    context = str(payload.get("context") or "")[:200]
-    detail = str(payload.get("detail") or "")[:2000]
+    # Whole, not clipped. These were cut to 200, 2000, 500 and 100 characters, and the one that
+    # mattered was `detail`: it carries a stack trace, a trace is longest exactly when the fault
+    # is least understood, and 2000 characters reliably kept the frames nearest the throw while
+    # discarding the ones that said which of the caller's paths reached it. A fault is rare and a
+    # log line is cheap; a truncated one costs another reproduction.
+    context = str(payload.get("context") or "")
+    detail = str(payload.get("detail") or "")
+    url = str(payload.get("url") or "")
+    session_id = str(payload.get("sessionId") or "")
     # Logged whether or not telemetry is configured, and that is the point: the interface no
     # longer keeps a console copy, so this log is the single answer to "where did that go".
     # Telemetry, when on, is an additional destination rather than the only one.
-    logger.warning("interface fault at %s: %s -- %s", payload.get("url") or "?", context, detail)
+    #
+    # As fields rather than as a sentence. This used to read `interface fault at %s: %s -- %s`,
+    # which glued the page, the context and a stack trace together with punctuation invented
+    # here and nowhere else — so anything reading the log back, a person included, had to take
+    # it apart by counting colons, and a `--` inside a stack trace took it apart wrongly. The
+    # same reasoning already applies to every payload this harness puts in front of a model:
+    # the fields have names, so use them.
+    logger.warning("interface fault %s", compact({
+        "context": context,
+        "url": url,
+        "session": session_id,
+        "detail": detail,
+    }))
     telemetry.record_client_fault(
         context,
         detail,
         {
-            "frank.client.url": str(payload.get("url") or "")[:500],
-            "frank.client.session_id": str(payload.get("sessionId") or "")[:100],
+            "frank.client.url": url,
+            "frank.client.session_id": session_id,
         },
     )
     return JSONResponse({"accepted": True}, status_code=202)

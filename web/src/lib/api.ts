@@ -459,6 +459,81 @@ export interface RemoteAgentInput {
   allowedProfiles?: string[];
 }
 
+export interface Schedule {
+  id: string;
+  workspace_id: string;
+  name: string;
+  cron: string;
+  timezone: string;
+  agent: string;
+  prompt: string;
+  permission_mode: PermissionMode;
+  working_directory: string;
+  enabled: boolean;
+  last_fired_at: string;
+  last_session_id: string;
+  last_error: string;
+  created_at: string;
+  // Worked out by the daemon on every read rather than stored, so it cannot go stale when the
+  // cron line or the timezone is edited.
+  next_firing: string;
+}
+
+export interface ScheduleInput {
+  workspace_id: string;
+  name: string;
+  cron: string;
+  prompt: string;
+  agent: string;
+  // No default anywhere in this type. A schedule runs with nobody watching, so the mode is
+  // chosen rather than inherited — the daemon refuses one that does not state it.
+  permission_mode: PermissionMode;
+  timezone: string;
+  working_directory: string;
+}
+
+export async function listSchedules(workspaceId: string): Promise<Schedule[]> {
+  const response = await apiFetch(`/schedules?workspace_id=${encodeURIComponent(workspaceId)}`);
+  if (!response.ok) throw new Error(`Failed to list schedules (${response.status})`);
+  const data = (await response.json()) as { schedules: Schedule[] };
+  return data.schedules;
+}
+
+export async function createSchedule(input: ScheduleInput): Promise<Schedule> {
+  const response = await apiFetch(`/schedules`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    // The daemon's own sentence — which cron expression, which timezone, which missing mode —
+    // rather than a status code the person then has to go and look up.
+    const detail = (await response.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(detail?.detail || `Failed to create schedule (${response.status})`);
+  }
+  return (await response.json()) as Schedule;
+}
+
+export async function setScheduleEnabled(scheduleId: string, enabled: boolean): Promise<Schedule> {
+  const response = await apiFetch(`/schedules/${encodeURIComponent(scheduleId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!response.ok) throw new Error(`Failed to update schedule (${response.status})`);
+  return (await response.json()) as Schedule;
+}
+
+export async function deleteSchedule(scheduleId: string): Promise<void> {
+  await apiFetch(`/schedules/${encodeURIComponent(scheduleId)}`, { method: "DELETE" });
+}
+
+export async function runSchedule(scheduleId: string): Promise<Schedule> {
+  const response = await apiFetch(`/schedules/${encodeURIComponent(scheduleId)}/run`, { method: "POST" });
+  if (!response.ok) throw new Error(`Failed to run schedule (${response.status})`);
+  return (await response.json()) as Schedule;
+}
+
 export async function listRemoteAgents(): Promise<RemoteAgent[]> {
   const response = await apiFetch(`/remote-agents`);
   if (!response.ok) throw new Error(`Failed to list remote agents (${response.status})`);

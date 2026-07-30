@@ -12,6 +12,7 @@ memory, so nothing here needs to.
 
 from __future__ import annotations
 
+from frank.base.serialization import upstream_detail
 import logging
 from typing import Any, Optional
 
@@ -52,7 +53,7 @@ class DaemonTurnStore(TaskStore):
             logger.warning("Persistence call %s failed: %s", method, error)
             return None
         if response.status_code >= 400:
-            logger.warning("Persistence call %s rejected: %s", method, response.text[:200])
+            logger.warning("Persistence call %s rejected: %s", method, upstream_detail(response.text))
             return None
         return response.json().get("result")
 
