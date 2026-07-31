@@ -6,6 +6,7 @@ from the leaf ``agent_internals`` module and stable modules, so the graph stays 
 from __future__ import annotations
 
 import logging
+import re
 
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -60,6 +61,14 @@ from frank.base.configuration import PermissionDenied
 from frank.base.serialization import compact
 
 logger = logging.getLogger(__name__)
+
+# What an element id looks like, across both surfaces, so one can be told from a description of an
+# element. A browser addresses by aria-ref (``e12``, or ``f1e3`` inside the first iframe) and by a
+# capture's own handle (``req41``, ``ws2``); a native window addresses by the element's path through
+# the tree (``1.4.2``). None of these is anything a person would ever write as a query, which is
+# what makes the test safe: the cost of reading a description as an id is a failed lookup a caller
+# can see, where the cost of reading an id as a description was a semantic search for "e1594".
+_ELEMENT_ID = re.compile(r"(?:f\d+)?e\d+|req\d+|ws\d+|\d+(?:\.\d+)+")
 
 
 def _with_schema_defaults(schema: Any, arguments: dict) -> dict:
@@ -1810,9 +1819,23 @@ class _DispatchesTools:
             if not args:
                 return args
             target = args[0]
+            # The element a find returned, passed whole. The most reliable way to act on a result,
+            # because it cannot be mistaken for anything else — and the reason the tool description
+            # now says so, since a model that did not know this reached for the id string instead.
             if isinstance(target, dict) and "id" in target:
                 return [target["id"], *args[1:]]
             if not isinstance(target, str) or target in known_ids:
+                return args
+            # An id is an id even when this call has not seen it, so it goes to the surface
+            # untouched — the surface is what resolves ids, and an aria-ref survives re-reading a
+            # page that has not changed. `known_ids` is built per control_screen call, so an id
+            # from an earlier call, or one the script filtered out of a find's results in Python,
+            # was not in it and fell through to the branch below — where it was handed to
+            # `find_one` as a *description*. A model that wrote `screen.click("e1594")` got a
+            # semantic search for the literal text "e1594", which matched several unrelated
+            # elements and refused as ambiguous. It read as the ids being unstable; the ids were
+            # fine, the string was being asked the wrong question.
+            if _ELEMENT_ID.fullmatch(target):
                 return args
             if verb in element_mutating_verbs:
                 resolved = find_one(target)["id"]  # unique-or-raise

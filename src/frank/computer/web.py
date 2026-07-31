@@ -259,6 +259,10 @@ class _Session:
         # The url is how a tab id is turned back into a Playwright page when something acts on it.
         self._ids_by_target: dict[str, str] = {}
         self.url_by_tab: dict[str, str] = {}
+        # Playwright `Page` → the browser's target id for it, asked once per page and kept. The
+        # join that makes a tab id mean the same thing before and after the tab navigates; see
+        # `target_of`. The url mapping above is now only the fallback for a page never bound here.
+        self._targets_by_page: dict[Any, str] = {}
         self._targets_cache: Optional[list[dict]] = None
         self._targets_read: float = 0.0
         # What to do with the next JavaScript dialog an action triggers ("accept"/"dismiss"); None
@@ -365,14 +369,50 @@ class _Session:
         self.url_by_tab[identifier] = url
         return identifier
 
+    def target_of(self, page) -> str:
+        """The browser's own target id for a page, asked once and remembered.
+
+        This is what makes a tab's identity survive its content. Everything used to be joined on
+        the url — the listing recorded one per tab id, and a page was recognised by matching it —
+        and a url is the one property navigation is *guaranteed* to change. So the moment a script
+        clicked a link, the tab it was working in stopped being findable by the id it had been
+        given, until some later listing happened to refresh the mapping. A script that clicked
+        through to a profile and then read the page it had opened could not name the tab it was
+        standing in.
+
+        A target id changes for none of that: it is the browser's handle on the tab itself, and it
+        outlives navigation, re-rendering, backgrounding and discard. Asked through a page-level
+        CDP session, which is the expensive kind — so it is asked once per page, when the page is
+        first acted on, and never during a listing. Listings stay browser-level and cheap; asking
+        every page who it was is what once took 19 seconds to enumerate a window."""
+        remembered = self._targets_by_page.get(page)
+        if remembered:
+            return remembered
+        try:
+            session = self.context.new_cdp_session(page)
+            target_id = str((session.send("Target.getTargetInfo") or {}).get("targetInfo", {}).get("targetId", ""))
+        except Exception:
+            return ""
+        if target_id:
+            self._targets_by_page[page] = target_id
+        return target_id
+
     def tab_id(self, page) -> str:
         """The id a page is known by — the same one `tabs()` hands out.
 
         There were two schemes: this one minted `tabN` per Playwright `Page` object while the
         listing minted `tabN` per browser target, so an id the model had been given by one was
         meaningless to the other. Every id from `tabs()` came back as "No open tab". One scheme
-        now, keyed on the browser's own target, matched through the page's url — which is a
-        cached attribute and so costs nothing."""
+        now, keyed on the browser's own target.
+
+        The url is still consulted, but only as the fallback for a page this has never bound —
+        never as the primary, which is what broke across navigation."""
+        target_id = self.target_of(page)
+        if target_id:
+            known = self._ids_by_target.get(target_id)
+            if known:
+                return known
+            return self.tab_id_for_target(target_id, _safe_url(page))
         url = _safe_url(page)
         for entry in self.describe_targets():
             if entry["url"] == url:
@@ -392,6 +432,10 @@ class _Session:
         immediately because an unanswered dialog freezes the page: an alert is acknowledged and a
         question declined by default, unless the acting call asked to ``accept``/``dismiss``."""
         self.tab_ids[page] = True   # adopted; the model-facing id comes from the browser
+        # Bind the page to the browser's handle on it now, while we are already paying for a page
+        # this session will act through. One CDP round trip, once, and from here the tab keeps its
+        # id through every navigation it makes.
+        self.target_of(page)
 
         def on_dialog(dialog) -> None:
             intent = self.pending_dialog
@@ -964,19 +1008,26 @@ class WebSurface(Surface):
         they name the window, and the one a script acts in unless it calls ``tab()``."""
         if target.startswith(f"{TAB_PREFIX}-") or not target.startswith(f"{WINDOW_PREFIX}-"):
             wanted = target.split("-", 1)[-1]
-            # Matched on the url the listing recorded for this tab id. Acting needs a Playwright
-            # `Page`, and a `Page` carries no public target id — but its url is a cached attribute,
-            # so this costs nothing and, unlike asking each page who it is, cannot stall on a tab
-            # whose renderer is asleep.
-            for candidate in (target, wanted, f"{TAB_PREFIX}{wanted}"):
+            names = {target, wanted, f"{TAB_PREFIX}{wanted}"}
+            # By the browser's own target id first, because that is the only handle on a tab that
+            # navigation does not change. Pages already bound answer from memory; the rest are
+            # asked once and remembered.
+            for page in session.live_pages():
+                bound_target = session._targets_by_page.get(page)
+                if bound_target and session._ids_by_target.get(bound_target) in names:
+                    return page
+            for page in session.live_pages():
+                if session.tab_id(page) in names:
+                    return page
+            # Only now the url the listing recorded. This used to be the primary test, which is
+            # why acting in a tab stopped working the moment that tab followed a link: the recorded
+            # url described where it had been, and nothing described where it was.
+            for candidate in names:
                 url = session.url_by_tab.get(candidate)
                 if url:
                     for page in session.context.pages:
                         if not page.is_closed() and _safe_url(page) == url:
                             return page
-            for page in session.live_pages():
-                if session.tab_id(page) in (target, wanted):
-                    return page
             raise ToolFailure({"ok": False, "error": f"Tab {target!r} is no longer open."})
         window_id = int(target.split("-", 1)[1])
         in_window = [page for page in session.live_pages() if self._window_of(session, page) == window_id]
@@ -1024,6 +1075,25 @@ class WebSurface(Surface):
         if not ref:
             raise ToolFailure({"ok": False, "error": "This action needs an element id from a find (find_one or find_many)."})
         return page.locator(f"aria-ref={ref}")
+
+    def _why_it_failed(self, page, element: str, error: Exception) -> str:
+        """Why an action on ``element`` did not happen — and whether the element is there at all.
+
+        Playwright reports a missing element as a timeout waiting for a selector, which is true and
+        unhelpful: "Timeout 5000ms exceeded waiting for locator('aria-ref=e1594')" reads like a slow
+        page, so the answer looks like retrying. It is usually neither slow nor retryable — the id
+        came from a find taken before the page re-rendered, and no amount of waiting will bring
+        that ref back.
+
+        Asked only once the action has already failed, so the waiting itself is unchanged: a target
+        that was about to appear still gets the full timeout to appear in."""
+        detail = _actionability_error(error)
+        try:
+            if page.locator(f"aria-ref={element}").count() == 0:
+                return f"{detail} — {message('stale_element', identifier=element)}"
+        except Exception:
+            pass
+        return detail
 
     def _field_text(self, locator) -> str:
         try:
@@ -1157,7 +1227,7 @@ class WebSurface(Surface):
             try:
                 self._locator(page, element).click(button=button, click_count=count)
             except Exception as error:
-                raise ToolFailure({"ok": False, "error": f"Could not click {element}: {_actionability_error(error)}"})
+                raise ToolFailure({"ok": False, "error": f"Could not click {element}: {self._why_it_failed(page, element, error)}"})
             _await_quiet(page)
             return self._acted(session, page, f"Clicked {element}")
 
@@ -1174,7 +1244,7 @@ class WebSurface(Surface):
                 else:
                     locator.fill(text)
             except Exception as error:
-                raise ToolFailure({"ok": False, "error": f"Could not type into {element}: {_actionability_error(error)}"})
+                raise ToolFailure({"ok": False, "error": f"Could not type into {element}: {self._why_it_failed(page, element, error)}"})
             landed = self._field_text(locator)
             if not submit:
                 result: dict[str, Any] = {"ok": True, "did": f"Typed into {element}", "value": landed}
@@ -1209,7 +1279,7 @@ class WebSurface(Surface):
             try:
                 self._locator(page, element).hover()
             except Exception as error:
-                raise ToolFailure({"ok": False, "error": f"Could not hover {element}: {_actionability_error(error)}"})
+                raise ToolFailure({"ok": False, "error": f"Could not hover {element}: {self._why_it_failed(page, element, error)}"})
             settle(lambda: _element_signature(page))
             return self._acted(session, page, f"Hovered {element}")
 
@@ -1250,7 +1320,7 @@ class WebSurface(Surface):
             try:
                 chosen = self._locator(page, element).select_option(option)
             except Exception as error:
-                raise ToolFailure({"ok": False, "error": f"Could not choose {option!r} in {element}: {_actionability_error(error)}"})
+                raise ToolFailure({"ok": False, "error": f"Could not choose {option!r} in {element}: {self._why_it_failed(page, element, error)}"})
             result = self._acted(session, page, f"Chose {option!r} in {element}")
             result["chosen"] = chosen
             return result
@@ -1273,7 +1343,7 @@ class WebSurface(Surface):
                         locator.click()
                     chooser.value.set_files(resolved)
                 except Exception as error:
-                    raise ToolFailure({"ok": False, "error": f"Could not upload to {element}: {_actionability_error(error)}"})
+                    raise ToolFailure({"ok": False, "error": f"Could not upload to {element}: {self._why_it_failed(page, element, error)}"})
             return self._acted(session, page, f"Attached {len(resolved)} file(s) to {element}")
 
         return self.guard(run)
@@ -1286,7 +1356,7 @@ class WebSurface(Surface):
             try:
                 self._locator(page, element).drag_to(self._locator(page, onto), timeout=active_tuning().amount(Tunable.drag_timeout_ms))
             except Exception as error:
-                raise ToolFailure({"ok": False, "error": f"Could not drag {element} to {onto}: {_actionability_error(error)}"})
+                raise ToolFailure({"ok": False, "error": f"Could not drag {element} to {onto}: {self._why_it_failed(page, element, error)}"})
             return self._acted(session, page, f"Dragged {element} onto {onto}")
 
         return self.guard(run)

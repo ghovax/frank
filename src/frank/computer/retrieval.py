@@ -489,8 +489,49 @@ class Index:
             best = max(fused, default=0.0)
             cutoff = floor * best if floor > 0 and best > 0 else float("-inf")
         order = [index for index in _ranked_indices(fused)
-                 if index not in unreachable and fused[index] >= cutoff][:top_k]
+                 if index not in unreachable and fused[index] >= cutoff]
+        order = self._one_per_visible_thing(order)[:top_k]
         return [Hit(id=self.documents[index].id, score=fused[index], payload=self.documents[index].payload) for index in order]
+
+    def _one_per_visible_thing(self, order: list[int]) -> list[int]:
+        """Collapse ranked positions that are the same visible thing published more than once.
+
+        A page can publish one result as several nodes — a combobox result arriving as both an
+        ``option`` and a ``button``, a row as both a ``row`` and a ``link``. To a reader they are
+        one thing; to a ranker they are two documents with the same words, so they arrive adjacent
+        and near-identical in score. That is worse than noise, because it is what makes a search
+        look ambiguous when it is not: ``find_one`` weighs its best match against a runner-up that
+        is *the same element*, the margin between them is naturally tiny, and it refuses to choose
+        between two spellings of one answer. Watched live on X, that is exactly what happened to a
+        search for a profile the page was plainly showing.
+
+        The test is deliberately narrow — same name, same context, same destination — because the
+        cost of being wrong is merging two real controls and hiding one. Elements with no name are
+        never collapsed: an empty name is not evidence of sameness, and two thirds of a native
+        window carries none.
+
+        Which survivor is kept is the other half of it. Not the best-ranked, but the one that can
+        be *acted on*: the pair exists because a page wrapped an actionable control in a semantic
+        one, and a caller that searched in order to click wants the half that clicks. Rank order is
+        otherwise untouched, so the group keeps the position its best member earned."""
+        kept: list[int] = []
+        seen: dict[tuple, int] = {}          # identity -> where its survivor sits in `kept`
+        for index in order:
+            payload = self.documents[index].payload
+            name = str(payload.get("name") or "").strip()
+            if not name:
+                kept.append(index)
+                continue
+            identity = (name, str(payload.get("context") or ""), str(payload.get("url") or ""))
+            position = seen.get(identity)
+            if position is None:
+                seen[identity] = len(kept)
+                kept.append(index)
+                continue
+            incumbent = self.documents[kept[position]].payload
+            if payload.get("clickable") and not incumbent.get("clickable"):
+                kept[position] = index
+        return kept
 
     def anchored(self, query: str, near: str, *, top_k: int, weight: float,
                  anchor_margin: float) -> list[Hit]:
