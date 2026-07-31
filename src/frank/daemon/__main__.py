@@ -205,16 +205,6 @@ def build_app() -> FastAPI:
     from frank.rest.app import mount as mount_gui_routes
 
     app = FastAPI(title="frankd")
-    # The desktop client's webview is a browser, and a browser will not send a request its
-    # origin policy forbids. Scoped to the app's own origins — reflecting `*` would let any
-    # page the user happened to visit script a local, tool-executing API.
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origin_regex=_APP_ORIGIN_PATTERN,
-        allow_methods=["*"],
-        allow_headers=["*"],
-        expose_headers=["*"],
-    )
 
     @app.exception_handler(RpcError)
     async def _rpc_error(_request: Request, error: RpcError) -> JSONResponse:
@@ -247,6 +237,16 @@ def build_app() -> FastAPI:
                 return await self.application(scope, receive, send)
             request = Request(scope)
             if request.url.path in {"/health"}:
+                return await self.application(scope, receive, send)
+            # A CORS preflight, which a browser sends without credentials by specification and
+            # which asks only whether the real request may follow. Demanding a token here rejects
+            # the question rather than the request, and the real one is then never sent at all.
+            #
+            # The middleware order already keeps these from reaching this point — CORS is
+            # outermost and answers them itself — so this is the belt to that pair of braces:
+            # the failure it prevents is silent, remote from its cause, and was diagnosed once
+            # already.
+            if request.method == "OPTIONS" and "access-control-request-method" in request.headers:
                 return await self.application(scope, receive, send)
             header = request.headers.get("Authorization", "")
             # A WebSocket handshake and an <img>/<iframe> URL cannot carry a header, so the
@@ -285,6 +285,31 @@ def build_app() -> FastAPI:
             return await self.application(scope, receive, send)
 
     app.add_middleware(Authenticate)
+    # Added *after* `Authenticate`, and the order is the whole point: `add_middleware` prepends,
+    # so the last one added is the outermost, and this has to be outside the token check.
+    #
+    # It was inside it, and the desktop app could not read anything. A browser sends a CORS
+    # preflight before any request carrying a non-simple header — `Authorization` is one — and it
+    # sends that preflight *without* credentials, by specification. So the preflight arrived with
+    # no token, the token check answered 401, and the real request was never sent: every list in
+    # the app was empty, every write failed, and none of it looked like an authentication problem
+    # because the 401 was invisible. The same build served by `frank web` worked perfectly, since
+    # a same-origin page preflights nothing — which is exactly what made this look like a fault
+    # in the app rather than in the daemon.
+    #
+    # Outermost also means the CORS headers are attached to *failures*. A 401 raised in the
+    # middleware below carried none, so the webview could not read the status and reported an
+    # opaque network error in place of the reason.
+    #
+    # Scoped to the app's own origins — reflecting `*` would let any page the user happened to
+    # visit script a local, tool-executing API.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=_APP_ORIGIN_PATTERN,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["*"],
+    )
 
     @app.get("/health")
     async def health() -> dict:

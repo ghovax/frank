@@ -31,6 +31,39 @@ logger = logging.getLogger("frank.computer.control")
 message = message_loader("control")
 
 
+#: The role name the frozen executable answers to for this child. Dispatched in
+#: `packaging/entry.py`, deliberately before the runtime is imported.
+CONTROL_CHILD_ROLE = "control-child"
+
+
+def _child_command(request_write: int, reply_read: int) -> list[str]:
+    """How to launch the disposable child, from a checkout and from the packaged app alike.
+
+    From a checkout it is the script, run by the interpreter: launching it by *path* rather than
+    as ``-m frank.computer.control_child`` is what keeps it stdlib-only, since running it as a
+    module would import the ``frank.computer`` package on the way in.
+
+    Frozen, ``sys.executable`` is the ``frank`` binary rather than an interpreter, and handing a
+    binary the path of a ``.py`` file makes it parse that path as a subcommand. It did:
+
+        frank: error: argument command: invalid choice:
+        '/Applications/Frank.app/…/frank/computer/control_child.py'
+
+    — which came back to the model as the screen helper failing to start, for every screen action,
+    in the packaged app only. From a checkout the same code worked perfectly, because there
+    ``sys.executable`` really is a Python. Every other process this project starts already had
+    this branch (`cli.client`, `daemon.prototype`, `worker.prototype`); this one did not.
+
+    So the frozen build is asked by *role*. It carries the sources on disk and a Python to run
+    them with, and `entry.py` answers this role before importing anything of the runtime — which
+    is what keeps the child as thin as the checkout's."""
+    numbers = [str(request_write), str(reply_read)]
+    if getattr(sys, "frozen", False):
+        return [sys.executable, CONTROL_CHILD_ROLE, *numbers]
+    child_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "control_child.py")
+    return [sys.executable, child_path, *numbers]
+
+
 class _NotPermitted(Exception):
     """A primitive this session may not run. Its own type so the pump can answer it with the
     message that says what *is* available, rather than with a bare exception name."""
@@ -94,12 +127,9 @@ async def run_control_script(
         "limits": {"cpu_seconds": int(timeout) + 5},
     }
 
-    # Launch the child by file path, not ``-m frank.computer.control_child``: running it as a module
-    # would import the ``frank.computer`` package first, which pulls the macOS-only surface code. As
-    # a script it stays stdlib-only, which is the whole point of the disposable child. The two pipe
-    # fds are passed on argv (not via the environment, which would leak them into every subprocess);
-    # the configuration is handed over on the reply pipe below.
-    child_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "control_child.py")
+    # How the child is launched. The two pipe fds go on argv (not via the environment, which would
+    # leak them into every subprocess); the configuration is handed over on the reply pipe below.
+    child_command = _child_command(request_write, reply_read)
     # Strictly less than the session holds. Everything this child can do is bridged to this
     # process over the two pipes below — a click, a find, an evaluate are all JSON requests the
     # parent performs — so it needs no network at all and nowhere to write but a temporary
@@ -121,7 +151,7 @@ async def run_control_script(
         extra_environment={"TMPDIR": scratch, "PWD": scratch} if scratch else None,
     )
     process = await asyncio.create_subprocess_exec(
-        *spawn.prefix, sys.executable, child_path, str(request_write), str(reply_read),
+        *spawn.prefix, *child_command,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         pass_fds=(request_write, reply_read),
         env=spawn.environment,

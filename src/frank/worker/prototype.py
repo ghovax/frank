@@ -202,11 +202,18 @@ def _settle_proxy_environment() -> dict[str, str]:
     if any(os.environ.get(name) for name in _PROXY_VARIABLES):
         return {}
     resolved: dict[str, str] = {}
+    # Frozen, `sys.executable` is the `frank` binary and not an interpreter, so `-c` is not a flag
+    # it has — it rejected the call, the non-zero exit was taken for "no proxies configured", and
+    # a machine behind a proxy silently got none. The packaged build answers a role instead; see
+    # `packaging/entry.py`.
+    if getattr(sys, "frozen", False):
+        command = [sys.executable, "read-proxies"]
+    else:
+        command = [sys.executable, "-c",
+                   "import json,urllib.request;print(json.dumps(urllib.request.getproxies()))"]
     try:
         completed = subprocess.run(
-            [sys.executable, "-c",
-             "import json,urllib.request;print(json.dumps(urllib.request.getproxies()))"],
-            capture_output=True, text=True, timeout=10, check=False,
+            command, capture_output=True, text=True, timeout=10, check=False,
         )
         if completed.returncode == 0:
             resolved = json.loads(completed.stdout or "{}")

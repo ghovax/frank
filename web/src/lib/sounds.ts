@@ -57,38 +57,38 @@ export function primeSounds(): void {
 }
 
 function tone(
-  ctx: AudioContext,
+  context: AudioContext,
   frequency: number,
   at: number,
   duration: number,
   peak: number,
 ): void {
-  const oscillator = ctx.createOscillator();
-  const envelope = ctx.createGain();
+  const oscillator = context.createOscillator();
+  const envelope = context.createGain();
   oscillator.type = "sine";
   oscillator.frequency.value = frequency;
-  const start = ctx.currentTime + at;
+  const start = context.currentTime + at;
   // Fast attack, exponential release — a soft mallet strike, no click on either end.
   envelope.gain.setValueAtTime(0.0001, start);
   envelope.gain.exponentialRampToValueAtTime(peak, start + 0.015);
   envelope.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-  oscillator.connect(envelope).connect(ctx.destination);
+  oscillator.connect(envelope).connect(context.destination);
   oscillator.start(start);
   oscillator.stop(start + duration + 0.05);
 }
 
 function playFallbackTurnEndSound(): void {
-  const ctx = audioContext();
-  if (!ctx || ctx.state !== "running") return;
-  tone(ctx, 587.33, 0, 0.3, 0.045); // D5
-  tone(ctx, 783.99, 0.1, 0.45, 0.04); // G5
+  const context = audioContext();
+  if (!context || context.state !== "running") return;
+  tone(context, 587.33, 0, 0.3, 0.045); // D5
+  tone(context, 783.99, 0.1, 0.45, 0.04); // G5
 }
 
 function playFallbackAttentionSound(): void {
-  const ctx = audioContext();
-  if (!ctx || ctx.state !== "running") return;
-  tone(ctx, 523.25, 0, 0.32, 0.022); // C5
-  tone(ctx, 659.25, 0.09, 0.46, 0.018); // E5
+  const context = audioContext();
+  if (!context || context.state !== "running") return;
+  tone(context, 523.25, 0, 0.32, 0.022); // C5
+  tone(context, 659.25, 0.09, 0.46, 0.018); // E5
 }
 
 function playSound(cue: SystemSoundCue, fallback: () => void): void {

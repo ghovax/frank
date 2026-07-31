@@ -108,6 +108,9 @@ class PrototypeClient:
         self._lock = asyncio.Lock()
         self._closed = False
         self._status: dict[str, Any] = {}
+        # Set by the pump when a status report lands, so `refresh_status` can wait for the
+        # answer instead of for a guess at how long the answer takes.
+        self._status_arrived = asyncio.Event()
 
     # Starting the prototype, and taking it down.
 
@@ -269,6 +272,7 @@ class PrototypeClient:
         session_id = str(message.get("session_id") or "")
         if event == "status":
             self._status = message
+            self._status_arrived.set()
             return
         # Every report about a child carries the token its fork was given, and that — never the
         # session id — is what finds the waiter. One session id covers every process the
@@ -383,11 +387,15 @@ class PrototypeClient:
 
     async def refresh_status(self) -> dict[str, Any]:
         """Ask the prototype what it looks like right now, for `daemon.status`."""
-        with contextlib.suppress(PrototypeUnavailable, OSError):
+        with contextlib.suppress(PrototypeUnavailable, OSError, asyncio.TimeoutError):
+            # Wait for the report itself rather than for a length of time. This slept twenty
+            # milliseconds and then took whatever had arrived — right almost always over a local
+            # socket, and silently answering with the *previous* snapshot whenever a loaded
+            # machine took longer. The pump sets this the moment the reply lands, so the ordinary
+            # case is quicker than the sleep was and the slow case is correct instead of stale.
+            self._status_arrived.clear()
             await self._request({"command": "status"})
-            # The report arrives on the pump; a short wait is enough for a local socket and
-            # the previous snapshot is a fine answer if it is not.
-            await asyncio.sleep(0.02)
+            await asyncio.wait_for(self._status_arrived.wait(), timeout=1.0)
         return self.status()
 
 

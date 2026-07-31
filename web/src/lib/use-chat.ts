@@ -1124,8 +1124,8 @@ export function useChat(
   // stableMessageId) mean that one prepend leaves every on-screen message untouched
   // — no remount, no flash, no layout shift.
   const drainOlderHistory = useCallback(async () => {
-    const ctx = sessionIdRef.current;
-    if (!ctx || isOlderHistoryLoadingRef.current) return;
+    const context = sessionIdRef.current;
+    if (!context || isOlderHistoryLoadingRef.current) return;
     if (historyPageCursorRef.current == null || !hasOlderHistoryRef.current) return;
     // Never fill history over the top of a live turn: applying replayed history would
     // rebuild state from the server transcript and drop the just-sent (not-yet-
@@ -1139,8 +1139,8 @@ export function useChat(
       let cursor: number | null = historyPageCursorRef.current;
       while (cursor != null && hasOlderHistoryRef.current) {
         if (streamedLocallyRef.current || isStreamingRef.current) return;
-        const page = await fetchSessionTurnsPage(ctx, cursor, undefined, HISTORY_PAGE_LIMIT);
-        if (sessionIdRef.current !== ctx) return;
+        const page = await fetchSessionTurnsPage(context, cursor, undefined, HISTORY_PAGE_LIMIT);
+        if (sessionIdRef.current !== context) return;
         historyFragmentsRef.current = [...page.turns, ...historyFragmentsRef.current];
         historyPageCursorRef.current = page.next_before_row_id;
         hasOlderHistoryRef.current = page.has_more;
@@ -1156,7 +1156,7 @@ export function useChat(
     } finally {
       // Skip the apply if a local turn began mid-drain (guarded above too) — the
       // fetched fragments stay in the ref, unused, rather than clobbering live state.
-      if (fetchedAny && sessionIdRef.current === ctx && !streamedLocallyRef.current && !isStreamingRef.current) {
+      if (fetchedAny && sessionIdRef.current === context && !streamedLocallyRef.current && !isStreamingRef.current) {
         setHasOlderHistory(hasOlderHistoryRef.current);
         // One replay + render for the whole accumulated transcript.
         applyHistoryFragments();
@@ -1435,7 +1435,7 @@ export function useChat(
       if (!trimmed) return Promise.resolve();
       if (isStreamingRef.current) {
         const pending = { id: crypto.randomUUID(), text: trimmed, steering: false, dataParts };
-        const ctx = sessionIdRef.current;
+        const context = sessionIdRef.current;
         // Steering is no longer a separate call: a message to a live session is sent the
         // same way as any other and injected at the next safe point. The chip says so
         // until the session echoes the steering event back.
@@ -1443,9 +1443,9 @@ export function useChat(
         // prompt), a new message is plain-queued instead — it could not be injected
         // until the decision is resolved anyway, and a "Steering next opening" chip
         // would misrepresent that. It drains when the turn ends.
-        if (ctx && !queueOnly && dataParts.length === 0) {
+        if (context && !queueOnly && dataParts.length === 0) {
           setQueue([...queuedMessagesRef.current, { ...pending, steering: true }]);
-          return sessionSend(ctx, messageParts(trimmed), { messageId: pending.id }).catch(() => {
+          return sessionSend(context, messageParts(trimmed), { messageId: pending.id }).catch(() => {
             // The send never reached the daemon, so nothing was injected. Keep it as an
             // ordinary queued message so it drives its own turn instead of vanishing.
             setQueue(queuedMessagesRef.current.map((message) =>
@@ -1496,9 +1496,9 @@ export function useChat(
   // per call, and the mode it would have amended is fixed when the session is created.
   const handlePermission = useCallback(
     async (requestId: string, decision: "deny" | "allow_once") => {
-      const ctx = sessionIdRef.current;
-      if (!ctx) return;
-      const result = await resolvePermission(ctx, requestId, decision);
+      const context = sessionIdRef.current;
+      if (!context) return;
+      const result = await resolvePermission(context, requestId, decision);
       if (result.status === "stale" || result.status === "unknown") {
         settleInactivePrompt(requestId);
         return;
@@ -1525,9 +1525,9 @@ export function useChat(
 
   const handleQuestion = useCallback(
     async (requestId: string, answers: QuestionAnswer[]) => {
-      const ctx = sessionIdRef.current;
-      if (!ctx) return;
-      const result = await resolveQuestion(ctx, requestId, answers);
+      const context = sessionIdRef.current;
+      if (!context) return;
+      const result = await resolveQuestion(context, requestId, answers);
       if (result.status === "stale" || result.status === "unknown") {
         settleInactivePrompt(requestId);
         return;
@@ -1557,9 +1557,9 @@ export function useChat(
   // "declined — stop and await" result and lets the turn end on its own.
   const declineQuestion = useCallback(
     async (requestId: string) => {
-      const ctx = sessionIdRef.current;
-      if (!ctx) return;
-      const result = await resolveQuestion(ctx, requestId, [], true);
+      const context = sessionIdRef.current;
+      if (!context) return;
+      const result = await resolveQuestion(context, requestId, [], true);
       if (result.status === "stale" || result.status === "unknown") {
         settleInactivePrompt(requestId);
         return;
@@ -1579,11 +1579,23 @@ export function useChat(
   );
 
   const abort = useCallback(() => {
-    const ctx = sessionIdRef.current;
+    const context = sessionIdRef.current;
     // Suppress the queue auto-drain that the imminent stream close would otherwise
     // trigger, so Stop halts everything instead of relaunching a queued follow-up.
     abortedByUserRef.current = true;
-    if (!ctx) {
+    // Retire the steering chips now, not when the stream finally closes.
+    //
+    // A steering message has two representations while it is in flight: the chip, which says
+    // "this will go in at the next opening", and the message itself once the session injects it
+    // and echoes it back into the transcript. The chip is meant to disappear the moment that
+    // echo arrives. Stop breaks that: the turn is torn down, the echo may never come, and the
+    // sweep that retires the chip only runs when the stream closes — so the message sat on
+    // screen *twice*, once as a chip and once as itself, for as long as the teardown took, and
+    // then one of them vanished with no explanation. Nothing more can be injected after a Stop,
+    // which is precisely what makes the chip's claim false the instant it is pressed.
+    const notSteering = queuedMessagesRef.current.filter((message) => !message.steering);
+    if (notSteering.length !== queuedMessagesRef.current.length) setQueue(notSteering);
+    if (!context) {
       // The session was never created (Stop landed while `create` was still in flight);
       // there is nothing to cancel, so just close whatever stream is open.
       attachRef.current?.abort();
@@ -1601,13 +1613,13 @@ export function useChat(
       const question = message.meta?.question;
       if (permission?.requestId) {
         settledAny = true;
-        void resolvePermission(ctx, permission.requestId, "deny");
+        void resolvePermission(context, permission.requestId, "deny");
       } else if (question?.requestId) {
         settledAny = true;
         // Stop while a question is open settles it as a decline (not empty
         // answers): the model is told the user declined and the turn ends, which
         // also cleanly resolves the awaiting tool even if the context teardown races.
-        void resolveQuestion(ctx, question.requestId, [], true);
+        void resolveQuestion(context, question.requestId, [], true);
       }
     }
     if (settledAny) {
@@ -1620,7 +1632,7 @@ export function useChat(
     }
     // Tell the user if the stop request never reached the server — the turn may still
     // be running, and silently doing nothing would leave them stuck expecting it to end.
-    return cancelTurn(ctx).then((ok) => {
+    return cancelTurn(context).then((ok) => {
       if (!ok) {
         toaster.create({
           type: "error",
@@ -1630,15 +1642,15 @@ export function useChat(
         });
       }
     });
-  }, [flush]);
+  }, [flush, setQueue]);
 
   // Kick off a manual context compaction. The compacting indicator and separator
   // arrive over the stream (live for the driver, via the subscribe stream for a
   // viewer), so there is nothing to render optimistically here.
   const compact = useCallback(() => {
-    const ctx = sessionIdRef.current;
-    if (!ctx) return;
-    void compactSession(ctx).then((ok) => {
+    const context = sessionIdRef.current;
+    if (!context) return;
+    void compactSession(context).then((ok) => {
       if (!ok) {
         toaster.create({
           type: "error",
@@ -1651,9 +1663,9 @@ export function useChat(
   }, []);
 
   const abortTool = useCallback((toolCallId: string) => {
-    const ctx = sessionIdRef.current;
-    if (!ctx || !toolCallId) return;
-    void abortToolCall(ctx, toolCallId).then((ok) => {
+    const context = sessionIdRef.current;
+    if (!context || !toolCallId) return;
+    void abortToolCall(context, toolCallId).then((ok) => {
       if (!ok) {
         toaster.create({
           type: "error",

@@ -203,6 +203,8 @@ class SerialWorker:
         self._queue: queue.Queue[Optional[tuple]] = queue.Queue()
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
+        # The worker's own identity, so `submit` can tell a nested call from an outside one.
+        self._thread_id: Optional[int] = None
 
     def _ensure_thread(self) -> None:
         with self._lock:
@@ -211,6 +213,7 @@ class SerialWorker:
                 self._thread.start()
 
     def _run(self) -> None:
+        self._thread_id = threading.get_ident()
         while True:
             item = self._queue.get()
             if item is None:
@@ -222,6 +225,14 @@ class SerialWorker:
                 future.set_exception(error)
 
     def submit(self, operation: Callable[[], Any], timeout: Optional[float] = None) -> Any:
+        # Already on the worker? Run it here. Queueing would enqueue work behind the very call
+        # that is waiting for it and then block on a future only this thread could complete — a
+        # deadlock held until the machinery ceiling expired. Nesting is the natural shape once an
+        # operation is bound on this thread and then calls a primitive that guards itself, and
+        # "the owned state is touched by one thread" is satisfied either way: this *is* that
+        # thread.
+        if threading.get_ident() == self._thread_id:
+            return operation()
         timeout = timeout if timeout is not None else machinery_ceiling()
         self._ensure_thread()
         future: concurrent.futures.Future = concurrent.futures.Future()

@@ -84,7 +84,7 @@ export function LocaleProvider({ children }: React.PropsWithChildren) {
 }
 
 export function useLocale(): LocaleContextValue {
-  const ctx = React.useContext(LocaleContext);
-  if (!ctx) return { locale: DEFAULT_LOCALE, setLocale: () => {} };
-  return ctx;
+  const context = React.useContext(LocaleContext);
+  if (!context) return { locale: DEFAULT_LOCALE, setLocale: () => {} };
+  return context;
 }
