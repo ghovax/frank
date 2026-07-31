@@ -1,9 +1,18 @@
-"""The permission policy a session runs under, fixed when the session is created.
+"""The permission policy a session runs under.
 
-A session's mode is chosen once, at ``create``, and never changes for the rest of its
-life — there is no mid-session escalation and no way to loosen a running session. A child
-session is clamped to no looser than its parent, which :meth:`PermissionMode.more_restrictive`
-computes as a meet on the restrictiveness order.
+A session's mode is chosen at ``create`` and can be changed afterwards by the person running
+it, through ``session.permission_mode`` on the control plane — a conversation that earns trust
+should not have to be restarted to stop being asked about every command, and one that has lost
+it should not have to be ended to be reined in. The change reaches the turn already in flight,
+because every decision reads the mode at call time.
+
+Two clamps survive that, and they are what the old immobility was really protecting. A child
+session is never looser than its parent, which :meth:`PermissionMode.more_restrictive` computes
+as a meet on the restrictiveness order; and no session is ever looser than its agent profile's
+own ceiling. Tightening a session tightens the subtree it created, so authority a session gives
+up cannot live on in one of its children. A *session* cannot make this call at all — it is
+absent from the verbs a session token may use — so widening is the human's act, never the
+model's.
 
 There is deliberately **no bypass mode**. An agent that runs with no gate at all is the one
 configuration whose blast radius is unbounded, and sessions now spawn sessions without a

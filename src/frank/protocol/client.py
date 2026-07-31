@@ -236,11 +236,11 @@ class _RemoteAgent:
                 _assert_url_trusted(url, self.configuration)
         except RemoteAgentTrustError as exception:
             self.health, self.error = "untrusted", str(exception)
-            logger.warning("Remote agent %r untrusted: %s", self.configuration.name, exception)
+            logger.warning("remote agent %r untrusted: %s", self.configuration.name, exception)
             return None
         except Exception as exception:  # noqa: BLE001 — any resolution failure is non-fatal
             self.health, self.error = "unreachable", str(exception)
-            logger.warning("Remote agent %r unreachable: %s", self.configuration.name, exception)
+            logger.warning("remote agent %r unreachable: %s", self.configuration.name, exception)
             return None
         self.card = card
         self.card_fetched_at = time.monotonic()
@@ -271,7 +271,7 @@ class _RemoteAgent:
                     # A trust violation on the extended card is a real signal, not an optional
                     # miss — surface it as untrusted rather than silently keeping the base card.
                     self.health, self.error = "untrusted", str(exception)
-                    logger.warning("Remote agent %r extended card untrusted: %s", self.configuration.name, exception)
+                    logger.warning("remote agent %r extended card untrusted: %s", self.configuration.name, exception)
                 except Exception:  # noqa: BLE001 — a non-trust extended-card fetch failure is optional
                     pass
         return self._client

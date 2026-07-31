@@ -87,7 +87,7 @@ def configure(
     meter = MeterProvider(resource=resource, metric_readers=[reader]).get_meter("frank")
     _token_counter = meter.create_counter("gen_ai.client.token.usage", unit="{token}", description="LLM tokens used")
     _call_counter = meter.create_counter("gen_ai.client.operation.count", unit="{call}", description="LLM model calls")
-    logger.info("Telemetry enabled; exporting traces and metrics to %s", endpoint)
+    logger.info("telemetry enabled, exporting traces and metrics to %s", endpoint)
 
 
 def is_enabled() -> bool:
@@ -149,7 +149,9 @@ def context_from_traceparent(traceparent: str) -> Any:
     return extract({"traceparent": traceparent})
 
 
-def record_client_fault(context: str, detail: str, attributes: Optional[dict[str, Any]] = None) -> None:
+def record_client_fault(
+    component: str, operation: str, attributes: Optional[dict[str, Any]] = None
+) -> None:
     """Record a fault the *interface* handled and carried on past.
 
     The browser has no route to the collector of its own: the OTLP endpoint and its headers
@@ -161,6 +163,10 @@ def record_client_fault(context: str, detail: str, attributes: Optional[dict[str
     A span rather than a counter, because the useful part of one of these is its context and
     message, and a counter cannot carry either. Silent when telemetry is disabled, which is
     the default and matches every other helper here.
+
+    `component` and `operation` arrive as separate attributes rather than as one sentence,
+    because an attribute is a dimension: "which surface is failing" and "at what" are both
+    questions you group by, and neither should require a prefix match against prose.
     """
     tracer = _active_tracer()
     if tracer is None:
@@ -168,8 +174,8 @@ def record_client_fault(context: str, detail: str, attributes: Optional[dict[str
     active_span = tracer.start_span(
         "frank.client.fault",
         attributes={
-            "frank.client.context": context,
-            "frank.client.detail": detail,
+            "frank.client.component": component,
+            "frank.client.operation": operation,
             **(attributes or {}),
         },
     )

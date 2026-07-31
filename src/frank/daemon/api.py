@@ -155,6 +155,26 @@ def _resolve_sandbox(agent: str, working_directory: str, parent) -> dict:
     return profile.as_dict()
 
 
+def _agent_permission_ceiling(agent: str, working_directory: str) -> Optional[PermissionMode]:
+    """The loosest mode the agent's own profile allows, or ``None`` if it cannot be read.
+
+    The runtime has always applied this — it meets the session's mode with the profile's
+    before enforcing anything — but the control plane did not, so a record could say `auto`
+    while the session it described ran under `default`. That gap was invisible while the mode
+    was fixed at creation and nobody could ask for it again; it is not invisible now that a
+    person changes it from a chip and watches for the answer. Applied here so what is recorded,
+    what is reported and what is enforced are the same value.
+    """
+    from frank.hub.services.agents import _agent_configuration_for_request
+
+    try:
+        _, configuration = _agent_configuration_for_request(agent, working_directory)
+    except Exception:  # noqa: BLE001 — an unreadable profile clamps nothing rather than failing
+        logger.debug("could not read the permission ceiling of agent %s", agent, exc_info=True)
+        return None
+    return configuration.permission_policy
+
+
 async def _session_create(params: dict) -> dict:
     """Mint a session and hand back its handle.
 
@@ -181,15 +201,19 @@ async def _session_create(params: dict) -> dict:
     # parent did not have.
     configured = getattr(getattr(state.global_configuration, "agent", None), "permission_mode", "")
     requested = str(params.get("permission_mode") or "") or str(configured or "")
-    mode = (
-        PermissionMode.more_restrictive(requested, parent.permission_mode)
-        if parent is not None
-        else PermissionMode.coerce(requested)
-    )
 
     working_directory = str(params.get("working_directory") or "")
     if parent is not None and not working_directory:
         working_directory = parent.working_directory
+
+    mode = PermissionMode.more_restrictive(
+        requested,
+        parent.permission_mode if parent is not None else None,
+        # The agent's own ceiling, which the runtime applies whether or not this record
+        # mentions it — so it is applied here too rather than leaving the record claiming a
+        # mode the session will not run under.
+        _agent_permission_ceiling(agent, working_directory),
+    )
 
     sandbox = _resolve_sandbox(agent, working_directory, parent)
 
@@ -224,7 +248,7 @@ async def _session_create(params: dict) -> dict:
         )
         state.registry.mark(record.id, runtime_working_directory=workspace.runtime_working_directory)
     except Exception:  # noqa: BLE001 — a workspace that cannot be prepared is not a fatal
-        logger.exception("Could not prepare a workspace for session %s", record.id)
+        logger.exception("could not prepare a workspace for session %s", record.id)
         state.registry.mark(record.id, runtime_working_directory=record.working_directory)
 
     started = await state.lifecycle.start(record)
@@ -279,6 +303,84 @@ async def _session_end(params: dict) -> dict:
     record = _session(_require(params, "id"))
     reaped = await state.lifecycle.reap(record.id, reason=str(params.get("reason") or "killed by request"))
     return {"killed": record.id, "reaped": reaped}
+
+
+async def _tell_worker_permission_mode(record: SessionRecord) -> None:
+    """Push a record's mode down to its worker, if it has one right now.
+
+    Deliberately not `wake_then_relay`: a sleeping session has nothing to tell. Its next
+    worker is forked from the record, which already carries the new mode, so waking one only
+    to inform it would spend a process on a message it did not need."""
+    if record.asleep or not record.is_live:
+        return
+    with contextlib.suppress(Exception):  # a worker mid-teardown simply reads it on the next fork
+        await state.relay_to_session(record, "session/permission-mode", {
+            "permission_mode": record.permission_mode,
+        })
+
+
+async def _session_permission_mode(params: dict) -> dict:
+    """Change the permission mode a session runs under, while it runs.
+
+    The mode was fixed at `create` for the whole of a session's life, and the cost of that was
+    paid by the person: a conversation begun under manual approvals and then trusted had to be
+    abandoned and restarted to stop being asked about every command, and one begun under `auto`
+    could not be reined in without ending it. So the mode is a live property now, and the two
+    guarantees that made it worth fixing are kept as clamps rather than as immobility:
+
+    - **A child is never looser than its parent.** The requested mode is met against the
+      parent's, exactly as at creation.
+    - **Tightening reaches everything underneath.** Restricting a session restricts the whole
+      subtree it created, because a child that stayed loose would be a way to keep the old
+      authority alive under a session that has just given it up.
+
+    Not a verb a session may call (it is absent from `_SESSION_CALLER_METHODS`), which is the
+    part that matters: this is the human's control, and a model must not be able to widen the
+    policy it is being judged by — its own, or one of its children's.
+    """
+    assert state.registry is not None
+    record = _session(_require(params, "id"))
+    if not record.is_live:
+        raise RpcError(
+            f"Session {record.id} has ended, so its permission mode cannot be changed.",
+            status_code=409,
+            code="session_not_running",
+        )
+    requested = PermissionMode.parse(params.get("permission_mode"))
+    if requested is None:
+        raise RpcError(
+            "permission_mode must be one of: default, auto, read_only.",
+            status_code=400,
+            code="invalid_permission_mode",
+        )
+    parent = state.registry.get(record.parent) if record.parent else None
+    mode = PermissionMode.more_restrictive(
+        requested,
+        parent.permission_mode if parent is not None else None,
+        _agent_permission_ceiling(record.agent, record.working_directory),
+    )
+    changed = [record] if record.permission_mode != str(mode) else []
+    state.registry.mark(record.id, permission_mode=str(mode), updated_at=_now())
+    for descendant in state.registry.descendants_of(record.id):
+        if not descendant.is_live:
+            continue
+        clamped = PermissionMode.more_restrictive(descendant.permission_mode, mode)
+        if descendant.permission_mode == str(clamped):
+            continue
+        state.registry.mark(descendant.id, permission_mode=str(clamped), updated_at=_now())
+        changed.append(descendant)
+    for altered in changed:
+        await _tell_worker_permission_mode(altered)
+    if changed:
+        state.broadcaster.publish({"type": "sessions_changed"})
+    return {
+        "id": record.id,
+        "permission_mode": str(mode),
+        # What the caller asked for is not always what it got: the parent clamp is applied
+        # here, and a creator that cannot see the difference cannot reason about it.
+        "clamped": str(mode) != str(requested),
+        "descendants_changed": [altered.id for altered in changed if altered.id != record.id],
+    }
 
 
 async def _session_send(params: dict) -> dict:
@@ -628,6 +730,7 @@ METHODS: dict[str, Callable[[dict], Awaitable[dict]]] = {
     "session.get": _session_get,
     "session.tree": _session_tree,
     "session.end": _session_end,
+    "session.permission_mode": _session_permission_mode,
     "session.send": _session_send,
     "turn.cancel": _turn_cancel,
     "session.respond": _session_respond,
@@ -717,8 +820,18 @@ async def telemetry_faults(request: Request) -> JSONResponse:
     # is least understood, and 2000 characters reliably kept the frames nearest the throw while
     # discarding the ones that said which of the caller's paths reached it. A fault is rare and a
     # log line is cheap; a truncated one costs another reproduction.
-    context = str(payload.get("context") or "")
-    detail = str(payload.get("detail") or "")
+    # Two fields, not a sentence with the place glued to the front. The interface used to send
+    # `chat input: could not read the message history`, which meant the only way to ask "which
+    # surface is failing" was to match on a prefix — and a colon inside a message took that
+    # apart wrongly. `component` and `operation` are dimensions; they group.
+    component = str(payload.get("component") or "")
+    operation = str(payload.get("operation") or "")
+    # The error arrives already parsed into fields — the interface runs whatever it caught
+    # through `serialize-error`, so a thrown string or bare object has a name and a message
+    # like anything else. Nothing here has to guess at the shape of a blob.
+    error_name = str(payload.get("errorName") or "")
+    error_message = str(payload.get("errorMessage") or "")
+    error_stack = str(payload.get("errorStack") or "")
     url = str(payload.get("url") or "")
     session_id = str(payload.get("sessionId") or "")
     # Logged whether or not telemetry is configured, and that is the point: the interface no
@@ -732,15 +845,21 @@ async def telemetry_faults(request: Request) -> JSONResponse:
     # same reasoning already applies to every payload this harness puts in front of a model:
     # the fields have names, so use them.
     logger.warning("interface fault %s", compact({
-        "context": context,
+        "component": component,
+        "operation": operation,
+        "error": error_name,
+        "message": error_message,
         "url": url,
         "session": session_id,
-        "detail": detail,
+        "stack": error_stack,
     }))
     telemetry.record_client_fault(
-        context,
-        detail,
+        component,
+        operation,
         {
+            "frank.client.error.name": error_name,
+            "frank.client.error.message": error_message,
+            "frank.client.error.stack": error_stack,
             "frank.client.url": url,
             "frank.client.session_id": session_id,
         },
@@ -777,7 +896,7 @@ async def rpc(request: Request) -> JSONResponse:
     except RpcError as error:
         return JSONResponse({"error": {"code": error.code, "message": error.message}}, status_code=error.status_code)
     except Exception as error:  # noqa: BLE001 — one bad call must not take the daemon down
-        logger.exception("Control-plane call %s failed", method)
+        logger.exception("control-plane call %s failed", method)
         return JSONResponse(
             {"error": {"code": "internal_error", "message": f"{method} failed: {error}"}},
             status_code=500,

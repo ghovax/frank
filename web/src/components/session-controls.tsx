@@ -1,16 +1,22 @@
 "use client";
 
 import { Box, Button, createListCollection, Flex, Portal, Select, Span, Text } from "@chakra-ui/react";
-import { type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
-import { LuBadgeCheck, LuBox, LuCircleSlash, LuEye, LuGitBranch, LuGitFork, LuGlobe, LuHand, LuHardDrive, LuMousePointerClick, LuUserSearch, LuZap } from "react-icons/lu";
+import { LuBadgeCheck, LuBox, LuCircleSlash, LuEye, LuGitBranch, LuGitFork, LuGlobe, LuHand, LuHardDrive, LuMic, LuMousePointerClick, LuUser, LuUserSearch, LuZap } from "react-icons/lu";
 import type { PermissionMode } from "@/lib/api";
-import { Tooltip } from "./ui/tooltip";
 
 export type WorktreeStrategyValue = "none" | "branch" | "worktree";
 
 // One house control size (xs / 32px, owned by the theme recipe). `layout` only decides
 // whether the control hugs its content (a chip) or fills its field column.
+//
+// `justifyContent` is part of that decision and has to be. Chakra's select trigger is
+// `space-between`, which is invisible on a chip — the content defines the width, so there is no
+// free space to distribute — and wrong the moment the control fills a column: the spare width
+// goes *between* the icon and the label, so a single control reads as two unrelated things
+// sitting at opposite ends of a box. A field packs to the start; the dropdown indicator is
+// absolutely positioned at the end either way, so nothing else moves.
 function controlMetrics(layout: "chip" | "field") {
   const base = {
     borderRadius: "md" as const,
@@ -23,7 +29,9 @@ function controlMetrics(layout: "chip" | "field") {
     dropdownTitleFontSize: "xs",
     dropdownDescriptionFontSize: "2xs",
   };
-  return layout === "field" ? { ...base, width: "100%", labelMaximumWidth: "100%" } : { ...base, width: "max-content" };
+  return layout === "field"
+    ? { ...base, width: "100%", labelMaximumWidth: "100%", justifyContent: "flex-start" as const }
+    : { ...base, width: "max-content", justifyContent: "space-between" as const };
 }
 
 function permissionAppearance(permissionMode: PermissionMode) {
@@ -66,23 +74,125 @@ function worktreeAppearance(worktreeStrategy: WorktreeStrategyValue) {
   }[worktreeStrategy];
 }
 
-// The permission mode is fixed when a session is created and never changes over its
-// life, so this control only ever configures a session that does not exist yet. Once
-// one does, `readOnly` renders the very same chip as a settled fact — the user still
-// sees which mode the conversation runs under, but there is nothing left to choose.
+// Which agent profile runs. One control for every place that choice is made — the composer,
+// where it picks what the next turn runs as, and a schedule, where it picks what fires
+// unattended. Each item carries the profile's own description, because "code-investigator"
+// and "senior-researcher" are not names anybody can rank without one.
+export function AgentSelectControl({
+  agents,
+  value,
+  onChange,
+  layout = "chip",
+  placeholder,
+  responsiveCompact = false,
+}: {
+  agents: { id: string; name: string; title?: string; description?: string }[];
+  value: string;
+  onChange: (agent: string) => void;
+  layout?: "chip" | "field";
+  placeholder?: string;
+  responsiveCompact?: boolean;
+}) {
+  const translation = useTranslations("SessionControls");
+  const metrics = controlMetrics(layout);
+  const collection = useMemo(
+    () => createListCollection({
+      items: agents.map((agent) => ({ label: agent.title || agent.name, value: agent.id })),
+    }),
+    [agents]
+  );
+  return (
+    <Select.Root
+      data-composer-agent-control={responsiveCompact ? "" : undefined}
+      collection={collection}
+      value={value ? [value] : []}
+      onValueChange={(details) => {
+        if (details.value[0]) onChange(details.value[0]);
+      }}
+      size="xs"
+      w={metrics.width}
+      minW={layout === "field" ? 0 : "max-content"}
+      maxW="none"
+      flexShrink={0}
+    >
+      <Select.Control data-composer-agent-control={responsiveCompact ? "" : undefined} w={metrics.width} minW={layout === "field" ? 0 : "max-content"} maxW="none">
+        <Select.Trigger
+          data-composer-agent-control={responsiveCompact ? "" : undefined}
+          w={metrics.width}
+          borderRadius={metrics.borderRadius}
+          fontSize={metrics.fontSize}
+          alignItems="center"
+          justifyContent={metrics.justifyContent}
+          gap={metrics.gap}
+          px={metrics.paddingX}
+          pe={metrics.paddingEnd}
+          bg="bg"
+          border="1px solid"
+          borderColor="border"
+          minW={layout === "field" ? 0 : "max-content"}
+          maxW="none"
+          whiteSpace="nowrap"
+          fontWeight="medium"
+          lineHeight="1"
+        >
+          <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color="fg.muted" flexShrink={0}>
+            <LuUser size={13} />
+          </Box>
+          <Select.ValueText
+            data-composer-agent-label={responsiveCompact ? "" : undefined}
+            placeholder={placeholder ?? translation("agentPlaceholder")}
+            fontSize={metrics.contentFontSize}
+            lineHeight="1"
+            maxW={metrics.labelMaximumWidth}
+            overflow={metrics.labelMaximumWidth === "none" ? "visible" : "hidden"}
+            textOverflow={metrics.labelMaximumWidth === "none" ? "clip" : "ellipsis"}
+            whiteSpace="nowrap"
+          />
+        </Select.Trigger>
+        <Select.IndicatorGroup>
+          <Select.Indicator />
+        </Select.IndicatorGroup>
+      </Select.Control>
+      <Portal>
+        <Select.Positioner>
+          <Select.Content minW="220px" maxW="320px">
+            {collection.items.map((item) => {
+              // Look the description up from the source list by id — the collection item only
+              // reliably carries label/value, so extra fields are read from `agents`.
+              const description = agents.find((agent) => agent.id === item.value)?.description;
+              return (
+                <Select.Item item={item} key={item.value}>
+                  <Flex direction="column" minW={0} flex={1}>
+                    <Text fontSize={metrics.dropdownTitleFontSize} fontWeight="medium" lineHeight="1.2" whiteSpace="nowrap">{item.label}</Text>
+                    {description ? (
+                      <Text fontSize={metrics.dropdownDescriptionFontSize} color="fg.muted" lineHeight="1.35" truncate>{description}</Text>
+                    ) : null}
+                  </Flex>
+                  <Select.ItemIndicator />
+                </Select.Item>
+              );
+            })}
+          </Select.Content>
+        </Select.Positioner>
+      </Portal>
+    </Select.Root>
+  );
+}
+
+// The permission mode a session runs under. Chosen before a session exists and adjustable
+// afterwards — the mode is a live property of the session, not a fact settled at creation —
+// so this control is the same picker in both cases.
 export function PermissionModeControl({
   value,
   onChange,
   layout = "chip",
   responsiveCompact = false,
-  readOnly = false,
 }: {
   value: PermissionMode;
   onChange: (mode: PermissionMode) => void;
   size?: "xs" | "sm";
   layout?: "chip" | "field";
   responsiveCompact?: boolean;
-  readOnly?: boolean;
 }) {
   const translation = useTranslations("SessionControls");
   const permissionChoices: { value: PermissionMode; label: string; description: string; icon: ReactNode; colorPalette?: "blue" | "green" }[] = [
@@ -95,34 +205,6 @@ export function PermissionModeControl({
   const collection = createListCollection({ items: permissionItems });
   const selectedAppearance = permissionAppearance(value);
   const selectedLabel = permissionItems.find((item) => item.value === value)?.label ?? translation("permissionDefaultLabel");
-
-  if (readOnly) {
-    return (
-      <Tooltip content={translation("permissionFixedAtCreation")} openDelay={350}>
-        <Flex
-          data-composer-permission-control={responsiveCompact ? "" : undefined}
-          align="center"
-          gap={metrics.gap}
-          h={8}
-          w={metrics.width}
-          minW={layout === "field" ? 0 : "max-content"}
-          px={metrics.paddingX}
-          borderRadius={metrics.borderRadius}
-          border="1px solid"
-          borderColor={selectedAppearance.borderColor}
-          bg={selectedAppearance.background}
-          flexShrink={0}
-        >
-          <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color={selectedAppearance.color} flexShrink={0}>
-            {selectedAppearance.icon}
-          </Box>
-          <Text data-composer-permission-label={responsiveCompact ? "" : undefined} fontSize={metrics.contentFontSize} fontWeight="medium" lineHeight="1" whiteSpace="nowrap" color="fg.muted">
-            {selectedLabel}
-          </Text>
-        </Flex>
-      </Tooltip>
-    );
-  }
 
   return (
     <Select.Root
@@ -146,6 +228,7 @@ export function PermissionModeControl({
           borderRadius={metrics.borderRadius}
           fontSize={metrics.fontSize}
           alignItems="center"
+          justifyContent={metrics.justifyContent}
           gap={metrics.gap}
           px={metrics.paddingX}
           pe={metrics.paddingEnd}
@@ -322,6 +405,23 @@ export function UserContextToggleControl({
   return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
 }
 
+export function DictationToggleControl({
+  enabled,
+  onChange,
+  layout = "chip",
+}: {
+  enabled: boolean;
+  onChange?: (enabled: boolean) => void;
+  size?: "xs" | "sm";
+  layout?: "chip" | "field";
+}) {
+  const translation = useTranslations("SessionControls");
+  const appearance: ToggleAppearance = enabled
+    ? { label: translation("dictationOn"), icon: <LuMic size={13} />, color: "blue.fg", background: "blue.subtle", borderColor: "blue.muted", hover: "blue.muted" }
+    : { label: translation("dictationOff"), icon: <LuCircleSlash size={13} />, color: "fg.muted", background: "bg.subtle", borderColor: "border", hover: "bg.muted" };
+  return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
+}
+
 export function ComputerControlToggleControl({
   enabled,
   onChange,
@@ -387,6 +487,7 @@ export function WorktreeStrategyControl({
           borderRadius={metrics.borderRadius}
           fontSize={metrics.fontSize}
           alignItems="center"
+          justifyContent={metrics.justifyContent}
           gap={metrics.gap}
           px={metrics.paddingX}
           pe={metrics.paddingEnd}

@@ -346,8 +346,8 @@ class PrototypeClient:
                         await result
             try:
                 await self._ensure_running()
-            except PrototypeUnavailable as error:
-                logger.error("could not restart the prototype: %s", error)
+            except PrototypeUnavailable:
+                logger.error("could not restart the prototype", exc_info=True)
                 await asyncio.sleep(active_tuning().duration(Tunable.prototype_restart_seconds))
 
     async def _fail_everyone_waiting(self, reason: str) -> None:

@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import { LocationEditorList, emptyLocation, locationConflict } from "./location-form";
 import { toaster } from "./ui/toaster";
+import { errorMessage } from "@/lib/errors";
 
 function locationToInput(location: Location): LocationInput {
   return {
@@ -26,8 +27,8 @@ function draftsFrom(locations: Location[]): LocationDraft[] {
   return locations.map((location) => ({ id: location.id, value: locationToInput(location) }));
 }
 
-// The workspace-folder manager inside Settings. Each folder is an inline editable form stacked
-// above the next, with an "Add folder" button below — no list-then-edit view. Edits are
+// The workspace-environment manager inside Settings. Each environment is an inline editable form
+// stacked above the next, with an "Add environment" button below — no list-then-edit view. Edits are
 // batched and persisted on Save (create new, update changed, delete removed).
 export function WorkspaceLocationsPanel({ workspaceId }: { workspaceId: string }) {
   const translation = useTranslations("WorkspaceLocationsPanel");
@@ -66,7 +67,7 @@ export function WorkspaceLocationsPanel({ workspaceId }: { workspaceId: string }
     // workspaces_changed event (a save reloads explicitly).
     const unsubscribe = subscribeEvents((event) => {
       if (event.type === "hosts_changed") {
-        listSshHosts().then((nextHosts) => { if (!cancelled) setHosts(nextHosts); }).catch((caught) => swallowed("workspace locations: a background load failed", caught));
+        listSshHosts().then((nextHosts) => { if (!cancelled) setHosts(nextHosts); }).catch((caught) => swallowed({ component: "workspace-locations", operation: "list the SSH hosts" }, caught));
       }
     });
     return () => {
@@ -105,7 +106,7 @@ export function WorkspaceLocationsPanel({ workspaceId }: { workspaceId: string }
       }
       await loadWorkspace();
     } catch (error) {
-      toaster.create({ type: "error", title: translation("saveError"), description: error instanceof Error ? error.message : "", closable: true });
+      toaster.create({ type: "error", title: translation("saveError"), description: errorMessage(error), closable: true });
     } finally {
       setSaving(false);
     }

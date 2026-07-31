@@ -17,6 +17,8 @@ import asyncio
 import logging
 
 from frank.hub.services import schedules as schedule_service
+from frank.base.errors import describe
+from frank.base.serialization import compact
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +49,9 @@ async def _fire(record) -> None:
             "parts": [{"kind": "text", "text": record.prompt}],
         })
     except Exception as error:  # noqa: BLE001 — one bad schedule must not stop the rest
-        logger.warning("schedule %s (%r) could not run: %s", record.id, record.name, error)
+        logger.warning("schedule could not run %s", compact({
+                "schedule": record.id, "name": record.name, **describe(error),
+            }))
         await asyncio.to_thread(
             schedule_service.record_run, record.id, session_id=session_id, error=str(error))
         return

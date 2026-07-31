@@ -26,6 +26,25 @@ export const LOCAL_DAEMON_URL = `http://127.0.0.1:${LOCAL_DAEMON_PORT}`;
 const DEFAULT_API_BASE =
   (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_FRANK_API_BASE : "") || LOCAL_DAEMON_URL;
 
+// The token a *development* page presents, and only ever a development page.
+//
+// The daemon writes its port and its token to 0600 files in the runtime directory. The Tauri
+// shell reads both and hands them over; a browser tab can read neither, so `bun run dev` at
+// :3000 had no way to address the daemon at all — it guessed the conventional port, which the
+// daemon never binds (it takes an ephemeral one), and presented no token, which the control
+// plane requires. Every list came back empty and nothing said why.
+// `scripts/web-development.sh` asks the daemon for its endpoint and passes it in.
+//
+// Gated on `NODE_ENV` rather than trusted to be unset: `NEXT_PUBLIC_*` values are inlined at
+// build time, so a production export built on a machine where this happened to be exported
+// would carry a live capability token inside a shipped bundle. The comparison is against a
+// literal Next replaces at build time, so in a production build this whole branch is
+// eliminated and the string cannot appear in the output.
+const DEVELOPMENT_TOKEN =
+  typeof process !== "undefined" && process.env.NODE_ENV !== "production"
+    ? process.env.NEXT_PUBLIC_FRANK_TOKEN || ""
+    : "";
+
 function runningInTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -48,7 +67,9 @@ let API_BASE = DEFAULT_API_BASE;
 // directory of this machine, and it authenticates nothing on a remote host. A connection
 // profile therefore carries its own token, and when one is activated it wins — otherwise
 // every SSH-tunnelled daemon would be handed the local machine's secret and answer 401.
-let localDaemonToken = "";
+// Seeded from the development token above, which is empty in every build that is not a
+// developer's own. The Tauri shell overwrites it with the real one below.
+let localDaemonToken = DEVELOPMENT_TOKEN;
 let daemonEndpointPromise: Promise<void> | null = null;
 
 async function resolveDaemonEndpoint(): Promise<void> {
@@ -714,6 +735,7 @@ export interface Settings {
   user_context_enabled: boolean;
   // Opt-in: let the agent control macOS apps via the computer-use tool. Off by default.
   computer_control_enabled: boolean;
+  dictation_enabled: boolean;
   worktree_strategy: "none" | "branch" | "worktree";
   compaction: CompactionSettings;
   providers: Record<string, ProviderCredential>;
@@ -764,6 +786,68 @@ export async function updateComputerControlSetting(enabled: boolean): Promise<vo
   });
 }
 
+// Dictation: whether the composer may take speech, and what the model behind it is doing.
+// `loading` is a real state rather than a wait — the first one fetches about a gigabyte over a
+// connection nobody can predict — so the microphone is shown arriving instead of blocking.
+export type DictationState = "idle" | "loading" | "ready" | "failed";
+
+export interface DictationStatus {
+  enabled: boolean;
+  model: string;
+  state: DictationState;
+  // Why loading failed, in a sentence, when it did.
+  failure: string;
+}
+
+// `prepare` asks the daemon to start loading the model as well as reporting on it, so the
+// weights arrive while somebody is reading their conversation rather than while they wait with
+// a finger on the microphone.
+export async function fetchDictationStatus(prepare = false): Promise<DictationStatus> {
+  const response = await apiFetch(`/dictation${prepare ? "?prepare=true" : ""}`);
+  const data = await response.json();
+  return {
+    enabled: !!data.enabled,
+    model: String(data.model ?? ""),
+    state: (data.state ?? "idle") as DictationState,
+    failure: String(data.failure ?? ""),
+  };
+}
+
+// Opt in or out of dictation. Turning it off also releases the model this machine was holding.
+export async function updateDictationSetting(enabled: boolean): Promise<void> {
+  await apiFetch(`/settings/dictation`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+// Transcribe one recording, on this machine. The body is the raw samples — mono float32 at the
+// rate the recorder captured them — rather than an encoded file, so neither side needs a codec.
+// The server's own sentence is thrown on failure: it distinguishes "the package is missing"
+// from "the download failed" from "the worker hung", and only it knows which happened.
+export async function transcribeDictation(samples: Float32Array): Promise<string> {
+  const response = await apiFetch(`/dictation/transcribe`, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength) as ArrayBuffer,
+  });
+  if (!response.ok) {
+    // `apiFetch` does not throw on a status, so the reason has to be lifted out here — and it
+    // is worth lifting: the alternative is telling somebody who just spoke that "something
+    // went wrong" when the server knows it was a failed download or a missing package.
+    let detail = "";
+    try {
+      detail = String((await response.json())?.detail ?? "");
+    } catch {
+      // A body that is not JSON says nothing more than the status already did.
+    }
+    throw new Error(detail || `Transcription failed (${response.status}).`);
+  }
+  const data = await response.json();
+  return String(data.text ?? "");
+}
+
 // Whether the server can read Full-Disk-Access-protected data (Screen Time, Safari history) —
 // gates the deepest user-context signals. False on any error (e.g. non-macOS).
 export async function fetchFullDiskAccess(): Promise<boolean> {
@@ -772,14 +856,15 @@ export async function fetchFullDiskAccess(): Promise<boolean> {
     if (!response.ok) return false;
     return (await response.json()).granted === true;
   } catch (caught) {
-    swallowed("fetchFullDiskAccess failed", caught);
+    swallowed({ component: "api", operation: "read the Full Disk Access state" }, caught);
     return false;
   }
 }
 
 // Open System Settings to the Full Disk Access pane so the user can add Frank in one hop.
 export async function openFullDiskAccessSettings(): Promise<void> {
-  await apiFetch(`/system/full-disk-access/open`, { method: "POST" }).catch(() => {});
+  await apiFetch(`/system/full-disk-access/open`, { method: "POST" })
+    .catch((caught) => swallowed({ component: "api", operation: "open the Full Disk Access pane" }, caught));
 }
 
 // Whether the app can control other apps (read the accessibility tree, synthesize input) —
@@ -790,14 +875,15 @@ export async function fetchAccessibility(): Promise<boolean> {
     if (!response.ok) return false;
     return (await response.json()).granted === true;
   } catch (caught) {
-    swallowed("fetchAccessibility failed", caught);
+    swallowed({ component: "api", operation: "read the Accessibility state" }, caught);
     return false;
   }
 }
 
 // Trigger the system Accessibility prompt and open its pane so the user can grant Frank.
 export async function openAccessibilitySettings(): Promise<void> {
-  await apiFetch(`/system/accessibility/open`, { method: "POST" }).catch(() => {});
+  await apiFetch(`/system/accessibility/open`, { method: "POST" })
+    .catch((caught) => swallowed({ component: "api", operation: "open the Accessibility pane" }, caught));
 }
 
 // Restart the daemon so it picks up a new Accessibility grant, then reload the window against
@@ -853,7 +939,7 @@ export interface ModelsResponse {
 export async function fetchSettings(): Promise<Settings> {
   const response = await apiFetch(`/settings`);
   if (!response.ok) {
-    return { permission_mode: "default", exa_api_key: "", composio_api_key: "", jina_api_key: "", firecrawl_api_key: "", web_fetch_proxy_url: "", sandbox: DEFAULT_SANDBOX, sandbox_backend: { backend: "", detail: "" }, user_context_enabled: false, computer_control_enabled: false, worktree_strategy: "none", compaction: DEFAULT_COMPACTION, providers: {} };
+    return { permission_mode: "default", exa_api_key: "", composio_api_key: "", jina_api_key: "", firecrawl_api_key: "", web_fetch_proxy_url: "", sandbox: DEFAULT_SANDBOX, sandbox_backend: { backend: "", detail: "" }, user_context_enabled: false, computer_control_enabled: false, dictation_enabled: false, worktree_strategy: "none", compaction: DEFAULT_COMPACTION, providers: {} };
   }
   return (await response.json()) as Settings;
 }
@@ -1035,7 +1121,7 @@ export async function fetchSkills(workingDirectory?: string): Promise<AgentSkill
     );
     return data.skills ?? [];
   } catch (caught) {
-    swallowed("fetchSkills failed", caught);
+    swallowed({ component: "api", operation: "list the skills" }, caught);
     return [];
   }
 }
@@ -1053,7 +1139,7 @@ export async function fetchMcpTools(workingDirectory?: string): Promise<McpServe
     );
     return data.servers ?? [];
   } catch (caught) {
-    swallowed("fetchMcpTools failed", caught);
+    swallowed({ component: "api", operation: "list the MCP tools" }, caught);
     return [];
   }
 }
@@ -1112,7 +1198,7 @@ export async function fetchHostHomeDirectory(alias: string): Promise<string> {
     const data = await response.json();
     return String(data.path ?? "");
   } catch (caught) {
-    swallowed("fetchHostHomeDirectory failed", caught);
+    swallowed({ component: "api", operation: "read a host's home directory" }, caught);
     return "";
   }
 }
@@ -1157,7 +1243,7 @@ export async function fetchSession(sessionId: string, options?: ApiRequestOption
     const data = await rpc<{ session: SessionSummary }>("session.get", { id: sessionId }, options);
     return data.session ?? null;
   } catch (caught) {
-    swallowed("fetchSession failed", caught);
+    swallowed({ component: "api", operation: "read a session" }, caught);
     return null;
   }
 }
@@ -1175,7 +1261,7 @@ export async function sessionTree(sessionId: string, options?: ApiRequestOptions
   try {
     return await rpc<SessionTree>("session.tree", { id: sessionId }, options);
   } catch (caught) {
-    swallowed("sessionTree failed", caught);
+    swallowed({ component: "api", operation: "read a session tree" }, caught);
     return null;
   }
 }
@@ -1219,6 +1305,21 @@ export async function sessionCreate(input: SessionCreateInput, options?: ApiRequ
   }, options);
 }
 
+// Change the approval policy of a session that already exists — including one mid-turn, which
+// reaches the very next tool call rather than the next turn. The daemon answers with the mode
+// that actually took: a session is clamped to no looser than its parent (and than its agent
+// profile), so what comes back is not always what was asked for.
+export async function setSessionPermissionMode(
+  sessionId: string,
+  mode: PermissionMode,
+): Promise<PermissionMode> {
+  const data = await rpc<{ permission_mode?: PermissionMode }>("session.permission_mode", {
+    id: sessionId,
+    permission_mode: mode,
+  });
+  return data.permission_mode ?? mode;
+}
+
 // Drive a turn. A message to an idle session starts one; a message to a session that is
 // mid-turn is safe-point injected at the next tool boundary — which is why steering is
 // no longer a separate call. The response arrives on the attach stream, not here.
@@ -1253,7 +1354,7 @@ export async function turnGet(turnId: string): Promise<A2ATurn | null> {
     const data = await rpc<{ turn: A2ATurn }>("turn.get", { turn_id: turnId });
     return data.turn ?? null;
   } catch (caught) {
-    swallowed("turnGet failed", caught);
+    swallowed({ component: "api", operation: "read a turn" }, caught);
     return null;
   }
 }
@@ -1265,7 +1366,7 @@ export async function daemonStatus(options?: ApiRequestOptions & { signal?: Abor
   try {
     return await rpc<Record<string, unknown>>("daemon.status", {}, options);
   } catch (caught) {
-    swallowed("daemonStatus failed", caught);
+    swallowed({ component: "api", operation: "read the daemon status" }, caught);
     return null;
   }
 }
@@ -1383,7 +1484,7 @@ export async function cancelTurn(sessionId: string): Promise<boolean> {
     await rpc("turn.cancel", { id: sessionId });
     return true;
   } catch (caught) {
-    swallowed("cancelTurn failed", caught);
+    swallowed({ component: "api", operation: "cancel a turn" }, caught);
     return false;
   }
 }
@@ -1395,7 +1496,7 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
     await rpc("session.end", { id: sessionId });
     return true;
   } catch (caught) {
-    swallowed("deleteSession failed", caught);
+    swallowed({ component: "api", operation: "delete a session" }, caught);
     return false;
   }
 }
@@ -1405,7 +1506,7 @@ export async function compactSession(sessionId: string): Promise<boolean> {
     const result = await rpc<{ compacting?: boolean }>("session.compact", { id: sessionId });
     return Boolean(result?.compacting);
   } catch (caught) {
-    swallowed("compactSession failed", caught);
+    swallowed({ component: "api", operation: "compact a session" }, caught);
     return false;
   }
 }
@@ -1418,7 +1519,7 @@ export async function abortToolCall(sessionId: string, toolCallId: string): Prom
     await rpc("turn.cancel", { id: sessionId, tool_call_id: toolCallId });
     return true;
   } catch (caught) {
-    swallowed("abortToolCall failed", caught);
+    swallowed({ component: "api", operation: "abort a tool call" }, caught);
     return false;
   }
 }
@@ -1434,7 +1535,7 @@ export async function sendToolToBackground(sessionId: string, toolCallId: string
     });
     return Boolean(result?.backgrounded);
   } catch (caught) {
-    swallowed("sendToolToBackground failed", caught);
+    swallowed({ component: "api", operation: "send a tool call to the background" }, caught);
     return false;
   }
 }
@@ -1453,7 +1554,7 @@ export async function fetchBackgroundJobs(sessionId: string): Promise<Background
     const result = await rpc<{ jobs?: BackgroundJob[] }>("jobs.list", { id: sessionId });
     return Array.isArray(result?.jobs) ? result.jobs : [];
   } catch (caught) {
-    swallowed("fetchBackgroundJobs failed", caught);
+    swallowed({ component: "api", operation: "list the background jobs" }, caught);
     return [];
   }
 }
@@ -1519,7 +1620,7 @@ export async function revealInFinder(path: string): Promise<boolean> {
     });
     return response.ok;
   } catch (caught) {
-    swallowed("revealInFinder failed", caught);
+    swallowed({ component: "api", operation: "reveal a path in Finder" }, caught);
     return false;
   }
 }
@@ -1534,7 +1635,7 @@ export async function openBrowserRemoteDebugging(browserName = "chrome"): Promis
     );
     return response.ok;
   } catch (caught) {
-    swallowed("openBrowserRemoteDebugging failed", caught);
+    swallowed({ component: "api", operation: "open the browser's remote debugging" }, caught);
     return false;
   }
 }

@@ -152,7 +152,7 @@ Keeping the halves apart serves one goal: **put the compute, the files, and the 
 
 ## Permissions
 
-A session's permission mode is fixed when the session is created, and you cannot change it afterwards. A child gets a mode no looser than its parent's. There is no bypass mode and no standing "always allow"; the only runtime decisions are allow-once and deny. See [Security notes](../SECURITY.md).
+A session's permission mode is chosen when the session is created and can be changed while it runs — the change reaches the turn already in flight. A child gets a mode no looser than its parent's, and tightening a session tightens everything it created. There is no bypass mode and no standing "always allow"; the only runtime decisions are allow-once and deny. See [Security notes](../SECURITY.md).
 
 ## Request lifecycle (a message)
 

@@ -19,6 +19,8 @@ from typing import Any, Optional
 import httpx
 from a2a.server.tasks import TaskStore
 from a2a.types import Task
+from frank.base.errors import describe
+from frank.base.serialization import compact
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +52,10 @@ class DaemonTurnStore(TaskStore):
             # Losing the daemon means losing durability, not the turn: the session keeps its
             # own conversation in memory and the next successful write catches up. Failing the
             # turn here would discard work the model has already done.
-            logger.warning("Persistence call %s failed: %s", method, error)
+            logger.warning("persistence call failed %s", compact({"method": method, **describe(error)}))
             return None
         if response.status_code >= 400:
-            logger.warning("Persistence call %s rejected: %s", method, upstream_detail(response.text))
+            logger.warning("persistence call %s rejected: %s", method, upstream_detail(response.text))
             return None
         return response.json().get("result")
 

@@ -29,7 +29,7 @@ the words the others use, so it comes first:
 | [Installation](installation.md) | Download and Gatekeeper, or building from source |
 | [As a library](library.md) | `frank.Session` in your own process, and every seam you can replace |
 | [The `frank` command](cli.md) | Every verb, the session states, JSON and exit codes |
-| [The desktop app](app.md) | The window, decisions, folders, and screen control |
+| [The desktop app](app.md) | The window, decisions, environments, and screen control |
 | [Agents and skills](agents-and-skills.md) | Authoring agents, skills, memory, and MCP servers |
 | [Configuration](configuration.md) | Providers, keys, permissions, MCP, and every config key |
 | [Tools](tools.md) | The full tool surface, including screen control (`control_screen`) |

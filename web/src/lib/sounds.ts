@@ -1,4 +1,7 @@
+
 "use client";
+
+import { expected } from "@/lib/swallowed";
 
 // The desktop app hands cues to macOS so they sound native and follow the
 // system output settings. Browser and non-macOS builds retain two quiet Web Audio
@@ -41,7 +44,11 @@ function audioContext(): AudioContext | null {
     // Audio is blocked until the page has been interacted with.
     return null;
   }
-  if (context.state === "suspended") void context.resume().catch(() => {});
+  // Autoplay policy routinely refuses this until the page has been interacted with, and the
+  // consequence is silence rather than a fault.
+  if (context.state === "suspended") {
+    void context.resume().catch((caught) => expected("a suspended audio context may refuse to resume", caught));
+  }
   return context;
 }
 

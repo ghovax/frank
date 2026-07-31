@@ -250,7 +250,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
         setProviderKeys(keyByProvider(loaded));
         setCustomBaseUrl(loaded.providers?.custom?.base_url ?? "");
       })
-      .catch((caught) => swallowed("model select: a background load failed", caught));
+      .catch((caught) => swallowed({ component: "model-select", operation: "read the settings" }, caught));
     return () => {
       cancelled = true;
     };
@@ -285,6 +285,11 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
         data-composer-model=""
         variant="outline"
         px={2}
+        // The icon-to-label gap is stated rather than inherited: the button recipe's `xs`
+        // size gives 4px, while the agent and permission chips beside it in the composer are
+        // Select triggers at 6px. Left to the recipe, this one control sat a notch tighter
+        // than its two neighbours in the same row.
+        gap={1.5}
         bg="bg"
         borderColor="border"
         minW={compact ? "max-content" : undefined}

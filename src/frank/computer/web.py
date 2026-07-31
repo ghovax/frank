@@ -691,7 +691,7 @@ def _titles_by_label(page) -> dict[str, str]:
     try:
         found = page.evaluate(_TITLES_BY_LABEL)
     except Exception:  # noqa: BLE001 — an unreadable tooltip is not a reason to fail a find
-        logger.debug("Could not read tooltips from the page", exc_info=True)
+        logger.debug("could not read tooltips from the page", exc_info=True)
         return {}
     if not isinstance(found, dict):
         return {}
@@ -961,7 +961,7 @@ class WebSurface(Surface):
                 if entry["url"] == url:
                     return entry["title"]
         except Exception:  # noqa: BLE001 — a title is never worth failing an action over
-            logger.debug("Could not read a page's title from the browser listing", exc_info=True)
+            logger.debug("could not read a page's title from the browser listing", exc_info=True)
         return ""
 
     def _window_of(self, session: _Session, page) -> Optional[int]:
@@ -998,7 +998,7 @@ class WebSurface(Surface):
                 if entry["url"] == url:
                     return entry["window"]
         except Exception:  # noqa: BLE001 — a browser that will not say leaves the page unplaced
-            logger.debug("Could not resolve the window of a page", exc_info=True)
+            logger.debug("could not resolve the window of a page", exc_info=True)
         return None
 
     def _page_for(self, session: _Session, target: str):
@@ -1475,7 +1475,7 @@ class WebSurface(Surface):
                 for entry in session.describe_targets()
             ]
         except Exception:  # noqa: BLE001 — a listing must never be the thing that fails
-            logger.debug("Could not list tabs of the connected browser", exc_info=True)
+            logger.debug("could not list tabs of the connected browser", exc_info=True)
             return []
 
     def glance(self, target: str) -> Glance:

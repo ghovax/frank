@@ -1,4 +1,7 @@
+
 "use client";
+
+import { swallowed } from "@/lib/swallowed";
 
 // System notifications for tool calls awaiting a decision, with the suggested
 // action ("Allow once" — the same primary the on-screen overlay defaults to)
@@ -98,7 +101,8 @@ export async function notifyPermissionRequest({
       requireInteraction: true,
       actions: [{ action: APPROVE_ACTION, title: actionLabel }],
     } as NotificationOptions;
-    await registration.showNotification(title, options).catch(() => {});
+    await registration.showNotification(title, options)
+      .catch((caught) => swallowed({ component: "notifications", operation: "show a permission notification" }, caught));
     return;
   }
   try {

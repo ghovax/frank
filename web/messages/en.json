@@ -3,11 +3,11 @@
     "skillsAvailable": "Skills available",
     "skillsDescription": "Capabilities available to assist with your tasks.",
     "skillsAvailableGlobally": "Skills available globally",
-    "skillsAvailableInWorkspace": "Skills available in this folder",
+    "skillsAvailableInWorkspace": "Skills available in this environment",
     "toolsAvailable": "Tools available",
     "toolsDescription": "External tools the agent can call, exposed by the configured MCP servers and grouped by server.",
     "toolsAvailableGlobally": "Tools available globally",
-    "toolsAvailableInWorkspace": "Tools available in this folder",
+    "toolsAvailableInWorkspace": "Tools available in this environment",
     "disabled": "Disabled",
     "examples": "Examples",
     "toolCount": "{count, plural, one {# tool} other {# tools}}"
@@ -36,7 +36,7 @@
     "local": "Local",
     "closeTerminalNumber": "Close Terminal {number}",
     "newTerminal": "New terminal",
-    "newTerminalIn": "New terminal in folder…",
+    "newTerminalIn": "New terminal in environment…",
     "noProcessesTitle": "No background processes",
     "noProcessesDescription": "Active jobs will appear here",
     "processesActive": "Active processes",
@@ -95,7 +95,7 @@
     "compactBody": "This summarizes the older conversation into a compact handoff, keeping the <b>most recent {count} turns</b> verbatim. It frees up the context window but the summarized detail can no longer be recalled in full.",
     "uploading": "Uploading {count}",
     "placeholderConnecting": "Connecting to server...",
-    "placeholderInvalidPath": "Choose a valid workspace folder before sending...",
+    "placeholderInvalidPath": "Choose a valid environment before sending...",
     "placeholderAttachments": "Add a message about your file(s), then send...",
     "placeholderStreaming": "Queue a message for the next turn...",
     "placeholderDefault": "Send a message...",
@@ -108,7 +108,12 @@
     "compactingTooltip": "Compacting the context…",
     "compactTooltip": "Summarize the older history to free up context, keeping the most recent turns verbatim",
     "compacting": "Compacting…",
-    "compact": "Compact"
+    "compact": "Compact",
+    "dictationStart": "Dictate",
+    "dictationStop": "Stop dictating and transcribe",
+    "dictationTranscribing": "Transcribing…",
+    "dictationFailed": "Couldn't take that dictation",
+    "dictationLoading": "Loading the dictation model…"
   },
   "ChatMessage": {
     "errorTitle": "Something went wrong",
@@ -138,7 +143,6 @@
     "jumpToLatest": "Jump to latest",
     "loadConversationErrorDescription": "The transcript failed to load. Check the connection and try again.",
     "loadConversationErrorTitle": "Couldn’t load this conversation",
-    "locationsAvailable": "Workspace folders",
     "newConversation": "New conversation",
     "openThisFolder": "Open this folder",
     "path": "Path",
@@ -155,7 +159,12 @@
     "thisFolder": "this folder",
     "unknown": "Unknown",
     "untitledConversation": "Untitled conversation",
-    "url": "URL"
+    "url": "URL",
+    "permissionModeFailedTitle": "Couldn't change the permission mode",
+    "environmentsAvailable": "Environments available",
+    "environmentsDescription": "The places this conversation can work in — a folder on this Mac, or one on an SSH host.",
+    "switchToLight": "Switch to light theme",
+    "switchToDark": "Switch to dark theme"
   },
   "Common": {
     "cancel": "Cancel",
@@ -263,19 +272,17 @@
   "LocationForm": {
     "local": "Local",
     "remote": "Remote (SSH)",
-    "removeLocation": "Remove folder",
+    "removeLocation": "Remove environment",
     "host": "Host",
     "noHosts": "No hosts in ~/.ssh/config. Add one there.",
     "baseDirectory": "Folder path",
     "openFolder": "Open folder",
     "permissionMode": "Permission mode",
-    "permissionManual": "Manual approvals",
-    "permissionAuto": "Approve for me",
-    "permissionReadOnly": "Read-only",
-    "addLocation": "Add folder",
-    "loadingLocations": "Loading workspace folders",
+    "addLocation": "Add environment",
+    "loadingLocations": "Loading workspace environments",
     "conflictSameDirectory": "Two entries use the same folder {directory}. Remove one or choose a different folder.",
-    "conflictNested": "{inner} is inside {outer}, so the folders overlap. The outer folder already includes everything beneath it."
+    "conflictNested": "{inner} is inside {outer}, so the folders overlap. The outer folder already includes everything beneath it.",
+    "homeUnresolved": "Frank could not read this host's home directory over SSH. Type the path to use."
   },
   "LocationStatus": {
     "uri": "URI",
@@ -303,8 +310,8 @@
   },
   "NewWorkspaceDialog": {
     "title": "New workspace",
-    "description": "Choose where Frank can work. You can add folders on this Mac or on an SSH host.",
-    "folders": "Workspace folders",
+    "description": "Choose where Frank can work. An environment is a folder on this Mac or on an SSH host.",
+    "environments": "Environments",
     "create": "Create workspace",
     "createError": "Could not create workspace"
   },
@@ -339,21 +346,27 @@
     "paused": "Paused",
     "runNow": "Run now",
     "next": "Next",
-    "namePlaceholder": "Name — how you will recognise it",
-    "cronPlaceholder": "When, as cron — e.g. 0 9 * * MON-FRI",
+    "namePlaceholder": "How you will recognise it",
     "promptPlaceholder": "What to ask, each time it fires",
     "agentPlaceholder": "Agent",
-    "modePlaceholder": "Permission mode — required",
-    "modeReadOnly": "Read only",
-    "modeDefault": "Ask before acting",
-    "modeAuto": "Act without asking",
-    "modeHint": "This runs with nobody watching, so it needs a permission mode of its own — it never inherits the workspace's.",
+    "modeHint": "This runs with nobody watching. Under manual approvals it parks on the first decision and waits, so pick a mode that can finish on its own.",
     "loadError": "Could not load schedules",
     "createError": "Could not create schedule",
     "updateError": "Could not update schedule",
     "deleteError": "Could not delete schedule",
     "runStarted": "Started",
-    "runFailed": "The run failed"
+    "runFailed": "The run failed",
+    "labelName": "Name",
+    "labelCron": "When it fires",
+    "labelPrompt": "Prompt",
+    "labelAgent": "Agent",
+    "labelPermission": "Permission mode",
+    "labelTimezone": "Time zone",
+    "cronFields": "Five fields: minute, hour, day of month, month, day of week.",
+    "presetHourly": "Hourly",
+    "presetDaily": "Daily at 9",
+    "presetWeekdays": "Weekdays at 9",
+    "presetWeekly": "Mondays at 9"
   },
   "SessionControls": {
     "permissionDefaultLabel": "Ask for approval",
@@ -371,7 +384,7 @@
     "computerControlOn": "Can control apps",
     "computerControlOff": "No app control",
     "worktreeNoneLabel": "Current checkout",
-    "worktreeNoneDescription": "Run in the selected folder. No branch or worktree is created",
+    "worktreeNoneDescription": "Run in the selected environment. No branch or worktree is created",
     "worktreeNoneTitle": "Run in the selected checkout without creating a session branch or worktree",
     "worktreeBranchLabel": "Create branch from main",
     "worktreeBranchDescription": "Create and check out a frank/session branch from the repo main line",
@@ -380,8 +393,10 @@
     "worktreeCopyDescription": "Create an isolated worktree on a frank/session branch from the repo main line",
     "worktreeCopyTitle": "Creates a separate worktree and frank/session branch from the repository main/default branch",
     "worktreeStrategyFallbackTitle": "Session isolation strategy",
-    "permissionFixedAtCreation": "Fixed when this session was created",
-    "sandboxUnavailable": "Unenforceable here"
+    "sandboxUnavailable": "Unenforceable here",
+    "agentPlaceholder": "Agent",
+    "dictationOn": "Dictation on",
+    "dictationOff": "Dictation off"
   },
   "SessionsSidebar": {
     "activeFirst": "Active first",
@@ -417,7 +432,8 @@
     "statusWaiting": "Waiting for you",
     "statusWorking": "Working",
     "untitledConversation": "Untitled conversation",
-    "untitledWorkspace": "Untitled workspace"
+    "untitledWorkspace": "Untitled workspace",
+    "newSchedule": "New schedule"
   },
   "SettingsDialog": {
     "addRule": "Add rule",
@@ -464,7 +480,7 @@
     },
     "loadAgentError": "Failed to load agent configuration",
     "loadingAgentConfiguration": "Loading agent configuration",
-    "locations": "Workspace folders",
+    "locations": "Environments",
     "modelProviders": "Model providers",
     "permissionMode": "Permission mode",
     "profile": "Profile",
@@ -486,7 +502,7 @@
     "tabAgents": "Agents",
     "tabConnection": "Connection",
     "tabGeneral": "General",
-    "tabLocations": "Folders",
+    "tabLocations": "Environments",
     "tabSchedules": "Schedules",
     "theme": {
       "label": "Theme",
@@ -497,7 +513,9 @@
     "title": "Settings",
     "tools": "Tools",
     "userContext": "Work habits",
-    "userContextHint": "Share a snapshot of how you work — frequent folders, recent files, apps, and sites — so the assistant fits your habits. Off by default; stays on this machine."
+    "userContextHint": "Share a snapshot of how you work — frequent folders, recent files, apps, and sites — so the assistant fits your habits. Off by default; stays on this machine.",
+    "dictation": "Dictation",
+    "dictationHint": "Speak into the composer instead of typing. Transcribed on this Mac — nothing is sent anywhere — but the first use downloads about a gigabyte of model weights."
   },
   "TerminalPanel": {
     "protocolErrorTitle": "Terminal protocol error",
@@ -689,8 +707,8 @@
     "yes": "Yes"
   },
   "WorkspaceLocationsPanel": {
-    "loadError": "Could not load workspace folders",
-    "saveError": "Could not save workspace folders",
+    "loadError": "Could not load workspace environments",
+    "saveError": "Could not save workspace environments",
     "saveChanges": "Save changes"
   }
 }

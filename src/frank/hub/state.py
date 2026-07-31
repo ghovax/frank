@@ -89,6 +89,7 @@ broadcaster = Broadcaster()
 # served without one.
 on_session_deleted: Optional[Callable[[str], Awaitable[Any]]] = None
 reset_live_session_runtimes: Optional[Callable[[], Awaitable[Any]]] = None
+refresh_live_session_locations: Optional[Callable[[str], Awaitable[Any]]] = None
 
 
 async def session_deleted(session_id: str) -> None:
@@ -106,6 +107,14 @@ async def reset_runtimes() -> None:
     if reset_live_session_runtimes is None:
         return
     await reset_live_session_runtimes()
+
+
+async def workspace_locations_changed(workspace_id: str) -> None:
+    """Tell the sessions running in a workspace that its environments were edited, so the
+    change reaches the conversations already open in it rather than only the next one."""
+    if refresh_live_session_locations is None or not workspace_id:
+        return
+    await refresh_live_session_locations(workspace_id)
 
 
 __all__ = [
@@ -130,11 +139,13 @@ __all__ = [
     "push_configuration_store",
     "push_sender",
     "remote_agent_manager",
+    "refresh_live_session_locations",
     "reset_live_session_runtimes",
     "reset_runtimes",
     "session_deleted",
     "session_factory",
     "turn_store",
     "terminal_manager",
+    "workspace_locations_changed",
     "worktree_manager",
 ]

@@ -6,6 +6,7 @@ import { LuTriangleAlert } from "react-icons/lu";
 import * as pdfjsLib from "pdfjs-dist";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import { Canvas } from "./ui/semantic";
+import { expected, swallowed } from "@/lib/swallowed";
 
 // Render PDFs with PDF.js (to a <canvas>) rather than relying on the browser's
 // built-in PDF plugin in an <iframe> — that path is inconsistent across browsers
@@ -108,7 +109,7 @@ export function PdfThumbnail({ url, width = 240 }: { url: string; width?: number
     });
     return () => {
       cancelled = true;
-      document?.destroy().catch(() => {});
+      document?.destroy().catch((caught) => expected("a document being torn down cannot fail usefully", caught));
     };
   }, [url, width]);
 
@@ -168,7 +169,7 @@ function PdfPageView({
       setAspect(baseViewport.height / baseViewport.width);
       renderTask = renderPageToCanvas(page, canvasRef.current, width);
       await renderTask?.promise;
-    })().catch(() => {});
+    })().catch((caught) => swallowed({ component: "pdf-view", operation: "render a page" }, caught));
     // Cancel an in-flight render before the next width re-runs this, so two renders never
     // touch the same canvas at once (which is what flips the page upside down on resize).
     return () => {
@@ -212,7 +213,7 @@ export function PdfDocumentView({ url }: { url: string }) {
     (async () => {
       opened = await openDocument(url);
       if (cancelled) {
-        opened.destroy().catch(() => {});
+        opened.destroy().catch((caught) => expected("a document abandoned mid-open cannot fail usefully", caught));
         return;
       }
       setDocumentState({ url, document: opened, status: "ready" });
@@ -221,7 +222,7 @@ export function PdfDocumentView({ url }: { url: string }) {
     });
     return () => {
       cancelled = true;
-      opened?.destroy().catch(() => {});
+      opened?.destroy().catch((caught) => expected("a document being torn down cannot fail usefully", caught));
     };
   }, [url]);
 

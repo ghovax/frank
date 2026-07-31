@@ -35,6 +35,7 @@ import sys
 import traceback
 from contextlib import redirect_stdout
 from typing import Any
+from frank.base.errors import summary
 
 # The primitives a script may call, sent by the parent because only the parent knows which surface
 # is answering. A name the surface does not implement is simply not bound, so reaching for it is a
@@ -278,7 +279,7 @@ def _failure(error: BaseException) -> dict[str, Any]:
     the field above, and a traceback is worth carrying for *where* it happened, not for repeating
     what happened."""
     frames = "".join(traceback.format_tb(error.__traceback__, limit=8)).strip()
-    result: dict[str, Any] = {"ok": False, "error": f"{type(error).__name__}: {error}"}
+    result: dict[str, Any] = {"ok": False, "error": summary(error)}
     if frames:
         result["traceback"] = frames
     return result

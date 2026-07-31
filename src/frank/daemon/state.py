@@ -138,6 +138,38 @@ async def reset_live_session_runtimes() -> None:
     )
 
 
+async def refresh_workspace_locations(workspace_id: str) -> None:
+    """Tell every live session in a workspace that its environments have changed.
+
+    The set a session may address is resolved once, at `session.create`, and travels in the
+    assignment — which is right, but it left a workspace edit reaching only the sessions
+    created after it. Adding a folder to the workspace you were already talking in did nothing
+    the conversation could see.
+
+    Only sessions with a worker are told. A sleeping one has nothing to inform: its next worker
+    is forked with a freshly resolved set, so it already wakes up current.
+
+    Best effort by design, exactly like the runtime reset beside it: a session mid-teardown
+    misses the push and re-reads the workspace on its next fork, and saving a workspace must
+    not fail because one session was unreachable."""
+    if registry is None or not workspace_id:
+        return
+    from frank.hub.services.locations import _resolve_session_locations
+
+    live = [
+        record for record in registry.live()
+        if record.workspace_id == workspace_id and not record.asleep
+    ]
+    if not live:
+        return
+
+    async def push(record) -> None:
+        locations = await asyncio.to_thread(_resolve_session_locations, record.id)
+        await relay_to_session(record, "session/locations", {"locations": locations})
+
+    await asyncio.gather(*(push(record) for record in live), return_exceptions=True)
+
+
 async def wake_then_relay(record, method: str, params: dict) -> dict:
     """Forward a command to a session, forking it a worker first if it has none.
 
@@ -168,7 +200,7 @@ async def wake_then_relay(record, method: str, params: dict) -> dict:
         #
         # Once, deliberately. A second failure is a session that cannot be woken at all, which
         # is a real fault and must surface rather than turn into a retry loop.
-        logger.info("Session %s had no worker for %s; waking it and retrying", record.id, method)
+        logger.info("session %s had no worker for %s; waking it and retrying", record.id, method)
         slept = registry.sleep(record.id)
         await _wake(slept if slept is not None else record)
         return await relay_to_session(slept if slept is not None else record, method, params)

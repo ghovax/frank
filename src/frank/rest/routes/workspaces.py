@@ -10,8 +10,10 @@ from frank.protocol.dtos import (
     LocationInput,
     WorkspaceCreateRequest,
 )
+from frank.hub import state
 from frank.hub.services import workspaces as _workspaces
 from frank.hub.services.broadcast import _publish_broadcast
+from frank.hub.services.locations import _workspace_id_for_location
 from frank.hub.services.workspaces import _create_location, _create_workspace, _delete_location, _delete_workspace, _hosts_payload, _workspace_name, _workspace_payload, _workspaces_payload, _update_location
 
 router = APIRouter()
@@ -93,6 +95,10 @@ async def create_location(workspace_id: str, request: LocationInput):
     if location is None:
         raise HTTPException(status_code=404, detail="Project not found.")
     _publish_broadcast({"type": "workspaces_changed"})
+    # The sessions already open in this workspace are told too. Without it the new
+    # environment existed in Settings and in no conversation — every session that
+    # predated the edit went on addressing the set it was created with.
+    await state.workspace_locations_changed(workspace_id)
     return location
 
 
@@ -103,15 +109,20 @@ async def update_location(location_id: str, request: LocationInput):
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     if location is None:
-        raise HTTPException(status_code=404, detail="Location not found.")
+        raise HTTPException(status_code=404, detail="Environment not found.")
     _publish_broadcast({"type": "workspaces_changed"})
+    await state.workspace_locations_changed(str(location.get("workspace_id") or ""))
     return location
 
 
 @router.delete("/locations/{location_id}")
 async def delete_location(location_id: str):
+    # Read the workspace off the row before it goes: after the delete there is nothing left
+    # to ask which workspace's sessions need telling.
+    workspace_id = await asyncio.to_thread(_workspace_id_for_location, location_id)
     deleted = await asyncio.to_thread(_delete_location, location_id)
     if not deleted:
-        raise HTTPException(status_code=404, detail="Location not found.")
+        raise HTTPException(status_code=404, detail="Environment not found.")
     _publish_broadcast({"type": "workspaces_changed"})
+    await state.workspace_locations_changed(workspace_id)
     return {"ok": True}

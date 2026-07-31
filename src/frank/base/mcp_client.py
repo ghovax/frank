@@ -22,6 +22,8 @@ from pydantic import AnyUrl
 
 from frank.base.configuration import MCPServerConfiguration
 from frank.base.tuning import Tunable, active_tuning
+from frank.base.errors import describe
+from frank.base.serialization import compact
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +133,7 @@ class MCPClientManager:
             except Exception as error:  # noqa: BLE001 — an unreachable server is a fact, not a failure
                 if server:
                     raise
-                logger.warning("Could not list tools for MCP server %s: %s", name, error)
+                logger.warning("MCP server tools unavailable %s", compact({"server": name, **describe(error)}))
                 result["servers"].append({"name": name, "tools": [], "error": str(error)})
                 continue
             result["servers"].append({
@@ -201,7 +203,7 @@ class MCPClientManager:
             except Exception as error:  # noqa: BLE001
                 if server:
                     raise
-                logger.warning("Could not list resources for MCP server %s: %s", name, error)
+                logger.warning("MCP server resources unavailable %s", compact({"server": name, **describe(error)}))
                 result["servers"].append({"name": name, "resources": [], "error": str(error)})
                 continue
             result["servers"].append({

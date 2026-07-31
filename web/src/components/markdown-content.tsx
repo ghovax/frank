@@ -353,31 +353,54 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
     pre({ children }) {
       return <>{children}</>;
     },
-    // Borderless table, mirroring the reference prose: no outer card or vertical rules —
-    // just a stronger rule under the header row and a fainter one under each body row,
-    // left-aligned with generous right padding. Scrolls horizontally when it overflows.
+    // A table with real cells: an outer frame, a filled header, and rules between every row
+    // *and* every column. It was borderless — horizontal rules only, no vertical ones, no
+    // frame, and no left padding — which reads as prose that happens to line up rather than as
+    // a table, and leaves the eye to guess which value belongs to which column once a cell
+    // wraps onto a second line.
+    //
+    // The grid comes from Chakra's own `outline` variant plus `showColumnBorder` rather than
+    // from borders written per cell here: the recipe already knows to omit the rule after the
+    // last column and under the last row, which is the fiddly half and the half a hand-rolled
+    // version gets wrong.
+    //
+    // The frame is the one part the recipe cannot supply here. `outline` draws it as an
+    // outward `box-shadow` ring, and this table lives inside a rounded scroll container —
+    // which clips, so the ring lands outside the clip and disappears on every edge. So the
+    // wrapper carries a real border and the ring is turned off rather than left to be
+    // invisible: the frame and the header fill then meet at the same rounded corner, and the
+    // table still scrolls horizontally when it is wider than the prose column.
     table({ children }) {
       return (
-        <Box overflowX="auto" maxW="100%" my={2}>
-          <Table.Root minW="100%" fontSize="inherit" lineHeight="1.55" borderCollapse="collapse">
+        <Box overflowX="auto" maxW="100%" my={3} borderWidth="1px" borderColor="border" borderRadius="md">
+          <Table.Root variant="outline" showColumnBorder size="sm" minW="100%" fontSize="inherit" lineHeight="1.55" boxShadow="none">
             {renderChildren(children)}
           </Table.Root>
         </Box>
       );
+    },
+    // Mapped, not left as raw `<thead>`/`<tbody>`: the recipe's header fill and its row rules
+    // hang off these two slots, so a bare element would take the table's structure and none of
+    // its styling — which is how the header ended up unfilled here in the first place.
+    thead({ children }) {
+      return <Table.Header>{renderChildren(children)}</Table.Header>;
+    },
+    tbody({ children }) {
+      return <Table.Body>{renderChildren(children)}</Table.Body>;
     },
     tr({ children }) {
       return <Table.Row>{renderChildren(children)}</Table.Row>;
     },
     th({ children }) {
       return (
-        <Table.ColumnHeader textAlign="left" pr={3} pl={0} py={1.5} fontWeight="semibold" color="fg" borderBottom="1px solid" borderColor="border" verticalAlign="top" overflowWrap="break-word">
+        <Table.ColumnHeader fontWeight="semibold" verticalAlign="top" overflowWrap="break-word">
           {renderChildren(children)}
         </Table.ColumnHeader>
       );
     },
     td({ children }) {
       return (
-        <Table.Cell pr={3} pl={0} py={1.5} borderBottom="1px solid" borderColor="border.muted" verticalAlign="top" overflowWrap="break-word">
+        <Table.Cell verticalAlign="top" overflowWrap="break-word">
           {renderChildren(children)}
         </Table.Cell>
       );

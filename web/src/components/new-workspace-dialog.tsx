@@ -6,9 +6,11 @@ import { useTranslations } from "next-intl";
 import { createWorkspace, type Workspace, type LocationInput, type SshHost } from "@/lib/api";
 import { LocationEditorList, emptyLocation, locationConflict } from "./location-form";
 import { toaster } from "./ui/toaster";
+import { errorMessage } from "@/lib/errors";
 
-// A workspace is an internal grouping of one or more folders, so creation only asks
-// where the agent will work. Mount this only while open so its initializers give fresh state.
+// A workspace is an internal grouping of one or more environments — a folder on this machine
+// or on an SSH host — so creation only asks where the agent will work. Mount this only while
+// open so its initializers give fresh state.
 export function NewWorkspaceDialog({
   hosts,
   hostsLoaded,
@@ -44,7 +46,7 @@ export function NewWorkspaceDialog({
       onCreated(workspace);
       onOpenChange(false);
     } catch (error) {
-      toaster.create({ type: "error", title: translation("createError"), description: error instanceof Error ? error.message : "", closable: true });
+      toaster.create({ type: "error", title: translation("createError"), description: errorMessage(error), closable: true });
     } finally {
       setSaving(false);
     }
@@ -62,7 +64,7 @@ export function NewWorkspaceDialog({
             </Dialog.Header>
             <Dialog.Body display="flex" flexDirection="column" gap={4}>
               <Box>
-                <Text textStyle="panelTitle" mb={2}>{translation("folders")}</Text>
+                <Text textStyle="panelTitle" mb={2}>{translation("environments")}</Text>
                 <LocationEditorList hosts={hosts} locations={locations} onChange={updateLocation} onAdd={addLocation} onRemove={removeLocation} loading={!hostsLoaded} />
               </Box>
             </Dialog.Body>

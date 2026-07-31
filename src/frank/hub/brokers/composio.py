@@ -30,7 +30,7 @@ def composio_mcp_servers(
         return {}
 
     if not configuration.url:
-        logger.warning("Composio is enabled but no MCP url is set; skipping Composio tools.")
+        logger.warning("Composio is enabled but no MCP URL is set, skipping its tools")
         return {}
 
     api_key = configuration.effective_api_key

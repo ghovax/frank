@@ -144,6 +144,22 @@ export function toolCallDetail(
   return { showArguments, showResult, collapsible: !isInternalPlanning && (showArguments || showResult) };
 }
 
+// What a tool line expands into: the call's arguments, then its result. Its own component
+// because two surfaces show it — the tool line here, and a group that holds exactly one call
+// and therefore skips the line entirely and shows this in its place.
+export function ToolCallDetail({ name, arguments: toolArguments, result, status }: ToolEvent) {
+  const { showArguments, showResult } = toolCallDetail(name, toolArguments, result, status);
+  const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
+  return (
+    // gap matches FieldList's own field spacing so the call's last field (e.g. Risk)
+    // and the result's first (e.g. PID) read as one list.
+    <Flex direction="column" gap={2} align="stretch">
+      {showArguments && <ToolCallView name={name} args={toolArguments} />}
+      {showResult && <ToolResultView name={name} content={resultContent ?? ""} status={status} />}
+    </Flex>
+  );
+}
+
 // A tool call is a line of activity, not a card: icon + label at the same type
 // scale as the surrounding markdown, with its badges hugging the text. Expanding
 // hangs the structured detail off a hairline left rule — the same visual grammar
@@ -154,8 +170,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, actio
   // One decision, shared with every other tool-line surface: what (if anything) this
   // line expands into. A line with nothing to show is not collapsible (DisclosureRow
   // enforces that from the presence of body children), so it never opens an empty rail.
-  const { showArguments, showResult, collapsible } = toolCallDetail(name, toolArguments, result, status);
-  const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
+  const { collapsible } = toolCallDetail(name, toolArguments, result, status);
   // A running call whose interim result says the work moved to the background.
   const background = status === "running" && hasBackgroundJobId(result);
   const tDisplay = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
@@ -184,12 +199,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, actio
       actions={actions}
     >
       {collapsible ? (
-        // gap matches FieldList's own field spacing so the call's last field (e.g. Risk)
-        // and the result's first (e.g. PID) read as one list.
-        <Flex direction="column" gap={2} align="stretch">
-          {showArguments && <ToolCallView name={name} args={toolArguments} />}
-          {showResult && <ToolResultView name={name} content={resultContent ?? ""} status={status} />}
-        </Flex>
+        <ToolCallDetail name={name} arguments={toolArguments} result={result} status={status} />
       ) : undefined}
     </DisclosureRow>
   );

@@ -273,12 +273,12 @@ class Surface:
             # resolve — arrived as "The action failed … Observe the app again and retry", and the
             # model spent a turn theorising about the application's readiness. The traceback that
             # would have named it was discarded here, so nobody could do better afterwards.
-            logger.exception("A %s operation failed", type(self).__name__)
+            logger.exception("a %s operation failed", type(self).__name__)
             first_line = str(error).splitlines()[0] if str(error) else error.__class__.__name__
             try:
                 self.worker.submit(self.on_recover, timeout=5.0)
             except Exception:
-                logger.debug("Recovery after a failed operation also failed", exc_info=True)
+                logger.debug("recovery after a failed operation also failed", exc_info=True)
             return self.recover(first_line)
 
     def on_recover(self) -> dict:

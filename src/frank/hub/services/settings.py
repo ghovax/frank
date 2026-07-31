@@ -73,6 +73,7 @@ async def _reload_configuration_from_disk() -> None:
     configuration.compaction = fresh.compaction
     configuration.user_context = fresh.user_context
     configuration.computer_control = fresh.computer_control
+    configuration.dictation = fresh.dictation
     configuration.tuning = fresh.tuning
     configuration.providers = fresh.providers
     configuration.agent = fresh.agent

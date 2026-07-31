@@ -3,23 +3,22 @@
 import {
   Box,
   Button,
-  createListCollection,
   Flex,
   IconButton,
   Input,
-  Portal,
-  Select,
   Separator,
   Spinner,
   Text,
   Textarea,
 } from "@chakra-ui/react";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslations } from "next-intl";
-import { LuArrowUp, LuCoins, LuFoldVertical, LuPaperclip, LuSquare, LuUser } from "react-icons/lu";
-import { fetchChatGPTAuthStatus, fetchMessageHistory, referenceAttachment, saveMessageHistory, uploadFile, type Attachment, type ChatGPTUsage, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
+import { LuArrowUp, LuCoins, LuFoldVertical, LuMic, LuMicOff, LuPaperclip, LuSquare } from "react-icons/lu";
+import { fetchChatGPTAuthStatus, fetchDictationStatus, type DictationState, fetchMessageHistory, referenceAttachment, saveMessageHistory, subscribeEvents, transcribeDictation, uploadFile, type Attachment, type ChatGPTUsage, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
+import { startDictationRecording, type DictationRecording } from "@/lib/dictation";
+import { toaster } from "./ui/toaster";
 import { ChatGPTUsageMeters } from "./chatgpt-usage-meters";
-import { PermissionModeControl } from "./session-controls";
+import { AgentSelectControl, PermissionModeControl } from "./session-controls";
 import { isTauri } from "@/lib/app-state";
 import { pickDesktopFilePaths, watchDesktopFileDrop } from "@/lib/desktop-files";
 import { AttachmentChip } from "./attachment-chips";
@@ -30,6 +29,8 @@ import { ModelSelect, modelSupportsVision } from "./model-select";
 import type { TokenUsage } from "@/lib/use-chat";
 import { InlineField } from "./ui/display";
 import { Strong } from "./ui/semantic";
+import { swallowed } from "@/lib/swallowed";
+import { errorMessage } from "@/lib/errors";
 
 interface ChatInputProps {
   // Returns the session id when the send created one, which the composer ignores — it is
@@ -133,7 +134,7 @@ function useChatGPTUsage(agentModel: string | undefined, isStreaming: boolean): 
       .then((status) => {
         if (!cancelled) setUsage(status?.usage ?? null);
       })
-      .catch(() => {});
+      .catch((caught) => swallowed({ component: "chat-input", operation: "read the ChatGPT plan usage" }, caught));
     return () => {
       cancelled = true;
     };
@@ -280,12 +281,13 @@ export function ChatInput({
   const [sendPending, setSendPending] = useState(false);
   const [stopPending, setStopPending] = useState(false);
   const [compactConfirmOpen, setCompactConfirmOpen] = useState(false);
-  const agentCollection = useMemo(
-    () => createListCollection({
-      items: agents.map((agent) => ({ label: agent.title || agent.name, value: agent.id })),
-    }),
-    [agents]
-  );
+  // Dictation, which is off until somebody turns it on in Settings — so the microphone is
+  // absent rather than disabled when they have not. `recording` holds the take in progress:
+  // the button is a toggle, and what a toggle owns is the thing it can stop.
+  const [dictationEnabled, setDictationEnabled] = useState(false);
+  const [dictationState, setDictationState] = useState<DictationState>("idle");
+  const [recording, setRecording] = useState<DictationRecording | null>(null);
+  const [transcribing, setTranscribing] = useState(false);
   // The composer's file-attach affordance is gated on the agent model's
   // capabilities (models.dev): a text-only model cannot process attachments, so
   // offering to attach is misleading. Unknown/custom models are not blocked.
@@ -359,7 +361,7 @@ export function ChatInput({
       .then((history) => {
         if (!cancelled) setMessageHistory(history);
       })
-      .catch(() => {});
+      .catch((caught) => swallowed({ component: "chat-input", operation: "read the message history" }, caught));
     return () => {
       cancelled = true;
     };
@@ -398,6 +400,91 @@ export function ChatInput({
       } finally {
         setUploadingCount((current) => Math.max(0, current - 1));
       }
+    }
+  }
+
+  // Whether the microphone is offered, and what the model behind it is doing. Asking with
+  // `prepare` also starts the load, so the weights come up while the composer is simply on
+  // screen — by the time anybody presses the button it is usually already warm. Polled only
+  // while it is actually loading: there is nothing to watch once it is ready, and a poll that
+  // outlives its question is a poll nobody remembers adding.
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number | undefined;
+    const read = (prepare: boolean) => {
+      fetchDictationStatus(prepare)
+        .then((status) => {
+          if (cancelled) return;
+          setDictationEnabled(status.enabled);
+          setDictationState(status.state);
+          if (status.enabled && status.state === "loading") {
+            timer = window.setTimeout(() => read(false), 1000);
+          }
+        })
+        .catch((caught) => swallowed({ component: "chat-input", operation: "read the dictation status" }, caught));
+    };
+    read(true);
+    const unsubscribe = subscribeEvents((event) => {
+      if (event.type === "settings_changed") read(true);
+    });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      unsubscribe();
+    };
+  }, []);
+
+  // Stop the microphone if the composer goes away mid-recording. Without it the tracks stay
+  // open and the browser keeps showing the machine as listening, which is the one bug in this
+  // area a person would rightly find alarming.
+  const recordingRef = useRef<DictationRecording | null>(null);
+  useEffect(() => {
+    recordingRef.current = recording;
+  }, [recording]);
+  useEffect(() => () => recordingRef.current?.cancel(), []);
+
+  // The dictation toggle. Press once to start, again to stop: on stop the samples go to the
+  // daemon, which transcribes them on this machine, and the text is *appended to what is
+  // already typed* rather than replacing it — dictation is another way to write into the box,
+  // not a separate box.
+  async function handleDictationClick() {
+    if (transcribing) return;
+    const active = recording;
+    if (active) {
+      setRecording(null);
+      setTranscribing(true);
+      try {
+        const samples = await active.stop();
+        if (samples.length === 0) return;
+        const spoken = (await transcribeDictation(samples)).trim();
+        if (!spoken) return;
+        setInputValue((current) => {
+          const next = current.trim() ? `${current.trimEnd()} ${spoken}` : spoken;
+          latestInputValueRef.current = next;
+          return next;
+        });
+        inputRef.current?.focus();
+      } catch (caught) {
+        toaster.create({
+          type: "error",
+          title: translation("dictationFailed"),
+          description: errorMessage(caught),
+          closable: true,
+        });
+      } finally {
+        setTranscribing(false);
+      }
+      return;
+    }
+    try {
+      setRecording(await startDictationRecording());
+    } catch (caught) {
+      toaster.create({
+        type: "error",
+        title: translation("dictationFailed"),
+        description: errorMessage(caught),
+        closable: true,
+      });
     }
   }
 
@@ -485,7 +572,8 @@ export function ChatInput({
       if (trimmed) {
         setMessageHistory((previous) => [trimmed, ...previous]);
         if (workingDirectory) {
-          saveMessageHistory(workingDirectory, trimmed).catch(() => {});
+          saveMessageHistory(workingDirectory, trimmed)
+            .catch((caught) => swallowed({ component: "chat-input", operation: "save the message history" }, caught));
         }
       }
     } finally {
@@ -659,6 +747,42 @@ export function ChatInput({
                 event.target.value = "";
               }}
             />
+            {dictationEnabled && (
+              <Tooltip
+                content={
+                  recording
+                    ? translation("dictationStop")
+                    : transcribing
+                      ? translation("dictationTranscribing")
+                      : dictationState === "loading"
+                        ? translation("dictationLoading")
+                        : translation("dictationStart")
+                }
+                openDelay={200}
+                positioning={{ placement: "top" }}
+              >
+                <IconButton
+                  aria-label={recording ? translation("dictationStop") : translation("dictationStart")}
+                  onClick={() => void handleDictationClick()}
+                  size="sm"
+                  // Recording is a state the machine is in, not a button that happens to be
+                  // pressed, so it is coloured rather than merely outlined — there must be no
+                  // way to leave a microphone open without noticing.
+                  variant={recording ? "solid" : "outline"}
+                  colorPalette={recording ? "red" : undefined}
+                  bg={recording ? undefined : "bg"}
+                  borderColor={recording ? undefined : "border"}
+                  // The spinner covers both waits a person can be in: the model coming up, and
+                  // the recording being turned into words. Disabled while it loads rather than
+                  // hidden — a button that vanishes and reappears is harder to trust than one
+                  // that says it is not ready yet.
+                  loading={transcribing || dictationState === "loading"}
+                  disabled={disabled || !directoryValid || dictationState === "loading"}
+                >
+                  {recording ? <LuMicOff /> : <LuMic />}
+                </IconButton>
+              </Tooltip>
+            )}
             <Tooltip
               content={attachmentTooltipContent}
               rich
@@ -717,66 +841,13 @@ export function ChatInput({
           context-usage chip and Compact action on the right. */}
       <Flex justify="space-between" align="center" columnGap={2} flexWrap="nowrap" px={0} pt={1} pb={2}>
         <Flex align="center" gap={2} flexWrap="nowrap" flex={1} minW={0}>
-          <Select.Root
-            data-composer-agent-control=""
-            collection={agentCollection}
-            value={[selectedAgent]}
-            onValueChange={(details) => {
-              if (details.value[0]) onAgentChange(details.value[0]);
-            }}
-            size="xs"
-            w="max-content"
-            minW="max-content"
-            maxW="none"
-            flexShrink={0}
-          >
-            <Select.Control data-composer-agent-control="" w="max-content" minW="max-content" maxW="none">
-              <Select.Trigger
-                data-composer-agent-control=""
-                w="max-content"
-                gap={1.5}
-                px={2}
-                pe={7}
-                bg="bg"
-                border="1px solid"
-                borderColor="border"
-                minW="max-content"
-                maxW="none"
-                whiteSpace="nowrap"
-                fontWeight="medium"
-              >
-                <Box display="flex" alignItems="center" color="fg.muted" flexShrink={0}>
-                  <LuUser size={13} />
-                </Box>
-                <Select.ValueText data-composer-agent-label="" placeholder={translation("agentPlaceholder")} maxW="none" overflow="visible" textOverflow="clip" whiteSpace="nowrap" />
-              </Select.Trigger>
-              <Select.IndicatorGroup>
-                <Select.Indicator />
-              </Select.IndicatorGroup>
-            </Select.Control>
-            <Portal>
-              <Select.Positioner>
-                <Select.Content minW="220px" maxW="320px">
-                  {agentCollection.items.map((item) => {
-                    // Look the description up from the source list by id — the collection item
-                    // only reliably carries label/value, so extra fields are read from `agents`.
-                    const description = agents.find((agent) => agent.id === item.value)?.description;
-                    return (
-                      <Select.Item item={item} key={item.value}>
-                        <Flex direction="column" minW={0} flex={1}>
-                          <Text fontSize="xs" fontWeight="medium" lineHeight="1.2" whiteSpace="nowrap">{item.label}</Text>
-                          {description ? (
-                            <Text fontSize="2xs" color="fg.muted" lineHeight="1.35" truncate>{description}</Text>
-                          ) : null}
-                        </Flex>
-                        <Select.ItemIndicator />
-                      </Select.Item>
-                    );
-                  })}
-                </Select.Content>
-              </Select.Positioner>
-            </Portal>
-          </Select.Root>
+          <AgentSelectControl
+            agents={agents}
+            value={selectedAgent}
+            onChange={onAgentChange}
+            placeholder={translation("agentPlaceholder")}
+            responsiveCompact
+          />
           <ModelSelect
             models={models}
             providers={modelProviders}
@@ -787,13 +858,13 @@ export function ChatInput({
             compact
             responsiveCompact
           />
-          {/* The mode is fixed when the session is created, so the chip only stays a
-              picker until there is a session — after that it reports what was chosen. */}
+          {/* Adjustable at any point in a session's life, not only before it starts: a
+              conversation that begins under manual approvals and earns trust should not have
+              to be restarted to run under a looser one. */}
           <PermissionModeControl
             value={permissionMode}
             onChange={(mode) => onPermissionModeChange?.(mode)}
             responsiveCompact
-            readOnly={!!sessionId}
           />
         </Flex>
         <Flex align="center" gap={2} flexShrink={0} justify="flex-end">

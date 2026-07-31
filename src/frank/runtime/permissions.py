@@ -278,7 +278,7 @@ class _DecidesPermissions:
             # the explanation for the gate, so they were shown a provider's 400 where they
             # expected to read why their approval was needed. The detail goes to the log, where
             # somebody can act on it.
-            logger.warning("The permission classifier could not decide; escalating", exc_info=True)
+            logger.warning("the permission classifier could not decide; escalating", exc_info=True)
             return PermissionDecision(
                 action="escalate",
                 explanation="The safety check could not run, so this needs your decision.",

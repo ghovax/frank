@@ -28,6 +28,7 @@ import { swallowed } from "@/lib/swallowed";
 import { useTranslations } from "next-intl";
 import { asArray, asRecord } from "@/lib/coerce";
 import type { WireEvent } from "@/lib/generated/events";
+import { errorMessage } from "@/lib/errors";
 
 // Re-export the A2A task shape so components can consume it from one place.
 export type A2ATurn = A2ATurnWire;
@@ -81,6 +82,11 @@ export interface MessageMeta {
   messagesAfter?: number;
   durationMs?: number;
   attachments?: MessageAttachment[];
+  // On a `thinking` row: this one was opened by the client the moment the turn was sent,
+  // before the session had said anything. It becomes a real reasoning row if reasoning
+  // arrives, and is removed if the turn produces anything else first — so the wait is
+  // visible without inventing a thinking phase that never happened.
+  opening?: boolean;
   // On a `peer` message: which session sent it. The transcript shows a report as coming
   // from somewhere, and "somewhere" has an id.
   peerSender?: string;
@@ -343,22 +349,55 @@ function isRunningThinkingMessage(message: ChatMessage): boolean {
   return message.role === "thinking" && message.meta?.status === "running";
 }
 
+// A thinking row the client opened on send, which the session has not yet claimed by
+// reasoning into it. It is a statement about the client waiting, not about the model, so it
+// is dropped rather than closed when the turn turns out to have gone somewhere else.
+function isOpeningPlaceholder(message: ChatMessage): boolean {
+  return isRunningThinkingMessage(message) && !!message.meta?.opening && message.content === "";
+}
+
 function finishRunningThinking(state: ReduceState): void {
-  state.messages = state.messages.map((message) =>
-    isRunningThinkingMessage(message)
-      ? { ...message, meta: { ...message.meta, status: "done" } }
-      : message
-  );
+  state.messages = state.messages
+    .filter((message) => !isOpeningPlaceholder(message))
+    .map((message) =>
+      isRunningThinkingMessage(message)
+        ? { ...message, meta: { ...message.meta, status: "done" } }
+        : message
+    );
 }
 
 // Close the in-flight thinking message and record the server-measured duration,
 // so the indicator flips from "Thinking" to "Thought for Ns".
 function finishRunningThinkingWithDuration(state: ReduceState, durationMs: number): void {
-  state.messages = state.messages.map((message) =>
-    isRunningThinkingMessage(message)
-      ? { ...message, meta: { ...message.meta, status: "done", durationMs } }
-      : message
-  );
+  state.messages = state.messages
+    .filter((message) => !isOpeningPlaceholder(message))
+    .map((message) =>
+      isRunningThinkingMessage(message)
+        ? { ...message, meta: { ...message.meta, status: "done", durationMs } }
+        : message
+    );
+}
+
+// Open the "Thinking" row the moment a turn is sent, before anything comes back.
+//
+// The wait it covers is real and was invisible: a turn spends a beat on the create/attach/send
+// round trip and the session's own preamble before the model produces its first token, and for
+// all of it the transcript sat exactly as it had been — so a send that was working looked like
+// a send that had not registered. The row carries no claim about the model; it says the turn is
+// under way, which is true from the instant it is sent. Reasoning that arrives flows into this
+// same row, so nothing jumps when it does.
+function beginOpeningThinking(state: ReduceState): void {
+  if (state.messages.some(isRunningThinkingMessage)) return;
+  state.messages = [
+    ...state.messages,
+    {
+      id: `status-${state.messages.length}`,
+      role: "thinking",
+      content: "",
+      timestamp: new Date().toISOString(),
+      meta: { status: "running", opening: true },
+    },
+  ];
 }
 
 function finishActiveTools(state: ReduceState): void {
@@ -382,9 +421,12 @@ function applyThinking(state: ReduceState, text: string): void {
     ];
     index = state.messages.length - 1;
   }
-  if (!text) return;
+  // The session is reasoning, so a row the client opened optimistically is now that
+  // reasoning phase and stops being provisional — even for a bare ping with no text yet.
   state.messages = state.messages.map((message, messageIndex) =>
-    messageIndex === index ? { ...message, content: message.content + text } : message
+    messageIndex === index
+      ? { ...message, content: message.content + text, meta: { ...message.meta, opening: undefined } }
+      : message
   );
 }
 
@@ -1103,7 +1145,7 @@ export function useChat(
         } catch (caught) {
           if (cancelled || controller.signal.aborted) return;
           if (attempt === MAX_ATTEMPTS - 1) {
-            swallowed("could not load the transcript after retrying", caught);
+            swallowed({ component: "transcript", operation: "load the transcript after retrying" }, caught);
             setHistoryError(true);
             setIsHistoryLoading(false);
             return;
@@ -1157,7 +1199,7 @@ export function useChat(
       // last cursor since hasOlderHistoryRef is still true. Still reported: resuming is the
       // recovery, not the reason, and a drain that fails every time looks identical to one
       // that simply reached the end.
-      swallowed("could not load older history", caught);
+      swallowed({ component: "transcript", operation: "load older history" }, caught);
     } finally {
       // Skip the apply if a local turn began mid-drain (guarded above too) — the
       // fetched fragments stay in the ref, unused, rather than clobbering live state.
@@ -1234,7 +1276,7 @@ export function useChat(
                 // The `sessionRunning` path below captures the same terminal state a moment
                 // later, so this is recoverable — but not silent, or a store that never
                 // answers is indistinguishable from one that answers slowly.
-                swallowed("could not read the finished turn", caught);
+                swallowed({ component: "transcript", operation: "read the finished turn" }, caught);
               }
             })();
           }
@@ -1255,7 +1297,7 @@ export function useChat(
           if (!cancelled && !isStreamingRef.current && !streamedLocallyRef.current) applySnapshot(tasks);
         } catch (caught) {
           // Leave the last live state in place; it is very nearly the terminal state.
-          swallowed("could not read the session's final state", caught);
+          swallowed({ component: "transcript", operation: "read the session's final state" }, caught);
         }
       })();
     }
@@ -1298,6 +1340,9 @@ export function useChat(
           ...(Object.keys(meta).length > 0 ? { meta } : {}),
         },
       ];
+      // Opened in the same paint as the user's own message, so the turn is visibly under way
+      // from the keystroke rather than from the model's first token.
+      beginOpeningThinking(stateRef.current);
       flush();
 
       isStreamingRef.current = true;
@@ -1414,7 +1459,7 @@ export function useChat(
           // went wrong — which call, which status, which network failure — was discarded and
           // replaced with advice to read a daemon log that, for a failure on this side of the
           // wire, has nothing in it. That sent an investigation looking in the wrong process.
-          const detail = caught instanceof Error ? caught.message : String(caught);
+          const detail = errorMessage(caught);
           console.error("[frank] could not start the turn:", caught);
           pushErrorMessage(stateRef.current, {
             code: "server_error",
@@ -1497,8 +1542,9 @@ export function useChat(
     flush();
   }, [flush]);
 
-  // Allow-always is gone with the mid-session policy it used to write: a decision is
-  // per call, and the mode it would have amended is fixed when the session is created.
+  // Allow-always is gone: a decision here is per call. Widening what the session may do
+  // without asking is the permission mode's job, changed deliberately from the composer
+  // rather than as a side effect of answering one prompt.
   const handlePermission = useCallback(
     async (requestId: string, decision: "deny" | "allow_once") => {
       const context = sessionIdRef.current;

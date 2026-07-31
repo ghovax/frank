@@ -77,6 +77,19 @@ def build_app(session) -> FastAPI:
             if method == "jobs/detach":
                 identifier = str(params.get("tool_call_id") or "")
                 return JSONResponse({"result": {"backgrounded": session.background_tool_call(identifier)}})
+            if method == "session/locations":
+                # The workspace's environments were edited under a live session. The daemon
+                # re-resolved them and sends the whole set, because an edit can rename or
+                # repoint one as easily as add one.
+                entries = params.get("locations")
+                resolved = entries if isinstance(entries, list) else None
+                return JSONResponse({"result": {"locations": session.set_locations(resolved)}})
+            if method == "session/permission-mode":
+                # The person changed this session's approval policy while it runs. The daemon
+                # has already clamped it and written it to the record; this is what makes it
+                # true for the turn currently in flight rather than only for the next one.
+                mode = str(params.get("permission_mode") or "")
+                return JSONResponse({"result": {"permission_mode": session.set_permission_mode(mode)}})
             if method == "session/reset":
                 # Settings changed under a live session. Drop the cached runtime so the next
                 # turn rebuilds it against the new configuration, rather than the session
@@ -84,7 +97,7 @@ def build_app(session) -> FastAPI:
                 session.reset_runtimes()
                 return JSONResponse({"result": {"ok": True}})
         except Exception as error:  # noqa: BLE001 — one bad call must not kill the session
-            logger.exception("Session call %s failed", method)
+            logger.exception("session call %s failed", method)
             return JSONResponse(
                 {"error": {"code": "internal_error", "message": f"{method} failed: {error}"}},
                 status_code=500,

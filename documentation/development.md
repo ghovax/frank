@@ -53,9 +53,25 @@ Add provider keys with `frank configure`, in the configuration file, or through 
 
 | Command | What it does |
 |---|---|
-| `cd web` |  |
-| `bun install` |  |
-| `bun run dev` | Http://localhost:3000, talks to the daemon's loopback port |
+| `cd web && bun install` | Once |
+| `./scripts/web-development.sh` | Http://localhost:3000, wired to the daemon already running |
+
+Start the daemon first; the script asks it for its endpoint and passes that to the development server.
+It has to, and this is worth knowing before the first time it appears to be broken: the daemon
+takes an **ephemeral** loopback port and requires a **capability token** on every call. The
+desktop shell reads both out of the runtime directory; a browser tab can read neither, so a bare
+`bun run dev` addresses a port nothing is listening on and presents no token. The page loads,
+every list is empty, and nothing says why.
+
+The token reaches the page as `NEXT_PUBLIC_FRANK_TOKEN`, which the client ignores unless
+`NODE_ENV` is not production — Next eliminates that branch from a production build, so a token
+cannot end up inside a shipped export even if the variable is set on the machine that builds it.
+
+Run the script from an **ordinary shell, not from inside `nix develop`**. The devshell rewrites
+`TMPDIR`, the runtime directory hangs off it, and a daemon started outside the devshell is
+therefore invisible to anything started inside it — `frank ps` and `frank daemon endpoint`
+included. The script enters the devshell itself for the bun half, after it has already resolved
+the endpoint.
 
 Useful scripts (in `web/`):
 
@@ -83,6 +99,31 @@ A new setting needs nothing beyond its `Field(description=...)` — no reference
 | `bun run tauri:dev` | Launches the Tauri window against the dev UI |
 
 Start the daemon first, in either order but before you expect the window to work. The app is a client. When nothing is listening, it shows the connection picker and says what to run. It does not launch a harness of its own.
+
+## Logs and copy
+
+Two vocabularies, and they are not the same thing.
+
+**A log message is an event name.** Lowercase, no terminal punctuation, and the facts go in
+fields rather than into the sentence — `logger.info("session %s takes warm worker pid %d", …)`.
+This is what makes a line groupable: the message is a label you filter on, not prose you read.
+Acronyms and proper nouns keep their capitals wherever they fall, including first
+(`MCP server %r failed to start`), because those are spellings rather than casing.
+
+**Human copy is prose.** The interface catalog, an `HTTPException` `detail`, an `RpcError`, CLI
+output: sentence case with terminal punctuation, because a person reads it as a sentence. A
+fragment used as a label or a chip — `high risk`, `waiting`, `write` — stays lowercase; it is
+not a sentence.
+
+**Never interpolate an exception into a log message.** An exception's message is human copy, so
+`logger.error("could not start session %s: %s", identifier, error)` staples a sentence — often
+one wrapping a JSON document — onto the end of an event. Pass the traceback with
+`exc_info=True`, or the fields with `frank.base.errors.describe`, and leave the message an
+event.
+
+The interface follows the same split: `swallowed({ component, operation }, error)` carries the
+place and the attempt as fields, and `serialize-error` parses whatever was thrown — JavaScript
+lets you throw a string, so a caught value may have no `message` at all.
 
 ## Building and signing
 

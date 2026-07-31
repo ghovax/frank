@@ -2,20 +2,20 @@ import type { IconType } from "react-icons";
 import {
   LuGlobe,
   LuTerminal,
-  LuPuzzle,
-  LuWrench,
   LuFileText,
   LuSearchCode,
   LuFilePen,
   LuFilePlus,
   LuDownload,
   LuMessageCircleQuestion,
-  LuSparkles,
-  LuListChecks,
   LuTarget,
   LuMousePointerClick,
   LuUserSearch,
 } from "react-icons/lu";
+// Skills, MCP, the task list and the unknown-tool fallback are not this file's to name: the
+// capability browser shows the same four things, and when each side chose its own glyphs they
+// collided. See `concept-icons.ts`.
+import { CONCEPT_ICONS, CONCEPT_ICON_COLORS } from "./concept-icons";
 
 interface ToolDisplayInfo {
   icon: IconType;
@@ -70,10 +70,10 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
     case "ask_user":
       return { icon: LuMessageCircleQuestion, iconColor: "purple.fg" };
     case "load_skill":
-      return { icon: LuSparkles, iconColor: "pink.fg" };
+      return { icon: CONCEPT_ICONS.skill, iconColor: CONCEPT_ICON_COLORS.skill };
     case "set_tasks":
     case "update_tasks":
-      return { icon: LuListChecks, iconColor: "blue.fg" };
+      return { icon: CONCEPT_ICONS.tasks, iconColor: CONCEPT_ICON_COLORS.tasks };
     case "update_goal":
       return { icon: LuTarget, iconColor: "orange.fg" };
     case "work_habits":
@@ -82,9 +82,9 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
     case "list_mcp_tools":
     case "list_mcp_resources":
     case "read_mcp_resource":
-      return { icon: LuPuzzle, iconColor: "purple.fg" };
+      return { icon: CONCEPT_ICONS.mcp, iconColor: CONCEPT_ICON_COLORS.mcp };
     default:
-      return { icon: LuWrench, iconColor: "fg.muted" };
+      return { icon: CONCEPT_ICONS.unknownTool, iconColor: CONCEPT_ICON_COLORS.unknownTool };
   }
 }
 

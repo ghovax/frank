@@ -23,6 +23,7 @@
     "@types/react-syntax-highlighter": "^15.5.13",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
+    "cronstrue": "^3.24.0",
     "drizzle-orm": "^0.45.2",
     "flowtoken": "^1.0.40",
     "katex": "^0.17.0",
@@ -39,7 +40,8 @@
     "react-syntax-highlighter": "^16.1.1",
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
-    "remark-math": "^6.0.0"
+    "remark-math": "^6.0.0",
+    "serialize-error": "^13.0.1"
   },
   "devDependencies": {
     "@types/node": "^20",

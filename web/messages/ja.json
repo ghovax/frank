@@ -3,11 +3,11 @@
     "skillsAvailable": "利用可能なスキル",
     "skillsDescription": "タスクの支援に利用できる機能です。",
     "skillsAvailableGlobally": "グローバルに利用可能なスキル",
-    "skillsAvailableInWorkspace": "このフォルダで利用可能なスキル",
+    "skillsAvailableInWorkspace": "この環境で利用可能なスキル",
     "toolsAvailable": "利用可能なツール",
     "toolsDescription": "エージェントが呼び出せる外部ツールで、設定された MCP サーバーが公開し、サーバーごとにグループ化されています。",
     "toolsAvailableGlobally": "グローバルに利用可能なツール",
-    "toolsAvailableInWorkspace": "このフォルダで利用可能なツール",
+    "toolsAvailableInWorkspace": "この環境で利用可能なツール",
     "disabled": "無効",
     "examples": "例",
     "toolCount": "{count, plural, other {# 個のツール}}"
@@ -36,7 +36,7 @@
     "local": "ローカル",
     "closeTerminalNumber": "ターミナル {number} を閉じる",
     "newTerminal": "新しいターミナル",
-    "newTerminalIn": "フォルダで新しいターミナル…",
+    "newTerminalIn": "環境で新しいターミナル…",
     "noProcessesTitle": "バックグラウンドプロセスはありません",
     "noProcessesDescription": "実行中のジョブはここに表示されます",
     "processesActive": "実行中のプロセス",
@@ -95,7 +95,7 @@
     "compactBody": "古い会話を要約してコンパクトな引き継ぎにまとめ、<b>直近の{count}ターン</b>はそのまま保持します。コンテキストウィンドウに空きができますが、要約された詳細は完全には復元できなくなります。",
     "uploading": "アップロード中 {count}",
     "placeholderConnecting": "サーバーに接続しています...",
-    "placeholderInvalidPath": "送信する前に有効なワークスペースフォルダを選択してください...",
+    "placeholderInvalidPath": "送信する前に有効な環境を選択してください...",
     "placeholderAttachments": "ファイルについてメッセージを追加してから送信してください...",
     "placeholderStreaming": "次のターン用にメッセージをキューに追加...",
     "placeholderDefault": "メッセージを送信...",
@@ -108,7 +108,12 @@
     "compactingTooltip": "コンテキストをコンパクト化しています…",
     "compactTooltip": "直近のターンはそのまま保持しつつ、古い履歴を要約してコンテキストを解放します",
     "compacting": "コンパクト化中…",
-    "compact": "コンパクト"
+    "compact": "コンパクト",
+    "dictationStart": "音声入力",
+    "dictationStop": "音声入力を停止して文字起こし",
+    "dictationTranscribing": "文字起こし中…",
+    "dictationFailed": "音声入力を処理できませんでした",
+    "dictationLoading": "音声入力モデルを読み込み中…"
   },
   "ChatMessage": {
     "errorTitle": "問題が発生しました",
@@ -138,7 +143,6 @@
     "jumpToLatest": "最新へ移動",
     "loadConversationErrorDescription": "トランスクリプトの読み込みに失敗しました。接続を確認して、もう一度お試しください。",
     "loadConversationErrorTitle": "この会話を読み込めませんでした",
-    "locationsAvailable": "ワークスペースフォルダ",
     "newConversation": "新しい会話",
     "openThisFolder": "このフォルダを開く",
     "path": "パス",
@@ -155,7 +159,12 @@
     "thisFolder": "このフォルダ",
     "unknown": "不明",
     "untitledConversation": "無題の会話",
-    "url": "URL"
+    "url": "URL",
+    "permissionModeFailedTitle": "権限モードを変更できませんでした",
+    "environmentsAvailable": "利用可能な環境",
+    "environmentsDescription": "この会話が作業できる場所 — この Mac 上のフォルダ、または SSH ホスト上のフォルダです。",
+    "switchToLight": "ライトテーマに切り替え",
+    "switchToDark": "ダークテーマに切り替え"
   },
   "Common": {
     "cancel": "キャンセル",
@@ -263,19 +272,17 @@
   "LocationForm": {
     "local": "ローカル",
     "remote": "リモート（SSH）",
-    "removeLocation": "フォルダを削除",
+    "removeLocation": "環境を削除",
     "host": "ホスト",
     "noHosts": "~/.ssh/config にホストがありません。そこに追加してください。",
     "baseDirectory": "フォルダのパス",
     "openFolder": "フォルダを開く",
     "permissionMode": "権限モード",
-    "permissionManual": "手動承認",
-    "permissionAuto": "代わりに承認",
-    "permissionReadOnly": "読み取り専用",
-    "addLocation": "フォルダを追加",
-    "loadingLocations": "ワークスペースフォルダを読み込み中",
+    "addLocation": "環境を追加",
+    "loadingLocations": "ワークスペースの環境を読み込み中",
     "conflictSameDirectory": "2 つの項目が同じフォルダ {directory} を使用しています。どちらかを削除するか、別のフォルダを選択してください。",
-    "conflictNested": "{inner} は {outer} の中にあるため、フォルダが重複しています。外側のフォルダには、その配下がすでに含まれています。"
+    "conflictNested": "{inner} は {outer} の中にあるため、フォルダが重複しています。外側のフォルダには、その配下がすでに含まれています。",
+    "homeUnresolved": "SSH でこのホストのホームディレクトリを読み取れませんでした。使用するパスを入力してください。"
   },
   "LocationStatus": {
     "uri": "URI",
@@ -303,8 +310,8 @@
   },
   "NewWorkspaceDialog": {
     "title": "新規ワークスペース",
-    "description": "Frank が作業する場所を選択します。この Mac または SSH ホスト上のフォルダを追加できます。",
-    "folders": "ワークスペースフォルダ",
+    "description": "Frank が作業する場所を選択します。環境とは、この Mac または SSH ホスト上のフォルダです。",
+    "environments": "環境",
     "create": "ワークスペースを作成",
     "createError": "ワークスペースを作成できませんでした"
   },
@@ -339,21 +346,27 @@
     "paused": "一時停止中",
     "runNow": "今すぐ実行",
     "next": "次回",
-    "namePlaceholder": "名前 — 後で見分けるためのもの",
-    "cronPlaceholder": "実行時刻（cron形式） — 例: 0 9 * * MON-FRI",
-    "promptPlaceholder": "実行のたびに送るプロンプト",
+    "namePlaceholder": "見分けがつく名前",
+    "promptPlaceholder": "実行のたびに尋ねる内容",
     "agentPlaceholder": "エージェント",
-    "modePlaceholder": "権限モード — 必須",
-    "modeReadOnly": "読み取り専用",
-    "modeDefault": "実行前に確認",
-    "modeAuto": "確認せずに実行",
-    "modeHint": "誰も見ていない状態で実行されるため、独自の権限モードが必要です。ワークスペースの設定は継承されません。",
+    "modeHint": "これは誰も見ていない状態で実行されます。手動承認では最初の判断で停止して待ち続けるため、自力で完了できるモードを選んでください。",
     "loadError": "スケジュールを読み込めませんでした",
     "createError": "スケジュールを作成できませんでした",
     "updateError": "スケジュールを更新できませんでした",
     "deleteError": "スケジュールを削除できませんでした",
     "runStarted": "開始しました",
-    "runFailed": "実行に失敗しました"
+    "runFailed": "実行に失敗しました",
+    "labelName": "名前",
+    "labelCron": "実行タイミング",
+    "labelPrompt": "プロンプト",
+    "labelAgent": "エージェント",
+    "labelPermission": "権限モード",
+    "labelTimezone": "タイムゾーン",
+    "cronFields": "5 つのフィールド: 分、時、日、月、曜日。",
+    "presetHourly": "毎時",
+    "presetDaily": "毎日 9 時",
+    "presetWeekdays": "平日 9 時",
+    "presetWeekly": "毎週月曜 9 時"
   },
   "SessionControls": {
     "permissionDefaultLabel": "承認を求める",
@@ -371,7 +384,7 @@
     "computerControlOn": "アプリを操作可能",
     "computerControlOff": "アプリ操作なし",
     "worktreeNoneLabel": "現在のチェックアウト",
-    "worktreeNoneDescription": "選択したフォルダーで実行します。ブランチやワークツリーは作成されません",
+    "worktreeNoneDescription": "選択した環境で実行します。ブランチやワークツリーは作成されません",
     "worktreeNoneTitle": "セッションブランチやワークツリーを作成せずに、選択したチェックアウトで実行します",
     "worktreeBranchLabel": "main からブランチを作成",
     "worktreeBranchDescription": "リポジトリのメインラインから frank/session ブランチを作成してチェックアウトします",
@@ -380,8 +393,10 @@
     "worktreeCopyDescription": "リポジトリのメインラインから frank/session ブランチで独立したワークツリーを作成します",
     "worktreeCopyTitle": "リポジトリの main/デフォルトブランチから、別のワークツリーと frank/session ブランチを作成します",
     "worktreeStrategyFallbackTitle": "セッション分離戦略",
-    "permissionFixedAtCreation": "このセッションの作成時に確定しています",
-    "sandboxUnavailable": "この環境では強制できません"
+    "sandboxUnavailable": "この環境では強制できません",
+    "agentPlaceholder": "エージェント",
+    "dictationOn": "音声入力オン",
+    "dictationOff": "音声入力オフ"
   },
   "SessionsSidebar": {
     "activeFirst": "アクティブ順",
@@ -417,7 +432,8 @@
     "statusWaiting": "応答待ち",
     "statusWorking": "実行中",
     "untitledConversation": "無題の会話",
-    "untitledWorkspace": "無題のワークスペース"
+    "untitledWorkspace": "無題のワークスペース",
+    "newSchedule": "新しいスケジュール"
   },
   "SettingsDialog": {
     "addRule": "ルールを追加",
@@ -464,7 +480,7 @@
     },
     "loadAgentError": "エージェント設定の読み込みに失敗しました",
     "loadingAgentConfiguration": "エージェント設定を読み込み中",
-    "locations": "ワークスペースフォルダ",
+    "locations": "環境",
     "modelProviders": "モデルプロバイダー",
     "permissionMode": "権限モード",
     "profile": "プロファイル",
@@ -486,7 +502,7 @@
     "tabAgents": "エージェント",
     "tabConnection": "接続",
     "tabGeneral": "一般",
-    "tabLocations": "フォルダ",
+    "tabLocations": "環境",
     "tabSchedules": "スケジュール",
     "theme": {
       "label": "テーマ",
@@ -497,7 +513,9 @@
     "title": "設定",
     "tools": "ツール",
     "userContext": "行動プロフィール",
-    "userContextHint": "作業スタイル（よく使うフォルダ、最近のファイル、アプリ、サイト）のスナップショットを共有し、アシスタントが習慣に合わせられるようにします。既定はオフで、データはこのマシン内に留まります。"
+    "userContextHint": "作業スタイル（よく使うフォルダ、最近のファイル、アプリ、サイト）のスナップショットを共有し、アシスタントが習慣に合わせられるようにします。既定はオフで、データはこのマシン内に留まります。",
+    "dictation": "音声入力",
+    "dictationHint": "入力欄に話しかけて入力します。文字起こしはこの Mac 上で行われ、どこにも送信されませんが、初回利用時に約 1 GB のモデルをダウンロードします。"
   },
   "TerminalPanel": {
     "protocolErrorTitle": "ターミナルプロトコルエラー",
@@ -689,8 +707,8 @@
     "yes": "はい"
   },
   "WorkspaceLocationsPanel": {
-    "loadError": "ワークスペースフォルダを読み込めませんでした",
-    "saveError": "ワークスペースフォルダを保存できませんでした",
+    "loadError": "ワークスペースの環境を読み込めませんでした",
+    "saveError": "ワークスペースの環境を保存できませんでした",
     "saveChanges": "変更を保存"
   }
 }

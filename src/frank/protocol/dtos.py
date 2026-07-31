@@ -123,6 +123,11 @@ class ComputerControlUpdateRequest(BaseModel):
     enabled: bool
 
 
+class DictationUpdateRequest(BaseModel):
+    """Opt-in/out of transcribing the composer's dictation on this machine."""
+    enabled: bool
+
+
 class CompactionUpdateRequest(BaseModel):
     """Observational-memory compaction settings. Only provided fields are changed."""
     auto: bool | None = None

@@ -13,7 +13,7 @@ import {
   Text,
   VStack,
 } from "@chakra-ui/react";
-import { LuAppWindow, LuArrowDown, LuChevronLeft, LuChevronRight, LuClock, LuDownload, LuEllipsis, LuFile, LuFolderOpen, LuHistory, LuMaximize2, LuMinimize2, LuMessageSquare, LuMousePointerClick, LuNetwork, LuPanelLeftClose, LuPanelLeftOpen, LuRotateCcw, LuRotateCw, LuSettings, LuTerminal, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
+import { LuAppWindow, LuArrowDown, LuChevronLeft, LuChevronRight, LuClock, LuDownload, LuEllipsis, LuFile, LuFolderOpen, LuHistory, LuMaximize2, LuMinimize2, LuMessageSquare, LuMoon, LuMousePointerClick, LuPanelLeftClose, LuPanelLeftOpen, LuRotateCcw, LuRotateCw, LuSettings, LuSun, LuTerminal, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { FadeIn } from "@/components/ui/fade-in";
 import { useFormatter, useTranslations } from "next-intl";
@@ -33,6 +33,8 @@ import { SettingsDialog, type SettingsSection } from "./settings-dialog";
 import { BackgroundJobsPanel } from "./background-jobs-panel";
 import { GitStatusBar } from "./git-status-bar";
 import { LocationChip } from "./location-status";
+import { SectionHeader } from "./ui/section-header";
+import { CONCEPT_ICONS } from "@/lib/concept-icons";
 import { useDirectoryStatus } from "@/lib/use-directory-status";
 import { Tooltip } from "./ui/tooltip";
 import { ToolbarAction } from "@/components/ui/toolbar";
@@ -42,13 +44,14 @@ import { AgentSkills } from "./agent-skills";
 import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-display";
 import type { ToolPermission, ToolQuestion } from "@/lib/tool-event";
 
-import { fetchSettings, getWorkspace, revealInFinder, saveSessionDraft, saveSettings, subscribeEvents, type AgentCard, type AgentSummary, type Location, type PermissionMode, type SandboxEnforce, type WorktreeStrategy } from "@/lib/api";
+import { fetchSettings, getWorkspace, revealInFinder, saveSessionDraft, saveSettings, setSessionPermissionMode, subscribeEvents, type AgentCard, type AgentSummary, type Location, type PermissionMode, type SandboxEnforce, type WorktreeStrategy } from "@/lib/api";
 import { PdfDocumentView } from "./pdf-view";
 import { scrollFade, scrollFadeTopBottom } from "@/lib/scroll-fade";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { playAttentionSound, playTurnEndSound } from "@/lib/sounds";
 import { closePermissionNotification, notifyPermissionRequest, setPermissionNotificationHandler } from "@/lib/notify";
 import { swallowed } from "@/lib/swallowed";
+import { errorMessage } from "@/lib/errors";
 
 // A Chakra Box that is also a motion component, so the right panel region can
 // animate its open/close (opacity + slide) exactly like the history sidebar on
@@ -253,7 +256,7 @@ export function ChatPanel({
     // on the next microtask rather than mid-render.
     const load = () => {
       const request = workspaceId ? getWorkspace(workspaceId) : Promise.resolve(null);
-      request.then((workspace) => { if (!cancelled) setWorkspaceLocations(workspace?.locations ?? []); }).catch((caught) => swallowed("chat panel: a background load failed", caught));
+      request.then((workspace) => { if (!cancelled) setWorkspaceLocations(workspace?.locations ?? []); }).catch((caught) => swallowed({ component: "chat-panel", operation: "read a workspace" }, caught));
     };
     load();
     const unsubscribe = subscribeEvents((event) => { if (event.type === "workspaces_changed") load(); });
@@ -269,7 +272,7 @@ export function ChatPanel({
     fetchSettings().then((settings) => {
       if (cancelled || settings.permission_mode === permissionMode) return;
       setPermissionModeState(settings.permission_mode);
-    }).catch((caught) => swallowed("chat panel: a background load failed", caught));
+    }).catch((caught) => swallowed({ component: "chat-panel", operation: "read the settings" }, caught));
     return () => { cancelled = true; };
   // Only run when there is no session — once the session is set, the session's own
   // permission_mode is authoritative.
@@ -298,7 +301,7 @@ export function ChatPanel({
   // Default right-region width: comfortable for one panel without dwarfing the
   // transcript (pairs with the sidebar default of 240 in page.tsx). Drag grows it.
   const [sidePanelWidth, setSidePanelWidth] = useState(480);
-  const { colorMode } = useColorMode();
+  const { colorMode, toggleColorMode } = useColorMode();
   // Whether the transcript is scrolled to (or near) the bottom. Drives the floating
   // "jump to latest" affordance so a reader who scrolled up to read history can
   // return to the live tail in one click instead of scrolling all the way down.
@@ -474,21 +477,35 @@ export function ChatPanel({
     onStreamingChangeRef.current?.(isStreaming);
   }, [isStreaming]);
 
-  // The mode is fixed when the session is created, so this only ever configures the
-  // *next* session: it moves the local choice and persists it as the stored default.
-  // A live session's mode is immutable, and the controls that call this are read-only
-  // once one exists.
+  // Two things at once, because the control is one control. Without a session this only
+  // chooses what the next one starts under; with a session it also changes *that* session,
+  // which the daemon applies to the turn in flight. The chip moves immediately and is
+  // corrected if the server clamps the mode (a child is never looser than its parent).
   function handlePermissionModeChange(nextMode: PermissionMode) {
-    if (sessionId) return;
     setPermissionModeState(nextMode);
     onPermissionModeChange?.(nextMode);
     // Persist to server settings so it survives across sessions.
-    saveSettings({ permission_mode: nextMode }).catch((caught) => swallowed("chat panel: a background load failed", caught));
+    saveSettings({ permission_mode: nextMode }).catch((caught) => swallowed({ component: "chat-panel", operation: "save the settings" }, caught));
+    if (!sessionId) return;
+    setSessionPermissionMode(sessionId, nextMode)
+      .then((applied) => setPermissionModeState(applied))
+      .catch((caught) => {
+        // The session kept the mode it had, so the chip must go back to saying so rather
+        // than showing a policy that is not being enforced.
+        setPermissionModeState(permissionMode);
+        onPermissionModeChange?.(permissionMode);
+        toaster.create({
+          type: "error",
+          title: translation("permissionModeFailedTitle"),
+          description: errorMessage(caught),
+          closable: true,
+        });
+      });
   }
 
   const handleInputDraftChange = useCallback((nextDraft: string) => {
     if (!sessionId) return;
-    saveSessionDraft(sessionId, nextDraft).catch((caught) => swallowed("chat panel: a background load failed", caught));
+    saveSessionDraft(sessionId, nextDraft).catch((caught) => swallowed({ component: "chat-panel", operation: "save the session draft" }, caught));
   }, [sessionId]);
 
   const currentFolderName = folderDisplayName(workingDirectory) || translation("thisFolder");
@@ -737,6 +754,15 @@ export function ChatPanel({
               indicator={runningShellCount > 0}
               onClick={() => setSidePanelOpen("background", !backgroundPanelOpen)}
             />
+            {/* Light/dark, switched here rather than only from three screens into Settings.
+                It is the one setting people change on a whim — because the room got dark, not
+                because they are configuring anything — so it belongs where they already are.
+                The label names what the click does, not the state it is in. */}
+            <ToolbarAction
+              label={colorMode === "dark" ? translation("switchToLight") : translation("switchToDark")}
+              icon={colorMode === "dark" ? <LuSun size={14} /> : <LuMoon size={14} />}
+              onClick={toggleColorMode}
+            />
             <ToolbarAction
               label={translation("settings")}
               icon={<LuSettings size={14} />}
@@ -805,34 +831,60 @@ export function ChatPanel({
             // un-animated: only the empty→timeline transition fades.
             <AnimatePresence mode="popLayout" initial={false}>
               {messages.length === 0 ? (
-                <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15, ease: "easeOut" }} style={{ width: "100%" }}>
+                <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15, ease: "easeOut" }} style={{ width: "100%", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
                   {/* The same `80rem` centred column as the transcript, the composer and the
                       approval overlay. Without it the welcome grew with the window while
                       everything else stayed put, so on a wide display the skills and tools ran
                       far outside the chat. No `px` of its own either: the scroller already pads,
-                      and a second inset put this list 10px inside the composer instead of flush. */}
-                  <Flex direction="column" align="center" gap={8} w="full" maxW="80rem" mx="auto" pt={{ base: 10, md: 20 }} pb={{ base: 8, md: 12 }}>
+                      and a second inset put this list 10px inside the composer instead of flush.
+
+                      Vertically it sits in the middle of whatever room there is, rather than
+                      being pushed down by a fixed inset. It used to carry 80px above and 48px
+                      below on a desktop width — numbers that were only ever right for one window
+                      height, so on a tall window the block hung near the top under a band of
+                      nothing, and on a short one those 128px pushed the skills under the fold and
+                      made an empty conversation scroll.
+
+                      `my="auto"` rather than `justify="center"` on purpose: this lives in a
+                      scroll container, and auto margins are defined to collapse to zero when the
+                      free space runs out, so tall content still starts at the top and stays
+                      reachable instead of being centred off the top edge. What is left is a small
+                      floor, which only applies when there is nothing to spare. */}
+                  {/* One rhythm for the sections, and it is `6` because that is the gap the
+                      capability sections keep between themselves (`AgentSkills` puts `mt={6}`
+                      between skills and tools). Set to anything else here — it was `10` — and
+                      the first gap is wider than the ones after it, so the environments read as
+                      belonging to the heading rather than as the first of three peers. The
+                      heading keeps its own extra space below, because a title is not a peer of
+                      the sections under it. */}
+                  <Flex direction="column" align="stretch" gap={6} w="full" maxW="80rem" mx="auto" my="auto" py={{ base: 4, md: 6 }}>
                     {/* The blank-conversation state inside a workspace: no brand lockup (that lives
-                        on the Workspaces home) — the build prompt, the workspace's locations (dotted
-                        by connection status), then the folder's skills. */}
-                    <Flex direction="column" align="center" gap={4}>
-                      <Heading as="h2" fontSize="3xl" fontWeight="semibold" textAlign="center">
-                        {translation("buildPrompt", { folder: currentFolderName })}
-                      </Heading>
-                      {workspaceLocations.length > 0 && (
-                        <Flex direction="column" align="center" gap={2}>
-                          <Flex align="center" justify="center" gap={1.5} color="fg.muted">
-                            <LuNetwork size={14} />
-                            <Text textStyle="panelTitle">{translation("locationsAvailable")}</Text>
-                          </Flex>
-                          <Flex align="center" gap={2.5} wrap="wrap" justify="center">
-                            {workspaceLocations.map((location) => (
-                              <LocationChip key={location.id} location={location} />
-                            ))}
-                          </Flex>
+                        on the Workspaces home) — the build prompt, then what this workspace can
+                        reach and what the agent can do, as sections. */}
+                    <Heading as="h2" fontSize="3xl" fontWeight="semibold" textAlign="center" mb={4}>
+                      {translation("buildPrompt", { folder: currentFolderName })}
+                    </Heading>
+
+                    {/* The environments read as a section, like the skills and tools under them,
+                        rather than as a centred caption hanging off the heading. They are the same
+                        kind of thing — what this conversation has available — so they get the same
+                        grammar: the section's own icon, a left-aligned heading with a line saying
+                        what it is, and the list beneath it. Centred and unlabelled, sitting tight
+                        under the title, it read as a subtitle of the question instead. */}
+                    {workspaceLocations.length > 0 && (
+                      <Box w="100%" minW={0}>
+                        <SectionHeader
+                          icon={<CONCEPT_ICONS.environment size={14} />}
+                          title={translation("environmentsAvailable")}
+                          description={translation("environmentsDescription")}
+                        />
+                        <Flex align="center" gap={2.5} wrap="wrap">
+                          {workspaceLocations.map((location) => (
+                            <LocationChip key={location.id} location={location} />
+                          ))}
                         </Flex>
-                      )}
-                    </Flex>
+                      </Box>
+                    )}
 
                     <AgentSkills card={agentCard ?? null} workingDirectory={workingDirectory} />
                   </Flex>

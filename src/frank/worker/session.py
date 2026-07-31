@@ -163,6 +163,8 @@ class SessionExecutor(AgentExecutor):
         # This session's own MCP connections, and the task connecting them.
         self._mcp_manager = None
         self._mcp_connect: Optional[asyncio.Task] = None
+        # Held so the screen warm-up is not collected mid-flight; nothing ever awaits it.
+        self._screen_warm: Optional[asyncio.Task] = None
 
     def _publish_stream_event(self, session_id: str, part) -> None:
         """Forward a turn part to the daemon for fan-out. Best effort and fire-and-forget: a
@@ -316,6 +318,51 @@ class SessionExecutor(AgentExecutor):
         if state is None or state.runtime is None:
             return []
         return state.runtime.background_snapshots()
+
+    def set_locations(self, locations: Optional[list[dict]]) -> int:
+        """Adopt the workspace's environments after somebody edited them.
+
+        The set travels in the assignment and used to be read exactly once, which made a
+        workspace edit invisible to every session already open in it — the folder was there in
+        Settings and the agent could not address it. The daemon re-resolves the workspace and
+        pushes the result here, so the change lands on the session that is open rather than
+        only on the next one. Answers with how many environments the session now has.
+        """
+        self._locations = locations
+        for state in self._contexts.values():
+            if state.runtime is not None:
+                state.runtime.set_locations(locations)
+        return len(locations or [])
+
+    def set_permission_mode(self, mode: str) -> str:
+        """Adopt a new permission mode for this session, now.
+
+        Deliberately not a runtime reset. A reset takes effect on the *next* turn, and the
+        turn a person wants this to reach is usually the one that is running — they have just
+        watched it ask for the fourth time, or do something they want it to stop doing. So the
+        mode is written straight onto the live runtime, where every tool call reads it at call
+        time, and the cached system prompt is dropped so the next model call describes the
+        policy the session is actually under.
+
+        The mode arrives already clamped by the daemon (against the parent session and the
+        agent profile's own ceiling); the runtime applies the profile ceiling again, so a
+        widening this process should not honour cannot get through even if it is sent one.
+        """
+        from frank.base.permission_mode import PermissionMode
+
+        resolved = PermissionMode.parse(mode)
+        if resolved is None:
+            return self._permission_mode
+        self._permission_mode = str(resolved)
+        # What a runtime built later starts from, and what this session asks for when it
+        # creates a peer. The daemon clamps a child against the parent's record either way, so
+        # this cannot widen anything; leaving it stale would only mean asking for a mode this
+        # session has since moved off.
+        self._peers.permission_mode = self._permission_mode
+        for state in self._contexts.values():
+            if state.runtime is not None:
+                state.runtime.set_permission_mode(resolved)
+        return self._permission_mode
 
     def reset_runtimes(self) -> None:
         """Drop cached runtimes so the next turn rebuilds them — used after a
@@ -476,7 +523,7 @@ class SessionExecutor(AgentExecutor):
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception("Background-resume pump failed for context %s", session_id)
+            logger.exception("background-resume pump failed for context %s", session_id)
         finally:
             # Clear the slot only if it still points at *this* pump — a freshly armed
             # pump (the user resumed) must not be dropped by a late-finishing finally.
@@ -671,7 +718,8 @@ class SessionExecutor(AgentExecutor):
         The daemon resolved this when the session was created — a worktree strategy puts the
         tools somewhere other than the project directory — and handed it over in the
         assignment. It is not renegotiated per turn: where a session runs is part of what the
-        session *is*, fixed at creation alongside its agent and its permission mode."""
+        session *is*, fixed at creation alongside its agent — unlike its permission mode, which the
+        person running it can change while it runs."""
         source = requested_working_directory or self._working_directory or ""
         runtime = self._runtime_working_directory or source
         return SessionWorktree(
@@ -789,6 +837,19 @@ class SessionExecutor(AgentExecutor):
             # and tool gating keys on the manager existing rather than on live connections.
             self._mcp_connect = asyncio.create_task(self._mcp_manager.start())
 
+        # Every turn tells the model what is on the screen, and the first time a process asks
+        # for that listing it spends ~1.8s opening an accessibility connection to each running
+        # application — a cost that landed on the session's first turn, before the model had
+        # been called at all. It is paid here instead, off the loop and behind the socket, so it
+        # overlaps the fork acknowledgement and the trip the first message is still making.
+        if self._global_configuration.computer_control.enabled:
+            def warm_screen() -> None:
+                from frank.computer import targets
+
+                targets.prewarm()
+
+            self._screen_warm = asyncio.create_task(asyncio.to_thread(warm_screen))
+
         self._context(self._session_id)
 
     async def start_turn(self, parts: list, metadata: dict) -> str:
@@ -873,7 +934,7 @@ class SessionExecutor(AgentExecutor):
             # session is a fault, and at debug level the difference was invisible — a sidebar
             # full of "Untitled conversation" with nothing anywhere saying why.
             logger.warning(
-                "Could not generate a title for session %s", self._session_id, exc_info=True
+                "could not generate a title for session %s", self._session_id, exc_info=True
             )
 
     def inject(self, text: str) -> bool:
@@ -914,7 +975,7 @@ class SessionExecutor(AgentExecutor):
             async for _event in handler.on_message_send_stream(MessageSendParams(message=message)):
                 pass
         except Exception:  # noqa: BLE001 — a failed resume must not take the session down
-            logger.exception("Resuming session %s after an answer failed", self._session_id)
+            logger.exception("resuming session %s after an answer failed", self._session_id)
 
     def abort(self) -> bool:
         return self.abort_context(self._session_id)
@@ -964,7 +1025,7 @@ class SessionExecutor(AgentExecutor):
         try:
             return self._build_card_payload()
         except Exception:  # noqa: BLE001 — a card is descriptive, never load-bearing
-            logger.exception("Building the agent card for session %s failed", self._session_id)
+            logger.exception("building the agent card for session %s failed", self._session_id)
             return {
                 "name": self._agent_name,
                 "description": f"Frank session {self._session_id}.",
@@ -1017,6 +1078,10 @@ class SessionExecutor(AgentExecutor):
         if "frank.computer.web" in sys.modules:
             with contextlib.suppress(Exception):
                 sys.modules["frank.computer.web"].close()
+        if self._screen_warm is not None and not self._screen_warm.done():
+            self._screen_warm.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._screen_warm
         if self._mcp_connect is not None and not self._mcp_connect.done():
             self._mcp_connect.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):

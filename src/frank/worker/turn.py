@@ -271,7 +271,7 @@ class _TurnRunner:
         try:
             await self._ex._turn_store.publish_usage(snapshot)
         except Exception:  # noqa: BLE001 — telemetry must not fail a turn
-            logger.warning("Could not publish the subscription usage snapshot", exc_info=True)
+            logger.warning("could not publish the subscription usage snapshot", exc_info=True)
 
     async def _ingest(self) -> _Ingested:
         """Parse the request message into the turn's inputs and mode flags. Returns them as a
@@ -380,7 +380,7 @@ class _TurnRunner:
                 for acknowledgement_part in _work_habits_acknowledgement_parts(task.id):
                     await self._emit(acknowledgement_part)
             except Exception as exception:
-                logger.exception("Work-habits acknowledgement failed: %s", exception)
+                logger.exception("work-habits acknowledgement failed: %s", exception)
                 await self._updater.failed(self._updater.new_agent_message([_event_part(ErrorEvent(**_safe_turn_error(exception)))]))
                 return self._DONE
         return None
@@ -585,7 +585,7 @@ class _TurnRunner:
         await self._save_runtime_conversation()
         # Log the real exception server-side for debugging, but show the user only a safe
         # category — never the raw exception text.
-        logger.exception("Agent turn failed: %s", exception)
+        logger.exception("agent turn failed: %s", exception)
         await self._updater.failed(self._updater.new_agent_message(
             [_event_part(ErrorEvent(**_safe_turn_error(exception, had_images=self._turn_has_images)))]
         ))

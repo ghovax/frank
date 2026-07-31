@@ -119,7 +119,7 @@ async def _drain_observation(pending) -> None:
     try:
         await pending
     except Exception:  # noqa: BLE001 — an audit sink must never fail a turn
-        logger.debug("An asynchronous observer raised", exc_info=True)
+        logger.debug("an asynchronous observer raised", exc_info=True)
 
 
 def build_chat_model(
@@ -685,7 +685,39 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             mcp_manager=mcp_manager,
         )
 
-    def _build_locations(self, locations: list[dict] | None, *, permission_mode_default: PermissionMode) -> None:
+    def set_locations(self, locations: list[dict] | None) -> None:
+        """Adopt the workspace's environments as they are now.
+
+        An environment added to a workspace used to reach only sessions created afterwards:
+        the set was resolved at `session.create`, travelled in the assignment, and was never
+        looked at again — so adding a folder to a workspace you were already talking in did
+        nothing you could see, and the only way to get it was a new conversation.
+
+        Rebuilt rather than mutated in place, because a location's name and its executor are
+        derived from its address and both can change under an edit. An executor already built
+        for an unchanged address is carried over, so re-reading the workspace does not throw
+        away a remote's memoized home directory (and, with it, a round trip on the next call).
+        A tool call in flight holds its own resolved location by value, so it is unaffected.
+        """
+        carried = {uri: resolved.executor for uri, resolved in self._locations.items()}
+        self._locations = {}
+        self._locations_by_name = {}
+        self._build_locations(
+            locations,
+            permission_mode_default=self._agent_configuration.permission_policy,
+            executors=carried,
+        )
+        # The environments and their policies are stated to the model in the system prompt, so
+        # the prompt has to be rebuilt or the next turn would name a set that no longer exists.
+        self._cached_system_prompt = None
+
+    def _build_locations(
+        self,
+        locations: list[dict] | None,
+        *,
+        permission_mode_default: PermissionMode,
+        executors: dict[str, Any] | None = None,
+    ) -> None:
         """Build the resolved-location map from the workspace's location records. Each entry
         carries an executor (local subprocess or multiplexed SSH) and its effective policy."""
         entries = locations or []
@@ -710,7 +742,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
                 name=str(entry.get("name") or "location"),
                 kind=kind,
                 base_directory=base_directory,
-                executor=executor_for(address),
+                executor=(executors or {}).get(uri) or executor_for(address),
                 permission_mode=PermissionMode.coerce(entry.get("permission_mode"), permission_mode_default),
             )
             self._locations[uri] = resolved
@@ -955,6 +987,26 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         caller's grant tightens it)."""
         return self._agent_configuration.permission_policy
 
+    def set_permission_mode(self, mode: PermissionMode) -> PermissionMode:
+        """Change the policy this runtime enforces, mid-life, and answer with what took.
+
+        The one mutation of `_permission_mode` after construction, and it is safe for the same
+        reason the field could be a constant before: every decision reads it at call time
+        through `_call_policy`, so the next tool call in the turn already in flight is judged
+        by the new mode rather than by the one the turn started under. That immediacy is the
+        point — a person changing this is reacting to what the session is doing right now.
+
+        Clamped against the agent card's ceiling exactly as the constructor clamps it, so this
+        can only ever be as loose as the profile itself allows. The cached system prompt is
+        dropped because it states the policy (and the locations' effective modes) to the model,
+        and a prompt describing the old one would be the harness lying about its own rules."""
+        resolved = PermissionMode.more_restrictive(mode, self._agent_configuration.permission_policy)
+        if resolved is self._permission_mode:
+            return resolved
+        self._permission_mode = resolved
+        self._cached_system_prompt = None
+        return resolved
+
     def set_a2a_turn_id(self, turn_id: str) -> None:
         """Record the A2A task id of the current turn, so work raised during it can name the
         turn it belongs to."""
@@ -1023,7 +1075,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         try:
             pending = self._observer.observe(observation)
         except Exception:  # noqa: BLE001 — an audit sink must never fail a turn
-            logger.debug("The observer raised on %s", kind, exc_info=True)
+            logger.debug("the observer raised on %s", kind, exc_info=True)
             return
         if pending is None:
             return
@@ -1032,7 +1084,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         except RuntimeError:
             # No loop: an observation recorded outside a turn. Nothing to schedule it on, and
             # blocking to run it would be worse than dropping it.
-            logger.debug("Dropped an awaitable observation with no running loop")
+            logger.debug("dropped an awaitable observation with no running loop")
 
     def _background_result_events(self) -> list[TurnEvent]:
         events: list[TurnEvent] = []

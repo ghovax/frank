@@ -557,12 +557,12 @@ class Prototype:
 
         try:
             pid = os.fork()
-        except OSError as error:
+        except OSError:
             for descriptor in (ready_read, ready_write, assignment_read, assignment_write,
                                lifeline_read, lifeline_write):
                 with contextlib.suppress(OSError):
                     os.close(descriptor)
-            logger.error("could not fork: %s", error)
+            logger.error("could not fork", exc_info=True)
             return None
 
         if pid == 0:
@@ -653,7 +653,7 @@ class Prototype:
                 os.close(worker.assignment_write)
             with contextlib.suppress(OSError):
                 os.close(worker.ready_read)
-            logger.error("could not write the assignment for %s: %s", session_id, error)
+            logger.error("could not write the assignment for %s", session_id, exc_info=True)
             self._send({
                 "event": "failed", "fork": fork, "session_id": session_id,
                 "reason": StartFailure.ASSIGNMENT_UNWRITABLE, "detail": str(error),
@@ -839,7 +839,7 @@ def main() -> int:
     # The same file the daemon writes, because this process and every session forked from it
     # are where turns actually run — and `logging.basicConfig` without a handler writes to a
     # stderr that nothing keeps. `_fail` in `worker/turn.py` has always called
-    # `logger.exception("Agent turn failed")`; it went nowhere, so a turn that died reached the
+    # `logger.exception("agent turn failed")`; it went nowhere, so a turn that died reached the
     # interface as "the raw details were written to the server log" when no such line existed.
     from frank.base.paths import log_file_path
 

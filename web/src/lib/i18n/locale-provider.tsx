@@ -10,6 +10,7 @@ import * as React from "react";
 import { NextIntlClientProvider } from "next-intl";
 import { getAppState, isTauri, setAppState } from "@/lib/app-state";
 import { DEFAULT_LOCALE, MESSAGES, isLocale, type Locale } from "./messages";
+import { swallowed } from "@/lib/swallowed";
 
 const LOCALE_KEY = "locale";
 const LOCALE_LS_KEY = "frank.locale";
@@ -42,7 +43,7 @@ export function LocaleProvider({ children }: React.PropsWithChildren) {
       .then((stored) => {
         if (!cancelled && isLocale(stored)) setLocaleState(stored);
       })
-      .catch(() => {});
+      .catch((caught) => swallowed({ component: "locale", operation: "read the stored preference" }, caught));
     return () => {
       cancelled = true;
     };

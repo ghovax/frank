@@ -109,6 +109,7 @@ def save_api_keys(
     compaction: dict | None = None,
     user_context_enabled: bool | None = None,
     computer_control_enabled: bool | None = None,
+    dictation_enabled: bool | None = None,
     tuning: dict | None = None,
     daemon: dict | None = None,
     provider_keys: dict[str, str] | None = None,
@@ -146,6 +147,8 @@ def save_api_keys(
         data.setdefault("user_context", {})["enabled"] = user_context_enabled
     if computer_control_enabled is not None:
         data.setdefault("computer_control", {})["enabled"] = computer_control_enabled
+    if dictation_enabled is not None:
+        data.setdefault("dictation", {})["enabled"] = dictation_enabled
     if provider_keys is not None or provider_base_urls is not None:
         providers_section = data.setdefault("providers", {})
         all_provider_ids = {*(provider_keys or {}), *(provider_base_urls or {})}
@@ -454,6 +457,67 @@ class ComputerControlConfiguration(Section):
     )
 
 
+class DictationTimingConfiguration(Section):
+    """How long dictation waits, and how hard it tries, before it gives up and says so.
+
+    Separated from the rest of the section because these are the numbers a slow machine needs to
+    move, and nothing else about dictation is.
+
+    There is deliberately no limit on *loading*. It takes as long as it takes — the first one
+    fetches about a gigabyte over a connection nobody can predict — so any number would
+    eventually declare a working download a failure. Loading is reported as a state instead, and
+    the microphone button shows it arriving. The sample rate is not here either: 16 kHz mono is
+    what the model takes, so it is a fact rather than a preference, and a setting for it would
+    only be a way to make transcription quietly wrong."""
+
+    minimum_transcription_timeout_seconds: float = Field(
+        30.0,
+        description="The floor on how long one transcription may take before it is treated as wedged.",
+    )
+    transcription_timeout_realtime_multiplier: float = Field(
+        0.5,
+        description=(
+            "Added to the floor, per second of audio. Transcription runs comfortably faster "
+            "than real time on Apple Silicon, so reaching the limit means stuck, not busy."
+        ),
+    )
+    maximum_attempts: int = Field(
+        2,
+        ge=1,
+        description=(
+            "How many workers one recording may be given. A hung or crashed worker is replaced "
+            "and the same audio submitted again, because asking somebody to say it twice is the "
+            "worst answer available; beyond this it is a real fault and is reported."
+        ),
+    )
+    worker_shutdown_seconds: float = Field(
+        2.0, description="How long a worker is given to exit on its own before it is killed."
+    )
+
+
+class DictationConfiguration(Section):
+    """Opt-in speech-to-text for the composer, transcribed on this machine.
+
+    Off by default, and the default is the interesting part: nothing here talks to a network
+    service, but the first use downloads about a gigabyte of model weights, and a feature that
+    quietly spends a person's bandwidth the first time they touch a microphone button is a
+    feature that decided something on their behalf. Enabling it is that decision, made once.
+
+    The weights land in the standard Hugging Face cache (``~/.cache/huggingface``), shared with
+    every other tool on the machine that uses it — so turning this on twice, or reinstalling,
+    does not download them twice."""
+
+    enabled: bool = Field(False, description="Let the composer take dictation, transcribed on this Mac.")
+    model: str = Field(
+        "mlx-community/parakeet-tdt-0.6b-v3",
+        description="The speech-recognition model to transcribe with, from Hugging Face.",
+    )
+    timing: DictationTimingConfiguration = Field(
+        default_factory=DictationTimingConfiguration,
+        description="How long dictation waits before it gives up.",
+    )
+
+
 class ComposioConfiguration(Section):
     """Composio integration via its hosted MCP endpoint. When enabled, the harness
     points at Composio's "connect" MCP URL and exposes it as a normal
@@ -697,6 +761,9 @@ class Configuration(Section):
     )
     computer_control: ComputerControlConfiguration = Field(
         default_factory=ComputerControlConfiguration, description="Driving the screen."
+    )
+    dictation: DictationConfiguration = Field(
+        default_factory=DictationConfiguration, description="Speaking to the composer instead of typing."
     )
     tuning: TuningConfiguration = Field(
         default_factory=TuningConfiguration,

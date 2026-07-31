@@ -18,9 +18,10 @@ import { ToolLocationBadge } from "./tool-call";
 import { Pill } from "./ui/pill";
 import { Pre } from "./ui/semantic";
 
-// The only runtime decisions that exist: deny, or allow this one call. A standing
-// allow would amend a policy that is now fixed when the session is created, so the
-// overlay never offers one.
+// The only runtime decisions that exist: deny, or allow this one call. A standing allow
+// would quietly write a rule into the session's policy from inside a prompt about one
+// command; the policy is edited where policy lives — the permission mode under the composer,
+// and the command rules in Settings — so the overlay never offers one.
 type RuntimeDecision = "deny" | "allow_once";
 
 interface PermissionOverlayProps {

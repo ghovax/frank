@@ -61,7 +61,7 @@ export function CursorAuthControl({
         setStatus(next);
         onStatusChange?.(next);
       })
-      .catch((caught) => swallowed("cursor auth: a background load failed", caught));
+      .catch((caught) => swallowed({ component: "cursor-auth", operation: "read the Cursor sign-in state" }, caught));
     return () => {
       cancelled = true;
       stopPolling();

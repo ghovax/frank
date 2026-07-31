@@ -123,7 +123,7 @@ async def _sleep_after_idle(session_id: str, delay: float) -> None:
     record = state.registry.get(session_id)
     if record is None or not record.is_live or not record.pid or record.busy:
         return
-    logger.info("Session %s idle for %.0fs; sleeping it", session_id, delay)
+    logger.info("session %s idle for %.0fs; sleeping it", session_id, delay)
     await state.lifecycle.sleep(session_id)
 
 
@@ -274,5 +274,5 @@ async def ingest(request: Request) -> JSONResponse:
     try:
         return JSONResponse({"result": await handler(payload.get("params") or {})})
     except Exception as error:  # noqa: BLE001 — a bad write must not take the daemon down
-        logger.exception("Ingest call failed")
+        logger.exception("ingest call failed")
         return JSONResponse({"error": {"message": str(error)}}, status_code=500)

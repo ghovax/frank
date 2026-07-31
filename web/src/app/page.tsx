@@ -78,7 +78,7 @@ function Workspace() {
         params.set("workspace", target);
         router.replace(`?${params.toString()}`, { scroll: false });
       })
-      .catch((caught) => swallowed("page: a background load failed", caught));
+      .catch((caught) => swallowed({ component: "workspace-page", operation: "read the home directory" }, caught));
     return () => { cancelled = true; };
   }, [workspaceId, router]);
 
@@ -146,7 +146,7 @@ function Workspace() {
     workingDirectoryRef.current = workingDirectory;
   }, [workingDirectory]);
   const loadAgentCards = useCallback(() => {
-    fetchAgentCards(workingDirectoryRef.current).then(setAgentCards).catch((caught) => swallowed("page: a background load failed", caught));
+    fetchAgentCards(workingDirectoryRef.current).then(setAgentCards).catch((caught) => swallowed({ component: "workspace-page", operation: "list the workspaces" }, caught));
   }, []);
   const loadAgents = useCallback(() => {
     fetchAgents(workingDirectoryRef.current)
@@ -171,7 +171,7 @@ function Workspace() {
         setModels(catalog.models);
         setModelProviders(catalog.providers);
       })
-      .catch((caught) => swallowed("page: a background load failed", caught));
+      .catch((caught) => swallowed({ component: "workspace-page", operation: "list the models" }, caught));
   }, []);
 
 
@@ -204,7 +204,7 @@ function Workspace() {
     } catch (caught) {
       // A transient failure (a slow probe right after a send, while the server is busy) keeps
       // what we already have rather than blanking the list.
-      swallowed("could not list sessions", caught);
+      swallowed({ component: "workspace-page", operation: "list the sessions" }, caught);
       return;
     }
     // Structural sharing: reuse the previous object for any session whose data is identical, so
@@ -282,7 +282,7 @@ function Workspace() {
           setWorktreeStrategy(settings.worktree_strategy);
           setCompactionKeepRecentTurns(settings.compaction?.keep_recent_turns ?? 6);
         })
-        .catch((caught) => swallowed("page: a background load failed", caught));
+        .catch((caught) => swallowed({ component: "workspace-page", operation: "list the agents" }, caught));
     };
     // Arm the audio cues on the first user interaction (browsers keep audio
     // suspended until a gesture); every later chime plays immediately.
@@ -294,13 +294,13 @@ function Workspace() {
     loadModelCatalog();
     fetchRecentModels()
       .then(setRecentModels)
-      .catch((caught) => swallowed("page: a background load failed", caught));
+      .catch((caught) => swallowed({ component: "workspace-page", operation: "list the agent cards" }, caught));
     // Home is the default workspace for a brand-new chat; the restoration effect
     // below applies it (or the active session's own folder) — we don't force it
     // here, or it would clobber a session opened directly via ?session=.
     fetchHomeDirectory()
       .then(setHomeWorkspace)
-      .catch((caught) => swallowed("page: a background load failed", caught));
+      .catch((caught) => swallowed({ component: "workspace-page", operation: "read the settings" }, caught));
 
     // Live reload: refresh agents when they change on disk, and the session list
     // when a session's (LLM-generated) title is updated.
@@ -316,7 +316,7 @@ function Workspace() {
       if (event.type === "settings_changed") {
         loadSettings();
         loadModelCatalog();
-        fetchRecentModels().then(setRecentModels).catch((caught) => swallowed("page: a background load failed", caught));
+        fetchRecentModels().then(setRecentModels).catch((caught) => swallowed({ component: "workspace-page", operation: "read the recent models" }, caught));
       }
     });
     return unsubscribe;
@@ -382,7 +382,7 @@ function Workspace() {
     let cancelled = false;
     fetchSessionDraft(activeSessionId)
       .then((draft) => { if (!cancelled) setActiveSessionDraft(draft); })
-      .catch((caught) => swallowed("page: a background load failed", caught));
+      .catch((caught) => swallowed({ component: "workspace-page", operation: "read the accessibility state" }, caught));
     return () => { cancelled = true; };
   }, [activeSessionId]);
 
@@ -404,7 +404,7 @@ function Workspace() {
 
   const refreshSessions = useCallback(() => {
     loadSessions()
-      .catch((caught) => swallowed("page: a background load failed", caught));
+      .catch((caught) => swallowed({ component: "workspace-page", operation: "save the settings" }, caught));
   }, [loadSessions]);
 
   const handleSessionCreated = useCallback(
@@ -557,13 +557,13 @@ function Workspace() {
     );
     try {
       await saveAgentConfiguration(selectedAgent, { provider, model }, workingDirectory);
-      fetchRecentModels().then(setRecentModels).catch((caught) => swallowed("page: a background load failed", caught));
+      fetchRecentModels().then(setRecentModels).catch((caught) => swallowed({ component: "workspace-page", operation: "read a workspace" }, caught));
       loadAgents();
     } catch (caught) {
       // The model the user picked did not save. Reloading the agents puts the real value back
       // on screen, so the change appears to undo itself — which is the only signal they get,
       // and says nothing about why.
-      swallowed("could not save the agent's model", caught);
+      swallowed({ component: "workspace-page", operation: "save the agent's model" }, caught);
       loadAgents();
     }
   }
@@ -576,7 +576,7 @@ function Workspace() {
     } catch (caught) {
       // Roll the toggle back so it reflects the daemon rather than the click. A sandbox
       // setting that silently refuses to change is worth a record.
-      swallowed("could not change sandbox enforcement", caught);
+      swallowed({ component: "workspace-page", operation: "change the sandbox enforcement" }, caught);
       setSandboxEnforceState(previous);
     }
   }
@@ -595,7 +595,7 @@ function Workspace() {
         worktree_strategy: strategy,
       });
     } catch (caught) {
-      swallowed("could not change the workspace strategy", caught);
+      swallowed({ component: "workspace-page", operation: "change the worktree strategy" }, caught);
       setWorktreeStrategy(previous);
     }
   }
@@ -649,7 +649,7 @@ function Workspace() {
       }
       const local = (workspace.locations ?? []).find((location) => location.kind === "local");
       setWorkingDirectory(local?.base_directory || homeWorkspace?.path || "");
-    }).catch((caught) => swallowed("page: a background load failed", caught));
+    }).catch((caught) => swallowed({ component: "workspace-page", operation: "list the sessions" }, caught));
     return () => { cancelled = true; };
   }, [workspaceId, homeWorkspace, router]);
 
@@ -715,6 +715,7 @@ function Workspace() {
             onNewChat={handleNewChat}
             onResume={(entry) => void handleResumeSession(entry)}
             onDeleteSession={(entry) => void handleDeleteSession(entry.sessionId)}
+            agents={agents}
           />
           </MotionFlex>
         )}

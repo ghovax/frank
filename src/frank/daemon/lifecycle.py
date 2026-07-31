@@ -53,7 +53,7 @@ def _resolve_locations(session_id: str):
     try:
         return _resolve_session_locations(session_id)
     except Exception:  # noqa: BLE001 — a session without locations still runs
-        logger.warning("Could not resolve locations for %s", session_id, exc_info=True)
+        logger.warning("could not resolve locations for %s", session_id, exc_info=True)
         return None
 
 
@@ -138,7 +138,7 @@ class SessionLifecycle:
         try:
             pid = await self._prototype.fork_session(assignment)
         except PrototypeUnavailable as error:
-            logger.error("Could not start session %s: %s", record.id, error)
+            logger.error("could not start session %s", record.id, exc_info=True)
             self._registry.end(record.id, outcome=FAILED, reason=str(error), updated_at=_now())
             self._changed()
             return False
@@ -168,7 +168,7 @@ class SessionLifecycle:
         if not losses:
             return
         logger.error(
-            "The prototype died; %d session(s) went with it and are being ended.", len(losses)
+            "the prototype died; %d session(s) went with it and are being ended.", len(losses)
         )
         for session_id, pid in losses:
             await self.on_session_exit(
@@ -207,7 +207,7 @@ class SessionLifecycle:
                 # nothing happening at all. The client is told "could not start the turn"; this
                 # is the line that says why.
                 logger.error(
-                    "Session %s died: %s", session_id, report.describe(),
+                    "session %s died: %s", session_id, report.describe(),
                 )
             self._registry.end(
                 session_id,
@@ -253,7 +253,7 @@ class SessionLifecycle:
                 "metadata": {Metadata.PEER_SENDER: record.id},
             })
         except Exception:  # noqa: BLE001 — a notice that cannot be delivered is not a failure
-            logger.debug("Could not tell %s that %s ended", parent.id, record.id, exc_info=True)
+            logger.debug("could not tell %s that %s ended", parent.id, record.id, exc_info=True)
 
     async def reap(self, session_id: str, *, reason: str = "", skip_self: bool = False) -> int:
         """Take a session and everything under it down.
@@ -303,7 +303,7 @@ class SessionLifecycle:
         pid = self._processes.pop(session_id, None)
         if pid is None:
             return False
-        logger.info("Sleeping session %s (pid %d)", session_id, pid)
+        logger.info("sleeping session %s (pid %d)", session_id, pid)
         self._sleeping.add(session_id)
         try:
             await self._terminate(session_id, pid)
@@ -355,7 +355,7 @@ class SessionLifecycle:
             # session's own group keeps its death reliable, and says why it is less than it
             # should be rather than silently reaping too little.
             logger.warning(
-                "Could not enumerate the process session of %d; signalling its group only", pid
+                "could not enumerate the process session of %d; signalling its group only", pid
             )
             with contextlib.suppress(OSError):
                 groups = [os.getpgid(pid)]

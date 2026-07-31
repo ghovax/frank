@@ -134,7 +134,7 @@ def _window_server_windows() -> tuple[dict[int, dict[str, Any]], set[int]]:
             Quartz.kCGNullWindowID,
         ) or []
     except Exception:  # noqa: BLE001 — never let enumeration take the tool down
-        logger.debug("Could not enumerate windows", exc_info=True)
+        logger.debug("could not enumerate windows", exc_info=True)
         return {}, set()
 
     numbered: dict[int, dict[str, Any]] = {}
@@ -183,7 +183,7 @@ def _native_targets() -> list[Target]:
         try:
             published = accessibility.windows_of(pid)
         except Exception:  # noqa: BLE001 — one unresponsive application must not empty the list
-            logger.debug("Could not read the windows of pid %s", pid, exc_info=True)
+            logger.debug("could not read the windows of pid %s", pid, exc_info=True)
             published = []
         if not published:
             # Running, and publishing nothing addressable: a menu-bar agent, or a window it draws
@@ -308,7 +308,7 @@ def _browser_targets() -> list[Target]:
     try:
         listing = surface.open_tabs()
     except Exception:  # noqa: BLE001 — a browser that is not connected simply offers no targets
-        logger.debug("Could not enumerate browser tabs", exc_info=True)
+        logger.debug("could not enumerate browser tabs", exc_info=True)
         return []
     targets = []
     for tab in listing:
@@ -390,7 +390,13 @@ def list_targets() -> list[Target]:
 
     Order is stable — browser tabs after native windows, each in the platform's own order — so
     that a diff between two listings reflects the world changing rather than the enumeration."""
-    return _native_targets() + _browser_targets()
+    global _warmed
+    targets = _native_targets() + _browser_targets()
+    # Set on the way out rather than on the way in: a listing that is still running has not
+    # paid the connection cost yet, and something checking `warm()` in the meantime must not be
+    # told it is cheap and then wait out the whole of it.
+    _warmed = True
+    return targets
 
 
 def _find(target_id: str, among: list[Target]) -> Optional[Target]:
@@ -445,6 +451,39 @@ def legend() -> dict[str, str]:
 def describe_all(targets: Optional[list[Target]] = None) -> list[dict[str, Any]]:
     """The whole listing, as the model reads it."""
     return [target.described() for target in (targets if targets is not None else list_targets())]
+
+
+# Whether this process has completed an enumeration. The first one costs about 1.8 seconds and
+# every one after it about 0.15: what is expensive is a process opening its accessibility
+# connection to each running application, which is per-process state that then lasts for the
+# session's life. Nothing about the *listing* is remembered here — every call still reads the
+# world — so this flag trades away no freshness at all. It exists so a turn can tell "the
+# screen is expensive right now" from "the screen is cheap", which is the difference between
+# waiting two seconds before the model is called and not waiting.
+_warmed = False
+
+
+def warm() -> bool:
+    """Whether reading the screen is cheap in this process yet."""
+    return _warmed
+
+
+def prewarm() -> None:
+    """Open this process's accessibility connections before a turn needs them.
+
+    Called off the event loop when a session starts. The enumeration it performs is thrown
+    away; what survives is the connection, and with it :func:`warm` answering true — so the
+    first turn that would have paid 1.8 seconds inside the model request either finds the work
+    already done or is told to ask for the listing instead of waiting for it.
+
+    Swallows everything. A machine that refuses the listing simply leaves the process cold, and
+    a cold process is a state the callers already handle."""
+    global _warmed
+    try:
+        _native_targets()
+    except Exception:  # noqa: BLE001 — warming is an optimisation, never a reason to fail
+        logger.debug("could not warm the screen listing", exc_info=True)
+    _warmed = True
 
 
 def context_block(mutating_allowed: bool = True) -> dict[str, Any]:

@@ -197,6 +197,24 @@ class _RunsTurns:
             return {}
         try:
             from frank.computer import targets as target_registry
+            from frank.computer.surface import message_loader
+
+            # The one turn where this is expensive is skipped rather than waited on.
+            #
+            # Enumerating costs ~1.8s the first time a process asks and ~0.15s afterwards, and
+            # the worker warms itself in the background from the moment it starts. But a session
+            # is a fresh process per wake and its first message arrives right behind the fork, so
+            # a turn that insisted on the listing sat in front of the model call waiting out a
+            # warm-up that was already running — roughly two seconds, on the very turn a person
+            # is watching for the first sign of life.
+            #
+            # So a cold process says so instead. The model is told the listing is being read and
+            # to ask for it if this turn needs it, which costs one call on the rare turn that
+            # does; every turn from the second on carries it as before, freshly enumerated. No
+            # snapshot is cached and nothing here is ever stale — the choice is between the
+            # current listing and none, never between the current one and an old one.
+            if not target_registry.warm():
+                return {"reading": message_loader("computer")("screen_warming")}
 
             # A read-only session is shown only the primitives it may actually run. Listing one
             # the permission layer will refuse advertises a capability and then denies it, which
@@ -221,7 +239,7 @@ class _RunsTurns:
                 block["workflows"] = saved
             return block
         except Exception:  # noqa: BLE001 — context is an aid, never the thing that fails a turn
-            logger.debug("Could not enumerate screen targets for the turn context", exc_info=True)
+            logger.debug("could not enumerate screen targets for the turn context", exc_info=True)
             return {}
 
     def _record_turn(self, user_message: str, tool_calls: list, tool_results: list, final_response: str):
@@ -270,7 +288,7 @@ class _RunsTurns:
                 error=error,
             ))
         except Exception:  # noqa: BLE001 — a record that cannot be written must not lose the turn
-            logger.warning("The transcript raised while recording a turn", exc_info=True)
+            logger.warning("the transcript raised while recording a turn", exc_info=True)
 
     async def _drain_steering_messages(self) -> list[TurnEvent]:
         events: list[TurnEvent] = []
@@ -301,7 +319,7 @@ class _RunsTurns:
             try:
                 verdict = await self._approvals.decide(gate)
             except Exception:  # noqa: BLE001 — a failing approver escalates, it does not allow
-                logger.warning("The approver raised on %s; escalating the gate", gate.kind, exc_info=True)
+                logger.warning("the approver raised on %s; escalating the gate", gate.kind, exc_info=True)
                 continue
             if verdict is None:
                 continue

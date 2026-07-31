@@ -59,6 +59,7 @@ import shlex
 import time
 from frank.base.configuration import PermissionDenied
 from frank.base.serialization import compact
+from frank.base.errors import summary
 
 logger = logging.getLogger(__name__)
 
@@ -610,10 +611,10 @@ class _DispatchesTools:
         try:
             result = await self._through_pipeline(tool_name, tool_arguments, tool.ainvoke)
         except Exception as error:  # noqa: BLE001 — a caller's tool failing is a tool result
-            logger.debug("Supplied tool %s raised", tool_name, exc_info=True)
+            logger.debug("supplied tool %s raised", tool_name, exc_info=True)
             yield Error(
                 id=tool_call_identifier,
-                message=f"{type(error).__name__}: {error}",
+                message=summary(error),
                 tool=tool_name,
             )
             return

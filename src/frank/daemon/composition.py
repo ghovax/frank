@@ -68,7 +68,7 @@ async def open_shared_resources() -> None:
     # frozen application.
     seeded = await asyncio.to_thread(seed_home_agents)
     if seeded:
-        logger.info("Seeded home agents and skills: %s", ", ".join(seeded))
+        logger.info("seeded home agents and skills: %s", ", ".join(seeded))
     # Seed the digest with the file as just loaded, so the bootstrap write that
     # `Configuration.load` may have performed is not mistaken for a manual edit by the
     # watcher below and echoed straight back.
@@ -197,7 +197,7 @@ async def _watch_agents_and_skills() -> None:
     except asyncio.CancelledError:
         pass
     except Exception:  # noqa: BLE001 — a watcher that dies must not take the daemon with it
-        logger.exception("The agent and skill watcher stopped")
+        logger.exception("the agent and skill watcher stopped")
 
 
 async def _watch_configuration() -> None:
@@ -228,7 +228,7 @@ async def _watch_configuration() -> None:
     except asyncio.CancelledError:
         pass
     except Exception:  # noqa: BLE001
-        logger.exception("The configuration watcher stopped")
+        logger.exception("the configuration watcher stopped")
 
 
 async def _watch_ssh_hosts() -> None:
@@ -251,7 +251,7 @@ async def _watch_ssh_hosts() -> None:
     except asyncio.CancelledError:
         pass
     except Exception:  # noqa: BLE001
-        logger.exception("The SSH host watcher stopped")
+        logger.exception("the SSH host watcher stopped")
 
 
 def known_agent_names() -> list[str]:

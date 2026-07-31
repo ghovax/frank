@@ -15,7 +15,7 @@ import { DisclosureRow } from "./ui/disclosure-row";
 import { ActivityIcon } from "./ui/activity-icon";
 import type { ToolEvent } from "@/lib/tool-event";
 import { hasBackgroundJobId, toolStatus } from "@/lib/tool-event";
-import { ToolCall, ToolLocationBadge, collapsedHeadingLocation } from "./tool-call";
+import { ToolCall, ToolCallDetail, ToolLocationBadge, ToolRiskBadges, collapsedHeadingLocation, toolCallDetail } from "./tool-call";
 
 // Shared, grouped/collapsible run of contiguous tool calls — the single source
 // of truth for how a batch of tool calls reads. The group is a single line of
@@ -150,12 +150,23 @@ export const ToolGroup = memo(function ToolGroup({
   // A tools-less group is a "thinking before acting" phase and owns the leading brain icon.
   const thinkingOnly = tools.length === 0;
   const headingText = latestLabel || (thinkingOnly ? translation("thinking") : active ? translation("working") : translation("actionsTaken"));
+  // A group of exactly one call skips the per-call line and opens straight onto that call's
+  // detail. The line was a duplicate of the heading — the heading already carries that call's
+  // icon, label and location, because with one call it *is* that call — so opening the group
+  // showed a row saying what you had just read, with the thing you actually wanted behind a
+  // second chevron. One expansion, one thing revealed.
+  const soleTool = tools.length === 1 ? tools[0] : null;
+  const soleDetail = soleTool ? toolCallDetail(soleTool.name, soleTool.arguments, soleTool.result, soleTool.status) : null;
   // Any call can be opened, including a single one. The rule used to be "more than one",
   // on the reasoning that one call is already represented by the summary row — but the row
   // carries the call's *label*, and the body carries what it did: the script, the output, the
   // error and its traceback. A lone failing call was therefore the one case where none of that
   // could be reached, which is precisely when a person most wants it.
-  const interactive = tools.length > 0;
+  //
+  // A lone call with nothing to show is the exception, and it has to be: with the per-call
+  // line gone there is no longer anything to put inside, so an openable group would reveal an
+  // empty rail — the very defect `toolCallDetail` exists to decide away.
+  const interactive = soleTool ? !!soleDetail?.collapsible : tools.length > 0;
 
   // Status chips surface states that need separate attention. Running and completed calls
   // carry no chip: the live shimmer already communicates activity, while the settled line
@@ -206,9 +217,14 @@ export const ToolGroup = memo(function ToolGroup({
   // The heading's chip cluster: prior-tool tallies, any file-change chip, the remote
   // badge, and status chips — all animated in/out.
   const hasBadges = tally.order.length > 0 || statusChips.length > 0
-    || fileChanges.length > 0 || !!groupLocation;
+    || fileChanges.length > 0 || !!groupLocation || !!soleTool;
   const badgeSlot = (
     <>
+      {/* The write/risk markers of a lone call, which used to ride on its own line. That line
+          is gone for a one-call group, and these are the one thing on it the heading did not
+          already say — so they move up rather than disappearing. They are safety markers; a
+          simplification that quietly drops them is not a simplification. */}
+      {soleTool ? <ToolRiskBadges arguments={soleTool.arguments} /> : null}
       <AnimatePresence initial={false}>
         {tally.order.map((name) => {
           const display = getToolCallDisplay(name, undefined, tDisplay);
@@ -288,7 +304,15 @@ export const ToolGroup = memo(function ToolGroup({
         // chevron sat a few pixels right of where it does on a row that genuinely has no badges.
         badges={hasBadges ? badgeSlot : undefined}
       >
-        {interactive ? (
+        {!interactive ? undefined : soleTool ? (
+          <ToolCallDetail
+            name={soleTool.name}
+            arguments={soleTool.arguments}
+            result={soleTool.result}
+            toolCallId={soleTool.toolCallId}
+            status={soleTool.status}
+          />
+        ) : (
           <Flex direction="column" gap={1}>
             {tools.map((tool, index) => (
               <ToolCall
@@ -303,7 +327,7 @@ export const ToolGroup = memo(function ToolGroup({
               />
             ))}
           </Flex>
-        ) : undefined}
+        )}
       </DisclosureRow>
     </Box>
   );

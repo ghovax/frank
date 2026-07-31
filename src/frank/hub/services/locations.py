@@ -92,11 +92,11 @@ def _location_pair_conflict(first: tuple[str, str, str], second: tuple[str, str,
     if machine_a != machine_b or not path_a or not path_b:
         return None
     if path_a == path_b:
-        return f"Two locations use the same directory {raw_a}. Each location must be a distinct place, so remove one or point it somewhere else."
+        return f"Two environments use the same directory {raw_a}. Each environment must be a distinct place, so remove one or point it somewhere else."
     if path_b.startswith(path_a + "/"):
-        return f"{raw_b} is inside {raw_a}, so the two overlap. A location already covers everything beneath it — give each one its own separate directory."
+        return f"{raw_b} is inside {raw_a}, so the two overlap. An environment already covers everything beneath it — give each one its own separate directory."
     if path_a.startswith(path_b + "/"):
-        return f"{raw_a} is inside {raw_b}, so the two overlap. A location already covers everything beneath it — give each one its own separate directory."
+        return f"{raw_a} is inside {raw_b}, so the two overlap. An environment already covers everything beneath it — give each one its own separate directory."
     return None
 
 
@@ -144,6 +144,19 @@ def _add_location_row(database_session, workspace_id: str, location_input: Locat
     )
     database_session.add(record)
     return record
+
+
+def _workspace_id_for_location(location_id: str) -> str:
+    """Which workspace a location belongs to, or ``""`` if there is no such row. Read before a
+    delete, because afterwards there is nothing left to ask whose sessions need telling."""
+    if state.session_factory is None:
+        return ""
+    database_session = state.session_factory()
+    try:
+        record = database_session.get(LocationRecord, location_id)
+        return record.workspace_id if record is not None else ""
+    finally:
+        database_session.close()
 
 
 def _resolve_session_locations(session_id: str) -> list[dict[str, Any]] | None:

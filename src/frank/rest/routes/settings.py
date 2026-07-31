@@ -348,6 +348,7 @@ async def get_settings():
         "compaction": state.global_configuration.compaction.model_dump(),
         "user_context_enabled": state.global_configuration.user_context.enabled,
         "computer_control_enabled": state.global_configuration.computer_control.enabled,
+        "dictation_enabled": state.global_configuration.dictation.enabled,
         "providers": {
             identifier: {"api_key": credential.api_key, "base_url": credential.base_url}
             for identifier, credential in state.global_configuration.providers.items()

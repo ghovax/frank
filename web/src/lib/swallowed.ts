@@ -15,7 +15,8 @@
  *   the call documents *why* silence is right, which a bare `catch {}` cannot.
  * - `swallowed(...)` — the failure is not expected, but this code can carry on without it.
  *   Reported to the daemon, which writes it to its log and, when an OTLP endpoint is
- *   configured, forwards it to the collector already carrying traces and metrics.
+ *   configured, forwards it to the collector already carrying traces and metrics. It takes a
+ *   :interface:`FaultSite` — *where* and *at what* — rather than a sentence; see below.
  *
  * **Why the daemon and not the collector.** The OTLP endpoint and its headers are user
  * configuration living in the daemon. A browser talking to the collector directly would mean
@@ -33,9 +34,48 @@
  * would be a cycle.
  */
 
+import { errorFields } from "./errors";
+
+/**
+ * Where a fault happened and what was being attempted, as two fields rather than as one
+ * sentence with the place glued to the front.
+ *
+ * The prose form drifted into three incompatible shapes across sixty-odd call sites: twenty-six
+ * read `<place>: a background load failed`, where the message carries nothing and the place is
+ * the only signal; seventeen were a bare `fetchSkills failed`, a camelCase identifier leaking
+ * into telemetry with no message at all; the rest were real sentences, some prefixed and some
+ * not. Nothing could be grouped by component without matching on a prefix, which is not a query
+ * anybody should have to write against their own telemetry.
+ *
+ * These become span attributes, and an attribute is a *dimension* — something you filter and
+ * group by. `frank.client.component` answers "which surface is failing", `frank.client.operation`
+ * answers "at what", and neither has to be parsed out of a string that a colon inside a message
+ * would take apart wrongly. The daemon reached this conclusion one layer out already, when its
+ * log line stopped being `interface fault at %s: %s -- %s` and became fields; this is the same
+ * argument applied to the field it receives.
+ */
+export interface FaultSite {
+  /**
+   * The surface it happened on, kebab-case and stable: `chat-panel`, `pdf-view`, `api`. The
+   * module, not the file path — a rename of the file should not split a year of telemetry.
+   */
+  component: string;
+  /**
+   * What was being attempted, as a short verb phrase: `load the message history`. Never the
+   * outcome ("failed" is what a fault *is*) and never the component again.
+   */
+  operation: string;
+}
+
 export interface ClientFault {
-  context: string;
-  detail: string;
+  component: string;
+  operation: string;
+  // The error as fields rather than as one pre-formatted blob. Flat because these become OTLP
+  // attributes and an attribute is a scalar — and parsed by `serialize-error`, so a thrown
+  // string, number or bare object arrives with a name and a message like anything else.
+  errorName: string;
+  errorMessage: string;
+  errorStack: string;
   url: string;
   sessionId: string;
 }
@@ -49,17 +89,16 @@ export function setFaultSender(sender: FaultSender): void {
   send = sender;
 }
 
-function detailOf(error: unknown): string {
-  if (error instanceof Error) return error.stack || `${error.name}: ${error.message}`;
-  return String(error);
-}
-
 /** A failure this code can continue past, but which nobody chose. Reported. */
-export function swallowed(context: string, error: unknown): void {
+export function swallowed(site: FaultSite, error: unknown): void {
   if (send === null || typeof window === "undefined") return;
+  const fields = errorFields(error);
   void send({
-    context,
-    detail: detailOf(error),
+    component: site.component,
+    operation: site.operation,
+    errorName: fields.name,
+    errorMessage: fields.message,
+    errorStack: fields.stack,
     url: window.location?.pathname ?? "",
     sessionId: new URLSearchParams(window.location?.search ?? "").get("session") ?? "",
   }).catch(() => {

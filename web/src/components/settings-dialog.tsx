@@ -4,7 +4,7 @@ import { Alert, Box, Button, Dialog, EmptyState, Flex, IconButton, Input, Portal
 import { swallowed } from "@/lib/swallowed";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LuClock, LuEye, LuEyeOff, LuKeyRound, LuPlug, LuPlus, LuSearch, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
-import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, restartDaemon, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel, type SandboxEnforce } from "@/lib/api";
+import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, restartDaemon, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateDictationSetting, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel, type SandboxEnforce } from "@/lib/api";
 import { ModelSelect } from "./model-select";
 import { ChatGPTAuthControl } from "./chatgpt-auth";
 import { CursorAuthControl } from "./cursor-auth";
@@ -17,9 +17,10 @@ import { ConfirmDialog } from "./ui/confirm-dialog";
 import { useTranslations } from "next-intl";
 import { useLocale } from "@/lib/i18n/locale-provider";
 import { LOCALES, type Locale } from "@/lib/i18n/messages";
-import { CompactionToggleControl, ComputerControlToggleControl, PermissionModeControl, SandboxToggleControl, UserContextToggleControl, WorktreeStrategyControl, type WorktreeStrategyValue } from "./session-controls";
+import { AgentSelectControl, CompactionToggleControl, ComputerControlToggleControl, DictationToggleControl, PermissionModeControl, SandboxToggleControl, UserContextToggleControl, WorktreeStrategyControl, type WorktreeStrategyValue } from "./session-controls";
 import { useScrollEdgeFade } from "@/lib/scroll-fade";
 import { Section } from "./ui/semantic";
+import { errorMessage } from "@/lib/errors";
 
 export type SettingsSection = "general" | "locations" | "schedules" | "agents" | "connection";
 
@@ -121,6 +122,8 @@ export function SettingsDialog({
   const [savedUserContextEnabled, setSavedUserContextEnabled] = useState(false);
   const [computerControlEnabled, setComputerControlEnabled] = useState(false);
   const [savedComputerControlEnabled, setSavedComputerControlEnabled] = useState(false);
+  const [dictationEnabled, setDictationEnabled] = useState(false);
+  const [savedDictationEnabled, setSavedDictationEnabled] = useState(false);
   // Whether the server can read Full-Disk-Access-protected data (Screen Time, Safari history).
   // `null` while unknown; drives the banner shown when user-context is on but FDA is missing.
   const [fullDiskAccess, setFullDiskAccess] = useState<boolean | null>(null);
@@ -163,12 +166,9 @@ export function SettingsDialog({
     || worktreeStrategy !== savedWorktreeStrategy
     || autoCompaction !== savedAutoCompaction
     || userContextEnabled !== savedUserContextEnabled
-    || computerControlEnabled !== savedComputerControlEnabled;
+    || computerControlEnabled !== savedComputerControlEnabled
+    || dictationEnabled !== savedDictationEnabled;
   const hasUnsavedChanges = generalDirty || agentDirty || connectionDirty;
-  const agentItems = useMemo(
-    () => agents.map((agent) => ({ label: agent.title || agent.name, value: agent.id })),
-    [agents]
-  );
 
   // Pre-fill from the server each time the dialog opens.
   useEffect(() => {
@@ -200,7 +200,7 @@ export function SettingsDialog({
         setWebFetchProxyUrl(settings.web_fetch_proxy_url);
         setSavedWebFetchProxyUrl(settings.web_fetch_proxy_url);
       })
-      .catch((caught) => swallowed("settings: a background load failed", caught));
+      .catch((caught) => swallowed({ component: "settings", operation: "read the settings" }, caught));
     return () => {
       cancelled = true;
     };
@@ -259,6 +259,7 @@ export function SettingsDialog({
     worktreeStrategy, savedWorktreeStrategy, autoCompaction, savedAutoCompaction,
     userContextEnabled, savedUserContextEnabled,
     computerControlEnabled, savedComputerControlEnabled,
+    dictationEnabled, savedDictationEnabled,
     exaApiKey, savedExaApiKey, composioApiKey, savedComposioApiKey,
     jinaApiKey, savedJinaApiKey, firecrawlApiKey, savedFirecrawlApiKey,
     webFetchProxyUrl, savedWebFetchProxyUrl,
@@ -269,6 +270,7 @@ export function SettingsDialog({
       worktreeStrategy, savedWorktreeStrategy, autoCompaction, savedAutoCompaction,
       userContextEnabled, savedUserContextEnabled,
       computerControlEnabled, savedComputerControlEnabled,
+      dictationEnabled, savedDictationEnabled,
       exaApiKey, savedExaApiKey, composioApiKey, savedComposioApiKey,
     jinaApiKey, savedJinaApiKey, firecrawlApiKey, savedFirecrawlApiKey,
     webFetchProxyUrl, savedWebFetchProxyUrl,
@@ -297,13 +299,14 @@ export function SettingsDialog({
           reconcile(settings.compaction?.auto ?? false, fields.autoCompaction, fields.savedAutoCompaction, setAutoCompaction, setSavedAutoCompaction);
           reconcile(settings.user_context_enabled, fields.userContextEnabled, fields.savedUserContextEnabled, setUserContextEnabled, setSavedUserContextEnabled);
           reconcile(settings.computer_control_enabled, fields.computerControlEnabled, fields.savedComputerControlEnabled, setComputerControlEnabled, setSavedComputerControlEnabled);
+          reconcile(settings.dictation_enabled, fields.dictationEnabled, fields.savedDictationEnabled, setDictationEnabled, setSavedDictationEnabled);
           reconcile(settings.exa_api_key, fields.exaApiKey, fields.savedExaApiKey, setExaApiKey, setSavedExaApiKey);
           reconcile(settings.composio_api_key, fields.composioApiKey, fields.savedComposioApiKey, setComposioApiKey, setSavedComposioApiKey);
           reconcile(settings.jina_api_key, fields.jinaApiKey, fields.savedJinaApiKey, setJinaApiKey, setSavedJinaApiKey);
           reconcile(settings.firecrawl_api_key, fields.firecrawlApiKey, fields.savedFirecrawlApiKey, setFirecrawlApiKey, setSavedFirecrawlApiKey);
           reconcile(settings.web_fetch_proxy_url, fields.webFetchProxyUrl, fields.savedWebFetchProxyUrl, setWebFetchProxyUrl, setSavedWebFetchProxyUrl);
         })
-        .catch((caught) => swallowed("settings: a background load failed", caught));
+        .catch((caught) => swallowed({ component: "settings", operation: "read the agent configuration" }, caught));
     });
   }, [open]);
 
@@ -333,7 +336,7 @@ export function SettingsDialog({
           setAgentConfiguration(configuration);
           setSavedAgentConfiguration(configuration);
         })
-        .catch((caught) => swallowed("settings: a background load failed", caught));
+        .catch((caught) => swallowed({ component: "settings", operation: "read the permission state" }, caught));
     });
   }, [open]);
 
@@ -360,7 +363,7 @@ export function SettingsDialog({
         if (cancelled) return;
         setAgentConfiguration(null);
         setSavedAgentConfiguration(null);
-        setAgentError(error instanceof Error ? error.message : translation("loadAgentError"));
+        setAgentError(errorMessage(error) || translation("loadAgentError"));
       })
       .finally(() => {
         if (!cancelled) setLoadedAgentKey(agentRequestKey);
@@ -419,6 +422,10 @@ export function SettingsDialog({
       if (computerControlEnabled !== savedComputerControlEnabled) {
         await updateComputerControlSetting(computerControlEnabled);
         setSavedComputerControlEnabled(computerControlEnabled);
+      }
+      if (dictationEnabled !== savedDictationEnabled) {
+        await updateDictationSetting(dictationEnabled);
+        setSavedDictationEnabled(dictationEnabled);
       }
       if (agentDirty && settingsAgent && agentConfiguration) {
         const savedConfiguration = await saveAgentConfiguration(settingsAgent, {
@@ -537,6 +544,7 @@ export function SettingsDialog({
             { key: "compaction", title: translation("compaction"), control: <CompactionToggleControl enabled={autoCompaction} onChange={setAutoCompaction} /> },
             { key: "userContext", title: translation("userContext"), description: translation("userContextHint"), control: <UserContextToggleControl enabled={userContextEnabled} onChange={setUserContextEnabled} /> },
             { key: "computerControl", title: translation("computerControl"), description: translation("computerControlHint"), control: <ComputerControlToggleControl enabled={computerControlEnabled} onChange={accessibilityGranted ? setComputerControlEnabled : undefined} /> },
+            { key: "dictation", title: translation("dictation"), description: translation("dictationHint"), control: <DictationToggleControl enabled={dictationEnabled} onChange={setDictationEnabled} /> },
           ],
           block: grantAlerts,
         },
@@ -568,7 +576,7 @@ export function SettingsDialog({
       id: "locations" as SettingsSection, label: translation("tabLocations"), icon: <LuServer size={14} />,
       sections: [{ title: translation("locations"), rows: [], block: <WorkspaceLocationsPanel workspaceId={workspaceId} /> }],
     }] : []),
-    // Only with a workspace, like the folders tab and for the same reason: a schedule belongs
+    // Only with a workspace, like the environments tab and for the same reason: a schedule belongs
     // to one, and there is nothing to show or create without it.
     ...(workspaceId ? [{
       id: "schedules" as SettingsSection, label: translation("tabSchedules"), icon: <LuClock size={14} />,
@@ -579,7 +587,11 @@ export function SettingsDialog({
       sections: [
         {
           title: translation("agent"),
-          rows: [{ key: "profile", title: translation("profile"), control: <Box w="280px"><SimpleSelect items={agentItems} value={settingsAgent} onValueChange={setSettingsAgent} placeholder={translation("chooseAgent")} /></Box> }],
+          // The same picker the composer uses, because it picks the same thing: which agent
+          // profile runs. A plain select here listed the names with none of their descriptions,
+          // so choosing between them in the one place you go to *edit* them was the one place
+          // you could not see what they were.
+          rows: [{ key: "profile", title: translation("profile"), control: <Box w="280px"><AgentSelectControl layout="field" agents={agents} value={settingsAgent} onChange={setSettingsAgent} placeholder={translation("chooseAgent")} /></Box> }],
           block: agentLoading ? (
             <Flex align="center" gap={2} color="fg.muted" fontSize="sm" py={3}><Spinner size="xs" />{translation("loadingAgentConfiguration")}</Flex>
           ) : agentError ? (
@@ -721,7 +733,7 @@ export function SettingsDialog({
                             {pageSection.block ? (
                               // Settings owns the content width, and every panel fills it.
                               // Each panel used to pick its own — 520, 560, 640 — so the
-                              // Folders panel stopped short of the pane while its neighbours
+                              // Environments panel stopped short of the pane while its neighbours
                               // reached the edge, and the measure changed as you moved between
                               // tabs.
                               <Box pt={pageSection.rows.length > 0 ? 4 : 0} w="100%" maxW="640px">
@@ -971,7 +983,7 @@ function AgentPermissionsEditor({
                 </IconButton>
               </Flex>
             ))}
-            <Button variant="outline" justifyContent="flex-start" onClick={addRule}>
+            <Button variant="subtle" colorPalette="blue" justifyContent="flex-start" onClick={addRule}>
               <LuPlus size={14} />
               {translation("addRule")}
             </Button>

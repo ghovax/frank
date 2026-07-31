@@ -4,7 +4,8 @@ import { Box, Flex, Span, Text } from "@chakra-ui/react";
 import { swallowed } from "@/lib/swallowed";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { LuListChecks, LuPlug, LuPuzzle, LuWrench } from "react-icons/lu";
+// The same glyphs the transcript uses for these things — see `concept-icons.ts`.
+import { CONCEPT_ICONS } from "@/lib/concept-icons";
 import { fetchMcpTools, fetchSkills, subscribeEvents, type AgentCard, type AgentSkill, type McpServerTools, type McpTool } from "@/lib/api";
 import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
 import { SectionHeader } from "./ui/section-header";
@@ -57,12 +58,12 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
         .then((skills) => {
           if (!cancelled) setFolderSkills(skills);
         })
-        .catch((caught) => swallowed("agent skills: a background load failed", caught));
+        .catch((caught) => swallowed({ component: "agent-skills", operation: "list the skills" }, caught));
       fetchMcpTools(workingDirectory)
         .then((servers) => {
           if (!cancelled) setMcpServers(servers);
         })
-        .catch((caught) => swallowed("agent skills: a background load failed", caught));
+        .catch((caught) => swallowed({ component: "agent-skills", operation: "list the MCP tools" }, caught));
     };
     loadCapabilities();
     // Skills and MCP servers reload live (their files are watched server-side);
@@ -115,7 +116,7 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
       {hasSkills && (
         <>
           <SectionHeader
-            icon={<LuListChecks size={14} />}
+            icon={<CONCEPT_ICONS.skill size={14} />}
             title={translation("skillsAvailable")}
             description={translation("skillsDescription")}
           />
@@ -131,7 +132,7 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
       {hasTools && (
         <Box mt={hasSkills ? 6 : 0}>
           <SectionHeader
-            icon={<LuWrench size={14} />}
+            icon={<CONCEPT_ICONS.mcp size={14} />}
             title={translation("toolsAvailable")}
             description={translation("toolsDescription")}
           />
@@ -153,7 +154,7 @@ function SkillCard({ skill }: { skill: AgentSkill }) {
   return (
     <DisclosureRow
       disabled={!enabled}
-      icon={<Box color="fg.muted"><LuPuzzle /></Box>}
+      icon={<Box color="fg.muted"><CONCEPT_ICONS.skill /></Box>}
       title={<DisclosureLabel><CapabilityTitle title={skill.title ?? skill.name} identifier={skill.id} /></DisclosureLabel>}
       badges={enabled ? undefined : <Pill colorPalette="gray">{translation("disabled")}</Pill>}
     >
@@ -189,7 +190,7 @@ function McpServerGroup({ server }: { server: McpServerTools }) {
   return (
     <DisclosureRow
       disabled={!enabled}
-      icon={<Box color="fg.muted"><LuPlug /></Box>}
+      icon={<Box color="fg.muted"><CONCEPT_ICONS.mcp /></Box>}
       title={<DisclosureLabel><CapabilityTitle identifier={server.name} /></DisclosureLabel>}
       badges={
         enabled

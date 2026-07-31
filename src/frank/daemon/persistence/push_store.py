@@ -167,7 +167,7 @@ class PinnedPushNotificationSender(BasePushNotificationSender):
             hostname, ips = resolve_public_ips(url, allow_private=self._allow_private)
         except UntrustedHostError as exception:
             logger.warning(
-                "Refusing push-notification for turn_id=%s to untrusted URL %s: %s",
+                "refusing push-notification for turn_id=%s to untrusted URL %s: %s",
                 task.id, url, exception,
             )
             return False
@@ -195,8 +195,8 @@ class PinnedPushNotificationSender(BasePushNotificationSender):
             response.raise_for_status()
         except Exception:
             logger.exception(
-                "Error sending push-notification for turn_id=%s to URL: %s.", task.id, url,
+                "error sending push-notification for turn_id=%s to URL: %s.", task.id, url,
             )
             return False
-        logger.info("Push-notification sent for turn_id=%s to URL: %s", task.id, url)
+        logger.info("push-notification sent for turn_id=%s to URL: %s", task.id, url)
         return True

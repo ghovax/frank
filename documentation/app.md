@@ -20,7 +20,7 @@ opens only the window, for when a daemon is already up or lives on another machi
 | The sidebar | Your projects, and the sessions in each. A session that created others nests under it |
 | The transcript | The conversation, as it happens: prose, tool calls, tool results, and prompts that need an answer |
 | The composer | Where you type. It also queues a message for the next turn while one is running |
-| Settings | Providers and keys, agents, folders, permissions, and the screen tools |
+| Settings | Providers and keys, agents, environments, permissions, and the screen tools |
 
 A dot beside a session says what it is doing. A pulsing grey dot means it is working. A yellow
 dot means it is parked on a decision only you can make. A blue dot means it finished something
@@ -31,17 +31,17 @@ while you were looking elsewhere. A session with no dot is idle, or asleep. Thos
 When a session needs permission, the turn stops and the prompt appears above the composer. It
 says what the tool wants to do and why it is being asked. Allow it or deny it, and the turn goes
 on. There is no "always allow": every decision is allow-once or deny, and a session's permission
-mode is fixed when the session is created. See [Configuration](configuration.md#permission-modes).
+mode can be changed at any point from the chip under the composer, including mid-turn. See [Configuration](configuration.md#permission-modes).
 
 You can leave a session parked for as long as you like. The whole turn is checkpointed on disk,
 and the session sleeps rather than holding a process open to wait for you.
 
-## Folders
+## Environments
 
-A project is a set of **folders**. A folder says where a session's work happens: a directory on this machine, or one on an SSH host. Add one in **Settings → Folders**. The SSH hosts
-come from your `~/.ssh/config`, so a host you already use is one you can pick.
+A project is a set of **environments**. An environment says where a session's work happens: a directory on this machine, or one on an SSH host. Add one in **Settings → Environments**. The SSH hosts
+come from your `~/.ssh/config`, so a host you already use is one you can pick — and picking one fills the path in with that host's home directory, since you cannot be expected to know its layout.
 
-The folder also carries the permission mode that its sessions start with. A scratch directory and a production checkout can therefore behave differently, with nothing for you to remember.
+An environment also carries the permission mode that its sessions start with. A scratch directory and a production checkout can therefore behave differently, with nothing for you to remember. Adding or editing one reaches the sessions already running in that workspace: they pick it up on their next turn rather than only after a restart.
 
 ## Screen control
 
@@ -57,7 +57,7 @@ The tool reads the accessibility tree and the page's structure, not screenshots.
 
 ## A daemon somewhere else
 
-The app is a client, so the daemon it talks to does not have to be on this machine. A folder on
+The app is a client, so the daemon it talks to does not have to be on this machine. An environment on
 an SSH host runs its tools there while the daemon stays here. To put the *daemon* on another
 machine, forward its port and point the app at it — see
 [Architecture](architecture.md#connections-local-remote-ssh).

@@ -189,7 +189,7 @@ It also clamps the confinement against the session that created it. Path sets in
 | `auto` | Auto-approve low-risk actions, ask for the rest. |
 | `read_only` | Allow reads; deny writes and side effects. |
 
-There is **no bypass mode**, and no standing "always allow": the only runtime decisions are allow-once and deny. A session's mode is fixed when the harness creates it, and nothing changes it afterwards. A session created by another is never looser than its parent.
+There is **no bypass mode**, and no standing "always allow": the only runtime decisions are allow-once and deny. A session's mode is chosen when the harness creates it and can be changed afterwards by the person running it; a session can never change its own. A session created by another is never looser than its parent, and tightening a session tightens the subtree it created.
 
 Bash additionally honours per-command rules on each agent (`sudo *: deny`, `rm *: ask`, …) — see [Agents and skills](agents-and-skills.md).
 

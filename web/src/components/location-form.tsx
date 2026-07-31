@@ -1,11 +1,13 @@
 "use client";
 
-import { Alert, Box, Button, Flex, IconButton, Input, Skeleton, Text } from "@chakra-ui/react";
-import { useEffect, useMemo, useRef } from "react";
+import { Alert, Box, Button, Flex, IconButton, Input, Skeleton, Spinner, Text } from "@chakra-ui/react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LuFolder, LuFolderOpen, LuPlus, LuServer, LuTrash2 } from "react-icons/lu";
 import { useTranslations } from "next-intl";
-import { browseWorkingDirectory, fetchHomeDirectory, fetchHostHomeDirectory, type LocationInput, type SshHost } from "@/lib/api";
+import { browseWorkingDirectory, fetchHomeDirectory, fetchHostHomeDirectory, type LocationInput, type PermissionMode, type SshHost } from "@/lib/api";
+import { PermissionModeControl } from "./session-controls";
 import { SimpleSelect, type SelectOption } from "./ui/simple-select";
+import { swallowed } from "@/lib/swallowed";
 
 // A fresh, empty location for the wizard/editor. The name is derived server-side from the
 // connection, and permission_mode defaults to manual approvals.
@@ -48,7 +50,7 @@ export function locationConflict(
   return null;
 }
 
-// The reusable folder editor — used during creation and in workspace-folder settings.
+// The reusable environment editor — used during creation and in workspace-environment settings.
 // `hosts` come from ~/.ssh/config (remote only). `showPermission` reveals the permission
 // mode control (shown when editing an existing location, hidden in the create wizard so
 // creation stays about *where*, not policy). `onRemove` (optional) puts a remove control in
@@ -69,15 +71,6 @@ export function LocationForm({
   const translation = useTranslations("LocationForm");
   const set = (patch: Partial<LocationInput>) => onChange({ ...value, ...patch });
 
-  const permissionModeItems = useMemo<SelectOption[]>(
-    () => [
-      { value: "default", label: translation("permissionManual") },
-      { value: "auto", label: translation("permissionAuto") },
-      { value: "read_only", label: translation("permissionReadOnly") },
-    ],
-    [translation],
-  );
-
   const hostItems = useMemo<SelectOption[]>(
     () => hosts.map((host) => ({
       value: host.alias,
@@ -86,11 +79,20 @@ export function LocationForm({
     [hosts],
   );
 
+  // Which machine this location points at: the local one, or one named remote. A base
+  // directory is a path *on that machine*, so the machine changing is exactly what makes the
+  // path in the field stop meaning anything — which is what the prefill below keys on.
+  const machine = value.kind === "remote" ? `remote:${(value.host_alias ?? "").trim()}` : "local";
   // Keep the latest value/onChange in refs (updated after each render, before the effects
   // below run) so those effects can stay keyed only on what actually drives them.
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
-  const lastAutoBaseDirectory = useRef("");
+  // The machine whose path the field currently holds. Seeded with the machine this form
+  // opened on so an existing location — which already carries a real path for its own
+  // machine — is never overwritten just because it was rendered.
+  const settledMachine = useRef(machine);
+  const [resolvingHome, setResolvingHome] = useState(false);
+  const [homeUnresolved, setHomeUnresolved] = useState(false);
   useEffect(() => {
     valueRef.current = value;
     onChangeRef.current = onChange;
@@ -106,26 +108,45 @@ export function LocationForm({
     }
   }, [value.kind, hosts]);
 
-  // Prefill the base directory with the selected location's home directory as an editable
-  // starter: the local machine's home for a local location, the host's home for a remote.
-  // Only fills when the field is empty or still holds a previous auto value, so a path the
-  // user typed is never clobbered.
+  // Prefill the base directory with the home directory of the machine the location points at,
+  // as an editable starter: this machine's home for a local location, the host's own home for
+  // a remote one. Keyed on the machine rather than on the field being empty, because that is
+  // the honest condition — a path that was right for the previous machine is not a path the
+  // user chose for this one, and on a remote they usually cannot know one to type. The only
+  // path left alone is the one an existing location arrived with, which `settledMachine`
+  // (seeded at mount) distinguishes.
+  //
+  // Resolving a remote home means an SSH round trip, so a value typed while it is in flight
+  // wins: the answer is applied only if the field still holds what this effect left it as.
   useEffect(() => {
+    if (machine === settledMachine.current && valueRef.current.base_directory) return;
     let cancelled = false;
+    const before = valueRef.current.base_directory;
+    const alias = machine.startsWith("remote:") ? machine.slice("remote:".length) : "";
+    setHomeUnresolved(false);
+    setResolvingHome(true);
     (async () => {
-      const current = valueRef.current;
-      const home = current.kind === "local"
-        ? (await fetchHomeDirectory()).path
-        : current.host_alias ? await fetchHostHomeDirectory(current.host_alias) : "";
+      const home = machine === "local"
+        ? (await fetchHomeDirectory().catch((caught) => {
+            swallowed({ component: "environment-form", operation: "read this machine's home directory" }, caught);
+            return { path: "" };
+          })).path
+        : alias ? await fetchHostHomeDirectory(alias) : "";
       if (cancelled) return;
+      setResolvingHome(false);
+      // A remote whose home could not be read (unknown, unreachable, or not yet
+      // authenticated) says so rather than silently leaving an empty box.
+      setHomeUnresolved(machine !== "local" && !!alias && !home);
+      settledMachine.current = machine;
       const latest = valueRef.current;
-      if (latest.base_directory === "" || latest.base_directory === lastAutoBaseDirectory.current) {
-        lastAutoBaseDirectory.current = home;
-        if (home !== latest.base_directory) onChangeRef.current({ ...latest, base_directory: home });
-      }
+      if (latest.base_directory !== before) return;
+      if (home !== latest.base_directory) onChangeRef.current({ ...latest, base_directory: home });
     })();
-    return () => { cancelled = true; };
-  }, [value.kind, value.host_alias]);
+    return () => {
+      cancelled = true;
+      setResolvingHome(false);
+    };
+  }, [machine]);
 
   async function pickFolder() {
     try {
@@ -182,7 +203,10 @@ export function LocationForm({
       )}
 
       <Flex direction="column" gap={1}>
-        <Text textStyle="fieldLabel">{translation("baseDirectory")}</Text>
+        <Flex align="center" gap={2}>
+          <Text textStyle="fieldLabel">{translation("baseDirectory")}</Text>
+          {resolvingHome && <Spinner size="xs" color="fg.subtle" />}
+        </Flex>
         <Flex gap={2}>
           <Input
             flex={1}
@@ -196,19 +220,33 @@ export function LocationForm({
             </Button>
           )}
         </Flex>
+        {homeUnresolved && (
+          <Alert.Root status="warning" size="sm" borderRadius="md" alignItems="center" mt={1}>
+            <Alert.Indicator />
+            <Alert.Content flex={1} minW={0}>
+              <Alert.Description fontSize="xs">{translation("homeUnresolved")}</Alert.Description>
+            </Alert.Content>
+          </Alert.Root>
+        )}
       </Flex>
 
       {showPermission && (
         <Flex direction="column" gap={1}>
           <Text textStyle="fieldLabel">{translation("permissionMode")}</Text>
-          <SimpleSelect items={permissionModeItems} value={value.permission_mode ?? "default"} onValueChange={(next) => set({ permission_mode: next })} />
+          {/* The same control the composer carries, in its field layout — one picker, one set
+              of icons and one set of descriptions wherever a permission mode is chosen. */}
+          <PermissionModeControl
+            layout="field"
+            value={(value.permission_mode as PermissionMode) ?? "default"}
+            onChange={(next) => set({ permission_mode: next })}
+          />
         </Flex>
       )}
     </Flex>
   );
 }
 
-// A stack of editable folder forms with an "Add folder" button and an inline overlap
+// A stack of editable environment forms with an "Add environment" button and an inline overlap
 // warning. Creation and Settings share the same editing surface; only persistence differs.
 export function LocationEditorList({
   hosts,

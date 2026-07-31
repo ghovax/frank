@@ -140,13 +140,13 @@ async def _defer_to_running_daemon() -> int:
             with attempt:
                 await asyncio.to_thread(probe_once)
     except RetryError:
-        logger.error("Another frankd holds the lock but never started serving.")
+        logger.error("another frankd holds the lock but never started serving")
         return 1
     with contextlib.suppress(OSError, ValueError):
         sys.stdout.write(json.dumps({"ready": True, "deferred": True}) + "\n")
         sys.stdout.flush()
         sys.stdout.close()
-    logger.info("Another frankd already holds the runtime directory; standing down.")
+    logger.info("another frankd already holds the runtime directory, standing down")
     return 0
 
 
@@ -349,10 +349,10 @@ async def _serve() -> int:
     # is so the answer is in the log before the first one does.
     confinement_state = confinement.probe()
     if confinement_state["backend"]:
-        logger.info("Confinement backend: %s", confinement_state["detail"])
+        logger.info("confinement backend: %s", confinement_state["detail"])
     else:
         logger.warning(
-            "No confinement backend (%s). Sessions will refuse to start unless sandbox.enforce "
+            "no confinement backend (%s). Sessions will refuse to start unless sandbox.enforce "
             "is set to 'preferred' or 'off'.", confinement_state["detail"],
         )
     state.daemon_token = secrets.token_urlsafe(32)
@@ -367,7 +367,7 @@ async def _serve() -> int:
     # session that legitimately owns one.
     orphans = await asyncio.to_thread(reap_orphaned_process_groups)
     if orphans:
-        logger.info("Reaped %d orphaned process group(s) from a previous run", orphans)
+        logger.info("reaped %d orphaned process group(s) from a previous run", orphans)
 
     # The registry is durable now: a daemon restart ends every session's *process*, not every
     # session. Live records come back asleep, and the first message to one forks it a worker.
@@ -377,7 +377,7 @@ async def _serve() -> int:
     state.registry.restore(restored)
     live = [record for record in restored if record.is_live]
     if live:
-        logger.info("Restored %d session(s), %d of them still live and asleep", len(restored), len(live))
+        logger.info("restored %d session(s), %d of them still live and asleep", len(restored), len(live))
     # The prototype and the lifecycle know about each other in both directions: the lifecycle
     # asks the prototype to fork, and the prototype reports every death back to the lifecycle.
     # Wired here rather than by either of them, because a composition root is exactly the place
@@ -399,13 +399,14 @@ async def _serve() -> int:
 
     hub_state.on_session_deleted = settle_and_reap
     hub_state.reset_live_session_runtimes = state.reset_live_session_runtimes
+    hub_state.refresh_live_session_locations = state.refresh_workspace_locations
 
     # Best effort: a machine that cannot start the prototype still serves the browser surface
     # and every read, and says so in `daemon.status`, rather than refusing to boot.
     try:
         await state.prototype.start()
-    except Exception as error:  # noqa: BLE001 — a daemon without a prototype is degraded, not dead
-        logger.error("The prototype could not be started; new sessions will fail: %s", error)
+    except Exception:  # noqa: BLE001 — a daemon without a prototype is degraded, not dead
+        logger.error("the prototype could not be started, new sessions will fail", exc_info=True)
     # Built after the stores and the prototype, because the shared resources read from both, and
     # after the port is known, because the file-URL signer signs against this daemon's address.
     await open_shared_resources()
@@ -548,7 +549,7 @@ async def _open_stores() -> None:
     # worker is gone — so it is marked interrupted rather than left claiming to be running.
     interrupted = await hub_state.turn_store.reconcile_orphaned_turns()
     if interrupted:
-        logger.warning("Marked %d interrupted turn(s) from a previous run.", len(interrupted))
+        logger.warning("marked %d interrupted turn(s) from a previous run", len(interrupted))
 
 
 def main() -> int:

@@ -56,7 +56,7 @@ export function ChatGPTAuthControl({
         setStatus(next);
         onStatusChange?.(next);
       })
-      .catch((caught) => swallowed("chatgpt auth: a background load failed", caught));
+      .catch((caught) => swallowed({ component: "chatgpt-auth", operation: "read the ChatGPT sign-in state" }, caught));
     return () => {
       cancelled = true;
       stopPolling();
@@ -70,7 +70,7 @@ export function ChatGPTAuthControl({
   useEffect(() => {
     if (!status?.signed_in) return;
     const id = window.setInterval(() => {
-      refresh().catch((caught) => swallowed("chatgpt auth: a background load failed", caught));
+      refresh().catch((caught) => swallowed({ component: "chatgpt-auth", operation: "poll the ChatGPT sign-in" }, caught));
     }, 5000);
     return () => window.clearInterval(id);
   }, [status?.signed_in, refresh]);

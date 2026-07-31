@@ -143,7 +143,7 @@ def main(arguments: list[str]) -> int:
         logger.info("the prototype went away before this worker was given a session; stopping")
         return 0
     except Exception:  # noqa: BLE001 — a session that cannot read its assignment cannot start
-        logger.exception("Session could not read its assignment")
+        logger.exception("session could not read its assignment")
         # Said on the ready pipe as well as in the log, because the prototype is waiting on that
         # pipe and would otherwise report a session that simply never arrived.
         with os.fdopen(ready_fd, "wb", closefd=True) as ready:

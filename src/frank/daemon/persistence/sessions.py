@@ -76,7 +76,7 @@ class SqliteSessionStore:
                 for row in rows
             ]
         except Exception:  # noqa: BLE001 — a daemon that cannot read its registry still starts
-            logger.exception("Could not load the session registry; starting with none")
+            logger.exception("could not load the session registry; starting with none")
             return []
         finally:
             database_session.close()
@@ -111,7 +111,7 @@ class SqliteSessionStore:
                 database_session.commit()
             except Exception:  # noqa: BLE001 — a failed registry write must not fail the call
                 database_session.rollback()
-                logger.exception("Could not persist session %s", record.id)
+                logger.exception("could not persist session %s", record.id)
             finally:
                 database_session.close()
 
@@ -125,7 +125,7 @@ class SqliteSessionStore:
                     database_session.commit()
             except Exception:  # noqa: BLE001
                 database_session.rollback()
-                logger.exception("Could not delete session %s", session_id)
+                logger.exception("could not delete session %s", session_id)
             finally:
                 database_session.close()
 
@@ -151,7 +151,7 @@ class SqliteSessionStore:
                 return True
             except Exception:  # noqa: BLE001
                 database_session.rollback()
-                logger.exception("Could not claim the work-habits acknowledgement for %s", session_id)
+                logger.exception("could not claim the work-habits acknowledgement for %s", session_id)
                 return False
             finally:
                 database_session.close()
@@ -167,7 +167,7 @@ class SqliteSessionStore:
                 database_session.commit()
             except Exception:  # noqa: BLE001
                 database_session.rollback()
-                logger.exception("Could not reset the work-habits acknowledgements")
+                logger.exception("could not reset the work-habits acknowledgements")
             finally:
                 database_session.close()
 

@@ -45,6 +45,11 @@ dependencies = [
     "tree-sitter-go>=0.23",
     "tree-sitter-rust>=0.23",
     "tree-sitter-markdown>=0.3",
+    # Speech to text for the composer's dictation, on this machine. Apple-Silicon only, like
+    # the frameworks below it: MLX is what makes a gigabyte-class model practical to keep
+    # resident on a laptop. Imported only by the dictation worker, and only once somebody has
+    # turned dictation on — the weights are never bundled and download on first use.
+    "parakeet-mlx>=0.3; sys_platform == 'darwin'",
     "pyobjc-framework-Cocoa>=11.0; sys_platform == 'darwin'",
     "pyobjc-framework-Quartz>=11.0; sys_platform == 'darwin'",
     "pyobjc-framework-ApplicationServices>=11.0; sys_platform == 'darwin'",
@@ -66,6 +71,11 @@ packages = ["src/frank"]
 
 [tool.uv]
 package = true
+# Not a dependency — a floor on one the speech stack drags in. `librosa` (under `parakeet-mlx`)
+# depends on `numba`, and left alone the resolver settles on a release from before Python 3.13
+# existed, whose build then refuses the interpreter this project requires. A constraint states
+# the bound without adding the package: whoever pulls numba in gets a version that runs here.
+constraint-dependencies = ["numba>=0.61", "llvmlite>=0.44"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -11,17 +11,19 @@ import { Box, Button, Flex, IconButton, Input, Kbd, Menu, Span, Text, VStack } f
 import { swallowed } from "@/lib/swallowed";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LuArrowDownUp, LuChevronDown, LuChevronRight, LuEllipsis, LuFolderOpen, LuFolderPlus, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
+import { LuArrowDownUp, LuChevronDown, LuChevronRight, LuClock, LuEllipsis, LuFolderOpen, LuFolderPlus, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FrankMark } from "@/components/ui/frank-mark";
 import { DropdownMenu, MenuOption } from "@/components/ui/menu";
 import { PanelBody, PanelCard } from "@/components/ui/panel";
 import { Tooltip } from "@/components/ui/tooltip";
-import { deleteWorkspace, listWorkspaces, listSshHosts, revealInFinder, subscribeEvents, type PermissionMode, type Workspace, type SshHost } from "@/lib/api";
+import { deleteWorkspace, listWorkspaces, listSshHosts, revealInFinder, subscribeEvents, type AgentSummary, type PermissionMode, type Workspace, type SshHost } from "@/lib/api";
 import { locationTargetAddress, locationTargetLabel } from "./location-status";
+import { NewScheduleDialog } from "./new-schedule-dialog";
 import { NewWorkspaceDialog } from "./new-workspace-dialog";
 import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
 import { toaster } from "./ui/toaster";
+import { errorMessage } from "@/lib/errors";
 
 // A session's process lifecycle, as the daemon's registry reports it — not the turn's.
 // What a session is doing, as the daemon derives it. Distinct from whether it *exists*,
@@ -387,6 +389,7 @@ export function SessionsSidebar({
   onNewChat,
   onResume,
   onDeleteSession,
+  agents,
 }: {
   sessions: SessionEntry[];
   sessionsLoaded: boolean;
@@ -400,6 +403,9 @@ export function SessionsSidebar({
   onNewChat: () => void;
   onResume: (entry: SessionEntry) => void;
   onDeleteSession: (entry: SessionEntry) => void;
+  // The profiles a schedule can be given. Passed down rather than fetched here: the sidebar
+  // has no other reason to know what an agent is, and the parent already holds the list.
+  agents: AgentSummary[];
 }) {
   const translation = useTranslations("SessionsSidebar");
   const [pendingDelete, setPendingDelete] = useState<SessionEntry | null>(null);
@@ -408,6 +414,7 @@ export function SessionsSidebar({
   const [sshHosts, setSshHosts] = useState<SshHost[]>([]);
   const [sshHostsLoaded, setSshHostsLoaded] = useState(false);
   const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
+  const [newScheduleOpen, setNewScheduleOpen] = useState(false);
   const [workspaceOpenOverrides, setWorkspaceOpenOverrides] = useState<Record<string, boolean>>({});
   // Which parents have their child sessions showing. Collapsed is the default and the
   // state is additive (an id is present only once opened), so a session that fans out
@@ -427,7 +434,7 @@ export function SessionsSidebar({
     : sessions;
 
   const refreshWorkspaces = useCallback(() => {
-    listWorkspaces().then(setWorkspaces).catch((caught) => swallowed("sessions sidebar: a background load failed", caught));
+    listWorkspaces().then(setWorkspaces).catch((caught) => swallowed({ component: "sessions-sidebar", operation: "list the SSH hosts" }, caught));
   }, []);
 
   useEffect(() => {
@@ -469,7 +476,7 @@ export function SessionsSidebar({
       toaster.create({
         type: "error",
         title: translation("deleteWorkspaceError"),
-        description: error instanceof Error ? error.message : "",
+        description: errorMessage(error),
         closable: true,
       });
     }
@@ -540,6 +547,31 @@ export function SessionsSidebar({
           <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">{translation("newWorkspace")}</Text>
         </Button>
       </Box>
+
+      {/* A schedule is something you make, like a workspace or a conversation, so it sits with
+          them rather than three screens into Settings — where it was reachable only by somebody
+          who already knew it was there. It belongs to a workspace, so it is offered only once
+          one is selected. */}
+      {currentWorkspaceId ? (
+        <Box px={2} flexShrink={0} pb={1}>
+          <Button
+            type="button"
+            variant="outline"
+            w="full"
+            minH={ROW_MINIMUM_H}
+            gap={1.5}
+            px={2}
+            justifyContent="flex-start"
+            textAlign="left"
+            onClick={() => setNewScheduleOpen(true)}
+          >
+            <Flex w={LEADING_SLOT} flexShrink={0} align="center" justify="center">
+              <LuClock size={14} />
+            </Flex>
+            <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">{translation("newSchedule")}</Text>
+          </Button>
+        </Box>
+      ) : null}
 
       {/* Filter the list by title — the same field treatment as the settings search. */}
       <Box px={2} flexShrink={0} pb={1}>
@@ -727,6 +759,13 @@ export function SessionsSidebar({
           }}
         />
       ) : null}
+
+      <NewScheduleDialog
+        workspaceId={currentWorkspaceId}
+        agents={agents}
+        open={newScheduleOpen}
+        onOpenChange={setNewScheduleOpen}
+      />
 
       <ConfirmDialog
         open={pendingWorkspaceDelete !== null}

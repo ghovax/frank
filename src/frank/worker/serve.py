@@ -196,7 +196,7 @@ def run(assignment: dict, ready_fd: int = -1, lifeline_fd: int = -1) -> int:
     except KeyboardInterrupt:
         return 0
     except Exception:  # noqa: BLE001 — a child must report its failure, not vanish silently
-        logger.exception("Session process failed")
+        logger.exception("session process failed")
         _report(ready_fd, {"ready": False, "reason": "the session process raised on startup"})
         return 1
 
