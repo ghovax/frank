@@ -544,6 +544,14 @@ class SessionExecutor(AgentExecutor):
             # result and given no way to find out which; the return path is a message, and a
             # message needs an address.
             parent_session=self._parent,
+            # The mode this session was created with. It was not passed, and nothing failed
+            # loudly: the runtime's parameter defaults to empty, which it reads as "no session
+            # mode given" and falls back to the agent profile's own policy. So a session created
+            # `read_only` was recorded read-only, listed read-only and displayed read-only, and
+            # ran as whatever its agent profile said — `default`, for every profile that does not
+            # set one. Every permission decision in the session was made against the wrong mode:
+            # a read-only session could click, type and write.
+            permission_mode=self._permission_mode,
             sandbox=self._sandbox,
             # The two things the runtime cannot derive from configuration: how this session
             # reaches its peers, and the MCP connections this worker owns.

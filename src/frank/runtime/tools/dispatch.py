@@ -1415,6 +1415,14 @@ class _DispatchesTools:
         # Verbs whose first argument is an element to resolve, changed or not.
         targeting_verbs = element_mutating_verbs | frozenset({"read", "hover", "scroll", "caret", "select", "focus"})
         # Verbs worth bracketing with a glance, because they can change what is on screen.
+        #
+        # Three that the permission layer gates are deliberately absent, and it is worth saying
+        # why rather than leaving the two lists looking like a mistake. `new_tab` and `close_tab`
+        # change the set of tabs, which is already reported: the dispatcher diffs the target list
+        # around the whole script and attaches what moved. `evaluate` returns the value of the
+        # expression it ran, which is a better account of what it did than a glance could give,
+        # and it is the primitive most often used simply to *read* a page — bracketing it would
+        # put two extra surface reads around every one of those.
         watched_verbs = element_mutating_verbs | frozenset({"press", "navigate", "caret", "select"})
         # Verbs that replace the document wholesale, whose diff is a summary rather than a list.
         navigating_verbs = frozenset({"navigate"})
@@ -1760,11 +1768,6 @@ class _DispatchesTools:
                     raise RuntimeError(control_message("waited_in_vain", query=str(query), seconds=f"{seconds:g}"))
                 await asyncio.sleep(interval)
 
-        async def sleep(seconds: float = 0.0) -> None:
-            """Wait, without holding the event loop. Bounded by the script's own ceiling, so a
-            script cannot sleep past the deadline it is already running against."""
-            await asyncio.sleep(min(max(0.0, float(seconds)), active_tuning().duration(Tunable.control_script_seconds)))
-
         def _resolve_target(verb: str, args: list) -> list:
             if not args:
                 return args
@@ -1785,31 +1788,17 @@ class _DispatchesTools:
             return [resolved, *args[1:]]
 
         async def dispatch(name: str, args: list, keywords: dict) -> Any:
-            # What this session may do, checked here rather than inferred from the script's text.
-            #
-            # This is the boundary; reading the source is only a gate in front of it. A scan of
-            # the source has to be right about what the source *will do*, and a script can always
-            # spell a call in a way a scan does not recognise — `getattr(screen, "cli" + "ck")`
-            # is the short version, and there is no end to the long ones. Refusing here needs to
-            # be right about nothing: whatever the script computed, the call arrives at this
-            # process as a name, and a name that is not permitted does not happen.
-            #
-            # It also means the read-only vocabulary the model is shown is the vocabulary it has,
-            # rather than a description of one. Those were two different things: the signatures in
-            # context were filtered, and the surface behind them was not.
-            if name not in permitted_primitives:
-                raise RuntimeError(control_message(
-                    "primitive_not_permitted", primitive=name,
-                    available=", ".join(sorted(permitted_primitives)),
-                ))
+            # What this session may do is enforced by `run_control_script`, which is handed
+            # `permitted_primitives` below and refuses anything outside it before this is
+            # reached. It lives there rather than here because a check in this closure would be
+            # a check every caller had to remember to write, and this is the only one — the
+            # guarantee belongs with the runner that owns the pipe.
             if name == "find_many":
                 return await asyncio.to_thread(find_many, *args, **keywords)
             if name == "find_one":
                 return await asyncio.to_thread(find_one, *args, **keywords)
             if name == "wait_for":
                 return await wait_for(*args, **keywords)
-            if name == "sleep":
-                return await sleep(*args, **keywords)
             if name in targeting_verbs:
                 args = await asyncio.to_thread(_resolve_target, name, list(args))
             # An action is bracketed by two cheap observations, so the result can say what

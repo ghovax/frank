@@ -30,6 +30,11 @@ logger = logging.getLogger("frank.computer.control")
 # holds no Frank code) can report bare facts and leave the prose to the loader.
 message = message_loader("control")
 
+
+class _NotPermitted(Exception):
+    """A primitive this session may not run. Its own type so the pump can answer it with the
+    message that says what *is* available, rather than with a bare exception name."""
+
 def _script_ceiling() -> float:
     """The child's wall-clock limit, and the base of an ordered stack.
 
@@ -59,6 +64,7 @@ async def run_control_script(
     return the child's result dict (``{ok, value?, stdout?, error?, traceback?}``). On timeout the
     child is killed and a timeout payload is returned instead."""
     timeout = timeout if timeout is not None else _script_ceiling()
+    permitted = frozenset(primitives or ())
     request_read, request_write = os.pipe()   # child → parent (primitive calls)
     reply_read, reply_write = os.pipe()        # parent → child (configuration, then results)
 
@@ -146,8 +152,19 @@ async def run_control_script(
                 return
             try:
                 call = json.loads(line)
-                value = await dispatch(call["call"], call.get("args", []), call.get("kwargs", {}))
+                name = call["call"]
+                # The permitted set is checked here, where it arrives, rather than being left to
+                # whatever `dispatch` a caller happened to pass. This function is handed the
+                # vocabulary already; making the refusal depend on the closure agreeing to do it
+                # too is one more thing to remember, and something nobody remembers is not a
+                # boundary. It costs a set lookup per primitive call.
+                if permitted and name not in permitted:
+                    raise _NotPermitted(name)
+                value = await dispatch(name, call.get("args", []), call.get("kwargs", {}))
                 reply: Any = {"value": value}
+            except _NotPermitted as refusal:
+                reply = {"error": message("primitive_not_permitted", primitive=str(refusal),
+                                          available=", ".join(sorted(permitted)))}
             except Exception as error:  # a failed primitive is raised into the script, not fatal here
                 reply = {"error": f"{type(error).__name__}: {error}"}
             await loop.run_in_executor(None, _write_line, replies, compact(reply, default=str))

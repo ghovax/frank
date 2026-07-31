@@ -199,11 +199,16 @@ class _RunsTurns:
             # A read-only session is shown only the primitives it may actually run. Listing one
             # the permission layer will refuse advertises a capability and then denies it, which
             # is the same defect as any other promise the code does not keep.
-            from frank.base.permission_mode import PermissionMode
             from frank.computer import workflows
 
             block = target_registry.context_block(
-                mutating_allowed=self._agent_configuration.permission_policy != PermissionMode.READ_ONLY,
+                # The session's effective mode, not the agent profile's. Those are different
+                # whenever a session is created more restrictive than its profile, which is the
+                # ordinary case for `read_only` — profiles rarely set one. Asking the profile
+                # meant a read-only session was shown `click`, `type` and `evaluate` as things it
+                # could do, which is the advertise-then-refuse defect this filter exists to
+                # prevent, in the one situation it was written for.
+                mutating_allowed=not self.is_read_only,
             )
             # What somebody has already worked out and saved, so a task that has been solved once
             # is imported rather than derived again. Read off the files without importing them —

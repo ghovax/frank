@@ -14,6 +14,8 @@
 
 Reach for it wherever an interface repeats a control — rows of a list, tabs of a bar, cells of a table, buttons of a toolbar — which is most interfaces. **It is not a fallback for a query that failed.** Naming the neighbour is how a person says which one they mean, it is the only thing that separates controls whose words are identical, and it does no harm on a query that would have succeeded alone. Anchor on something the surface says exactly once: a filename, a heading, the text beside the control. If the anchor is itself ambiguous the find refuses rather than guessing — anchor on a different neighbour rather than repeating the same one.
 
+**`read` gives words, `find_many` gives elements.** `read` answers with what a place says — the text, one entry per label, with no ids, roles or positions. `find_many` answers with dicts carrying `id`, `role`, `text`, `context` and `bounds`. Use `read` when the words are the answer; use `find_many` for anything you will filter, sort, count or act on, because those fields are the only thing that lets a script tell one region of a window from another. Reading everything first and then asking again, because the text you are holding cannot be told apart, costs a round trip that one `find_many` would have saved.
+
 **`clickable` is the only narrowing there is.** `clickable=True` keeps what can be activated, `False` what cannot. Neither isolates a text field — a text area is clickable exactly like a button — and there is no filter by kind of control.
 
 **The script is Python, and it is a real program.** Not a macro or a step list — a module body whose first line is an import:
@@ -24,7 +26,7 @@ from frank.screen import screen
 
 Nothing is put into scope for you, so that the same text works typed here or saved to a file, and so that anyone reading it can see where its capabilities come from. You may import whatever else the task needs — the standard library, a saved workflow, a skill's script package. Imports are not restricted: the process the script runs in has no network and can write nowhere that outlives it, and a primitive this session may not use is refused at the surface however it was spelled, so neither safety question is answered by guessing from the source.
 
-Loops, conditionals, `try`/`except`, functions, comprehensions: all of it applies, and the point of the tool is that a whole task fits in one call. `screen.wait_for(query, seconds=...)` blocks until something matches, which is how to say "once the pane has loaded" rather than hoping. Avoid three timid lines followed by another round trip to discover the fourth: nothing carries between calls but element ids, so each new one starts blind.
+Loops, conditionals, `try`/`except`, functions, comprehensions: all of it applies, and the point of the tool is that a whole task fits in one call. `screen.wait_for(query, seconds=...)` blocks until something matches, which is how to say "once the pane has loaded" rather than hoping; it returns as soon as the thing appears and says so when it never does. Prefer it to pausing for a guessed interval — and when you genuinely want an interval that answers to nothing on screen, `time.sleep` is an ordinary import. Avoid three timid lines followed by another round trip to discover the fourth: nothing carries between calls but element ids, so each new one starts blind.
 
 **A workflow can be a file.** `screen` is an instance of the importable `frank.screen.Screen`, so the same calls work in a saved module as inline:
 

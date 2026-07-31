@@ -39,12 +39,21 @@ logger = logging.getLogger(__name__)
 # command rather than an address (`/logout`, `/unsubscribe?token=…`, `/items/12/delete`), and nothing
 # reading primitive names can tell those from a page worth reading.
 #
+# `caret` and `select` are here because they write. Both call `set_selected_range` on a live
+# element — they move somebody's insertion point, or select a range inside a field they are
+# editing — and every other description of the harness already said so: the tool's own
+# documentation lists them among "the primitives that alter something", and the dispatcher
+# brackets them with before-and-after glances exactly as it does a click. This set was the only
+# place that disagreed, so a read-only session could reach into a document and change the
+# selection, which is both a write and the setup for the user's next keystroke replacing it.
+#
 # Switching tabs and listing tabs or frames are reads, and stay out: moving attention to a tab the
 # user already had open changes nothing about it.
 MUTATING_SCREEN_PRIMITIVES = frozenset({
     "click", "type", "choose", "upload", "drag",
     "evaluate", "press", "navigate",
     "new_tab", "close_tab",
+    "caret", "select",
 })
 
 

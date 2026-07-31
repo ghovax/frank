@@ -280,18 +280,20 @@ class Surface:
         return {"ok": False, "error": detail}
 
     # The primitives the dispatcher services rather than the surface, so their shapes are written
-    # here instead of discovered below. These four are the only hand-written signatures left.
+    # here instead of discovered below. These three are the only hand-written signatures left.
     #
-    # `wait_for` and `sleep` are here because a script could not previously wait for anything at
-    # all: `import time` is outside the safe set, so any script that polled classified `unknown`
-    # and was refused. That made "click, wait for the pane, then find" — the commonest shape in
-    # this whole domain — unwritable, and left splitting the work across tool calls as the only
-    # option. Scripts were short because the environment made them short.
+    # `wait_for` is here because waiting for a *condition* is work only this side can do: it reads
+    # the surface until something matches, and says so in words when nothing ever does. It arrived
+    # alongside a `sleep` that has since been removed — that one existed because `import time` was
+    # outside the safe module set, so any script that paused classified `unknown` and was refused,
+    # which made "click, wait for the pane, then find" unwritable and left splitting the work
+    # across tool calls as the only option. Scripts were short because the environment made them
+    # short. The allowlist is gone, `time` is an ordinary import again, and a primitive that only
+    # slept had nothing left to offer over `time.sleep`.
     PROVIDED_SIGNATURES = {
         "find_one": 'screen.find_one(query, clickable=None, near="", name="", context="")',
         "find_many": 'screen.find_many(query, limit=8, all=False, clickable=None, near="", name="", context="")',
         "wait_for": 'screen.wait_for(query, seconds=5, clickable=None, near="", name="", context="")',
-        "sleep": "screen.sleep(seconds)",
     }
     RETRIEVAL_PRIMITIVES = tuple(PROVIDED_SIGNATURES)
 
