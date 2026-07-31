@@ -88,9 +88,14 @@ class PrototypeClient:
         *,
         environment: Optional[dict[str, str]] = None,
         on_exit: Optional[Callable[[SessionExit], Any]] = None,
+        on_lost: Optional[Callable[[], Any]] = None,
     ) -> None:
         self._environment = environment
         self._on_exit = on_exit
+        # Called when the prototype dies unexpectedly, which is also the death of every session
+        # it had forked — they hold lifelines to it. Nothing else can report those deaths, since
+        # the process that forked them is the one that has gone.
+        self._on_lost = on_lost
         self._process: Optional[asyncio.subprocess.Process] = None
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
@@ -119,17 +124,31 @@ class PrototypeClient:
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await task
         await self._detach()
+        await self._end_process()
+
+    async def _end_process(self) -> None:
+        """Stop the prototype and wait for it to go, killing it if it will not.
+
+        Waiting matters rather than being tidy: the prototype's exit is what closes the
+        lifelines its sessions hold, so returning before it has actually gone would be
+        returning while the sessions are still running."""
         process, self._process = self._process, None
-        if process is not None and process.returncode is None:
+        if process is None or process.returncode is not None:
+            return
+        with contextlib.suppress(ProcessLookupError):
+            process.terminate()
+        try:
+            await asyncio.wait_for(
+                process.wait(), timeout=active_tuning().duration(Tunable.sigterm_grace_seconds)
+            )
+        except (asyncio.TimeoutError, ProcessLookupError):
             with contextlib.suppress(ProcessLookupError):
-                process.terminate()
-            try:
+                process.kill()
+            with contextlib.suppress(asyncio.TimeoutError, ProcessLookupError):
                 await asyncio.wait_for(
-                    process.wait(), timeout=active_tuning().duration(Tunable.sigterm_grace_seconds)
+                    process.wait(),
+                    timeout=active_tuning().duration(Tunable.sigterm_grace_seconds),
                 )
-            except (asyncio.TimeoutError, ProcessLookupError):
-                with contextlib.suppress(ProcessLookupError):
-                    process.kill()
 
     @property
     def alive(self) -> bool:
@@ -166,6 +185,11 @@ class PrototypeClient:
             await self._attach()
 
     async def _spawn(self) -> None:
+        # A prototype that is still alive is ended before its replacement starts. Reaching here
+        # while one is running means the connection to it broke without the process dying —
+        # rare, but the descriptor being overwritten was the only thing holding it, so it and
+        # every session under it would have been left with nothing that could ever reach them.
+        await self._end_process()
         socket_path = prototype_socket_path()
         with contextlib.suppress(OSError):
             socket_path.unlink()
@@ -288,10 +312,17 @@ class PrototypeClient:
     async def _supervise(self) -> None:
         """Restart the prototype if it dies.
 
-        Live sessions are untouched by this: they are independent processes and were
-        reparented the moment their parent went. What a dead prototype costs is the ability to
-        create new sessions, and the exit reports for the ones already running — which is why
-        the restart matters and why it is not urgent enough to be violent about."""
+        Every session it had forked ends with it, through the lifeline each one holds. That is
+        deliberate, and it replaces an arrangement where they carried on: a session outlives its
+        prototype perfectly well as a *process* — it has its own socket and the daemon talks to
+        it directly — but nothing can ever report its death again, because the only process that
+        could was the one that just died. The daemon would show it running until the machine was
+        rebooted, and a replacement prototype cannot adopt it: it is not its parent, so it cannot
+        wait on it.
+
+        So a dead prototype costs the sessions that were running, and they come back as records
+        rather than as processes, which they were built to do. What it must not cost is a set of
+        workers nobody can see or stop."""
         while not self._closed:
             process = self._process
             if process is None:
@@ -301,6 +332,14 @@ class PrototypeClient:
                 return
             logger.error("the prototype exited with status %s; restarting", code)
             await self._fail_everyone_waiting("the prototype died before the session started")
+            # Before the restart, and before anything is forked into the replacement: the
+            # sessions that died with it must be accounted for while it is still clear which
+            # ones they were.
+            if self._on_lost is not None:
+                with contextlib.suppress(Exception):
+                    result = self._on_lost()
+                    if asyncio.iscoroutine(result):
+                        await result
             try:
                 await self._ensure_running()
             except PrototypeUnavailable as error:

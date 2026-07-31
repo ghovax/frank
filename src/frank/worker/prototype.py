@@ -36,6 +36,25 @@ position to see them.
 A parked worker has no session until it is given one, and having had one it never goes back to
 the pool — so there is no path by which one session's state can reach another's.
 
+## Nothing outlives the process that made it
+
+Every process here holds a **lifeline**: a descriptor whose far end only its parent holds, and
+which carries no data at all. Reading end-of-file on it means the parent is gone, and the child
+stops. The prototype's lifeline is the daemon's control connection; each worker's is a pipe
+made for it in `_start_worker`.
+
+This replaces ending children by *signalling* them, which worked only while the parent was
+alive and well enough to send a signal — and a parent that has been killed outright, or that
+crashed, is neither. A `SIGKILL` to the daemon left a prototype and every worker under it
+running: reparented to init, holding sockets nothing would ever call again, and unreapable,
+because the only process that could ever have waited on them was the one that had just died.
+They accumulated one full set at a time, and the only sign was a machine that was busy for no
+reason anyone could point at.
+
+A descriptor asks nothing of the dying process. Closing it is the kernel's doing, so it happens
+for every way a process can end, including the ways that run no code — which is what makes the
+guarantee hold in exactly the cases the old arrangement could not reach.
+
 ## The three conditions
 
 Forking a live Python interpreter is safe only under conditions this file has to hold, not
@@ -205,7 +224,7 @@ def _settle_proxy_environment() -> dict[str, str]:
     return exported
 
 
-def session_command(assignment_fd: int, ready_fd: int) -> list[str]:
+def session_command(assignment_fd: int, ready_fd: int, lifeline_fd: int) -> list[str]:
     """How a session worker is launched: a re-exec of *this* executable.
 
     The same reasoning as :func:`frank.daemon.prototype.prototype_command`, and now it carries
@@ -214,12 +233,13 @@ def session_command(assignment_fd: int, ready_fd: int) -> list[str]:
     has to be this one and not the interpreter. Anything else would be a second code identity
     and a second Accessibility prompt per session.
 
-    The two descriptors are passed as numbers because that is all an `exec` boundary carries.
+    The three descriptors are passed as numbers because that is all an `exec` boundary carries.
     The assignment itself is not: it holds capability tokens, and `argv` is readable by any
     process on the machine."""
+    numbers = [str(assignment_fd), str(ready_fd), str(lifeline_fd)]
     if getattr(sys, "frozen", False):
-        return [sys.executable, "session", str(assignment_fd), str(ready_fd)]
-    return [sys.executable, "-m", "frank", "session", str(assignment_fd), str(ready_fd)]
+        return [sys.executable, "session", *numbers]
+    return [sys.executable, "-m", "frank", "session", *numbers]
 
 
 def _load_runtime() -> None:
@@ -255,6 +275,25 @@ class _ParkedWorker:
     pid: int
     assignment_write: int
     ready_read: int
+    lifeline_write: int
+
+
+@dataclass
+class _SessionChild:
+    """A worker that has been given a session, and this process's hold on its life.
+
+    `fork` names *this* incarnation: a session id names the conversation, which outlives many
+    processes, so a report keyed by session id cannot say which one it describes.
+
+    `lifeline_write` is never written to. It is held open for exactly as long as this process
+    lives, and its only purpose is to be closed — by `close`, by an exit, or by the kernel when
+    this process dies however it dies. The child watches the other end and stops when it sees
+    the end-of-file. See :meth:`Prototype._start_worker`.
+    """
+
+    session_id: str
+    fork: str
+    lifeline_write: int
 
 
 class Prototype:
@@ -273,11 +312,11 @@ class Prototype:
         self._listener: Optional[socket.socket] = None
         self._control: Optional[socket.socket] = None
         self._control_buffer = b""
-        # pid -> (session id, fork token), so an exit can be reported both as the session it
-        # was and as the *particular* process it was. The token is what lets the daemon tell a
-        # dead worker's exit from its replacement's: a session is forked afresh every turn, so
-        # the session id alone names a queue of processes rather than one.
-        self._children: dict[int, tuple[str, str]] = {}
+        # pid -> the child, so an exit can be reported both as the session it was and as the
+        # *particular* process it was. The token is what lets the daemon tell a dead worker's
+        # exit from its replacement's: a session is forked afresh every turn, so the session id
+        # alone names a queue of processes rather than one.
+        self._children: dict[int, _SessionChild] = {}
         # ready-pipe read end -> (session id, fork token, buffer)
         self._pending: dict[int, tuple[str, str, bytearray]] = {}
         # Workers started before anyone asked for one. Each has already forked, exec'd and paid
@@ -359,6 +398,16 @@ class Prototype:
         self._stopping = True
 
     def close(self) -> None:
+        # The lifelines first. Exiting would close them anyway — that is the guarantee the whole
+        # mechanism rests on — but closing them here starts every worker's shutdown now rather
+        # than after the rest of this teardown, and says plainly that ending this process ends
+        # them, instead of leaving it to be inferred from which descriptors happen to be open.
+        for parked in self._parked:
+            with contextlib.suppress(OSError):
+                os.close(parked.lifeline_write)
+        for child in self._children.values():
+            with contextlib.suppress(OSError):
+                os.close(child.lifeline_write)
         signal.set_wakeup_fd(-1)
         for descriptor in (self._wakeup_read, self._wakeup_write):
             if descriptor >= 0:
@@ -385,8 +434,9 @@ class Prototype:
         except OSError:
             return
         connection.setblocking(False)
-        # Exactly one client at a time. A second connection means the daemon restarted and
-        # the old one is stale, so the newest wins rather than the oldest holding the slot.
+        # Exactly one client at a time, and in practice exactly one ever: a daemon spawns its
+        # own prototype rather than adopting one, so a second connection would mean two daemons
+        # were running. The newest wins, which is the same rule as everywhere else here.
         if self._control is not None:
             self._drop_control()
         self._control = connection
@@ -412,8 +462,19 @@ class Prototype:
         except OSError:
             chunk = b""
         if not chunk:
-            logger.info("daemon detached")
+            # The daemon's end of this socket is the prototype's own lifeline, and this is it
+            # closing. A prototype exists to fork sessions for one daemon and for nothing else:
+            # it cannot be reached again once that daemon is gone, because the next daemon
+            # spawns its own and unlinks this socket out from under it.
+            #
+            # So it stops, and the sessions under it stop with it — each through the lifeline
+            # it holds, without this process having to signal anything, which is what makes it
+            # work when the daemon was killed outright rather than asked to stop. Leaving it
+            # running is what left a prototype and a full set of workers behind after every
+            # crash, reparented to init and serving sockets nobody would call again.
+            logger.info("the daemon is gone; stopping")
             self._drop_control()
+            self.stop()
             return
         self._control_buffer += chunk
         while b"\n" in self._control_buffer:
@@ -467,15 +528,31 @@ class Prototype:
         """
         ready_read, ready_write = os.pipe()
         assignment_read, assignment_write = os.pipe()
+        # The lifeline. Nothing is ever sent down it: the child holds the read end for its whole
+        # life and stops the moment it reads end-of-file, which happens when the last copy of the
+        # write end closes. This process holds that copy, so the child outlives this one by
+        # exactly as long as it takes to notice — whether this process exits cleanly, crashes, or
+        # is killed outright.
+        #
+        # That last case is the point. Every other way of ending a worker requires the parent to
+        # still be running well enough to send a signal, so a `SIGKILL` or a crash left the whole
+        # tree behind: a prototype and its sessions, reparented to init, serving sockets nobody
+        # would ever call again. A descriptor needs no cooperation from a dead process, because
+        # closing it is the kernel's job rather than the parent's.
+        lifeline_read, lifeline_write = os.pipe()
         # `exec` closes everything marked close-on-exec, which is the default for a pipe. These
-        # two have to cross it, and their numbers are what the child is told on its command line.
+        # three have to cross it, and their numbers are what the child is told on its command
+        # line. Every *other* worker's descriptors stay close-on-exec, which is what stops one
+        # child from holding another's lifeline open and making it immortal.
         os.set_inheritable(assignment_read, True)
         os.set_inheritable(ready_write, True)
+        os.set_inheritable(lifeline_read, True)
 
         try:
             pid = os.fork()
         except OSError as error:
-            for descriptor in (ready_read, ready_write, assignment_read, assignment_write):
+            for descriptor in (ready_read, ready_write, assignment_read, assignment_write,
+                               lifeline_read, lifeline_write):
                 with contextlib.suppress(OSError):
                     os.close(descriptor)
             logger.error("could not fork: %s", error)
@@ -484,12 +561,20 @@ class Prototype:
         if pid == 0:
             with contextlib.suppress(OSError):
                 os.close(assignment_write)
-            os._exit(self._become_session(assignment_read, ready_read, ready_write))
+            # The child must not hold its own lifeline's write end: it would then be keeping
+            # itself alive, and would never see the end-of-file no matter who died.
+            with contextlib.suppress(OSError):
+                os.close(lifeline_write)
+            os._exit(self._become_session(assignment_read, ready_read, ready_write, lifeline_read))
 
         os.close(ready_write)
         os.close(assignment_read)
+        os.close(lifeline_read)
         os.set_blocking(ready_read, False)
-        return _ParkedWorker(pid=pid, assignment_write=assignment_write, ready_read=ready_read)
+        return _ParkedWorker(
+            pid=pid, assignment_write=assignment_write, ready_read=ready_read,
+            lifeline_write=lifeline_write,
+        )
 
     def _refill_pool(self) -> None:
         """Bring the pool back up to strength.
@@ -569,12 +654,16 @@ class Prototype:
             self._want_refill()
             return
 
-        self._children[worker.pid] = (session_id, fork)
+        self._children[worker.pid] = _SessionChild(
+            session_id=session_id, fork=fork, lifeline_write=worker.lifeline_write,
+        )
         self._pending[worker.ready_read] = (session_id, fork, bytearray())
         self._selector.register(worker.ready_read, selectors.EVENT_READ, self._on_ready_readable)
         self._want_refill()
 
-    def _become_session(self, assignment_read: int, ready_read: int, ready_write: int) -> int:
+    def _become_session(
+        self, assignment_read: int, ready_read: int, ready_write: int, lifeline_read: int
+    ) -> int:
         """Everything the child does between `fork` and `exec`. Runs only in the child.
 
         Deliberately short, and every call in it async-signal-safe. Between those two points a
@@ -602,7 +691,7 @@ class Prototype:
             # listening socket open would make the prototype's own shutdown never complete.
             os.close(ready_read)
             self._close_inherited()
-            command = session_command(assignment_read, ready_write)
+            command = session_command(assignment_read, ready_write, lifeline_read)
             os.execv(command[0], command)
             # `execv` does not return. Reaching here at all means it failed without raising,
             # which it cannot, but a fall-through into the parent's loop would be far worse
@@ -614,7 +703,13 @@ class Prototype:
             return 1
 
     def _close_inherited(self) -> None:
-        """Drop the parent's sockets and pipes. Runs only in the child."""
+        """Drop the parent's sockets and pipes. Runs only in the child.
+
+        The `exec` that follows closes all of these anyway — they are close-on-exec, which is
+        the default — so this covers the window before it and states the rule outright. The
+        rule matters most for the other workers' lifelines: a child holding a sibling's write
+        end would keep that sibling alive after everything else had gone, which is the exact
+        failure this whole mechanism exists to make impossible."""
         for descriptor in (self._wakeup_read, self._wakeup_write):
             if descriptor >= 0:
                 with contextlib.suppress(OSError):
@@ -622,6 +717,13 @@ class Prototype:
         for descriptor in list(self._pending):
             with contextlib.suppress(OSError):
                 os.close(descriptor)
+        for parked in self._parked:
+            for descriptor in (parked.assignment_write, parked.ready_read, parked.lifeline_write):
+                with contextlib.suppress(OSError):
+                    os.close(descriptor)
+        for child in self._children.values():
+            with contextlib.suppress(OSError):
+                os.close(child.lifeline_write)
         for connection in (self._control, self._listener):
             if connection is not None:
                 with contextlib.suppress(OSError):
@@ -696,13 +798,21 @@ class Prototype:
             parked = next((worker for worker in self._parked if worker.pid == pid), None)
             if parked is not None:
                 self._parked.remove(parked)
-                for descriptor in (parked.assignment_write, parked.ready_read):
+                for descriptor in (parked.assignment_write, parked.ready_read,
+                                   parked.lifeline_write):
                     with contextlib.suppress(OSError):
                         os.close(descriptor)
                 logger.warning("a parked worker (pid %d) ended before it was used", pid)
                 self._want_refill()
                 continue
-            session_id, fork = self._children.pop(pid, ("", ""))
+            child = self._children.pop(pid, None)
+            session_id, fork = (child.session_id, child.fork) if child else ("", "")
+            # The dead child's end of the lifeline is already gone; this drops ours, so the
+            # descriptor is not held for the life of the prototype by a process that ended
+            # minutes ago.
+            if child is not None:
+                with contextlib.suppress(OSError):
+                    os.close(child.lifeline_write)
             if os.WIFSIGNALED(status):
                 code, signal_number = -1, os.WTERMSIG(status)
             else:

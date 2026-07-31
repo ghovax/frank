@@ -359,6 +359,7 @@ async def _serve() -> int:
     # a cycle between two collaborators becomes two one-way dependencies.
     state.prototype = PrototypeClient(
         on_exit=lambda report: state.lifecycle.on_session_exit(report),
+        on_lost=lambda: state.lifecycle.on_prototype_lost(),
     )
     state.lifecycle = SessionLifecycle(
         state.registry,

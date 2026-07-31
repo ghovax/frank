@@ -148,6 +148,33 @@ class SessionLifecycle:
         self._changed()
         return True
 
+    async def on_prototype_lost(self) -> None:
+        """The prototype died, so every session it forked died with it.
+
+        Each holds a lifeline to the prototype and stops when it breaks, which is what keeps a
+        dead prototype from leaving a set of unreachable workers behind. The cost is that their
+        deaths arrive with nobody to report them: the prototype is the only process that could,
+        being the only one that forked them, and it is what has just gone.
+
+        Left there, every record would claim to be running for as long as the daemon lived —
+        the process gone, the socket gone, the session still listed as live and answering
+        nothing. So the deaths are accounted for here instead, through the same path an ordinary
+        exit takes, so that a record is ended, children are reaped and subscribers are told in
+        exactly one way rather than two.
+
+        The status is reported as a signal rather than a clean exit because that is what it was:
+        nothing about this was a session finishing its work."""
+        losses = list(self._processes.items())
+        if not losses:
+            return
+        logger.error(
+            "The prototype died; %d session(s) went with it and are being ended.", len(losses)
+        )
+        for session_id, pid in losses:
+            await self.on_session_exit(
+                SessionExit(session_id=session_id, pid=pid, code=-1, signal=signal.SIGKILL)
+            )
+
     async def on_session_exit(self, report: SessionExit) -> None:
         """A session's process has ended, however it ended.
 

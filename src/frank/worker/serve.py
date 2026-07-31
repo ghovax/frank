@@ -45,7 +45,7 @@ def _report(ready_fd: int, payload: dict) -> None:
         os.close(ready_fd)
 
 
-async def serve(assignment: dict, ready_fd: int = -1) -> int:
+async def serve(assignment: dict, ready_fd: int = -1, lifeline_fd: int = -1) -> int:
     """Run one session until its socket closes. Answers with the process exit status."""
     from frank.base.configuration import Configuration
     from frank.worker.server import build_app
@@ -134,6 +134,28 @@ async def serve(assignment: dict, ready_fd: int = -1) -> int:
     for received in (signal.SIGTERM, signal.SIGINT):
         with contextlib.suppress(NotImplementedError):
             loop.add_signal_handler(received, stopping.set)
+
+    # The lifeline, watched for as long as this session runs rather than checked once. It only
+    # ever becomes readable by reaching end-of-file, because nothing is ever written to it: the
+    # prototype holds the far end open and closes it by dying.
+    #
+    # This is what a signal cannot do. Ending a session by signalling it needs the prototype to
+    # still be alive enough to send one, so a prototype that was killed outright, or that
+    # crashed, left every session it had forked running — reparented, still holding its socket,
+    # and unreapable, because the only process that could ever have reported their deaths was
+    # the one that had just died. Stopping here goes through the same path as a `SIGTERM`, so
+    # the turn is abandoned and the conversation checkpointed on the way out rather than lost.
+    def _prototype_is_gone() -> None:
+        with contextlib.suppress(OSError, ValueError):
+            loop.remove_reader(lifeline_fd)
+        logger.warning("the prototype is gone; stopping this session")
+        stopping.set()
+
+    if lifeline_fd >= 0:
+        with contextlib.suppress(OSError, ValueError, NotImplementedError):
+            os.set_blocking(lifeline_fd, False)
+            loop.add_reader(lifeline_fd, _prototype_is_gone)
+
     shutdown_watcher = asyncio.create_task(_shutdown_on_signal())
 
     serve_task = asyncio.create_task(server.serve())
@@ -153,19 +175,24 @@ async def serve(assignment: dict, ready_fd: int = -1) -> int:
         await serve_task
     finally:
         shutdown_watcher.cancel()
+        if lifeline_fd >= 0:
+            with contextlib.suppress(OSError, ValueError):
+                loop.remove_reader(lifeline_fd)
+            with contextlib.suppress(OSError):
+                os.close(lifeline_fd)
         await session.aclose()
         with contextlib.suppress(OSError):
             socket_path.unlink(missing_ok=True)
     return 0
 
 
-def run(assignment: dict, ready_fd: int = -1) -> int:
+def run(assignment: dict, ready_fd: int = -1, lifeline_fd: int = -1) -> int:
     """`serve` with its own event loop, for a process that has just been forked into being."""
     logging.basicConfig(
         level=logging.WARNING, format="%(asctime)s %(levelname)s %(name)s %(message)s"
     )
     try:
-        return asyncio.run(serve(assignment, ready_fd))
+        return asyncio.run(serve(assignment, ready_fd, lifeline_fd))
     except KeyboardInterrupt:
         return 0
     except Exception:  # noqa: BLE001 — a child must report its failure, not vanish silently

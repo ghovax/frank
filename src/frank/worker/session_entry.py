@@ -6,7 +6,7 @@ image. That is the whole difference between a session that works and one that di
 copy of Network.framework and the Objective-C runtime, and neither is usable after a fork
 without an exec.
 
-Two descriptors survive the exec, named on the command line because a number is all that can
+Three descriptors survive the exec, named on the command line because a number is all that can
 be passed across it:
 
 * the **assignment pipe**, which the prototype fills before forking. The assignment carries
@@ -14,8 +14,14 @@ be passed across it:
   ``argv``, which any other process on the machine can read out of ``ps``.
 * the **ready pipe**, which this process writes once it is listening, and which the prototype
   is watching to know whether the session came up.
+* the **lifeline**, which carries nothing at all. The prototype holds the other end open for
+  as long as it lives, so reading end-of-file on it means the prototype is gone — and a
+  session whose prototype is gone can never have its death reported to the daemon, which
+  would leave the daemon believing it is running forever. So this process stops when that
+  happens, and it does so without anyone having to signal it: closing the descriptor is the
+  kernel's doing, which is why it still works when the prototype was killed outright.
 
-Both are passed as raw file-descriptor numbers, which is only meaningful because
+All three are passed as raw file-descriptor numbers, which is only meaningful because
 :func:`os.set_inheritable` was called on them before the exec — the default is for a
 descriptor to be closed by it.
 """
@@ -55,6 +61,13 @@ def _configure_logging() -> None:
     )
 
 
+class PrototypeGone(Exception):
+    """The prototype closed the assignment pipe without ever writing an assignment.
+
+    Which means it died while this worker was parked. It is not an error to report anywhere —
+    there is nobody left to report it to — so it ends the process quietly."""
+
+
 def _read_assignment(descriptor: int) -> dict:
     """Drain the assignment pipe. Reads to EOF rather than once, because a pipe is a stream and
     a short read would produce a truncated assignment that parses as nothing useful."""
@@ -65,23 +78,32 @@ def _read_assignment(descriptor: int) -> dict:
             if not chunk:
                 break
             chunks.append(chunk)
-    payload = json.loads(b"".join(chunks).decode() or "{}")
+    raw = b"".join(chunks).decode()
+    # End-of-file with nothing before it is not an empty assignment, it is the prototype
+    # dying while this worker sat parked waiting to be told which session it was. Read as
+    # `{}` — which is what happened before — the worker went on to start a session with no
+    # id, no token and no directory, and the ones that got far enough stayed up serving a
+    # socket nothing would ever call. This is the whole reason a parked worker was among the
+    # strays after a crash.
+    if not raw:
+        raise PrototypeGone
+    payload = json.loads(raw)
     if not isinstance(payload, dict):
         raise ValueError(f"assignment must be an object, got {type(payload).__name__}")
     return payload
 
 
 def main(arguments: list[str]) -> int:
-    if len(arguments) != 2:
+    if len(arguments) != 3:
         print(
-            "usage: frank session <assignment-fd> <ready-fd> "
+            "usage: frank session <assignment-fd> <ready-fd> <lifeline-fd> "
             "(internal; the prototype execs this)",
             file=sys.stderr,
         )
         return 2
 
     try:
-        assignment_fd, ready_fd = (int(value) for value in arguments)
+        assignment_fd, ready_fd, lifeline_fd = (int(value) for value in arguments)
     except ValueError:
         print(f"session: file descriptors must be integers, got {arguments}", file=sys.stderr)
         return 2
@@ -115,6 +137,11 @@ def main(arguments: list[str]) -> int:
 
     try:
         assignment = _read_assignment(assignment_fd)
+    except PrototypeGone:
+        # No ready report and no traceback: the prototype is the only thing that reads that
+        # pipe, and it is what has just gone. Saying so on the way out is the whole message.
+        logger.info("the prototype went away before this worker was given a session; stopping")
+        return 0
     except Exception:  # noqa: BLE001 — a session that cannot read its assignment cannot start
         logger.exception("Session could not read its assignment")
         # Said on the ready pipe as well as in the log, because the prototype is waiting on that
@@ -123,4 +150,4 @@ def main(arguments: list[str]) -> int:
             ready.write(json.dumps({"ready": False, "reason": StartFailure.ASSIGNMENT_UNREADABLE}).encode())
         return 1
 
-    return run(assignment, ready_fd)
+    return run(assignment, ready_fd, lifeline_fd)
