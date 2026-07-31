@@ -432,9 +432,30 @@ class Index:
         query_vector = query_vector / max(float(np.linalg.norm(query_vector)), 1e-9)
         return (self._dense_matrix @ query_vector).tolist()
 
-    def search(self, query: str, *, top_k: int, everything: bool = False) -> list[Hit]:
-        """Rank the surface against ``query``. ``top_k`` best matches, or ``everything`` for the
-        full ranking (bulk harvest).
+    def search(self, query: str, *, top_k: int, floor: float = 0.0) -> list[Hit]:
+        """Rank the surface against ``query`` and return its ``top_k`` best matches, dropping any
+        that score below ``floor``.
+
+        There used to be an ``everything`` flag here that returned the whole ranking and ignored
+        ``top_k``, for "bulk harvest". It was a mistake in two directions at once. A caller writing
+        ``find_many(query, limit=20, all=True)`` — which reads like "up to 20, exhaustively" — got
+        590 elements and 1.5MB, because the two parameters contradicted each other and the flag
+        won silently. And the premise was wrong anyway: the tail of a ranking is not more answer,
+        it is the surface in score order, and on the page that ended a turn the 590th element
+        scored -0.12 against the query that returned it.
+
+        ``floor`` is what lets this method say *nothing matched*, which nothing above it could
+        express before. A cosine is comparable across queries on one surface, so an absolute floor
+        means the same thing from call to call; under the BM25 fallback the scores are unbounded
+        sums with no such calibration, so there it is applied relative to the best score in the
+        ranking, which is the closest thing that ranker has to the same statement.
+
+        What the floor is *not* is an absence detector, and the distinction is measured. Across
+        596 elements of one real page, paraphrases of things present scored 0.48–0.75 at top-1 and
+        queries for things plainly absent scored 0.26–0.59. Those overlap, so there is no cutoff
+        that admits every real match and refuses every absent one. The floor is therefore set to
+        clear the band that is unambiguously noise and nothing more; an empty result means nothing
+        rose above that band, which is weaker than "it is not there" and must be read as such.
 
         The embedding model ranks. BM25 is the fallback for when it cannot load, and nothing
         more, because measurement said so: across 39 labelled queries on four applications,
@@ -454,6 +475,10 @@ class Index:
         dense_scores = self._dense_scores(query)
         if dense_scores is not None:
             fused, unreachable = dense_scores, self._unreachable
+            # A zero floor means "no floor", not "drop everything below zero": `find_one` ranks
+            # without one and its margin test was calibrated against the full ranking, so the
+            # default must leave that ranking exactly as it was.
+            cutoff = floor if floor > 0 else float("-inf")
         else:
             # Without the model, BM25 carries retrieval — and there the same elements are
             # unreachable for the same reason by a different route: a private-use glyph yields no
@@ -461,9 +486,10 @@ class Index:
             fused = self._bm25.scores(_tokens(query))
             unreachable = {index for index, document in enumerate(self.documents)
                            if not _tokens(document.text)}
-        order = [index for index in _ranked_indices(fused) if index not in unreachable]
-        if not everything:
-            order = order[:top_k]
+            best = max(fused, default=0.0)
+            cutoff = floor * best if floor > 0 and best > 0 else float("-inf")
+        order = [index for index in _ranked_indices(fused)
+                 if index not in unreachable and fused[index] >= cutoff][:top_k]
         return [Hit(id=self.documents[index].id, score=fused[index], payload=self.documents[index].payload) for index in order]
 
     def anchored(self, query: str, near: str, *, top_k: int, weight: float,

@@ -13,8 +13,7 @@ from frank.base.cursor_credentials import is_signed_in as cursor_is_signed_in
 from frank.base.configuration import Configuration, PromptLoader
 from frank.protocol.events import tool_status_from_result, ToolStatus
 from frank.base.providers import resolve_api_key
-from frank.base.tuning import active_tuning, clip_to_tokens, Tunable
-from frank.base.identifiers import new_id
+from frank.base.tuning import active_tuning, clip_to_tokens, count_tokens, Tunable
 from langchain_core.messages import AIMessageChunk
 from pathlib import Path
 from pydantic import BaseModel, Field
@@ -133,32 +132,76 @@ def _background_handle_kind(turn_id: str) -> str | None:
 
 
 def _cap_model_result_payload(result: str, *, code: str = "tool_result_truncated") -> str:
-    """Keep model-facing tool results bounded while preserving a full-output file. The cap is the
-    window-scaled output budget, so a larger model may hold a larger result inline."""
-    excerpt, was_truncated = clip_to_tokens(result, active_tuning().amount(Tunable.output_tokens))
+    """Bound a model-facing tool result to the window-scaled output budget.
+
+    This is the backstop: whatever a tool produces, what reaches the conversation is smaller than
+    the budget. It has to hold unconditionally, because every tool that grows a result is a tool
+    that can end a turn, and the tools cannot each be trusted to bound themselves.
+
+    It did not hold. The previous version clipped the result to an ``excerpt``, then returned
+    ``{**parsed, "output_excerpt": excerpt, …}`` — every original key *plus* a copy of the whole
+    thing, popping only four hard-coded names (``output``, ``content``, ``summary``, ``results``)
+    that a ``control_screen`` result does not have. Measured on a real payload it turned 533,013
+    characters into 855,823. The one function whose job was to make results smaller was the
+    largest single contributor to the result that overran a context window, and it announced this
+    by setting ``"truncated": true`` on a payload it had just enlarged.
+
+    What replaces it drops whole fields, largest first, and says which ones went. A structured
+    result is read field by field, so losing ``ran`` entirely and being told so leaves something a
+    model can still act on, where a payload clipped mid-string leaves it holding the first 60% of
+    a JSON document. Only when a single field is itself over budget is that field's text clipped.
+
+    Nothing is written to disk. The full result used to be spooled to ``/tmp`` and its path handed
+    over, which read as a way to recover the rest and was not: the path outlived the turn, nothing
+    ever cleaned it up, and no model in a recorded session ever read one back."""
+    budget = active_tuning().amount(Tunable.output_tokens)
+    _, was_truncated = clip_to_tokens(result, budget)
     if not was_truncated:
         return result
-    output_path = Path("/tmp") / f"{new_id('tool-result')}.json"
-    output_path.write_text(result)
+
     parsed = _maybe_json(result)
-    if isinstance(parsed, dict):
-        payload = {
-            **parsed,
-            "truncated": True,
-            "full_output_file": str(output_path),
-            "output_excerpt": excerpt,
-        }
-        for large_key in ("output", "content", "summary", "results"):
-            if large_key in payload:
-                payload.pop(large_key, None)
-        return compact(payload)
-    return compact({
-        "code": code,
-        "truncated": True,
-        "full_output_file": str(output_path),
-        "output_excerpt": excerpt,
-        "size": len(result),
-    })
+    if not isinstance(parsed, dict):
+        excerpt, _ = clip_to_tokens(result, budget)
+        return compact({"code": code, "truncated": True,
+                        "omitted_characters": len(result) - len(excerpt),
+                        "output_excerpt": excerpt})
+
+    kept = dict(parsed)
+    omitted: dict[str, int] = {}
+
+    def rendered_with(fields: dict) -> str:
+        return compact({**fields, "truncated": True, **({"omitted": omitted} if omitted else {})})
+
+    def over(fields: dict) -> bool:
+        return clip_to_tokens(rendered_with(fields), budget)[1]
+
+    # Largest first, so the fewest fields are lost — but never the ones that say what happened.
+    # Dropping by size alone once discarded `error` while keeping `targets`, which is the wrong
+    # way round by exactly the margin that matters: a model can act on a failure it can read and
+    # can do nothing at all with a result whose reason has been elided for being long.
+    essential = {"ok", "error", "error_code", "code", "status"}
+    for key in sorted(kept, key=lambda key: len(compact(kept[key])), reverse=True):
+        if not over(kept):
+            break
+        if key not in essential:
+            omitted[key] = len(compact(kept.pop(key)))
+
+    if not over(kept):
+        return rendered_with(kept)
+
+    # What is left is essential and still too large, which means one field is enormous on its own —
+    # a script that raised with a page's worth of records interpolated into its message. Clip that
+    # field's text in place, so the result keeps its shape and its reason stays readable, rather
+    # than dropping the one thing the model needs in order to do anything about the failure.
+    for key in sorted(kept, key=lambda key: len(compact(kept[key])), reverse=True):
+        if not over(kept) or not isinstance(kept[key], str):
+            continue
+        elsewhere = count_tokens(rendered_with({k: v for k, v in kept.items() if k != key}))
+        excerpt, clipped = clip_to_tokens(kept[key], max(1, budget - elsewhere))
+        if clipped:
+            omitted[f"{key} (clipped)"] = len(kept[key]) - len(excerpt)
+            kept[key] = excerpt
+    return rendered_with(kept)
 
 
 def _utc_timestamp(datetime_value: datetime) -> str:

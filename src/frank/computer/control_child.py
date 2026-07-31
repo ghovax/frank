@@ -266,6 +266,24 @@ def _run(script: str, namespace: dict[str, Any]) -> Any:
     return final_value
 
 
+def _failure(error: BaseException) -> dict[str, Any]:
+    """A raised exception as a result: the message once, and the frames that led to it.
+
+    Once, because it used to be twice. ``error`` carried ``f"{type}: {error}"`` and ``traceback``
+    carried ``format_exc()``, whose last line is that same string — so a script that raised with a
+    payload in the message sent the payload twice. One real script raised with 172 element records
+    interpolated into it, and the two fields came to 35,414 and 36,063 characters of the same text.
+
+    The frames stop short of the exception line for exactly that reason: the message is already
+    the field above, and a traceback is worth carrying for *where* it happened, not for repeating
+    what happened."""
+    frames = "".join(traceback.format_tb(error.__traceback__, limit=8)).strip()
+    result: dict[str, Any] = {"ok": False, "error": f"{type(error).__name__}: {error}"}
+    if frames:
+        result["traceback"] = frames
+    return result
+
+
 def main() -> None:
     global _request, _reply
     _request = os.fdopen(int(sys.argv[1]), "w", buffering=1)
@@ -309,10 +327,9 @@ def main() -> None:
         if missing in ("screen", "Screen", "place"):
             result = {"ok": False, "error_code": "needs_import", "detail": missing}
         else:
-            result = {"ok": False, "error": f"{type(error).__name__}: {error}",
-                      "traceback": traceback.format_exc(limit=8)}
+            result = _failure(error)
     except Exception as error:
-        result = {"ok": False, "error": f"{type(error).__name__}: {error}", "traceback": traceback.format_exc(limit=8)}
+        result = _failure(error)
     output = captured.getvalue()
     if output:
         result["stdout"] = output

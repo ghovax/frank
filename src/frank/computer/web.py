@@ -6,6 +6,10 @@ can find a control *or* the page's own API endpoint by describing it — and the
 against the result (:meth:`WebSurface.perform`) with Playwright's trusted, actionability-checked
 input, and can replay an authenticated request in-page with ``evaluate``.
 
+An exchange document carries the request's *shape* and never its data: method, url, status, header
+names, and a field-by-field description of each body (:func:`_body_shape`). That is what makes the
+traffic searchable at all — see the function for the page that proved the alternative unaffordable.
+
 Why the real browser, not a copy. The point of the browser tool is to act as the user, with their
 real logins and real session. Copying a profile cannot do that anymore: Google's Device Bound
 Session Credentials tie a login to a non-exportable key in this device's Secure Enclave, so a
@@ -85,8 +89,8 @@ _FOCUSED_ELEMENT = _page_script("focused_element")
 
 
 def _decode_body(text: str, content_type: str = "") -> Any:
-    """Represent a captured body as structured data when it is JSON — so the model reads it as an
-    object it can navigate rather than an escaped string — and otherwise as the plain string."""
+    """Represent a captured body as structured data when it is JSON — so its *shape* can be
+    described field by field — and otherwise as the plain string."""
     stripped = text.lstrip()
     if "json" in content_type or stripped[:1] in "{[":
         try:
@@ -94,6 +98,85 @@ def _decode_body(text: str, content_type: str = "") -> Any:
         except Exception:
             pass
     return text
+
+
+def _body_shape(value: Any) -> Any:
+    """A captured body described by its **shape** rather than its contents: the same structure it
+    has, with every leaf replaced by the name of its type.
+
+    An object maps its keys to the shapes of their values; an array becomes a one-element array
+    holding the shape its items share. The result is ordinary JSON of the same form as the body,
+    so it is read the way the body would be — ``shape["data"]["user"]["id"]`` is ``"int"`` — rather
+    than parsed out of a description of it. Nothing is elided and no depth is capped: a shape is
+    already proportional to the document's *variety* rather than its size, so the recursion ends
+    where the structure does, and a million-row array is one row's worth of shape.
+
+    This is the whole of why a browser session is affordable to search. An exchange used to travel
+    with its body verbatim, and one real page proved what that costs: a single captured Google
+    response was 365,282 characters, a single X ``HomeTimeline`` response 289,102, and across one
+    ordinary tab 250 exchanges accounted for 96.2% of a 1.9MB tool result — a result that exceeded
+    the model's context window and killed the turn. The comment above the capture claimed the
+    bodies were "size-clipped, so one exchange cannot dominate"; nothing clipped them, and one did.
+
+    Clipping to a character budget would have been the obvious repair and is the wrong one: half a
+    JSON document is not a smaller JSON document, it is a broken one, and the half that survives is
+    arbitrary. What a caller actually wants from a captured exchange is *what this endpoint
+    returns* — which fields, nested how — and that is exactly what survives here, at a few hundred
+    characters however large the response was.
+
+    The values themselves are not summarised, sampled, or truncated: they are never read into the
+    result at all. That is deliberate beyond the size. A captured response body is the user's own
+    authenticated data — their timeline, their messages, their account — and the shape answers
+    every question a script has about an endpoint without any of it entering a model's context.
+    Replaying the request is how a script gets real data, in the page, when it decides it needs it.
+    """
+    if isinstance(value, bool):
+        return "bool"          # before int: a bool is one in Python, and not one to a reader
+    if value is None:
+        return "null"
+    if isinstance(value, int):
+        return "int"
+    if isinstance(value, float):
+        return "float"
+    if isinstance(value, str):
+        return "str"
+    if isinstance(value, dict):
+        return {key: _body_shape(entry) for key, entry in value.items()}
+    if isinstance(value, list):
+        # One shape for the whole array, unioned across its items: rows are usually the same record
+        # repeated, and where they are not, the union says so rather than letting the first item
+        # claim a uniformity the data does not have. An optional field present on one row in a
+        # thousand is a fact about the endpoint, and this is the only place it can be seen.
+        shapes = [_body_shape(item) for item in value]
+        if not shapes:
+            return []
+        merged = shapes[0]
+        for shape in shapes[1:]:
+            merged = _merged_shape(merged, shape)
+        return [merged]
+    return type(value).__name__
+
+
+def _merged_shape(left: Any, right: Any) -> Any:
+    """Two shapes of the same array, combined into one that admits both."""
+    if isinstance(left, dict) and isinstance(right, dict):
+        return {key: _merged_shape(left[key], right[key]) if key in left and key in right
+                else left.get(key, right.get(key))
+                for key in (*left, *(key for key in right if key not in left))}
+    if isinstance(left, list) and isinstance(right, list):
+        if not left:
+            return right
+        if not right:
+            return left
+        return [_merged_shape(left[0], right[0])]
+    # An absent value tells you nothing about the field's type, so anything outranks it — this is
+    # what makes an optional field read as what it holds when set, rather than as `null` because
+    # the first row happened not to have it. Otherwise the first shape stands: genuinely mixed
+    # types in one field are rare, and inventing a notation for them would cost every reader of
+    # every ordinary shape more than it buys.
+    if left == "null":
+        return right
+    return left
 
 # The user-visible Chromium browsers we can connect to and drive, mapped to the support directory
 # that holds each one's DevToolsActivePort file (written when its remote-debugging switch is on).
@@ -181,9 +264,11 @@ class _Session:
         # What to do with the next JavaScript dialog an action triggers ("accept"/"dismiss"); None
         # means the default (acknowledge alerts, decline questions).
         self.pending_dialog: Optional[str] = None
-        # The page's recent network exchanges — full request/response, so a ``find`` can
-        # surface the API endpoints behind a rendered view and ``evaluate`` can replay them. A
-        # generous rolling window, bounded only so a long-lived page cannot grow the buffer forever.
+        # The page's recent network exchanges — method, url, status and the *shape* of each body
+        # (see `_body_shape`), never its contents, so a ``find`` can surface the API endpoints
+        # behind a rendered view and ``evaluate`` can replay them. A generous rolling window,
+        # bounded only so a long-lived page cannot grow the buffer forever; it stays affordable
+        # because what each entry holds is a description rather than a document.
         self.exchanges: deque[dict] = deque(maxlen=active_tuning().amount(Tunable.web_exchanges))
         self._exchange_counter = count(1)
         # Live WebSockets and their recent frames (chat, live data, trading feeds — the traffic that
@@ -332,9 +417,10 @@ class _Session:
                 self.events.append({"download": {"url": download.url, "error": str(error)}})
 
         def on_response(response) -> None:
-            # Capture each exchange in full for the exchange documents: eager but selective — only
-            # the data-shaped requests (XHR/fetch with a text-ish body), size-clipped, so the junk
-            # (images, fonts, media) never gets stored and one exchange cannot dominate. Best effort.
+            # Capture each exchange as its *shape*: eager but selective — only the data-shaped
+            # requests (XHR/fetch with a text-ish body), so the junk (images, fonts, media) never
+            # gets stored — and described by :func:`_body_shape` rather than retained, so no
+            # response body is ever held in memory or carried into a result. Best effort.
             try:
                 request = response.request
                 resource_type = request.resource_type
@@ -346,19 +432,30 @@ class _Session:
                 request_headers: dict[str, str] = {}
                 try:
                     request_headers = dict(request.headers)
-                    entry["request_headers"] = request_headers
                 except Exception:
                     pass
                 headers: dict[str, str] = {}
                 try:
                     headers = dict(response.headers)
-                    entry["response_headers"] = headers
                 except Exception:
                     pass
+                # Headers get the same treatment as bodies, and for both reasons. They were 21% of
+                # the traffic in the result that overflowed a context window, and one of them is
+                # `authorization` — a bearer token that has no business being in a model's
+                # context. The names say what the endpoint expects, which is what a script
+                # replaying it needs; `content-type` keeps its value because it is the one header
+                # whose value *is* the shape.
+                if request_headers:
+                    entry["request_header_names"] = sorted(request_headers)
+                if headers:
+                    entry["response_header_names"] = sorted(headers)
+                    if headers.get("content-type"):
+                        entry["content_type"] = headers["content-type"]
                 try:
                     post = request.post_data
                     if post:
-                        entry["request_body"] = _decode_body(post, request_headers.get("content-type", ""))
+                        entry["request_body"] = _body_shape(
+                            _decode_body(post, request_headers.get("content-type", "")))
                 except Exception:
                     pass
                 content_type = headers.get("content-type", "")
@@ -366,7 +463,7 @@ class _Session:
                     marker in content_type for marker in ("json", "javascript", "text", "xml", "graphql", "urlencoded")
                 ):
                     try:
-                        entry["response_body"] = _decode_body(response.text(), content_type)
+                        entry["response_body"] = _body_shape(_decode_body(response.text(), content_type))
                     except Exception:
                         pass
                 self.exchanges.append(entry)
@@ -387,7 +484,12 @@ class _Session:
                     if isinstance(payload, (bytes, bytearray)):
                         record["frames"].append({"direction": direction, "binary_bytes": len(payload)})
                     else:
-                        record["frames"].append({"direction": direction, "data": _decode_body(payload)})
+                        # Shaped like every other captured body, and for the same reasons — a live
+                        # feed is the one source here that never stops producing, so 200 retained
+                        # frames of a trading or chat socket is precisely where verbatim data does
+                        # the most damage.
+                        record["frames"].append({"direction": direction,
+                                                 "data": _body_shape(_decode_body(payload))})
                 return handler
 
             websocket.on("framesent", note("sent"))

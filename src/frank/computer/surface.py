@@ -303,7 +303,7 @@ class Surface:
     # slept had nothing left to offer over `time.sleep`.
     PROVIDED_SIGNATURES = {
         "find_one": 'screen.find_one(query, clickable=None, near="", name="", context="")',
-        "find_many": 'screen.find_many(query, limit=8, all=False, clickable=None, near="", name="", context="")',
+        "find_many": 'screen.find_many(query, limit=8, clickable=None, near="", name="", context="")',
         "wait_for": 'screen.wait_for(query, seconds=5, clickable=None, near="", name="", context="")',
     }
     RETRIEVAL_PRIMITIVES = tuple(PROVIDED_SIGNATURES)

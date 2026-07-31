@@ -178,8 +178,13 @@ function friendlyErrorFromData(data: Record<string, unknown>): FriendlyError {
         return { title: "Connection interrupted", message: "The model connection dropped before the turn finished. Check the connection and retry." };
       case "server_error":
         return { title: "Server request failed", message: "Frank could not start the turn. Check the daemon log and try again." };
+      // The daemon sends the numbers it has (the window, the model) in `message`, so this is only
+      // the fallback for when it could not name them. It is its own case rather than folded into
+      // the default: an overlong conversation is the one turn failure the user can fix directly,
+      // and it used to arrive as "the turn stopped unexpectedly, see the server log".
+      case "context_window_exceeded":
       case "request_too_large":
-        return { title: "Request is too large", message: "The agent's model could not accept this much context. Start a smaller follow-up or configure a model with more capacity." };
+        return { title: "Conversation is too long for this model", message: "The request was larger than this model's context window. Compact the conversation, start a new one, or switch to a model with a larger window. A single tool result — a long file or a screen listing — is the usual cause." };
       case "request_rejected":
         return { title: "Model rejected the request", message: "The agent's model could not accept this turn. Adjust the request or configure a different model for this agent." };
       case "image_unsupported":

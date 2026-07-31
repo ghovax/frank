@@ -44,6 +44,7 @@ from frank.base.credentials import (
     valid_tokens,
 )
 from frank.base.message_content import content_blocks_to_message_content, message_text
+from frank.base.model_errors import CONTEXT_OVERFLOW_CODES, ContextWindowExceeded
 from frank.base.serialization import compact, upstream_detail
 from frank.base.subscription import (
     RESPONSES_URL,
@@ -51,6 +52,23 @@ from frank.base.subscription import (
     capture_usage_headers,
     request_headers,
 )
+
+# What the Codex endpoint serves when its own catalogue has not been fetched yet. Deliberately the
+# conservative figure rather than the advertised one — see :meth:`ChatCodexModel.context_window`.
+COLD_START_WINDOW = 272_000
+
+
+def _error_code(body: str) -> str:
+    """The machine-readable ``code`` out of an error body, or ``""``. Never its prose."""
+    try:
+        parsed = json.loads(body)
+    except Exception:
+        return ""
+    if not isinstance(parsed, dict):
+        return ""
+    detail = parsed.get("error") if isinstance(parsed.get("error"), dict) else parsed
+    return str(detail.get("code") or "") if isinstance(detail, dict) else ""
+
 
 class ChatCodexModel(BaseChatModel):
     """A ``BaseChatModel`` backed by the ChatGPT-subscription Codex endpoint.
@@ -61,7 +79,8 @@ class ChatCodexModel(BaseChatModel):
     the cold-start fallback the factory reads from the models.dev catalog, but the
     Codex endpoint enforces a *smaller* budget than models.dev's direct-API metadata
     advertises (e.g. models.dev lists ~1M for gpt-5.5/5.6 while Codex serves 272k),
-    so :meth:`context_window` prefers the live per-account value when it is known."""
+    so :meth:`context_window` prefers the live per-account value when it is known and
+    never reports more than :data:`COLD_START_WINDOW` when it is not."""
 
     model: str
     reasoning_effort: Optional[str] = None
@@ -76,12 +95,19 @@ class ChatCodexModel(BaseChatModel):
         return "codex"
 
     def context_window(self) -> int:
-        # The live subscription catalog is authoritative for the real Codex budget;
-        # fall back to the models.dev-derived value only until that cache is warm.
+        # The live subscription catalog is authoritative for the real Codex budget.
         live = cached_subscription_models().get(self.model)
         if live and live.get("context"):
             return int(live["context"])
-        return self.context_length
+        # Until that cache is warm, models.dev's figure is not merely unverified, it is known to
+        # be wrong for this endpoint in the one direction that does harm: it describes the direct
+        # API, and Codex serves less. Believing it made the interface report a conversation as 3%
+        # full while the provider was refusing it for length — and, because every window-scaled
+        # budget in `tuning` divides by this number, it also set the cap on tool results four
+        # times too high, so the backstop against overlong results was itself sized by the error
+        # it was meant to catch. Taking the smaller of the two is the only reading that is wrong
+        # in the harmless direction.
+        return min(self.context_length, COLD_START_WINDOW) if self.context_length else COLD_START_WINDOW
 
     @property
     def _identifying_params(self) -> dict[str, Any]:
@@ -208,6 +234,12 @@ class ChatCodexModel(BaseChatModel):
                 "ChatGPT rejected the subscription token (expired, revoked, or plan "
                 f"lacks access). Sign in again. Detail: {upstream_detail(body)}"
             )
+        # An overlong request is refused before the stream opens as often as during it, and the
+        # two paths have to agree — a failure that is specific down one and generic down the other
+        # is the same opacity, arrived at by a different route. Read from the body's `code`, like
+        # the streaming path, rather than from its prose.
+        if status == 400 and _error_code(body) in CONTEXT_OVERFLOW_CODES:
+            return ContextWindowExceeded("The request exceeded this model's context window.")
         return RuntimeError(f"ChatGPT Codex endpoint returned {status}: {upstream_detail(body)}")
 
     # SSE event translation. The Responses stream is a sequence of ``data: {json}``
@@ -265,7 +297,21 @@ class ChatCodexModel(BaseChatModel):
         if event_type in ("response.failed", "response.error", "error"):
             response = data.get("response") or {}
             detail = (response.get("error") or data.get("error") or {})
-            message = detail.get("message") if isinstance(detail, dict) else str(detail)
+            structured = detail if isinstance(detail, dict) else {}
+            message = structured.get("message") if structured else str(detail)
+            # The failure event carries a machine-readable `code` beside its `message`, and this
+            # used to read only the message and raise a bare RuntimeError. Everything downstream
+            # then had a sentence and no way to act on it, so a context-window overflow — which
+            # the harness has a precise answer for — reached the user as "the turn stopped
+            # unexpectedly, see the server log", while the log held the provider saying exactly
+            # what was wrong.
+            code = str(structured.get("code") or "")
+            if code in CONTEXT_OVERFLOW_CODES:
+                raise ContextWindowExceeded(
+                    message or "The request exceeded this model's context window.",
+                    model=str(state.get("model") or ""),
+                    context_window=int(state.get("context_window") or 0),
+                )
             raise RuntimeError(f"ChatGPT Codex stream failed: {message or 'unknown error'}")
         return None
 
@@ -349,7 +395,10 @@ class ChatCodexModel(BaseChatModel):
     ) -> AsyncIterator[ChatGenerationChunk]:
         payload = self._build_payload(messages, stream=True, **kwargs)
         headers = await self._headers()
-        state: dict[str, Any] = {"saw_tool_call": False}
+        # Carried so a failure can name the model that refused the request and the window it was
+        # measured against — the two things that make "too large" actionable rather than a verdict.
+        state: dict[str, Any] = {"saw_tool_call": False, "model": self.model,
+                                 "context_window": self.context_window()}
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             async with client.stream("POST", RESPONSES_URL, json=payload, headers=headers) as response:
                 if response.status_code >= 400:
@@ -408,7 +457,10 @@ class ChatCodexModel(BaseChatModel):
             raise ChatGPTAuthError("Not signed in to ChatGPT (or the session expired).")
         payload = self._build_payload(messages, stream=True, **kwargs)
         headers = request_headers(tokens)
-        state: dict[str, Any] = {"saw_tool_call": False}
+        # Carried so a failure can name the model that refused the request and the window it was
+        # measured against — the two things that make "too large" actionable rather than a verdict.
+        state: dict[str, Any] = {"saw_tool_call": False, "model": self.model,
+                                 "context_window": self.context_window()}
         aggregate: Optional[ChatGenerationChunk] = None
         with httpx.Client(timeout=self.timeout) as client:
             with client.stream("POST", RESPONSES_URL, json=payload, headers=headers) as response:

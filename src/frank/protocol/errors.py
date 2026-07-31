@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from litellm import exceptions as litellm_exceptions
 
+from frank.base.model_errors import CONTEXT_OVERFLOW_CODES, ContextWindowExceeded
+
 
 def _provider_error_body(error: object) -> dict:
     body = getattr(error, "body", None)
@@ -53,6 +55,41 @@ def _safe_turn_error(error: object, had_images: bool = False) -> dict[str, objec
     fields: dict[str, object] = {}
     if status_code is not None:
         fields["status"] = status_code
+
+    # Its own failure, ahead of every status-code test, because it is the one the harness caused
+    # and the one a user can act on. It used to fall through all of them into the generic bucket —
+    # "The turn stopped unexpectedly. The raw details were written to the server log" — because
+    # the provider client raised a bare RuntimeError carrying the sentence and not the code.
+    #
+    # Three structural signals and no prose: the harness's own pre-flight measurement, litellm's
+    # typed error (which already encodes every provider's way of saying this), and the
+    # machine-readable `code` for the providers reached outside litellm.
+    overflow = error if isinstance(error, ContextWindowExceeded) else None
+    if (overflow is not None
+            or isinstance(error, litellm_exceptions.ContextWindowExceededError)
+            or provider_code in CONTEXT_OVERFLOW_CODES):
+        window = getattr(overflow, "context_window", 0) or 0
+        model = getattr(overflow, "model", "") or ""
+        tokens = getattr(overflow, "tokens", None)
+        # Said only when it is known, and said as the measurement it is. A window with no token
+        # count is a fact about the model; the pair is a fact about this request.
+        if window and tokens:
+            measured = f" — about {tokens:,} tokens against a {window:,}-token window"
+        elif window:
+            measured = f" ({window:,} tokens" + (f", {model}" if model else "") + ")"
+        else:
+            measured = ""
+        return {
+            **fields,
+            "code": "context_window_exceeded",
+            "title": "Conversation is too long for this model",
+            "message": (
+                f"The request was larger than this model's context window{measured}. "
+                "Compact the conversation, start a new one, or switch to a model with a larger "
+                "window. A single tool result — a long file or a screen listing — is the usual "
+                "cause."
+            ),
+        }
     # `provider_code` classifies the failure below (e.g. context-length) but is not part
     # of the wire ErrorEvent — the client keys off `code`/`status`, never the raw provider code.
 
@@ -96,14 +133,10 @@ def _safe_turn_error(error: object, had_images: bool = False) -> dict[str, objec
             "message": "The model connection dropped before the turn finished. Check the connection and retry.",
         }
     if isinstance(error, litellm_exceptions.BadRequestError) or status_code == 400:
-        request_too_large_codes = {"context_length_exceeded", "context_length_error", "input_too_large"}
-        if provider_code in request_too_large_codes:
-            return {
-                **fields,
-                "code": "request_too_large",
-                "title": "Request is too large",
-                "message": "The model could not accept this much context. Start a smaller follow-up or switch to a model with more capacity.",
-            }
+        # The overflow codes are tested above, against every error rather than only against a 400,
+        # because a streaming provider reports this failure mid-stream where there is no status
+        # code to key off at all. One code (`context_window_exceeded`) covers both routes, so the
+        # interface has one thing to recognise instead of two spellings of one failure.
         return {
             **fields,
             "code": "request_rejected",

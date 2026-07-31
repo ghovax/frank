@@ -834,7 +834,6 @@ function BashResultView({ data }: { data: Record<string, unknown> }) {
         <InlineField label={translation("output")}><Mono>{outputFile}</Mono></InlineField>
       ) : null}
       {output && outputFile ? <InlineField label={translation("fullOutput")}><Mono>{outputFile}</Mono></InlineField> : null}
-      {asString(data.full_output_file) ? <InlineField label={translation("fullOutput")}><Mono>{asString(data.full_output_file)}</Mono></InlineField> : null}
     </FieldList>
   );
 }

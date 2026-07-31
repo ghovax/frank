@@ -356,6 +356,27 @@ class Tunable(Enum):
         "0.05 against a key that did not yet carry the kind of control; adding that clustered the "
         "scores, so re-fit this whenever the key changes rather than carrying the number across.",
     )
+    find_many_ceiling = Default(
+        50, Scaling.RESULTS,
+        "Elements find_many will return however many are asked for. There used to be an `all=True` "
+        "that bypassed the limit entirely and returned the whole ranking; on one ordinary page "
+        "that was 590 elements and 1.5MB, which ended the turn by exceeding the model's context "
+        "window. A find is a ranked search, and the tail of a ranking is not more answer.",
+    )
+    find_relevance_floor = Default(
+        0.25, Scaling.NONE,
+        "How well an element must match, as a cosine against the query, before find_many will "
+        "return it at all. It cuts the noise band and nothing more, and the limit of that is "
+        "measured rather than assumed: on 596 elements of a real page, six paraphrased queries "
+        "for things that WERE present scored 0.48 to 0.75 at top-1, while six for things that "
+        "were plainly absent (a checkout button, a flight time) scored 0.26 to 0.59 — overlapping "
+        "distributions, so no absolute cosine separates 'here' from 'not here' with this "
+        "embedding. Set where it removes the tail that is unambiguously noise (that page ran to "
+        "-0.12) without touching the band where real matches live. Treat an empty result as "
+        "'nothing scored above the noise', never as proof of absence, and do not raise this "
+        "hoping to buy absence detection — it would cost real matches first. Making find_many "
+        "abstain honestly needs a calibrated signal this ranker does not yet have.",
+    )
     click_interval_seconds = Default(0.01, Scaling.NONE, "Pause between successive synthesized clicks.")
     drag_step_interval_seconds = Default(0.01, Scaling.NONE, "Pause between the interpolated steps of a drag.")
     type_chunk_interval_seconds = Default(0.005, Scaling.NONE, "Pause between typed chunks.")
@@ -439,6 +460,18 @@ def _get_encoding():
         except Exception:
             _encoding = None
     return _encoding
+
+
+def count_tokens(text: str) -> int:
+    """How many tokens ``text`` is, by the same encoding :func:`clip_to_tokens` cuts on.
+
+    Its counterpart: clipping answers "what fits", this answers "how much is there", and a caller
+    fitting several pieces into one budget needs both. Falls back to the same coarse ratio, so the
+    two agree about a text's size whether or not the tokenizer loaded."""
+    encoding = _get_encoding()
+    if encoding is None:
+        return (len(text) + _FALLBACK_CHARS_PER_TOKEN - 1) // _FALLBACK_CHARS_PER_TOKEN
+    return len(encoding.encode(text, disallowed_special=()))
 
 
 def clip_to_tokens(text: str, budget: int) -> tuple[str, bool]:

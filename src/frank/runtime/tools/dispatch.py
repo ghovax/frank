@@ -1545,7 +1545,7 @@ class _DispatchesTools:
             asked.append((vector, top))
             del asked[:-12]
 
-        def _rank(query: str, limit: int, everything: bool, facets: dict | None = None,
+        def _rank(query: str, limit: int, floor: float = 0.0, facets: dict | None = None,
                   near: str = "") -> list:
             # One call, one meaning, both surfaces: the target says where to read.
             raw = surface.documents(target_id)
@@ -1579,7 +1579,7 @@ class _DispatchesTools:
                         "weak_anchor", query=str(query), anchor=weak.anchor,
                     )) from None
             else:
-                hits = index.search(query, top_k=limit, everything=everything)
+                hits = index.search(query, top_k=limit, floor=floor)
             # What the model actually asks for, recorded so the index can be tuned against real
             # queries instead of invented ones. Every encoding decision in
             # ``the-input-is-the-ceiling`` rests on a guess about how often a query names a
@@ -1687,24 +1687,41 @@ class _DispatchesTools:
                 for record in records
             ])
 
-        def find_many(query: Any, limit: int = 8, all: bool = False, clickable: Any = None,
+        def find_many(query: Any, limit: int = 8, clickable: Any = None,
                       near: str = "", name: str = "", context: str = "", **_: Any) -> list:
+            # The limit is the caller's, bounded by what any caller may ask for. There used to be
+            # an `all=True` beside it that returned the entire ranking and ignored the limit
+            # outright: `find_many("Search", limit=20, all=True)` answered with 590 elements and
+            # 1.5MB, which overran the model's context window and ended the turn. Two parameters
+            # that contradict each other are not two features.
+            tuning = active_tuning()
+            wanted = max(1, min(int(limit), tuning.amount(Tunable.find_many_ceiling)))
+            floor = tuning.ratio(Tunable.find_relevance_floor)
             facets = _facets(clickable, name, context)
-            records = [_record(hit) for hit in _rank(str(query), int(limit), bool(all), facets, str(near))]
+            records = [_record(hit) for hit in _rank(str(query), wanted, floor, facets, str(near))]
             for record in records:
                 _register(record)
             # Recorded whether or not the script does anything with the return value. A model that
             # wanted these in its result had to wrap the call in `print`, which stringifies a list
             # of dicts into a Python repr it then has to parse back out of stdout — records handed
             # to it as records, returned to it as prose.
-            ran.append({"find_many": str(query), "matched": records})
+            #
+            # Only what was *found* is recorded, not what was returned: the script already holds
+            # the records, and `ran` is a trace of the work rather than a second copy of it. The
+            # copy is what the trace used to be, and one script's `ran` reached 1.6MB — 81% of the
+            # result that killed a turn — restating elements the same result carried already.
+            ran.append({"find_many": str(query), "matched": len(records),
+                        "ids": [record["id"] for record in records]})
             return records
 
         def find_one(query: Any, clickable: Any = None, near: str = "", name: str = "",
                      context: str = "", **_: Any) -> dict:
             facets = _facets(clickable, name, context)
+            # No floor: this method's own abstention is the margin between first and second, fitted
+            # over 2,263 queries against the *full* ranking, and a floor applied underneath it
+            # would silently change what that margin is measured on.
             scored = [(_record(hit), float(hit.score or 0.0))
-                      for hit in _rank(str(query), 8, False, facets, str(near))]
+                      for hit in _rank(str(query), 8, 0.0, facets, str(near))]
             if not scored:
                 raise RuntimeError(control_message("no_match", query=str(query)))
             top, top_score = scored[0]
@@ -1742,7 +1759,11 @@ class _DispatchesTools:
                     candidates=_candidates([record for record, _ in scored[:shortlist]]),
                 ))
             _register(top)
-            ran.append({"find_one": str(query), "matched": top})
+            # The element it settled on, named rather than reproduced — the script has the record
+            # itself, and a single one of these can run to tens of thousands of characters when the
+            # surface is a page of articles.
+            ran.append({"find_one": str(query),
+                        "matched": {key: top.get(key) for key in ("id", "role", "name") if top.get(key)}})
             return top
 
         async def wait_for(query: Any, seconds: float = 5.0, clickable: Any = None, near: str = "",
@@ -1753,14 +1774,31 @@ class _DispatchesTools:
             the click that asked for it. Every real script needs to say "once this exists", and
             until now none could: `import time` falls outside the safe module set, so any script
             that polled was classified `unknown` and refused. The shape had to be split across
-            tool calls, which is why scripts were three lines long."""
+            tool calls, which is why scripts were three lines long.
+
+            **This can now wait at all, and that is a weaker claim than it sounds.** It polls a
+            find and returns the first non-empty answer, so it waits exactly as well as
+            `find_many` refuses. Before the relevance floor, `find_many` refused nothing — the
+            ranker always ranked *something* — so the first poll always won and `waited_in_vain`
+            could only fire on a surface with no elements at all. One recorded script asked for
+            `"OpenAI"` on a page that had never heard of it, was handed a link reading "Your Home
+            Timeline", and carried straight on as though its wait had succeeded.
+
+            The floor fixes that case and does not fix the general one. Measured on 596 elements
+            of a real page, paraphrased queries for present things scored 0.48–0.75 while queries
+            for plainly absent things reached 0.59: the distributions overlap, so a wait for
+            something that never arrives can still be satisfied by a confident wrong match. What
+            this reliably does now is not return *noise*; what it still cannot do is prove absence.
+            A script that must be certain should check a property of what it found — its role, its
+            text, where it sits — rather than trusting that the wait succeeding means the thing
+            arrived."""
             deadline = time.monotonic() + max(0.0, float(seconds))
             interval = active_tuning().settle_poll()
             while True:
                 # By keyword, because these are the caller's facets and the order they sit in is
                 # `find_many`'s business, not this function's. Passed positionally, adding one
                 # parameter there silently re-aimed every one of them here.
-                hits = await asyncio.to_thread(find_many, query, 1, False, clickable=clickable,
+                hits = await asyncio.to_thread(find_many, query, 1, clickable=clickable,
                                                near=near, name=name, context=context)
                 if hits:
                     return hits[0]
@@ -1779,7 +1817,7 @@ class _DispatchesTools:
             if verb in element_mutating_verbs:
                 resolved = find_one(target)["id"]  # unique-or-raise
             else:  # read / hover / scroll: a wrong non-mutating target is self-correcting, so top-1
-                hits = _rank(target, 1, False)
+                hits = _rank(target, 1, 0.0)
                 if not hits:
                     raise RuntimeError(control_message("no_match", query=target))
                 record = _record(hits[0])

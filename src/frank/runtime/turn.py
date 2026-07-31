@@ -25,6 +25,8 @@ from frank.protocol.events import TurnContext
 from frank.base.instructions import instructions_payload
 from frank.base.memories import memories_payload
 from frank.base.message_content import message_content_deltas, message_text
+from frank.base.model_errors import ContextWindowExceeded, over_context_window
+from frank.base.tuning import count_tokens
 from frank.base.skills import enabled_skills, skills_for_agent, skills_payload
 from frank.runtime.turn_events import (
     Checkpoint,
@@ -473,8 +475,21 @@ class _RunsTurns:
             # Phase 1 — the model call. Yields the thinking/answer stream and hands back
             # the assembled response, or a terminal (cancelled) / steering condition.
             call = _ModelCallOutcome()
-            async for event in self._stream_model_call(messages, call):
-                yield event
+            try:
+                async for event in self._stream_model_call(messages, call):
+                    yield event
+            except ContextWindowExceeded as overflow:
+                # The context reading is written from a call's reported usage, and a call that is
+                # refused reports none — so the indicator held whatever the last *successful* call
+                # said and went on claiming it. One session showed 3% full (36,021 of 1,050,000)
+                # while the provider was rejecting the conversation for length. Refusal is itself
+                # a measurement, and the one thing it establishes is that the window is full.
+                window = overflow.context_window or self._context_window
+                if window > 0:
+                    self._context_window = window
+                    self._latest_context_tokens = max(self._latest_context_tokens,
+                                                      overflow.tokens or window)
+                raise
             if call.cancelled:
                 return
             if call.aborted_for_steering:
@@ -552,6 +567,38 @@ class _RunsTurns:
             + dynamic_parts
         )
 
+    def _refuse_if_over_window(self, messages: list) -> None:
+        """Refuse a request that cannot fit, before it is sent, and say so with numbers.
+
+        The harness assembles the request and knows the window, so whether the two fit is a fact
+        it can compute rather than a verdict it has to wait for. Measuring here beats every
+        alternative on the three things that matter: it is the same answer for every provider
+        (including any that reports an overflow with no machine-readable code at all), it names
+        the size instead of merely the failure, and it does not spend a round trip discovering
+        something already knowable.
+
+        This replaced matching phrases like "exceeds the context window" against whatever prose a
+        provider returned — a test that would have quietly stopped working the day a provider
+        reworded its message, and never worked in another language.
+
+        Conservative on purpose (see :func:`over_context_window`): the count uses one general
+        tokenizer as a proxy for every model's own, so it is approximate, and refusing a request
+        the model would have taken is the worse of the two mistakes. Anything this misses the
+        provider still catches, and is still classified properly when it does."""
+        window = self._context_window
+        if window <= 0:
+            return                              # the catalogue is cold; it says nothing about room
+        tokens = sum(count_tokens(message_text(message)) for message in messages)
+        if not over_context_window(tokens, window):
+            return
+        # Recorded so the indicator agrees with the refusal instead of reporting the reading from
+        # the last call that succeeded.
+        self._latest_context_tokens = tokens
+        raise ContextWindowExceeded(
+            "The assembled request is larger than this model's context window.",
+            model=self.effective_model_identifier, context_window=window, tokens=tokens,
+        )
+
     async def _stream_model_call(
         self, messages: list, outcome: _ModelCallOutcome
     ) -> AsyncIterator[TurnEvent]:
@@ -583,6 +630,7 @@ class _RunsTurns:
         # A hook may read the conversation about to leave the process, and may change it.
         if not self._hooks.empty:
             messages = await self._hooks.before_model(messages)
+        self._refuse_if_over_window(messages)
         model_stream = self._bound_model.astream(messages)
         abort_waiter = asyncio.ensure_future(self._abort_event.wait())
         try:

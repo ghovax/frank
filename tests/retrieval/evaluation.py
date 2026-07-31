@@ -100,7 +100,11 @@ def evaluate_strategy(strategy_name: str, strategy: EncodingStrategy, corpora: l
         ])
         for family_name, family_queries in queries[corpus.site_name].items():
             for query in family_queries:
-                ranking = index.search(query.text, top_k=0, everything=True)
+                # The whole ranking, because this measures *where* the target lands rather than
+                # whether it is returned. Asked for by size rather than by a flag: the flag that
+                # used to do this also existed on the model-facing `find_many`, where it silently
+                # overrode the caller's limit and returned entire surfaces.
+                ranking = index.search(query.text, top_k=len(corpus.elements))
                 positions = [position for position, hit in enumerate(ranking)
                              if hit.id == str(query.target_index)]
                 outcomes.append(QueryOutcome(
