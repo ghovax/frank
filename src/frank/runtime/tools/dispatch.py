@@ -1388,6 +1388,15 @@ class _DispatchesTools:
             return
 
         control_message = message_loader("control")
+        # The vocabulary this call may actually use: what the surface implements, less the
+        # state-changing half when the session is read-only. Computed once, used both to tell the
+        # script what exists and to refuse anything else at the bridge — one set, so the two can
+        # never disagree about what "read-only" meant.
+        from frank.runtime.permissions import MUTATING_SCREEN_PRIMITIVES
+
+        permitted_primitives = set(surface.primitives())
+        if policy.read_only:
+            permitted_primitives -= MUTATING_SCREEN_PRIMITIVES
         known_ids: dict[str, dict[str, str]] = {}   # id -> {id, name, role, context}, from find_* results
         changed: list[dict[str, Any]] = []
         read_failures: list[dict[str, Any]] = []    # structured payloads a failed read produced
@@ -1776,6 +1785,23 @@ class _DispatchesTools:
             return [resolved, *args[1:]]
 
         async def dispatch(name: str, args: list, keywords: dict) -> Any:
+            # What this session may do, checked here rather than inferred from the script's text.
+            #
+            # This is the boundary; reading the source is only a gate in front of it. A scan of
+            # the source has to be right about what the source *will do*, and a script can always
+            # spell a call in a way a scan does not recognise — `getattr(screen, "cli" + "ck")`
+            # is the short version, and there is no end to the long ones. Refusing here needs to
+            # be right about nothing: whatever the script computed, the call arrives at this
+            # process as a name, and a name that is not permitted does not happen.
+            #
+            # It also means the read-only vocabulary the model is shown is the vocabulary it has,
+            # rather than a description of one. Those were two different things: the signatures in
+            # context were filtered, and the surface behind them was not.
+            if name not in permitted_primitives:
+                raise RuntimeError(control_message(
+                    "primitive_not_permitted", primitive=name,
+                    available=", ".join(sorted(permitted_primitives)),
+                ))
             if name == "find_many":
                 return await asyncio.to_thread(find_many, *args, **keywords)
             if name == "find_one":
@@ -1824,13 +1850,19 @@ class _DispatchesTools:
         targets_before = target_registry.list_targets()
         result = await control.run_control_script(
             script, dispatch, profile=active.sandbox, workspace=active.workspace,
-            # Only what this surface implements, so a name it does not have fails against the
-            # surface — which can say what it does have — rather than silently doing nothing.
-            primitives=surface.primitives(),
+            # Only what this surface implements *and* this session may run, so a name it does not
+            # have fails against the surface — which can say what it does have — rather than
+            # silently doing nothing.
+            primitives=tuple(sorted(permitted_primitives)),
             # The place the script drives, so the child binds a `screen` already pointed at it.
             target=target_id,
             # Where saved workflows live, so `from workflows.x import y` reaches them.
             import_roots=workflow_registry.import_roots(self._project_directory or active.workspace or ""),
+            # And what those skills' own projects were installed into, so a package that has
+            # dependencies works rather than failing on a name the script never mentioned.
+            dependency_roots=workflow_registry.dependency_roots(self._project_directory or active.workspace or ""),
+            # And where those dependencies keep the shared libraries they were built against.
+            library_roots=workflow_registry.library_roots(self._project_directory or active.workspace or ""),
         )
         if isinstance(result, dict):
             moved = target_registry.difference(targets_before, target_registry.list_targets())

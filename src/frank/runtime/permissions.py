@@ -17,10 +17,12 @@ from frank.runtime.locations import (
     ToolLocationError,
 )
 from langchain_core.messages import HumanMessage, SystemMessage
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 import ast
+import sys
 import logging
 import uuid
+from pathlib import Path
 from frank.base.serialization import compact
 
 logger = logging.getLogger(__name__)
@@ -46,24 +48,25 @@ MUTATING_SCREEN_PRIMITIVES = frozenset({
 })
 
 
-# What a control_screen script is allowed to import and still be judged on its primitives alone.
-# Pure computation over what a `find` returned: no filesystem, no network, no subprocesses. A script
-# that reaches outside this is not read-only in any sense this module can establish, whatever
-# primitives it does or does not call.
-_SCRIPT_SAFE_MODULES = frozenset({
-    "base64", "collections", "datetime", "decimal", "difflib", "fractions", "functools",
-    "hashlib", "html", "itertools", "json", "math", "operator", "random", "re", "statistics",
-    "string", "textwrap", "unicodedata", "urllib",
-})
-
-# The names that turn "arbitrary expression" into "arbitrary authority". `open` and `__import__`
-# are the direct routes; `eval`/`exec`/`compile` reconstruct source the AST never sees; `getattr`
-# and friends walk to the same place by string. None of them has an honest use in a script whose
-# whole job is to drive elements a find returned.
-_SCRIPT_FORBIDDEN_NAMES = frozenset({
-    "__import__", "breakpoint", "compile", "delattr", "eval", "exec", "exit", "getattr",
-    "globals", "input", "locals", "memoryview", "open", "quit", "setattr", "vars",
-})
+# There is no import allowlist, and that is a decision rather than an omission.
+#
+# There was one: twenty modules of pure computation, and anything else made a script `unknown`.
+# It was written when this scan was the only thing standing between a screen script and the
+# machine, and two things have since made it false. The child a script runs in is confined by the
+# operating system to a scratch directory of its own and no network at all, so `import os` reaches
+# nothing — `frank.computer.control` narrows the session's own profile before spawning it. And the
+# primitives are refused at the surface rather than read out of the source, so no spelling of a
+# call gets past a read-only policy.
+#
+# What the list did instead was make the tool poorer at the thing it is for. A skill's script
+# package, the `frank.screen` import in this project's own documented example, and `import csv`
+# were all "unknown", which under a read-only policy is a refusal — and the refusal said the
+# script *changed state*, which importing `csv` does not. Meanwhile `python3 whatever.py` through
+# the bash tool was waved through on the model's own say-so. A restriction that strict, sitting
+# beside a door that open, was not buying safety; it was buying friction.
+#
+# So a script may import what it needs. What it may *do* is answered by the two things that can
+# actually answer it: the confinement, and the primitive check at the bridge.
 
 
 def _screen_primitive(func: ast.expr) -> str:
@@ -80,51 +83,111 @@ def _screen_primitive(func: ast.expr) -> str:
     return ""
 
 
-def _control_script_assessment(script: str) -> tuple[str, str]:
+def _module_source(module: str, import_roots: Sequence[str]) -> str:
+    """The source of an imported module, if it is one of ours to read.
+
+    Only the directories a script's own imports are served from: a person's workflows and the
+    script packages their skills carry. Never site-packages — following `httpx` into its own
+    imports would parse half the environment to answer a question about one screen script, and
+    the answer would be "unknown" long before it finished.
+    """
+    parts = module.split(".")
+    for root in import_roots:
+        base = Path(root)
+        candidates = [base.joinpath(*parts).with_suffix(".py"), base.joinpath(*parts, "__init__.py")]
+        for candidate in candidates:
+            try:
+                if candidate.is_file():
+                    return candidate.read_text()
+            except OSError:
+                continue
+    return ""
+
+
+def _control_script_assessment(script: str, import_roots: Sequence[str] = ()) -> tuple[str, str]:
     """Classify a control_screen script as ``read_only``, ``mutating``, or ``unknown``.
 
-    The thing this has to get right is what a script *is*. It is not a list of primitive calls —
-    it is arbitrary Python, executed in a child process that has the user's full privileges, whose
-    only bounds are a wall-clock timeout and rlimits. Bounding runaway resource use is not bounding
-    authority. So a scan that looked only for state-changing primitive names and called everything
-    else read-only was answering a different question than the one asked: `import os` followed by
-    `os.system("rm -rf ~")` names no primitive, and so classified read-only, passed a read-only
-    policy, and at `risk: low` raised no gate at all — routing around every bash rule, the working
-    directory check, and the mode the session was created with.
+    The question is what the script will do *to the screen*, and nothing else. It used to be a
+    much broader question — whether the script stayed inside a curated set of modules — because
+    this scan was once the only thing between a screen script and the machine. It is not any more.
+    The child is confined by the operating system to a scratch directory and no network, and a
+    primitive the session may not use is refused at the surface however the script spelled it. So
+    this no longer has to be right about arbitrary Python in order for the harness to be safe,
+    and it stops trying: a script may import whatever it needs.
 
-    So the vocabulary is inverted. A script is read-only when everything in it is drawn from what
-    this tool is for — the primitives, control flow, and computation over their results — and
-    ``unknown`` the moment it reaches for anything else. ``unknown`` is not a refusal; it escalates,
-    so a script that genuinely needs `subprocess` can still be approved by the person whose machine
-    it is. Under a read-only policy it is refused, which is the honest reading of a script whose
-    authority cannot be established.
+    What is left is worth doing well, because it is what decides whether the user is asked. A
+    script is ``mutating`` when it calls a primitive that changes something, ``read_only`` when it
+    only looks, and ``unknown`` when it reaches for something whose effect cannot be read here.
+
+    Imports are followed rather than surrendered to. A script whose whole body is
+    ``from filing import file_all`` says nothing on its face, and answering ``unknown`` meant that
+    the more work somebody moved into a reusable module — the thing this tool wants them to do —
+    the less could be said about it, and the more often they were asked. Where the module is one
+    of ours, it is read and folded in, so a skill's package is classified by what it actually
+    calls; where it is not, the verdict is ``unknown`` and the person decides once.
 
     This is a gate, not a boundary. It reasons about source, and source can be obscured. The
-    boundary is the child process not having the authority in the first place."""
-    try:
-        tree = ast.parse(script)
-    except SyntaxError:
-        return "unknown", "the script could not be parsed"
-    mutating_detail = ""
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            if isinstance(node, ast.ImportFrom):
-                roots = [(node.module or "").split(".")[0]]
-            else:
-                roots = [alias.name.split(".")[0] for alias in node.names]
-            outside = [root for root in roots if root not in _SCRIPT_SAFE_MODULES]
-            if outside:
-                return "unknown", f"imports {outside[0]}"
-        elif isinstance(node, ast.Attribute) and node.attr.startswith("__") and node.attr.endswith("__"):
-            # `().__class__.__subclasses__()` and the rest of the walk back up to the interpreter.
-            return "unknown", f"reaches for {node.attr}"
-        elif isinstance(node, ast.Name) and node.id in _SCRIPT_FORBIDDEN_NAMES:
-            return "unknown", f"uses {node.id}"
-        elif isinstance(node, ast.Call) and _screen_primitive(node.func) in MUTATING_SCREEN_PRIMITIVES:
-            # Recorded rather than returned: a later node may still prove the script `unknown`,
-            # which is the stricter verdict and must win however the walk happens to be ordered.
-            mutating_detail = mutating_detail or f"calls {_screen_primitive(node.func)}()"
-    return ("mutating", mutating_detail) if mutating_detail else ("read_only", "")
+    boundary is the confinement and the primitive check, neither of which reads anything."""
+    seen: set[str] = set()
+
+    def assess(source: str, depth: int) -> tuple[str, str]:
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return "unknown", "the script could not be parsed"
+        mutating_detail = ""
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                if depth <= 0:
+                    continue
+                if isinstance(node, ast.ImportFrom):
+                    modules = [node.module or ""]
+                else:
+                    modules = [alias.name for alias in node.names]
+                for module in modules:
+                    root = module.split(".")[0]
+                    # `frank.screen` is how a script reaches the screen at all, and reading it
+                    # would say nothing: the primitives are forwarded by `__getattr__`, so there
+                    # is no call in that file to find. What a script does with it is visible in
+                    # the script.
+                    if not module or root == "frank":
+                        continue
+                    # The standard library cannot reach the screen — there is no bridge in it —
+                    # so what it computes is none of this scan's business.
+                    if root in sys.stdlib_module_names:
+                        continue
+                    if module in seen:
+                        continue
+                    seen.add(module)
+                    source_text = _module_source(module, import_roots)
+                    if not source_text:
+                        # Not ours to read: a third-party package, or a name that does not
+                        # resolve at all. Either way its screen calls are invisible here, and a
+                        # module holding a `click` would otherwise make the script that imports
+                        # it look read-only. `unknown` escalates rather than refuses, so this
+                        # costs one question and not the capability.
+                        return "unknown", f"imports {module}, which cannot be read from here"
+                    verdict, detail = assess(source_text, depth - 1)
+                    if verdict == "unknown":
+                        return "unknown", detail or f"imports {module}"
+                    if verdict == "mutating" and not mutating_detail:
+                        mutating_detail = f"{detail} in {module}" if detail else f"calls into {module}"
+            elif isinstance(node, ast.Attribute) and node.attr.startswith("__") and node.attr.endswith("__"):
+                # `().__class__.__subclasses__()` and the rest of the walk back up to the
+                # interpreter. Kept not because it is dangerous now — the confinement settles
+                # that — but because it is never what a screen script is honestly doing, and
+                # asking about it costs one prompt.
+                return "unknown", f"reaches for {node.attr}"
+            elif isinstance(node, ast.Call) and _screen_primitive(node.func) in MUTATING_SCREEN_PRIMITIVES:
+                # Recorded rather than returned: a later node may still prove the script
+                # `unknown`, which is the stricter verdict and must win however the walk happens
+                # to be ordered.
+                mutating_detail = mutating_detail or f"calls {_screen_primitive(node.func)}()"
+        return ("mutating", mutating_detail) if mutating_detail else ("read_only", "")
+
+    # Two levels: the script, and the module it imports. Deeper than that is a module importing a
+    # module, where naming the offending call is no longer information a person can act on.
+    return assess(script, depth=2)
 
 
 class _DecidesPermissions:
@@ -135,6 +198,19 @@ class _DecidesPermissions:
     def _evaluate_bash_permission(self, command: str) -> str:
         unmatched = "ask" if self._interactive_manual_mode else "allow"
         return self._permissions.evaluate_bash_permission(command, unmatched=unmatched)
+
+    def _script_import_roots(self) -> list[str]:
+        """Where a screen script's own imports are served from.
+
+        The same list the script will actually be run with, so that what the classifier can read
+        and what the script can import are the same set by construction. Two lists would drift,
+        and the drift would show up as a script that ran fine being asked about every time."""
+        from frank.computer import workflows as workflow_registry
+
+        try:
+            return workflow_registry.import_roots(self._project_directory or "")
+        except Exception:  # noqa: BLE001 — a classifier must not fail on a missing directory
+            return []
 
     async def _classify_permission(
         self,
@@ -462,11 +538,22 @@ class _DecidesPermissions:
             script = tool_arguments.get("script", "") or ""
             explanation = tool_arguments.get("explanation", "")
             risk = tool_arguments.get("risk", "") or ""
-            static_classification, static_detail = _control_script_assessment(script)
+            static_classification, static_detail = _control_script_assessment(
+                script, import_roots=self._script_import_roots(),
+            )
             # Read-only enforcement is a hard block (no human in the loop): a mutating script cannot
             # run under a read-only policy; an unparseable one is treated as modifying, not waved through.
             if policy.read_only and static_classification in ("mutating", "unknown"):
-                violation = f"a screen action that changes state ({static_detail})" if static_detail else "a screen action that changes state"
+                # Two verdicts, two files, because they are different facts and are acted on
+                # differently. `unknown` used to borrow the mutating sentence, so a script that
+                # imported `csv` was told it *changed state* — which it did not — and advised not
+                # to write files, which it had not tried to do. A model reading that concludes its
+                # screen work was the problem and rewrites the half that was fine.
+                violation = self._prompt_loader.load(
+                    "read_only_screen_mutating" if static_classification == "mutating"
+                    else "read_only_screen_unknown",
+                    {"detail": f" ({static_detail})" if static_detail else ""},
+                )
                 deny_message = self._prompt_loader.load("read_only_denied", {"violation": violation})
                 plan.denial = {"code": "", "message": deny_message, "denied_injection": False, "raw_command": ""}
                 return plan

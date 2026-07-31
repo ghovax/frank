@@ -16,7 +16,15 @@ Reach for it wherever an interface repeats a control — rows of a list, tabs of
 
 **`clickable` is the only narrowing there is.** `clickable=True` keeps what can be activated, `False` what cannot. Neither isolates a text field — a text area is clickable exactly like a button — and there is no filter by kind of control.
 
-**The script is Python, and it is a real program.** Not a macro or a step list — a module body with the standard library available and one object, `screen`, bound to the target. Loops, conditionals, `try`/`except`, functions, comprehensions: all of it applies, and the point of the tool is that a whole task fits in one call. `screen.wait_for(query, seconds=...)` blocks until something matches, which is how to say "once the pane has loaded" rather than hoping. Avoid three timid lines followed by another round trip to discover the fourth: nothing carries between calls but element ids, so each new one starts blind.
+**The script is Python, and it is a real program.** Not a macro or a step list — a module body whose first line is an import:
+
+```python
+from frank.screen import screen
+```
+
+Nothing is put into scope for you, so that the same text works typed here or saved to a file, and so that anyone reading it can see where its capabilities come from. You may import whatever else the task needs — the standard library, a saved workflow, a skill's script package. Imports are not restricted: the process the script runs in has no network and can write nowhere that outlives it, and a primitive this session may not use is refused at the surface however it was spelled, so neither safety question is answered by guessing from the source.
+
+Loops, conditionals, `try`/`except`, functions, comprehensions: all of it applies, and the point of the tool is that a whole task fits in one call. `screen.wait_for(query, seconds=...)` blocks until something matches, which is how to say "once the pane has loaded" rather than hoping. Avoid three timid lines followed by another round trip to discover the fourth: nothing carries between calls but element ids, so each new one starts blind.
 
 **A workflow can be a file.** `screen` is an instance of the importable `frank.screen.Screen`, so the same calls work in a saved module as inline:
 
@@ -30,7 +38,9 @@ def <what_it_does>(screen: Screen, <what_varies>: str) -> <what_it_gives_back>:
     return ...
 ```
 
-That shape generalises: `screen` first, whatever varies as a parameter, a return value rather than a print. Two directories hold them and both import as `workflows` — `.agents/workflows/` in the project, versioned with it, for work about this codebase's application; `~/.agents/workflows/` for the person's own tools, available everywhere and committed nowhere. The second matters: a workflow driving somebody's mail carries their accounts and habits and does not belong in a shared repository, so ask which they want when it is ambiguous and say which you chose when it is not. Whatever exists arrives in context under `workflows` with its import line and what it does — reach for one before writing what it already does, and save new ones with `write_file` rather than re-deriving them. A script that imports one cannot be read statically, so its first run asks the user.
+That shape generalises: `screen` first, whatever varies as a parameter, a return value rather than a print. Two directories hold them and both import as `workflows` — `.agents/workflows/` in the project, versioned with it, for work about this codebase's application; `~/.agents/workflows/` for the person's own tools, available everywhere and committed nowhere. The second matters: a workflow driving somebody's mail carries their accounts and habits and does not belong in a shared repository, so ask which they want when it is ambiguous and say which you chose when it is not. A **skill** carries screen work the same way and is the better home for anything bigger than one function: its `scripts/` directory is a real Python package with its own `pyproject.toml`, on your import path, reached with an ordinary `from <package> import <function>`. Read the skill's `SKILL.md` for what it already offers.
+
+Whatever exists arrives in context under `workflows` with its import line and what it does — reach for one before writing what it already does, and save new ones with `write_file` rather than re-deriving them. What you import is read along with your script when the harness decides whether to ask the user: a workflow or skill package that only reads keeps the script read-only, while a module that cannot be read from here — a third-party library — costs one question.
 
 **There are two places to compose, and they are peers.** In the script, Python composes the primitives: loop over what a find returned, branch on it, wait for what an action reveals, compute the answer, report once. On a page, `screen.evaluate` composes inside the document — one expression can filter a table to the rows that matter, aggregate a list into a number, read the page's own state, or call its signed-in API with `fetch` through the user's real session. Neither is a fallback for the other, and the strongest scripts use both: `screen.evaluate` to work out *what* to act on, the element primitives to act on it. `screen.evaluate` is state-changing by classification, so it is absent under a read-only policy.
 

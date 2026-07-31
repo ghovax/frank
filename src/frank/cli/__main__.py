@@ -499,12 +499,13 @@ def _command_open(arguments: argparse.Namespace) -> int:
     exits rather than half-working.
 
     The daemon comes up first because the app is useless without one, and starting it is
-    something the command line does anyway. `--no-daemon` is for wanting only the window."""
+    something the command line does anyway. Unconditionally: `ensure_daemon` returns at once when
+    one is already running and never starts a second, so the `--no-daemon` that used to be here
+    could only ever turn a window that would have worked into one that opens onto nothing."""
     import shutil
     import subprocess
 
-    if not arguments.no_daemon:
-        ensure_daemon()
+    ensure_daemon()
     launcher = shutil.which("open")
     if launcher is None:
         _note("frank: `open` is not available; the desktop app is macOS-only")
@@ -527,7 +528,7 @@ def _command_open(arguments: argparse.Namespace) -> int:
             "/Applications first. See documentation/installation.md."
         )
         return 1
-    _emit({"opened": APPLICATION_BUNDLE_ID, "daemon": not arguments.no_daemon})
+    _emit({"opened": APPLICATION_BUNDLE_ID, "daemon": True})
     return 0
 
 
@@ -743,25 +744,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="address to bind (default 127.0.0.1; this surface drives the daemon, so keep it local)",
     )
     serve.add_argument(
-        "--no-daemon", action="store_true",
-        help="do not start a control plane; serve against one that is already running",
-    )
-    serve.add_argument(
-        "--allow-stale-interface", action="store_true",
-        help="serve the built interface even when it is older than web/src (it will not match "
-             "this checkout; normally you want `cd web && bun run build` instead)",
-    )
-    serve.add_argument(
-        "--no-open", action="store_true",
-        help="do not open a browser; print the address and serve (for a headless box)",
+        "--open", dest="open_browser", action="store_true",
+        help="also open a browser at the served address (off by default: serving is not a "
+             "reason to take over the screen, and this may not be the machine you are looking at)",
     )
     serve.set_defaults(handler=_command_serve)
 
     open_app = add("app", help="start the daemon and launch the desktop app")
-    open_app.add_argument(
-        "--no-daemon", action="store_true",
-        help="launch the app without starting a daemon first",
-    )
     open_app.set_defaults(handler=_command_open)
 
     run = add("run", help="run one turn and print the answer, without a daemon")

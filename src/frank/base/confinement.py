@@ -595,6 +595,39 @@ def temporary_directory(profile: Optional[Profile], *, workspace: str = "") -> s
     return outside[0] if outside else next((path for path in candidates if path), "")
 
 
+def private_scratch(profile: Optional[Profile], *, workspace: str = "", prefix: str = "frank-") -> str:
+    """A fresh directory of a child's own, or ``""`` when the profile permits nowhere suitable.
+
+    :func:`temporary_directory` answers a different question — *somewhere* this profile may write —
+    and it falls back to the workspace when nothing else qualifies, which is right for the bash
+    tool's log and wrong for a child that is being narrowed down to scratch. Narrowing a child to
+    "the workspace" is not narrowing it: it is handing the user's source tree to a process whose
+    whole point is that it needs nothing but somewhere to put a temporary file.
+
+    That failure inverted with configuration, which is what makes it worth its own function. The
+    shipped profile lists ``$TMPDIR`` among its writable paths, so the fallback never fired and the
+    child was correctly confined; a person who *hardened* their profile down to ``$WORKSPACE``
+    alone — the obvious way to tighten it — removed the only candidate outside the tree and thereby
+    widened the child to the whole of it. Nothing about that is visible from either setting.
+
+    So the workspace is refused outright here rather than preferred last, and a fresh subdirectory
+    is made inside whatever does qualify: two children of one session cannot see each other's
+    scratch, and no child can write the tree. Empty when nothing qualifies, which leaves the child
+    unable to write anywhere at all — the correct answer for one that only bridges."""
+    base = temporary_directory(profile, workspace=workspace)
+    if not base:
+        return ""
+    worktree_root = os.path.realpath(workspace) if workspace else ""
+    if worktree_root:
+        real = os.path.realpath(base)
+        if real == worktree_root or real.startswith(worktree_root + os.sep):
+            return ""
+    try:
+        return tempfile.mkdtemp(prefix=prefix, dir=base)
+    except OSError:
+        return ""
+
+
 def resolve_command(command: str, spawn: Spawn) -> list[str]:
     """The argv for a shell command under a spawn recipe. A confined command is still a shell
     command — the prefix wraps the shell, it does not replace it."""

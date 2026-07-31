@@ -75,70 +75,6 @@ def interface_directory() -> Optional[Path]:
     return None
 
 
-# Everything the export is built from. `web/src` is the bulk of it, but a translation, a Next
-# setting or a dependency bump changes the built output just as surely and would otherwise pass
-# the check unnoticed.
-INTERFACE_SOURCES = ("src", "messages", "next.config.ts", "package.json")
-
-
-def stale_interface(directory: Path) -> Optional[tuple[float, float, Path]]:
-    """``(built, newest, culprit)`` when the export predates its sources, else ``None``.
-
-    `frank serve` hands out a static export, and nothing regenerates it: `web/out` is gitignored,
-    so a checkout neither builds it nor updates it on a pull. The only condition ever checked was
-    that `index.html` exists, which a months-old build satisfies exactly as well as a fresh one.
-
-    The failure that produces is the worst kind available. The interface loads, it looks right,
-    and it runs code nobody has touched in a day — so a bug fixed hours ago is reported as still
-    broken, re-diagnosed from nothing, and "fixed" a second time. That happened here: a Jul 28
-    21:00 export was served against a source tree from Jul 29 14:23, and two separate defects
-    already repaired in `web/src` were investigated again from scratch because the browser was
-    running the version from before the repair.
-
-    Checkout-only. A frozen build carries its own bundle, built by the packaging script moments
-    before freezing, and has no source tree to compare it against."""
-    if getattr(sys, "frozen", False):
-        return None
-    index = directory / "index.html"
-    if not index.is_file():
-        return None
-    built = index.stat().st_mtime
-    newest, culprit = 0.0, index
-    for entry in INTERFACE_SOURCES:
-        source = directory.parent / entry
-        candidates = source.rglob("*") if source.is_dir() else ([source] if source.is_file() else [])
-        for candidate in candidates:
-            if not candidate.is_file():
-                continue
-            modified = candidate.stat().st_mtime
-            if modified > newest:
-                newest, culprit = modified, candidate
-    if newest <= built:
-        return None
-    return built, newest, culprit
-
-
-def describe_stale_interface(built: float, newest: float, culprit: Path, directory: Path) -> str:
-    """The message a person needs: what is being served, what is newer, and what to do.
-
-    Names the specific file rather than the directory, because "something under web/src changed"
-    sends you looking while "web/src/lib/use-chat.ts is newer" does not."""
-    from datetime import datetime
-
-    try:
-        where = culprit.relative_to(directory.parent.parent)
-    except ValueError:
-        where = culprit
-    return (
-        f"frank: the built interface is older than its sources, so the browser would run code "
-        f"that no longer matches this checkout.\n"
-        f"       serving : {directory} (built {datetime.fromtimestamp(built):%Y-%m-%d %H:%M})\n"
-        f"       newer   : {where} ({datetime.fromtimestamp(newest):%Y-%m-%d %H:%M})\n"
-        f"       Run `cd web && bun run build` to rebuild it, or pass --allow-stale-interface "
-        f"to serve the old build anyway."
-    )
-
-
 def build_application(daemon_url: str, token: str, directory: Path):
     """The ASGI application: the interface at the root, the daemon behind everything else."""
     import httpx
@@ -314,17 +250,6 @@ def run(arguments) -> int:
         )
         return 1
 
-    # Refused rather than warned, because a warning is what the previous version of this check
-    # would have been, and the whole lesson here is that nobody reads a line of stderr scrolling
-    # past a server that started successfully. Serving a stale interface is not a degraded mode,
-    # it is showing someone a different program than the one they are editing.
-    stale = stale_interface(directory)
-    if stale is not None:
-        _note(describe_stale_interface(*stale, directory))
-        if not getattr(arguments, "allow_stale_interface", False):
-            return 1
-        _note("frank: serving the stale build anyway, because --allow-stale-interface was passed.")
-
     # Claim the port before starting anything, because `uvicorn.run` binds last and a bind that
     # fails after `ensure_daemon` leaves a daemon running that nobody asked for and nothing is
     # serving. Whoever already holds the port is almost always an earlier `frank serve`, and the
@@ -336,17 +261,20 @@ def run(arguments) -> int:
         )
         return 1
 
-    # A browser with no daemon behind it is a blank screen with a spinner, so start one for the
-    # same reason `frank app` does: the command line owns the daemon, and this is the command
-    # line. `--no-daemon` opts out for pointing at something already running.
-    # Whether *this* command started the daemon. It matters because of what happens if the rest
-    # of this function fails: a daemon we started and then never served is a process nobody asked
-    # for and nothing is talking to, left behind by a command that reported an error. Claiming the
-    # port first removed the likeliest cause; owning what we start removes the rest.
-    started_the_daemon = False
-    if not arguments.no_daemon:
-        started_the_daemon = not daemon_is_up()
-        ensure_daemon()
+    # A browser with no daemon behind it is a blank screen with a spinner, so one is started
+    # unconditionally: the command line owns the daemon, and this is the command line.
+    #
+    # There was a `--no-daemon` here, described as being for pointing at a daemon that is already
+    # running — which is what happens anyway, because `ensure_daemon` returns at once when one is
+    # up and never starts a second. Its only real effect was to turn "no daemon yet" from
+    # something this command fixes into an error it reports, so it could not be used for the
+    # thing it was documented for and was worth nothing for anything else.
+    #
+    # Whether *this* command started the daemon is still worth knowing, for what happens if the
+    # rest of this function fails: a daemon we started and then never served is a process nobody
+    # asked for and nothing is talking to, left behind by a command that reported an error.
+    started_the_daemon = not daemon_is_up()
+    ensure_daemon()
 
     def stop_the_daemon_we_started() -> None:
         """Undo our own side effect. A daemon someone else was already running is left alone."""
@@ -375,11 +303,12 @@ def run(arguments) -> int:
     _note(f"frank: serving the interface at {address} (daemon on :{port})")
     _note("frank: this address carries full control of the daemon — do not expose it beyond loopback.")
 
-    # Opening the browser is what makes this `web` rather than a second `serve`. `serve` is the
-    # API alone; this is the API plus the thing that looks at it, and a command that serves an
-    # interface and then leaves you to find it is doing half a job. `--no-open` is for a
-    # headless box, where there is no browser to open and the printed address is the point.
-    if not arguments.no_open:
+    # Asked for, never assumed. Serving and opening a window are two different acts, and this
+    # command was doing the second on its own initiative: run it to restart a server, or from a
+    # script, or over ssh, and a browser tab arrived uninvited — taking focus from whatever the
+    # person was doing, on a machine that may not be the one they are looking at. The address is
+    # printed either way, which is all a command that serves owes its caller.
+    if arguments.open_browser:
         _open_when_listening(address)
 
     try:

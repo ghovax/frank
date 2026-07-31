@@ -244,6 +244,13 @@ class FilesystemConfiguration(Section):
 
     readable: list[str] = Field(
         default=[
+            # Where a person's own agents, skills and workflows live. Not a convenience: a
+            # `control_screen` script imports its workflows and its skills' script packages from
+            # here, and without the read those imports fail inside the sandbox with
+            # `PermissionError: Operation not permitted` — which names no file and reads as a
+            # broken tool rather than a missing permission. Everything under it is the person's
+            # own instructions to the harness, which the harness is the intended reader of.
+            "~/.agents",
             "~/.config", "~/.local", "~/.ssh", "~/.gitconfig", "~/.gitignore_global",
             "~/.cargo", "~/.rustup", "~/.npmrc", "~/.nvm", "~/.pyenv", "~/.docker", "~/.netrc",
         ],

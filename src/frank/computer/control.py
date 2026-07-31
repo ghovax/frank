@@ -15,6 +15,7 @@ import asyncio
 import logging
 import json
 import os
+import shutil
 import sys
 from typing import Any, Awaitable, Callable, Optional
 
@@ -51,6 +52,8 @@ async def run_control_script(
     primitives: Optional[tuple[str, ...]] = None,
     target: str = "",
     import_roots: Optional[list[str]] = None,
+    dependency_roots: Optional[list[str]] = None,
+    library_roots: Optional[list[str]] = None,
 ) -> dict:
     """Execute ``script`` in a child process, servicing its primitive calls via ``dispatch``, and
     return the child's result dict (``{ok, value?, stdout?, error?, traceback?}``). On timeout the
@@ -70,6 +73,16 @@ async def run_control_script(
         # The workflow directories, put on the child's import path so a workflow somebody saved
         # is importable by name instead of having to be pasted in as text.
         "import_roots": list(import_roots or ()),
+        # The environments those directories' own projects were installed into — appended rather
+        # than prepended, so a skill's dependencies are reachable without any of them being able
+        # to decide what the rest of this process imports.
+        "dependency_roots": list(dependency_roots or ()),
+        # Directories holding shared libraries those dependencies ship with them. Sent as paths
+        # for the child to load rather than as `DYLD_FALLBACK_LIBRARY_PATH`, because macOS strips
+        # every `DYLD_*` variable from the environment when the protected `/usr/bin/sandbox-exec`
+        # is executed — measured: `TMPDIR` arrives from this same dictionary and the `DYLD_` one
+        # does not. The child loads them itself, after the sandbox is already in force.
+        "library_roots": list(library_roots or ()),
         # CPU seconds only. Address space is the confinement profile's `RLIMIT_AS` now — this
         # used to set it too, from its own constant, so two mechanisms raced for one rlimit.
         "limits": {"cpu_seconds": int(timeout) + 5},
@@ -86,7 +99,10 @@ async def run_control_script(
     # parent performs — so it needs no network at all and nowhere to write but a temporary
     # directory. Derived from the session's profile rather than configured separately: two
     # profiles to configure would be two profiles to get wrong.
-    scratch = confinement.temporary_directory(profile, workspace=workspace)
+    # A directory of this child's own, never the workspace. `temporary_directory` would hand back
+    # the session's own tree when the profile permits nowhere else, and a child narrowed to "the
+    # whole source tree" is not narrowed at all — see `confinement.private_scratch`.
+    scratch = confinement.private_scratch(profile, workspace=workspace, prefix="frank-screen-")
     child_profile = (
         profile.narrowed(writable=[scratch] if scratch else [], network=False, workspace=workspace)
         if profile is not None else None
@@ -96,7 +112,7 @@ async def run_control_script(
         # No permitted scratch means the child is told about none. A profile that grants no
         # writable directory should produce a child that cannot write, not one pointed at a
         # directory the session itself was refused.
-        extra_environment={"TMPDIR": scratch} if scratch else None,
+        extra_environment={"TMPDIR": scratch, "PWD": scratch} if scratch else None,
     )
     process = await asyncio.create_subprocess_exec(
         *spawn.prefix, sys.executable, child_path, str(request_write), str(reply_read),
@@ -104,6 +120,14 @@ async def run_control_script(
         pass_fds=(request_write, reply_read),
         env=spawn.environment,
         preexec_fn=spawn.preexec,
+        # Its own scratch directory, not the session's. A child inherits the working directory
+        # otherwise, and the narrowing has just taken that directory out of its readable set — so
+        # `os.getcwd()` raises `PermissionError`, and any library that calls it while being
+        # imported fails on a line that has nothing to do with anything the script asked for.
+        # `rich` does exactly that on its first line and took `httpx` down with it, which took
+        # down every skill that speaks HTTP. Working somewhere it can actually look is also the
+        # honest arrangement for a process whose whole job is bridged to its parent.
+        cwd=scratch or None,
     )
     # The parent keeps only its own ends; the child holds the others.
     os.close(request_write)
@@ -143,10 +167,22 @@ async def run_control_script(
         pump_task.cancel()
         _quietly_close(requests)
         _quietly_close(replies)
+        # The scratch directory was made for this one run and nothing outlives it: whatever the
+        # script left there is unreachable the moment the child is gone, and a directory per call
+        # would otherwise accumulate one per screen action for as long as the machine is up.
+        if scratch:
+            shutil.rmtree(scratch, ignore_errors=True)
 
     result = _parse_result(stdout, stderr, process.returncode)
     if result.get("error_code") == "syntax_error":
-        return {"ok": False, "error": message("syntax_error", detail=str(result.get("detail", "")), line=str(result.get("line", "")))}
+        # The interpreter's rendering when there is one — it carries the offending line and the
+        # caret, which is what the error is actually fixed from — and the bare facts otherwise.
+        rendered = str(result.get("rendered") or "").strip()
+        if not rendered:
+            rendered = f"SyntaxError: {result.get('detail', '')} (line {result.get('line', '')})"
+        return {"ok": False, "error": message("syntax_error", rendered=rendered)}
+    if result.get("error_code") == "needs_import":
+        return {"ok": False, "error": message("needs_import", detail=str(result.get("detail", "")))}
     return result
 
 

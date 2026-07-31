@@ -11,10 +11,19 @@ Anything the script prints is captured and reported too, so a script that just p
 is as good as one that ends in an expression. The script is run through the AST — no source is
 rewritten — so a multiline string literal is never disturbed.
 
-The primitives are injected as bare names (``click(...)``, not ``surface.click(...)``) — the script
-reads as plain Python. The two pipe fds and the configuration arrive out-of-band (fds on argv, the
-configuration as the first line the parent writes on the reply pipe), so nothing about this run
-lives in the process environment.
+Nothing is injected into the script's namespace. It reaches the screen by importing it —
+``from frank.screen import screen`` — which is what makes the text a program rather than a
+fragment that only means something inside one ``exec``: it declares what it depends on, it can be
+saved to a file unchanged, and a person can read it without knowing this harness exists. The two
+pipe fds and the configuration arrive out-of-band (fds on argv, the configuration as the first
+line the parent writes on the reply pipe), so nothing about this run lives in the process
+environment.
+
+The script may import anything else it likes. That is not an oversight: this process is confined
+by the operating system to a scratch directory and no network, so what it can *reach* is settled
+before it starts and does not depend on guessing from the source which modules are harmless. The
+screen itself is the exception, and it is bridged rather than held — every primitive call goes to
+the parent, which is where the permission to make it was asked for.
 """
 from __future__ import annotations
 
@@ -45,43 +54,109 @@ _request: Any = None
 _reply: Any = None
 
 
-class _LocalScreen:
-    """The same object `frank.screen.Screen` provides, for when the package cannot be imported.
+class _PreloadsBundledLibraries:
+    """Loads a package's own shared libraries just before that package is first imported.
 
-    Attributes are forwarded rather than enumerated, exactly as there: which primitives exist
-    depends on the target and the session's permissions, and the surface is the only thing that
-    knows. A saved workflow that says `from frank.screen import Screen` still needs the real
-    module — but an inline script needs nothing but this."""
+    A wheel that ships a compiled library links it as ``@rpath/libwhatever.dylib`` and records
+    rpaths that assume the environment it was installed into. Borrowing the packages does not
+    reproduce that, so the extension module loads and its library does not, and the import fails
+    naming a ``.dylib`` the script never mentioned.
 
-    def __init__(self, target: str = "") -> None:
-        self.target = target
+    The ordinary answer is ``DYLD_FALLBACK_LIBRARY_PATH``, and it cannot be used here: macOS
+    strips every ``DYLD_*`` variable when the protected ``/usr/bin/sandbox-exec`` is executed, so
+    it never reaches this process. Loading the library by absolute path has the same effect from
+    the inside — it is registered under its install name, and the later ``@rpath`` request finds
+    the image already loaded.
 
-    def __repr__(self) -> str:
-        return f"Screen({self.target!r})" if self.target else "Screen()"
+    Done as a finder rather than up front so it costs nothing until it is needed. A script that
+    never touches the package never loads its libraries, which matters when one of them is tens
+    of megabytes and most scripts want neither.
+    """
 
-    def __getattr__(self, name: str):
-        if name.startswith("_"):
-            raise AttributeError(name)
+    def __init__(self, directories) -> None:
+        self._pending: dict[str, str] = {}
+        for directory in directories or ():
+            name = os.path.basename(directory)
+            # `delocate` puts a wheel's vendored libraries in `<package>/.dylibs`; anything else
+            # is the package directory itself.
+            package = os.path.basename(os.path.dirname(directory)) if name == ".dylibs" else name
+            if package:
+                self._pending[package] = directory
 
-        def call(*arguments: Any, **keywords: Any) -> Any:
-            return _perform(name, list(arguments), keywords)
+    def find_spec(self, fullname, path=None, target=None):  # noqa: ANN001 — importlib's signature
+        directory = self._pending.pop(fullname.split(".")[0], None)
+        if directory:
+            import ctypes
+            import glob
 
-        call.__name__ = name
-        return call
+            # `*.dylib`, and `lib*.so` for the ones built with the other extension. The `lib`
+            # prefix is what separates a shared library from a Python extension module: they are
+            # both `.so` here, and loading `_extra.so` this way would be wrong. Dylibs first,
+            # since a `lib*.so` in these bundles is usually the C++ layer over the C one.
+            libraries = (sorted(glob.glob(os.path.join(directory, "*.dylib")))
+                         + sorted(glob.glob(os.path.join(directory, "lib*.so"))))
+            for library in libraries:
+                # Quietly: a library that will not load on its own is not necessarily a problem —
+                # it may be one this package never reaches for — and the import that follows is
+                # what says whether anything is actually missing.
+                try:
+                    ctypes.CDLL(library, mode=getattr(ctypes, "RTLD_GLOBAL", 0))
+                except OSError:
+                    continue
+        # Never claims the import. This exists for its side effect; the normal machinery finds
+        # the module.
+        return None
 
 
-def _script_namespace(allowed: tuple, target: str, workspace: list) -> dict[str, Any]:
-    """What a script starts with: a bound ``screen``, and its own workflows on the import path.
+def _load_screen_module(package_root: str):
+    """`frank.screen`, executed on its own, without the package body it lives under.
 
-    One calling form, here and in a saved file. The primitives used to be injected as bare names,
-    which reads pleasantly and cannot be written down anywhere else — a script saved to disk was
-    not a Python program, because nothing defined ``click``. Now the same call is
-    ``screen.click(...)`` whether it is typed into a tool argument or imported from a module a
-    person wrote last month, and there is one vocabulary rather than one for each situation.
+    Registered in ``sys.modules`` under both names so that everything afterwards — this file, a
+    saved workflow, a skill's package — reaches the same module object and therefore the same
+    installed bridge. Importing it the ordinary way instead would run `frank/__init__.py`, which
+    pulls in the entire runtime for the sake of one file that imports `pathlib` and `typing`.
+    """
+    import importlib.util
+    import types
 
-    ``frank.screen`` is the single Frank module this child imports. It carries no surface state and
-    no configuration — just the object and the hook this installs — so the child stays the thin,
-    disposable thing it was built to be."""
+    if "frank.screen" in sys.modules:
+        return sys.modules["frank.screen"]
+    directory = os.path.join(package_root, "frank")
+    if "frank" not in sys.modules:
+        package = types.ModuleType("frank")
+        # The real directory, so `frank.anything_else` still resolves if something asks for it.
+        package.__path__ = [directory]
+        sys.modules["frank"] = package
+    specification = importlib.util.spec_from_file_location(
+        "frank.screen", os.path.join(directory, "screen.py")
+    )
+    if specification is None or specification.loader is None:
+        raise ImportError(f"frank.screen could not be loaded from {directory}")
+    module = importlib.util.module_from_spec(specification)
+    sys.modules["frank.screen"] = module
+    specification.loader.exec_module(module)
+    return module
+
+
+def _script_namespace(
+    allowed: tuple, target: str, workspace: list, dependencies: list = (), libraries: list = ()
+) -> dict[str, Any]:
+    """What a script starts with: an empty namespace, and everything importable that it may need.
+
+    Deliberately empty. A script reaches the screen the way a program reaches anything —
+
+        from frank.screen import screen
+
+    — and nothing is put into scope for it. The runner used to inject a bound ``screen``, which
+    read pleasantly and made the text not a program: it declared none of what it depended on, so
+    it could not be saved to a file, could not be read by anyone who did not already know this
+    harness, and could not be moved between the inline form and the saved form without being
+    rewritten. One of those two was going to have to become the other, and the one with the
+    import is the one that is ordinary Python.
+
+    What this does instead is arrange the import path, so that the line above resolves, and so do
+    a person's saved workflows and the script packages their skills carry.
+    """
     # The path is settled *before* anything is imported, because the import below depends on it.
     # It was written the other way round — `from frank import screen` first, the repair after —
     # so the repair could never run in the one situation it existed for, and every script died
@@ -99,29 +174,44 @@ def _script_namespace(allowed: tuple, target: str, workspace: list) -> dict[str,
     if package_root not in sys.path:
         sys.path.insert(0, package_root)
 
-    # `frank.screen` if it can be reached, and an equivalent built here if it cannot. This child
-    # is meant to hold no Frank code — that is what makes it disposable — and making it depend on
-    # importing the package put the whole tool behind a question about `sys.path` and what the
-    # sandbox will let this process read. It lost that bet twice. The object is a dozen lines; a
-    # dependency that can fail is worse than a duplicate that cannot.
-    try:
-        from frank import screen as screen_module
-
-        screen_module.install_bridge(lambda name, arguments, keywords: _perform(name, arguments, keywords))
-        place: Any = screen_module.Screen(target)
-    except Exception:
-        place = _LocalScreen(target)
-    # A project's and a person's workflow directories, in precedence order, so
-    # `from workflows.invoice import run` reaches whichever wrote it. They are namespace
-    # packages, so Python merges the two into one `workflows` and the project wins a collision.
+    # `frank.screen`, loaded from its file without running `frank/__init__.py`.
+    #
+    # A plain `from frank import screen` executes the package's `__init__`, and that imports the
+    # whole runtime — compaction, credentials, httpx, rich — none of which this process has any
+    # use for. It is slow, it is the opposite of the thin disposable child this file exists to
+    # be, and under the session's own sandbox it does not even work: `rich` raises
+    # `PermissionError` on import, so every script died before its first line with an error
+    # naming a library nobody mentioned.
+    #
+    # So a stub `frank` package is put in `sys.modules` with its real `__path__`, and `screen` is
+    # executed into it directly. Anything else under `frank` a script reaches for still imports
+    # normally through that path; the package body simply never runs. A workflow or skill saying
+    # `from frank.screen import Screen` finds this same module object, which is what makes the
+    # inline script and the saved file the same program.
+    screen_module = _load_screen_module(package_root)
+    screen_module.install_bridge(lambda name, arguments, keywords: _perform(name, arguments, keywords))
+    screen_module.screen.target = target
+    # A project's and a person's workflow directories, and any script package a skill carries, in
+    # precedence order — so `from workflows.invoice import run` reaches whichever wrote it and
+    # `from filing import file_all` reaches the skill that ships it. The workflow directories are
+    # namespace packages, so Python merges the two into one `workflows` and the project wins a
+    # collision.
     for root in reversed(list(workspace or ())):
         if root and root not in sys.path:
             sys.path.insert(0, root)
-    namespace: dict[str, Any] = {"screen": place, "Screen": type(place)}
-    # The names a surface implements are still reported, so an attribute the place does not have
-    # fails against the live surface, which can say what it does have.
-    namespace["__primitives__"] = tuple(allowed)
-    return namespace
+    # A skill's own dependencies go on the *end*. They have to be reachable — a skill whose
+    # package imports `httpx` is broken without them, and the failure names a module the script
+    # never mentioned — but they must not be reachable before anything else: one skill pinning an
+    # old copy of a library would otherwise decide what every script in this process gets, and
+    # `frank` itself is importable from exactly one place for a reason.
+    for root in dependencies or ():
+        if root and root not in sys.path:
+            sys.path.append(root)
+    if libraries:
+        sys.meta_path.insert(0, _PreloadsBundledLibraries(libraries))
+    # The names a surface implements, for a script that wants to ask rather than try. Everything
+    # else a script needs, it imports.
+    return {"__primitives__": tuple(allowed)}
 
 
 def _apply_limits(limits: dict[str, int]) -> None:
@@ -162,7 +252,9 @@ def _run(script: str, namespace: dict[str, Any]) -> Any:
     """Execute ``script`` and return the value of its trailing expression, or ``None``. Parsed to an
     AST first (so a syntax error is precise and no source is rewritten); if the last statement is a
     bare expression it is evaluated separately for its value, and everything before it is executed."""
-    tree = ast.parse(script, mode="exec")
+    # Named, so a syntax error reports `File "<control_screen>"` rather than `File "<unknown>"` —
+    # the same name the compiles below use, and one that says which script is meant.
+    tree = ast.parse(script, filename="<control_screen>", mode="exec")
     final_value = None
     if tree.body and isinstance(tree.body[-1], ast.Expr):
         final_expression = tree.body.pop().value
@@ -192,13 +284,33 @@ def main() -> None:
         # on. Everything that can go wrong now comes back as an error the script can be fixed by.
         allowed = configuration.get("primitives") or _FALLBACK_PRIMITIVES
         namespace: dict[str, Any] = _script_namespace(allowed, configuration.get("target", ""),
-                                                      configuration.get("import_roots", []))
+                                                      configuration.get("import_roots", []),
+                                                      configuration.get("dependency_roots", []),
+                                                      configuration.get("library_roots", []))
         with redirect_stdout(captured):
             result["value"] = _run(script, namespace)
     except SyntaxError as error:
-        # The child holds no Frank code, so it reports the bare facts; the parent renders the
-        # model-facing message (messages/control/syntax_error.md) from them.
-        result = {"ok": False, "error_code": "syntax_error", "detail": error.msg or "", "line": error.lineno or 0}
+        # The interpreter's own rendering, verbatim — the offending line, the caret under the
+        # column, the message. Reporting only `msg` and `lineno` and rewriting them into a
+        # sentence threw away the two things that make a syntax error fixable: which text, and
+        # where in it. "invalid syntax (line 7)" is not something a program can be repaired
+        # from; the caret is. The parent adds its guidance around this rather than instead of it.
+        result = {
+            "ok": False, "error_code": "syntax_error",
+            "detail": error.msg or "", "line": error.lineno or 0,
+            "rendered": "".join(traceback.format_exception_only(type(error), error)).strip(),
+        }
+    except NameError as error:
+        # Almost always the one mistake: a script written as though `screen` were in scope,
+        # which it was until this became a program that says where its screen comes from.
+        # Answered with the line to add rather than with the bare name, because "name 'screen'
+        # is not defined" is true and teaches nothing.
+        missing = getattr(error, "name", "") or ""
+        if missing in ("screen", "Screen", "place"):
+            result = {"ok": False, "error_code": "needs_import", "detail": missing}
+        else:
+            result = {"ok": False, "error": f"{type(error).__name__}: {error}",
+                      "traceback": traceback.format_exc(limit=8)}
     except Exception as error:
         result = {"ok": False, "error": f"{type(error).__name__}: {error}", "traceback": traceback.format_exc(limit=8)}
     output = captured.getvalue()
