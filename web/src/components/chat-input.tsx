@@ -643,29 +643,44 @@ export function ChatInput({
       // than as an overflow. The sandbox toggle was added without an entry here and did exactly
       // that; it now sheds its label with the other toggles and can shrink like its neighbours.
       //
-      // The order is deliberate, cheapest first: detail nobody navigates by, then labels whose
-      // control still says what it is through an icon and a colour, and only then the identity
-      // labels. `data-composer-*` marks what may be dropped; a control with no marker is one
-      // whose text is the whole point.
+      // **Drop before you truncate.** That ordering is the whole design and it was the wrong way
+      // round: the first band capped every control's width while the first band that removed any
+      // *label* was three steps further down, so a composer around 800px wide showed a row of
+      // words cut mid-syllable — "ChatGPT Su… > GP…" for the model, "Global ac…" for the sandbox.
+      // A hidden label leaves an icon and a colour, which still say which control this is. A
+      // truncated one says nothing and takes the same room to say it.
+      //
+      // So each band now removes the least load-bearing *text* remaining, and the caps exist only
+      // to stop a pathologically long name from bullying its neighbours — not as the mechanism.
+      // `data-composer-*` marks what may be dropped; a control with no marker is one whose text
+      // is the whole point.
       css={{
+        // First to go, and by a distance: the provider before the model, and the capability
+        // glyphs beside it. Nobody navigates by the provider — it is implied by the model, and it
+        // is what pushes that chip into truncating the one name that matters.
         "@container (max-width: 900px)": {
-          "& [data-composer-agent-control]": { minWidth: "0 !important", maxWidth: "160px", flexShrink: 1 },
-          "& [data-composer-model]": { minWidth: "0 !important", maxWidth: "220px", flexShrink: 1 },
-          "& [data-composer-permission-control]": { minWidth: "0 !important", maxWidth: "160px", flexShrink: 1 },
-          "& [data-composer-sandbox-control]": { minWidth: "0 !important", maxWidth: "160px", flexShrink: 1 },
-        },
-        "@container (max-width: 760px)": {
-          "& [data-composer-context-detail]": { display: "none" },
           "& [data-composer-model-provider], & [data-composer-model-capabilities]": { display: "none" },
+          "& [data-composer-agent-control]": { minWidth: "0 !important", maxWidth: "190px", flexShrink: 1 },
+          "& [data-composer-model]": { minWidth: "0 !important", maxWidth: "230px", flexShrink: 1 },
+          "& [data-composer-permission-control]": { minWidth: "0 !important", maxWidth: "180px", flexShrink: 1 },
+          "& [data-composer-sandbox-control]": { minWidth: "0 !important", maxWidth: "170px", flexShrink: 1 },
         },
-        // The three toggles lose their words together. Dropping one and keeping another reads as
-        // a rendering fault rather than as a response to the width — they are the same kind of
-        // control and their icons carry the same amount of meaning.
-        "@container (max-width: 620px)": {
-          "& [data-composer-permission-label], & [data-composer-sandbox-label], & [data-composer-compact-label]": { display: "none" },
+        // Then the sandbox word. Of the three toggles it is the one whose icon carries most on its
+        // own — a globe against a box, in red against green — so it can lose its label a step
+        // before the others without the row looking half-collapsed.
+        "@container (max-width: 820px)": {
+          "& [data-composer-sandbox-label]": { display: "none" },
         },
-        "@container (max-width: 500px)": {
-          "& [data-composer-agent-label], & [data-composer-model-label], & [data-composer-model-capabilities], & [data-composer-context-percent]": { display: "none" },
+        // Then the permission word and the exact token counts. The percentage stays: it is the
+        // part of the usage chip anybody actually reads at a glance.
+        "@container (max-width: 720px)": {
+          "& [data-composer-permission-label], & [data-composer-compact-label]": { display: "none" },
+          "& [data-composer-context-detail]": { display: "none" },
+        },
+        // Last, the two identity labels. These are the ones worth keeping longest, which is why
+        // they go last rather than being capped into ellipses early.
+        "@container (max-width: 560px)": {
+          "& [data-composer-agent-label], & [data-composer-model-label], & [data-composer-context-percent]": { display: "none" },
         },
         // Below this the row cannot hold every control and the usage chip at any width they can be
         // reduced to, so it stops pretending and wraps. Both halves wrap together, and that is the
