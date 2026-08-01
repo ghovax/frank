@@ -648,7 +648,7 @@ export function SettingsDialog({
                   minH={0}
                   bg="bg.subtle"
                 >
-                  <Box p={3} flexShrink={0}>
+                  <Box px={{ base: 4, md: 3 }} py={3} flexShrink={0}>
                     <Flex align="center" gap={2} h={8} px={2} borderRadius="md" bg="bg" borderWidth="1px" borderColor="border.muted" _focusWithin={{ borderColor: "border.emphasized" }}>
                       <Box color="fg.muted" flexShrink={0} display="flex" alignItems="center"><LuSearch size={14} /></Box>
                       <Input
@@ -664,7 +664,7 @@ export function SettingsDialog({
                       />
                     </Flex>
                   </Box>
-                  <Box flex={1} minH={0} overflowY="auto" px={3} pb={3}>
+                  <Box flex={1} minH={0} overflowY="auto" px={{ base: 4, md: 3 }} pb={3}>
                     <Text pb={2} textStyle="sectionLabel">{translation("title")}</Text>
                     <Flex direction="column" gap={1}>
                       {pages.map((page) => {
@@ -698,7 +698,11 @@ export function SettingsDialog({
             <Flex data-layout="settings-content" direction="column" flex={1} minW={0} minH={0}>
               <Dialog.Body px={0} py={2} flex={1} minH={0}>
                 {/* Right content: search results across all sections, or the active page's sections. */}
-                <Box ref={contentScrollRef} onScroll={onContentScroll} css={contentFade} h="100%" overflowY="auto" px={6} py={4}>
+                {/* One horizontal inset for the whole column. Stacked at `base` — the nav sits
+                    above this and the footer below it — three different paddings read as the
+                    panel's edge moving as you scroll down it. 24px is also a sixth of a 390pt
+                    screen, spent on margin. */}
+                <Box ref={contentScrollRef} onScroll={onContentScroll} css={contentFade} h="100%" overflowY="auto" px={{ base: 4, md: 6 }} py={4}>
                   {searching ? (
                     searchSections.length === 0 ? (
                       <Flex h="full" align="center" justify="center" py={10}>
@@ -751,7 +755,7 @@ export function SettingsDialog({
                 </Box>
               </Dialog.Body>
             {/* Footer sits inside the right column so the nav stays full height. */}
-            <Dialog.Footer pt={3}>
+            <Dialog.Footer pt={3} px={{ base: 4, md: 6 }}>
               <Button variant="outline" onClick={requestClose} disabled={saving}>
                 {tc("close")}
               </Button>
