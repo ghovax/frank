@@ -80,7 +80,14 @@ export default function InterfaceScreen() {
   }, []);
 
   if (status !== "online") {
-    return <Waiting status={status} machine={pairing?.name ?? "your Mac"} onRetry={reconnect} />;
+    return (
+      <Waiting
+        status={status}
+        machine={pairing?.name ?? "your Mac"}
+        onRetry={reconnect}
+        endpoints={pairing?.endpoints ?? []}
+      />
+    );
   }
 
   return (
@@ -124,7 +131,12 @@ export default function InterfaceScreen() {
 }
 
 /** Before the interface can load: what the connection is doing, and what to do about it. */
-function Waiting({ status, machine, onRetry }: { status: string; machine: string; onRetry: () => void }) {
+function Waiting({ status, machine, onRetry, endpoints }: {
+  status: string;
+  machine: string;
+  onRetry: () => void;
+  endpoints: string[];
+}) {
   const theme = useTheme();
   const insets = useEdgeInsets();
   const [refreshing, setRefreshing] = useState(false);
@@ -161,9 +173,32 @@ function Waiting({ status, machine, onRetry }: { status: string; machine: string
     >
       <FrankMark size={40} color={theme.colors.fgSubtle} />
       <Text variant="body" tone="muted" align="center">{message}</Text>
-      {status === "connecting"
-        ? <ActivityIndicator color={theme.colors.fgMuted} />
-        : <Button label="Try again" onPress={onRetry} />}
+      {status === "connecting" ? (
+        <ActivityIndicator color={theme.colors.fgMuted} />
+      ) : (
+        <>
+          <Button label="Try again" onPress={onRetry} />
+          {/*
+            The addresses actually being tried, and the way out when none of them are right.
+
+            A pairing freezes the machine's addresses at the moment it was made, and a laptop's
+            address on a home network is a lease — so a phone that worked last week can be left
+            asking for a number nobody answers to any more. "Not answering" is then true and
+            useless: the machine is awake, on this network, and being asked for the wrong door.
+
+            Showing what is being tried turns that into something a person can recognise on
+            sight, and pairing again is the only thing that fixes it — which until now was
+            unreachable from here, because this screen is what a phone with a stale address is
+            stuck on and nothing on it led anywhere.
+          */}
+          {endpoints.length > 0 ? (
+            <Text variant="small" tone="subtle" align="center">
+              {`Tried ${endpoints.join(", ")}`}
+            </Text>
+          ) : null}
+          <Button label="Pair again" variant="ghost" onPress={() => router.push("/pair")} />
+        </>
+      )}
     </ScrollView>
   );
 }
