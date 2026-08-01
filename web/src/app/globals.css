@@ -14,10 +14,56 @@ body {
    strip of this height for dragging and keep content from hiding underneath. */
 :root {
   --titlebar-height: 0px;
+
+  /* What the *device* takes out of the viewport: a notch, a home indicator, a
+     rounded corner. Zero everywhere but a phone, where this interface now runs
+     inside the mobile app's webview and the top 47pt are under the status bar.
+
+     Named separately from the titlebar because they are different reservations
+     that can both apply, and because `env()` is only meaningful in a property
+     value — it cannot be tested for, so a layout that wants both has to add
+     them, which is what `--app-inset-top` is for. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  /* The one value the app shell reserves at the top: whichever chrome is above
+     it, plus the 8px the layout wants regardless. */
+  --app-inset-top: calc(var(--titlebar-height) + var(--safe-top) + 8px);
 }
 
 html[data-tauri="true"] {
   --titlebar-height: 30px;
+}
+
+/* Touch targets.
+ *
+ * The house control height is 32px, which is right for a pointer and below both
+ * Apple's and Google's floor for a finger. Rather than a second set of sizes
+ * threaded through every call site, the controls grow on any device whose
+ * primary input is coarse — which is exactly the condition that makes 32px
+ * wrong, and leaves a mouse-driven window untouched.
+ *
+ * Scoped to the controls a finger actually hunts for. Chips inside a transcript
+ * row are read far more often than they are tapped, and growing those would push
+ * the conversation off the screen to solve a problem it does not have. */
+@media (pointer: coarse) {
+  button:not([data-scope="menu"]):not([data-scope="select"]),
+  [role="button"]:not([data-scope="menu"]):not([data-scope="select"]),
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  [data-scope="select"] [data-part="trigger"],
+  [data-scope="menu"] [data-part="trigger"] {
+    min-height: 40px;
+  }
+
+  /* A dropdown row is a list item, and a list you scroll with a thumb wants more
+     than the 28px a pointer is happy with. */
+  [data-scope="menu"] [data-part="item"],
+  [data-scope="select"] [data-part="item"] {
+    min-height: 40px;
+  }
 }
 
 /* The draggable strip that spans the top of the window. `data-tauri-drag-region`

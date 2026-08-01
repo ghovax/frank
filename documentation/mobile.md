@@ -157,14 +157,36 @@ Making the interface good on a phone is now work on the shared implementation, w
 belongs — a dialog that is unusable at 390pt is unusable in a narrow browser window too. That
 hardening has started and is not finished:
 
-- **Done.** Every dialog is full-bleed below `sm` — square corners, full height, a header and
-  footer that stay put while the body scrolls between them, and safe-area padding top and bottom.
-  Stated once in the dialog slot recipe in `web/src/components/ui/provider.tsx`, so every dialog
-  inherits it. The settings dialog is full-bleed to match.
-- **Still to do.** The model picker, the schedule form and the workspace dialogs have their own
-  widths and want checking at 390pt. The composer's control row wraps but has not been looked at
-  on a real device. The terminal panel assumes a pointer. Long-press and swipe affordances do not
-  exist anywhere.
+**Dialogs.** Full-bleed below `sm` — square corners, full height, a header and footer that stay
+put while the body scrolls between them. Stated once in the dialog slot recipe in
+`web/src/components/ui/provider.tsx`, so every dialog inherits it; the settings dialog, the model
+picker and the attachment lightbox carry their own widths and were made responsive to match.
+
+**Safe areas.** `viewport-fit=cover` in the root layout is what makes `env(safe-area-inset-*)`
+report anything at all; `--app-inset-top` in `globals.css` combines the notch with the Tauri
+titlebar, and the shell reserves it once. The composer, the sidebar and the side panels each
+reserve the bottom, so nothing sits under the home indicator. The phone app deliberately adds no
+padding of its own — the page owns its insets, and two layers reserving the same strip is a black
+band at the top.
+
+**Touch targets.** The house control height is 32px, which is right for a pointer and under both
+Apple's and Google's floor for a finger. Rather than a second set of sizes threaded through every
+call site, controls grow to 40px under `@media (pointer: coarse)` — the exact condition that makes
+32px wrong, leaving a mouse-driven window untouched. Dropdown rows grow with them.
+
+**The terminal.** Larger cells and touch-rate scrolling on a coarse pointer: a 12px cell is below
+what a thumb can place a cursor in, and momentum scrolling moves far more rows per gesture than a
+wheel notch does.
+
+Still to do, and unverified because it needs hardware:
+
+- The whole thing on a real device. Everything above is reasoned from the code and checked in a
+  build; none of it has been seen at 390pt on glass.
+- Long-press and swipe affordances exist nowhere. Deleting a session is a `⋯` menu that was
+  designed for a hover.
+- The composer's container-query ladder bottoms out at 460px and has not been looked at below it.
+- `getUserMedia` for dictation inside a `WKWebView` — the permission plumbing is in place
+  (`mediaCapturePermissionGrantType`, the Info.plist string) and has not been exercised.
 
 ## Checks
 

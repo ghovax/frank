@@ -1056,8 +1056,16 @@ export function ChatPanel({
             at every width. `both-edges` reserves the gutter symmetrically (left AND right) so the
             centered column stays on the panel's true centre and the left/right insets match,
             rather than a single-edge gutter nudging everything off-centre. */}
+        {/* The bottom padding is the phone's home indicator, which sits over the last few
+            millimetres of the screen and would otherwise sit over the send button. Zero
+            everywhere else. */}
         {chatReady && (
-        <Box px={4} overflowY="hidden" style={{ scrollbarGutter: "stable both-edges" }}>
+        <Box
+          px={4}
+          pb="var(--safe-bottom, 0px)"
+          overflowY="hidden"
+          style={{ scrollbarGutter: "stable both-edges" }}
+        >
         <Box w="full" maxW="80rem" mx="auto">
         <ChatInput
           onSend={handleSend}
@@ -1108,7 +1116,8 @@ export function ChatPanel({
           minW={{ base: "100%", md: "min(360px, 55%)" }}
           maxW={{ base: "100%", md: "80vw" }}
           pr={2}
-          pb={2}
+          // Full-screen at `base`, so its bottom edge is the device's rather than the panel's.
+          pb={{ base: "calc(var(--safe-bottom, 0px) + 0.5rem)", md: 2 }}
           position={{ base: "absolute", md: "relative" }}
           inset={{ base: 0, md: "auto" }}
           zIndex={{ base: 3, md: "auto" }}

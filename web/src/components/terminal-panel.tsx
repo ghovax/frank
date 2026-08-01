@@ -87,9 +87,19 @@ export function TerminalSurface({
     const host = hostRef.current;
     if (!host) return;
 
+    // A terminal on a touch screen is a different instrument. There is no hover, no middle
+    // click, and no mouse wheel — and a 12px cell that a mouse reads comfortably is below what
+    // a thumb can place a cursor in. So the sizes and the scrolling come from the input the
+    // device actually has, and a pointer-driven window is untouched.
+    const coarse = typeof window !== "undefined"
+      && window.matchMedia?.("(pointer: coarse)").matches === true;
+
     const terminal = new Terminal({
       cursorBlink: true,
-      fontSize: 12,
+      fontSize: coarse ? 14 : 12,
+      // Momentum scrolling on a touch surface moves far more rows per gesture than a wheel
+      // notch does; three lines per tick makes a flick feel like it went nowhere.
+      ...(coarse ? { scrollSensitivity: 1, fastScrollSensitivity: 3 } : {}),
       fontWeight: "normal",
       fontWeightBold: "bold",
       letterSpacing: 0,

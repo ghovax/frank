@@ -34,7 +34,6 @@ import { useEdgeInsets } from "../theme/insets";
 
 export default function InterfaceScreen() {
   const theme = useTheme();
-  const insets = useEdgeInsets();
   const { status, pairing, endpoint, reconnect } = useConnection();
   const view = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
@@ -65,7 +64,10 @@ export default function InterfaceScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.bg, paddingTop: insets.top }}>
+    // No padding here on purpose. The page is served `viewport-fit=cover` and reserves the
+    // notch and the home indicator itself, in `globals.css`, so a shell that also inset the
+    // webview would reserve them twice — a black band at the top and a gap at the bottom.
+    <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
       <WebView
         ref={view}
         source={{ uri: source }}

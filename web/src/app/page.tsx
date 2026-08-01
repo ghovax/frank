@@ -669,7 +669,9 @@ function Workspace() {
       minW={0}
       bg="bg"
       overflow="hidden"
-      pt="calc(var(--titlebar-height, 0px) + 8px)"
+      pt="var(--app-inset-top, 8px)"
+      pl="var(--safe-left, 0px)"
+      pr="var(--safe-right, 0px)"
       boxSizing="border-box"
     >
       <AnimatePresence initial={false}>
@@ -681,7 +683,12 @@ function Workspace() {
             minW={{ base: "100%", md: "240px" }}
             ml={{ md: 2 }}
             mb={{ md: 2 }}
-            h={{ base: "100dvh", md: "auto" }}
+            // On a phone this panel *is* the screen, so its bottom edge is the device's — the
+            // last conversation in the list would otherwise sit under the home indicator.
+            pb={{ base: "var(--safe-bottom, 0px)", md: 0 }}
+            // `100%` rather than `100dvh`: the parent has already reserved the top
+            // inset, so a full-viewport child overflows the screen by exactly that much.
+            h={{ base: "100%", md: "auto" }}
             flexShrink={0}
             position="relative"
             minH={0}
