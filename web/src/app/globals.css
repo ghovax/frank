@@ -80,13 +80,22 @@ html[data-tauri="true"] {
   button:not([data-scope="menu"]):not([data-scope="select"]),
   [role="button"]:not([data-scope="menu"]):not([data-scope="select"]),
   input:not([type="checkbox"]):not([type="radio"]),
-  textarea,
   [data-scope="select"] [data-part="trigger"],
   [data-scope="menu"] [data-part="trigger"] {
     min-height: 40px;
   }
 
-  /* A dropdown row is a list item, and a list you scroll with a thumb wants more
+  /* Not `textarea`, and it used to be.
+
+     A text box lays its text along the top of the content box — there is no
+     vertical centring to be had — so a floor taller than one line does not
+     centre that line, it leaves the whole difference underneath it. On a phone
+     that read as the composer's text sitting above where it should, most
+     visibly in WebKit. And it bought nothing: the composer is the full width of
+     the screen, which is not a target a thumb can miss, and it grows with what
+     is typed into it. The floor exists for controls a finger hunts for.
+
+     A dropdown row is a list item, and a list you scroll with a thumb wants more
      than the 28px a pointer is happy with. */
   [data-scope="menu"] [data-part="item"],
   [data-scope="select"] [data-part="item"] {

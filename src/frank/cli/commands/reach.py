@@ -69,7 +69,19 @@ _TAILSCALE_CANDIDATES = (
 
 
 def _note(message: str) -> None:
+    """Prose, on stderr — as `frank.cli.__main__` does it, and for its reason: stdout carries
+    data, and a reader must not have to filter sentences out of it."""
     print(message, file=sys.stderr)
+
+
+def _report(error: "TailscaleUnavailable") -> None:
+    """Say what is wrong and, underneath, what Tailscale said about it.
+
+    Never a traceback. Every one of these is a person needing to do something in an app, and a
+    stack of frames from inside `subprocess` is noise in front of the sentence that answers it."""
+    _note(f"frank: {error}")
+    if error.detail:
+        _note(f"frank: tailscale said: {error.detail}")
 
 
 def reach_token(create: bool = True) -> Optional[str]:
@@ -115,7 +127,16 @@ class TailscaleUnavailable(RuntimeError):
 
     A single exception rather than a set of them because every one of these is answered the same
     way — by a person doing something in the Tailscale app — and what differs is only which
-    thing. The message is the whole value."""
+    thing. The message is the whole value.
+
+    `detail` is what Tailscale itself said, when it said anything, and it is a separate field
+    rather than a second line of the message because an exception's message is one line here —
+    `frank.base.errors.summary` collapses newlines precisely so it stays one field in a log. How
+    the two are laid out is the caller's decision, not this class's."""
+
+    def __init__(self, message: str, detail: str = "") -> None:
+        super().__init__(message)
+        self.detail = detail
 
 
 def _tailscale_command() -> str:
@@ -209,10 +230,10 @@ def ensure_served(port: int) -> None:
         raise TailscaleUnavailable(
             "Your tailnet does not have HTTPS certificates enabled, so Tailscale cannot get a "
             "certificate for this machine. Turn it on in the admin console under DNS → HTTPS "
-            "Certificates, then run this again.\n"
-            f"Tailscale said: {message}"
+            "Certificates, then run this again.",
+            message,
         )
-    raise TailscaleUnavailable(f"Tailscale would not serve this listener.\n{message}")
+    raise TailscaleUnavailable("Tailscale would not serve this listener.", message)
 
 
 def stop_serving() -> None:
@@ -440,21 +461,26 @@ def _write_image(uri: str, destination: str) -> Path:
 
 
 def _describe(payload: dict, image: str = "") -> None:
-    """Print what a person needs to pair a device, and the QR code that saves them typing it."""
-    import segno
+    """Say how to pair a device.
 
-    uri = pairing_uri(payload)
-    print(f"Pair a device with Frank on {payload['name']}:\n")
-    print(f"  → {payload['endpoint']}\n")
+    Split the way the rest of this command line splits it: the link is *data* and goes to stdout,
+    on one line, so `frank reach pair | pbcopy` does the obvious thing. Everything else is prose
+    about what to do with it and goes to stderr, so a reader never has to filter sentences out of
+    the thing it came for.
+
+    There is no QR drawn in the terminal. One needs the right window size, the right font and the
+    right colours to be scannable at all, and when any of those is wrong it degrades to a wall of
+    noise rather than to a smaller code — so it was a picture that mostly could not be used, in
+    the middle of the output that could. `--image` writes a real PNG and opens it, which is what
+    a camera was built to read."""
+    _note(f"Pair a device with Frank on {payload['name']}, at {payload['endpoint']}.")
     if image:
-        print(f"  Code saved to {_write_image(uri, image)}\n")
-    else:
-        segno.make(uri, error="m").terminal(compact=True)
-    print(f"\n{uri}\n")
+        _note(f"Pairing code saved to {_write_image(pairing_uri(payload), image)}.")
     _note(
-        "frank: that code carries a token with full control of this daemon. Show it to a phone, "
-        "not to a room."
+        "This link carries a token with full control of this daemon. Send it to a phone, not to "
+        "a room."
     )
+    print(pairing_uri(payload), flush=True)
 
 
 def run(arguments) -> int:
@@ -463,15 +489,13 @@ def run(arguments) -> int:
 
     if action == "rotate":
         rotate_token()
-        print("Rotated. Every paired device must pair again.")
+        _note("Rotated. Every paired device must pair again.")
         return 0
 
     try:
         payload = pairing_payload()
     except TailscaleUnavailable as error:
-        # Not a traceback. Every one of these is a person needing to do something in an app, and
-        # the sentence is the whole of the answer.
-        _note(f"frank: {error}")
+        _report(error)
         return 1
 
     if action == "pair":
@@ -541,11 +565,11 @@ def _serve(arguments, payload: dict) -> int:
     try:
         ensure_served(arguments.port)
     except TailscaleUnavailable as error:
-        _note(f"frank: {error}")
+        _report(error)
         return 1
 
     _describe(payload, getattr(arguments, "image", "") or "")
-    print(f"Serving on {payload['endpoint']}. Scan the code with Frank on your phone, or paste the link.", flush=True)
+    _note(f"Serving on {payload['endpoint']}. Scan the code with Frank on your phone, or paste the link.")
 
     # No TLS here. Tailscale terminates it, with a certificate issued for this machine's tailnet
     # name — which is the one thing this process could not obtain for itself and the reason there
