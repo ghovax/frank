@@ -87,9 +87,26 @@ export default function PairScreen() {
     if (link) void accept(String(link));
   }, [link, accept]);
 
+  /**
+   * The clipboard, when there is one.
+   *
+   * There is not always one. Read access is gated on a secure context, so a browser that reached
+   * this over plain HTTP does not merely refuse it — `navigator.clipboard` is undefined and
+   * `expo-clipboard` throws — and a phone can refuse the permission outright. Neither is worth
+   * more than a sentence, because the field below takes a pasted link perfectly well through the
+   * keyboard; this button only ever saved a gesture. Left unhandled it did the opposite, putting
+   * a rejection about an API in front of somebody who was trying to pair a phone.
+   */
   const paste = useCallback(async () => {
-    const text = await Clipboard.getStringAsync();
-    if (text) setTyped(text);
+    try {
+      const text = await Clipboard.getStringAsync();
+      if (text) {
+        setTyped(text);
+        setFailure("");
+      }
+    } catch {
+      setFailure("Frank could not read the clipboard here. Paste the link into the box above instead.");
+    }
   }, []);
 
   return (
