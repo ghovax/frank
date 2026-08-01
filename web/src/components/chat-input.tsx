@@ -681,27 +681,39 @@ export function ChatInput({
         // they go last rather than being capped into ellipses early.
         "@container (max-width: 560px)": {
           "& [data-composer-agent-label], & [data-composer-model-label], & [data-composer-context-percent]": { display: "none" },
-        },
-        // Below this the row cannot hold every control and the usage chip at any width they can be
-        // reduced to, so it stops pretending and wraps. Both halves wrap together, and that is the
-        // point rather than a detail: letting only the selectors wrap put one chip alone on a
-        // second line while the usage chip stayed on the first, and because the row centres its
-        // two halves that chip then floated across both lines — which is the collision, and it
-        // looks like a bug rather than like a narrow window.
-        //
-        // `flex-start` goes with it for the same reason. Centring is right for two halves of equal
-        // height and wrong the moment one of them is taller, because the shorter half then sits
-        // against nothing.
-        "@container (max-width: 460px)": {
-          "& [data-composer-row]": {
-            flexWrap: "wrap",
-            alignItems: "flex-start",
-            rowGap: "var(--chakra-spacing-1)",
+          // Past here every selector is an icon and nothing else, so they should be one shape.
+          // Two things stopped them being. The select-backed chips reserve 28px on their right
+          // for a dropdown chevron that the toggle-backed ones do not have, which made them
+          // wider; and that reservation is asymmetric, which pushed their glyph left of centre
+          // inside its own chip. A row of four then read as four different controls.
+          //
+          // With no label for it to point at, the chevron says nothing the chip does not — it
+          // still opens its menu when tapped — so it goes, the padding becomes even, and the
+          // four come out identical without anyone choosing a width.
+          "& [data-composer-agent-control], & [data-composer-model], & [data-composer-permission-control], & [data-composer-sandbox-control]": {
+            minWidth: "0 !important",
+            maxWidth: "none !important",
+            width: "auto !important",
+            paddingInline: "var(--chakra-spacing-2) !important",
+            justifyContent: "center !important",
+            flexShrink: 0,
           },
-          "& [data-composer-selectors]": { flexWrap: "wrap", rowGap: "var(--chakra-spacing-1)" },
-          // The usage chip and Compact take their own line, left-aligned under the selectors,
-          // rather than being pushed to the far edge of a line they now share with nothing.
-          "& [data-composer-row] > :last-child": { justifyContent: "flex-start", flexBasis: "100%" },
+          "& [data-part='indicator-group']": { display: "none" },
+        },
+        // No wrap, at any width.
+        //
+        // This used to fold onto a second line here, on the reasoning that the row could not hold
+        // every control and the usage chip however narrow they were made. That was true while the
+        // chips were unequal and chevron-padded; once the rule above turns them into four ~29px
+        // squares the whole row is about 220px, and a fold was costing a line of the transcript
+        // to solve a problem that had stopped existing.
+        //
+        // The gap tightens instead, which is the last thing left to give before wrapping would be
+        // the only option — and if it ever is, it should be reached by measurement rather than by
+        // a breakpoint chosen in advance.
+        "@container (max-width: 460px)": {
+          "& [data-composer-selectors]": { gap: "var(--chakra-spacing-1)" },
+          "& [data-composer-row]": { columnGap: "var(--chakra-spacing-1)" },
         },
       }}
     >

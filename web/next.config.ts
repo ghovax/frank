@@ -40,6 +40,11 @@ const nextConfig: NextConfig = {
       "@shared": path.resolve(__dirname, "../shared"),
     },
   },
+  // Next's dev badge is a floating button it injects into the running app. On a desktop it sits
+  // in a corner nobody is using; on a phone, where the interface is the whole screen, it lands on
+  // top of the composer — and `frank reach --interface` puts a dev server in front of a device
+  // for exactly the work where that matters. It reports nothing this project reads.
+  devIndicators: false,
   experimental: {
     optimizePackageImports: ["@chakra-ui/react"],
   },
