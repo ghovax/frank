@@ -1,8 +1,10 @@
 // The app's message catalogs. This is a static-export Tauri app (no server, no i18n
 // routing), so both locales are bundled and imported at build time; the active locale is
 // an in-app setting (see locale-provider) and messages are swapped client-side.
-import en from "../../../messages/en.json";
-import ja from "../../../messages/ja.json";
+// `shared/`, not `web/`: the phone shows the same words, and a second catalogue is how
+// "Medium risk" on one client becomes "medium" on the other.
+import en from "../../../../shared/messages/en.json";
+import ja from "../../../../shared/messages/ja.json";
 
 export const LOCALES = ["en", "ja"] as const;
 export type Locale = (typeof LOCALES)[number];

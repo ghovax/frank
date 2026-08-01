@@ -27,7 +27,7 @@ import { toaster } from "@/components/ui/toaster";
 import { swallowed } from "@/lib/swallowed";
 import { useTranslations } from "next-intl";
 import { asArray, asRecord } from "@/lib/coerce";
-import type { WireEvent } from "@/lib/generated/events";
+import type { WireEvent } from "@shared/generated/events";
 import { errorMessage } from "@/lib/errors";
 
 // Re-export the A2A task shape so components can consume it from one place.

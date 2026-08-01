@@ -14,7 +14,7 @@
  */
 
 import { partPayload, turnState, type A2AMessage, type A2APart, type A2ATurn } from "./api";
-import type { ToolStatus, WireEvent } from "./generated/events";
+import type { ToolStatus, WireEvent } from "@shared/generated/events";
 
 export interface ToolCallMessage {
   key: string;

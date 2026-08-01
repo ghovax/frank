@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import type { NextConfig } from "next";
 
 // The desktop app (Tauri) bundles the UI as a static export — Tauri serves the
@@ -24,6 +26,16 @@ const nextConfig: NextConfig = {
     unoptimized: true,
   },
   assetPrefix: isProduction ? undefined : `http://${internalHost}:${devPort}`,
+  // `shared/` sits beside `web/`, not inside it, because the phone imports it too. Next resolves
+  // modules from the project directory down, so both halves of this are needed: the root widens
+  // what the bundler will look at, and the alias is what `@shared/...` means. TypeScript is told
+  // separately, in `tsconfig.json` — the two have to agree, and neither reads the other.
+  turbopack: {
+    root: path.resolve(__dirname, ".."),
+    resolveAlias: {
+      "@shared": path.resolve(__dirname, "../shared"),
+    },
+  },
   experimental: {
     optimizePackageImports: ["@chakra-ui/react"],
   },

@@ -367,6 +367,34 @@ export async function fetchSettings(): Promise<Settings> {
   return (await response.json()) as Settings;
 }
 
+/**
+ * The three booleans a phone can sensibly change, each with its own endpoint on the daemon.
+ *
+ * Separate calls rather than a `POST /settings` with the whole object, which is what the desktop
+ * does too: turning dictation off also releases the model that machine was holding, and a
+ * whole-object write would carry along whatever the phone last read for everything else.
+ */
+export async function updateDictationSetting(enabled: boolean): Promise<void> {
+  await postSetting("/settings/dictation", { enabled });
+}
+
+export async function updateComputerControlSetting(enabled: boolean): Promise<void> {
+  await postSetting("/settings/computer-control", { enabled });
+}
+
+export async function updateUserContextSetting(enabled: boolean): Promise<void> {
+  await postSetting("/settings/user-context", { enabled });
+}
+
+async function postSetting(path: string, body: Record<string, unknown>): Promise<void> {
+  const response = await apiFetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new ApiError(`That setting would not save (${response.status}).`, response.status);
+}
+
 // ── Schedules ─────────────────────────────────────────────────────────────────────────────────
 
 export interface Schedule {

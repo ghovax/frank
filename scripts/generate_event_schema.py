@@ -3,7 +3,7 @@
 
 Pydantic is the source of truth (``frank.core.events``); this uses Pydantic's own
 ``models_json_schema`` — no hand-written Python->TS type mapping — to produce
-``web/src/lib/generated/events.schema.json``. The TypeScript is then generated from
+``shared/generated/events.schema.json``. The TypeScript is then generated from
 that schema by ``json-schema-to-typescript`` (see the web ``build:events`` script), so
 the whole pipeline is two authoritative libraries and zero bespoke type-walking.
 
@@ -29,7 +29,9 @@ from frank.protocol import events  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-OUTPUT = ROOT / "web" / "src" / "lib" / "generated" / "events.schema.json"
+# `shared/`, not `web/`: both clients read this union, and a copy per client is how the
+# two stop describing the same daemon.
+OUTPUT = ROOT / "shared" / "generated" / "events.schema.json"
 REFERENCE_TEMPLATE = "#/$defs/{model}"
 
 

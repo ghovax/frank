@@ -130,20 +130,28 @@ mobile/src
     transcript.ts      parts folded into a transcript — the same reducer for live and replay
     use-chat.ts        one turn, driven and watched
     dictation.ts       recording, and the samples the transcriber wants
-    generated/         the event union, generated from the harness's own schema
+    glyphs.ts          a shared glyph name as a lucide-react-native component
   theme/               the desktop's design tokens, as values React Native can use
 ```
 
-Three things are shared with the web client rather than reimplemented, and each is checkable:
+Almost nothing in `mobile/src` decides anything. What to show lives in
+[`shared/`](../shared/README.md) and is read by both clients:
 
-- **The event union.** `mobile/src/lib/generated/events.ts` is generated from
-  `web/src/lib/generated/events.schema.json`, which is generated from the harness's Pydantic
-  models. `bun run build:events` regenerates it; the output is byte-identical to the web client's.
-- **The typefaces.** Metro watches `web/public/fonts`, so there is one set of font files in the
-  repository and both clients bundle it.
-- **The design tokens.** `mobile/src/theme/tokens.ts` is a transcription of the desktop's Chakra
-  configuration, with the semantic names kept — `bg.subtle`, `border.emphasized`, `blue.solid` —
-  so a screen here and a panel there can be compared.
+| | |
+|---|---|
+| `shared/messages/` | Every string either client shows. The desktop reads it through `next-intl`; the phone reads it through `shared/labels.ts`. |
+| `shared/generated/` | The wire event union, from the harness's Pydantic models. Generated once, into `shared/`. |
+| `shared/workspace.ts` | What a workspace and a location are called. |
+| `shared/status.ts` | What a turn's state is called, and in which colour. |
+| `shared/tools.ts` | What a tool call is called, and which glyph stands for it. |
+
+The typefaces are shared the same way: Metro watches `web/public/fonts`, so one set of files in
+the repository is bundled by both.
+
+What cannot be shared is components. The desktop is React DOM and Chakra; the phone is React
+Native, which has no DOM and no stylesheet. The seam between them is deliberately narrow — each
+client has one small table (`glyphs.ts`) turning a shared glyph *name* into its own icon
+package's component, and that is the whole of it.
 
 ### What the port changed, and why
 

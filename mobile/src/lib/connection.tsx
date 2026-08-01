@@ -48,6 +48,8 @@ interface ConnectionValue {
   pair: (pairing: Pairing) => Promise<void>;
   unpair: () => Promise<void>;
   reconnect: () => void;
+  /** Call this machine something else on this phone. */
+  rename: (name: string) => Promise<void>;
 }
 
 const STORAGE_KEY = "frank.pairing";
@@ -228,9 +230,26 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
 
   const reconnect = useCallback(() => { void connect(pairingRef.current); }, [connect]);
 
+  /**
+   * Rename the machine, on this phone only.
+   *
+   * The pairing arrives carrying the host's own name, which is whatever DHCP and the ISP left
+   * it — `Giovannis-MBP`, and worse on some networks. That is a fine default and a poor label,
+   * and the machine is not the right place to fix it: the name is what *this* phone calls it,
+   * and another device pairing with the same Mac may reasonably call it something else.
+   */
+  const rename = useCallback(async (name: string) => {
+    const current = pairingRef.current;
+    const trimmed = name.trim();
+    if (current === null || !trimmed || trimmed === current.name) return;
+    const renamed = { ...current, name: trimmed };
+    await store.set(JSON.stringify(renamed));
+    setPairing(renamed);
+  }, []);
+
   const value = useMemo<ConnectionValue>(
-    () => ({ status, pairing, endpoint, pair, unpair, reconnect }),
-    [status, pairing, endpoint, pair, unpair, reconnect],
+    () => ({ status, pairing, endpoint, pair, unpair, reconnect, rename }),
+    [status, pairing, endpoint, pair, unpair, reconnect, rename],
   );
 
   return <ConnectionContext.Provider value={value}>{children}</ConnectionContext.Provider>;

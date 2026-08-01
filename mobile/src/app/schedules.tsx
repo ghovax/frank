@@ -10,7 +10,6 @@
 import { Clock, Play, Trash2, X } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Switch, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Card, EmptyState, Pill, Text } from "../components/ui";
 import {
@@ -20,10 +19,11 @@ import {
 import { useConnection } from "../lib/connection";
 import { goBack } from "../lib/navigation";
 import { useTheme } from "../theme";
+import { useEdgeInsets } from "../theme/insets";
 
 export default function SchedulesScreen() {
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
+  const insets = useEdgeInsets();
   const { status } = useConnection();
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [loaded, setLoaded] = useState(false);

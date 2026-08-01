@@ -10,9 +10,29 @@ import { Check, Hand, MessageCircleQuestion, X } from "lucide-react-native";
 import { useState } from "react";
 import { ScrollView, StyleSheet, TextInput, View } from "react-native";
 
+import { labels } from "@shared/labels";
+import { RISK_LABEL_KEY, RISK_PALETTE } from "@shared/status";
+
 import type { PendingPermission, PendingQuestion } from "../lib/transcript";
 import { useTheme } from "../theme";
 import { Button, Pill, Text } from "./ui";
+
+/**
+ * Drop a trailing keyboard hint from a shared label.
+ *
+ * The catalogue spells these "Deny (1)" and "Allow once (2)", because on the desktop those keys
+ * work and the parentheses teach them. A phone has no `1` key to press, so the hint is a pair of
+ * digits in a button that does nothing — the one place a shared string needs adjusting rather
+ * than adopting, and small enough to do here rather than by splitting the catalogue.
+ */
+function withoutShortcut(text: string): string {
+  return text.replace(/\s*\(\d+\)\s*$/, "");
+}
+
+/** A shared palette name as one of this client's tones. */
+const RISK_TONE: Record<string, "danger" | "warning" | "neutral"> = {
+  red: "danger", orange: "warning", gray: "neutral",
+};
 
 export function PermissionGate({
   request, onAnswer,
@@ -21,7 +41,14 @@ export function PermissionGate({
   onAnswer: (decision: "allow_once" | "deny") => void;
 }) {
   const theme = useTheme();
+  const say = labels("PermissionOverlay");
   const detail = request.command || String(request.arguments.file_path ?? request.arguments.url ?? "");
+  // "Medium risk", from the same catalogue the desktop reads. This used to render the raw
+  // `medium` the daemon sends, in lowercase, which is a value and not a label.
+  const risk = request.risk ? String(request.risk).toLowerCase() : "";
+  const riskLabel = risk
+    ? say("riskBadge", { level: RISK_LABEL_KEY[risk] ? say(RISK_LABEL_KEY[risk]) : risk })
+    : "";
 
   return (
     <View
@@ -39,8 +66,8 @@ export function PermissionGate({
     >
       <View style={[styles.heading, { gap: theme.space[2] }]}>
         <Hand size={15} color={theme.colors.yellowFg} />
-        <Text variant="title" style={{ flex: 1 }}>Approval needed</Text>
-        {request.risk ? <Pill label={request.risk} tone={request.risk === "high" ? "danger" : "warning"} /> : null}
+        <Text variant="title" style={{ flex: 1 }}>{say("approvalNeeded")}</Text>
+        {riskLabel ? <Pill label={riskLabel} tone={RISK_TONE[RISK_PALETTE[risk]] ?? "neutral"} /> : null}
       </View>
 
       {request.explanation ? <Text variant="small" tone="muted">{request.explanation}</Text> : null}
@@ -61,9 +88,9 @@ export function PermissionGate({
       )}
 
       <View style={{ flexDirection: "row", gap: theme.space[2] }}>
-        <Button label="Deny" icon={X} onPress={() => onAnswer("deny")} style={{ flex: 1 }} />
+        <Button label={withoutShortcut(say("deny"))} icon={X} onPress={() => onAnswer("deny")} style={{ flex: 1 }} />
         <Button
-          label="Allow once" icon={Check} variant="solid" tone="accent"
+          label={withoutShortcut(say("allowOnce"))} icon={Check} variant="solid" tone="accent"
           onPress={() => onAnswer("allow_once")} style={{ flex: 1 }}
         />
       </View>

@@ -15,7 +15,6 @@ import {
 } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { FrankMark } from "../components/frank-mark";
 import { Button, EmptyState, Row, StatusDot, Text } from "../components/ui";
@@ -23,8 +22,11 @@ import {
   fetchSessions, listWorkspaces, subscribeEvents,
   type SessionSummary, type Workspace,
 } from "../lib/api";
+import { workspaceLabel } from "@shared/workspace";
+
 import { useConnection } from "../lib/connection";
 import { useTheme } from "../theme";
+import { useEdgeInsets } from "../theme/insets";
 
 /** Shown only when there is something to say — the desktop's rule, and the reason for the nulls. */
 function indicatorFor(session: SessionSummary, colors: ReturnType<typeof useTheme>["colors"]): string | null {
@@ -32,13 +34,6 @@ function indicatorFor(session: SessionSummary, colors: ReturnType<typeof useThem
   if (session.awaiting_input || session.activity === "waiting") return colors.yellowSolid;
   if (session.outcome === "failed") return colors.redSolid;
   return null;
-}
-
-function workspaceLabel(workspace: Workspace): string {
-  const names = workspace.locations.map((location) =>
-    location.name || location.base_directory.split("/").filter(Boolean).pop() || location.base_directory);
-  if (names.length === 0) return "Workspace";
-  return names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`;
 }
 
 interface TreeNode {
@@ -61,7 +56,7 @@ function buildTree(sessions: SessionSummary[]): TreeNode[] {
 
 export default function SessionsScreen() {
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
+  const insets = useEdgeInsets();
   const { status, reconnect } = useConnection();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -199,7 +194,7 @@ export default function SessionsScreen() {
                   : <ChevronDown size={14} color={theme.colors.fgSubtle} />}
                 <Folder size={14} color={theme.colors.fgSubtle} />
                 <Text variant="sectionLabel" tone="muted" style={{ flex: 1 }} numberOfLines={1}>
-                  {workspaceLabel(group.workspace)}
+                  {workspaceLabel(group.workspace.locations, "en", "Workspace")}
                 </Text>
                 <Text variant="small" tone="subtle">{group.roots.length}</Text>
               </Pressable>

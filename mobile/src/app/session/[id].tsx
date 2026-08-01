@@ -13,7 +13,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Composer } from "../../components/composer";
 import { PermissionGate, QuestionGate } from "../../components/gates";
@@ -29,6 +28,7 @@ import { goBack } from "../../lib/navigation";
 import { timelineItems } from "../../lib/transcript";
 import { useChat } from "../../lib/use-chat";
 import { useTheme } from "../../theme";
+import { useEdgeInsets } from "../../theme/insets";
 
 /**
  * The route, whose only job is to make the conversation below a fresh component per session.
@@ -47,7 +47,7 @@ export default function ConversationRoute() {
 
 function Conversation({ routeId, workspaceParameter }: { routeId: string; workspaceParameter: string }) {
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
+  const insets = useEdgeInsets();
   const { status } = useConnection();
   const isNew = routeId === "new";
   const sessionId = isNew ? null : routeId;

@@ -19,16 +19,16 @@ import { router, useLocalSearchParams } from "expo-router";
 import { Camera, ClipboardPaste, ScanLine, X } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Button, Card, Text } from "../components/ui";
 import { parsePairing, useConnection } from "../lib/connection";
 import { goBack } from "../lib/navigation";
 import { useTheme } from "../theme";
+import { useEdgeInsets } from "../theme/insets";
 
 export default function PairScreen() {
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
+  const insets = useEdgeInsets();
   const { pair, pairing } = useConnection();
   const { link } = useLocalSearchParams<{ link?: string }>();
   const [permission, requestPermission] = useCameraPermissions();

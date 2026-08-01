@@ -32,8 +32,10 @@ at layout. The camera does not work there — pair by pasting the `frank://pair#
 ```sh
 bunx tsc --noEmit
 bunx expo lint
-bun run check:events   # the event types still match the harness's schema
 ```
+
+The event types are generated into `shared/` by the web client's `bun run check:events`, and
+this client imports them — so there is nothing here to check for drift.
 
 ## Notes for whoever edits this next
 
@@ -41,9 +43,10 @@ bun run check:events   # the event types still match the harness's schema
 than working from memory. This is SDK 57, React Native 0.86, the New Architecture, React Compiler
 on.
 
-**The event union is generated, not written.** `src/lib/generated/events.ts` comes from the
-harness's own Pydantic models by way of `web/src/lib/generated/events.schema.json`. Editing it by
-hand is a change the next `bun run build:events` throws away.
+**Almost nothing here decides anything.** Labels, workspace names, tool glyphs, status colours
+and the wire event union all live in [`shared/`](../shared/README.md) and are read by the desktop
+too. If you find yourself writing a string or picking an icon in this directory, check there
+first — every divergence between the two clients so far started as a small local decision.
 
 **Messages are replaced, never mutated.** `src/lib/transcript.ts` keeps a mutable *array* on
 purpose — a turn emits one part per token — but every message in it is replaced rather than

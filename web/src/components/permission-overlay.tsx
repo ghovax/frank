@@ -15,6 +15,8 @@ import { LuShieldAlert } from "react-icons/lu";
 import type { ToolPermission } from "@/lib/tool-event";
 import { MarkdownContent } from "./markdown-content";
 import { ToolLocationBadge } from "./tool-call";
+import { RISK_LABEL_KEY, RISK_PALETTE as SHARED_RISK_PALETTE } from "@shared/status";
+
 import { Pill } from "./ui/pill";
 import { Pre } from "./ui/semantic";
 
@@ -37,8 +39,10 @@ interface PermissionOverlayProps {
   onPermission: (requestId: string, decision: RuntimeDecision) => void;
 }
 
-const RISK_PALETTE: Record<string, string> = { high: "red", medium: "orange", low: "gray" };
-const RISK_KEY: Record<string, string> = { high: "riskHigh", medium: "riskMedium", low: "riskLow" };
+// Shared, because the phone shows the same badge and had been showing a bare lowercase
+// `medium` where this says "Medium risk".
+const RISK_PALETTE = SHARED_RISK_PALETTE;
+const RISK_KEY = RISK_LABEL_KEY;
 
 export function PermissionOverlay({ permission, title, detail, command, arguments: toolArguments, onPermission }: PermissionOverlayProps) {
   const translation = useTranslations("PermissionOverlay");
