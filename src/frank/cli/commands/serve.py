@@ -36,9 +36,22 @@ _DROPPED_REQUEST_HEADERS = frozenset({
     "host", "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
     "te", "trailers", "transfer-encoding", "upgrade", "authorization",
 })
+# `content-encoding` is deliberately **not** here, and that is the whole of a bug worth naming.
+#
+# The body is forwarded with `aiter_raw()`, which is to say exactly as it arrived and still
+# compressed — and httpx asks every upstream for gzip whether or not the client did. Dropping the
+# one header that says "these bytes are compressed" therefore hands the browser gzip labelled as
+# text, which it renders as a screen of binary. It never showed while this only fronted the
+# daemon, because uvicorn does not compress; it appeared the moment a dev server, which does, was
+# put behind it.
+#
+# `content-encoding` is end-to-end rather than hop-by-hop: it describes the payload, not the
+# connection, so a proxy that does not decode the payload has no business removing it.
+# `content-length` stays, because the response is re-chunked on the way out and a length copied
+# from the other hop would then be a lie.
 _DROPPED_RESPONSE_HEADERS = frozenset({
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-    "te", "trailers", "transfer-encoding", "upgrade", "content-encoding", "content-length",
+    "te", "trailers", "transfer-encoding", "upgrade", "content-length",
 })
 
 # Served to the page so it knows it is behind this proxy and should address the daemon
@@ -159,6 +172,14 @@ def build_application(daemon_url: str, token: str, directory: Optional[Path], in
             name: value for name, value in request.headers.items()
             if name.lower() not in _DROPPED_REQUEST_HEADERS
         }
+        # Ask the upstream for exactly what the caller asked us for.
+        #
+        # httpx supplies its own `Accept-Encoding: gzip, deflate, br` when a request carries
+        # none, so a client that never asked for compression was being handed it anyway — this
+        # proxy forwards the body untouched and cannot decide otherwise on the caller's behalf.
+        # Saying `identity` is how a proxy declines on their behalf instead.
+        headers.setdefault("accept-encoding", "identity")
+
         # The daemon needs the capability token; a dev server needs nothing and must not be
         # handed one — it is not the daemon, and a credential sent to the wrong process is a
         # credential in the wrong log.

@@ -172,3 +172,23 @@ def test_the_pairing_link_keeps_its_payload_in_the_fragment() -> None:
     encoded = rest.split("#", 1)[1]
     decoded = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
     assert json.loads(decoded) == payload
+
+
+def test_the_proxy_does_not_strip_the_header_that_decodes_the_body() -> None:
+    """A compressed body must keep the header that says so.
+
+    The proxy forwards a body with `aiter_raw()` — exactly as it arrived, and therefore still
+    compressed. `content-encoding` describes the payload rather than the connection, so removing
+    it while passing the bytes through unchanged hands the browser gzip labelled as text, which
+    renders as a screen of binary.
+
+    It hid for as long as this only fronted the daemon, which does not compress, and appeared the
+    instant `--interface` put a dev server behind it. An assertion rather than a comment because
+    the header sits in a list of hop-by-hop ones where it looks like it belongs.
+    """
+    from frank.cli.commands.serve import _DROPPED_RESPONSE_HEADERS
+
+    assert "content-encoding" not in _DROPPED_RESPONSE_HEADERS
+    # `content-length` does belong there: the response is re-chunked on the way out, so a length
+    # copied from the other hop would describe a body this one is not sending.
+    assert "content-length" in _DROPPED_RESPONSE_HEADERS
