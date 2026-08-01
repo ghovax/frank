@@ -681,39 +681,23 @@ export function ChatInput({
         // they go last rather than being capped into ellipses early.
         "@container (max-width: 560px)": {
           "& [data-composer-agent-label], & [data-composer-model-label], & [data-composer-context-percent]": { display: "none" },
-          // Past here every selector is an icon and nothing else, so they should be one shape.
-          // Two things stopped them being. The select-backed chips reserve 28px on their right
-          // for a dropdown chevron that the toggle-backed ones do not have, which made them
-          // wider; and that reservation is asymmetric, which pushed their glyph left of centre
-          // inside its own chip. A row of four then read as four different controls.
-          //
-          // With no label for it to point at, the chevron says nothing the chip does not — it
-          // still opens its menu when tapped — so it goes, the padding becomes even, and the
-          // four come out identical without anyone choosing a width.
-          "& [data-composer-agent-control], & [data-composer-model], & [data-composer-permission-control], & [data-composer-sandbox-control]": {
-            minWidth: "0 !important",
-            maxWidth: "none !important",
-            width: "auto !important",
-            paddingInline: "var(--chakra-spacing-2) !important",
-            justifyContent: "center !important",
-            flexShrink: 0,
-          },
-          "& [data-part='indicator-group']": { display: "none" },
         },
-        // No wrap, at any width.
+        // Never two rows.
         //
-        // This used to fold onto a second line here, on the reasoning that the row could not hold
-        // every control and the usage chip however narrow they were made. That was true while the
-        // chips were unequal and chevron-padded; once the rule above turns them into four ~29px
-        // squares the whole row is about 220px, and a fold was costing a line of the transcript
-        // to solve a problem that had stopped existing.
+        // This used to wrap here, and the reasoning is still in the history: with labels showing,
+        // the row genuinely could not hold every control and the usage chip. But by this width the
+        // rules above have already reduced every one of them to its glyph, and four glyphs plus a
+        // ring come to about half of a 390pt panel — so the wrap was firing on a width it had
+        // stopped applying to, and spending a whole line of the transcript to put one small chip
+        // on its own beneath four others.
         //
-        // The gap tightens instead, which is the last thing left to give before wrapping would be
-        // the only option — and if it ever is, it should be reached by measurement rather than by
-        // a breakpoint chosen in advance.
+        // The gap tightens instead, which is the last thing left to give. If a control is ever
+        // added that genuinely does not fit, the fix is to reduce it like the others rather than
+        // to reintroduce a second line: two rows under a text box read as a layout that has come
+        // apart, not as a layout adapting.
         "@container (max-width: 460px)": {
-          "& [data-composer-selectors]": { gap: "var(--chakra-spacing-1)" },
           "& [data-composer-row]": { columnGap: "var(--chakra-spacing-1)" },
+          "& [data-composer-selectors]": { gap: "var(--chakra-spacing-1)" },
         },
       }}
     >
