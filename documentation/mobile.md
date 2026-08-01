@@ -170,13 +170,22 @@ mobile/src
   app/
     index.tsx        a WebView onto the machine's own interface
     pair.tsx         the camera, and the token going into the keychain
-  lib/connection.tsx which of the machine's addresses answers, and holding the pairing
-  theme/             tokens, for the two screens above and nothing else
+  lib/connection.tsx      which of the machine's addresses answers, and holding the pairing
+  lib/dictation-bridge.ts recording, for a page that is not allowed to
+  theme/                  tokens, for the two screens above and nothing else
 ```
 
 That is the whole application. Everything else is `web/src`.
 
 What the two clients share beyond that lives in [`shared/`](../shared/README.md) and is read by the desktop too: the message catalogue, the wire event union, workspace naming, status colours, and the tool glyph vocabulary.
+
+### Dictation, and why the shell records it
+
+A browser only opens a microphone in a secure context, and the interface arrives on the phone over plain HTTP from a private address — so inside the webview `navigator.mediaDevices` is not refused, it is not defined. The browser is right about that, and a private-network address is not going to become secure, so this is not something the page can be made to work around.
+
+The shell records instead, with the microphone permission the app itself holds. `expo-audio`'s `AudioStream` gives mono float32 at 16 kHz — the same shape the Web Audio path produces in a browser, with no container and no codec anywhere in between — and the shell posts it to the same daemon the page is already talking to, because it has the endpoint and the token anyway. What crosses back into the page is the sentence, not the audio: a minute of speech is nearly four megabytes of float32, and moving that through a webview bridge as base64 would be an expensive way to carry something neither side reads.
+
+Both halves are ordinary modules. The page-side half is in `web/src/lib/dictation.ts`, not injected into the page as a template string: `window.ReactNativeWebView` is how a page can tell where it is running, so there was never anything for the shell to install, and the only thing crossing from the shell is one call with three arguments.
 
 ## What has been done for narrow screens, and what has not
 
@@ -193,7 +202,7 @@ Still to do, and unverified because it needs hardware:
 - The whole thing on a real device, in WebKit. Everything above is reasoned from the code and checked in a build; what has been looked at was looked at in Chrome, which is the wrong engine for a `WKWebView` target.
 - The composer's control row wraps below 460px and orphans its last chip on a second line. That is the desktop's own responsive ladder bottoming out, and it wants another breakpoint.
 - Long-press and swipe affordances exist nowhere. Deleting a session is a `⋯` menu designed for a hover.
-- `getUserMedia` for dictation inside a `WKWebView` — the permission plumbing is in place and has never been exercised.
+- Dictation through the native bridge, end to end on a device — the recording path is written and typechecked but has never had a real microphone on it.
 - Whether the pairing cookie survives a cold start of the app.
 
 ## Checks
@@ -202,4 +211,4 @@ Still to do, and unverified because it needs hardware:
 cd mobile && bunx tsc --noEmit && bunx expo lint
 ```
 
-The reach listener's guard is tested in `tests/test_reach.py`: that nothing without the token gets through, HTTP or websocket, that the cookie exchange happens only for documents, and that neither the token nor the cookie is forwarded to the daemon. The daemon's own token check is tested in `tests/test_daemon_authentication.py`.
+The reach listener's guard and the daemon's own token check are exercised ad hoc against a running daemon rather than kept as test files: that nothing without the token gets through, HTTP or websocket, that the cookie exchange happens only for documents, and that neither the token nor the cookie is forwarded to the daemon.

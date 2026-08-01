@@ -14,8 +14,8 @@ import {
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslations } from "next-intl";
 import { LuArrowUp, LuCoins, LuFoldVertical, LuMic, LuMicOff, LuPaperclip, LuSquare } from "react-icons/lu";
-import { fetchChatGPTAuthStatus, fetchDictationStatus, type DictationState, fetchMessageHistory, referenceAttachment, saveMessageHistory, subscribeEvents, transcribeDictation, uploadFile, type Attachment, type ChatGPTUsage, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
-import { startDictationRecording, type DictationRecording } from "@/lib/dictation";
+import { fetchChatGPTAuthStatus, fetchDictationStatus, type DictationState, fetchMessageHistory, referenceAttachment, saveMessageHistory, subscribeEvents, uploadFile, type Attachment, type ChatGPTUsage, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
+import { startDictation, type Dictation } from "@/lib/dictation";
 import { toaster } from "./ui/toaster";
 import { ChatGPTUsageMeters } from "./chatgpt-usage-meters";
 import { AgentSelectControl, PermissionModeControl, SandboxToggleControl } from "./session-controls";
@@ -296,7 +296,7 @@ export function ChatInput({
   // the button is a toggle, and what a toggle owns is the thing it can stop.
   const [dictationEnabled, setDictationEnabled] = useState(false);
   const [dictationState, setDictationState] = useState<DictationState>("idle");
-  const [recording, setRecording] = useState<DictationRecording | null>(null);
+  const [recording, setRecording] = useState<Dictation | null>(null);
   const [transcribing, setTranscribing] = useState(false);
   // The composer's file-attach affordance is gated on the agent model's
   // capabilities (models.dev): a text-only model cannot process attachments, so
@@ -447,7 +447,7 @@ export function ChatInput({
   // Stop the microphone if the composer goes away mid-recording. Without it the tracks stay
   // open and the browser keeps showing the machine as listening, which is the one bug in this
   // area a person would rightly find alarming.
-  const recordingRef = useRef<DictationRecording | null>(null);
+  const recordingRef = useRef<Dictation | null>(null);
   useEffect(() => {
     recordingRef.current = recording;
   }, [recording]);
@@ -464,9 +464,7 @@ export function ChatInput({
       setRecording(null);
       setTranscribing(true);
       try {
-        const samples = await active.stop();
-        if (samples.length === 0) return;
-        const spoken = (await transcribeDictation(samples)).trim();
+        const spoken = (await active.stop()).trim();
         if (!spoken) return;
         setInputValue((current) => {
           const next = current.trim() ? `${current.trimEnd()} ${spoken}` : spoken;
@@ -487,7 +485,7 @@ export function ChatInput({
       return;
     }
     try {
-      setRecording(await startDictationRecording());
+      setRecording(await startDictation());
     } catch (caught) {
       toaster.create({
         type: "error",
@@ -691,14 +689,12 @@ export function ChatInput({
         // stopped applying to, and spending a whole line of the transcript to put one small chip
         // on its own beneath four others.
         //
-        // The gap tightens instead, which is the last thing left to give. If a control is ever
-        // added that genuinely does not fit, the fix is to reduce it like the others rather than
-        // to reintroduce a second line: two rows under a text box read as a layout that has come
-        // apart, not as a layout adapting.
-        "@container (max-width: 460px)": {
-          "& [data-composer-row]": { columnGap: "var(--chakra-spacing-1)" },
-          "& [data-composer-selectors]": { gap: "var(--chakra-spacing-1)" },
-        },
+        // The spacing stays the desktop's. Tightening it here was the obvious next lever and the
+        // wrong one: the controls already fit, so the gap was being spent to buy room nothing
+        // needed, and a row of glyphs four points apart reads as one crowded control rather than
+        // as four. If something is ever added that genuinely does not fit, reduce it the way the
+        // rules above reduce everything else — a second line under a text box reads as a layout
+        // that has come apart, not as one adapting.
       }}
     >
       <ConfirmDialog

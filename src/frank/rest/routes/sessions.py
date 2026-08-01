@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 from fastapi import APIRouter
-from frank.hub.database import SessionRecord
+from frank.hub.database import SessionRecord, WorkspaceRecord
 from frank.base.paths import uploads_directory
 import asyncio
 import re
@@ -102,6 +102,12 @@ async def delete_session(session_id: str):
             if record is None:
                 database_session.commit()
                 return False
+            # A workspace pointing at a conversation that no longer exists would send the next
+            # client that opened it looking for a session nothing can serve, so the pointer is
+            # cleared here rather than being left for a reader to discover.
+            database_session.query(WorkspaceRecord).filter(
+                WorkspaceRecord.last_session_id == session_id
+            ).update({WorkspaceRecord.last_session_id: ""})
             database_session.delete(record)
             database_session.commit()
             return True

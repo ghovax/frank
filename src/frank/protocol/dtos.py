@@ -159,6 +159,13 @@ class WorkspaceCreateRequest(BaseModel):
     locations: list[LocationInput] = Field(min_length=1)
 
 
+class WorkspaceLastSessionRequest(BaseModel):
+    """Which conversation a workspace was last opened at. The empty string means none — what a
+    client sends when it lands on a workspace with nothing to reopen."""
+
+    session_id: str = ""
+
+
 class AttachmentReference(BaseModel):
     """A local file the user attached by its real OS path (the Tauri desktop app
     hands over the path; the sandboxed web build cannot and falls back to /uploads)."""

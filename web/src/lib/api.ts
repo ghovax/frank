@@ -368,6 +368,9 @@ export interface Workspace {
   updated_at: string;
   session_count: number;
   locations?: Location[];
+  // The conversation this workspace was last opened at, or "" for none. The daemon's memory,
+  // not the browser's — see `rememberLastSession`.
+  last_session_id?: string;
 }
 
 // The editable shape of a location (create/update). No `name` — the server derives it.
@@ -410,6 +413,25 @@ export async function createWorkspace(input: WorkspaceCreateInput): Promise<Work
   });
   if (!response.ok) throw new Error(`Failed to create workspace (${response.status})`);
   return await response.json() as Workspace;
+}
+
+/**
+ * Remember which conversation this workspace is open at, so the next launch lands there.
+ *
+ * Deliberately the server's memory. The same workspace is reached from the desktop app, a
+ * browser and the phone, and "where I was" is a fact about the machine rather than about the
+ * window looking at it; kept per-client, each one reopens somewhere different, and the phone —
+ * whose storage goes whenever its webview is cleared — reopens nowhere.
+ *
+ * Fire-and-forget on purpose: nothing on screen depends on the write landing, and a failed one
+ * costs the person a reopened conversation, not their place in this one.
+ */
+export async function rememberLastSession(workspaceId: string, sessionId: string): Promise<void> {
+  await apiFetch(`/workspaces/${encodeURIComponent(workspaceId)}/last-session`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId }),
+  }).catch(() => undefined);
 }
 
 export async function deleteWorkspace(workspaceId: string): Promise<void> {

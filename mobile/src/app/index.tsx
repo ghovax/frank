@@ -18,7 +18,9 @@
  * in a narrow window on a laptop too.
  *
  * What stays native is only what a page cannot do: reading a pairing code with the camera,
- * keeping the token in the keychain, and finding which of a machine's addresses answers today.
+ * keeping the token in the keychain, finding which of a machine's addresses answers today, and
+ * recording dictation — a webview reached over plain HTTP is not a secure context, so the
+ * microphone is closed to the page and open to the app. See `lib/dictation-bridge.ts`.
  */
 
 import { router } from "expo-router";
@@ -28,7 +30,9 @@ import { WebView } from "react-native-webview";
 
 import { FrankMark } from "../components/frank-mark";
 import { Button, Text } from "../components/ui";
+import { transcribe } from "../lib/api";
 import { useConnection } from "../lib/connection";
+import { handleDictationRequest, isDictationRequest } from "../lib/dictation-bridge";
 import { useTheme } from "../theme";
 import { useEdgeInsets } from "../theme/insets";
 
@@ -59,6 +63,22 @@ export default function InterfaceScreen() {
     view.current?.reload();
   }, []);
 
+  /**
+   * The page asking the shell for something. Only dictation so far, and anything else is
+   * ignored rather than logged: the interface is a whole web application, and some library
+   * inside it posting its own messages is not this shell's business.
+   */
+  const onMessage = useCallback((event: { nativeEvent: { data: string } }) => {
+    let message: unknown;
+    try {
+      message = JSON.parse(event.nativeEvent.data);
+    } catch {
+      return;
+    }
+    if (!isDictationRequest(message)) return;
+    void handleDictationRequest(message, transcribe).then((reply) => view.current?.injectJavaScript(reply));
+  }, []);
+
   if (status !== "online") {
     return <Waiting status={status} machine={pairing?.name ?? "your Mac"} onRetry={reconnect} />;
   }
@@ -75,9 +95,10 @@ export default function InterfaceScreen() {
         // The interface is a single-page application that manages its own history, so the back
         // gesture should move within it rather than unload it.
         allowsBackForwardNavigationGestures
-        // Dictation records through `getUserMedia`, which a webview will not grant unasked.
-        // `grant` answers with the permission the app already holds, so the person is asked once
-        // by the operating system rather than twice.
+        // Dictation goes through the bridge below, not `getUserMedia` — over plain HTTP the
+        // webview has no microphone to grant. This stays for the case where it does: served
+        // behind TLS the page can take its own Web Audio path, and then the app's permission
+        // should answer for it rather than a second prompt.
         mediaCapturePermissionGrantType="grant"
         allowsInlineMediaPlayback
         mediaPlaybackRequiresUserAction={false}
@@ -85,6 +106,7 @@ export default function InterfaceScreen() {
         // interface would ask to be paired again on every launch.
         sharedCookiesEnabled
         thirdPartyCookiesEnabled={false}
+        onMessage={onMessage}
         onLoadEnd={() => setLoading(false)}
         onError={() => setLoading(false)}
         renderError={() => <Fallen machine={pairing?.name ?? "your Mac"} onRetry={reload} />}

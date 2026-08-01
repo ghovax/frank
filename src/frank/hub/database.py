@@ -95,6 +95,16 @@ class WorkspaceRecord(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)  # generated uuid
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    # The conversation a client should open when it arrives with nothing else to go on.
+    #
+    # Here rather than in a browser, because it is not a fact about a browser. Open the same
+    # workspace from a phone, a second window and the desktop app and all three mean the same
+    # conversation by "the last one" — which `localStorage` cannot express, since it would give
+    # each of them a private and diverging answer to a question about shared state.
+    #
+    # Empty when the workspace has never been opened, which is the one time landing on a blank
+    # composer is right.
+    last_session_id: Mapped[str] = mapped_column(String, nullable=False, default="")
 
 
 class ScheduleRecord(Base):

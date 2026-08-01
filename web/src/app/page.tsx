@@ -9,7 +9,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Point
 // animate its open/close (opacity + slide) without losing its flex-layout props.
 const MotionFlex = motion.create(Flex);
 import { useRouter, useSearchParams } from "next/navigation";
-import { deleteSession, fetchAccessibility, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchSessionDraft, fetchSessions, fetchSettings, getWorkspace, listWorkspaces, saveAgentConfiguration, saveSettings, setSandboxEnforce, subscribeEvents, updateComputerControlSetting, type AgentCard, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
+import { deleteSession, fetchAccessibility, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchSessionDraft, fetchSessions, fetchSettings, getWorkspace, listWorkspaces, rememberLastSession, saveAgentConfiguration, saveSettings, setSandboxEnforce, subscribeEvents, updateComputerControlSetting, type AgentCard, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
 import { useTray } from "@/lib/use-tray";
 import { playAttentionSound, playTurnEndSound, primeSounds } from "@/lib/sounds";
@@ -29,19 +29,17 @@ function writeLastWorkspace(workspaceId: string): void {
   try { localStorage.setItem(LAST_WORKSPACE_KEY, workspaceId); } catch { /* ignore */ }
 }
 
-// And the last conversation, for the same reason and by the same means.
+// The last conversation is remembered too — but by the daemon, on the workspace record, not
+// here. Opening onto an empty composer is the right answer exactly once, the first time, when
+// there is nothing to return to; every launch after that the thing you almost certainly want is
+// the conversation you were in, and having to find it in the sidebar is a step that exists only
+// because the application forgot.
 //
-// Opening onto an empty composer is the right answer exactly once — the first time, when there
-// is nothing to return to. Every launch after that, the thing you almost certainly want is the
-// conversation you were in, and having to find it in the sidebar first is a step that exists
-// only because the application forgot.
-const LAST_SESSION_KEY = "frank:lastSession";
-function readLastSession(): string | null {
-  try { return localStorage.getItem(LAST_SESSION_KEY); } catch { return null; }
-}
-function writeLastSession(sessionId: string): void {
-  try { localStorage.setItem(LAST_SESSION_KEY, sessionId); } catch { /* ignore */ }
-}
+// Which window you were in is a fact about the browser, so the workspace above stays local. Which
+// conversation you were in is a fact about the machine — the desktop app, a browser tab and the
+// phone are three views of one daemon, and kept per-client each would reopen somewhere different.
+// The phone settles it: its storage goes whenever the webview is cleared, so a remembered
+// conversation that lived there would not survive the thing it exists to survive.
 
 
 // A session that is actually working. The daemon derives this for us now: `activity` is
@@ -76,6 +74,12 @@ function Workspace() {
     return () => { cancelled = true; };
   }, []);
 
+  // Which conversation the daemon last saw this workspace opened at: `null` until it has said,
+  // then an id or `""` for none. The restore below waits for it rather than racing it — arriving
+  // late and switching the conversation out from under someone is worse than opening a moment
+  // later on the right one.
+  const [rememberedSession, setRememberedSession] = useState<string | null>(null);
+
   useEffect(() => {
     if (workspaceId) {
       writeLastWorkspace(workspaceId);
@@ -87,7 +91,9 @@ function Workspace() {
         if (cancelled) return;
         const last = readLastWorkspace();
         const target = last && workspaces.some((workspace) => workspace.id === last) ? last : workspaces[0]?.id;
-        if (!target) return;
+        // Nothing to open into — release the restore below, which is waiting on a workspace that
+        // is never going to arrive, so it can settle on the empty composer rather than on nothing.
+        if (!target) { setRememberedSession(""); return; }
         const params = new URLSearchParams(window.location.search);
         params.set("workspace", target);
         router.replace(`?${params.toString()}`, { scroll: false });
@@ -95,6 +101,22 @@ function Workspace() {
       .catch((caught) => swallowed({ component: "workspace-page", operation: "read the home directory" }, caught));
     return () => { cancelled = true; };
   }, [workspaceId, router]);
+
+  useEffect(() => {
+    // No workspace yet means the effect above is still choosing one; it will set this itself if
+    // it turns out there is none to choose.
+    if (!workspaceId) return;
+    let cancelled = false;
+    getWorkspace(workspaceId)
+      .then((workspace) => { if (!cancelled) setRememberedSession(workspace?.last_session_id ?? ""); })
+      .catch((caught) => {
+        // A workspace that would not load is not a reason to hang on the loading screen; the
+        // empty composer is a fine place to land.
+        if (!cancelled) setRememberedSession("");
+        swallowed({ component: "workspace-page", operation: "read the last conversation" }, caught);
+      });
+    return () => { cancelled = true; };
+  }, [workspaceId]);
 
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [agentCards, setAgentCards] = useState<AgentCard[]>([]);
@@ -412,18 +434,17 @@ function Workspace() {
   // that lands on the empty composer, which is the right answer the first time.
   const restoredInitialSession = useRef(false);
   useEffect(() => {
-    if (restoredInitialSession.current || !sessionsLoaded) return;
+    if (restoredInitialSession.current || !sessionsLoaded || rememberedSession === null) return;
     restoredInitialSession.current = true;
     if (activeSessionId) return;
     const candidates = sessions.filter((entry) => !workspaceId || entry.workspaceId === workspaceId);
     if (candidates.length === 0) return;
-    const remembered = readLastSession();
-    const target = candidates.find((entry) => entry.sessionId === remembered) ?? candidates[0];
+    const target = candidates.find((entry) => entry.sessionId === rememberedSession) ?? candidates[0];
     void handleResumeSession(target);
     // `handleResumeSession` is redefined every render and is not a dependency anything wants to
     // re-run on; the ref above is what bounds this to once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionsLoaded, sessions, workspaceId, activeSessionId]);
+  }, [sessionsLoaded, sessions, workspaceId, activeSessionId, rememberedSession]);
 
   // Sidebar sort: "recent" (newest first, the load order) or "active" (sessions
   // needing attention or running float to the top, then newest). The sidebar groups
@@ -449,6 +470,8 @@ function Workspace() {
   const handleSessionCreated = useCallback(
     (sessionId: string) => {
       setActiveSessionId(sessionId);
+      // A conversation you just started is the one you were last in.
+      void rememberLastSession(workspaceId, sessionId);
       const params = new URLSearchParams(window.location.search);
       params.set("session", sessionId);
       router.replace(`?${params.toString()}`, { scroll: false });
@@ -456,7 +479,7 @@ function Workspace() {
       refreshSessions();
       setTimeout(refreshSessions, 5000);
     },
-    [isCompactViewport, refreshSessions, router]
+    [isCompactViewport, refreshSessions, router, workspaceId]
   );
 
   const handleStreamingChange = useCallback((streaming: boolean) => {
@@ -535,7 +558,7 @@ function Workspace() {
     // The restoration effect rebinds the working directory to this session's
     // own persisted folder; no need to set (or re-record) it here.
     setActiveSessionId(entry.sessionId);
-    writeLastSession(entry.sessionId);
+    void rememberLastSession(entry.workspaceId || workspaceId, entry.sessionId);
     setChatKey((current) => current + 1);
     const params = new URLSearchParams(window.location.search);
     if (entry.workspaceId) {

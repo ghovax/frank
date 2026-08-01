@@ -98,6 +98,31 @@ def _ensure_default_project() -> None:
             database_session.close()
 
 
+def _remember_last_session(workspace_id: str, session_id: str) -> bool:
+    """Record which conversation a workspace was last opened at.
+
+    Written by whichever client opened it, and read by all of them. The session is checked to
+    belong to this workspace rather than taken on trust: a client that had drifted could
+    otherwise point a workspace at a conversation in another one, and the next launch would open
+    somewhere its own sidebar does not list."""
+    assert state.session_factory is not None
+    with sqlite_write_lock():
+        database_session = state.session_factory()
+        try:
+            workspace = database_session.get(WorkspaceRecord, workspace_id)
+            if workspace is None:
+                return False
+            if session_id:
+                session = database_session.get(SessionRecord, session_id)
+                if session is None or session.workspace_id != workspace_id:
+                    return False
+            workspace.last_session_id = session_id
+            database_session.commit()
+            return True
+        finally:
+            database_session.close()
+
+
 def _workspace_count() -> int:
     assert state.session_factory is not None
     database_session = state.session_factory()

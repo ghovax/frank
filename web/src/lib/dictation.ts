@@ -1,4 +1,4 @@
-// Recording a person's voice into the samples the daemon transcribes.
+// Turning a person's voice into text: recording it, and getting it transcribed.
 //
 // Deliberately not `MediaRecorder`. That would hand back an encoded file — `webm/opus` in
 // Chromium, `mp4/aac` in WebKit — and the daemon would then need a decoder to undo an encode
@@ -14,6 +14,7 @@
 
 // What the model expects. The `AudioContext` is opened at this rate and resamples the
 // microphone into it, so no resampling code exists on either side of the wire.
+import { transcribeDictation } from "@/lib/api";
 import { expected } from "@/lib/swallowed";
 import { errorMessage } from "@/lib/errors";
 
@@ -27,6 +28,106 @@ const CAPTURE_PROCESSOR_URL = "/dictation-capture.worklet.js";
 
 export class DictationRecordingError extends Error {}
 
+/**
+ * Asking the shell to do the recording, when this page is running inside the phone app.
+ *
+ * `getUserMedia` is gated on a secure context, and the interface arrives on a phone over plain
+ * HTTP from a private address — so `navigator.mediaDevices` is not merely refused there, it is
+ * not defined. The browser is right about that and a private-network origin is never going to
+ * become secure, so this is not something the page can route around: somebody else has to hold
+ * the microphone.
+ *
+ * The shell does, with the permission the app itself was granted, and it posts the samples to
+ * the same daemon this page is already talking to — it has the endpoint and the token anyway.
+ * What comes back is the sentence, not the audio: a minute of speech is nearly four megabytes of
+ * float32, and moving that through a webview bridge as base64 would be an expensive way to carry
+ * something neither side reads. The other half is `mobile/src/lib/dictation-bridge.ts`.
+ *
+ * Written here, in the page, rather than injected into it. A webview bridge can only carry
+ * strings, so the temptation is to have the shell inject this whole conversation as a template
+ * string — which is the same mistake the capture worklet above deliberately does not make. It
+ * isn't necessary: `window.ReactNativeWebView` is how a page can tell where it is running, so the
+ * page-side half can just be a module, and the only thing crossing from the shell is one call
+ * with three arguments.
+ */
+interface ReactNativeWebView {
+  postMessage: (data: string) => void;
+}
+
+declare global {
+  interface Window {
+    ReactNativeWebView?: ReactNativeWebView;
+    // Called by the shell, through `injectJavaScript`, to answer one request below.
+    frankDictationSettle?: (id: number, failure: string, value: string) => void;
+  }
+}
+
+const awaitingShell = new Map<number, { resolve: (value: string) => void; reject: (error: Error) => void }>();
+let lastRequestId = 0;
+
+if (typeof window !== "undefined") {
+  window.frankDictationSettle = (id, failure, value) => {
+    const waiting = awaitingShell.get(id);
+    if (!waiting) return;
+    awaitingShell.delete(id);
+    if (failure) waiting.reject(new DictationRecordingError(failure));
+    else waiting.resolve(value);
+  };
+}
+
+function askShell(kind: "start" | "stop" | "cancel"): Promise<string> {
+  const bridge = window.ReactNativeWebView;
+  if (!bridge) return Promise.reject(new DictationRecordingError("This browser cannot reach a microphone."));
+  return new Promise((resolve, reject) => {
+    const id = (lastRequestId += 1);
+    awaitingShell.set(id, { resolve, reject });
+    bridge.postMessage(JSON.stringify({ channel: "dictation", id, kind }));
+  });
+}
+
+function insideShell(): boolean {
+  return typeof window !== "undefined" && Boolean(window.ReactNativeWebView);
+}
+
+/**
+ * One dictation, from the moment the microphone opens to the sentence it produced.
+ *
+ * Deliberately a small object with a `stop` rather than a callback API: the caller is a toggle
+ * button, and "the thing I started, which I can stop" is what a toggle actually holds. It hands
+ * back text rather than samples because that is the only part of this both paths agree on — the
+ * shell's audio never enters the page at all.
+ */
+export interface Dictation {
+  // Everything said so far, transcribed, and the microphone released. Safe to call once;
+  // calling it again answers with nothing.
+  stop: () => Promise<string>;
+  // Give up and release the microphone without transcribing.
+  cancel: () => void;
+}
+
+export async function startDictation(): Promise<Dictation> {
+  if (insideShell()) {
+    await askShell("start");
+    return {
+      stop: () => askShell("stop"),
+      cancel: () => {
+        // Nothing is waiting on a cancellation, and a shell that fails to answer one has already
+        // released the microphone — there is no second thing to tell the person about.
+        void askShell("cancel").catch((caught) => expected("a cancelled dictation has nothing left to release", caught));
+      },
+    };
+  }
+  const recording = await startDictationRecording();
+  return {
+    async stop() {
+      const samples = await recording.stop();
+      if (samples.length === 0) return "";
+      return await transcribeDictation(samples);
+    },
+    cancel: () => recording.cancel(),
+  };
+}
+
 // One recording, from the moment the microphone opens to the moment the samples are handed
 // back. Deliberately a small object with a `stop` rather than a callback API: the caller is a
 // toggle button, and "the thing I started, which I can stop" is what a toggle actually holds.
@@ -38,9 +139,18 @@ export interface DictationRecording {
   cancel: () => void;
 }
 
-export async function startDictationRecording(): Promise<DictationRecording> {
+async function startDictationRecording(): Promise<DictationRecording> {
   if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-    throw new DictationRecordingError("This browser cannot reach a microphone.");
+    // Naming the cause, because the two are fixed in completely different places. An insecure
+    // origin is not a browser that lacks a microphone — it is this page having been reached by
+    // an address the browser will not hand a microphone to, and saying so is the difference
+    // between "my phone is broken" and "open it through the app, or put TLS in front of it".
+    const insecure = typeof window !== "undefined" && !window.isSecureContext;
+    throw new DictationRecordingError(
+      insecure
+        ? "A browser only allows recording over a secure connection, and this page arrived over plain HTTP. Open Frank through the phone app, or serve it over HTTPS."
+        : "This browser cannot reach a microphone."
+    );
   }
   let stream: MediaStream;
   try {
