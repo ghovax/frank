@@ -29,6 +29,7 @@ import { useTranslations } from "next-intl";
 import { asArray, asRecord } from "@/lib/coerce";
 import type { WireEvent } from "@shared/generated/events";
 import { errorMessage } from "@/lib/errors";
+import { clientIdentifier } from "@/lib/identifier";
 
 // Re-export the A2A task shape so components can consume it from one place.
 export type A2ATurn = A2ATurnWire;
@@ -332,7 +333,7 @@ function newReduceState(): ReduceState {
 // transcript with older pages prepended keeps every existing key byte-identical.
 // Falls back to a position-based id only when no messageId is available.
 function toolCallMessageId(toolCallId: string | undefined): string {
-  return `toolcall-${toolCallId || crypto.randomUUID()}`;
+  return `toolcall-${toolCallId || clientIdentifier()}`;
 }
 
 function stableMessageId(state: ReduceState, prefix: string, sourceId: string | undefined): string {
@@ -1370,7 +1371,7 @@ export function useChat(
     (input: ChatInput) => {
       // Optimistic input message + reset the open prose lane.
       stateRef.current.lane = null;
-      const userMessageId = crypto.randomUUID();
+      const userMessageId = clientIdentifier();
       const dataParts = input.dataParts ?? [];
       const attachments = dataParts.flatMap((dataPart) => attachmentsFromData(dataPart));
       const meta = attachments.length > 0 ? { attachments } : {};
@@ -1528,7 +1529,7 @@ export function useChat(
       const trimmed = text.trim();
       if (!trimmed) return Promise.resolve();
       if (isStreamingRef.current) {
-        const pending = { id: crypto.randomUUID(), text: trimmed, steering: false, dataParts };
+        const pending = { id: clientIdentifier(), text: trimmed, steering: false, dataParts };
         const context = sessionIdRef.current;
         // Steering is no longer a separate call: a message to a live session is sent the
         // same way as any other and injected at the next safe point. The chip says so
