@@ -26,67 +26,18 @@ export const DICTATION_SAMPLE_RATE = 16000;
 // same-origin.
 const CAPTURE_PROCESSOR_URL = "/dictation-capture.worklet.js";
 
-export class DictationRecordingError extends Error {}
-
 /**
- * Asking the shell to do the recording, when this page is running inside the phone app.
+ * A recording that could not be made, named by the `ChatInput` entry that says why.
  *
- * `getUserMedia` is gated on a secure context, and the interface arrives on a phone over plain
- * HTTP from a private address — so `navigator.mediaDevices` is not merely refused there, it is
- * not defined. The browser is right about that and a private-network origin is never going to
- * become secure, so this is not something the page can route around: somebody else has to hold
- * the microphone.
- *
- * The shell does, with the permission the app itself was granted, and it posts the samples to
- * the same daemon this page is already talking to — it has the endpoint and the token anyway.
- * What comes back is the sentence, not the audio: a minute of speech is nearly four megabytes of
- * float32, and moving that through a webview bridge as base64 would be an expensive way to carry
- * something neither side reads. The other half is `mobile/src/lib/dictation-bridge.ts`.
- *
- * Written here, in the page, rather than injected into it. A webview bridge can only carry
- * strings, so the temptation is to have the shell inject this whole conversation as a template
- * string — which is the same mistake the capture worklet above deliberately does not make. It
- * isn't necessary: `window.ReactNativeWebView` is how a page can tell where it is running, so the
- * page-side half can just be a module, and the only thing crossing from the shell is one call
- * with three arguments.
+ * `message` is a key, and `values` are its ICU placeholders. This module has no hook to reach
+ * the catalogue through, and an English sentence written here would be one the composer could
+ * not translate — the language of a message belongs to whatever is about to show it.
  */
-interface ReactNativeWebView {
-  postMessage: (data: string) => void;
-}
-
-declare global {
-  interface Window {
-    ReactNativeWebView?: ReactNativeWebView;
-    // Called by the shell, through `injectJavaScript`, to answer one request below.
-    frankDictationSettle?: (id: number, failure: string, value: string) => void;
+export class DictationRecordingError extends Error {
+  constructor(message: string, readonly values: Record<string, string> = {}) {
+    super(message);
+    this.name = "DictationRecordingError";
   }
-}
-
-const awaitingShell = new Map<number, { resolve: (value: string) => void; reject: (error: Error) => void }>();
-let lastRequestId = 0;
-
-if (typeof window !== "undefined") {
-  window.frankDictationSettle = (id, failure, value) => {
-    const waiting = awaitingShell.get(id);
-    if (!waiting) return;
-    awaitingShell.delete(id);
-    if (failure) waiting.reject(new DictationRecordingError(failure));
-    else waiting.resolve(value);
-  };
-}
-
-function askShell(kind: "start" | "stop" | "cancel"): Promise<string> {
-  const bridge = window.ReactNativeWebView;
-  if (!bridge) return Promise.reject(new DictationRecordingError("This browser cannot reach a microphone."));
-  return new Promise((resolve, reject) => {
-    const id = (lastRequestId += 1);
-    awaitingShell.set(id, { resolve, reject });
-    bridge.postMessage(JSON.stringify({ channel: "dictation", id, kind }));
-  });
-}
-
-function insideShell(): boolean {
-  return typeof window !== "undefined" && Boolean(window.ReactNativeWebView);
 }
 
 /**
@@ -106,17 +57,6 @@ export interface Dictation {
 }
 
 export async function startDictation(): Promise<Dictation> {
-  if (insideShell()) {
-    await askShell("start");
-    return {
-      stop: () => askShell("stop"),
-      cancel: () => {
-        // Nothing is waiting on a cancellation, and a shell that fails to answer one has already
-        // released the microphone — there is no second thing to tell the person about.
-        void askShell("cancel").catch((caught) => expected("a cancelled dictation has nothing left to release", caught));
-      },
-    };
-  }
   const recording = await startDictationRecording();
   return {
     async stop() {
@@ -142,23 +82,11 @@ export interface DictationRecording {
 async function startDictationRecording(): Promise<DictationRecording> {
   if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
     // Naming the cause, because the two are fixed in completely different places. An insecure
-    // origin is not a browser that lacks a microphone — it is this page having been reached by
-    // an address the browser will not hand a microphone to, and saying so is the difference
-    // between "my phone is broken" and "open the same thing at a different address".
-    //
-    // And it usually is the same thing at a different address. `frank reach` advertises the
-    // machine's LAN address so a phone can find it, but a browser *on* that machine can open the
-    // very same listener at `localhost`, which every browser trusts whatever the scheme. That is
-    // one line to act on rather than a paragraph about TLS, so it is what the message says.
+    // origin is not a browser that lacks a microphone — it is this page having been reached by an
+    // address the browser will not hand a microphone to, and saying so is the difference between
+    // "my phone is broken" and "reach this machine by its other name".
     const insecure = typeof window !== "undefined" && !window.isSecureContext;
-    const local = insecure && window.location.hostname !== "localhost"
-      ? ` If this machine is the one serving it, open http://localhost:${window.location.port || "80"} instead.`
-      : "";
-    throw new DictationRecordingError(
-      insecure
-        ? `A browser only opens a microphone over a secure connection, and this page arrived over plain HTTP.${local} On a phone, open Frank through the app.`
-        : "This browser cannot reach a microphone."
-    );
+    throw new DictationRecordingError(insecure ? "dictationInsecureOrigin" : "dictationNoMicrophone");
   }
   let stream: MediaStream;
   try {
@@ -169,11 +97,7 @@ async function startDictationRecording(): Promise<DictationRecording> {
     // The one failure worth naming precisely: permission, which the person can fix, versus
     // anything else, which they cannot.
     const denied = caught instanceof DOMException && (caught.name === "NotAllowedError" || caught.name === "SecurityError");
-    throw new DictationRecordingError(
-      denied
-        ? "Frank was not allowed to use the microphone. Grant it in your system settings and try again."
-        : "No microphone is available."
-    );
+    throw new DictationRecordingError(denied ? "dictationRefused" : "dictationNoDevice");
   }
 
   const audioContext = new AudioContext({ sampleRate: DICTATION_SAMPLE_RATE });
@@ -200,7 +124,7 @@ async function startDictationRecording(): Promise<DictationRecording> {
     capture.connect(audioContext.destination);
   } catch (caught) {
     release();
-    throw new DictationRecordingError(`The microphone could not be opened: ${errorMessage(caught)}`);
+    throw new DictationRecordingError("dictationCouldNotOpen", { reason: errorMessage(caught) });
   }
 
   return {

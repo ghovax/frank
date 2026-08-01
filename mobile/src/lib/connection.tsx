@@ -60,8 +60,20 @@ const ConnectionContext = createContext<ConnectionValue | null>(null);
  * Read a `frank://pair#…` link, or a bare base64 payload pasted out of one.
  *
  * Throws rather than returning null: every caller is a person who just scanned or pasted
- * something, and "that is not a Frank pairing code" is the only useful thing to say.
+ * something, and being told which way it was wrong is the only useful thing to say.
+ *
+ * What it throws is a key into `PairScreen`, not a sentence. This is a plain module with no hook
+ * to reach the catalogue through, and an English sentence written here would be one no screen
+ * could translate — the language of a message belongs to whatever is about to show it.
  */
+/** A pairing code that would not do, named by which entry in `PairScreen` says so. */
+export class PairingError extends Error {
+  constructor(readonly reason: "notAPairingCode" | "missingTokenOrAddress" | "noAddress") {
+    super(reason);
+    this.name = "PairingError";
+  }
+}
+
 export function parsePairing(input: string): Pairing {
   const trimmed = input.trim();
   const fragment = trimmed.includes("#") ? trimmed.slice(trimmed.indexOf("#") + 1) : trimmed;
@@ -71,19 +83,19 @@ export function parsePairing(input: string): Pairing {
     const padded = fragment.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((fragment.length + 3) % 4);
     decoded = globalThis.atob(padded);
   } catch {
-    throw new Error("That is not a Frank pairing code.");
+    throw new PairingError("notAPairingCode");
   }
   let payload: Pairing;
   try {
     payload = JSON.parse(decoded) as Pairing;
   } catch {
-    throw new Error("That is not a Frank pairing code.");
+    throw new PairingError("notAPairingCode");
   }
   if (!payload?.token || !Array.isArray(payload.endpoints)) {
-    throw new Error("That pairing code is missing its token or its address.");
+    throw new PairingError("missingTokenOrAddress");
   }
   if (payload.endpoints.length === 0) {
-    throw new Error("That pairing code carries no address — the machine could not find one to offer.");
+    throw new PairingError("noAddress");
   }
   return {
     version: Number(payload.version ?? 1),

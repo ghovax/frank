@@ -17,14 +17,19 @@
  * `web/` itself. That is the right place for it — a dialog that is unusable at 390pt is unusable
  * in a narrow window on a laptop too.
  *
- * What stays native is only what a page cannot do: reading a pairing code with the camera,
- * keeping the token in the keychain, finding which of a machine's addresses answers today, and
- * recording dictation — a webview reached over plain HTTP is not a secure context, so the
- * microphone is closed to the page and open to the app. See `lib/dictation-bridge.ts`.
+ * What stays native is only what a page cannot do: reading a pairing code with the camera, and
+ * keeping the token in the keychain.
+ *
+ * Dictation was briefly on that list and is not. Over plain HTTP a webview is not a secure
+ * context, so the microphone was closed to the page and the shell recorded on its behalf — a
+ * second recording implementation, in a second language, of something the desktop already did.
+ * Reaching the machine over HTTPS makes the page a secure context and the whole apparatus
+ * unnecessary, which is the better fix: the phone dictates with the desktop's own code.
  */
 
 import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslations } from "use-intl";
 import { ActivityIndicator, Platform, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
 
@@ -32,13 +37,12 @@ import { ExternalLink, RotateCw, ScanLine } from "lucide-react-native";
 
 import { FrankMark } from "../components/frank-mark";
 import { Button, Text } from "../components/ui";
-import { transcribe } from "../lib/api";
 import { useConnection } from "../lib/connection";
-import { handleDictationRequest, isDictationRequest } from "../lib/dictation-bridge";
 import { useTheme } from "../theme";
 import { useEdgeInsets } from "../theme/insets";
 
 export default function InterfaceScreen() {
+  const translation = useTranslations("InterfaceScreen");
   const theme = useTheme();
   const { status, pairing, endpoint, reconnect } = useConnection();
   const view = useRef<WebView>(null);
@@ -65,27 +69,11 @@ export default function InterfaceScreen() {
     view.current?.reload();
   }, []);
 
-  /**
-   * The page asking the shell for something. Only dictation so far, and anything else is
-   * ignored rather than logged: the interface is a whole web application, and some library
-   * inside it posting its own messages is not this shell's business.
-   */
-  const onMessage = useCallback((event: { nativeEvent: { data: string } }) => {
-    let message: unknown;
-    try {
-      message = JSON.parse(event.nativeEvent.data);
-    } catch {
-      return;
-    }
-    if (!isDictationRequest(message)) return;
-    void handleDictationRequest(message, transcribe).then((reply) => view.current?.injectJavaScript(reply));
-  }, []);
-
   if (status !== "online") {
     return (
       <Waiting
         status={status}
-        machine={pairing?.name ?? "your Mac"}
+        machine={pairing?.name ?? translation("thisMachine")}
         onRetry={reconnect}
         endpoints={pairing?.endpoints ?? []}
       />
@@ -105,7 +93,7 @@ export default function InterfaceScreen() {
   // honest shape of it — in a browser this shell has no camera, no keychain and no microphone to
   // lend, so the one useful thing it still holds is the address and the token.
   if (Platform.OS === "web") {
-    return <HandOver machine={pairing?.name ?? "your Mac"} url={source} />;
+    return <HandOver machine={pairing?.name ?? translation("thisMachine")} url={source} />;
   }
 
   return (
@@ -120,10 +108,9 @@ export default function InterfaceScreen() {
         // The interface is a single-page application that manages its own history, so the back
         // gesture should move within it rather than unload it.
         allowsBackForwardNavigationGestures
-        // Dictation goes through the bridge below, not `getUserMedia` — over plain HTTP the
-        // webview has no microphone to grant. This stays for the case where it does: served
-        // behind TLS the page can take its own Web Audio path, and then the app's permission
-        // should answer for it rather than a second prompt.
+        // Dictation is `getUserMedia` in the page, as on the desktop. `grant` answers it with
+        // the microphone permission the app already holds, so the person is asked once by the
+        // operating system rather than twice.
         mediaCapturePermissionGrantType="grant"
         allowsInlineMediaPlayback
         mediaPlaybackRequiresUserAction={false}
@@ -131,10 +118,9 @@ export default function InterfaceScreen() {
         // interface would ask to be paired again on every launch.
         sharedCookiesEnabled
         thirdPartyCookiesEnabled={false}
-        onMessage={onMessage}
         onLoadEnd={() => setLoading(false)}
         onError={() => setLoading(false)}
-        renderError={() => <Fallen machine={pairing?.name ?? "your Mac"} onRetry={reload} />}
+        renderError={() => <Fallen machine={pairing?.name ?? translation("thisMachine")} onRetry={reload} />}
         automaticallyAdjustContentInsets={false}
         contentInsetAdjustmentBehavior="never"
         {...(Platform.OS === "android" ? { setSupportMultipleWindows: false } : {})}
@@ -150,6 +136,7 @@ export default function InterfaceScreen() {
 
 /** In a browser: the door, rather than the room. */
 function HandOver({ machine, url }: { machine: string; url: string }) {
+  const translation = useTranslations("InterfaceScreen");
   const theme = useTheme();
   const insets = useEdgeInsets();
   return (
@@ -166,14 +153,14 @@ function HandOver({ machine, url }: { machine: string; url: string }) {
       ]}
     >
       <FrankMark size={40} color={theme.colors.fgSubtle} />
-      <Text variant="body" tone="muted" align="center">{`Frank is paired with ${machine}.`}</Text>
+      <Text variant="body" tone="muted" align="center">{translation("pairedWith", { machine })}</Text>
       <Button
-        label="Open Frank" icon={ExternalLink} variant="solid" tone="accent"
+        label={translation("openFrank")} icon={ExternalLink} variant="solid" tone="accent"
         // Replacing rather than opening: a browser would treat a new window as a popup, and
         // there is nothing on this screen worth going back to.
         onPress={() => { window.location.replace(url); }}
       />
-      <Button label="Pair again" icon={ScanLine} onPress={() => router.push("/pair")} />
+      <Button label={translation("pairAgain")} icon={ScanLine} onPress={() => router.push("/pair")} />
     </View>
   );
 }
@@ -185,13 +172,14 @@ function Waiting({ status, machine, onRetry, endpoints }: {
   onRetry: () => void;
   endpoints: string[];
 }) {
+  const translation = useTranslations("InterfaceScreen");
   const theme = useTheme();
   const insets = useEdgeInsets();
   const [refreshing, setRefreshing] = useState(false);
 
   const message = status === "connecting"
-    ? `Looking for ${machine}…`
-    : `${machine} is not answering. It may be asleep, or off this network.`;
+    ? translation("lookingFor", { machine })
+    : translation("notAnswering", { machine });
 
 
   return (
@@ -226,7 +214,7 @@ function Waiting({ status, machine, onRetry, endpoints }: {
         <ActivityIndicator color={theme.colors.fgMuted} />
       ) : (
         <>
-          <Button label="Try again" icon={RotateCw} onPress={onRetry} />
+          <Button label={translation("tryAgain")} icon={RotateCw} onPress={onRetry} />
           {/*
             The addresses actually being tried, and the way out when none of them are right.
 
@@ -242,7 +230,7 @@ function Waiting({ status, machine, onRetry, endpoints }: {
           */}
           {endpoints.length > 0 ? (
             <Text variant="small" tone="subtle" align="center">
-              {`Tried ${endpoints.join(", ")}`}
+              {translation("tried", { addresses: endpoints.join(", ") })}
             </Text>
           ) : null}
         </>
@@ -253,15 +241,13 @@ function Waiting({ status, machine, onRetry, endpoints }: {
 
 /** The interface itself failed to load, which is a different problem from not being reachable. */
 function Fallen({ machine, onRetry }: { machine: string; onRetry: () => void }) {
+  const translation = useTranslations("InterfaceScreen");
   const theme = useTheme();
   return (
     <View style={[styles.centre, { backgroundColor: theme.colors.bg, gap: theme.space[4], padding: theme.space[6] }]}>
-      <Text variant="title" align="center">The interface would not load</Text>
-      <Text variant="small" tone="muted" align="center">
-        {machine} answered, but did not serve the screens — it may be running a build that was
-        never made.
-      </Text>
-      <Button label="Try again" icon={RotateCw} onPress={onRetry} />
+      <Text variant="title" align="center">{translation("wouldNotLoad")}</Text>
+      <Text variant="small" tone="muted" align="center">{translation("wouldNotLoadBody", { machine })}</Text>
+      <Button label={translation("tryAgain")} icon={RotateCw} onPress={onRetry} />
     </View>
   );
 }

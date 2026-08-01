@@ -15,7 +15,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslations } from "next-intl";
 import { LuArrowUp, LuCoins, LuFoldVertical, LuMic, LuMicOff, LuPaperclip, LuSquare } from "react-icons/lu";
 import { fetchChatGPTAuthStatus, fetchDictationStatus, type DictationState, fetchMessageHistory, referenceAttachment, saveMessageHistory, subscribeEvents, uploadFile, type Attachment, type ChatGPTUsage, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
-import { startDictation, type Dictation } from "@/lib/dictation";
+import { DictationRecordingError, startDictation, type Dictation } from "@/lib/dictation";
 import { toaster } from "./ui/toaster";
 import { ChatGPTUsageMeters } from "./chatgpt-usage-meters";
 import { AgentSelectControl, PermissionModeControl, SandboxToggleControl } from "./session-controls";
@@ -476,7 +476,7 @@ export function ChatInput({
         toaster.create({
           type: "error",
           title: translation("dictationFailed"),
-          description: errorMessage(caught),
+          description: dictationReason(caught),
           closable: true,
         });
       } finally {
@@ -490,7 +490,7 @@ export function ChatInput({
       toaster.create({
         type: "error",
         title: translation("dictationFailed"),
-        description: errorMessage(caught),
+        description: dictationReason(caught),
         closable: true,
       });
     }
@@ -499,6 +499,20 @@ export function ChatInput({
   // The attach button: on the desktop app talking to a local server, open the native
   // picker and reference the chosen files by path; otherwise fall back to the web
   // <input>, which yields bytes to upload.
+  /**
+   * What to tell somebody about a dictation that did not happen.
+   *
+   * `DictationRecordingError` carries a catalogue key because the module that raises it has no
+   * hook to translate with. Anything else — a transcription the daemon refused, a network that
+   * went — already arrives as a sentence in the person's language, and is passed through.
+   */
+  function dictationReason(caught: unknown): string {
+    if (caught instanceof DictationRecordingError) {
+      return translation(caught.message as Parameters<typeof translation>[0], caught.values);
+    }
+    return errorMessage(caught);
+  }
+
   async function handleAttachClick() {
     if (isTauri()) {
       const paths = await pickDesktopFilePaths();

@@ -1,8 +1,8 @@
 /**
  * The shell every screen sits in.
  *
- * Three things happen here and nowhere else: the typefaces are loaded, the theme is provided, and
- * the pairing is read off the keychain. The last of those decides what the app is: without one
+ * Four things happen here and nowhere else: the typefaces are loaded, the message catalogue and
+ * the theme are provided, and the pairing is read off the keychain. The last of those decides what the app is: without one
  * there is nothing to show but the pairing screen, so `index` redirects rather than each screen
  * having to check.
  */
@@ -16,6 +16,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ConnectionProvider } from "../lib/connection";
+import { Translations } from "../lib/intl";
 import { ThemeProvider, useTheme } from "../theme";
 import { FONT_SOURCES } from "../theme/fonts";
 
@@ -35,11 +36,13 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <ThemeProvider>
-          <ConnectionProvider>
-            <Navigation />
-          </ConnectionProvider>
-        </ThemeProvider>
+        <Translations>
+          <ThemeProvider>
+            <ConnectionProvider>
+              <Navigation />
+            </ConnectionProvider>
+          </ThemeProvider>
+        </Translations>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

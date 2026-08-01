@@ -18,17 +18,19 @@ import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
 import { Camera, ClipboardPaste, ScanLine, X } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslations } from "use-intl";
 import {
   ActivityIndicator, Linking, Platform, Pressable, ScrollView, StyleSheet, TextInput, View,
 } from "react-native";
 
 import { Alert, Button, Card, Text } from "../components/ui";
-import { parsePairing, useConnection } from "../lib/connection";
+import { PairingError, parsePairing, useConnection } from "../lib/connection";
 import { goBack } from "../lib/navigation";
 import { useTheme } from "../theme";
 import { useEdgeInsets } from "../theme/insets";
 
 export default function PairScreen() {
+  const translation = useTranslations("PairScreen");
   const theme = useTheme();
   const insets = useEdgeInsets();
   const { pair, pairing } = useConnection();
@@ -50,7 +52,10 @@ export default function PairScreen() {
     try {
       parsed = parsePairing(raw);
     } catch (caught) {
-      setFailure(caught instanceof Error ? caught.message : "That is not a Frank pairing code.");
+      // `parsePairing` says which way the code was wrong by throwing a key, not a sentence: it
+      // is a plain module with no hook to reach a catalogue through, and a sentence written
+      // there would be one this screen could not translate.
+      setFailure(translation(caught instanceof PairingError ? caught.reason : "notAPairingCode"));
       return;
     }
     claimed.current = true;
@@ -59,7 +64,7 @@ export default function PairScreen() {
     if (Platform.OS !== "web") await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     await pair(parsed);
     router.replace("/");
-  }, [pair]);
+  }, [pair, translation]);
 
   // Ask for the camera as soon as the scanner is what is on screen.
   //
@@ -105,14 +110,14 @@ export default function PairScreen() {
         setFailure("");
       }
     } catch {
-      setFailure("Frank could not read the clipboard here. Paste the link into the box above instead.");
+      setFailure(translation("clipboardUnavailable"));
     }
-  }, []);
+  }, [translation]);
 
   return (
     <View style={[styles.screen, { backgroundColor: theme.colors.bg, paddingTop: insets.top + theme.space[2] }]}>
       <View style={[styles.header, { paddingHorizontal: theme.space[4], paddingBottom: theme.space[3] }]}>
-        <Text variant="heading" style={{ flex: 1 }}>Pair with Frank</Text>
+        <Text variant="heading" style={{ flex: 1 }}>{translation("title")}</Text>
         {pairing ? (
           <Pressable onPress={() => goBack()} hitSlop={12}>
             <X size={22} color={theme.colors.fgMuted} />
@@ -125,19 +130,20 @@ export default function PairScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <Text variant="body" tone="muted">
-          On the Mac running Frank, run <Text variant="mono">frank reach pair</Text> and point this
-          phone at the code it prints.
+          {translation.rich("instructions", {
+            command: (parts) => <Text variant="mono">{parts}</Text>,
+          })}
         </Text>
 
         <View style={[styles.tabs, { gap: theme.space[2] }]}>
           <Button
-            label="Scan" icon={ScanLine} full style={{ flex: 1 }}
+            label={translation("scan")} icon={ScanLine} full style={{ flex: 1 }}
             variant={mode === "scan" ? "subtle" : "outline"}
             tone={mode === "scan" ? "accent" : "neutral"}
             onPress={() => setMode("scan")}
           />
           <Button
-            label="Paste link" icon={ClipboardPaste} full style={{ flex: 1 }}
+            label={translation("pasteLink")} icon={ClipboardPaste} full style={{ flex: 1 }}
             variant={mode === "paste" ? "subtle" : "outline"}
             tone={mode === "paste" ? "accent" : "neutral"}
             onPress={() => setMode("paste")}
@@ -148,9 +154,7 @@ export default function PairScreen() {
           <Card style={{ overflow: "hidden", aspectRatio: 1 }}>
             {Platform.OS === "web" ? (
               <View style={styles.center}>
-                <Text variant="small" tone="subtle" align="center">
-                  Scanning needs a camera. Paste the link instead.
-                </Text>
+                <Text variant="small" tone="subtle" align="center">{translation("noCameraHere")}</Text>
               </View>
             ) : permission?.granted ? (
               <CameraView
@@ -163,12 +167,9 @@ export default function PairScreen() {
               // where to change it — or to use the other tab, which needs no camera at all.
               <View style={[styles.center, { gap: theme.space[3], padding: theme.space[4] }]}>
                 <Camera size={26} color={theme.colors.fgSubtle} />
-                <Text variant="small" tone="muted" align="center">
-                  The camera is turned off for Frank. Turn it on in Settings, or paste the link
-                  instead.
-                </Text>
+                <Text variant="small" tone="muted" align="center">{translation("cameraRefused")}</Text>
                 <Button
-                  label="Open Settings" tone="accent" variant="solid"
+                  label={translation("openSettings")} tone="accent" variant="solid"
                   onPress={() => void Linking.openSettings()}
                 />
               </View>
@@ -176,9 +177,7 @@ export default function PairScreen() {
               // Between the tab appearing and the system dialog being answered.
               <View style={[styles.center, { gap: theme.space[3], padding: theme.space[4] }]}>
                 <ActivityIndicator color={theme.colors.fgMuted} />
-                <Text variant="small" tone="subtle" align="center">
-                  Waiting for camera access…
-                </Text>
+                <Text variant="small" tone="subtle" align="center">{translation("waitingForCamera")}</Text>
               </View>
             )}
           </Card>
@@ -187,7 +186,7 @@ export default function PairScreen() {
             <TextInput
               value={typed}
               onChangeText={(next) => { setTyped(next); setFailure(""); }}
-              placeholder="frank://pair#…"
+              placeholder={translation("linkPlaceholder")}
               placeholderTextColor={theme.colors.fgSubtle}
               autoCapitalize="none"
               autoCorrect={false}
@@ -207,9 +206,9 @@ export default function PairScreen() {
               ]}
             />
             <View style={{ flexDirection: "row", gap: theme.space[2] }}>
-              <Button label="Paste" icon={ClipboardPaste} onPress={() => void paste()} style={{ flex: 1 }} />
+              <Button label={translation("paste")} icon={ClipboardPaste} onPress={() => void paste()} style={{ flex: 1 }} />
               <Button
-                label="Connect" variant="solid" tone="accent" busy={busy}
+                label={translation("connect")} variant="solid" tone="accent" busy={busy}
                 disabled={!typed.trim()} onPress={() => void accept(typed)} style={{ flex: 1 }}
               />
             </View>
@@ -218,10 +217,7 @@ export default function PairScreen() {
 
         {failure ? <Alert status="error">{failure}</Alert> : null}
 
-        <Text variant="small" tone="subtle">
-          The code carries a token with full control of that machine. Frank keeps it in this
-          phone&apos;s keychain and sends it to nowhere but the machine it came from.
-        </Text>
+        <Text variant="small" tone="subtle">{translation("tokenWarning")}</Text>
       </ScrollView>
     </View>
   );

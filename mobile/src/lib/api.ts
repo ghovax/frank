@@ -28,6 +28,13 @@ export function currentEndpoint(): string {
   return endpoint;
 }
 
+/**
+ * A request that did not do what was asked, named by the `InterfaceScreen` entry that says so.
+ *
+ * `message` is a key rather than a sentence. This is a plain module with no hook to reach the
+ * catalogue through, and an English sentence written here would be one no screen could
+ * translate — the language of a message belongs to whatever is about to show it.
+ */
 export class ApiError extends Error {
   constructor(message: string, readonly status: number, readonly code = "") {
     super(message);
@@ -48,7 +55,7 @@ interface RequestOptions {
  * that are not the websocket below.
  */
 export async function apiFetch(path: string, options: RequestOptions = {}) {
-  if (!endpoint) throw new ApiError("Not paired with a Frank yet.", 0, "unpaired");
+  if (!endpoint) throw new ApiError("notPaired", 0, "unpaired");
   return streamingFetch(`${endpoint}${path}`, {
     method: options.method ?? "GET",
     headers: { Authorization: `Bearer ${bearer}`, ...(options.headers ?? {}) },
@@ -71,40 +78,12 @@ export async function rpc<T>(method: string, params: Record<string, unknown> = {
     body: JSON.stringify({ method, params }),
     signal,
   });
-  if (response.status === 401) throw new ApiError("This device is no longer paired.", 401, "unauthorized");
+  if (response.status === 401) throw new ApiError("noLongerPaired", 401, "unauthorized");
   const data = await response.json();
   if (data?.error) {
-    throw new ApiError(String(data.error.message ?? "The daemon refused."), response.status, String(data.error.code ?? ""));
+    throw new ApiError(String(data.error.message ?? "daemonRefused"), response.status, String(data.error.code ?? ""));
   }
   return data.result as T;
-}
-
-/**
- * Turn a recording into words, on the machine this device is paired with.
- *
- * The one API call the shell makes on the page's behalf rather than for itself, and it is here
- * because the page cannot make it: the webview's microphone is closed to it, so the samples only
- * ever exist on this side. The body is raw little-endian float32 mono at 16 kHz, which is what
- * `/dictation/transcribe` reads — no container, no codec, nothing to agree on but a sample rate.
- */
-export async function transcribe(samples: Float32Array): Promise<string> {
-  const response = await apiFetch("/dictation/transcribe", {
-    method: "POST",
-    headers: { "Content-Type": "application/octet-stream" },
-    body: samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength) as ArrayBuffer,
-  });
-  if (!response.ok) {
-    // The daemon says something useful here — dictation switched off, a model that would not
-    // download — and a person who has just spoken deserves that rather than a status code.
-    let detail = "";
-    try {
-      detail = String((await response.json())?.detail ?? "");
-    } catch {
-      // A body that is not JSON says nothing the status did not.
-    }
-    throw new ApiError(detail || `Transcription failed (${response.status}).`, response.status);
-  }
-  return String((await response.json())?.text ?? "");
 }
 
 /** Is the machine there, and does this device still count? Both answers in one round trip. */

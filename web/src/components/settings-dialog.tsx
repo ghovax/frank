@@ -16,7 +16,7 @@ import { useColorMode } from "./ui/color-mode";
 import { ConfirmDialog } from "./ui/confirm-dialog";
 import { useTranslations } from "next-intl";
 import { useLocale } from "@/lib/i18n/locale-provider";
-import { LOCALES, type Locale } from "@/lib/i18n/messages";
+import { LOCALES, type Locale } from "@shared/locales";
 import { AgentSelectControl, CompactionToggleControl, ComputerControlToggleControl, DictationToggleControl, PermissionModeControl, SandboxToggleControl, UserContextToggleControl, WorktreeStrategyControl, type WorktreeStrategyValue } from "./session-controls";
 import { useScrollEdgeFade } from "@/lib/scroll-fade";
 import { Section } from "./ui/semantic";
