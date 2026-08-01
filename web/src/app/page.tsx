@@ -29,6 +29,20 @@ function writeLastWorkspace(workspaceId: string): void {
   try { localStorage.setItem(LAST_WORKSPACE_KEY, workspaceId); } catch { /* ignore */ }
 }
 
+// And the last conversation, for the same reason and by the same means.
+//
+// Opening onto an empty composer is the right answer exactly once — the first time, when there
+// is nothing to return to. Every launch after that, the thing you almost certainly want is the
+// conversation you were in, and having to find it in the sidebar first is a step that exists
+// only because the application forgot.
+const LAST_SESSION_KEY = "frank:lastSession";
+function readLastSession(): string | null {
+  try { return localStorage.getItem(LAST_SESSION_KEY); } catch { return null; }
+}
+function writeLastSession(sessionId: string): void {
+  try { localStorage.setItem(LAST_SESSION_KEY, sessionId); } catch { /* ignore */ }
+}
+
 
 // A session that is actually working. The daemon derives this for us now: `activity` is
 // "working" only while a turn is in flight, where the old process-lifecycle field reported
@@ -386,6 +400,31 @@ function Workspace() {
     return () => { cancelled = true; };
   }, [activeSessionId]);
 
+  // Open the last conversation when nothing else says which to open.
+  //
+  // Once, and only on a launch that arrived without a `session` in the URL — a deep link says
+  // which conversation it means, and a person who has just pressed "New conversation" is asking
+  // for the empty composer, not to be sent back where they came from. The ref is what keeps this
+  // to the first opportunity rather than every time the session list refreshes.
+  //
+  // The remembered one if it still exists, and otherwise the most recent, which is what the list
+  // is already sorted by. Both can miss — a machine you have never opened here has neither — and
+  // that lands on the empty composer, which is the right answer the first time.
+  const restoredInitialSession = useRef(false);
+  useEffect(() => {
+    if (restoredInitialSession.current || !sessionsLoaded) return;
+    restoredInitialSession.current = true;
+    if (activeSessionId) return;
+    const candidates = sessions.filter((entry) => !workspaceId || entry.workspaceId === workspaceId);
+    if (candidates.length === 0) return;
+    const remembered = readLastSession();
+    const target = candidates.find((entry) => entry.sessionId === remembered) ?? candidates[0];
+    void handleResumeSession(target);
+    // `handleResumeSession` is redefined every render and is not a dependency anything wants to
+    // re-run on; the ref above is what bounds this to once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionsLoaded, sessions, workspaceId, activeSessionId]);
+
   // Sidebar sort: "recent" (newest first, the load order) or "active" (sessions
   // needing attention or running float to the top, then newest). The sidebar groups
   // these conversations under every workspace; the filtered subset remains useful to
@@ -496,6 +535,7 @@ function Workspace() {
     // The restoration effect rebinds the working directory to this session's
     // own persisted folder; no need to set (or re-record) it here.
     setActiveSessionId(entry.sessionId);
+    writeLastSession(entry.sessionId);
     setChatKey((current) => current + 1);
     const params = new URLSearchParams(window.location.search);
     if (entry.workspaceId) {
