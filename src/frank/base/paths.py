@@ -158,6 +158,51 @@ def daemon_socket_path() -> Path:
     return _within_socket_limit(runtime_directory() / DAEMON_SOCKET_FILENAME)
 
 
+# How many hex characters name an SSH control socket. The budget is what decides it: a macOS
+# `$TMPDIR` runtime directory is ~63 bytes, and a unix socket path may be 104, so the name has
+# about forty to spend. Sixteen leaves comfortable headroom and is far past the point where a
+# collision between two host aliases on one machine is worth reasoning about.
+SSH_CONTROL_IDENTIFIER_LENGTH = 16
+
+
+def ssh_control_identifier(host_alias: str) -> str:
+    """The filename for one host's multiplexed SSH control socket.
+
+    A digest rather than ssh's own `%C`, and that is the fix rather than a preference. `%C` is a
+    full SHA-1 — forty characters — so under a macOS `$TMPDIR` the ControlPath came to 111 bytes
+    against a 104-byte limit and ssh refused every connection with `ControlPath too long`, which
+    made every remote environment unreachable on the platform this ships for. The comment where
+    it was used called `%C` "length-safe"; it is length-*stable*, which is not the same thing,
+    and the directory it sits in is what decides whether it fits.
+
+    Keyed on the alias because the alias is what a location connects by: one alias is one
+    connection to share, and two aliases pointing at the same host simply get a socket each,
+    which costs a connection and breaks nothing. `%C` additionally folds in the resolved host,
+    port and user — a distinction that only matters for a config where one alias resolves two
+    ways, which is not a thing a workspace environment can express."""
+    return hashlib.sha256(host_alias.encode()).hexdigest()[:SSH_CONTROL_IDENTIFIER_LENGTH]
+
+
+def ssh_control_directory() -> Path:
+    """Where multiplexed SSH control sockets live, guaranteed short enough to bind.
+
+    The runtime directory, like every other socket the harness owns — unless it is so deep that
+    even a short name would not fit, in which case a per-user directory directly under the
+    system temporary root is used instead. That fallback is not decoration: `XDG_RUNTIME_DIR`
+    can be set to anything, and a remote environment failing to connect because of how somebody
+    configured a directory is a bad way to find out about it."""
+    preferred = runtime_directory() / "ssh"
+    if len(str(preferred).encode()) + 1 + SSH_CONTROL_IDENTIFIER_LENGTH <= SOCKET_PATH_MAXIMUM_BYTES:
+        preferred.mkdir(parents=True, exist_ok=True)
+        return preferred
+    # `/tmp` literally, not `tempfile.gettempdir()` — on macOS that *is* the long path this
+    # is escaping from. Everything reached over SSH is POSIX by construction.
+    fallback = Path("/tmp") / f"{APPLICATION}-{os.getuid()}-ssh"
+    fallback.mkdir(parents=True, exist_ok=True)
+    fallback.chmod(0o700)
+    return fallback
+
+
 def session_socket_identifier(session_id: str) -> str:
     """The short, stable filename stem for a session's socket.
 

@@ -361,12 +361,15 @@
     "labelPrompt": "プロンプト",
     "labelAgent": "エージェント",
     "labelPermission": "権限モード",
-    "labelTimezone": "タイムゾーン",
-    "cronFields": "5 つのフィールド: 分、時、日、月、曜日。",
+    "labelTimezone": "実行時のタイムゾーン",
+    "cronFields": "スペース区切りで 5 つの値を入力します — 分、時、日、月、曜日の順です。",
     "presetHourly": "毎時",
     "presetDaily": "毎日 9 時",
     "presetWeekdays": "平日 9 時",
-    "presetWeekly": "毎週月曜 9 時"
+    "presetWeekly": "毎週月曜 9 時",
+    "cronInvalid": "値が 5 つではありません。分、時、日、月、曜日の順に、スペースで区切って入力してください。",
+    "timezonePlaceholder": "都市名や地域名で検索",
+    "timezoneCurrent": "現在"
   },
   "SessionControls": {
     "permissionDefaultLabel": "承認を求める",
@@ -395,8 +398,8 @@
     "worktreeStrategyFallbackTitle": "セッション分離戦略",
     "sandboxUnavailable": "この環境では強制できません",
     "agentPlaceholder": "エージェント",
-    "dictationOn": "音声入力オン",
-    "dictationOff": "音声入力オフ"
+    "dictationOn": "音声で入力",
+    "dictationOff": "キーボードのみ"
   },
   "SessionsSidebar": {
     "activeFirst": "アクティブ順",

@@ -85,6 +85,7 @@ from frank.base.ports import (
     TurnSummary,
     describe_unmet,
 )
+from frank.base.schedules import ScheduleError, is_due, next_firing, validate as validate_schedule
 
 __all__ = [
     "AgentConfiguration",
@@ -109,9 +110,13 @@ __all__ = [
     "Observer",
     "PermissionMode",
     "Session",
+    "ScheduleError",
     "ToolMiddleware",
     "TurnHook",
     "Skill",
+    "is_due",
+    "next_firing",
+    "validate_schedule",
     "ToolsConfiguration",
     "SuspensionGate",
     "Transcript",

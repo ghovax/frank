@@ -1,4 +1,4 @@
-"""Schedule domain: recurring prompts, and working out when one is next due.
+"""Schedules as *rows*: creating them, listing them, and recording what a firing did.
 
 A schedule is a prompt, a workspace, an agent and a cron line. Firing one creates an ordinary
 session and sends it that prompt — there is no separate unattended execution path, because a
@@ -7,6 +7,12 @@ second way of running a turn is a second thing to keep correct.
 What *is* different is that nobody is watching, and everything unusual here follows from that:
 the permission mode is stated rather than inherited, the timezone is stored rather than assumed,
 and a missed window is caught up exactly once rather than replayed.
+
+What a cron line *means* is not here. It is in `frank.base.schedules`, in values, because
+"is `0 9 * * MON-FRI` in `Europe/Rome` due yet" is a question about three strings and has no
+opinion about SQLAlchemy — and while it lived here, every caller that wanted to ask it had to
+import a database first. This module is the half that genuinely needs one: the durable row, the
+transaction, and the facts a firing writes down for the next tick to read.
 """
 
 from __future__ import annotations
@@ -14,74 +20,39 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone as _utc
 from typing import Any, Optional
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from croniter import croniter
-
+from frank.base.schedules import (
+    PERMISSION_MODES,
+    ScheduleError,
+    is_due,
+    next_firing,
+    validate,
+)
 from frank.base.sqlite_lock import sqlite_write_lock
 from frank.hub import state
 from frank.hub.database import ScheduleRecord, WorkspaceRecord
 
-#: The modes a schedule may run under. Deliberately the same three a person may choose, minus
-#: nothing: a scheduled job is not a lesser kind of session and may legitimately need to write.
-PERMISSION_MODES = ("default", "auto", "read_only")
-
-
-class ScheduleError(ValueError):
-    """A schedule that cannot be created or run, with a sentence saying why."""
+# `ScheduleError` and `PERMISSION_MODES` are re-exported rather than re-imported at each call
+# site: the daemon's API and the REST routes catch one error for one concept, and which module
+# happens to define it is not a distinction worth pushing onto them.
+__all__ = ["PERMISSION_MODES", "ScheduleError", "create", "delete", "due_now", "get",
+           "listing", "next_firing", "record_run", "serialize", "set_enabled", "validate"]
 
 
 def _now() -> str:
     return datetime.now(_utc.utc).isoformat()
 
 
-def validate(cron: str, zone: str, permission_mode: str) -> None:
-    """Reject a schedule that could never fire correctly, at the moment it is written.
+def _record_is_due(record: ScheduleRecord, *, now: Optional[datetime] = None) -> bool:
+    """Whether this stored schedule should fire on this tick.
 
-    All three are checked here rather than at the first firing, because the first firing may be
-    days away and at three in the morning. A cron line that does not parse, a timezone the host
-    has never heard of, and a permission mode nobody chose are each a mistake somebody can fix
-    now and cannot fix then."""
-    if not croniter.is_valid(cron):
-        raise ScheduleError(f"{cron!r} is not a cron expression.")
-    try:
-        ZoneInfo(zone)
-    except (ZoneInfoNotFoundError, ValueError) as error:
-        raise ScheduleError(f"{zone!r} is not a timezone this machine knows.") from error
-    if permission_mode not in PERMISSION_MODES:
-        # Never defaulted. A schedule runs with nobody present, so the mode is the one thing
-        # its author must decide rather than discover — inheriting the workspace's would mean a
-        # job silently gaining write access the day somebody loosened the workspace.
-        raise ScheduleError(
-            "A schedule must state its permission mode explicitly (one of: "
-            + ", ".join(PERMISSION_MODES) + "), because it runs with nobody watching."
-        )
-
-
-def next_firing(record: ScheduleRecord, after: Optional[datetime] = None) -> datetime:
-    """When this schedule is next due, in UTC."""
-    zone = ZoneInfo(record.timezone)
-    moment = (after or datetime.now(_utc.utc)).astimezone(zone)
-    return croniter(record.cron, moment).get_next(datetime).astimezone(_utc.utc)
-
-
-def is_due(record: ScheduleRecord, *, now: Optional[datetime] = None) -> bool:
-    """Whether this schedule should fire on this tick.
-
-    Measured from the last firing rather than from the clock, so a daemon that was asleep over
-    a window still runs the job once when it wakes — and *once* is the point. Asking "is the
-    current minute a match" instead would drop the run entirely on a machine that was closed;
-    replaying every window since would open a hundred sessions on a laptop back from a holiday.
-    """
+    The anchor is the last firing, or the moment it was created when it has never fired — which
+    is what makes a daemon that was asleep over a window run the job once on waking rather than
+    dropping it or replaying every window since."""
     if not record.enabled:
         return False
-    moment = now or datetime.now(_utc.utc)
-    if not record.last_fired_at:
-        # Never fired: due from the moment it was created, not from the epoch.
-        anchor = datetime.fromisoformat(record.created_at)
-    else:
-        anchor = datetime.fromisoformat(record.last_fired_at)
-    return next_firing(record, anchor) <= moment
+    anchor = datetime.fromisoformat(record.last_fired_at or record.created_at)
+    return is_due(record.cron, record.timezone, since=anchor, now=now)
 
 
 def serialize(record: ScheduleRecord) -> dict[str, Any]:
@@ -90,7 +61,7 @@ def serialize(record: ScheduleRecord) -> dict[str, Any]:
     Derived on read because a stored "next run" is a fact with a shelf life: it goes stale the
     moment the cron line or the timezone is edited, and nothing would be obviously wrong."""
     try:
-        upcoming = next_firing(record).isoformat()
+        upcoming = next_firing(record.cron, record.timezone).isoformat()
     except Exception:  # noqa: BLE001 — a bad cron line must not make the listing unreadable
         upcoming = ""
     return {
@@ -220,7 +191,7 @@ def due_now(*, now: Optional[datetime] = None) -> list[ScheduleRecord]:
         due = []
         for row in rows:
             try:
-                if is_due(row, now=now):
+                if _record_is_due(row, now=now):
                     due.append(row)
             except Exception:  # noqa: BLE001 — one unparseable row must not stop the others
                 continue

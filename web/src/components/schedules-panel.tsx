@@ -37,6 +37,11 @@ export function SchedulesPanel({ workspaceId, agents }: { workspaceId: string; a
   }, [workspaceId]);
 
   useEffect(() => {
+    // The rule reads `reload` as a function containing `setState` and stops there; it does not
+    // follow the `await` that every one of those calls sits behind. Nothing is set during this
+    // render — the first state change happens a network round trip later, which is the pattern
+    // the rule exists to distinguish from.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void reload();
     const unsubscribe = subscribeEvents((event) => {
       if (event.type === "schedules_changed") void reload();
@@ -115,9 +120,11 @@ export function SchedulesPanel({ workspaceId, agents }: { workspaceId: string; a
               </Pill>
             </Flex>
             <Text fontSize="xs" color="fg.muted" truncate>{schedule.prompt}</Text>
-            <Text fontSize="xs" color="fg.muted" truncate>
-              {translation("next")}: {nextFiring(schedule)} · {schedule.timezone} · {schedule.agent}
-            </Text>
+            <Flex gap={3} fontSize="xs" color="fg.muted" minW={0} wrap="wrap">
+              <Text truncate>{translation("next")} {nextFiring(schedule)}</Text>
+              <Text truncate>{schedule.timezone}</Text>
+              <Text truncate>{schedule.agent}</Text>
+            </Flex>
             {schedule.last_error ? (
               <Text fontSize="xs" color="red.fg" truncate>{schedule.last_error}</Text>
             ) : null}

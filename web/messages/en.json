@@ -361,12 +361,15 @@
     "labelPrompt": "Prompt",
     "labelAgent": "Agent",
     "labelPermission": "Permission mode",
-    "labelTimezone": "Time zone",
-    "cronFields": "Five fields: minute, hour, day of month, month, day of week.",
+    "labelTimezone": "Time zone it runs in",
+    "cronFields": "Write it as five values separated by spaces — the minute, the hour, the day of the month, the month, then the day of the week.",
     "presetHourly": "Hourly",
     "presetDaily": "Daily at 9",
     "presetWeekdays": "Weekdays at 9",
-    "presetWeekly": "Mondays at 9"
+    "presetWeekly": "Mondays at 9",
+    "cronInvalid": "That is not five values. A schedule needs the minute, the hour, the day of the month, the month, then the day of the week, separated by spaces.",
+    "timezonePlaceholder": "Search for a city or region",
+    "timezoneCurrent": "Current"
   },
   "SessionControls": {
     "permissionDefaultLabel": "Ask for approval",
@@ -395,8 +398,8 @@
     "worktreeStrategyFallbackTitle": "Session isolation strategy",
     "sandboxUnavailable": "Unenforceable here",
     "agentPlaceholder": "Agent",
-    "dictationOn": "Dictation on",
-    "dictationOff": "Dictation off"
+    "dictationOn": "Voice input",
+    "dictationOff": "Typing only"
   },
   "SessionsSidebar": {
     "activeFirst": "Active first",

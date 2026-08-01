@@ -14,11 +14,11 @@ import {
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslations } from "next-intl";
 import { LuArrowUp, LuCoins, LuFoldVertical, LuMic, LuMicOff, LuPaperclip, LuSquare } from "react-icons/lu";
-import { fetchChatGPTAuthStatus, fetchDictationStatus, type DictationState, fetchMessageHistory, referenceAttachment, saveMessageHistory, subscribeEvents, transcribeDictation, uploadFile, type Attachment, type ChatGPTUsage, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
+import { fetchChatGPTAuthStatus, fetchDictationStatus, type DictationState, fetchMessageHistory, referenceAttachment, saveMessageHistory, subscribeEvents, transcribeDictation, uploadFile, type Attachment, type ChatGPTUsage, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
 import { startDictationRecording, type DictationRecording } from "@/lib/dictation";
 import { toaster } from "./ui/toaster";
 import { ChatGPTUsageMeters } from "./chatgpt-usage-meters";
-import { AgentSelectControl, PermissionModeControl } from "./session-controls";
+import { AgentSelectControl, PermissionModeControl, SandboxToggleControl } from "./session-controls";
 import { isTauri } from "@/lib/app-state";
 import { pickDesktopFilePaths, watchDesktopFileDrop } from "@/lib/desktop-files";
 import { AttachmentChip } from "./attachment-chips";
@@ -63,6 +63,13 @@ interface ChatInputProps {
   // server). Surfaced here as a selector beside agent/model so it's adjustable inline.
   permissionMode?: PermissionMode;
   onPermissionModeChange?: (mode: PermissionMode) => void;
+  // Whether this machine confines what tools may touch, and whether it can. Surfaced beside the
+  // permission mode because the two answer one question together — what this session is allowed
+  // to do — and half of it living three screens into Settings meant the riskier half was the
+  // half nobody saw.
+  sandboxEnforce?: SandboxEnforce;
+  sandboxBackend?: string;
+  onSandboxEnforceChange?: (enforce: SandboxEnforce) => void;
   // Running token totals for the session, summed from the model's reported usage.
   // Null until the first turn reports usage.
   tokenUsage?: TokenUsage | null;
@@ -258,6 +265,9 @@ export function ChatInput({
   onAgentModelChange,
   permissionMode = "default",
   onPermissionModeChange,
+  sandboxEnforce = "required",
+  sandboxBackend = "",
+  onSandboxEnforceChange,
   tokenUsage,
   onCompact,
   isCompacting = false,
@@ -864,6 +874,14 @@ export function ChatInput({
           <PermissionModeControl
             value={permissionMode}
             onChange={(mode) => onPermissionModeChange?.(mode)}
+            responsiveCompact
+          />
+          {/* The same control Settings shows, not a second rendering of the same fact: one
+              component means the two can never disagree about what "restricted" looks like. */}
+          <SandboxToggleControl
+            enforce={sandboxEnforce}
+            backend={sandboxBackend}
+            onChange={onSandboxEnforceChange}
             responsiveCompact
           />
         </Flex>

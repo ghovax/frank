@@ -303,11 +303,15 @@ function ToggleControl({
   enabled,
   onChange,
   layout,
+  labelMarker,
 }: {
   appearance: ToggleAppearance;
   enabled: boolean;
   onChange?: (enabled: boolean) => void;
   layout: "chip" | "field";
+  // A `data-` hook so the composer's container queries can drop this label as the row narrows,
+  // exactly as they drop the agent, model and permission ones.
+  labelMarker?: string;
 }) {
   const metrics = controlMetrics(layout);
   return (
@@ -333,7 +337,7 @@ function ToggleControl({
       <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" flexShrink={0}>
         {appearance.icon}
       </Box>
-      <Span fontSize={metrics.contentFontSize} fontWeight="medium" lineHeight="1">
+      <Span {...(labelMarker ? { [labelMarker]: "" } : {})} fontSize={metrics.contentFontSize} fontWeight="medium" lineHeight="1">
         {appearance.label}
       </Span>
     </Button>
@@ -353,12 +357,14 @@ export function SandboxToggleControl({
   backend,
   onChange,
   layout = "chip",
+  responsiveCompact = false,
 }: {
   enforce: "required" | "preferred" | "off";
   backend?: string;
   onChange?: (enforce: "required" | "preferred" | "off") => void;
   size?: "xs" | "sm";
   layout?: "chip" | "field";
+  responsiveCompact?: boolean;
 }) {
   const translation = useTranslations("SessionControls");
   const confining = enforce !== "off";
@@ -368,7 +374,15 @@ export function SandboxToggleControl({
     : enforceable
       ? { label: translation("sandboxRestricted"), icon: <LuBox size={13} />, color: "green.fg", background: "green.subtle", borderColor: "green.muted", hover: "green.muted" }
       : { label: translation("sandboxUnavailable"), icon: <LuGlobe size={13} />, color: "orange.fg", background: "orange.subtle", borderColor: "orange.muted", hover: "orange.muted" };
-  return <ToggleControl appearance={appearance} enabled={confining} onChange={onChange ? (next) => onChange(next ? "required" : "off") : undefined} layout={layout} />;
+  return (
+    <ToggleControl
+      appearance={appearance}
+      enabled={confining}
+      onChange={onChange ? (next) => onChange(next ? "required" : "off") : undefined}
+      layout={layout}
+      labelMarker={responsiveCompact ? "data-composer-sandbox-label" : undefined}
+    />
+  );
 }
 
 export function CompactionToggleControl({

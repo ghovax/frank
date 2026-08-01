@@ -19,8 +19,8 @@ import cronstrue from "cronstrue";
 import "cronstrue/locales/ja";
 import { useLocale } from "@/lib/i18n/locale-provider";
 import { AgentSelectControl, PermissionModeControl } from "./session-controls";
+import { TimezoneSelect, currentZone } from "./ui/timezone-select";
 import { toaster } from "./ui/toaster";
-import { expected } from "@/lib/swallowed";
 import { errorMessage } from "@/lib/errors";
 
 type Draft = {
@@ -36,18 +36,8 @@ type Draft = {
   timezone: string;
 };
 
-/** The machine's own zone — what "nine every weekday" means to the person typing it. */
-function localTimezone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  } catch (caught) {
-    expected("a platform with no resolvable time zone falls back to UTC", caught);
-    return "UTC";
-  }
-}
-
 function emptyDraft(agent: string): Draft {
-  return { name: "", cron: "", prompt: "", agent, permissionMode: "default", timezone: localTimezone() };
+  return { name: "", cron: "", prompt: "", agent, permissionMode: "default", timezone: currentZone() };
 }
 
 // What a cron expression actually says, in the reader's own language.
@@ -205,6 +195,17 @@ export function ScheduleForm({
         </Flex>
       </ScheduleField>
 
+      {/* Beside the expression, not below the prompt. `0 9 * * MON-FRI` is meaningless without
+          the clock it is read against, so the two belong to one question. */}
+      <ScheduleField label={translation("labelTimezone")}>
+        <TimezoneSelect
+          value={draft.timezone}
+          onChange={(zone) => setDraft({ ...draft, timezone: zone })}
+          placeholder={translation("timezonePlaceholder")}
+          currentLabel={translation("timezoneCurrent")}
+        />
+      </ScheduleField>
+
       <ScheduleField label={translation("labelPrompt")}>
         <Textarea rows={3} placeholder={translation("promptPlaceholder")} value={draft.prompt}
                   onChange={(event) => setDraft({ ...draft, prompt: event.target.value })} />
@@ -233,11 +234,6 @@ export function ScheduleForm({
           value={draft.permissionMode}
           onChange={(next) => setDraft({ ...draft, permissionMode: next })}
         />
-      </ScheduleField>
-
-      <ScheduleField label={translation("labelTimezone")}>
-        <Input value={draft.timezone}
-               onChange={(event) => setDraft({ ...draft, timezone: event.target.value })} />
       </ScheduleField>
 
       <Flex justify="flex-end" gap={2} mt={1}>

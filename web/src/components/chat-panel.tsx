@@ -1079,6 +1079,9 @@ export function ChatPanel({
           onAgentModelChange={onAgentModelChange}
           permissionMode={permissionMode}
           onPermissionModeChange={handlePermissionModeChange}
+          sandboxEnforce={sandboxEnforce}
+          sandboxBackend={sandboxBackend.backend}
+          onSandboxEnforceChange={onSandboxEnforceChange}
           tokenUsage={tokenUsage}
           onCompact={compact}
           isCompacting={isCompacting}

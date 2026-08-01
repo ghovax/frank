@@ -284,6 +284,38 @@ interface ReduceState {
   keyCounts: Map<string, number>;
 }
 
+// Whether a replayed transcript would render exactly what is already on screen.
+//
+// This is the whole of the end-of-stream flash. A row built from the live tail is keyed
+// `asst-anon-0` — the tail is part-granular, so the message id the store will file it under does
+// not exist yet — while the same row replayed from the store is keyed `asst-<messageId>-0`. When
+// a turn ends, the terminal state is fetched and applied, no key survives the swap, and React
+// unmounts and remounts every row in the conversation. Nothing has changed on screen; everything
+// is rebuilt anyway, and the repaint is the flash.
+//
+// The snapshot is still worth fetching: it carries the turn's result artifact, which is written
+// only as the task closes and therefore never appears on the live tail. But that artifact is
+// appended *only* when the tail produced no assistant text — so in the ordinary case, where the
+// model answered, the replay is identical to what is displayed and applying it buys nothing at
+// all. Comparing first means the common case costs one comparison and no render, and the case
+// that genuinely differs still gets its update.
+//
+// Compared on what renders, not on identity: the ids differ by construction, which is the
+// premise. Roles and text first because they are cheap and almost always settle it; `meta` (a
+// tool's status and result, a permission, an attachment) only for a transcript that has already
+// matched on everything else.
+function rendersIdentically(current: ChatMessage[], replayed: ChatMessage[]): boolean {
+  if (current.length !== replayed.length) return false;
+  for (let index = 0; index < current.length; index += 1) {
+    if (current[index].role !== replayed[index].role) return false;
+    if (current[index].content !== replayed[index].content) return false;
+  }
+  for (let index = 0; index < current.length; index += 1) {
+    if (JSON.stringify(current[index].meta ?? null) !== JSON.stringify(replayed[index].meta ?? null)) return false;
+  }
+  return true;
+}
+
 function newReduceState(): ReduceState {
   return {
     messages: [],
@@ -1237,6 +1269,18 @@ export function useChat(
 
     const applySnapshot = (turns: A2ATurn[]) => {
       const replayed = replayTurns(turns);
+      // Already showing exactly this. Keeping the current messages keeps their identity *and*
+      // their array reference, so `setMessages` bails out and not one row re-renders — where
+      // replacing them would have rebuilt every row under a new key.
+      if (rendersIdentically(stateRef.current.messages, replayed.messages)) {
+        stateRef.current.tasks = replayed.tasks;
+        stateRef.current.tokenUsage = replayed.tokenUsage;
+        stateRef.current.lane = null;
+        sessionIdRef.current = initialSessionId;
+        setSessionId(initialSessionId);
+        flushNow();
+        return;
+      }
       stateRef.current = {
         messages: replayed.messages,
         tasks: replayed.tasks,

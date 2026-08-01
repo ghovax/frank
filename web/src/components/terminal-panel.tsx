@@ -179,7 +179,7 @@ export function TerminalSurface({
         }
         if (message.type === "ready") {
           const cwd = String(message.cwd ?? (workingDirectory || "terminal"));
-          setConnectionStatus({ state: "connected", label: `Connected · ${cwd}` });
+          setConnectionStatus({ state: "connected", label: `Connected to ${cwd}` });
           for (const key of errorToastKeysRef.current) {
             if (key.startsWith("terminal_") && !key.startsWith("terminal_closed") && !key.startsWith("terminal_exit")) {
               errorToastKeysRef.current.delete(key);
@@ -213,7 +213,7 @@ export function TerminalSurface({
       socket.addEventListener("close", (event) => {
         if (disposed) return;
         if (!socketHadError) {
-          setConnectionStatus({ state: "disconnected", label: "Terminal disconnected · reconnecting" });
+          setConnectionStatus({ state: "disconnected", label: "Terminal disconnected, reconnecting" });
           notifyTerminal(
             "warning",
             translateRef.current("disconnectedTitle"),

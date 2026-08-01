@@ -10,6 +10,7 @@
 import { Box, Button, Flex, IconButton, Input, Kbd, Menu, Span, Text, VStack } from "@chakra-ui/react";
 import { swallowed } from "@/lib/swallowed";
 import { useTranslations } from "next-intl";
+import { useLocale } from "@/lib/i18n/locale-provider";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LuArrowDownUp, LuChevronDown, LuChevronRight, LuClock, LuEllipsis, LuFolderOpen, LuFolderPlus, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -18,7 +19,7 @@ import { DropdownMenu, MenuOption } from "@/components/ui/menu";
 import { PanelBody, PanelCard } from "@/components/ui/panel";
 import { Tooltip } from "@/components/ui/tooltip";
 import { deleteWorkspace, listWorkspaces, listSshHosts, revealInFinder, subscribeEvents, type AgentSummary, type PermissionMode, type Workspace, type SshHost } from "@/lib/api";
-import { locationTargetAddress, locationTargetLabel } from "./location-status";
+import { locationTargetAddress, workspaceLabel } from "./location-status";
 import { NewScheduleDialog } from "./new-schedule-dialog";
 import { NewWorkspaceDialog } from "./new-workspace-dialog";
 import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
@@ -408,6 +409,7 @@ export function SessionsSidebar({
   agents: AgentSummary[];
 }) {
   const translation = useTranslations("SessionsSidebar");
+  const { locale } = useLocale();
   const [pendingDelete, setPendingDelete] = useState<SessionEntry | null>(null);
   const [pendingWorkspaceDelete, setPendingWorkspaceDelete] = useState<Workspace | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -482,9 +484,8 @@ export function SessionsSidebar({
     }
   }
 
-  function workspaceLabel(workspace: Workspace): string {
-    const primaryLocation = workspace.locations?.[0];
-    return primaryLocation ? locationTargetLabel(primaryLocation) : translation("untitledWorkspace");
+  function workspaceName(workspace: Workspace): string {
+    return workspaceLabel(workspace.locations, locale, translation("untitledWorkspace"));
   }
 
   const visibleWorkspaces = workspaces
@@ -636,7 +637,7 @@ export function SessionsSidebar({
             {visibleWorkspaces.map(({ workspace, sessions: workspaceSessions }) => {
               const primaryLocation = workspace.locations?.[0];
               const address = primaryLocation ? locationTargetAddress(primaryLocation) : "";
-              const label = workspaceLabel(workspace);
+              const label = workspaceName(workspace);
               const workspaceOpenKey = searchQuery ? `${workspace.id}:${searchQuery}` : workspace.id;
               const workspaceOpen = workspaceOpenOverrides[workspaceOpenKey]
                 ?? (searchQuery ? workspaceSessions.length > 0 : workspace.id === currentWorkspaceId);
@@ -775,7 +776,7 @@ export function SessionsSidebar({
         danger
         onConfirm={() => void confirmWorkspaceDelete()}
       >
-        {translation("deleteWorkspaceBody", { workspace: pendingWorkspaceDelete ? workspaceLabel(pendingWorkspaceDelete) : "" })}
+        {translation("deleteWorkspaceBody", { workspace: pendingWorkspaceDelete ? workspaceName(pendingWorkspaceDelete) : "" })}
       </ConfirmDialog>
     </PanelCard>
   );

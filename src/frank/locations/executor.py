@@ -20,7 +20,7 @@ consistent with the rest of the server's blocking-work discipline.
 
 from __future__ import annotations
 
-from frank.base.paths import runtime_directory
+from frank.base.paths import ssh_control_directory, ssh_control_identifier
 
 import abc
 import os
@@ -350,19 +350,22 @@ class SshExecutor(LocationExecutor):
 
     def __init__(self, alias: str, control_directory: Path | None = None):
         self.alias = alias
-        # `runtime_directory()`, not `~/.frank`. Every other path in the harness moved to the
-        # XDG layout and this one was missed, so it kept creating a stray dot-directory in
-        # $HOME. A multiplexed SSH control socket is runtime state — the OS clears the runtime
-        # directory on logout, which is exactly the lifetime it should have.
-        self._control_directory = control_directory or (runtime_directory() / "ssh-control")
+        # Runtime state, so it lives with the other sockets rather than in a dot-directory in
+        # $HOME: the OS clears the runtime directory on logout, which is exactly the lifetime a
+        # multiplexed control socket should have. `ssh_control_directory` also guarantees the
+        # result is short enough to bind, which is the part that was wrong here.
+        self._control_directory = control_directory or ssh_control_directory()
         self._control_directory.mkdir(parents=True, exist_ok=True)
         self._home_directory: str | None = None
         self._ripgrep_available: bool | None = None
 
     def _mux_options(self) -> list[str]:
-        # `%C` is ssh's short hash of (localhost, remotehost, port, user) — a stable,
-        # length-safe socket name that keeps the ControlPath under the Unix socket limit.
-        control_path = str(self._control_directory / "%C")
+        # Our own digest of the alias, not ssh's `%C`. `%C` is a full SHA-1, so under a macOS
+        # `$TMPDIR` the ControlPath came to 111 bytes against the 104-byte unix socket limit and
+        # ssh refused every connection — `ControlPath too long` — which made every remote
+        # environment unreachable on the one platform this ships for. See
+        # `paths.ssh_control_identifier`.
+        control_path = str(self._control_directory / ssh_control_identifier(self.alias))
         return [
             "-o", "ControlMaster=auto",
             "-o", f"ControlPath={control_path}",
