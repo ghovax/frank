@@ -231,7 +231,9 @@ Those three move whole families. `defaults` is the escape hatch for a single val
 
 The names are lowercase because they are not constants. Each one is a default the file may replace, and the casing is the first thing that says so.
 
-`frank configure --all` lists every tunable with what it is for, what it ships at, and what this machine currently runs on.
+`frank configure --all` lists every tunable with what it is for, what it ships at, and what this machine currently runs on. [`configuration.example.yaml`](configuration.example.yaml) is the same surface as a file — every setting that exists, grouped and annotated, at its shipped value. Read it; do not copy it over your own configuration. Everything in it is already the default, so a copy changes nothing now and pins all of it later, which is exactly why the file you get on first run is nearly empty.
+
+The longest tunable notes live as markdown beside the code, in `src/frank/base/tuning_notes/`, and are read at runtime rather than restated — so what `frank configure` prints is the same text a reader of the repository sees.
 
 Settling — how long a screen surface is given to stop changing after an action — lives with the surface rather than here, under [`computer_control.settle`](#screen-control).
 
@@ -243,11 +245,33 @@ computer_control:
   settle:
     poll_seconds: 0.05
     give_up_seconds: 1.5
+  retrieval:
+    multilingual_rank_model: "minishlab/M2V_multilingual_output"
+    english_rank_model: "minishlab/potion-base-32M"
+    lexical_gate_short_words: 3
+    lexical_gate_long_words: 7
 ```
 
 `enabled` drives native macOS apps and your own Chrome, and it is opt-in. `poll_seconds` is how often to re-check whether the surface settled. `give_up_seconds` is the longest to wait before reading it anyway.
 
 After an action, the harness *polls* a surface until it stops changing. It does not sleep for a fixed guess. A fast page therefore costs one interval, and a slow one costs the ceiling. These two sit here rather than under `tuning` because settling is something a **surface** does, not a budget a tool spends.
+
+### How a screen is ranked
+
+`find_one` and `find_many` score every element three ways and add the results: two static embeddings read what the query *means*, and a character similarity reads how it is *spelled*. `retrieval` is where those choices live.
+
+| Setting | What it does |
+|---|---|
+| `multilingual_rank_model` | Ranks by meaning across languages. Also backs the relevance floor, because a floor needs a score comparable between calls and only a plain cosine is |
+| `english_rank_model` | A second embedding, ranked *beside* the first. Better on queries that describe a purpose, weaker on exact labels |
+| `lexical_gate_short_words` | At or below this, a query is a quoted label and its spelling counts in full |
+| `lexical_gate_long_words` | At or above this, a query is a description and its spelling is ignored. Linear between the two |
+
+The two models are added, not chosen between. Used alone the English one is worse on native windows, where a query usually quotes a label it can see; used together they beat either alone on every surface measured. Clearing a name turns that model off, and clearing both leaves BM25 — which is also how to get the older single-model ranking back if this one suits your work less.
+
+The gate is what keeps the character similarity from doing harm. A short query is a label read off the screen, so its spelling is the strongest evidence available — it is what lets a retyped number, a changed case, or a label the interface truncated still find its element. A long query is a description that shares no spelling with anything, and a character similarity is never silent, so past `lexical_gate_long_words` it is dropped rather than left to rank by coincidence.
+
+`find_one`'s willingness to answer at all is separate, under [`tuning.defaults.find_one_margin`](#tool-tuning) — and it is fitted against *this* ranking, so change one and re-fit the other.
 
 ## MCP servers
 

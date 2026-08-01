@@ -1,0 +1,5 @@
+How far ahead of the runner-up `find_one`'s best match must score, in units of the shortlist's own spread, before it answers with one element instead of asking which was meant.
+
+Measured over 13,628 queries on 50 recordings: at 0.20 it asks on 15.0% of calls and takes precision from 54.0% to 58.5%, deferring 8.0% of the answers that were right. The curve is smooth and the choice is a budget rather than a discovery — 0.10 asks on 10.3% for 57.2%, 0.30 asks on 19.5% for 59.7%, 0.60 asks on 30.4% for 62.6%. Deferring is cheap because the answer is usually still in the shortlist it hands back: recall at eight among deferred calls is 65.5%.
+
+Both the number and the quantity changed with the ranker. It used to be a fraction of the top score, which is meaningful for a cosine and not for a sum of standardised signals, where the score is comparable within one ranking and arbitrary between two. Re-fit this whenever the ranking changes rather than carrying the number across — the previous note said so about the key, and the ranker is the larger change.

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import re
+import statistics
 
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -1760,10 +1761,21 @@ class _DispatchesTools:
             # element wanted is nearly certainly in this list and the caller has only to say which.
             # Reaching for a different wording instead is the one wrong move here, which is why the
             # message says so.
+            #
+            # The gap between first and second, in units of the shortlist's own spread.
+            #
+            # It used to be the gap as a *fraction of the top score*, which was a sound reading
+            # while the score was a cosine: positive, bounded, and meaning the same thing from one
+            # call to the next. The ranking now adds several standardised signals, so the score is
+            # comparable within one ranking and arbitrary between two, and a fraction of it is not
+            # a quantity. Dividing by the spread of the candidates being weighed keeps the test
+            # inside a single ranking, where it is well defined however the signals are combined.
+            #
+            # Refitted with the ranker rather than carried across, as the tunable's own note asks.
             runner_up = scored[1][1] if len(scored) > 1 else 0.0
-            if top_score > 0 and (top_score - runner_up) / top_score < active_tuning().ratio(
-                Tunable.find_one_margin
-            ):
+            spread = statistics.pstdev([score for _record, score in scored]) if len(scored) > 1 else 0.0
+            margin = (top_score - runner_up) / spread if spread > 1e-9 else 1.0
+            if margin < active_tuning().ratio(Tunable.find_one_margin):
                 raise RuntimeError(control_message(
                     "unsure_match", query=str(query),
                     candidates=_candidates([record for record, _ in scored[:shortlist]]),

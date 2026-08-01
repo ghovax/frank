@@ -154,6 +154,25 @@ def _apply_providers(configuration: Any, providers: Mapping[str, str | Mapping[s
         configuration.providers[name] = credential
 
 
+def _bind_retrieval_policy(configuration: Any) -> None:
+    """Bind which models rank a screen, from the loaded configuration.
+
+    Beside :func:`set_tuning` at both call sites rather than inside it: tuning answers "how much
+    may a tool return", and which embedding ranks a window is not that question. Importing lazily
+    keeps ``frank.computer`` — which pulls in the accessibility stack — off the import path of a
+    session that never touches a screen.
+
+    Silent when the screen tool is not configured at all, because a policy for a tool nobody has
+    enabled is a load nobody asked for."""
+    screen = getattr(configuration, "computer_control", None)
+    section = getattr(screen, "retrieval", None)
+    if section is None:
+        return
+    from frank.computer.retrieval import retrieval_policy_from, set_retrieval_policy
+
+    set_retrieval_policy(retrieval_policy_from(section))
+
+
 def _require(port: type, candidate: Any, argument: str) -> Any:
     """Reject an implementation that does not satisfy its port, naming what is missing.
 
@@ -292,6 +311,7 @@ class Session:
             # The tuning policy is bound per task, so binding it here scopes it to the caller
             # rather than to the interpreter.
             set_tuning(tuning_from_policy(self._configuration.tuning))
+            _bind_retrieval_policy(self._configuration)
             # Both are bound per task rather than installed on the process, so two sessions in
             # one interpreter can hold different credentials and report to different places.
             # The tokens are held so the bindings end with the session rather than leaking.
