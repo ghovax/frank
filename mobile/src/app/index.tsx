@@ -217,7 +217,7 @@ function Waiting({ status, machine, onRetry, endpoints }: {
               interface, or run this app on a phone.
             </Alert>
           ) : null}
-          <Button label="Pair again" variant="ghost" onPress={() => router.push("/pair")} />
+          <Button label="Pair again" onPress={() => router.push("/pair")} />
         </>
       )}
     </ScrollView>
