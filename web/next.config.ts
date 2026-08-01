@@ -25,7 +25,11 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
-  assetPrefix: isProduction ? undefined : `http://${internalHost}:${devPort}`,
+  // Absolute in dev so a Tauri window loading from `tauri://` can find the assets — but *not*
+  // when something is proxying this, where the page is already on one origin and an absolute
+  // `localhost:3000` is a machine the phone holding it does not have. `frank reach --interface`
+  // sets this.
+  assetPrefix: isProduction || process.env.FRANK_PROXIED ? undefined : `http://${internalHost}:${devPort}`,
   // `shared/` sits beside `web/`, not inside it, because the phone imports it too. Next resolves
   // modules from the project directory down, so both halves of this are needed: the root widens
   // what the bundler will look at, and the alias is what `@shared/...` means. TypeScript is told

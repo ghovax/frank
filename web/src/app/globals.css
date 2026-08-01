@@ -1,4 +1,13 @@
 @import "@xterm/xterm/css/xterm.css";
+/* KaTeX's stylesheet, imported here rather than in `layout.tsx` — beside xterm's, which was
+   always done this way.
+
+   A `.css` import in the root layout is a server component's import, and `next dev` puts the
+   root layout in a server bundle that Node evaluates: Node cannot `require` a stylesheet, so
+   the whole page answered 500 with `Cannot find module 'katex/dist/katex.min.css'`. `next build`
+   never hit it because the export has no server to run. Reached from here the file only ever
+   goes through the CSS pipeline, which is the only thing that was ever meant to read it. */
+@import "katex/dist/katex.min.css";
 
 html,
 body {

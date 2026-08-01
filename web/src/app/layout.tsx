@@ -3,7 +3,6 @@ import localFont from "next/font/local";
 import { Provider } from "@/components/ui/provider";
 import { Toaster } from "@/components/ui/toaster";
 import { DesktopChrome } from "@/components/desktop-chrome";
-import "katex/dist/katex.min.css";
 import "./globals.css";
 
 const sansFont = localFont({

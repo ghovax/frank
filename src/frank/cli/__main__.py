@@ -786,6 +786,11 @@ def build_parser() -> argparse.ArgumentParser:
              "— which needs the right size, font and colours to be readable at all. Takes a file "
              "or a directory; defaults to ~/Downloads",
     )
+    reach.add_argument(
+        "--interface", nargs="?", const="http://127.0.0.1:3000", default="",
+        help="serve the interface from a running dev server instead of the built export, so a "
+             "change reaches the phone without `bun run build`. Defaults to Next's own port",
+    )
     reach.add_argument("--tls-certificate", default="", help="serve TLS with this certificate")
     reach.add_argument("--tls-key", default="", help="the private key for --tls-certificate")
     reach.set_defaults(handler=_command_reach)

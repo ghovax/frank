@@ -75,19 +75,44 @@ def interface_directory() -> Optional[Path]:
     return None
 
 
-def build_application(daemon_url: str, token: str, directory: Optional[Path]):
+# What belongs to the interface rather than to the daemon.
+#
+# Only consulted when the interface is a **dev server**, because a built export is a directory
+# and "is there a file at this path" answers the question exactly. A dev server cannot be asked
+# that — Next answers an unknown route with its own 404 *page*, which is a 200 as far as a proxy
+# can tell — so the split has to be stated. It is short because the interface is a single-page
+# export: one route, its bundles, its fonts, and the dev server's own machinery.
+_INTERFACE_PREFIXES = ("/_next/", "/__next", "/fonts/", "/@vite", "/@react-refresh")
+_INTERFACE_PATHS = frozenset({
+    "/", "/favicon.ico", "/icon.png", "/apple-icon.png", "/manifest.json",
+    "/dictation-capture.worklet.js",
+})
+
+
+def _wants_interface(path: str) -> bool:
+    return path in _INTERFACE_PATHS or path.startswith(_INTERFACE_PREFIXES)
+
+
+def build_application(daemon_url: str, token: str, directory: Optional[Path], interface_url: str = ""):
     """The ASGI application: the interface at the root, the daemon behind everything else.
 
-    `directory` may be ``None``, which means serve no interface and proxy everything. That is
-    what `frank reach` wants: its client is a native application that carries its own screens,
-    so the static export is not merely unnecessary there, it may not have been built at all —
-    and refusing to start for want of files nobody was going to ask for would be absurd."""
+    `directory` may be ``None``, which means serve no interface and proxy everything.
+
+    `interface_url` replaces the directory with a **running dev server**, which is what makes
+    iterating on the interface from a phone bearable: a static export has to be rebuilt for every
+    change, and `next build` is forty seconds whether the change was a component or a colour. With
+    a dev server the phone gets hot reload over the same door it was already using, and the same
+    cookie, because it is still one origin."""
     import httpx
     from starlette.applications import Starlette
     from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
     from starlette.routing import Route, WebSocketRoute
 
     client = httpx.AsyncClient(base_url=daemon_url, timeout=None, follow_redirects=False)
+    interface = (
+        httpx.AsyncClient(base_url=interface_url, timeout=None, follow_redirects=False)
+        if interface_url else None
+    )
     root = directory.resolve() if directory is not None else None
     async def runtime(_request) -> JSONResponse:
         # An empty base is the whole message: address the daemon relative to this origin, which
@@ -117,13 +142,16 @@ def build_application(daemon_url: str, token: str, directory: Optional[Path]):
         catch-all proxy first does the same in reverse, which is what it did on the first
         attempt: the interface itself came back as a proxied 404. One handler that looks before
         it forwards is the only ordering that serves both."""
+        if interface is not None and _wants_interface(request.url.path):
+            return await proxy(request, interface, authorise=False)
         if request.method in {"GET", "HEAD"}:
             found = static_file(request.url.path)
             if found is not None:
                 return FileResponse(found)
         return await proxy(request)
 
-    async def proxy(request) -> Response:
+    async def proxy(request, upstream_client=None, authorise: bool = True) -> Response:
+        upstream_client = upstream_client or client
         upstream = request.url.path
         if request.url.query:
             upstream = f"{upstream}?{request.url.query}"
@@ -131,12 +159,16 @@ def build_application(daemon_url: str, token: str, directory: Optional[Path]):
             name: value for name, value in request.headers.items()
             if name.lower() not in _DROPPED_REQUEST_HEADERS
         }
-        headers["Authorization"] = f"Bearer {token}"
-        outgoing = client.build_request(
+        # The daemon needs the capability token; a dev server needs nothing and must not be
+        # handed one — it is not the daemon, and a credential sent to the wrong process is a
+        # credential in the wrong log.
+        if authorise:
+            headers["Authorization"] = f"Bearer {token}"
+        outgoing = upstream_client.build_request(
             request.method, upstream, headers=headers, content=request.stream(),
         )
         try:
-            response = await client.send(outgoing, stream=True)
+            response = await upstream_client.send(outgoing, stream=True)
         except httpx.HTTPError as error:
             return JSONResponse(
                 {"error": {"code": "daemon_unreachable", "message": str(error)}}, status_code=502,
@@ -159,6 +191,16 @@ def build_application(daemon_url: str, token: str, directory: Optional[Path]):
 
         return BackgroundTask(response.aclose)
 
+    async def proxy_interface_websocket(websocket) -> None:
+        """The dev server's hot-reload socket.
+
+        Same relay as the terminal's, minus the token: this is the bundler telling the page a
+        file changed, and the bundler is not the daemon."""
+        if interface is None:
+            await websocket.close(code=1008)
+            return
+        await _relay(websocket, interface_url, append_token=False)
+
     async def proxy_websocket(websocket) -> None:
         """Relay a websocket both ways.
 
@@ -166,14 +208,19 @@ def build_application(daemon_url: str, token: str, directory: Optional[Path]):
         which is why the daemon also accepts the token as a query parameter. That is the form
         used here, and it never leaves this process either."""
 
+        await _relay(websocket, daemon_url, append_token=True)
+
+    async def _relay(websocket, base: str, append_token: bool) -> None:
         import websockets as websockets_client
 
         query = str(websocket.url.query or "")
-        separator = "&" if query else ""
+        if append_token:
+            separator = "&" if query else ""
+            query = f"{query}{separator}token={token}"
         target = (
-            daemon_url.replace("http://", "ws://", 1).replace("https://", "wss://", 1)
+            base.replace("http://", "ws://", 1).replace("https://", "wss://", 1)
             + websocket.url.path
-            + f"?{query}{separator}token={token}"
+            + (f"?{query}" if query else "")
         )
         await websocket.accept()
         try:
@@ -220,6 +267,9 @@ def build_application(daemon_url: str, token: str, directory: Optional[Path]):
         # Named explicitly rather than caught by the wildcard: an ASGI application dispatches
         # websockets by route, so an HTTP catch-all would never see it.
         WebSocketRoute("/terminal", proxy_websocket),
+        # The dev server's hot-reload channel, which lives under `/_next` and is the whole reason
+        # a change reaches the phone without a rebuild.
+        WebSocketRoute("/_next/{path:path}", proxy_interface_websocket),
         Route(
             "/{path:path}", serve_or_proxy,
             methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],

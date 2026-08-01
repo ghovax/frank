@@ -478,13 +478,18 @@ def _serve(arguments, payload: dict, secure: bool) -> int:
     # bundle authenticates by being on the same machine as the daemon and so carries no reach
     # token of its own, and the cookie supplies one to every request it makes without the page
     # ever holding it.
-    interface = interface_directory()
-    if interface is None:
+    develop = getattr(arguments, "interface", "") or ""
+    interface = None if develop else interface_directory()
+    if develop:
+        _note(f"frank: serving the interface from {develop} — changes reload without a build.")
+    elif interface is None:
         _note(
             "frank: the interface has not been built, so this will serve the control plane but no "
             "screens. Run `cd web && bun run build` in a checkout, or install the packaged build."
         )
-    application = build_application(f"http://127.0.0.1:{daemon_port}", daemon_token, interface)
+    application = build_application(
+        f"http://127.0.0.1:{daemon_port}", daemon_token, interface, interface_url=develop,
+    )
     guarded = require_token(application, payload["token"])
 
     _describe(payload, arguments.port, arguments.host, getattr(arguments, "image", "") or "")
