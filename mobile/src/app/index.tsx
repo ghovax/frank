@@ -145,6 +145,20 @@ function Waiting({ status, machine, onRetry, endpoints }: {
     ? `Looking for ${machine}…`
     : `${machine} is not answering. It may be asleep, or off this network.`;
 
+  // On the web that sentence is usually a lie, and an expensive one — it sends somebody to go
+  // and wake a machine that is wide awake.
+  //
+  // This shell in a browser is a development surface, and there it is a *page*: a probe from the
+  // dev server's origin to the reach listener's is cross-origin, the listener answers no
+  // `access-control-allow-origin` because it is not meant to be reached that way, and the fetch
+  // fails with nothing readable in it. "Unreachable" is all the app can honestly conclude, so
+  // the browser is where the rest of the explanation has to come from.
+  //
+  // Not fixed by widening CORS on the listener. It carries a token with full control of the
+  // machine, and letting arbitrary origins talk to it to make a debug build more convenient is a
+  // poor trade when the interface itself is one same-origin URL away.
+  const browserBlocked = Platform.OS === "web" && status !== "connecting";
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: theme.colors.bg }}
@@ -194,6 +208,13 @@ function Waiting({ status, machine, onRetry, endpoints }: {
           {endpoints.length > 0 ? (
             <Text variant="small" tone="subtle" align="center">
               {`Tried ${endpoints.join(", ")}`}
+            </Text>
+          ) : null}
+          {browserBlocked ? (
+            <Text variant="small" tone="subtle" align="center">
+              A browser will not let this page reach that address from another origin, so it
+              cannot tell whether the machine is there. Open the listener directly to see the
+              interface, or run this app on a phone.
             </Text>
           ) : null}
           <Button label="Pair again" variant="ghost" onPress={() => router.push("/pair")} />
