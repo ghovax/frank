@@ -13,6 +13,7 @@
         # isolated to this directory:
         #   - uv           the Python harness's environment, and the PyInstaller freeze
         #   - bun          the web UI (Next.js) package manager and bundler
+        #   - nodejs       Metro, which bundles the mobile client, and which bun cannot stand in for
         #   - rustc/cargo  the Tauri desktop shell (Rust)
         #   - cargo-tauri  the `cargo tauri dev|build` subcommand
         #   - pkg-config   native dependency discovery during the Rust build
@@ -29,6 +30,11 @@
           # that had not installed it by hand.
           ruff
           bun
+          # The mobile client's bundler. Expo's CLI runs Metro, and Metro is a Node program that
+          # reaches for Node's own module resolution and worker APIs; bun runs the CLI but not the
+          # bundler underneath it. So Node is here as a build tool, not as a second package
+          # manager — `mobile/` is installed with bun like the web UI is.
+          nodejs_22
           rustc
           cargo
           cargo-tauri

@@ -75,15 +75,20 @@ def interface_directory() -> Optional[Path]:
     return None
 
 
-def build_application(daemon_url: str, token: str, directory: Path):
-    """The ASGI application: the interface at the root, the daemon behind everything else."""
+def build_application(daemon_url: str, token: str, directory: Optional[Path]):
+    """The ASGI application: the interface at the root, the daemon behind everything else.
+
+    `directory` may be ``None``, which means serve no interface and proxy everything. That is
+    what `frank reach` wants: its client is a native application that carries its own screens,
+    so the static export is not merely unnecessary there, it may not have been built at all —
+    and refusing to start for want of files nobody was going to ask for would be absurd."""
     import httpx
     from starlette.applications import Starlette
     from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
     from starlette.routing import Route, WebSocketRoute
 
     client = httpx.AsyncClient(base_url=daemon_url, timeout=None, follow_redirects=False)
-    root = directory.resolve()
+    root = directory.resolve() if directory is not None else None
     async def runtime(_request) -> JSONResponse:
         # An empty base is the whole message: address the daemon relative to this origin, which
         # is what makes the proxy invisible to the page.
@@ -95,6 +100,8 @@ def build_application(daemon_url: str, token: str, directory: Path):
         Resolved and then checked to be inside the export, so `..` in a URL cannot reach out of
         it. A directory means its `index.html`, which is how a static export serves routes; a
         bare route with no file is not an error here, it is the daemon's."""
+        if root is None:
+            return None
         candidate = (root / path.lstrip("/")).resolve()
         if not candidate.is_relative_to(root):
             return None

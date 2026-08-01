@@ -1,0 +1,190 @@
+/**
+ * Pairing: pointing this phone at a machine, once.
+ *
+ * Two ways in, because the QR code is the good one and it is not always available. Scanning is
+ * what `frank reach pair` prints and is the whole reason the token can be 43 characters of
+ * base64 rather than something a person could be asked to retype. Pasting the link is for the
+ * case the camera cannot help with — reading the terminal over SSH from the phone itself, or a
+ * machine whose screen you are not in front of.
+ *
+ * What is deliberately absent is a form with a host, a port and a token in three fields. The
+ * pairing payload carries several addresses precisely so the app can decide which one works, and
+ * asking somebody to pick one by hand throws that away.
+ */
+
+import { CameraView, useCameraPermissions } from "expo-camera";
+import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
+import { router, useLocalSearchParams } from "expo-router";
+import { Camera, ClipboardPaste, ScanLine, X } from "lucide-react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import { Button, Card, Text } from "../components/ui";
+import { parsePairing, useConnection } from "../lib/connection";
+import { goBack } from "../lib/navigation";
+import { useTheme } from "../theme";
+
+export default function PairScreen() {
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
+  const { pair, pairing } = useConnection();
+  const { link } = useLocalSearchParams<{ link?: string }>();
+  const [permission, requestPermission] = useCameraPermissions();
+  // The camera is the default everywhere it exists. On web there is no `frank reach pair` QR to
+  // point a laptop's webcam at from the same laptop, so pasting leads there.
+  const [mode, setMode] = useState<"scan" | "paste">(Platform.OS === "web" ? "paste" : "scan");
+  const [typed, setTyped] = useState("");
+  const [failure, setFailure] = useState("");
+  const [busy, setBusy] = useState(false);
+  // A scanner fires the same code many times a second. One accepted code ends the screen, so the
+  // rest have to be dropped rather than each starting its own pairing.
+  const claimed = useRef(false);
+
+  const accept = useCallback(async (raw: string) => {
+    if (claimed.current) return;
+    let parsed;
+    try {
+      parsed = parsePairing(raw);
+    } catch (caught) {
+      setFailure(caught instanceof Error ? caught.message : "That is not a Frank pairing code.");
+      return;
+    }
+    claimed.current = true;
+    setBusy(true);
+    setFailure("");
+    if (Platform.OS !== "web") await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    await pair(parsed);
+    router.replace("/");
+  }, [pair]);
+
+  // A `frank://pair#…` link opened from outside the app arrives as a route parameter, which is
+  // the same act as scanning and takes the same path.
+  useEffect(() => {
+    // A link that will not parse reports itself immediately, which is a state change in the same
+    // tick as the effect — and the right behaviour. The alternative is a screen that sits there
+    // saying nothing about the code somebody just followed.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (link) void accept(String(link));
+  }, [link, accept]);
+
+  const paste = useCallback(async () => {
+    const text = await Clipboard.getStringAsync();
+    if (text) setTyped(text);
+  }, []);
+
+  return (
+    <View style={[styles.screen, { backgroundColor: theme.colors.bg, paddingTop: insets.top + theme.space[2] }]}>
+      <View style={[styles.header, { paddingHorizontal: theme.space[4], paddingBottom: theme.space[3] }]}>
+        <Text variant="heading">Pair with Frank</Text>
+        {pairing ? (
+          <Pressable onPress={() => goBack()} hitSlop={12}>
+            <X size={22} color={theme.colors.fgMuted} />
+          </Pressable>
+        ) : null}
+      </View>
+
+      <ScrollView
+        contentContainerStyle={{ padding: theme.space[4], paddingTop: 0, gap: theme.space[3], paddingBottom: insets.bottom + theme.space[6] }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text variant="body" tone="muted">
+          On the Mac running Frank, run <Text variant="mono">frank reach pair</Text> and point this
+          phone at the code it prints.
+        </Text>
+
+        <View style={[styles.tabs, { gap: theme.space[2] }]}>
+          <Button
+            label="Scan" icon={ScanLine} full style={{ flex: 1 }}
+            variant={mode === "scan" ? "subtle" : "outline"}
+            tone={mode === "scan" ? "accent" : "neutral"}
+            onPress={() => setMode("scan")}
+          />
+          <Button
+            label="Paste link" icon={ClipboardPaste} full style={{ flex: 1 }}
+            variant={mode === "paste" ? "subtle" : "outline"}
+            tone={mode === "paste" ? "accent" : "neutral"}
+            onPress={() => setMode("paste")}
+          />
+        </View>
+
+        {mode === "scan" ? (
+          <Card style={{ overflow: "hidden", aspectRatio: 1 }}>
+            {Platform.OS === "web" ? (
+              <View style={styles.center}>
+                <Text variant="small" tone="subtle" align="center">
+                  Scanning needs a camera. Paste the link instead.
+                </Text>
+              </View>
+            ) : permission?.granted ? (
+              <CameraView
+                style={StyleSheet.absoluteFill}
+                barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+                onBarcodeScanned={({ data }) => void accept(data)}
+              />
+            ) : (
+              <View style={[styles.center, { gap: theme.space[3], padding: theme.space[4] }]}>
+                <Camera size={26} color={theme.colors.fgSubtle} />
+                <Text variant="small" tone="muted" align="center">
+                  Frank needs the camera to read the pairing code. It is used for nothing else.
+                </Text>
+                <Button label="Allow camera" tone="accent" variant="solid" onPress={() => void requestPermission()} />
+              </View>
+            )}
+          </Card>
+        ) : (
+          <Card style={{ padding: theme.space[3], gap: theme.space[3] }}>
+            <TextInput
+              value={typed}
+              onChangeText={(next) => { setTyped(next); setFailure(""); }}
+              placeholder="frank://pair#…"
+              placeholderTextColor={theme.colors.fgSubtle}
+              autoCapitalize="none"
+              autoCorrect={false}
+              multiline
+              style={[
+                theme.text.mono,
+                {
+                  color: theme.colors.fg,
+                  backgroundColor: theme.colors.bgSubtle,
+                  borderColor: theme.colors.border,
+                  borderWidth: 1,
+                  borderRadius: theme.radii.md,
+                  padding: theme.space[2.5],
+                  minHeight: 96,
+                  textAlignVertical: "top",
+                },
+              ]}
+            />
+            <View style={{ flexDirection: "row", gap: theme.space[2] }}>
+              <Button label="Paste" icon={ClipboardPaste} onPress={() => void paste()} style={{ flex: 1 }} />
+              <Button
+                label="Connect" variant="solid" tone="accent" busy={busy}
+                disabled={!typed.trim()} onPress={() => void accept(typed)} style={{ flex: 1 }}
+              />
+            </View>
+          </Card>
+        )}
+
+        {failure ? (
+          <Card style={{ padding: theme.space[3], backgroundColor: theme.colors.redSubtle, borderColor: theme.colors.redMuted }}>
+            <Text variant="small" tone="danger">{failure}</Text>
+          </Card>
+        ) : null}
+
+        <Text variant="small" tone="subtle">
+          The code carries a token with full control of that machine. Frank keeps it in this
+          phone&apos;s keychain and sends it to nowhere but the machine it came from.
+        </Text>
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  tabs: { flexDirection: "row" },
+  center: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center" },
+});

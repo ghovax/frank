@@ -356,6 +356,20 @@ def _command_serve(arguments: argparse.Namespace) -> int:
     return serve.run(arguments)
 
 
+def _command_reach(arguments: argparse.Namespace) -> int:
+    """Make Frank reachable from somewhere that is not this machine.
+
+    `serve` is the same proxy for a browser on the same host, and stops at loopback because that
+    is all a browser on the same host needs. This one is the case that surface cannot cover: a
+    phone, on a network, tomorrow. What it adds is the two things that turn an address into an
+    endpoint — authentication, so binding past loopback is not a hole, and a token that survives
+    the reboot that gives the daemon a new one.
+    """
+    from frank.cli.commands import reach
+
+    return reach.run(arguments)
+
+
 def _command_run(arguments: argparse.Namespace) -> int:
     """One turn, in this process, with no daemon at all.
 
@@ -749,6 +763,26 @@ def build_parser() -> argparse.ArgumentParser:
              "reason to take over the screen, and this may not be the machine you are looking at)",
     )
     serve.set_defaults(handler=_command_serve)
+
+    reach = add("reach", help="make Frank reachable from a phone: a stable address and a durable token")
+    reach.add_argument(
+        "action", choices=["serve", "pair", "rotate"], nargs="?", default="serve",
+        help="serve the endpoint (default), print a pairing code for it, or mint a new token",
+    )
+    reach.add_argument("-p", "--port", type=int, default=8825, help="port to listen on (default 8825)")
+    reach.add_argument(
+        "--host", default="0.0.0.0",
+        help="address to bind (default 0.0.0.0, because a phone cannot reach loopback; every "
+             "request needs the reach token, and nothing without it touches the daemon)",
+    )
+    reach.add_argument(
+        "--advertise", default="",
+        help="the address to hand a phone, when something else fronts this — a reverse proxy or "
+             "a tunnel. Takes a host or a whole URL",
+    )
+    reach.add_argument("--tls-certificate", default="", help="serve TLS with this certificate")
+    reach.add_argument("--tls-key", default="", help="the private key for --tls-certificate")
+    reach.set_defaults(handler=_command_reach)
 
     open_app = add("app", help="start the daemon and launch the desktop app")
     open_app.set_defaults(handler=_command_open)

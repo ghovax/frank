@@ -152,6 +152,33 @@ It **proxies** the daemon rather than pointing the browser at it, and that is th
 
 Needs the interface to have been built (`cd web && bun run build` in a checkout). The packaged build carries it.
 
+## Reaching it from a phone
+
+| Command | What it does |
+|---|---|
+| `frank reach` | Serve an authenticated endpoint on `0.0.0.0:8825`, and print a pairing code |
+| `frank reach pair` | Print the pairing code for an endpoint already running |
+| `frank reach rotate` | Mint a new token, unpairing every device |
+| `frank reach --advertise https://frank.example.com` | Hand the phone the address of whatever fronts this |
+| `frank reach --tls-certificate cert.pem --tls-key key.pem` | Serve TLS directly |
+
+The same proxy as `frank web`, with the three differences that let it leave the machine. **It
+authenticates** — a request without the reach token gets a 401 and never touches the daemon, and
+websocket handshakes are checked too, which is the case an HTTP-shaped check forgets. **Its token
+is durable**, kept in `~/.local/share/frank/reach-token` rather than minted per boot, so a paired
+device stays paired across a restart. And **it knows where it can be found**: the pairing code
+carries every address this machine answers on, best first, and the app races them and keeps
+whichever works — so the phone uses the LAN at home and the tailnet away, without being told.
+
+> [!WARNING]
+> This is a bearer token over whatever transport you gave it. On a tailnet that is fine — WireGuard
+> is the encryption, and nothing is listening on a public port. Anywhere else, put TLS in front of
+> it. Do not forward the port on your router.
+
+It serves no browser interface, deliberately: that bundle authenticates by being on the same
+machine as the daemon, so it carries no reach token and every call it made through this door would
+come back 401. `frank web` is the browser's door; this is the phone's. See [The phone](mobile.md).
+
 ## The desktop app
 
 | Command | What it does |
