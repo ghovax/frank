@@ -26,6 +26,9 @@ export function SchedulesPanel({ workspaceId, agents }: { workspaceId: string; a
   const [busy, setBusy] = useState("");
   const [failed, setFailed] = useState(false);
 
+  // Reloading after something changed: a click, or the daemon saying the schedules moved. Both
+  // of those already happen after the panel is on screen, so neither needs the care the first
+  // read below does.
   const reload = useCallback(async () => {
     try {
       setSchedules(await listSchedules(workspaceId));
@@ -36,20 +39,32 @@ export function SchedulesPanel({ workspaceId, agents }: { workspaceId: string; a
     }
   }, [workspaceId]);
 
+  // Read the list once, then follow the daemon. The first read is awaited here rather than
+  // handed to `reload`, and the difference is `cancelled`: this panel lives inside the settings
+  // dialog, so it is regularly closed while the daemon is still answering, and the version that
+  // fired `reload` and forgot about it would set state on a panel that no longer exists.
   useEffect(() => {
-    // The rule reads `reload` as a function containing `setState` and stops there; it does not
-    // follow the `await` that every one of those calls sits behind. Nothing is set during this
-    // render — the first state change happens a network round trip later, which is the pattern
-    // the rule exists to distinguish from.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void reload();
+    let cancelled = false;
+    void (async () => {
+      try {
+        const loaded = await listSchedules(workspaceId);
+        if (cancelled) return;
+        setSchedules(loaded);
+        setFailed(false);
+      } catch (error) {
+        if (cancelled) return;
+        setFailed(true);
+        swallowed({ component: "schedules-panel", operation: "list the schedules" }, error);
+      }
+    })();
     const unsubscribe = subscribeEvents((event) => {
       if (event.type === "schedules_changed") void reload();
     });
     return () => {
+      cancelled = true;
       unsubscribe();
     };
-  }, [reload]);
+  }, [reload, workspaceId]);
 
   async function handleToggle(schedule: Schedule) {
     setBusy(schedule.id + "toggle");
