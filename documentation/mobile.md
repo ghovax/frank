@@ -178,10 +178,38 @@ call site, controls grow to 40px under `@media (pointer: coarse)` — the exact 
 what a thumb can place a cursor in, and momentum scrolling moves far more rows per gesture than a
 wheel notch does.
 
+### Looking at it without a phone
+
+The interface is a web page, so the mobile layout is a browser window at the right width — no
+device, simulator or build. Two tools, and they answer different questions.
+
+**Chrome DevTools device mode** (⌘⇧M) for quick layout work: device presets, pixel ratio, touch
+emulation, throttling.
+
+Its one gap is the safe areas — Chrome reports `env(safe-area-inset-*)` as `0px` whatever device
+you pick, and has done since the request was
+[filed in 2020](https://issues.chromium.org/issues/40718410). That does not matter here, because
+`globals.css` never calls `env()` where the layout reads it. Every inset is mapped once onto a
+custom property and consumed as `var(--safe-top)` — so a notch is two values typed into the
+Styles pane on `:root`:
+
+```css
+--safe-top: 59px;    /* iPhone 15 */
+--safe-bottom: 34px;
+```
+
+**Safari** for the truth. The phone app is a `WKWebView`, which is WebKit; Chrome is Blink, so a
+layout checked only in Chrome is a layout checked in the wrong engine. Turn on Settings →
+Advanced → "Show features for web developers", then ⌥⌘R for Responsive Design Mode — and, better,
+plug the phone in and use Develop → *your iPhone* → the webview, which inspects the real page on
+the real device with real insets and needs no Xcode. That is the check worth trusting before
+believing any of this.
+
 Still to do, and unverified because it needs hardware:
 
-- The whole thing on a real device. Everything above is reasoned from the code and checked in a
-  build; none of it has been seen at 390pt on glass.
+- The whole thing on a real device, in WebKit. Everything above is reasoned from the code and
+  checked in a build; what has been looked at was looked at in Chrome, which is the wrong engine
+  for a `WKWebView` target.
 - Long-press and swipe affordances exist nowhere. Deleting a session is a `⋯` menu that was
   designed for a hover.
 - The composer's container-query ladder bottoms out at 460px and has not been looked at below it.
