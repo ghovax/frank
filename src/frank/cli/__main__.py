@@ -780,6 +780,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="the address to hand a phone, when something else fronts this — a reverse proxy or "
              "a tunnel. Takes a host or a whole URL",
     )
+    reach.add_argument(
+        "--image", nargs="?", const="~/Downloads", default="",
+        help="save the pairing code as a PNG and open it, instead of drawing it in the terminal "
+             "— which needs the right size, font and colours to be readable at all. Takes a file "
+             "or a directory; defaults to ~/Downloads",
+    )
     reach.add_argument("--tls-certificate", default="", help="serve TLS with this certificate")
     reach.add_argument("--tls-key", default="", help="the private key for --tls-certificate")
     reach.set_defaults(handler=_command_reach)

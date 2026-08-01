@@ -18,7 +18,9 @@ import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
 import { Camera, ClipboardPaste, ScanLine, X } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import {
+  ActivityIndicator, Linking, Platform, Pressable, ScrollView, StyleSheet, TextInput, View,
+} from "react-native";
 
 import { Button, Card, Text } from "../components/ui";
 import { parsePairing, useConnection } from "../lib/connection";
@@ -58,6 +60,22 @@ export default function PairScreen() {
     await pair(parsed);
     router.replace("/");
   }, [pair]);
+
+  // Ask for the camera as soon as the scanner is what is on screen.
+  //
+  // It used to wait behind an "Allow camera" button, on the reasoning that explaining before
+  // prompting is polite. It is not, here: scanning *is* this screen, the person arrived intending
+  // to point the camera at something, and a button whose only outcome is the system prompt is a
+  // step that asks permission to ask permission. iOS shows its own dialog with our reason string
+  // from `app.json`, which is the explanation that button was carrying.
+  //
+  // `canAskAgain` is what separates "not decided yet" from "already refused" — asking again after
+  // a refusal does nothing at all, silently, so that case gets the fallback below instead.
+  useEffect(() => {
+    if (mode !== "scan" || Platform.OS === "web") return;
+    if (permission === null || permission.granted || !permission.canAskAgain) return;
+    void requestPermission();
+  }, [mode, permission, requestPermission]);
 
   // A `frank://pair#…` link opened from outside the app arrives as a route parameter, which is
   // the same act as scanning and takes the same path.
@@ -123,13 +141,27 @@ export default function PairScreen() {
                 barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
                 onBarcodeScanned={({ data }) => void accept(data)}
               />
-            ) : (
+            ) : permission && !permission.canAskAgain ? (
+              // Refused before. Asking again does nothing, so the only honest instruction is
+              // where to change it — or to use the other tab, which needs no camera at all.
               <View style={[styles.center, { gap: theme.space[3], padding: theme.space[4] }]}>
                 <Camera size={26} color={theme.colors.fgSubtle} />
                 <Text variant="small" tone="muted" align="center">
-                  Frank needs the camera to read the pairing code. It is used for nothing else.
+                  The camera is turned off for Frank. Turn it on in Settings, or paste the link
+                  instead.
                 </Text>
-                <Button label="Allow camera" tone="accent" variant="solid" onPress={() => void requestPermission()} />
+                <Button
+                  label="Open Settings" tone="accent" variant="solid"
+                  onPress={() => void Linking.openSettings()}
+                />
+              </View>
+            ) : (
+              // Between the tab appearing and the system dialog being answered.
+              <View style={[styles.center, { gap: theme.space[3], padding: theme.space[4] }]}>
+                <ActivityIndicator color={theme.colors.fgMuted} />
+                <Text variant="small" tone="subtle" align="center">
+                  Waiting for camera access…
+                </Text>
               </View>
             )}
           </Card>

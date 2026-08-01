@@ -116,7 +116,14 @@ function Waiting({ status, machine, onRetry }: { status: string; machine: string
       style={{ flex: 1, backgroundColor: theme.colors.bg }}
       contentContainerStyle={[
         styles.centre,
-        { paddingTop: insets.top, paddingBottom: insets.bottom, gap: theme.space[4], padding: theme.space[6] },
+        {
+          // Longhand, and the order matters: a `padding` written after `paddingTop` overrides
+          // it, which had been quietly throwing the safe-area reservation away.
+          paddingTop: insets.top + theme.space[6],
+          paddingBottom: insets.bottom + theme.space[6],
+          paddingHorizontal: theme.space[6],
+          gap: theme.space[4],
+        },
       ]}
       refreshControl={
         <RefreshControl

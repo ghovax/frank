@@ -31,6 +31,7 @@ bought, and `--advertise` is how you tell a phone about it.
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import os
 import secrets
@@ -364,7 +365,32 @@ def _presented_token(scope, parse_qsl, urlencode) -> tuple[str, bytes, bool]:
     return "", scope.get("query_string", b""), False
 
 
-def _describe(payload: dict, port: int, host: str) -> None:
+def _write_image(uri: str, destination: str) -> Path:
+    """Save the pairing code as a PNG, and open it.
+
+    A QR drawn in half-block characters needs a terminal of the right size, the right font and
+    the right colours, and a phone camera that will focus on glowing text — and when any of those
+    is not true it degrades to a wall of noise rather than to a smaller code. An image has none
+    of those requirements: it opens in a viewer, at whatever size the window is, in black on
+    white, which is what a camera was built to read.
+
+    `scale` is pixels per module; large enough to lock on from a comfortable distance, with the
+    quiet zone the specification asks for so the code is not flush against the window edge.
+    """
+    import segno
+
+    path = Path(destination).expanduser()
+    if path.is_dir():
+        path = path / "frank-pairing.png"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    segno.make(uri, error="m").save(path, scale=12, border=4, dark="#000000", light="#ffffff")
+    if sys.platform == "darwin":
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            subprocess.run(["open", str(path)], check=False, timeout=5)
+    return path
+
+
+def _describe(payload: dict, port: int, host: str, image: str = "") -> None:
     """Print what a person needs to pair a device, and the QR code that saves them typing it."""
     import segno
 
@@ -380,7 +406,10 @@ def _describe(payload: dict, port: int, host: str) -> None:
         marker = "  →" if index == 0 else "   "
         print(f"{marker} {endpoint}")
     print()
-    segno.make(uri, error="m").terminal(compact=True)
+    if image:
+        print(f"  Code saved to {_write_image(uri, image)}\n")
+    else:
+        segno.make(uri, error="m").terminal(compact=True)
     print(f"\n{uri}\n")
     # Flushed, because this is printed by a command that then blocks forever. Python buffers
     # stdout when it is not a terminal, so under `frank reach | tee` or a supervisor's log the
@@ -406,7 +435,7 @@ def run(arguments) -> int:
     payload = pairing_payload(arguments.port, secure, getattr(arguments, "advertise", "") or "")
 
     if action == "pair":
-        _describe(payload, arguments.port, arguments.host)
+        _describe(payload, arguments.port, arguments.host, getattr(arguments, "image", "") or "")
         return 0
 
     return _serve(arguments, payload, secure)
@@ -458,7 +487,7 @@ def _serve(arguments, payload: dict, secure: bool) -> int:
     application = build_application(f"http://127.0.0.1:{daemon_port}", daemon_token, interface)
     guarded = require_token(application, payload["token"])
 
-    _describe(payload, arguments.port, arguments.host)
+    _describe(payload, arguments.port, arguments.host, getattr(arguments, "image", "") or "")
     if not secure and not any(endpoint.startswith("https://") for endpoint in payload["endpoints"]):
         _note(
             "frank: this is plain HTTP. On a tailnet that is fine — WireGuard is the encryption. "

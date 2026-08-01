@@ -83,7 +83,15 @@ export function Button({
     : tone === "accent" ? theme.colors.blueFg : theme.colors.fg;
 
   const background = variant === "solid" ? accent : variant === "subtle" ? subtleBackground : "transparent";
-  const border = variant === "outline" ? theme.colors.border : "transparent";
+  // Every variant carries a border; only its colour changes. A `borderWidth` that switched
+  // between 1 and 0 made selecting a segmented button *move* it — the box lost two points of
+  // width and one of height, and everything inside shifted to match. Matching each variant's
+  // border to its own background keeps the geometry identical and the appearance unchanged.
+  const border = variant === "outline" ? theme.colors.border
+    : variant === "solid" ? accent
+    : variant === "subtle" ? subtleBackground
+    : "transparent";
+  const iconSize = 16;
 
   return (
     <Pressable
@@ -96,7 +104,7 @@ export function Button({
           borderRadius: theme.radii.md,
           backgroundColor: background,
           borderColor: border,
-          borderWidth: variant === "outline" ? 1 : 0,
+          borderWidth: 1,
           paddingHorizontal: label ? theme.space[3] : theme.space[2.5],
           opacity: disabled ? 0.45 : pressed ? 0.7 : 1,
         },
@@ -104,10 +112,29 @@ export function Button({
         style,
       ]}
     >
-      {busy ? <ActivityIndicator size="small" color={foreground} /> : Icon ? <Icon size={16} color={foreground} /> : null}
-      {label ? (
-        <RNText style={[theme.text.fieldLabel, { color: foreground, fontSize: theme.fontSizes.sm }]}>{label}</RNText>
-      ) : null}
+      {/*
+        A busy button is a spinner alone, centred — not a spinner beside the label it replaces.
+        Showing both put the spinner where the icon had been, which is left of centre and
+        *stays* left of centre while it turns: it reads as a spinner mounted off its own axis
+        rather than as a centred one. Chakra's `loading` does the same thing on the desktop,
+        and for the same reason.
+
+        The size is pinned to the icon's so the button does not resize when it starts: an
+        `ActivityIndicator` is intrinsically 20pt against a 16pt glyph, and the four points
+        moved every control beside it.
+      */}
+      {busy ? (
+        <View style={[styles.busy, { height: iconSize }]}>
+          <ActivityIndicator size="small" color={foreground} />
+        </View>
+      ) : (
+        <>
+          {Icon ? <Icon size={iconSize} color={foreground} /> : null}
+          {label ? (
+            <RNText style={[theme.text.fieldLabel, { color: foreground, fontSize: theme.fontSizes.sm }]}>{label}</RNText>
+          ) : null}
+        </>
+      )}
     </Pressable>
   );
 }
@@ -232,6 +259,9 @@ export function EmptyState({ icon: Icon, title, description }: {
 
 const styles = StyleSheet.create({
   button: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
+  // Clipped to the icon's box so the intrinsically larger indicator cannot change the row's
+  // height, and centred within it so it turns about the middle of the button.
+  busy: { alignItems: "center", justifyContent: "center", overflow: "hidden" },
   pill: { flexDirection: "row", alignItems: "center", paddingHorizontal: 6, paddingVertical: 2 },
   row: { flexDirection: "row", alignItems: "center" },
   rowBody: { flex: 1, gap: 1 },
