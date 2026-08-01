@@ -7,7 +7,7 @@
 // page wraps it in the resizable panel, and the collapsed state wraps the very same component
 // in a hover popover), so the list looks and behaves identically wherever it is shown.
 
-import { Box, Button, Flex, IconButton, Input, Kbd, Menu, Span, Text, VStack } from "@chakra-ui/react";
+import { Alert, Box, Button, Flex, IconButton, Input, Kbd, Menu, Span, Text, VStack } from "@chakra-ui/react";
 import { swallowed } from "@/lib/swallowed";
 import { useTranslations } from "next-intl";
 import { useLocale } from "@/lib/i18n/locale-provider";
@@ -135,9 +135,6 @@ const ROW_MINIMUM_H = "30px";
 const LEADING_SLOT = "14px";
 // The corner radius the whole row family shares — the app's standard `md` default corner.
 const ROW_RADIUS = "md";
-const HOVER_BG = "bg.subtle";
-const SELECTED_BG = "blue.subtle";
-const SELECTED_HOVER_BG = "blue.muted";
 
 // Extra left-shift, beyond the raw overflow, so a fully-scrolled title comes to rest with
 // its end clear of the row's trailing ⋯ actions rather than sliding underneath them. The
@@ -238,8 +235,8 @@ function SessionTreeRow({
       <Box
         className="sidebar-row"
         borderRadius={ROW_RADIUS}
-        bg={isActive ? SELECTED_BG : undefined}
-        _hover={{ bg: isActive ? SELECTED_HOVER_BG : HOVER_BG }}
+        bg={isActive ? "blue.subtle" : undefined}
+        _hover={{ bg: isActive ? "blue.muted" : "bg.subtle" }}
         transition="background-color 0.12s"
         // The row draws the selected and hover background, and `DisclosureRow` inside it is a
         // fixed-height strip with no padding of its own — so without this the highlight ended
@@ -631,7 +628,16 @@ export function SessionsSidebar({
           </Box>
         </Flex>
         {!sessionsLoaded || workspaces.length === 0 ? null : visibleWorkspaces.length === 0 ? (
-          <Text fontSize="xs" color="fg.muted" px={2} py={2}>{translation("noMatches", { query: search })}</Text>
+          // The same alert the settings panel uses, rather than a line of muted text. A search
+          // that found nothing is a state to report, not a caption: as plain text it read as a
+          // row of the list that happened to be greyed out, which is the one thing it must not
+          // look like in a list of rows.
+          <Alert.Root status="info" size="sm" borderRadius="md" my={2} alignItems="center">
+            <Alert.Indicator />
+            <Alert.Content minW={0}>
+              <Alert.Description fontSize="xs">{translation("noMatches", { query: search })}</Alert.Description>
+            </Alert.Content>
+          </Alert.Root>
         ) : (
           <VStack gap={1} align="stretch">
             {visibleWorkspaces.map(({ workspace, sessions: workspaceSessions }) => {
@@ -688,7 +694,7 @@ export function SessionsSidebar({
                   key={workspace.id}
                   className="sidebar-row"
                   borderRadius={ROW_RADIUS}
-                  px={2}
+                  pr={2}
                   py={1}
                 >
                   <DisclosureRow

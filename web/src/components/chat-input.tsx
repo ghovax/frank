@@ -636,21 +636,57 @@ export function ChatInput({
       position="relative"
       pb={2}
       containerType="inline-size"
+      // The selectors row is `nowrap`, so every control in it has to be told how to give way as
+      // the composer narrows. A control that is in none of these rules keeps its full width for
+      // ever, and because nothing in the row can shrink past its content the row simply grows
+      // wider than the box — which is seen as the context chip riding over the selectors rather
+      // than as an overflow. The sandbox toggle was added without an entry here and did exactly
+      // that; it now sheds its label with the other toggles and can shrink like its neighbours.
+      //
+      // The order is deliberate, cheapest first: detail nobody navigates by, then labels whose
+      // control still says what it is through an icon and a colour, and only then the identity
+      // labels. `data-composer-*` marks what may be dropped; a control with no marker is one
+      // whose text is the whole point.
       css={{
         "@container (max-width: 900px)": {
           "& [data-composer-agent-control]": { minWidth: "0 !important", maxWidth: "160px", flexShrink: 1 },
           "& [data-composer-model]": { minWidth: "0 !important", maxWidth: "220px", flexShrink: 1 },
           "& [data-composer-permission-control]": { minWidth: "0 !important", maxWidth: "160px", flexShrink: 1 },
+          "& [data-composer-sandbox-control]": { minWidth: "0 !important", maxWidth: "160px", flexShrink: 1 },
         },
         "@container (max-width: 760px)": {
           "& [data-composer-context-detail]": { display: "none" },
           "& [data-composer-model-provider], & [data-composer-model-capabilities]": { display: "none" },
         },
+        // The three toggles lose their words together. Dropping one and keeping another reads as
+        // a rendering fault rather than as a response to the width — they are the same kind of
+        // control and their icons carry the same amount of meaning.
         "@container (max-width: 620px)": {
-          "& [data-composer-permission-label], & [data-composer-compact-label]": { display: "none" },
+          "& [data-composer-permission-label], & [data-composer-sandbox-label], & [data-composer-compact-label]": { display: "none" },
         },
         "@container (max-width: 500px)": {
           "& [data-composer-agent-label], & [data-composer-model-label], & [data-composer-model-capabilities], & [data-composer-context-percent]": { display: "none" },
+        },
+        // Below this the row cannot hold every control and the usage chip at any width they can be
+        // reduced to, so it stops pretending and wraps. Both halves wrap together, and that is the
+        // point rather than a detail: letting only the selectors wrap put one chip alone on a
+        // second line while the usage chip stayed on the first, and because the row centres its
+        // two halves that chip then floated across both lines — which is the collision, and it
+        // looks like a bug rather than like a narrow window.
+        //
+        // `flex-start` goes with it for the same reason. Centring is right for two halves of equal
+        // height and wrong the moment one of them is taller, because the shorter half then sits
+        // against nothing.
+        "@container (max-width: 460px)": {
+          "& [data-composer-row]": {
+            flexWrap: "wrap",
+            alignItems: "flex-start",
+            rowGap: "var(--chakra-spacing-1)",
+          },
+          "& [data-composer-selectors]": { flexWrap: "wrap", rowGap: "var(--chakra-spacing-1)" },
+          // The usage chip and Compact take their own line, left-aligned under the selectors,
+          // rather than being pushed to the far edge of a line they now share with nothing.
+          "& [data-composer-row] > :last-child": { justifyContent: "flex-start", flexBasis: "100%" },
         },
       }}
     >
@@ -849,8 +885,8 @@ export function ChatInput({
 
       {/* Selectors row (below the input): the agent and model selectors, with the
           context-usage chip and Compact action on the right. */}
-      <Flex justify="space-between" align="center" columnGap={2} flexWrap="nowrap" px={0} pt={1} pb={2}>
-        <Flex align="center" gap={2} flexWrap="nowrap" flex={1} minW={0}>
+      <Flex data-composer-row="" justify="space-between" align="center" columnGap={2} flexWrap="nowrap" px={0} pt={1} pb={2}>
+        <Flex data-composer-selectors="" align="center" gap={2} flexWrap="nowrap" flex={1} minW={0}>
           <AgentSelectControl
             agents={agents}
             value={selectedAgent}
