@@ -144,11 +144,19 @@ async function startDictationRecording(): Promise<DictationRecording> {
     // Naming the cause, because the two are fixed in completely different places. An insecure
     // origin is not a browser that lacks a microphone — it is this page having been reached by
     // an address the browser will not hand a microphone to, and saying so is the difference
-    // between "my phone is broken" and "open it through the app, or put TLS in front of it".
+    // between "my phone is broken" and "open the same thing at a different address".
+    //
+    // And it usually is the same thing at a different address. `frank reach` advertises the
+    // machine's LAN address so a phone can find it, but a browser *on* that machine can open the
+    // very same listener at `localhost`, which every browser trusts whatever the scheme. That is
+    // one line to act on rather than a paragraph about TLS, so it is what the message says.
     const insecure = typeof window !== "undefined" && !window.isSecureContext;
+    const local = insecure && window.location.hostname !== "localhost"
+      ? ` If this machine is the one serving it, open http://localhost:${window.location.port || "80"} instead.`
+      : "";
     throw new DictationRecordingError(
       insecure
-        ? "A browser only allows recording over a secure connection, and this page arrived over plain HTTP. Open Frank through the phone app, or serve it over HTTPS."
+        ? `A browser only opens a microphone over a secure connection, and this page arrived over plain HTTP.${local} On a phone, open Frank through the app.`
         : "This browser cannot reach a microphone."
     );
   }
