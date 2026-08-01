@@ -75,7 +75,7 @@ export default function InterfaceScreen() {
         status={status}
         machine={pairing?.name ?? translation("thisMachine")}
         onRetry={reconnect}
-        endpoints={pairing?.endpoints ?? []}
+        endpoint={pairing?.endpoint ?? ""}
       />
     );
   }
@@ -166,11 +166,11 @@ function HandOver({ machine, url }: { machine: string; url: string }) {
 }
 
 /** Before the interface can load: what the connection is doing, and what to do about it. */
-function Waiting({ status, machine, onRetry, endpoints }: {
+function Waiting({ status, machine, onRetry, endpoint }: {
   status: string;
   machine: string;
   onRetry: () => void;
-  endpoints: string[];
+  endpoint: string;
 }) {
   const translation = useTranslations("InterfaceScreen");
   const theme = useTheme();
@@ -218,19 +218,19 @@ function Waiting({ status, machine, onRetry, endpoints }: {
           {/*
             The addresses actually being tried, and the way out when none of them are right.
 
-            A pairing freezes the machine's addresses at the moment it was made, and a laptop's
-            address on a home network is a lease — so a phone that worked last week can be left
-            asking for a number nobody answers to any more. "Not answering" is then true and
-            useless: the machine is awake, on this network, and being asked for the wrong door.
+            The address itself is stable — a tailnet name outlives the machine's leases — so this
+            is a machine that really is asleep, off the tailnet, or not running `frank reach`.
+            Showing the address anyway is what turns "not answering" from a verdict into
+            something a person can check.
 
             Showing what is being tried turns that into something a person can recognise on
             sight, and pairing again is the only thing that fixes it — which until now was
             unreachable from here, because this screen is what a phone with a stale address is
             stuck on and nothing on it led anywhere.
           */}
-          {endpoints.length > 0 ? (
+          {endpoint ? (
             <Text variant="small" tone="subtle" align="center">
-              {translation("tried", { addresses: endpoints.join(", ") })}
+              {translation("tried", { address: endpoint })}
             </Text>
           ) : null}
         </>

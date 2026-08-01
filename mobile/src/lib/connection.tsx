@@ -25,25 +25,33 @@ export interface Pairing {
   version: number;
   name: string;
   token: string;
-  endpoints: string[];
+  /**
+   * The machine's address on the tailnet, e.g. `https://mac.tailnet.ts.net`.
+   *
+   * One, and singular on purpose. This used to be a ranked list the app raced to see which
+   * answered — an advertised address, the tailnet, the LAN — which was machinery for coping with
+   * addresses that might stop working. A tailnet name does not stop working, so there is nothing
+   * left to race and nothing left to fall back to.
+   */
+  endpoint: string;
 }
 
 export type ConnectionStatus =
   /** Nothing has been paired, so there is nothing to connect to. */
   | "unpaired"
-  /** Racing the endpoints. */
+  /** Asking the machine whether it is there. */
   | "connecting"
-  /** One of them answered and the token was accepted. */
+  /** It answered and the token was accepted. */
   | "online"
-  /** None of them answered. The pairing is still good; the machine is asleep, or away. */
+  /** It did not answer. The pairing is still good; the machine is asleep, or off the tailnet. */
   | "offline"
-  /** One answered and refused the token — the machine rotated it, or this device was unpaired. */
+  /** It answered and refused the token — the machine rotated it, or this device was unpaired. */
   | "rejected";
 
 interface ConnectionValue {
   status: ConnectionStatus;
   pairing: Pairing | null;
-  /** The address that answered, once one has. */
+  /** The machine's address, once it has answered. */
   endpoint: string;
   pair: (pairing: Pairing) => Promise<void>;
   unpair: () => Promise<void>;
@@ -91,47 +99,15 @@ export function parsePairing(input: string): Pairing {
   } catch {
     throw new PairingError("notAPairingCode");
   }
-  if (!payload?.token || !Array.isArray(payload.endpoints)) {
+  if (!payload?.token || !payload?.endpoint) {
     throw new PairingError("missingTokenOrAddress");
-  }
-  if (payload.endpoints.length === 0) {
-    throw new PairingError("noAddress");
   }
   return {
     version: Number(payload.version ?? 1),
     name: String(payload.name ?? "Frank"),
     token: String(payload.token),
-    endpoints: payload.endpoints.map(String),
+    endpoint: String(payload.endpoint),
   };
-}
-
-/**
- * The first endpoint that answers, or `null`.
- *
- * Raced rather than tried in turn: the whole point of carrying several addresses is that the
- * unreachable ones fail by timing out, and three timeouts in sequence is a quarter of a minute
- * staring at a spinner. `Promise.any` over the whole list settles as fast as the fastest.
- * `unauthorized` is not a win but it is an *answer*, so it is remembered separately — a machine
- * that refuses the token has more to say than one that is simply not there.
- */
-async function raceEndpoints(
-  endpoints: string[], token: string, signal: AbortSignal,
-): Promise<{ endpoint: string } | { rejected: true } | null> {
-  let sawRejection = false;
-  const attempts = endpoints.map(async (candidate) => {
-    const answer = await probe(candidate, token, signal);
-    if (answer === "unauthorized") {
-      sawRejection = true;
-      throw new Error("unauthorized");
-    }
-    if (answer !== "ok") throw new Error("unreachable");
-    return candidate;
-  });
-  try {
-    return { endpoint: await Promise.any(attempts) };
-  } catch {
-    return sawRejection ? { rejected: true } : null;
-  }
 }
 
 /**
@@ -192,22 +168,22 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
     // "cannot connect", and that is a truthful answer arrived at by something that is actually
     // allowed to ask. Widening CORS to buy back a probe would mean letting any page a person
     // visits script a listener holding a token with full control of their machine.
-    const won = Platform.OS === "web"
-      ? { endpoint: current.endpoints[0] ?? "" }
-      : await raceEndpoints(current.endpoints, current.token, controller.signal);
+    const answer = Platform.OS === "web"
+      ? "ok"
+      : await probe(current.endpoint, current.token, controller.signal);
     if (controller.signal.aborted) return;
-    if (won === null) {
+    if (answer === "unreachable") {
       setStatus("offline");
       return;
     }
-    if ("rejected" in won) {
+    if (answer === "unauthorized") {
       setStatus("rejected");
       return;
     }
     // Configured before the status changes, so nothing renders as "online" with the API still
     // pointing at the previous machine.
-    configure(won.endpoint, current.token);
-    setEndpoint(won.endpoint);
+    configure(current.endpoint, current.token);
+    setEndpoint(current.endpoint);
     setStatus("online");
   }, []);
 

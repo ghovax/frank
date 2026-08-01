@@ -37,9 +37,28 @@ body {
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
 
+  /* The gap above the app shell, matching the one the floating panels carry on
+     their other three sides — so the chat's top bar and the cards' top edges
+     land on one line.
+
+     Zero on a phone, and that is the whole reason it is a variable. Below `md`
+     those panels are not floating: they are the screen, full-bleed on the left,
+     the right and the bottom. The gap was reserving a strip above them that
+     nothing on the other three sides had, which reads as the page hanging
+     slightly below the top of the screen for no reason. */
+  --app-gap-top: 8px;
+
   /* The one value the app shell reserves at the top: whichever chrome is above
-     it, plus the 8px the layout wants regardless. */
-  --app-inset-top: calc(var(--titlebar-height) + var(--safe-top) + 8px);
+     it, plus that gap. */
+  --app-inset-top: calc(var(--titlebar-height) + var(--safe-top) + var(--app-gap-top));
+}
+
+/* Chakra's `md`. Stated in `em` to match, so the two cannot drift apart under a
+   different root font size. */
+@media (max-width: 47.9975em) {
+  :root {
+    --app-gap-top: 0px;
+  }
 }
 
 html[data-tauri="true"] {

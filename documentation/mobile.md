@@ -2,7 +2,7 @@
 
 Frank's daemon is deliberately unreachable. It binds loopback on a port it picks fresh every boot and mints a capability token to match, so nothing off the machine can address it. That is the right default, and the mobile client does not change it — it adds a second front door, with a lock on it.
 
-Two pieces. **`frank reach`** is a proxy on the machine: a port that stays the same, behind a token that survives a reboot. **The app** is an Expo client in `mobile/` that pairs with that door once and then shows you the interface.
+Three pieces. **`frank reach`** is a proxy on the machine, on a loopback port that stays the same, behind a token that survives a reboot. **Tailscale** is what carries it off the machine — a stable name, a real TLS certificate, and WireGuard between your own devices. **The app** is an Expo client in `mobile/` that pairs with that door once and then shows you the interface.
 
 The machine has to be awake and the daemon running for any of it to work. A phone is a client, not a second Frank.
 
@@ -34,7 +34,9 @@ Install the app's dependencies.
 cd mobile && bun install
 ```
 
-Install **Expo Go** from the App Store on the phone. Everything the app uses — the camera for pairing, the keychain, the microphone — is in Expo Go, so no native build and no Xcode is needed.
+Install **Expo Go** from the App Store on the phone. Everything the app uses — the camera for pairing, and the keychain — is in Expo Go, so no native build and no Xcode is needed.
+
+Set Tailscale up on both devices, once. The four steps are under [Setting Tailscale up](#setting-tailscale-up-once) below; `frank reach` refuses to start until they are done, and says which one is missing.
 
 ### Every time
 
@@ -92,13 +94,13 @@ Hot reload reaches the phone because reach relays the bundler's websocket too. T
 
 ### Checking before you blame the phone
 
-The dev server has to be reachable from the phone, which means the same Wi-Fi and a LAN address rather than loopback:
+Metro is the one thing the phone still reaches over the LAN, so it needs the same Wi-Fi and an address that is not loopback:
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" "http://$(ipconfig getifaddr en0):8081/status"
 ```
 
-And the interface has to actually be served — a 200 here means the build exists and the token works:
+Frank itself does not, and this is the check for it — it asks the loopback listener directly, which is the only interface it binds. A 200 means the build exists and the token works:
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" -H "Sec-Fetch-Dest: document" "http://127.0.0.1:8825/?token=$(cat ~/.local/share/frank/reach-token)"
@@ -106,28 +108,48 @@ curl -s -o /dev/null -w "%{http_code}\n" -H "Sec-Fetch-Dest: document" "http://1
 
 ## Making the machine reachable
 
-`frank reach` starts the daemon if it is not running, serves on `0.0.0.0:8825`, and prints a QR code. Every request needs the reach token; anything without it gets a 401 and never touches the daemon. Websocket handshakes are checked too.
+Over Tailscale, and only over Tailscale. `frank reach` binds `127.0.0.1` and never anything else; what faces the network is `tailscale serve`, which puts a listener on your tailnet, terminates TLS with a Let's Encrypt certificate for this machine's `*.ts.net` name, and proxies to that loopback port. Every request still needs the reach token, and anything without it gets a 401 without touching the daemon — websocket handshakes included.
+
+```bash
+frank reach
+```
+
+That starts the daemon if it is not running, configures `tailscale serve`, prints a QR code, and takes the serve configuration down again when it stops.
 
 | Flag | What it does |
 |---|---|
-| `-p`, `--port` | The port. Default 8825, and fixed on purpose — a phone cannot be told a new one every morning. |
-| `--host` | What to bind. Default `0.0.0.0`, because a phone cannot reach loopback. |
-| `--advertise` | The address to hand the phone when something else fronts this: a reverse proxy, or a tunnel. Takes a host or a whole URL. |
-| `--tls-certificate`, `--tls-key` | Serve TLS directly. |
+| `-p`, `--port` | The loopback port Tailscale proxies to. Default 8825. Nothing listens on a network interface, so this only matters if something else already has the port. |
+| `--image` | Save the pairing code as a PNG and open it, rather than drawing it in the terminal. |
+| `--interface` | Serve the interface from a running dev server instead of the built export. |
 
 `frank reach pair` prints the pairing code without starting a server. `frank reach rotate` mints a new token, which unpairs every device holding the old one.
 
-### Where it can be reached from
+### Why a tailnet rather than the LAN
 
-The pairing code carries a **list** of addresses, best first, and the app races them on every connect and keeps whichever answers. That is what makes the endpoint stable without anything having a fixed IP: at home the phone uses the LAN address, away it uses the tailnet one, and the connection does not notice.
+The first two reasons are the ones you would expect. The address is stable — `mac.tailnet.ts.net` is the machine's name for as long as it is on the tailnet, where a LAN address is a DHCP lease that changes and leaves a paired phone asking for a number nobody answers to. And nothing is exposed: no port is open on the LAN, nothing is forwarded at the router, and WireGuard carries the traffic between authenticated devices.
 
-The list is built from, in order: whatever `--advertise` said; this machine's Tailscale name, if it is on a tailnet; and the LAN address the routing table says faces the network.
+The third is the one that actually forced it. **A page served over plain HTTP to anything but `localhost` is not a secure context**, and browsers withhold a growing list of APIs from those pages — `navigator.mediaDevices`, `navigator.clipboard`, `crypto.randomUUID`. The interface is a real web application that uses all three. Served from `http://192.168.1.30:8825` it does not degrade gracefully; it breaks one API at a time, with errors that read as faults in Frank: dictation that says there is no microphone, a paste button that throws, a message that will not send. Guarding each one as it turns up is whack-a-mole with a list that browsers keep extending. Being a secure origin ends the entire class.
 
-**Tailscale is the recommended shape**, by some distance. The address is stable for the life of the machine, WireGuard carries the token, and nothing is listening on a public port anywhere. Install it on the Mac and on the phone and `frank reach` finds the address by itself.
+`tailscale funnel` would put this on the public internet and is deliberately not used. The token is a bearer credential with full control of the machine, which is exactly what [`SECURITY.md`](../SECURITY.md) says to tunnel rather than expose.
 
-A reverse proxy terminating TLS on a hostname you own is the same bargain differently bought — point it at `127.0.0.1:8825` and run `frank reach --host 127.0.0.1 --advertise https://frank.example.com`, and the phone gets a real certificate.
+### What the daemon knows about any of this
 
-What is **not** supported is forwarding port 8825 on your router. It is a bearer token over plain HTTP; [`SECURITY.md`](../SECURITY.md) says to tunnel that rather than expose it, and this does not change that advice.
+Nothing, and that is deliberate. Three layers, each reaching exactly as far as how it binds:
+
+```
+tailscale serve   the tailnet          TLS, a real certificate, WireGuard
+  → frank reach   127.0.0.1:8825       the reach token, durable across reboots
+    → frankd      127.0.0.1:<random>   a capability token, new every boot
+```
+
+No layer is configured to be safe; each one *is* safe because of what it binds to. There is no flag that makes `frank reach` listen on a network interface, and no setting in the daemon that mentions Tailscale.
+
+### Setting Tailscale up, once
+
+1. Install it. On this machine that is `~/.config/nix-darwin` → `homebrew.casks` → `tailscale-app`, then `rebuild`. The standalone variant rather than the App Store one: Tailscale recommends it, and it is the one that carries the full CLI. Never run both.
+2. Sign in from the Tailscale app, and install the phone's client from the App Store and sign in with the same account.
+3. Turn on **HTTPS Certificates** in the [admin console](https://login.tailscale.com/admin/dns), under DNS. Without it Tailscale cannot obtain a certificate for your machine's name, and `frank reach` will say so and stop.
+4. In the Mac app's settings, switch on the CLI integration, which puts `tailscale` on `PATH`. Frank also looks inside `/Applications/Tailscale.app` if it is not there.
 
 ### The token, and how it gets into the page
 
@@ -154,11 +176,13 @@ The interface is a web page, so the mobile layout is a browser window at the rig
 |---|---|
 | Expo Go cannot reach the dev server | The phone is on a different network, or Metro bound to loopback. Check the `/status` probe above. |
 | The app opens on the pairing screen every launch | The pairing did not persist. On a device that is the keychain; in a browser it is `localStorage`. |
-| "not answering" on the pairing's addresses | `frank reach` is not running, or the phone left the network the LAN address belongs to. Pull to refresh, or `frank reach pair` again after joining a tailnet. |
+| "not answering" on the pairing's address | `frank reach` is not running, the Mac is asleep, or one of the two devices is off the tailnet. The address itself does not go stale, so pairing again fixes nothing — check `tailscale status` on both. |
 | Paired, but the screens never load | The interface was not built. `cd web && bun run build`, then reload. |
 | Everything 401s | The token was rotated. `frank reach pair` and scan again. |
 | The mic button does nothing | `getUserMedia` inside the webview. The permission plumbing is in `mobile/app.json` and `mobile/src/app/index.tsx`; iOS asks once, and a refusal is remembered. |
-| Expo Go says to run `eas init` | Ignore it. EAS is the cloud build service; this project has no EAS configuration and LAN development needs none. |
+| "only opens a microphone over a secure connection" | The page was reached at something other than the tailnet address — a LAN address or `127.0.0.1` from another device. Use the `*.ts.net` one; on this Mac, `http://localhost:8825` also counts as secure. |
+| `frank reach` says Tailscale is not connected | Open the Tailscale app and sign in. It says exactly which of the four setup steps above is missing. |
+| Expo Go says to run `eas init` | Ignore it. EAS is the cloud build service; this project has no EAS configuration and local development needs none. |
 | Expo Go's server list is empty | Discovery is mDNS, which on iOS needs Local Network permission — Settings → Expo Go → Local Network. Not needed if you open the `exp://` URL directly. |
 | The terminal QR will not scan | `frank reach pair --image`, which writes a PNG and opens it. |
 | The pairing screen will not open the camera | It asks on arrival now. If it was refused once, iOS will not ask again — the screen offers Settings, or use the Paste link tab. |
@@ -170,22 +194,20 @@ mobile/src
   app/
     index.tsx        a WebView onto the machine's own interface
     pair.tsx         the camera, and the token going into the keychain
-  lib/connection.tsx      which of the machine's addresses answers, and holding the pairing
-  lib/dictation-bridge.ts recording, for a page that is not allowed to
-  theme/                  tokens, for the two screens above and nothing else
+  lib/connection.tsx whether the machine is answering, and holding the pairing
+  lib/intl.tsx       the same message catalogue the desktop reads
+  theme/             tokens, for the two screens above and nothing else
 ```
 
 That is the whole application. Everything else is `web/src`.
 
 What the two clients share beyond that lives in [`shared/`](../shared/README.md) and is read by the desktop too: the message catalogue, the wire event union, workspace naming, status colours, and the tool glyph vocabulary.
 
-### Dictation, and why the shell records it
+### Dictation
 
-A browser only opens a microphone in a secure context, and the interface arrives on the phone over plain HTTP from a private address — so inside the webview `navigator.mediaDevices` is not refused, it is not defined. The browser is right about that, and a private-network address is not going to become secure, so this is not something the page can be made to work around.
+There is nothing here about it, and that is the point. The page calls `getUserMedia` and records through its own `AudioWorklet`, exactly as it does on the desktop — because over Tailscale the page is a secure context and the browser hands it a microphone.
 
-The shell records instead, with the microphone permission the app itself holds. `expo-audio`'s `AudioStream` gives mono float32 at 16 kHz — the same shape the Web Audio path produces in a browser, with no container and no codec anywhere in between — and the shell posts it to the same daemon the page is already talking to, because it has the endpoint and the token anyway. What crosses back into the page is the sentence, not the audio: a minute of speech is nearly four megabytes of float32, and moving that through a webview bridge as base64 would be an expensive way to carry something neither side reads.
-
-Both halves are ordinary modules. The page-side half is in `web/src/lib/dictation.ts`, not injected into the page as a template string: `window.ReactNativeWebView` is how a page can tell where it is running, so there was never anything for the shell to install, and the only thing crossing from the shell is one call with three arguments.
+It was briefly otherwise. Over plain HTTP the microphone was closed to the page, so the shell recorded on its behalf and posted the samples to the daemon itself: a second recording implementation, in a second language, of something already implemented. That is the same drift the WebView exists to prevent, bought back in a different currency. Making the origin secure deleted it.
 
 ## What has been done for narrow screens, and what has not
 

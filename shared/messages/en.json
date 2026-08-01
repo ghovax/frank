@@ -277,7 +277,7 @@
   "InterfaceScreen": {
     "lookingFor": "Looking for {machine}…",
     "notAnswering": "{machine} is not answering. It may be asleep, or off this network.",
-    "tried": "Tried {addresses}",
+    "tried": "Tried {address}",
     "tryAgain": "Try again",
     "pairAgain": "Pair again",
     "pairedWith": "Frank is paired with {machine}.",

@@ -764,21 +764,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     serve.set_defaults(handler=_command_serve)
 
-    reach = add("reach", help="make Frank reachable from a phone: a stable address and a durable token")
+    reach = add("reach", help="make Frank reachable from a phone, over your tailnet")
     reach.add_argument(
         "action", choices=["serve", "pair", "rotate"], nargs="?", default="serve",
         help="serve the endpoint (default), print a pairing code for it, or mint a new token",
     )
-    reach.add_argument("-p", "--port", type=int, default=8825, help="port to listen on (default 8825)")
     reach.add_argument(
-        "--host", default="0.0.0.0",
-        help="address to bind (default 0.0.0.0, because a phone cannot reach loopback; every "
-             "request needs the reach token, and nothing without it touches the daemon)",
-    )
-    reach.add_argument(
-        "--advertise", default="",
-        help="the address to hand a phone, when something else fronts this — a reverse proxy or "
-             "a tunnel. Takes a host or a whole URL",
+        "-p", "--port", type=int, default=8825,
+        help="the loopback port Tailscale proxies to (default 8825). Nothing listens on a "
+             "network interface; only change this if something else already has the port",
     )
     reach.add_argument(
         "--image", nargs="?", const="~/Downloads", default="",
@@ -791,8 +785,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="serve the interface from a running dev server instead of the built export, so a "
              "change reaches the phone without `bun run build`. Defaults to Next's own port",
     )
-    reach.add_argument("--tls-certificate", default="", help="serve TLS with this certificate")
-    reach.add_argument("--tls-key", default="", help="the private key for --tls-certificate")
     reach.set_defaults(handler=_command_reach)
 
     open_app = add("app", help="start the daemon and launch the desktop app")

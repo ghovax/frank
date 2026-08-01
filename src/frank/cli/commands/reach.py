@@ -1,31 +1,34 @@
-"""`frank reach`: one address a phone can keep, and a token that outlives a reboot.
+"""`frank reach`: one address a phone can keep, over a connection a browser will trust.
 
 The daemon is deliberately unreachable. It binds loopback on a port it picks fresh every boot,
-and mints a capability token to match, so nothing off this machine can address it and nothing
-on it can address it without reading a 0600 file. That is the right default and this does not
-change it.
+and mints a capability token to match, so nothing off this machine can address it and nothing on
+it can address it without reading a 0600 file. That is the right default and this does not
+change it — this binds loopback too. Nothing here ever listens on a network interface.
 
-But a phone is off this machine, and a phone cannot be told a new address every morning. What
-it needs is the opposite of what the daemon offers: a port that is the same tomorrow, a token
-that is the same next month, and a way to be handed both once. So this is a second front door —
-a proxy, in the same shape as `frank serve`, with three differences that are the whole point:
+What faces the network is Tailscale, and only Tailscale. `tailscale serve` puts a listener on
+the tailnet, terminates TLS with a Let's Encrypt certificate for this machine's `*.ts.net` name,
+and proxies to the loopback port below. Three things follow, and they are the reason this is
+built this way rather than on a LAN address and a bearer token in the clear:
 
-  1. **It authenticates.** `frank serve` has no auth of its own; it is loopback-only and the
-     browser is on the same machine. This one is meant to leave the machine, so a request
-     without the reach token gets a 401 and never touches the daemon. Websockets too, which is
-     the case an HTTP-shaped check forgets.
-  2. **Its token is durable.** Kept in the data directory, minted once, rotated on request.
-     Pairing a device against the daemon's own token would unpair it at the next restart.
-  3. **It knows where it can be found.** `frank reach pair` enumerates the addresses this
-     machine actually answers on — the Tailscale one first, because that is the only one in the
-     list that is both stable and encrypted — and prints them, with the token, as one QR code.
+  1. **The address is stable.** `mac.tailnet.ts.net` is the machine's name for as long as it is
+     on the tailnet. A LAN address is a DHCP lease: it changes, and a phone holding the old one
+     has no way to find the new one short of pairing again.
+  2. **It is a *secure context*.** This is the one that is not negotiable. Browsers withhold a
+     growing list of APIs from pages served over plain HTTP to anything but localhost — the
+     microphone, the clipboard, `crypto.randomUUID` — and the interface is a real web
+     application that uses them. Served over http://192.168.x.x it does not degrade, it breaks,
+     one API at a time, with errors that read as faults in Frank.
+  3. **Nothing is exposed.** No port is open on the LAN, nothing is forwarded at the router, and
+     the tailnet is WireGuard between authenticated devices. The bearer token below is a second
+     lock on a door that is already inside the house.
 
-What it deliberately does not do is make this safe to put on the public internet. It is a
-bearer token over whatever transport you gave it, which is exactly what `SECURITY.md` says to
-tunnel rather than expose. The recommended shape is Tailscale: the address is stable for the
-life of the machine, WireGuard carries the token, and nothing is listening on a public port at
-all. A reverse proxy terminating TLS on a hostname you own is the same bargain differently
-bought, and `--advertise` is how you tell a phone about it.
+`tailscale funnel` would put this on the public internet and is deliberately not used: the token
+is a bearer credential with full control of the machine, which is exactly what `SECURITY.md`
+says to tunnel rather than expose.
+
+The daemon knows none of this, and should not. It is loopback-only with a capability token; this
+is the single network-facing piece; Tailscale fronts this. Each layer's reach is a property of
+how it binds, not of a setting somebody could get wrong.
 """
 
 from __future__ import annotations
@@ -107,84 +110,124 @@ def _write_token(path: Path, token: str) -> str:
     return token
 
 
-def _tailscale_address() -> Optional[str]:
-    """This machine's Tailscale name, or ``None`` if it is not on a tailnet.
+class TailscaleUnavailable(RuntimeError):
+    """Tailscale cannot front this listener, with a sentence saying what to do about it.
 
-    The MagicDNS name in preference to the 100.x address: both are stable, but the name survives
-    the machine being re-added to the tailnet and is the one a person can read back off a screen.
-    """
+    A single exception rather than a set of them because every one of these is answered the same
+    way — by a person doing something in the Tailscale app — and what differs is only which
+    thing. The message is the whole value."""
+
+
+def _tailscale_command() -> str:
+    """Where the Tailscale command line is.
+
+    On PATH if the app's CLI integration is switched on, which installs a launcher into
+    `/usr/local/bin`. Inside the bundle if it is not, and inside the bundle is where the App
+    Store build keeps it regardless — so both are looked for before concluding there is none."""
     from shutil import which
 
-    command = which("tailscale")
-    if command is None:
-        command = next((path for path in _TAILSCALE_CANDIDATES if Path(path).is_file()), None)
-    if command is None:
-        return None
+    found = which("tailscale")
+    if found:
+        return found
+    for candidate in _TAILSCALE_CANDIDATES:
+        if Path(candidate).is_file():
+            return candidate
+    raise TailscaleUnavailable(
+        "Tailscale is not installed. Frank reaches your phone over your tailnet, which is what "
+        "makes the connection both stable and encrypted; install Tailscale and sign in, then run "
+        "this again."
+    )
+
+
+def _tailscale(*arguments: str, timeout: float = 15.0) -> subprocess.CompletedProcess:
     try:
-        completed = subprocess.run(
-            [command, "status", "--json"], capture_output=True, text=True, timeout=5, check=False,
+        return subprocess.run(
+            [_tailscale_command(), *arguments], capture_output=True, text=True,
+            timeout=timeout, check=False,
         )
-    except (OSError, subprocess.SubprocessError):
-        return None
+    except subprocess.TimeoutExpired as error:
+        raise TailscaleUnavailable(
+            f"Tailscale did not answer `{' '.join(arguments)}` within {timeout:.0f}s. Open the "
+            "Tailscale app and check it is connected."
+        ) from error
+    except OSError as error:
+        raise TailscaleUnavailable(f"Tailscale would not run: {error}") from error
+
+
+def tailnet_name() -> str:
+    """This machine's name on the tailnet, e.g. `mac.tailnet-name.ts.net`.
+
+    The MagicDNS name rather than the 100.x address, and not because it reads better: the
+    certificate `tailscale serve` obtains is issued *for* this name, so it is the only address at
+    which the connection is both encrypted and trusted. An IP would be a certificate error."""
+    completed = _tailscale("status", "--json", timeout=10.0)
     if completed.returncode != 0:
-        return None
+        raise TailscaleUnavailable(
+            "Tailscale is installed but not connected. Open the Tailscale app and sign in, then "
+            "run this again."
+        )
     try:
         status = json.loads(completed.stdout)
-    except json.JSONDecodeError:
-        return None
-    myself = status.get("Self") or {}
-    # `DNSName` arrives fully qualified with a trailing dot, which is correct for DNS and wrong
-    # in a URL.
-    name = str(myself.get("DNSName") or "").rstrip(".")
-    if name:
-        return name
-    for address in myself.get("TailscaleIPs") or []:
-        if ":" not in str(address):
-            return str(address)
-    return None
+    except json.JSONDecodeError as error:
+        raise TailscaleUnavailable("Tailscale reported a status this could not read.") from error
+
+    if str(status.get("BackendState") or "") != "Running":
+        raise TailscaleUnavailable(
+            "Tailscale is installed but not connected. Open the Tailscale app and sign in, then "
+            "run this again."
+        )
+    # Fully qualified with a trailing dot, which is correct for DNS and wrong in a URL.
+    name = str((status.get("Self") or {}).get("DNSName") or "").rstrip(".")
+    if not name:
+        raise TailscaleUnavailable(
+            "This machine has no MagicDNS name, so there is no address a certificate can be "
+            "issued for. Turn MagicDNS on in the Tailscale admin console under DNS."
+        )
+    return name
 
 
-def _local_address() -> Optional[str]:
-    """The address this machine uses to reach the rest of its network.
+def ensure_served(port: int) -> None:
+    """Put this listener on the tailnet over HTTPS, if it is not there already.
 
-    Found by asking the routing table rather than by enumerating interfaces: a connected UDP
-    socket sends nothing, but the kernel has to choose a source address to answer
-    `getsockname()`, and that choice *is* the answer to "which of my addresses faces the
-    network". Enumerating gets you loopback, every bridge Docker ever made, and no way to rank
-    them."""
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-        probe.settimeout(0.5)
-        try:
-            # A documentation-range address, chosen because nothing is expected to answer and
-            # nothing needs to: no packet leaves the host for an unconnected UDP socket.
-            probe.connect(("192.0.2.1", 9))
-            address = probe.getsockname()[0]
-        except OSError:
-            return None
-    return address if address and not address.startswith("127.") else None
+    `--bg` because the alternative holds the terminal for as long as the proxy exists, and this
+    command has its own server to run. The configuration is Tailscale's and outlives this
+    process, which is the behaviour wanted: a phone that started a session should not lose the
+    machine because the listener was restarted.
 
-
-def endpoints(port: int, secure: bool, advertise: str = "") -> list[str]:
-    """Every address this listener can be reached at, best first.
-
-    "Best" means most likely to still work tomorrow, from somewhere else. An address the caller
-    advertised wins because they know something this code cannot; Tailscale comes next because
-    it is stable *and* encrypted *and* needs no port open anywhere; the LAN address is last
-    because it is none of those things and is offered as the thing that works today, at home."""
-    scheme = "https" if secure else "http"
-    found: list[str] = []
-    if advertise:
-        # Taken as given if it carries a scheme — the caller may be describing a reverse proxy on
-        # 443, where appending this listener's port would be wrong.
-        found.append(advertise if "://" in advertise else f"{scheme}://{advertise}:{port}")
-    if (tailnet := _tailscale_address()) is not None:
-        found.append(f"{scheme}://{tailnet}:{port}")
-    if (local := _local_address()) is not None:
-        found.append(f"{scheme}://{local}:{port}")
-    return found
+    Asked for every time rather than only when absent. It is idempotent, it costs one local call,
+    and it is what repairs the case where somebody ran `tailscale serve reset` — which otherwise
+    presents as a phone that cannot connect and a listener insisting it is up."""
+    completed = _tailscale("serve", "--bg", "--https=443", f"http://127.0.0.1:{port}", timeout=60.0)
+    if completed.returncode == 0:
+        return
+    message = (completed.stderr or completed.stdout or "").strip()
+    # The one failure worth naming, because it is the one a person cannot guess: certificates are
+    # off for the whole tailnet until somebody turns them on, and every machine on it fails this
+    # way until they do.
+    lowered = message.lower()
+    if "https" in lowered and ("enable" in lowered or "certificate" in lowered):
+        raise TailscaleUnavailable(
+            "Your tailnet does not have HTTPS certificates enabled, so Tailscale cannot get a "
+            "certificate for this machine. Turn it on in the admin console under DNS → HTTPS "
+            "Certificates, then run this again.\n"
+            f"Tailscale said: {message}"
+        )
+    raise TailscaleUnavailable(f"Tailscale would not serve this listener.\n{message}")
 
 
-def pairing_payload(port: int, secure: bool, advertise: str = "") -> dict:
+def stop_serving() -> None:
+    """Take this listener off the tailnet. Best effort — nothing is worth failing a shutdown."""
+    with contextlib.suppress(TailscaleUnavailable):
+        _tailscale("serve", "--https=443", "off", timeout=15.0)
+
+
+def pairing_payload() -> dict:
+    """What a phone is handed, once.
+
+    One address, not a list. There used to be a ranked set — an advertised one, the tailnet, the
+    LAN — and a client that raced them to see which answered. All of that was machinery for
+    coping with addresses that might not work, and the answer to an address that might not work
+    is not to carry three of them; it is to use the one that does not change."""
     return {
         "version": 1,
         # The first label only. A hostname arrives with whatever the network's DHCP server
@@ -193,7 +236,9 @@ def pairing_payload(port: int, secure: bool, advertise: str = "") -> dict:
         # telephone company.
         "name": socket.gethostname().split(".")[0],
         "token": reach_token(),
-        "endpoints": endpoints(port, secure, advertise),
+        # Port 443, so it is not in the URL. `tailscale serve` listens there and nothing else on
+        # the tailnet competes for it.
+        "endpoint": f"https://{tailnet_name()}",
     }
 
 
@@ -304,11 +349,15 @@ def _setting_cookie(send, token: str):
     async def sending(message):
         if message["type"] == "http.response.start":
             message = dict(message)
-            # `HttpOnly` so no script on the page can read it back out, `SameSite=Lax` so another
-            # site cannot make the browser spend it, and session-scoped so closing the app ends
-            # it. Not `Secure`: on a tailnet this is plain HTTP by design, and a `Secure` cookie
-            # would simply never be stored there.
-            cookie = f"{REACH_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax"
+            # `HttpOnly` so no script on the page can read it back out, `SameSite=Lax` so
+            # another site cannot make the browser spend it, `Secure` so it is never sent in the
+            # clear, and session-scoped so closing the app ends it.
+            #
+            # `Secure` is new and is the point of everything above it: this used to be plain HTTP
+            # on a LAN address, where a `Secure` cookie would simply never be stored. Tailscale
+            # terminates TLS in front of this now, so the browser both accepts the flag and
+            # enforces it.
+            cookie = f"{REACH_COOKIE}={token}; Path=/; HttpOnly; Secure; SameSite=Lax"
             message["headers"] = [*message.get("headers", []), (b"set-cookie", cookie.encode("latin-1"))]
         await send(message)
 
@@ -390,32 +439,18 @@ def _write_image(uri: str, destination: str) -> Path:
     return path
 
 
-def _describe(payload: dict, port: int, host: str, image: str = "") -> None:
+def _describe(payload: dict, image: str = "") -> None:
     """Print what a person needs to pair a device, and the QR code that saves them typing it."""
     import segno
 
     uri = pairing_uri(payload)
     print(f"Pair a device with Frank on {payload['name']}:\n")
-    if not payload["endpoints"]:
-        _note(
-            "frank: this machine has no address but loopback, so nothing off it can reach this "
-            "listener. Join a tailnet, or pass --advertise with the address of whatever fronts "
-            "this."
-        )
-    for index, endpoint in enumerate(payload["endpoints"]):
-        marker = "  →" if index == 0 else "   "
-        print(f"{marker} {endpoint}")
-    print()
+    print(f"  → {payload['endpoint']}\n")
     if image:
         print(f"  Code saved to {_write_image(uri, image)}\n")
     else:
         segno.make(uri, error="m").terminal(compact=True)
     print(f"\n{uri}\n")
-    # Flushed, because this is printed by a command that then blocks forever. Python buffers
-    # stdout when it is not a terminal, so under `frank reach | tee` or a supervisor's log the
-    # pairing code — the one thing this command exists to show — did not appear at all until the
-    # server was stopped.
-    print(f"Serving on {host}:{port}. Scan the code with Frank on your phone, or paste the link.", flush=True)
     _note(
         "frank: that code carries a token with full control of this daemon. Show it to a phone, "
         "not to a room."
@@ -431,17 +466,22 @@ def run(arguments) -> int:
         print("Rotated. Every paired device must pair again.")
         return 0
 
-    secure = bool(getattr(arguments, "tls_certificate", "") and getattr(arguments, "tls_key", ""))
-    payload = pairing_payload(arguments.port, secure, getattr(arguments, "advertise", "") or "")
+    try:
+        payload = pairing_payload()
+    except TailscaleUnavailable as error:
+        # Not a traceback. Every one of these is a person needing to do something in an app, and
+        # the sentence is the whole of the answer.
+        _note(f"frank: {error}")
+        return 1
 
     if action == "pair":
-        _describe(payload, arguments.port, arguments.host, getattr(arguments, "image", "") or "")
+        _describe(payload, getattr(arguments, "image", "") or "")
         return 0
 
-    return _serve(arguments, payload, secure)
+    return _serve(arguments, payload)
 
 
-def _serve(arguments, payload: dict, secure: bool) -> int:
+def _serve(arguments, payload: dict) -> int:
     import uvicorn
 
     from frank.base.paths import daemon_port_path, daemon_token_path
@@ -453,9 +493,13 @@ def _serve(arguments, payload: dict, secure: bool) -> int:
         interface_directory,
     )
 
-    if _port_is_taken(arguments.host, arguments.port):
+    # Loopback, always, and there is no flag to change it. Nothing here is meant to be addressed
+    # from a network — Tailscale is what carries this off the machine, and it reaches this port
+    # the same way anything else on the machine would.
+    host = "127.0.0.1"
+    if _port_is_taken(host, arguments.port):
         _note(
-            f"frank: {arguments.host}:{arguments.port} is already in use — most likely another "
+            f"frank: {host}:{arguments.port} is already in use — most likely another "
             f"`frank reach`. Stop it, or pass `--port` to use a different one."
         )
         return 1
@@ -492,18 +536,29 @@ def _serve(arguments, payload: dict, secure: bool) -> int:
     )
     guarded = require_token(application, payload["token"])
 
-    _describe(payload, arguments.port, arguments.host, getattr(arguments, "image", "") or "")
-    if not secure and not any(endpoint.startswith("https://") for endpoint in payload["endpoints"]):
-        _note(
-            "frank: this is plain HTTP. On a tailnet that is fine — WireGuard is the encryption. "
-            "Anywhere else, put TLS in front of it or pass --tls-certificate and --tls-key."
-        )
+    # Put it on the tailnet before saying it is available, so that a failure here is reported
+    # instead of a QR code somebody would scan and wait on.
+    try:
+        ensure_served(arguments.port)
+    except TailscaleUnavailable as error:
+        _note(f"frank: {error}")
+        return 1
 
+    _describe(payload, getattr(arguments, "image", "") or "")
+    print(f"Serving on {payload['endpoint']}. Scan the code with Frank on your phone, or paste the link.", flush=True)
+
+    # No TLS here. Tailscale terminates it, with a certificate issued for this machine's tailnet
+    # name — which is the one thing this process could not obtain for itself and the reason there
+    # is no `--tls-certificate` any more.
     configuration = uvicorn.Config(
-        guarded, host=arguments.host, port=arguments.port, log_level="warning",
+        guarded, host=host, port=arguments.port, log_level="warning",
         timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_SECONDS,
-        ssl_certfile=getattr(arguments, "tls_certificate", "") or None,
-        ssl_keyfile=getattr(arguments, "tls_key", "") or None,
     )
-    uvicorn.Server(configuration).run()
+    try:
+        uvicorn.Server(configuration).run()
+    finally:
+        # Taken down with the listener. Leaving it configured would leave the tailnet advertising
+        # an address that answers with a connection refused, which is a worse thing for a phone
+        # to find than nothing at all.
+        stop_serving()
     return 0

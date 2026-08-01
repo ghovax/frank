@@ -277,7 +277,7 @@
   "InterfaceScreen": {
     "lookingFor": "{machine} を探しています…",
     "notAnswering": "{machine} が応答しません。スリープ中か、このネットワークにいない可能性があります。",
-    "tried": "試行したアドレス: {addresses}",
+    "tried": "試行したアドレス: {address}",
     "tryAgain": "再試行",
     "pairAgain": "再ペアリング",
     "pairedWith": "Frank は {machine} とペアリングされています。",
