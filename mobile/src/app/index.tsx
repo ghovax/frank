@@ -29,7 +29,7 @@ import { ActivityIndicator, Platform, RefreshControl, ScrollView, StyleSheet, Vi
 import { WebView } from "react-native-webview";
 
 import { FrankMark } from "../components/frank-mark";
-import { Button, Text } from "../components/ui";
+import { Alert, Button, Text } from "../components/ui";
 import { transcribe } from "../lib/api";
 import { useConnection } from "../lib/connection";
 import { handleDictationRequest, isDictationRequest } from "../lib/dictation-bridge";
@@ -211,11 +211,11 @@ function Waiting({ status, machine, onRetry, endpoints }: {
             </Text>
           ) : null}
           {browserBlocked ? (
-            <Text variant="small" tone="subtle" align="center">
+            <Alert status="info">
               A browser will not let this page reach that address from another origin, so it
               cannot tell whether the machine is there. Open the listener directly to see the
               interface, or run this app on a phone.
-            </Text>
+            </Alert>
           ) : null}
           <Button label="Pair again" variant="ghost" onPress={() => router.push("/pair")} />
         </>

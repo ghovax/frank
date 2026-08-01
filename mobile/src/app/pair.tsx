@@ -22,7 +22,7 @@ import {
   ActivityIndicator, Linking, Platform, Pressable, ScrollView, StyleSheet, TextInput, View,
 } from "react-native";
 
-import { Button, Card, Text } from "../components/ui";
+import { Alert, Button, Card, Text } from "../components/ui";
 import { parsePairing, useConnection } from "../lib/connection";
 import { goBack } from "../lib/navigation";
 import { useTheme } from "../theme";
@@ -216,11 +216,7 @@ export default function PairScreen() {
           </Card>
         )}
 
-        {failure ? (
-          <Card style={{ padding: theme.space[3], backgroundColor: theme.colors.redSubtle, borderColor: theme.colors.redMuted }}>
-            <Text variant="small" tone="danger">{failure}</Text>
-          </Card>
-        ) : null}
+        {failure ? <Alert status="error">{failure}</Alert> : null}
 
         <Text variant="small" tone="subtle">
           The code carries a token with full control of that machine. Frank keeps it in this

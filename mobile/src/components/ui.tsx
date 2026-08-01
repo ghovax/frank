@@ -10,7 +10,7 @@
  * points high, where the desktop uses 32. A mouse hits a 32px target; a thumb does not.
  */
 
-import { type LucideIcon } from "lucide-react-native";
+import { CircleCheck, Info, TriangleAlert, type LucideIcon } from "lucide-react-native";
 import type { ReactNode } from "react";
 import {
   ActivityIndicator, Pressable, StyleSheet, Text as RNText, View,
@@ -162,6 +162,51 @@ export function Pill({ label, tone = "neutral", icon: Icon }: {
   );
 }
 
+/**
+ * Something the person needs to read before carrying on.
+ *
+ * The same shape the desktop's Settings panel uses — Chakra's `Alert.Root` with an
+ * `Alert.Indicator`, subtle fill, `md` corner — down to which glyph goes with which status, so
+ * that a warning here and a warning there are recognisably the same object. Chakra maps `error`
+ * and `warning` to the one triangle and `info` to the circle, and this follows it rather than
+ * improving on it: a screen where the danger sign is a triangle in one place and a circle in
+ * another is a screen that has to be read rather than glanced at.
+ *
+ * The icon is aligned to the first line rather than to the box, because these run to two and
+ * three lines on a phone and an indicator centred against a paragraph reads as floating loose
+ * of the sentence it belongs to.
+ */
+export function Alert({ status = "error", children }: {
+  status?: "info" | "warning" | "success" | "error";
+  children: ReactNode;
+}) {
+  const theme = useTheme();
+  const palette = {
+    info: [theme.colors.blueSubtle, theme.colors.blueMuted, theme.colors.blueFg, Info],
+    warning: [theme.colors.orangeSubtle, theme.colors.orangeSubtle, theme.colors.orangeFg, TriangleAlert],
+    success: [theme.colors.greenSubtle, theme.colors.greenSubtle, theme.colors.greenFg, CircleCheck],
+    error: [theme.colors.redSubtle, theme.colors.redMuted, theme.colors.redFg, TriangleAlert],
+  } as const;
+  const [background, border, foreground, Icon] = palette[status];
+  return (
+    <View
+      style={[
+        styles.alert,
+        {
+          backgroundColor: background,
+          borderColor: border,
+          borderRadius: theme.radii.md,
+          padding: theme.space[3],
+          gap: theme.space[2],
+        },
+      ]}
+    >
+      <Icon size={16} color={foreground} style={{ marginTop: 1 }} />
+      <Text variant="small" style={{ color: foreground, flex: 1 }}>{children}</Text>
+    </View>
+  );
+}
+
 /** A floating surface: `bg.panel`, a hairline border, and the ring-free panel shadow. */
 export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   const theme = useTheme();
@@ -263,6 +308,7 @@ const styles = StyleSheet.create({
   // height, and centred within it so it turns about the middle of the button.
   busy: { alignItems: "center", justifyContent: "center", overflow: "hidden" },
   pill: { flexDirection: "row", alignItems: "center", paddingHorizontal: 6, paddingVertical: 2 },
+  alert: { flexDirection: "row", alignItems: "flex-start", borderWidth: 1 },
   row: { flexDirection: "row", alignItems: "center" },
   rowBody: { flex: 1, gap: 1 },
   empty: { flex: 1, alignItems: "center", justifyContent: "center" },
