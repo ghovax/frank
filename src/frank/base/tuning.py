@@ -33,9 +33,11 @@ having to grow a parameter for it. Concurrent calls from different agents each s
 from __future__ import annotations
 
 import contextvars
+import logging
 import time
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Callable, Iterable, NamedTuple, Optional, TypeVar
 
 # The live model context window (in tokens) for the tool call currently executing. The agent
@@ -65,6 +67,9 @@ _DEFAULT_TEXT_SHARE = 0.25
 _DEFAULT_RESULTS_SHARE = 0.15
 
 
+logger = logging.getLogger(__name__)
+
+
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
@@ -81,17 +86,50 @@ class Scaling(Enum):
     NONE = "none"        # physical pacing, fixed shapes, pixel sizes: not scaled at all
 
 
+#: Where a tunable's long note lives, one markdown file per member, named for the member.
+#:
+#: Eleven of the seventy-four notes carry more than half the prose in this module between them,
+#: and one of them ran to 1,777 characters spliced together out of adjacent string literals — a
+#: form that cannot hold a paragraph break, a list, or a number somebody wants to scan for. The
+#: short ones stay inline, where a reader scanning the enum can see what a value is for without
+#: opening anything; the long ones live next door as markdown and are read on demand.
+#:
+#: The same shape as ``runtime/tools/descriptions/*.md``, and read with a loader of this module's
+#: own rather than that package's: ``tuning`` deliberately does not import the configuration
+#: module, and the twelve lines below are cheaper than the dependency would be.
+NOTES_DIRECTORY = Path(__file__).resolve().parent / "tuning_notes"
+
+
+def _note(name: str) -> str:
+    """The markdown note for one tunable, or "" when it has none."""
+    path = NOTES_DIRECTORY / f"{name}.md"
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
 @dataclass(frozen=True)
 class Default:
     """One tunable's shipped value, how it scales, and what it is for.
 
     ``about`` is carried rather than left in a comment because `frank configure` renders it and the
     configuration reference is generated from it — an explanation only a reader can see is one that
-    drifts from the value beside it."""
+    drifts from the value beside it.
+
+    Leave ``about`` empty and the text is read from ``tuning_notes/<member>.md`` instead — see
+    :data:`NOTES_DIRECTORY`. An inline note may be written as an ordinary triple-quoted string
+    laid out to fit the file; its whitespace is collapsed here, so how it is *wrapped* in the
+    source is a question about reading the code and never about what a user is shown."""
 
     value: float
     scaling: Scaling
     about: str = ""
+
+    def __post_init__(self) -> None:
+        collapsed = " ".join(self.about.split())
+        if collapsed != self.about:
+            object.__setattr__(self, "about", collapsed)
 
 
 class Tunable(Enum):
@@ -109,77 +147,87 @@ class Tunable(Enum):
     # page (the rest overflows to a file). Enforced by clip_to_tokens.
     output_tokens = Default(
         16_000, Scaling.TEXT,
-        "Tokens of inline output one tool may return before the rest overflows to a file.",
+        """Tokens of inline output one tool may return before the rest overflows to a file.""",
     )
-    fetch_tokens = Default(
-        24_000, Scaling.TEXT,
-        "Tokens of a fetched web page's text kept inline.",
-    )
+    fetch_tokens = Default(24_000, Scaling.TEXT, "Tokens of a fetched web page's text kept inline.")
     maximum_line_chars = Default(
         2_048, Scaling.TEXT,
-        "Characters of a single over-long line kept before it is clipped, so one minified blob "
-        "cannot fill a result on its own.",
+        """Characters of a single over-long line kept before it is clipped, so one minified blob
+        cannot fill a result on its own.""",
     )
     upstream_error_detail_tokens = Default(
         256, Scaling.TEXT,
-        "Tokens of an upstream service's error body kept in the failure this harness raises — "
-        "enough to carry the provider's own explanation, short of pasting a whole page into a "
-        "message someone has to read.",
+        """Tokens of an upstream service's error body kept in the failure this harness raises —
+        enough to carry the provider's own explanation, short of pasting a whole page into a
+        message someone has to read.""",
     )
 
     # Listing budgets, in item COUNTS, scaled by the window and context_share.results.
     read_lines = Default(
         2_000, Scaling.RESULTS,
-        "Lines a file read returns when no explicit limit is given.",
+        """Lines a file read returns when no explicit limit is given.""",
     )
     grep_results = Default(512, Scaling.RESULTS, "Total matches one search returns.")
-    grep_per_file = Default(512, Scaling.RESULTS, "Matches one search returns from any single file.")
+    grep_per_file = Default(
+        512, Scaling.RESULTS,
+        """Matches one search returns from any single file.""",
+    )
     glob_results = Default(1_000, Scaling.RESULTS, "Paths one glob returns.")
     web_search_maximum = Default(
         10, Scaling.RESULTS,
-        "Ceiling on the result count a web search may ask for, however many it requests.",
+        """Ceiling on the result count a web search may ask for, however many it requests.""",
     )
     remote_listing = Default(
         32_768, Scaling.RESULTS,
-        "Paths listed on a remote machine before glob matching is applied locally.",
+        """Paths listed on a remote machine before glob matching is applied locally.""",
     )
     # What a browser session keeps of the page's own traffic, so a `find` can surface the API
     # behind a rendered view. Budgets like any other listing: a bigger window affords more.
     web_exchanges = Default(
         250, Scaling.RESULTS,
-        "Recent request/response pairs a browser session keeps, so a search can surface the API "
-        "behind a rendered view.",
+        """Recent request/response pairs a browser session keeps, so a search can surface the API
+        behind a rendered view.""",
     )
-    web_websockets = Default(32, Scaling.RESULTS, "Live websockets a browser session tracks at once.")
+    web_websockets = Default(
+        32, Scaling.RESULTS,
+        """Live websockets a browser session tracks at once.""",
+    )
     web_websocket_frames = Default(200, Scaling.RESULTS, "Frames retained per tracked websocket.")
 
     # Timeouts. Milliseconds (read with amount) for Playwright, seconds (read with duration) for the
     # subprocess/AX/settle IO; both scale only with timeout_multiplier.
     action_timeout_ms = Default(
         5_000, Scaling.TIME,
-        "How long one browser action (click, type, hover) waits for its element.",
+        """How long one browser action (click, type, hover) waits for its element.""",
     )
-    navigation_timeout_ms = Default(20_000, Scaling.TIME, "How long a page load or navigation waits.")
-    snapshot_timeout_ms = Default(10_000, Scaling.TIME, "How long an accessibility snapshot of a page waits.")
+    navigation_timeout_ms = Default(
+        20_000, Scaling.TIME,
+        """How long a page load or navigation waits.""",
+    )
+    snapshot_timeout_ms = Default(
+        10_000, Scaling.TIME,
+        """How long an accessibility snapshot of a page waits.""",
+    )
     connect_timeout_ms = Default(10_000, Scaling.TIME, "How long attaching to a browser waits.")
     # A person's reaction time, not a network one: Chrome shows a consent box when a debugging
     # client attaches, and this is how long we wait for somebody to find it and click Allow. It
     # was ten seconds, budgeted as if the browser were the slow party, and anyone slower than
     # that was told their endpoint had gone stale and advised to toggle the switch — dismissing
     # the prompt they were on their way to approving.
-    browser_authorization_ms = Default(90_000, Scaling.TIME, "How long attaching waits for the user to approve Chrome's prompt.")
+    browser_authorization_ms = Default(
+        90_000, Scaling.TIME,
+        """How long attaching waits for the user to approve Chrome's prompt.""",
+    )
     drag_timeout_ms = Default(8_000, Scaling.TIME, "How long a drag between two elements waits.")
-    screenshot_timeout_ms = Default(20_000, Scaling.TIME, "How long capturing a page screenshot waits.")
+    screenshot_timeout_ms = Default(
+        20_000, Scaling.TIME,
+        """How long capturing a page screenshot waits.""",
+    )
     read_text_timeout_ms = Default(10_000, Scaling.TIME, "How long reading a page's text waits.")
     # Resolving a frame id to its live frame. Deliberately far below the action timeout: a stale
     # aria-ref does not error, it waits, and `frames()` resolves every iframe it found — so one that
     # has gone would otherwise hold up the whole listing.
-    frame_resolve_timeout_ms = Default(
-        2_000, Scaling.TIME,
-        "How long resolving a frame reference waits. Deliberately well below the action timeout: a "
-        "frame that has gone waits out its budget rather than erroring, and listing every frame "
-        "would otherwise stall on the one that left.",
-    )
+    frame_resolve_timeout_ms = Default(2_000, Scaling.TIME)
     # After SIGTERM, before SIGKILL — for a cancelled command and for a reaped session alike.
     # `daemon/lifecycle.py` used to carry its own `_TERMINATE_GRACE_SECONDS = 3.0` for the second
     # case, which was the same concept under a second name, at a different value, and outside the
@@ -187,7 +235,7 @@ class Tunable(Enum):
     # flush than a single command being cancelled.
     sigterm_grace_seconds = Default(
         3.0, Scaling.TIME,
-        "How long a cancelled command or a reaped session has after SIGTERM before SIGKILL.",
+        """How long a cancelled command or a reaped session has after SIGTERM before SIGKILL.""",
     )
     ripgrep_seconds = Default(30.0, Scaling.TIME, "How long one content search may run.")
     # How long a backgroundable tool waits inline before it hands the work to the background
@@ -196,218 +244,188 @@ class Tunable(Enum):
     # rather than as scattered private module constants.
     bash_sync_window_seconds = Default(
         60.0, Scaling.TIME,
-        "How long a shell command runs inline before it moves to the background. It is not killed "
-        "at this point, only handed off, and the model can override it per call.",
+        """How long a shell command runs inline before it moves to the background. It is not killed
+        at this point, only handed off, and the model can override it per call.""",
     )
     slow_tool_sync_window_seconds = Default(
         10.0, Scaling.TIME,
-        "The same inline window for fetching a URL or downloading a file.",
+        """The same inline window for fetching a URL or downloading a file.""",
     )
-    web_search_sync_window_seconds = Default(10.0, Scaling.TIME, "The same inline window for a web search.")
+    web_search_sync_window_seconds = Default(
+        10.0, Scaling.TIME,
+        """The same inline window for a web search.""",
+    )
     ax_messaging_seconds = Default(
         2.0, Scaling.TIME,
-        "How long one accessibility message to an application waits, so a hung application costs a "
-        "moment rather than the whole action.",
+        """How long one accessibility message to an application waits, so a hung application costs
+        a moment rather than the whole action.""",
     )
 
     # The control plane and the processes it supervises.
-    warm_workers = Default(
-        2, Scaling.NONE,
-        "How many session workers to keep started and waiting. A worker spends about two and a "
-        "half seconds importing the runtime before it can serve, and none of that work depends "
-        "on which session it becomes — so some are started ahead of demand and a new session is "
-        "handed one instead of waiting. Raise it if several sessions are often created at once. "
-        "One is the minimum: a session created with the pool empty starts its own worker and "
-        "waits for the import, which is what every session did before the pool existed.",
-    )
-    prototype_start_seconds = Default(
-        120.0, Scaling.TIME,
-        "How long the daemon waits for the prototype to start and accept a connection. The "
-        "prototype itself imports nothing heavy; it starts the workers that do, and keeps a "
-        "couple of them started ahead of demand.",
-    )
+    warm_workers = Default(2, Scaling.NONE)
+    prototype_start_seconds = Default(120.0, Scaling.TIME)
     prototype_restart_seconds = Default(
         5.0, Scaling.TIME,
-        "How long the daemon waits before trying again after the prototype failed to restart.",
+        """How long the daemon waits before trying again after the prototype failed to restart.""",
     )
-    session_idle_sleep_seconds = Default(
-        18000.0, Scaling.TIME,
-        "How long a session keeps its process after its last turn before it sleeps. Five hours "
-        "by default: long enough that a working day of on-and-off use never pays a wake, short "
-        "enough that a machine left overnight is not holding interpreters for conversations "
-        "nobody returned to.",
-    )
+    session_idle_sleep_seconds = Default(18000.0, Scaling.TIME)
     session_start_seconds = Default(
         60.0, Scaling.TIME,
-        "How long the daemon waits for a forked session to bind its socket and report ready.",
+        """How long the daemon waits for a forked session to bind its socket and report ready.""",
     )
     daemon_startup_seconds = Default(
         45.0, Scaling.TIME,
-        "How long a command waits for a daemon it just started to become reachable.",
+        """How long a command waits for a daemon it just started to become reachable.""",
     )
-    control_plane_call_seconds = Default(60.0, Scaling.TIME, "How long one call to the daemon waits.")
-    model_catalogue_ttl_seconds = Default(60.0, Scaling.TIME, "How long the list of available models is cached.")
+    control_plane_call_seconds = Default(
+        60.0, Scaling.TIME,
+        """How long one call to the daemon waits.""",
+    )
+    model_catalogue_ttl_seconds = Default(
+        60.0, Scaling.TIME,
+        """How long the list of available models is cached.""",
+    )
     credential_refresh_leeway_seconds = Default(
         300.0, Scaling.TIME,
-        "How far ahead of its expiry an access token is refreshed.",
+        """How far ahead of its expiry an access token is refreshed.""",
     )
     daemon_probe_interval_seconds = Default(
         0.05, Scaling.TIME,
-        "Pause between asks of whether another process's daemon socket answers yet, or whether a "
-        "daemon being replaced has finally exited.",
+        """Pause between asks of whether another process's daemon socket answers yet, or whether a
+        daemon being replaced has finally exited.""",
     )
     daemon_probe_connect_seconds = Default(
         0.5, Scaling.TIME,
-        "How long one connect to a daemon socket waits before it counts as unanswered.",
+        """How long one connect to a daemon socket waits before it counts as unanswered.""",
     )
     oauth_poll_interval_seconds = Default(
         1.0, Scaling.TIME,
-        "First pause between asks of whether a browser sign-in has completed; it widens from here.",
+        """First pause between asks of whether a browser sign-in has completed; it widens from
+        here.""",
     )
     oauth_poll_ceiling_seconds = Default(
         10.0, Scaling.TIME,
-        "Ceiling on the widening pause between sign-in polls, so a slow sign-in is not asked about "
-        "every second for minutes.",
+        """Ceiling on the widening pause between sign-in polls, so a slow sign-in is not asked
+        about every second for minutes.""",
     )
     oauth_poll_give_up_seconds = Default(
         300.0, Scaling.TIME,
-        "How long a browser sign-in is waited for before it is abandoned — a person's whole trip "
-        "through a consent screen, not a network round trip.",
+        """How long a browser sign-in is waited for before it is abandoned — a person's whole trip
+        through a consent screen, not a network round trip.""",
     )
     subscription_resume_ttl_seconds = Default(
         1_800.0, Scaling.TIME,
-        "How long a subscription provider's server-side conversation state stays worth resuming "
-        "from before the whole conversation is resent instead.",
+        """How long a subscription provider's server-side conversation state stays worth resuming
+        from before the whole conversation is resent instead.""",
     )
     model_silence_give_up_seconds = Default(
         180.0, Scaling.TIME,
-        "How long a model may hold a stream open saying nothing at all before the turn is ended. "
-        "Long, because a model weighing a hard problem is silent and still working.",
+        """How long a model may hold a stream open saying nothing at all before the turn is ended.
+        Long, because a model weighing a hard problem is silent and still working.""",
     )
     file_url_ttl_seconds = Default(600.0, Scaling.TIME, "How long a signed file URL stays valid.")
-    mcp_connect_seconds = Default(20.0, Scaling.TIME, "How long connecting to one MCP server waits.")
-    card_resolve_seconds = Default(20.0, Scaling.TIME, "How long fetching a remote agent's card waits.")
+    mcp_connect_seconds = Default(
+        20.0, Scaling.TIME,
+        """How long connecting to one MCP server waits.""",
+    )
+    card_resolve_seconds = Default(
+        20.0, Scaling.TIME,
+        """How long fetching a remote agent's card waits.""",
+    )
 
     # Commands on another machine, where patience is a property of the network.
-    remote_command_seconds = Default(120.0, Scaling.TIME, "How long a command on another machine may run.")
-    remote_connect_seconds = Default(16.0, Scaling.TIME, "How long opening an SSH connection waits.")
+    remote_command_seconds = Default(
+        120.0, Scaling.TIME,
+        """How long a command on another machine may run.""",
+    )
+    remote_connect_seconds = Default(
+        16.0, Scaling.TIME,
+        """How long opening an SSH connection waits.""",
+    )
     remote_control_persist_seconds = Default(
         120.0, Scaling.TIME,
-        "How long a shared SSH connection lingers after its last use, so the next command reuses it.",
+        """How long a shared SSH connection lingers after its last use, so the next command reuses
+        it.""",
     )
 
     # The control_screen timeout stack, which has to stay ordered rather than merely equal. The
     # script's own ceiling is the one anybody would want to raise; the surface's guard and its
     # worker thread each sit a margin above it, so a long script can never outlive the machinery
     # waiting on it — which used to drop the connection and leave the surface half-dead.
-    control_script_seconds = Default(120.0, Scaling.TIME, "How long one screen-control script may run.")
+    control_script_seconds = Default(
+        120.0, Scaling.TIME,
+        """How long one screen-control script may run.""",
+    )
     surface_guard_margin_seconds = Default(
         30.0, Scaling.TIME,
-        "How far above the script's own limit the machinery waiting on it sits, so raising that "
-        "limit can never make the guard fire first and leave the surface half-dead.",
+        """How far above the script's own limit the machinery waiting on it sits, so raising that
+        limit can never make the guard fire first and leave the surface half-dead.""",
     )
     screencapture_seconds = Default(15.0, Scaling.TIME, "How long capturing the screen waits.")
-    open_url_seconds = Default(5.0, Scaling.TIME, "How long handing a URL to the system browser waits.")
+    open_url_seconds = Default(
+        5.0, Scaling.TIME,
+        """How long handing a URL to the system browser waits.""",
+    )
 
     # Fixed, deliberately NOT scaled — physical input-event pacing the OS needs for a synthesized
     # click/keystroke/drag to register, fixed shapes, and pixel sizes.
     type_chunk_size = Default(20, Scaling.NONE, "Characters sent per synthesized keyboard event.")
-    drag_steps = Default(12, Scaling.NONE, "Segments a drag is split into, so it looks like a hand moved it.")
-    scroll_amount_pixels = Default(300, Scaling.NONE, "Pixels one scroll step moves a native window.")
+    drag_steps = Default(
+        12, Scaling.NONE,
+        """Segments a drag is split into, so it looks like a hand moved it.""",
+    )
+    scroll_amount_pixels = Default(
+        300, Scaling.NONE,
+        """Pixels one scroll step moves a native window.""",
+    )
     settle_stable_reads = Default(
         2, Scaling.NONE,
-        "Identical consecutive reads that count a surface as having stopped changing.",
+        """Identical consecutive reads that count a surface as having stopped changing.""",
     )
-    find_rephrasing_similarity = Default(
-        0.45, Scaling.NONE,
-        "How alike two screen queries must be, as a cosine in the retrieval model's own space, "
-        "before a second one landing on the same element counts as the first asked again. Both "
-        "halves are required: across 127 rephrasing sequences and 113 legitimate ones, likeness "
-        "alone caught everything and cried wolf on 76% of honest work, while the same element "
-        "reached from three wordings never cried wolf but missed 12% and noticed a call and a "
-        "half later. Together: everything caught, 4% false, and noticed by the second query.",
-    )
-    find_near_weight = Default(
-        0.5, Scaling.NONE,
-        "How much sitting beside the anchor is worth against matching the query, when a find "
-        "names one with near=. Measured over 284 anchored cases on ten applications: relevance "
-        "alone answers 20.8% of them and proximity alone 21.5%, while the two together answer "
-        "85.2%. Neither half carries this on its own.",
-    )
-    find_anchor_margin = Default(
-        0.02, Scaling.NONE,
-        "How far ahead of its own runner-up a near= anchor must score before a find will join on "
-        "it. Below this the anchor is a guess, and organising a ranking around a guess is worse "
-        "than not anchoring: it catches a third of the failures for one correct answer in 242.",
-    )
+    find_rephrasing_similarity = Default(0.45, Scaling.NONE)
+    find_near_weight = Default(0.5, Scaling.NONE)
+    find_anchor_margin = Default(0.02, Scaling.NONE)
     find_candidates = Default(
         5, Scaling.RESULTS,
-        "Elements find_one weighs against its best match, and offers back when it cannot choose "
-        "between them.",
+        """Elements find_one weighs against its best match, and offers back when it cannot choose
+        between them.""",
     )
-    find_one_margin = Default(
-        0.03, Scaling.NONE,
-        "How far ahead of the runner-up find_one's best match must score, as a fraction of that "
-        "best score, before it answers with one element instead of asking which was meant. "
-        "Measured over 2,263 queries on twelve live applications: at 0.03 it catches 65% of wrong "
-        "answers for 5.4% of right ones, taking precision from 76.3% to 89.8% and asking on 19.7% "
-        "of calls. Raising it asks more often and is more nearly always right when it does not — "
-        "0.05 buys 91.5% precision but defers twice as many correct answers. This was fitted at "
-        "0.05 against a key that did not yet carry the kind of control; adding that clustered the "
-        "scores, so re-fit this whenever the key changes rather than carrying the number across.",
+    find_one_margin = Default(0.20, Scaling.NONE)
+    find_many_ceiling = Default(50, Scaling.RESULTS)
+    find_relevance_floor = Default(0.25, Scaling.NONE)
+    click_interval_seconds = Default(
+        0.01, Scaling.NONE,
+        """Pause between successive synthesized clicks.""",
     )
-    find_many_ceiling = Default(
-        50, Scaling.RESULTS,
-        "Elements find_many will return however many are asked for. There used to be an `all=True` "
-        "that bypassed the limit entirely and returned the whole ranking; on one ordinary page "
-        "that was 590 elements and 1.5MB, which ended the turn by exceeding the model's context "
-        "window. A find is a ranked search, and the tail of a ranking is not more answer.",
+    drag_step_interval_seconds = Default(
+        0.01, Scaling.NONE,
+        """Pause between the interpolated steps of a drag.""",
     )
-    find_relevance_floor = Default(
-        0.25, Scaling.NONE,
-        "How well an element must match, as a cosine against the query, before find_many will "
-        "return it at all. It cuts the noise band and nothing more, and the limit of that is "
-        "measured rather than assumed: on 596 elements of a real page, six paraphrased queries "
-        "for things that WERE present scored 0.48 to 0.75 at top-1, while six for things that "
-        "were plainly absent (a checkout button, a flight time) scored 0.26 to 0.59 — overlapping "
-        "distributions, so no absolute cosine separates 'here' from 'not here' with this "
-        "embedding. Set where it removes the tail that is unambiguously noise (that page ran to "
-        "-0.12) without touching the band where real matches live. Treat an empty result as "
-        "'nothing scored above the noise', never as proof of absence, and do not raise this "
-        "hoping to buy absence detection — it would cost real matches first. Making find_many "
-        "abstain honestly needs a calibrated signal this ranker does not yet have.",
-    )
-    click_interval_seconds = Default(0.01, Scaling.NONE, "Pause between successive synthesized clicks.")
-    drag_step_interval_seconds = Default(0.01, Scaling.NONE, "Pause between the interpolated steps of a drag.")
     type_chunk_interval_seconds = Default(0.005, Scaling.NONE, "Pause between typed chunks.")
-    focus_settle_seconds = Default(0.03, Scaling.NONE, "Pause after focusing a field, before typing into it.")
+    focus_settle_seconds = Default(
+        0.03, Scaling.NONE,
+        """Pause after focusing a field, before typing into it.""",
+    )
     # Pixels, not a share of anybody's context — this sat in the text family, where raising
     # `context_share.text` silently enlarged every screenshot.
     stamped_image_side = Default(
         2_048, Scaling.NONE,
-        "Longest side, in pixels, of a screenshot annotated with element labels.",
+        """Longest side, in pixels, of a screenshot annotated with element labels.""",
     )
-    ax_walk_budget_seconds = Default(
-        3.0, Scaling.TIME,
-        "How long one read of an app's accessibility tree may take. It replaces a depth limit, "
-        "which guarded the wrong quantity: a window six levels deep can take twice as long as "
-        "one thirty-five levels deep, because the cost is how quickly the app answers, not how "
-        "far down the answer is. Anything unread when this expires is reported as a region, so "
-        "a short read says it is short.",
-    )
+    ax_walk_budget_seconds = Default(3.0, Scaling.TIME)
     ax_ready_probe_seconds = Default(
         0.4, Scaling.TIME,
-        "How long the readiness poll may spend deciding whether an app's tree has built yet. "
-        "Short on purpose: it runs repeatedly while an app is still starting, and it only has "
-        "to see past the window chrome.",
+        """How long the readiness poll may spend deciding whether an app's tree has built yet.
+        Short on purpose: it runs repeatedly while an app is still starting, and it only has to
+        see past the window chrome.""",
     )
     ax_prewarm_interval_seconds = Default(
         0.4, Scaling.NONE,
-        "Pause between pre-warming the frontmost application's accessibility tree.",
+        """Pause between pre-warming the frontmost application's accessibility tree.""",
     )
     ax_ready_backoff_seconds = Default(
         0.2, Scaling.NONE,
-        "Ceiling on the widening pause between accessibility readiness probes.",
+        """Ceiling on the widening pause between accessibility readiness probes.""",
     )
 
     def __new__(cls, default: Default) -> "Tunable":
@@ -430,14 +448,38 @@ class Tunable(Enum):
     def __init__(self, default: Default) -> None:
         self.default = default.value
         self.scaling = default.scaling
-        self.about = default.about
+        self._about = default.about
+
+    @property
+    def about(self) -> str:
+        """What this tunable is for: the inline note, or the markdown file named after it.
+
+        Read on demand rather than at import. Only `frank configure` and the generated
+        configuration reference ask for these, and a process that never renders a settings page
+        should not pay for seventy-four file reads to start."""
+        return self._about or _note(self.name)
 
 
 # Tokenizer-backed text budgeting. A real tokenizer maps a token budget to an accurate character
 # cut for any content; a fixed characters-per-token ratio (which the old code assumed) is wrong for
-# code, whitespace runs, and non-Latin scripts. The encoding is loaded lazily and cached, with a
-# coarse character estimate as the fallback if it cannot load at all (e.g. an offline first run of
-# the frozen app) so budgeting degrades rather than crashing.
+# code, whitespace runs, and non-Latin scripts.
+#
+# The fallback below looks like dead code and is not, which is worth stating because "tiktoken is a
+# hard dependency, so the tokenizer is always there" is the obvious reading and it is wrong.
+# `tiktoken` ships no vocabulary: `get_encoding` fetches `o200k_base` from
+# `openaipublic.blob.core.windows.net` on first use and caches it. Checked rather than assumed —
+# with an empty cache directory and the network refused, `get_encoding` raises. So the reachable
+# case is a first run with no network, exactly as the comment here has always claimed.
+#
+# What the fallback must not be is quiet. Four characters per token is a guess that is roughly
+# right for English prose and wrong in both directions for the content this harness actually
+# budgets — dense for minified code, generous for CJK — so a session running on it is one where
+# every cap means something other than what it says. It says so once, loudly, and then gets on
+# with it. Ending the session instead would trade a degraded budget for no harness at all.
+#
+# The way to remove it is to make the vocabulary present rather than to delete the branch: ship the
+# encoding with the bundle, or warm the cache at install. Until one of those is true, deleting this
+# turns an offline first run into a crash on the first tool result.
 _ENCODING_NAME = "o200k_base"     # the current-generation general tokenizer; a good cross-model proxy
 _FALLBACK_CHARS_PER_TOKEN = 4     # only used when the tokenizer is unavailable
 # A single token decodes to at most this many characters, so budget * this characters is a safe
@@ -457,8 +499,18 @@ def _get_encoding():
             import tiktoken
 
             _encoding = tiktoken.get_encoding(_ENCODING_NAME)
-        except Exception:
+        except Exception as error:
             _encoding = None
+            # Once per process, and at warning level, because every token budget for the rest of
+            # this session is now an estimate. Silently degrading is what makes a caps bug take a
+            # day to find: the numbers all still look like numbers.
+            logger.warning(
+                "token budgeting fell back to %d characters per token: the %s encoding could not "
+                "be loaded (%s: %s). tiktoken downloads its vocabulary on first use, so this is "
+                "usually a first run with no network. Every size cap this session is an estimate "
+                "until the process restarts with the vocabulary cached.",
+                _FALLBACK_CHARS_PER_TOKEN, _ENCODING_NAME, type(error).__name__, error,
+            )
     return _encoding
 
 

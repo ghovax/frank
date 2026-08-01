@@ -194,15 +194,54 @@ samp {
   overflow: hidden;
 }
 
+/* How far the title's left edge is faded. A registered custom property so it can be animated:
+   `mask-image` itself cannot be, which is the whole reason this exists. Swapping one gradient
+   for another flips on the frame the pointer leaves, so the title spent its entire journey home
+   sliding out from under a hard left edge — the one place the fade is most obviously missing,
+   because that is the edge the text is moving away from. A length that interpolates gives the
+   fade the same 0.96s as the travel, in both directions. */
+@property --sidebar-title-left-fade {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+/* The mask is written **once**, here, and every other state changes only the variables feeding
+   it. That is the rule that matters, not the values: any rule that re-declares `mask-image` with
+   a different number of layers drops the animating layer outright, and the fade then disappears
+   on the frame that rule starts matching rather than travelling home with the text.
+
+   That is exactly how the first attempt failed, and it failed in the one case nobody tests by
+   moving the mouse to the far side of the screen: pointing at the *next row down* makes the row
+   you just left match the "not being pointed at" rule below, which used to re-declare a
+   single-layer mask. Leaving the sidebar entirely worked; moving one row did not. */
 .sidebar-title[data-overflow="true"] {
-  -webkit-mask-image: linear-gradient(to right, #000 82%, transparent 98%);
-  mask-image: linear-gradient(to right, #000 82%, transparent 98%);
+  --sidebar-title-left-fade: 0px;
+  --sidebar-title-right-solid: 82%;
+  --sidebar-title-right-clear: 98%;
+  /* Two layers intersected: the right edge, which every state wants in some form, and the left
+     edge, which only a travelling title has. */
+  -webkit-mask-image:
+    linear-gradient(to right, #000 var(--sidebar-title-right-solid), transparent var(--sidebar-title-right-clear)),
+    linear-gradient(to right, transparent, #000 var(--sidebar-title-left-fade));
+  mask-image:
+    linear-gradient(to right, #000 var(--sidebar-title-right-solid), transparent var(--sidebar-title-right-clear)),
+    linear-gradient(to right, transparent, #000 var(--sidebar-title-left-fade));
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+  transition: --sidebar-title-left-fade var(--marquee-duration, 0s) linear;
 }
 
 .sidebar-title-inner {
   display: inline-block;
   white-space: nowrap;
   will-change: transform;
+  /* The return is a journey too, and it belongs here rather than in the hover rule. Declared
+     only on hover, the transition ceased to exist the moment the pointer left — so the title
+     did not travel back at all, it snapped home in a single frame while the fade it had been
+     moving under was still on screen. Declaring it on the element means both directions are
+     animated by the same rule and at the same speed. */
+  transition: transform var(--marquee-duration, 0s) linear;
 }
 
 /* On hover the trailing ⋯ actions appear over the row's right edge. Fade EVERY title's
@@ -214,24 +253,30 @@ samp {
    on their left rather than sitting against a letter. It was 26px, which is narrower than the
    button itself — the last 6px of title ran underneath it. Keep this in step with
    MARQUEE_TAIL_CLEARANCE in sessions-sidebar.tsx, which parks a scrolled title at the same
-   edge. */
-.sidebar-row:hover .sidebar-title,
-.sidebar-row:focus-within .sidebar-title {
+   edge.
+
+   Scoped to titles that do NOT overflow. An overflowing one gets the same treatment through the
+   variables on its own two-layer mask above — and if this rule matched it too it would win, being
+   the last `mask-image` declared for it, and quietly replace that mask with a single layer. The
+   left fade would then be absent for the whole hover, not just the return. */
+.sidebar-row:hover .sidebar-title:not([data-overflow="true"]),
+.sidebar-row:focus-within .sidebar-title:not([data-overflow="true"]) {
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 68px), transparent calc(100% - 44px));
   mask-image: linear-gradient(to right, #000 calc(100% - 68px), transparent calc(100% - 44px));
 }
 
-/* A scrolling (overflowing) title additionally fades its left edge as it travels off. */
+/* A scrolling (overflowing) title fades its left edge as it travels off — and keeps fading it all
+   the way back, because the property animates rather than the mask switching. Variables only. */
 .sidebar-row:hover .sidebar-title[data-overflow="true"],
 .sidebar-row:focus-within .sidebar-title[data-overflow="true"] {
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 46px), transparent calc(100% - 26px));
-  mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 46px), transparent calc(100% - 26px));
+  --sidebar-title-left-fade: 12px;
+  --sidebar-title-right-solid: calc(100% - 46px);
+  --sidebar-title-right-clear: calc(100% - 26px);
 }
 
 .sidebar-row:hover .sidebar-title-inner,
 .sidebar-row:focus-within .sidebar-title-inner {
   transform: translateX(calc(-1 * var(--marquee-overflow, 0px)));
-  transition: transform var(--marquee-duration, 0s) linear;
 }
 
 /* A workspace row *contains* its session rows, and the rules above are descendant selectors —
@@ -246,8 +291,13 @@ samp {
    the moment the cursor entered it and regain them one row at a time on hover. */
 .sidebar-row:hover .sidebar-row:not(:hover):not(:focus-within) .sidebar-title[data-overflow="true"],
 .sidebar-row:focus-within .sidebar-row:not(:hover):not(:focus-within) .sidebar-title[data-overflow="true"] {
-  -webkit-mask-image: linear-gradient(to right, #000 82%, transparent 98%);
-  mask-image: linear-gradient(to right, #000 82%, transparent 98%);
+  /* Variables only — no `mask-image` here. This is the rule that matches the row you have just
+     pointed away from when the pointer lands on a neighbour, which is the common case, so
+     re-declaring the mask here is what stripped the left fade mid-journey. Setting the variable
+     back to zero lets it animate down over the same 0.96s the text takes to come home. */
+  --sidebar-title-left-fade: 0px;
+  --sidebar-title-right-solid: 82%;
+  --sidebar-title-right-clear: 98%;
 }
 
 /* A title short enough not to overflow has no mask at rest. */

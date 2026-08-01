@@ -444,6 +444,56 @@ class SettleConfiguration(Section):
     give_up_seconds: float = Field(1.5, description="The longest to wait before reading it anyway.")
 
 
+class RetrievalConfiguration(Section):
+    """How a screen is ranked when a script asks for an element by name.
+
+    Two static embedding models score every element against the query, and a character similarity
+    scores it a third time; the three are standardised and added. The defaults are fitted, not
+    guessed — 108,710 labelled queries over 50 recorded windows and pages — but they are settings
+    rather than facts, because the right ones depend on what the queries look like, and that is a
+    property of the work rather than of the harness.
+
+    The models are named for what they read. A multilingual one handles a desktop whose labels are
+    not in English; an English one is markedly better at a query that describes a purpose instead
+    of quoting a label (27.4% against 20.7% top-1 on queries written that way). Neither replaces
+    the other — used alone the English model is 4.3 points worse on native windows — so both run,
+    and either can be turned off by clearing its name."""
+
+    multilingual_rank_model: str = Field(
+        "minishlab/M2V_multilingual_output",
+        description=(
+            "The static embedding that ranks by meaning across languages. Also the model whose "
+            "plain cosine backs the relevance floor, so clearing it disables that floor. Empty "
+            "turns it off."
+        ),
+    )
+    english_rank_model: str = Field(
+        "minishlab/potion-base-32M",
+        description=(
+            "A second static embedding, ranked alongside the first rather than instead of it. "
+            "Stronger on queries that describe what an element is for; weaker on exact labels. "
+            "Empty turns it off."
+        ),
+    )
+    lexical_gate_short_words: int = Field(
+        3, ge=0,
+        description=(
+            "Queries of this many words or fewer are treated as a label quoted off the screen, "
+            "and the character similarity counts in full. This is what makes a retyped number, a "
+            "changed case or a truncated label still find its element."
+        ),
+    )
+    lexical_gate_long_words: int = Field(
+        7, ge=1,
+        description=(
+            "Queries of this many words or more are treated as a description of a purpose, and "
+            "the character similarity is ignored — its spelling agrees with nothing, so it ranks "
+            "by coincidence. Between the two bounds it fades out linearly. Raising this makes "
+            "long queries behave more like short ones."
+        ),
+    )
+
+
 class ComputerControlConfiguration(Section):
     """Opt-in ability for the agent to control macOS apps through the `computer` tool —
     reading the accessibility tree and clicking/typing/navigating. Off by default because
@@ -454,6 +504,10 @@ class ComputerControlConfiguration(Section):
     settle: SettleConfiguration = Field(
         default_factory=SettleConfiguration,
         description="How long a screen surface is given to stop changing after an action.",
+    )
+    retrieval: RetrievalConfiguration = Field(
+        default_factory=RetrievalConfiguration,
+        description="Which models rank a screen, and when a query's spelling stops being evidence.",
     )
 
 

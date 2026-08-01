@@ -1,0 +1,1 @@
+How long resolving a frame reference waits. Deliberately well below the action timeout: a frame that has gone waits out its budget rather than erroring, and listing every frame would otherwise stall on the one that left.

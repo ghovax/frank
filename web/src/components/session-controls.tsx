@@ -133,7 +133,6 @@ export function AgentSelectControl({
           maxW="none"
           whiteSpace="nowrap"
           fontWeight="medium"
-          lineHeight="1"
         >
           <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color="fg.muted" flexShrink={0}>
             <LuUser size={13} />
@@ -142,7 +141,6 @@ export function AgentSelectControl({
             data-composer-agent-label={responsiveCompact ? "" : undefined}
             placeholder={placeholder ?? translation("agentPlaceholder")}
             fontSize={metrics.contentFontSize}
-            lineHeight="1"
             maxW={metrics.labelMaximumWidth}
             overflow={metrics.labelMaximumWidth === "none" ? "visible" : "hidden"}
             textOverflow={metrics.labelMaximumWidth === "none" ? "clip" : "ellipsis"}
@@ -240,12 +238,11 @@ export function PermissionModeControl({
           maxW="none"
           whiteSpace="nowrap"
           fontWeight="medium"
-          lineHeight="1"
         >
           <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color={selectedAppearance.color} flexShrink={0}>
             {selectedAppearance.icon}
           </Box>
-          <Text data-composer-permission-label={responsiveCompact ? "" : undefined} fontSize={metrics.contentFontSize} fontWeight="medium" lineHeight="1" whiteSpace="nowrap" maxW={metrics.labelMaximumWidth} truncate={metrics.labelMaximumWidth !== "none"}>
+          <Text data-composer-permission-label={responsiveCompact ? "" : undefined} fontSize={metrics.contentFontSize} fontWeight="medium" whiteSpace="nowrap" maxW={metrics.labelMaximumWidth} truncate={metrics.labelMaximumWidth !== "none"}>
             {selectedLabel}
           </Text>
         </Select.Trigger>
@@ -304,6 +301,7 @@ function ToggleControl({
   onChange,
   layout,
   labelMarker,
+  controlMarker,
 }: {
   appearance: ToggleAppearance;
   enabled: boolean;
@@ -312,10 +310,17 @@ function ToggleControl({
   // A `data-` hook so the composer's container queries can drop this label as the row narrows,
   // exactly as they drop the agent, model and permission ones.
   labelMarker?: string;
+  // A second hook, on the control rather than the label. The composer's row is `nowrap`, so a
+  // child that cannot shrink does not get smaller when there is no room for it — it pushes the
+  // row wider than its container and the right-hand group rides over the left. Hiding the label
+  // is most of the fix; being *allowed to shrink* is the rest of it, and the two are separate
+  // because a control that has given up its label can still be the one thing too many.
+  controlMarker?: string;
 }) {
   const metrics = controlMetrics(layout);
   return (
     <Button
+      {...(controlMarker ? { [controlMarker]: "" } : {})}
       variant="outline"
       borderRadius={metrics.borderRadius}
       fontSize={metrics.fontSize}
@@ -323,6 +328,7 @@ function ToggleControl({
       px={metrics.paddingX}
       gap={metrics.gap}
       w={metrics.width}
+      minW="max-content"
       justifyContent="flex-start"
       alignItems="center"
       bg={appearance.background}
@@ -337,7 +343,13 @@ function ToggleControl({
       <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" flexShrink={0}>
         {appearance.icon}
       </Box>
-      <Span {...(labelMarker ? { [labelMarker]: "" } : {})} fontSize={metrics.contentFontSize} fontWeight="medium" lineHeight="1">
+      <Span
+        {...(labelMarker ? { [labelMarker]: "" } : {})}
+        fontSize={metrics.contentFontSize}
+        fontWeight="medium"
+        minW={0}
+        truncate
+      >
         {appearance.label}
       </Span>
     </Button>
@@ -381,6 +393,7 @@ export function SandboxToggleControl({
       onChange={onChange ? (next) => onChange(next ? "required" : "off") : undefined}
       layout={layout}
       labelMarker={responsiveCompact ? "data-composer-sandbox-label" : undefined}
+      controlMarker={responsiveCompact ? "data-composer-sandbox-control" : undefined}
     />
   );
 }
@@ -515,12 +528,11 @@ export function WorktreeStrategyControl({
           fontWeight="medium"
           disabled={disabled}
           title={title ?? selectedChoice?.title ?? translation("worktreeStrategyFallbackTitle")}
-          lineHeight="1"
         >
           <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color={selectedAppearance.color} flexShrink={0}>
             {selectedAppearance.icon}
           </Box>
-          <Select.ValueText fontSize={metrics.contentFontSize} lineHeight="1" maxW={metrics.labelMaximumWidth} overflow={metrics.labelMaximumWidth === "none" ? "visible" : "hidden"} textOverflow={metrics.labelMaximumWidth === "none" ? "clip" : "ellipsis"} whiteSpace="nowrap" />
+          <Select.ValueText fontSize={metrics.contentFontSize} maxW={metrics.labelMaximumWidth} overflow={metrics.labelMaximumWidth === "none" ? "visible" : "hidden"} textOverflow={metrics.labelMaximumWidth === "none" ? "clip" : "ellipsis"} whiteSpace="nowrap" />
         </Select.Trigger>
         <Select.IndicatorGroup>
           <Select.Indicator />

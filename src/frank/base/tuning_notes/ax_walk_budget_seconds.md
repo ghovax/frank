@@ -1,0 +1,1 @@
+How long one read of an app's accessibility tree may take. It replaces a depth limit, which guarded the wrong quantity: a window six levels deep can take twice as long as one thirty-five levels deep, because the cost is how quickly the app answers, not how far down the answer is. Anything unread when this expires is reported as a region, so a short read says it is short.
