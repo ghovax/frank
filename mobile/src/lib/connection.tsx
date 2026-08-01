@@ -18,7 +18,7 @@ import {
 } from "react";
 import { AppState, Platform } from "react-native";
 
-import { closeSharedStreams, configure, probe } from "./api";
+import { configure, probe } from "./api";
 
 /** What `frank reach pair` encodes into its QR code. */
 export interface Pairing {
@@ -212,14 +212,12 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
   }, [connect]);
 
   const pair = useCallback(async (next: Pairing) => {
-    closeSharedStreams();
     await store.set(JSON.stringify(next));
     setPairing(next);
     await connect(next);
   }, [connect]);
 
   const unpair = useCallback(async () => {
-    closeSharedStreams();
     attempt.current?.abort();
     await store.clear();
     configure("", "");

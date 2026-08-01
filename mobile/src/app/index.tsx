@@ -1,278 +1,158 @@
 /**
- * Every conversation on the machine, grouped by workspace.
+ * Frank, on a phone: the desktop interface, in a window.
  *
- * This is the desktop's sidebar, which on a narrow viewport it already renders as a full-screen
- * view of its own — so the phone is not a new layout so much as the one the web client falls
- * back to, given the whole screen and a push navigator instead of a panel that slides away.
+ * There is no second interface here and there is not meant to be. Everything a person sees — the
+ * sessions list, the transcript, the tool rows and their shimmer, the composer, the approval
+ * cards, the settings — is `web/`, the same bundle the Tauri app puts in a window and the same
+ * one `frank serve` hands a browser. The desktop app is already a webview around it; this is that
+ * arrangement, on a device that happens to be a phone.
  *
- * The tree is kept: a session created by another session is nested under it, because a peer is an
- * ordinary session and the only thing that says otherwise is where it sits in this list.
+ * A React Native port of those screens is what this replaced, and the reason is worth keeping: a
+ * port can be faithful on the day it is written and cannot *stay* faithful, because nothing
+ * structurally stops it drifting. It drifted — a thinking row the desktop does not have, a
+ * spinner where the desktop shimmers, a workspace called `name +1`. None of that is reachable
+ * from here, because there is nowhere for it to live.
+ *
+ * The consequence, and it is not a small one: making the interface work on a phone is now work on
+ * `web/` itself. That is the right place for it — a dialog that is unusable at 390pt is unusable
+ * in a narrow window on a laptop too.
+ *
+ * What stays native is only what a page cannot do: reading a pairing code with the camera,
+ * keeping the token in the keychain, and finding which of a machine's addresses answers today.
  */
 
 import { router } from "expo-router";
-import {
-  ChevronDown, ChevronRight, Clock, Folder, MessageSquare, Search, Settings, SquarePen, WifiOff,
-} from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Platform, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { WebView } from "react-native-webview";
 
 import { FrankMark } from "../components/frank-mark";
-import { Button, EmptyState, Row, StatusDot, Text } from "../components/ui";
-import {
-  fetchSessions, listWorkspaces, subscribeEvents,
-  type SessionSummary, type Workspace,
-} from "../lib/api";
-import { workspaceLabel } from "@shared/workspace";
-
+import { Button, Text } from "../components/ui";
 import { useConnection } from "../lib/connection";
 import { useTheme } from "../theme";
 import { useEdgeInsets } from "../theme/insets";
 
-/** Shown only when there is something to say — the desktop's rule, and the reason for the nulls. */
-function indicatorFor(session: SessionSummary, colors: ReturnType<typeof useTheme>["colors"]): string | null {
-  if (session.activity === "working") return colors.fgMuted;
-  if (session.awaiting_input || session.activity === "waiting") return colors.yellowSolid;
-  if (session.outcome === "failed") return colors.redSolid;
-  return null;
-}
-
-interface TreeNode {
-  session: SessionSummary;
-  children: TreeNode[];
-}
-
-/** Sessions nested under whatever created them; orphans (a reaped parent) come back to the top. */
-function buildTree(sessions: SessionSummary[]): TreeNode[] {
-  const nodes = new Map<string, TreeNode>();
-  for (const session of sessions) nodes.set(session.id, { session, children: [] });
-  const roots: TreeNode[] = [];
-  for (const node of nodes.values()) {
-    const parent = node.session.parent ? nodes.get(node.session.parent) : undefined;
-    if (parent) parent.children.push(node);
-    else roots.push(node);
-  }
-  return roots;
-}
-
-export default function SessionsScreen() {
+export default function InterfaceScreen() {
   const theme = useTheme();
   const insets = useEdgeInsets();
-  const { status, reconnect } = useConnection();
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [query, setQuery] = useState("");
-  const [refreshing, setRefreshing] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const { status, pairing, endpoint, reconnect } = useConnection();
+  const view = useRef<WebView>(null);
+  const [loading, setLoading] = useState(true);
 
-  const reload = useCallback(async () => {
-    if (status !== "online") return;
-    try {
-      const [foundSessions, foundWorkspaces] = await Promise.all([fetchSessions(), listWorkspaces()]);
-      setSessions(foundSessions);
-      setWorkspaces(foundWorkspaces);
-    } catch {
-      // The connection layer owns "can this phone reach the machine"; a failure here is that
-      // question being answered elsewhere, and the last list stays on screen meanwhile.
-    } finally {
-      setLoaded(true);
-    }
+  useEffect(() => {
+    if (status === "unpaired" || status === "rejected") router.replace("/pair");
   }, [status]);
 
-  useEffect(() => {
-    // The rule reads `reload` as setting state during the effect, and it does — but only after
-    // awaiting the daemon, which the analysis does not follow across. Loading a list when the
-    // screen appears is the thing this effect is for.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void reload();
-  }, [reload]);
+  /**
+   * The one URL this app knows.
+   *
+   * The token goes in the query exactly once, on the document request: `frank reach` answers it
+   * with an `HttpOnly` session cookie, and every script, font, event stream and websocket the
+   * page asks for afterwards carries the token without the page ever holding it. See
+   * `require_token` in `src/frank/cli/commands/reach.py`.
+   */
+  const source = endpoint && pairing
+    ? `${endpoint}/?token=${encodeURIComponent(pairing.token)}`
+    : "";
 
-  // The daemon says when something changed rather than being polled, which is what keeps a
-  // session started at the desk appearing here without anybody pulling to refresh.
-  useEffect(() => {
-    if (status !== "online") return;
-    return subscribeEvents((event) => {
-      if (event === "sessions_changed" || event === "workspaces_changed") void reload();
-    });
-  }, [status, reload]);
+  const reload = useCallback(() => {
+    setLoading(true);
+    view.current?.reload();
+  }, []);
 
-  useEffect(() => {
-    if (status === "unpaired") router.replace("/pair");
-  }, [status]);
-
-  const grouped = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const visible = needle
-      ? sessions.filter((session) =>
-          session.title.toLowerCase().includes(needle) || session.agent.toLowerCase().includes(needle))
-      : sessions;
-    return workspaces.map((workspace) => ({
-      workspace,
-      roots: buildTree(visible.filter((session) => session.workspace_id === workspace.id)),
-    })).filter((group) => group.roots.length > 0 || !needle);
-  }, [sessions, workspaces, query]);
-
-  const primaryWorkspace = workspaces[0]?.id ?? "";
+  if (status !== "online") {
+    return <Waiting status={status} machine={pairing?.name ?? "your Mac"} onRetry={reconnect} />;
+  }
 
   return (
-    <View style={[styles.screen, { backgroundColor: theme.colors.bg, paddingTop: insets.top + theme.space[2] }]}>
-      <View style={[styles.header, { paddingHorizontal: theme.space[4], gap: theme.space[2] }]}>
-        <FrankMark size={24} color={theme.colors.fg} />
-        <Text variant="heading" style={{ flex: 1 }}>Frank</Text>
-        <Pressable onPress={() => router.push("/schedules")} hitSlop={10}>
-          <Clock size={20} color={theme.colors.fgMuted} />
-        </Pressable>
-        <Pressable onPress={() => router.push("/settings")} hitSlop={10}>
-          <Settings size={20} color={theme.colors.fgMuted} />
-        </Pressable>
-      </View>
-
-      <ConnectionBanner onRetry={reconnect} />
-
-      <View style={{ paddingHorizontal: theme.space[4], paddingTop: theme.space[3], gap: theme.space[2] }}>
-        <Button
-          label="New conversation" icon={SquarePen} variant="subtle" tone="accent" full
-          disabled={status !== "online"}
-          onPress={() => router.push({ pathname: "/session/[id]", params: { id: "new", workspace: primaryWorkspace } })}
-        />
-        <View
-          style={[
-            styles.search,
-            {
-              backgroundColor: theme.colors.bgSubtle,
-              borderRadius: theme.radii.md,
-              paddingHorizontal: theme.space[2.5],
-              gap: theme.space[2],
-              height: theme.controlHeight,
-            },
-          ]}
-        >
-          <Search size={15} color={theme.colors.fgSubtle} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search conversations"
-            placeholderTextColor={theme.colors.fgSubtle}
-            style={[theme.text.body, { flex: 1, color: theme.colors.fg }]}
-            autoCapitalize="none"
-          />
-        </View>
-      </View>
-
-      <ScrollView
-        contentContainerStyle={{
-          paddingHorizontal: theme.space[3],
-          paddingBottom: insets.bottom + theme.space[8],
-          flexGrow: 1,
-        }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            tintColor={theme.colors.fgMuted}
-            onRefresh={() => {
-              setRefreshing(true);
-              void reload().finally(() => setRefreshing(false));
-            }}
-          />
-        }
-      >
-        {loaded && grouped.every((group) => group.roots.length === 0) ? (
-          <EmptyState
-            icon={MessageSquare}
-            title={query ? "Nothing matches that" : "No conversations yet"}
-            description={query ? undefined : "Start one and it will appear here, on every device paired with this machine."}
-          />
-        ) : (
-          grouped.map((group) => (
-            <View key={group.workspace.id} style={{ paddingTop: theme.space[3] }}>
-              <Pressable
-                onPress={() => setCollapsed((previous) => ({ ...previous, [group.workspace.id]: !previous[group.workspace.id] }))}
-                style={[styles.workspaceHeader, { paddingHorizontal: theme.space[1], gap: theme.space[1.5], paddingVertical: theme.space[1.5] }]}
-              >
-                {collapsed[group.workspace.id]
-                  ? <ChevronRight size={14} color={theme.colors.fgSubtle} />
-                  : <ChevronDown size={14} color={theme.colors.fgSubtle} />}
-                <Folder size={14} color={theme.colors.fgSubtle} />
-                <Text variant="sectionLabel" tone="muted" style={{ flex: 1 }} numberOfLines={1}>
-                  {workspaceLabel(group.workspace.locations, "en", "Workspace")}
-                </Text>
-                <Text variant="small" tone="subtle">{group.roots.length}</Text>
-              </Pressable>
-              {collapsed[group.workspace.id]
-                ? null
-                : group.roots.map((node) => <SessionBranch key={node.session.id} node={node} depth={0} />)}
-            </View>
-          ))
-        )}
-      </ScrollView>
-    </View>
-  );
-}
-
-function SessionBranch({ node, depth }: { node: TreeNode; depth: number }) {
-  const theme = useTheme();
-  const [open, setOpen] = useState(false);
-  const indicator = indicatorFor(node.session, theme.colors);
-
-  return (
-    <View style={{ paddingLeft: depth * theme.space[3] }}>
-      <Row
-        title={node.session.title || "Untitled conversation"}
-        subtitle={node.session.agent}
-        onPress={() => router.push({ pathname: "/session/[id]", params: { id: node.session.id } })}
-        trailing={
-          <View style={{ flexDirection: "row", alignItems: "center", gap: theme.space[2] }}>
-            {indicator ? <StatusDot color={indicator} /> : null}
-            {node.children.length > 0 ? (
-              <Pressable onPress={() => setOpen((previous) => !previous)} hitSlop={10}>
-                {open
-                  ? <ChevronDown size={15} color={theme.colors.fgSubtle} />
-                  : <Text variant="small" tone="subtle">{node.children.length}</Text>}
-              </Pressable>
-            ) : null}
-          </View>
-        }
+    <View style={{ flex: 1, backgroundColor: theme.colors.bg, paddingTop: insets.top }}>
+      <WebView
+        ref={view}
+        source={{ uri: source }}
+        style={{ flex: 1, backgroundColor: theme.colors.bg }}
+        // The interface is a single-page application that manages its own history, so the back
+        // gesture should move within it rather than unload it.
+        allowsBackForwardNavigationGestures
+        // Dictation records through `getUserMedia`, which a webview will not grant unasked.
+        // `grant` answers with the permission the app already holds, so the person is asked once
+        // by the operating system rather than twice.
+        mediaCapturePermissionGrantType="grant"
+        allowsInlineMediaPlayback
+        mediaPlaybackRequiresUserAction={false}
+        // The token became a session cookie; without this it is dropped between loads and the
+        // interface would ask to be paired again on every launch.
+        sharedCookiesEnabled
+        thirdPartyCookiesEnabled={false}
+        onLoadEnd={() => setLoading(false)}
+        onError={() => setLoading(false)}
+        renderError={() => <Fallen machine={pairing?.name ?? "your Mac"} onRetry={reload} />}
+        automaticallyAdjustContentInsets={false}
+        contentInsetAdjustmentBehavior="never"
+        {...(Platform.OS === "android" ? { setSupportMultipleWindows: false } : {})}
       />
-      {open ? node.children.map((child) => <SessionBranch key={child.session.id} node={child} depth={depth + 1} />) : null}
+      {loading ? (
+        <View style={[styles.veil, { backgroundColor: theme.colors.bg }]}>
+          <ActivityIndicator color={theme.colors.fgMuted} />
+        </View>
+      ) : null}
     </View>
   );
 }
 
-/** Said once, at the top, rather than by every screen that fails to load something. */
-function ConnectionBanner({ onRetry }: { onRetry: () => void }) {
+/** Before the interface can load: what the connection is doing, and what to do about it. */
+function Waiting({ status, machine, onRetry }: { status: string; machine: string; onRetry: () => void }) {
   const theme = useTheme();
-  const { status, pairing } = useConnection();
-  if (status === "online" || status === "unpaired") return null;
+  const insets = useEdgeInsets();
+  const [refreshing, setRefreshing] = useState(false);
 
-  const message = status === "connecting" ? `Looking for ${pairing?.name ?? "your Mac"}…`
-    : status === "rejected" ? "That machine no longer recognises this phone. Pair again."
-    : `${pairing?.name ?? "Your Mac"} is not answering. It may be asleep, or off this network.`;
+  const message = status === "connecting"
+    ? `Looking for ${machine}…`
+    : `${machine} is not answering. It may be asleep, or off this network.`;
 
   return (
-    <View
-      style={{
-        marginHorizontal: theme.space[4],
-        marginTop: theme.space[3],
-        padding: theme.space[3],
-        borderRadius: theme.radii.md,
-        backgroundColor: status === "rejected" ? theme.colors.redSubtle : theme.colors.bgMuted,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: theme.space[2.5],
-      }}
+    <ScrollView
+      style={{ flex: 1, backgroundColor: theme.colors.bg }}
+      contentContainerStyle={[
+        styles.centre,
+        { paddingTop: insets.top, paddingBottom: insets.bottom, gap: theme.space[4], padding: theme.space[6] },
+      ]}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          tintColor={theme.colors.fgMuted}
+          onRefresh={() => {
+            setRefreshing(true);
+            onRetry();
+            setTimeout(() => setRefreshing(false), 1200);
+          }}
+        />
+      }
     >
-      <WifiOff size={16} color={status === "rejected" ? theme.colors.redFg : theme.colors.fgMuted} />
-      <Text variant="small" tone={status === "rejected" ? "danger" : "muted"} style={{ flex: 1 }}>{message}</Text>
-      {status === "rejected"
-        ? <Button label="Pair" variant="outline" tone="danger" onPress={() => router.push("/pair")} />
-        : status === "offline" ? <Button label="Retry" variant="outline" onPress={onRetry} /> : null}
+      <FrankMark size={40} color={theme.colors.fgSubtle} />
+      <Text variant="body" tone="muted" align="center">{message}</Text>
+      {status === "connecting"
+        ? <ActivityIndicator color={theme.colors.fgMuted} />
+        : <Button label="Try again" onPress={onRetry} />}
+    </ScrollView>
+  );
+}
+
+/** The interface itself failed to load, which is a different problem from not being reachable. */
+function Fallen({ machine, onRetry }: { machine: string; onRetry: () => void }) {
+  const theme = useTheme();
+  return (
+    <View style={[styles.centre, { backgroundColor: theme.colors.bg, gap: theme.space[4], padding: theme.space[6] }]}>
+      <Text variant="title" align="center">The interface would not load</Text>
+      <Text variant="small" tone="muted" align="center">
+        {machine} answered, but did not serve the screens — it may be running a build that was
+        never made.
+      </Text>
+      <Button label="Try again" onPress={onRetry} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center" },
-  search: { flexDirection: "row", alignItems: "center" },
-  workspaceHeader: { flexDirection: "row", alignItems: "center" },
+  centre: { flexGrow: 1, alignItems: "center", justifyContent: "center" },
+  veil: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center" },
 });

@@ -47,7 +47,6 @@
         }
       ],
       "expo-secure-store",
-      "expo-audio",
       [
         "expo-camera",
         {

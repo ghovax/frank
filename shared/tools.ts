@@ -19,7 +19,11 @@ import { labels } from "./labels";
 export type GlyphName =
   | "globe" | "terminal" | "file-text" | "search-code" | "mouse-pointer-click"
   | "file-pen" | "file-plus" | "download" | "message-circle-question" | "target"
-  | "user-search" | "sparkles" | "plug" | "list-checks" | "server" | "wrench";
+  | "user-search" | "sparkles" | "plug" | "list-checks" | "server" | "wrench"
+  // The settings controls, which pick from the same vocabulary so a concept cannot wear one
+  // glyph in the transcript and another in a menu.
+  | "hand" | "badge-check" | "eye" | "box" | "folder" | "git-branch" | "copy" | "zap"
+  | "circle-slash" | "user-round-x" | "mic" | "mic-off";
 
 /**
  * One icon per concept, for the whole interface. Kept together with the colours so a concept

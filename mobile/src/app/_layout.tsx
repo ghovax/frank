@@ -54,15 +54,12 @@ function Navigation() {
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: theme.colors.bg },
-          // The conversation is the destination and the list is where you came from, so the
-          // platform's own push is right; only pairing and settings arrive from below.
+          // There are two screens: the interface, and the one that points at it.
           animation: "slide_from_right",
         }}
       >
         <Stack.Screen name="index" />
         <Stack.Screen name="pair" options={{ presentation: "modal", animation: "slide_from_bottom" }} />
-        <Stack.Screen name="settings" options={{ presentation: "modal", animation: "slide_from_bottom" }} />
-        <Stack.Screen name="schedules" options={{ presentation: "modal", animation: "slide_from_bottom" }} />
       </Stack>
     </>
   );

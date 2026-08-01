@@ -51,6 +51,10 @@ DEFAULT_PORT = 8825
 # it. A private scheme is opened by this application or by nothing.
 PAIRING_SCHEME = "frank"
 
+# The session cookie the interface rides on. Named for what it is, so somebody looking at a
+# request in a debugger can tell it from the daemon's own credentials.
+REACH_COOKIE = "frank_reach"
+
 # Tailscale on macOS may be the App Store build, which puts its command line inside the bundle
 # rather than on PATH. Both are tried before concluding there is no Tailscale here.
 _TAILSCALE_CANDIDATES = (
@@ -209,11 +213,24 @@ def require_token(application, token: str):
     for the same choice: this proxy's whole job is streams that stay open for hours, and that
     middleware's cancel scopes do not survive them. A plain callable has no such opinion.
 
-    The token is accepted in the `Authorization` header or in a `token` query parameter, and is
-    then **removed from the query string** before the request goes any further. A websocket
-    handshake cannot carry a header, so the query form is not optional; forwarding it would put
-    this listener's durable secret into the daemon's logs and, worse, into the daemon's own token
-    check, where it would shadow the header the proxy is about to attach."""
+    Three ways to present it, and each exists for a transport that cannot manage the others:
+
+      - the `Authorization` header, for anything making its own requests;
+      - a `token` query parameter, because a websocket handshake cannot carry a header;
+      - a **cookie**, because a *page* cannot carry either.
+
+    The cookie is what lets this serve the interface. A browser — or the phone's webview — asks
+    for a document, then for every script, font, event stream and websocket that document names,
+    and it attaches nothing of its own to any of them. Handing the page a token to attach would
+    mean the token living in reachable storage on the device; a cookie is sent by the transport,
+    is `HttpOnly` so no script can read it, and covers subresources and upgrades alike. So the
+    app opens `…/?token=…` exactly once, this exchanges it for the cookie, and everything after
+    that is an ordinary same-origin request.
+
+    Whichever form it arrived in, it is **removed before the request goes any further**: the query
+    parameter is stripped and the cookie header is dropped. Forwarding either would put this
+    listener's durable secret into the daemon's logs and — worse, for the query form — into the
+    daemon's own token check, where it would shadow the header the proxy is about to attach."""
     import secrets as _secrets
     from urllib.parse import parse_qsl, urlencode
 
@@ -252,26 +269,99 @@ def require_token(application, token: str):
             return await application(scope, receive, send)
         if is_preflight(scope):
             return await application(scope, receive, send)
-        presented, remainder = _presented_token(scope, parse_qsl, urlencode)
+        presented, remainder, from_query = _presented_token(scope, parse_qsl, urlencode)
         if not presented or not _secrets.compare_digest(presented, token):
             return await refuse(scope, receive, send)
-        scope = dict(scope, query_string=remainder)
+        scope = dict(scope, query_string=remainder, headers=_without_cookie(scope))
+
+        # A document asked for with `?token=…` is the app opening the interface. Answer it, and
+        # set the cookie on the way out, so the hundred requests that document is about to make
+        # carry the token without anything having to remember to add it.
+        if from_query and scope["type"] == "http" and _wants_document(scope):
+            return await application(scope, receive, _setting_cookie(send, presented))
         return await application(scope, receive, send)
 
     return guarded
 
 
-def _presented_token(scope, parse_qsl, urlencode) -> tuple[str, bytes]:
-    """The token the caller offered, and the query string with it taken out."""
+def _wants_document(scope) -> bool:
+    """Whether this request is a page rather than something a page asked for.
+
+    `Sec-Fetch-Dest` says so outright and every current browser sends it. Without it, a request
+    that accepts HTML is close enough — the only cost of guessing wrong is a cookie set on
+    something that did not need one."""
+    headers = {name.lower(): value for name, value in scope.get("headers") or []}
+    destination = headers.get(b"sec-fetch-dest", b"").decode("latin-1")
+    if destination:
+        return destination == "document"
+    return b"text/html" in headers.get(b"accept", b"")
+
+
+def _setting_cookie(send, token: str):
+    """Wrap `send` so the response that goes out carries the session cookie."""
+
+    async def sending(message):
+        if message["type"] == "http.response.start":
+            message = dict(message)
+            # `HttpOnly` so no script on the page can read it back out, `SameSite=Lax` so another
+            # site cannot make the browser spend it, and session-scoped so closing the app ends
+            # it. Not `Secure`: on a tailnet this is plain HTTP by design, and a `Secure` cookie
+            # would simply never be stored there.
+            cookie = f"{REACH_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax"
+            message["headers"] = [*message.get("headers", []), (b"set-cookie", cookie.encode("latin-1"))]
+        await send(message)
+
+    return sending
+
+
+def _without_cookie(scope) -> list:
+    """The request headers with our cookie taken out, so it never reaches the daemon."""
+    from http.cookies import SimpleCookie
+
+    kept = []
     for name, value in scope.get("headers") or []:
-        if name.lower() == b"authorization":
-            decoded = value.decode("latin-1")
-            if decoded.startswith("Bearer "):
-                return decoded[len("Bearer "):], scope.get("query_string", b"")
+        if name.lower() != b"cookie":
+            kept.append((name, value))
+            continue
+        jar = SimpleCookie()
+        jar.load(value.decode("latin-1"))
+        remaining = "; ".join(
+            f"{key}={entry.value}" for key, entry in jar.items() if key != REACH_COOKIE
+        )
+        if remaining:
+            kept.append((name, remaining.encode("latin-1")))
+    return kept
+
+
+def _presented_token(scope, parse_qsl, urlencode) -> tuple[str, bytes, bool]:
+    """The token the caller offered, the query string without it, and whether it came from there.
+
+    The last of those is what decides whether to answer with a cookie: a token in the query is
+    the app opening the interface and asking to be let in for the session, while one in a header
+    or a cookie is a caller that already carries it and needs nothing back.
+    """
+    from http.cookies import SimpleCookie
+
+    headers = {name.lower(): value for name, value in scope.get("headers") or []}
+
+    authorization = headers.get(b"authorization", b"").decode("latin-1")
+    if authorization.startswith("Bearer "):
+        return authorization[len("Bearer "):], scope.get("query_string", b""), False
+
     pairs = parse_qsl(scope.get("query_string", b"").decode("latin-1"), keep_blank_values=True)
     presented = next((value for key, value in pairs if key == "token"), "")
-    remainder = urlencode([(key, value) for key, value in pairs if key != "token"])
-    return presented, remainder.encode("latin-1")
+    if presented:
+        remainder = urlencode([(key, value) for key, value in pairs if key != "token"])
+        return presented, remainder.encode("latin-1"), True
+
+    if b"cookie" in headers:
+        jar = SimpleCookie()
+        jar.load(headers[b"cookie"].decode("latin-1"))
+        entry = jar.get(REACH_COOKIE)
+        if entry is not None:
+            return entry.value, scope.get("query_string", b""), False
+
+    return "", scope.get("query_string", b""), False
 
 
 def _describe(payload: dict, port: int, host: str) -> None:
@@ -327,7 +417,12 @@ def _serve(arguments, payload: dict, secure: bool) -> int:
 
     from frank.base.paths import daemon_port_path, daemon_token_path
     from frank.cli.client import ensure_daemon
-    from frank.cli.commands.serve import GRACEFUL_SHUTDOWN_SECONDS, _port_is_taken, build_application
+    from frank.cli.commands.serve import (
+        GRACEFUL_SHUTDOWN_SECONDS,
+        _port_is_taken,
+        build_application,
+        interface_directory,
+    )
 
     if _port_is_taken(arguments.host, arguments.port):
         _note(
@@ -349,14 +444,18 @@ def _serve(arguments, payload: dict, secure: bool) -> int:
         _note("frank: frankd is not running and could not be started.")
         return 1
 
-    # The proxy alone — no static interface, unlike `frank serve`.
-    #
-    # Serving the browser interface here would look like a bonus and would not work: that bundle
-    # authenticates by being on the same machine as the daemon, so it carries no reach token and
-    # every call it made through this door would come back 401. A page that loads and then fails
-    # at everything is worse than no page. `frank serve` is the browser's door; this is the
-    # phone's.
-    application = build_application(f"http://127.0.0.1:{daemon_port}", daemon_token, None)
+    # The interface *and* the proxy, because the phone's app is a window onto that interface
+    # rather than a second implementation of it. This is what the cookie above exists for: the
+    # bundle authenticates by being on the same machine as the daemon and so carries no reach
+    # token of its own, and the cookie supplies one to every request it makes without the page
+    # ever holding it.
+    interface = interface_directory()
+    if interface is None:
+        _note(
+            "frank: the interface has not been built, so this will serve the control plane but no "
+            "screens. Run `cd web && bun run build` in a checkout, or install the packaged build."
+        )
+    application = build_application(f"http://127.0.0.1:{daemon_port}", daemon_token, interface)
     guarded = require_token(application, payload["token"])
 
     _describe(payload, arguments.port, arguments.host)

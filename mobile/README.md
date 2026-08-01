@@ -37,22 +37,26 @@ bunx expo lint
 The event types are generated into `shared/` by the web client's `bun run check:events`, and
 this client imports them — so there is nothing here to check for drift.
 
+## What is in here
+
+Almost nothing. The interface is `web/`, and this app is a window onto it — plus the two things a
+page cannot do for itself: reading a pairing code with the camera, and keeping the token in the
+keychain. If you are looking for the sessions list or the composer, they are in `web/src`.
+
+Which means: **UI work happens in `web/`, not here.** See
+[documentation/mobile.md](../documentation/mobile.md) for what has been hardened for narrow
+screens and what has not.
+
 ## Notes for whoever edits this next
 
 **Expo has changed.** Read the versioned docs at <https://docs.expo.dev/versions/v57.0.0/> rather
 than working from memory. This is SDK 57, React Native 0.86, the New Architecture, React Compiler
 on.
 
-**Almost nothing here decides anything.** Labels, workspace names, tool glyphs, status colours
-and the wire event union all live in [`shared/`](../shared/README.md) and are read by the desktop
-too. If you find yourself writing a string or picking an icon in this directory, check there
-first — every divergence between the two clients so far started as a small local decision.
+**Do not add screens here.** This directory held a React Native port of the whole interface and
+it was deleted, because a port can be faithful the day it is written and cannot stay faithful. If
+a screen belongs in Frank, it belongs in `web/src` where both clients get it.
 
-**Messages are replaced, never mutated.** `src/lib/transcript.ts` keeps a mutable *array* on
-purpose — a turn emits one part per token — but every message in it is replaced rather than
-written through. A row is memoised on the identity of its message, so a field assigned in place is
-a change no component can see: correct state, stale render, and nothing anywhere reporting a
-problem.
-
-**Nothing outside `src/theme` names a colour.** The tokens are a transcription of the desktop's,
-with the semantic names kept, so the two clients can be compared.
+**The token becomes a cookie.** The app opens the interface once with `?token=…`; `frank reach`
+answers with an `HttpOnly` session cookie that covers every subsequent request. Nothing in the
+page ever holds the token.

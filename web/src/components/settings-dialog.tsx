@@ -623,9 +623,12 @@ export function SettingsDialog({
         <Dialog.Positioner>
           <Dialog.Content
             data-layout="settings-dialog"
-            w={{ base: "calc(100vw - 16px)", md: "min(900px, calc(100vw - 48px))" }}
-            maxW="900px"
-            h={{ base: "calc(100dvh - 16px)", md: "min(760px, calc(100vh - 48px))" }}
+            // Full-bleed on a narrow screen rather than inset by 8px: a dialog that is nearly
+            // the whole viewport reads as a dialog that failed to fit, and the 8px of backdrop
+            // around it is 8px the content could have used. Wide, it stays a card.
+            w={{ base: "100%", md: "min(900px, calc(100vw - 48px))" }}
+            maxW={{ base: "100%", md: "900px" }}
+            h={{ base: "100dvh", md: "min(760px, calc(100vh - 48px))" }}
             display="flex"
             flexDirection={{ base: "column", md: "row" }}
             overflow="hidden"

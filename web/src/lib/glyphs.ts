@@ -1,8 +1,9 @@
 import type { IconType } from "react-icons";
 import {
-  LuCircleAlert, LuCircleX, LuDownload, LuFilePen, LuFilePlus, LuFileText, LuGlobe,
-  LuListChecks, LuMessageCircleQuestion, LuMoon, LuMousePointerClick, LuPlug, LuSearchCode,
-  LuServer, LuSparkles, LuTarget, LuTerminal, LuUserSearch, LuWrench,
+  LuBadgeCheck, LuBox, LuCircleAlert, LuCircleSlash, LuCircleX, LuCopy, LuDownload, LuEye,
+  LuFilePen, LuFilePlus, LuFileText, LuFolder, LuGitBranch, LuGlobe, LuHand, LuListChecks,
+  LuMessageCircleQuestion, LuMic, LuMicOff, LuMoon, LuMousePointerClick, LuPlug, LuSearchCode,
+  LuServer, LuSparkles, LuTarget, LuTerminal, LuUserRoundX, LuUserSearch, LuWrench, LuZap,
 } from "react-icons/lu";
 
 /**
@@ -34,6 +35,18 @@ export const GLYPHS: Record<string, IconType> = {
   "circle-alert": LuCircleAlert,
   "circle-x": LuCircleX,
   "moon": LuMoon,
+  "hand": LuHand,
+  "badge-check": LuBadgeCheck,
+  "eye": LuEye,
+  "box": LuBox,
+  "folder": LuFolder,
+  "git-branch": LuGitBranch,
+  "copy": LuCopy,
+  "zap": LuZap,
+  "circle-slash": LuCircleSlash,
+  "user-round-x": LuUserRoundX,
+  "mic": LuMic,
+  "mic-off": LuMicOff,
 };
 
 /** A glyph by name, falling back to the one that means "not a tool I know". */

@@ -29,7 +29,11 @@ def client() -> TestClient:
     """The guard, wrapped around an application that reports what reached it."""
 
     async def echo(request) -> JSONResponse:
-        return JSONResponse({"query": str(request.url.query), "seen": True})
+        return JSONResponse({
+            "query": str(request.url.query),
+            "cookie": request.headers.get("cookie", ""),
+            "seen": True,
+        })
 
     async def socket(websocket) -> None:
         await websocket.accept()
@@ -86,6 +90,40 @@ def test_a_websocket_handshake_needs_the_token_too(client: TestClient) -> None:
 
     with client.websocket_connect(f"/terminal?token={TOKEN}") as socket:
         assert "token" not in socket.receive_text()
+
+
+def test_a_document_asked_for_with_a_token_is_answered_with_a_cookie(client: TestClient) -> None:
+    """What lets this serve the interface at all.
+
+    A page cannot attach a credential to the hundred subresource requests it is about to make, so
+    the app opens the interface once with `?token=…` and the session cookie covers everything
+    after it — scripts, fonts, event streams and the terminal's websocket alike.
+    """
+    response = client.get("/", params={"token": TOKEN}, headers={"Sec-Fetch-Dest": "document"})
+    cookie = response.headers.get("set-cookie", "")
+    assert "frank_reach=" in cookie
+    assert "HttpOnly" in cookie
+    assert "SameSite=Lax" in cookie
+
+
+def test_the_cookie_is_then_enough_on_its_own(client: TestClient) -> None:
+    client.get("/", params={"token": TOKEN}, headers={"Sec-Fetch-Dest": "document"})
+    # The client keeps the cookie, so this carries no token of its own.
+    assert client.get("/sessions").status_code == 200
+
+
+def test_the_cookie_does_not_reach_the_daemon(client: TestClient) -> None:
+    """The reach token is this process's secret, whichever envelope it arrived in."""
+    client.get("/", params={"token": TOKEN}, headers={"Sec-Fetch-Dest": "document"})
+    seen = client.get("/sessions", headers={"Cookie": f"frank_reach={TOKEN}; theme=dark"}).json()
+    assert "frank_reach" not in seen.get("cookie", "")
+    assert seen.get("cookie") == "theme=dark"
+
+
+def test_a_subresource_with_a_token_is_not_given_a_cookie(client: TestClient) -> None:
+    """Only a document starts a session. A script that happens to carry one is just a request."""
+    response = client.get("/main.js", params={"token": TOKEN}, headers={"Sec-Fetch-Dest": "script"})
+    assert "set-cookie" not in response.headers
 
 
 def test_a_cors_preflight_passes_without_a_token(client: TestClient) -> None:

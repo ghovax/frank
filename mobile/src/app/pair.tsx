@@ -77,7 +77,7 @@ export default function PairScreen() {
   return (
     <View style={[styles.screen, { backgroundColor: theme.colors.bg, paddingTop: insets.top + theme.space[2] }]}>
       <View style={[styles.header, { paddingHorizontal: theme.space[4], paddingBottom: theme.space[3] }]}>
-        <Text variant="heading">Pair with Frank</Text>
+        <Text variant="heading" style={{ flex: 1 }}>Pair with Frank</Text>
         {pairing ? (
           <Pressable onPress={() => goBack()} hitSlop={12}>
             <X size={22} color={theme.colors.fgMuted} />

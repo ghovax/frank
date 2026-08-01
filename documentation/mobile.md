@@ -120,66 +120,51 @@ is the path that does not need Xcode locally. Nothing in the app requires it.
 
 ## How it is put together
 
+There is one interface, and it is `web/`. The phone runs it.
+
 ```
 mobile/src
-  app/                 the routes: the session list, one conversation, pairing, settings, schedules
-  components/          the transcript, the composer, the gates, and the primitives under them
-  lib/
-    api.ts             the daemon, transcribed from web/src/lib/api.ts
-    connection.tsx     the pairing, the keychain, and the endpoint race
-    transcript.ts      parts folded into a transcript — the same reducer for live and replay
-    use-chat.ts        one turn, driven and watched
-    dictation.ts       recording, and the samples the transcriber wants
-    glyphs.ts          a shared glyph name as a lucide-react-native component
-  theme/               the desktop's design tokens, as values React Native can use
+  app/
+    index.tsx        a WebView onto the machine's own interface
+    pair.tsx         the camera, and the token going into the keychain
+  lib/connection.tsx which of the machine's addresses answers, and holding the pairing
+  theme/             tokens, for the two screens above and nothing else
 ```
 
-Almost nothing in `mobile/src` decides anything. What to show lives in
-[`shared/`](../shared/README.md) and is read by both clients:
+That is the whole application. The sessions list, the transcript, the tool rows and their
+shimmer, the composer, the approval cards and the settings are all `web/src`, served by
+`frank reach` from the same bundle the Tauri app puts in a window.
 
-| | |
-|---|---|
-| `shared/messages/` | Every string either client shows. The desktop reads it through `next-intl`; the phone reads it through `shared/labels.ts`. |
-| `shared/generated/` | The wire event union, from the harness's Pydantic models. Generated once, into `shared/`. |
-| `shared/workspace.ts` | What a workspace and a location are called. |
-| `shared/status.ts` | What a turn's state is called, and in which colour. |
-| `shared/tools.ts` | What a tool call is called, and which glyph stands for it. |
+It began as a React Native port of those screens, and the reason it is not one any more is worth
+recording. A port can be faithful on the day it is written and cannot *stay* faithful, because
+nothing structurally prevents it drifting — and it drifted, in ways that were obvious to anyone
+who used both: a "thinking" row the desktop deliberately does not render, a spinner where the
+desktop shimmers, a workspace named `giovannigravili +1` where the desktop says
+`giovannigravili, colima`. Each was a decision made a second time because reaching the first one
+was inconvenient. None of them is reachable now.
 
-The typefaces are shared the same way: Metro watches `web/public/fonts`, so one set of files in
-the repository is bundled by both.
+### How the token gets in
 
-What cannot be shared is components. The desktop is React DOM and Chakra; the phone is React
-Native, which has no DOM and no stylesheet. The seam between them is deliberately narrow — each
-client has one small table (`glyphs.ts`) turning a shared glyph *name* into its own icon
-package's component, and that is the whole of it.
+The app opens `https://endpoint/?token=…` exactly once. `frank reach` answers that document with
+an `HttpOnly` session cookie, and every script, font, event stream and websocket the page asks
+for afterwards carries the token without the page ever holding it. A page cannot attach a
+credential to its own subresources; a cookie is attached by the transport, and no script can read
+it back out.
 
-### What the port changed, and why
+### What this makes into work on `web/`
 
-**Streaming.** `fetch` in React Native resolves its whole body before it answers, so a server-sent
-event tail would arrive when the turn was already over. Every request goes through `expo/fetch`,
-the WinterCG implementation that streams.
+Making the interface good on a phone is now work on the shared implementation, which is where it
+belongs — a dialog that is unusable at 390pt is unusable in a narrow browser window too. That
+hardening has started and is not finished:
 
-**Coalescing.** The desktop copies its mutable transcript into React once per animation frame. A
-phone in a pocket is not painting, so a frame scheduled then never arrives — and because a pending
-frame also means "do not schedule another", the transcript would freeze at whatever was on screen
-when the app went away. The mobile version schedules a frame *and* a timer, and whichever fires
-first cancels the other.
-
-**Dictation.** The desktop taps the browser's audio graph, which hands out float32 and resamples
-the microphone for you. A phone has no audio graph, so the same contract is met from the other
-side: record uncompressed at exactly 16 kHz and strip the WAV header. The wire format is unchanged
-— the endpoint takes raw mono float32 either way.
-
-Android is the gap, and it is stated rather than hidden: its recorder encodes, with no
-uncompressed option to ask for, so honouring that contract there would mean shipping a decoder.
-The daemon is macOS-only, so the phone at the other end of it is overwhelmingly an iPhone, and the
-app says so rather than failing after somebody has spoken a paragraph into it.
-
-**Density.** The desktop composer drops labels as it narrows — provider name, then the sandbox
-label, then the permission label, then the counts — on the rule that it is better to drop a label
-than to truncate it. A phone is below the last of those breakpoints before it starts, so the
-mobile composer is that ladder's final rung: icons and values, with the words in the sheet that
-opens when you tap one.
+- **Done.** Every dialog is full-bleed below `sm` — square corners, full height, a header and
+  footer that stay put while the body scrolls between them, and safe-area padding top and bottom.
+  Stated once in the dialog slot recipe in `web/src/components/ui/provider.tsx`, so every dialog
+  inherits it. The settings dialog is full-bleed to match.
+- **Still to do.** The model picker, the schedule form and the workspace dialogs have their own
+  widths and want checking at 390pt. The composer's control row wraps but has not been looked at
+  on a real device. The terminal panel assumes a pointer. Long-press and swipe affordances do not
+  exist anywhere.
 
 ## Checks
 
