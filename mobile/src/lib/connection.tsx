@@ -167,7 +167,22 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
     const controller = new AbortController();
     attempt.current = controller;
     setStatus("connecting");
-    const won = await raceEndpoints(current.endpoints, current.token, controller.signal);
+    // In a browser there is nothing to probe with.
+    //
+    // A page cannot ask whether another origin is there: the request is cross-origin, the reach
+    // listener answers no `access-control-allow-origin` because it is not meant to be scripted
+    // from arbitrary pages, and what comes back is an opaque failure indistinguishable from a
+    // machine that is asleep. Reporting that as "not answering" was worse than useless — it sent
+    // people to go and wake a machine that was wide awake.
+    //
+    // So on web the pairing is taken at its word and the browser is left to find out, which it
+    // does perfectly well: opening the endpoint either shows Frank or shows the browser's own
+    // "cannot connect", and that is a truthful answer arrived at by something that is actually
+    // allowed to ask. Widening CORS to buy back a probe would mean letting any page a person
+    // visits script a listener holding a token with full control of their machine.
+    const won = Platform.OS === "web"
+      ? { endpoint: current.endpoints[0] ?? "" }
+      : await raceEndpoints(current.endpoints, current.token, controller.signal);
     if (controller.signal.aborted) return;
     if (won === null) {
       setStatus("offline");

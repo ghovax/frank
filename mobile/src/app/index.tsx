@@ -28,8 +28,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Platform, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
 
+import { ExternalLink, RotateCw, ScanLine } from "lucide-react-native";
+
 import { FrankMark } from "../components/frank-mark";
-import { Alert, Button, Text } from "../components/ui";
+import { Button, Text } from "../components/ui";
 import { transcribe } from "../lib/api";
 import { useConnection } from "../lib/connection";
 import { handleDictationRequest, isDictationRequest } from "../lib/dictation-bridge";
@@ -90,6 +92,22 @@ export default function InterfaceScreen() {
     );
   }
 
+  // A browser cannot be the shell, so in one it hands over instead.
+  //
+  // `WebView` on web is an `<iframe>`, and the interface inside one would be a third party to the
+  // page framing it: reach's session cookie is `SameSite=Lax` and would never be sent, and every
+  // current browser blocks third-party cookies outright anyway. `SameSite=None` is not a way out
+  // — it requires `Secure`, and this is plain HTTP by design. So the frame would load and then
+  // fail to authenticate a single thing it asked for.
+  //
+  // Navigating there at the top level has none of that: the interface becomes the page, first
+  // party to itself, and the cookie exchange works exactly as it does in the app. Which is the
+  // honest shape of it — in a browser this shell has no camera, no keychain and no microphone to
+  // lend, so the one useful thing it still holds is the address and the token.
+  if (Platform.OS === "web") {
+    return <HandOver machine={pairing?.name ?? "your Mac"} url={source} />;
+  }
+
   return (
     // No padding here on purpose. The page is served `viewport-fit=cover` and reserves the
     // notch and the home indicator itself, in `globals.css`, so a shell that also inset the
@@ -130,6 +148,36 @@ export default function InterfaceScreen() {
   );
 }
 
+/** In a browser: the door, rather than the room. */
+function HandOver({ machine, url }: { machine: string; url: string }) {
+  const theme = useTheme();
+  const insets = useEdgeInsets();
+  return (
+    <View
+      style={[
+        styles.centre,
+        {
+          backgroundColor: theme.colors.bg,
+          gap: theme.space[4],
+          paddingTop: insets.top + theme.space[6],
+          paddingBottom: insets.bottom + theme.space[6],
+          paddingHorizontal: theme.space[6],
+        },
+      ]}
+    >
+      <FrankMark size={40} color={theme.colors.fgSubtle} />
+      <Text variant="body" tone="muted" align="center">{`Frank is paired with ${machine}.`}</Text>
+      <Button
+        label="Open Frank" icon={ExternalLink} variant="solid" tone="accent"
+        // Replacing rather than opening: a browser would treat a new window as a popup, and
+        // there is nothing on this screen worth going back to.
+        onPress={() => { window.location.replace(url); }}
+      />
+      <Button label="Pair again" icon={ScanLine} onPress={() => router.push("/pair")} />
+    </View>
+  );
+}
+
 /** Before the interface can load: what the connection is doing, and what to do about it. */
 function Waiting({ status, machine, onRetry, endpoints }: {
   status: string;
@@ -145,19 +193,6 @@ function Waiting({ status, machine, onRetry, endpoints }: {
     ? `Looking for ${machine}…`
     : `${machine} is not answering. It may be asleep, or off this network.`;
 
-  // On the web that sentence is usually a lie, and an expensive one — it sends somebody to go
-  // and wake a machine that is wide awake.
-  //
-  // This shell in a browser is a development surface, and there it is a *page*: a probe from the
-  // dev server's origin to the reach listener's is cross-origin, the listener answers no
-  // `access-control-allow-origin` because it is not meant to be reached that way, and the fetch
-  // fails with nothing readable in it. "Unreachable" is all the app can honestly conclude, so
-  // the browser is where the rest of the explanation has to come from.
-  //
-  // Not fixed by widening CORS on the listener. It carries a token with full control of the
-  // machine, and letting arbitrary origins talk to it to make a debug build more convenient is a
-  // poor trade when the interface itself is one same-origin URL away.
-  const browserBlocked = Platform.OS === "web" && status !== "connecting";
 
   return (
     <ScrollView
@@ -191,7 +226,7 @@ function Waiting({ status, machine, onRetry, endpoints }: {
         <ActivityIndicator color={theme.colors.fgMuted} />
       ) : (
         <>
-          <Button label="Try again" onPress={onRetry} />
+          <Button label="Try again" icon={RotateCw} onPress={onRetry} />
           {/*
             The addresses actually being tried, and the way out when none of them are right.
 
@@ -210,14 +245,6 @@ function Waiting({ status, machine, onRetry, endpoints }: {
               {`Tried ${endpoints.join(", ")}`}
             </Text>
           ) : null}
-          {browserBlocked ? (
-            <Alert status="info">
-              A browser will not let this page reach that address from another origin, so it
-              cannot tell whether the machine is there. Open the listener directly to see the
-              interface, or run this app on a phone.
-            </Alert>
-          ) : null}
-          <Button label="Pair again" onPress={() => router.push("/pair")} />
         </>
       )}
     </ScrollView>
@@ -234,7 +261,7 @@ function Fallen({ machine, onRetry }: { machine: string; onRetry: () => void }) 
         {machine} answered, but did not serve the screens — it may be running a build that was
         never made.
       </Text>
-      <Button label="Try again" onPress={onRetry} />
+      <Button label="Try again" icon={RotateCw} onPress={onRetry} />
     </View>
   );
 }
