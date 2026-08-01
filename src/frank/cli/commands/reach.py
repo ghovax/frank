@@ -215,7 +215,13 @@ def ensure_served(port: int) -> None:
 
     Asked for every time rather than only when absent. It is idempotent, it costs one local call,
     and it is what repairs the case where somebody ran `tailscale serve reset` — which otherwise
-    presents as a phone that cannot connect and a listener insisting it is up."""
+    presents as a phone that cannot connect and a listener insisting it is up.
+
+    Nothing here undoes it when this command stops, and that is deliberate rather than an
+    omission. The configuration is Tailscale's, it costs nothing while this is not running — the
+    address answers with a connection error, which is what a phone shows as "not answering"
+    either way — and re-asserting it on every start is cheaper than a teardown that could only
+    ever be best-effort. `tailscale serve --https=443 off` removes it."""
     completed = _tailscale("serve", "--bg", "--https=443", f"http://127.0.0.1:{port}", timeout=60.0)
     if completed.returncode == 0:
         return
@@ -232,12 +238,6 @@ def ensure_served(port: int) -> None:
             message,
         )
     raise TailscaleUnavailable("Tailscale would not serve this listener.", message)
-
-
-def stop_serving() -> None:
-    """Take this listener off the tailnet. Best effort — nothing is worth failing a shutdown."""
-    with contextlib.suppress(TailscaleUnavailable):
-        _tailscale("serve", "--https=443", "off", timeout=15.0)
 
 
 def pairing_payload() -> dict:
@@ -574,11 +574,5 @@ def _serve(arguments, payload: dict) -> int:
     configuration = uvicorn.Config(
         guarded, host=host, port=arguments.port, log_level="warning",
     )
-    try:
-        uvicorn.Server(configuration).run()
-    finally:
-        # Taken down with the listener. Leaving it configured would leave the tailnet advertising
-        # an address that answers with a connection refused, which is a worse thing for a phone
-        # to find than nothing at all.
-        stop_serving()
+    uvicorn.Server(configuration).run()
     return 0

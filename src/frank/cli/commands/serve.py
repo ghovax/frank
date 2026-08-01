@@ -393,12 +393,22 @@ def run(arguments) -> int:
             # which force-quits and prints a page of tracebacks on the way out. Waiting a few
             # seconds for a stream to notice is courteous; waiting forever is a hang.
         )
+        # SIGTERM needs a handler of its own, and this is the whole reason.
+        #
+        # Uvicorn catches both signals, restores whatever handlers were installed before it ran,
+        # and then re-raises the one it caught so the parent sees the right exit status. For
+        # Ctrl-C that lands on Python's default SIGINT handler, which raises `KeyboardInterrupt`
+        # — so the `finally` below runs and this command undoes its own side effect. For SIGTERM
+        # the default disposition is to end the process where it stands, no unwinding, and the
+        # daemon this command started outlived every `kill` of it while Ctrl-C cleaned up
+        # perfectly. The two ways of stopping a program should not differ in what they leave
+        # behind.
+        signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
         uvicorn.Server(configuration).run()
     finally:
-        # `finally`, not `except`. Uvicorn installs its own signal handlers and returns *normally*
-        # on Ctrl-C, so nothing was ever raised for an `except` to catch — and the daemon this
-        # command had started outlived the command every single time somebody stopped it the
-        # ordinary way. The guard inside means a daemon somebody else was running is left alone.
+        # `finally`, not `except`. Uvicorn returns *normally* when it is not re-raising, so
+        # nothing is guaranteed to be raised for an `except` to catch. The guard inside means a
+        # daemon somebody else was running is left alone.
         stop_daemon_if_started()
     return 0
 

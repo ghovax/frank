@@ -114,7 +114,9 @@ Over Tailscale, and only over Tailscale. `frank reach` binds `127.0.0.1` and nev
 frank reach
 ```
 
-That starts the daemon if it is not running, configures `tailscale serve`, prints a QR code, and takes the serve configuration down again when it stops.
+That starts the daemon if it is not running, configures `tailscale serve`, and prints the pairing link.
+
+The serve configuration outlives the command, deliberately. It costs nothing while `frank reach` is not running — the address answers with a connection error, which a phone shows as "not answering" either way — and re-asserting it on every start is cheaper and more reliable than a teardown that could only ever be best-effort. `tailscale serve --https=443 off` removes it.
 
 | Flag | What it does |
 |---|---|
