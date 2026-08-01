@@ -133,7 +133,6 @@ export function AgentSelectControl({
           maxW="none"
           whiteSpace="nowrap"
           fontWeight="medium"
-          lineHeight="1"
         >
           <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color="fg.muted" flexShrink={0}>
             <LuUser size={13} />
@@ -142,7 +141,6 @@ export function AgentSelectControl({
             data-composer-agent-label={responsiveCompact ? "" : undefined}
             placeholder={placeholder ?? translation("agentPlaceholder")}
             fontSize={metrics.contentFontSize}
-            lineHeight="1"
             maxW={metrics.labelMaximumWidth}
             overflow={metrics.labelMaximumWidth === "none" ? "visible" : "hidden"}
             textOverflow={metrics.labelMaximumWidth === "none" ? "clip" : "ellipsis"}
@@ -240,12 +238,11 @@ export function PermissionModeControl({
           maxW="none"
           whiteSpace="nowrap"
           fontWeight="medium"
-          lineHeight="1"
         >
           <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color={selectedAppearance.color} flexShrink={0}>
             {selectedAppearance.icon}
           </Box>
-          <Text data-composer-permission-label={responsiveCompact ? "" : undefined} fontSize={metrics.contentFontSize} fontWeight="medium" lineHeight="1" whiteSpace="nowrap" maxW={metrics.labelMaximumWidth} truncate={metrics.labelMaximumWidth !== "none"}>
+          <Text data-composer-permission-label={responsiveCompact ? "" : undefined} fontSize={metrics.contentFontSize} fontWeight="medium" whiteSpace="nowrap" maxW={metrics.labelMaximumWidth} truncate={metrics.labelMaximumWidth !== "none"}>
             {selectedLabel}
           </Text>
         </Select.Trigger>
@@ -350,7 +347,6 @@ function ToggleControl({
         {...(labelMarker ? { [labelMarker]: "" } : {})}
         fontSize={metrics.contentFontSize}
         fontWeight="medium"
-        lineHeight="1"
         minW={0}
         truncate
       >
@@ -532,12 +528,11 @@ export function WorktreeStrategyControl({
           fontWeight="medium"
           disabled={disabled}
           title={title ?? selectedChoice?.title ?? translation("worktreeStrategyFallbackTitle")}
-          lineHeight="1"
         >
           <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color={selectedAppearance.color} flexShrink={0}>
             {selectedAppearance.icon}
           </Box>
-          <Select.ValueText fontSize={metrics.contentFontSize} lineHeight="1" maxW={metrics.labelMaximumWidth} overflow={metrics.labelMaximumWidth === "none" ? "visible" : "hidden"} textOverflow={metrics.labelMaximumWidth === "none" ? "clip" : "ellipsis"} whiteSpace="nowrap" />
+          <Select.ValueText fontSize={metrics.contentFontSize} maxW={metrics.labelMaximumWidth} overflow={metrics.labelMaximumWidth === "none" ? "visible" : "hidden"} textOverflow={metrics.labelMaximumWidth === "none" ? "clip" : "ellipsis"} whiteSpace="nowrap" />
         </Select.Trigger>
         <Select.IndicatorGroup>
           <Select.Indicator />
