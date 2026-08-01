@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import sys
 from pathlib import Path
 from typing import Optional
@@ -60,14 +61,7 @@ _DROPPED_RESPONSE_HEADERS = frozenset({
 RUNTIME_PATH = "/__frank/runtime.json"
 
 
-def _note(message: str) -> None:
-    print(message, file=sys.stderr)
-
-
-# How long a stop waits for connections that do not end on their own before closing them anyway.
-# Long enough that a stream in the middle of a message finishes it; short enough that Ctrl-C is
-# answered rather than ignored.
-GRACEFUL_SHUTDOWN_SECONDS = 3
+logger = logging.getLogger("frank.serve")
 
 
 def interface_directory() -> Optional[Path]:
@@ -322,7 +316,7 @@ def run(arguments) -> int:
 
     directory = interface_directory()
     if directory is None:
-        _note(
+        logger.info(
             "frank: the interface has not been built. Run `cd web && bun run build` in a "
             "checkout, or install the packaged build which carries it."
         )
@@ -333,7 +327,7 @@ def run(arguments) -> int:
     # serving. Whoever already holds the port is almost always an earlier `frank serve`, and the
     # useful thing to say is so — not a traceback from deep inside uvicorn.
     if _port_is_taken(arguments.host, arguments.port):
-        _note(
+        logger.info(
             f"frank: {arguments.host}:{arguments.port} is already in use — most likely another "
             f"`frank serve`. Stop it, or pass `--port` to use a different one."
         )
@@ -354,7 +348,7 @@ def run(arguments) -> int:
     started_the_daemon = not daemon_is_up()
     ensure_daemon()
 
-    def stop_the_daemon_we_started() -> None:
+    def stop_daemon_if_started() -> None:
         """Undo our own side effect. A daemon someone else was already running is left alone."""
         if not started_the_daemon:
             return
@@ -366,20 +360,20 @@ def run(arguments) -> int:
         # anything. The same reasoning, and the same signal, as `frank daemon stop`.
         with contextlib.suppress(OSError, ProcessLookupError):
             os.killpg(os.getpgid(pid), signal.SIGTERM)
-        _note("frank: stopped the daemon this command had started.")
+        logger.info("frank: stopped the daemon this command had started.")
 
     try:
         port = int(daemon_port_path().read_text().strip())
         token = daemon_token_path().read_text().strip()
     except (OSError, ValueError):
-        _note("frank: frankd is not running (start it with `frank serve`)")
-        stop_the_daemon_we_started()
+        logger.info("frank: frankd is not running (start it with `frank serve`)")
+        stop_daemon_if_started()
         return 1
 
     application = build_application(f"http://127.0.0.1:{port}", token, directory)
     address = f"http://{arguments.host}:{arguments.port}"
-    _note(f"frank: serving the interface at {address} (daemon on :{port})")
-    _note("frank: this address carries full control of the daemon — do not expose it beyond loopback.")
+    logger.info(f"frank: serving the interface at {address} (daemon on :{port})")
+    logger.info("frank: this address carries full control of the daemon — do not expose it beyond loopback.")
 
     # Asked for, never assumed. Serving and opening a window are two different acts, and this
     # command was doing the second on its own initiative: run it to restart a server, or from a
@@ -398,7 +392,6 @@ def run(arguments) -> int:
             # given one. So the first interrupt appeared to do nothing, and it took a second one,
             # which force-quits and prints a page of tracebacks on the way out. Waiting a few
             # seconds for a stream to notice is courteous; waiting forever is a hang.
-            timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_SECONDS,
         )
         uvicorn.Server(configuration).run()
     finally:
@@ -406,7 +399,7 @@ def run(arguments) -> int:
         # on Ctrl-C, so nothing was ever raised for an `except` to catch — and the daemon this
         # command had started outlived the command every single time somebody stopped it the
         # ordinary way. The guard inside means a daemon somebody else was running is left alone.
-        stop_the_daemon_we_started()
+        stop_daemon_if_started()
     return 0
 
 

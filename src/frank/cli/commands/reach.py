@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import logging
 import json
 import os
 import secrets
@@ -68,10 +69,7 @@ _TAILSCALE_CANDIDATES = (
 )
 
 
-def _note(message: str) -> None:
-    """Prose, on stderr — as `frank.cli.__main__` does it, and for its reason: stdout carries
-    data, and a reader must not have to filter sentences out of it."""
-    print(message, file=sys.stderr)
+logger = logging.getLogger("frank.reach")
 
 
 def _report(error: "TailscaleUnavailable") -> None:
@@ -79,9 +77,9 @@ def _report(error: "TailscaleUnavailable") -> None:
 
     Never a traceback. Every one of these is a person needing to do something in an app, and a
     stack of frames from inside `subprocess` is noise in front of the sentence that answers it."""
-    _note(f"frank: {error}")
+    logger.info(f"frank: {error}")
     if error.detail:
-        _note(f"frank: tailscale said: {error.detail}")
+        logger.info(f"frank: tailscale said: {error.detail}")
 
 
 def reach_token(create: bool = True) -> Optional[str]:
@@ -473,10 +471,10 @@ def _describe(payload: dict, image: str = "") -> None:
     noise rather than to a smaller code — so it was a picture that mostly could not be used, in
     the middle of the output that could. `--image` writes a real PNG and opens it, which is what
     a camera was built to read."""
-    _note(f"Pair a device with Frank on {payload['name']}, at {payload['endpoint']}.")
+    logger.info(f"Pair a device with Frank on {payload['name']}, at {payload['endpoint']}.")
     if image:
-        _note(f"Pairing code saved to {_write_image(pairing_uri(payload), image)}.")
-    _note(
+        logger.info(f"Pairing code saved to {_write_image(pairing_uri(payload), image)}.")
+    logger.info(
         "This link carries a token with full control of this daemon. Send it to a phone, not to "
         "a room."
     )
@@ -489,7 +487,7 @@ def run(arguments) -> int:
 
     if action == "rotate":
         rotate_token()
-        _note("Rotated. Every paired device must pair again.")
+        logger.info("Rotated. Every paired device must pair again.")
         return 0
 
     try:
@@ -511,7 +509,6 @@ def _serve(arguments, payload: dict) -> int:
     from frank.base.paths import daemon_port_path, daemon_token_path
     from frank.cli.client import ensure_daemon
     from frank.cli.commands.serve import (
-        GRACEFUL_SHUTDOWN_SECONDS,
         _port_is_taken,
         build_application,
         interface_directory,
@@ -522,7 +519,7 @@ def _serve(arguments, payload: dict) -> int:
     # the same way anything else on the machine would.
     host = "127.0.0.1"
     if _port_is_taken(host, arguments.port):
-        _note(
+        logger.info(
             f"frank: {host}:{arguments.port} is already in use — most likely another "
             f"`frank reach`. Stop it, or pass `--port` to use a different one."
         )
@@ -538,7 +535,7 @@ def _serve(arguments, payload: dict) -> int:
         daemon_port = int(daemon_port_path().read_text().strip())
         daemon_token = daemon_token_path().read_text().strip()
     except (OSError, ValueError):
-        _note("frank: frankd is not running and could not be started.")
+        logger.info("frank: frankd is not running and could not be started.")
         return 1
 
     # The interface *and* the proxy, because the phone's app is a window onto that interface
@@ -549,9 +546,9 @@ def _serve(arguments, payload: dict) -> int:
     develop = getattr(arguments, "interface", "") or ""
     interface = None if develop else interface_directory()
     if develop:
-        _note(f"frank: serving the interface from {develop} — changes reload without a build.")
+        logger.info(f"frank: serving the interface from {develop} — changes reload without a build.")
     elif interface is None:
-        _note(
+        logger.info(
             "frank: the interface has not been built, so this will serve the control plane but no "
             "screens. Run `cd web && bun run build` in a checkout, or install the packaged build."
         )
@@ -569,14 +566,13 @@ def _serve(arguments, payload: dict) -> int:
         return 1
 
     _describe(payload, getattr(arguments, "image", "") or "")
-    _note(f"Serving on {payload['endpoint']}. Scan the code with Frank on your phone, or paste the link.")
+    logger.info(f"Serving on {payload['endpoint']}. Scan the code with Frank on your phone, or paste the link.")
 
     # No TLS here. Tailscale terminates it, with a certificate issued for this machine's tailnet
     # name — which is the one thing this process could not obtain for itself and the reason there
     # is no `--tls-certificate` any more.
     configuration = uvicorn.Config(
         guarded, host=host, port=arguments.port, log_level="warning",
-        timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_SECONDS,
     )
     try:
         uvicorn.Server(configuration).run()

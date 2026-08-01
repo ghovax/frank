@@ -25,6 +25,7 @@ and pay for the indentation by the token. `jq .` puts it back for a person.
 from __future__ import annotations
 
 import argparse
+import logging
 import contextlib
 import sys
 from typing import Any
@@ -39,6 +40,9 @@ from frank.base.tuning import Tunable, active_tuning
 class _StillRunning(Exception):
     """A process being waited on has not exited yet. Raised so a retry keeps waiting, rather
     than being a return value a caller could forget to check."""
+
+
+logger = logging.getLogger("frank")
 
 
 def _emit(payload: Any) -> None:
@@ -56,8 +60,13 @@ def _emit_line(payload: Any) -> None:
 
 def _note(message: str) -> None:
     """A diagnostic. Never stdout — that carries data, and a reader must not have to filter
-    prose out of it."""
-    print(message, file=sys.stderr)
+    prose out of it.
+
+    Through the logger rather than around it, so that everything this program says goes out one
+    way. `main` configures the handler to write the bare message to stderr: at a terminal a
+    timestamp and a level in front of every sentence is noise, and the sentences here are
+    addressed to a person, not to a log."""
+    logger.info(message)
 
 
 def _command_create(arguments: argparse.Namespace) -> int:
@@ -821,6 +830,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Prose, on stderr, with nothing in front of it. The daemon's format — timestamp, level,
+    # logger name — is right for a file somebody greps a week later and wrong for a command
+    # answering somebody who is watching. `force` because a library on the way in may already
+    # have installed a handler of its own, and then this one would be ignored.
+    #
+    # The root stays at `WARNING` and only Frank's own logger is lowered. Lowering the root as
+    # well let every library share the channel, and httpx narrating `POST http://daemon/rpc
+    # "HTTP/1.1 200 OK"` before each answer is not what somebody running `frank ps` asked to
+    # read.
+    logging.basicConfig(
+        level=logging.WARNING, format="%(message)s",
+        handlers=[logging.StreamHandler(sys.stderr)], force=True,
+    )
+    logging.getLogger("frank").setLevel(logging.INFO)
     parser = build_parser()
     arguments = parser.parse_args(argv)
     try:
