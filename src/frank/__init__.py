@@ -8,13 +8,25 @@ only way to run a turn was to start a daemon and drive a session over a socket.
 This is that front door.
 
     import asyncio
-    from frank import Session
+    from frank import AgentConfiguration, Session
+
+    assistant = AgentConfiguration(
+        name="assistant",
+        system_prompt="You answer questions about the code in front of you.",
+        provider="anthropic",
+        model="claude-opus-4-5",
+    )
 
     async def main() -> None:
-        async with Session(agent="general-assistant", directory=".") as session:
+        async with Session(assistant, directory="/srv/checkout") as session:
             print(await session.ask("what does this project do?"))
 
     asyncio.run(main())
+
+The agent is the object, not a name for one — a name would mean this library went looking
+through your home directory for a profile, which is the thing it exists not to do. The
+directory is absolute for the same reason: where tools run is a property of the run, not of
+wherever the program happened to be started from.
 
 **Everything durable is a seam.** A library that writes where it likes is a library you cannot
 embed, so each thing this one writes down — the conversation checkpoint, the background-job
@@ -31,8 +43,9 @@ to join. See :mod:`frank.base.ports`.
                 return Approval(allow=True, reason="read-only work is pre-approved")
             return None  # anything else still asks a human
 
-    async with Session("general-assistant", approvals=AllowReads()) as session:
-        ...
+    async def review() -> None:
+        async with Session(assistant, directory="/srv/checkout", approvals=AllowReads()) as session:
+            print(await session.ask("what changed here recently?"))
 
 **What a library session is not.** It is an object in your process, not a process of its own,
 so it has none of the three properties the daemon exists to provide: it is not addressable
