@@ -375,7 +375,7 @@ class _RunsTurns:
         marks: dict[str, Any] | None = None,
     ) -> HumanMessage:
         """A reminder: something neither the user nor the model said, put into the conversation
-        as a user-role message carrying a ``<systemReminder>`` block.
+        as a user-role message.
 
         The role is deliberate, and it is what keeps the conversation strictly append-only for
         the provider's prompt cache. A mid-conversation ``role:"system"`` message does not stay

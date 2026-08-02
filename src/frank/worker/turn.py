@@ -498,13 +498,13 @@ class _TurnRunner:
         runtime = prepared.runtime
         self._as_system_note = self._autonomous or self._report_reminder
         if self._report_reminder:
-            # Same delivery as a wake — a <systemReminder> reminder, never user prose —
+            # Same delivery as a wake — a reminder, never user prose —
             # because this is the harness speaking, not the person the session works for.
             self._turn_input = _PROMPTS.load("report_reminder_note", {})
         elif self._autonomous:
             # The wake message carries no prose (only an `autonomous_resume` part); the
             # framing note is supplied here and injected into the model as a
-            # <systemReminder> reminder — cache-safe user-role delivery (see
+            # A reminder — cache-safe delivery that stays in place (see
             # AgentRuntime._reminder_message) that never appears as user input in the
             # transcript.
             self._turn_input = _PROMPTS.load("background_resume_note", {})

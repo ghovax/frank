@@ -42,8 +42,13 @@ litellm.drop_params = True
 #: to the front, ahead of the whole conversation. That is both a lie about when it was said and a
 #: rewrite of the cached prefix. The user role is the only one that stays where it was put, so on
 #: this path the distinction has to live in the text.
-_REMINDER_OPEN = "<systemReminder>\n"
-_REMINDER_CLOSE = "\n</systemReminder>"
+#:
+#: A sentence rather than a tag. The only job is to say who is speaking, and a message boundary
+#: already says where the reminder ends — so the closing tag was delimiting something that was
+#: never embedded in anything. The assistant role would remove the need for even this, but it
+#: would trade one wrong author for another and weaken the thing besides: a model reads its own
+#: prior output as revisable, and a reminder is not up for revision.
+_REMINDER_PREFIX = "System reminder, not from the user:\n\n"
 
 
 class ChatLiteLLMModel(BaseChatModel):
@@ -130,7 +135,7 @@ class ChatLiteLLMModel(BaseChatModel):
             role = ChatLiteLLMModel._role_for(message)
             content = message_text(message) if isinstance(message, AIMessage) else message.content
             if message.additional_kwargs.get("reminder") and isinstance(content, str):
-                content = f"{_REMINDER_OPEN}{content}{_REMINDER_CLOSE}"
+                content = _REMINDER_PREFIX + content
             entry: dict[str, Any] = {"role": role, "content": content}
             if isinstance(message, AIMessage):
                 tool_calls = ChatLiteLLMModel._tool_calls_to_openai(message.tool_calls)
