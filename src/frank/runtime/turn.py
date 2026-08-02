@@ -153,18 +153,33 @@ class _RunsTurns:
                 self._prompt_loader.load("mcp_servers", {})
                 if "call_mcp_tool" in available else ""
             )
+            # Whole documents, so each is laid out by its own template rather than serialised
+            # into a JSON array of escaped strings: metadata as JSON, the document as itself.
+            # Empty when the machine and project supply none, which drops the section instead of
+            # leaving a bare `[]` in the prompt.
+            instruction_files = "".join(
+                self._prompt_loader.load("instruction_file", {
+                    "metadata": compact({"source": entry["source"]}),
+                    "content": entry["content"].strip(),
+                })
+                for entry in instructions_payload(self._catalogue.instructions())
+            ).strip()
+            instructions = (
+                self._prompt_loader.load("instructions", {"files": instruction_files})
+                if instruction_files else ""
+            )
             self._cached_system_prompt = self._prompt_loader.load("system_prompt", {
                 "system_prompt": self._system_prompt,
                 "context": context_json,
                 "user_environment": user_environment,
-                "instructions": compact(instructions_payload(self._catalogue.instructions())),
+                "instructions": instructions,
                 "skills": compact(skills_payload(agent_skills)),
                 "memories": compact(memories_payload(memories)),
                 "agent_context": agent_context,
                 "computer_control_guidance": computer_control_guidance,
                 "peer_sessions": peer_sessions,
                 "mcp_servers": mcp_servers,
-            })
+            }).strip()
         return self._cached_system_prompt
 
     def _user_context_enabled(self) -> bool:
@@ -395,12 +410,12 @@ class _RunsTurns:
         user role is the one role every provider accepts images on, which is how a file the
         model asked to read reaches a vision model.
 
-        The content is stored plain. How a reminder is *marked* as not-the-user is the provider's
-        question, not this one's, and the two answers differ: the Responses API has a `developer`
-        role that stays where it is put, while Anthropic's Messages API has no per-message system
-        role at all — only a top-level parameter — so there the distinction has to live in the
-        text. Each adapter renders this marker the way its own provider can carry it."""
-        text = content.strip()
+        The heading it carries lives in the ``reminder`` template, like every other piece of
+        model-facing wording here. On the Responses API the `developer` role says the same thing
+        by itself; elsewhere — Anthropic's Messages API has no per-message system role at all,
+        only a top-level parameter — the text is the only place the distinction can live, so it
+        is written once, here, and reads the same everywhere."""
+        text = self._prompt_loader.load("reminder", {"content": content.strip()}).strip()
         # `transient` marks a note that is assembled for one request and never appended to the
         # conversation — so it cannot appear in the next one, and a cache breakpoint placed on it
         # is a breakpoint nothing will ever match.

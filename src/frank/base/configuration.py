@@ -1535,9 +1535,37 @@ class PromptLoader:
         template that is not a well-formed placeholder, raises rather than silently shipping raw
         braces into a prompt the model would see. The strictness applies to the *template* only —
         braces that appear inside a substituted value (a tool result echoing Handlebars, a file
-        of Jinja, AppleScript record syntax) are data, never placeholders, and pass through."""
+        of Jinja, AppleScript record syntax) are data, never placeholders, and pass through.
+
+        A placeholder that sits alone on its line and has nothing to put there takes the line
+        with it, along with the blank line that separated it from what follows. Most sections of
+        a prompt are optional — no agent context in a library run, no screen guidance unless the
+        tool is on, no instructions on a bare machine — and a template cannot say "and the gap
+        too", so every absent one used to leave the blank lines that were meant to surround it.
+        Five of them stacked up in the system prompt, one run reaching five blank lines. Doing it
+        here keeps the templates written the way they read, and touches only the template's own
+        whitespace: a value is substituted after this and is never rewritten."""
         where = f" in prompt '{template_name}'" if template_name else ""
         placeholder = re.compile(r"\{\{\s*(\w+)\s*\}\}")
+
+        def drop_if_empty(match: re.Match[str]) -> str:
+            name = match.group(1)
+            supplied = variables.get(name)
+            return "" if supplied is not None and not str(supplied).strip() else match.group(0)
+
+        # The placeholder's own line, plus one blank line after it if there is one.
+        own_line = r"^[ \t]*\{\{\s*(\w+)\s*\}\}[ \t]*"
+        template = re.sub(own_line + r"\n(?:[ \t]*\n)?", drop_if_empty, template, flags=re.M)
+
+        # What is left on a line of its own contributes its content and nothing else: the
+        # template's own newline already ends the line, so a value that ends in one — which every
+        # value read from a file does — would spend it on a blank line nobody asked for. The
+        # template decides the spacing; the value decides the words.
+        sections = set(re.findall(own_line + r"$", template, flags=re.M))
+        variables = {
+            name: str(value).strip() if name in sections else value
+            for name, value in variables.items()
+        }
 
         # A {{ … }} in the template that is not a well-formed {{ name }} (a dotted path, a space
         # in the name, an unclosed brace) is a template bug — catch it before substitution so it
