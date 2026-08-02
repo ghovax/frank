@@ -14,7 +14,7 @@ prose is a default nobody gets.
 
 `FileCatalogue` takes the directories it searches rather than deriving them, and that is the
 whole point of the file. The old resolution baked the home directory in at four levels, and
-one of them read *other products'* configuration:
+one of them read *other products'* configuration::
 
     Path.home() / ".config" / "opencode" / "AGENTS.md"
     Path.home() / ".claude" / "CLAUDE.md"

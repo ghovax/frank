@@ -5,7 +5,7 @@ clients — has always been free of the control plane. `runtime` imports nothing
 or `worker`; it takes what it needs by injection. What it never had was a front door, so the
 only way to run a turn was to start a daemon and drive a session over a socket.
 
-This is that front door.
+This is that front door::
 
     import asyncio
     from frank import AgentConfiguration, Session
@@ -33,7 +33,7 @@ embed, so each thing this one writes down — the conversation checkpoint, the b
 record, the audit trail — is a constructor argument with an interface behind it, and the
 default for each is *nothing on your disk*. Bring your own model, store, approver or observer
 by passing an object with the right methods; there is no base class to inherit and no registry
-to join. See :mod:`frank.base.ports`.
+to join. See :mod:`frank.base.ports`::
 
     from frank import Approval, Session
 

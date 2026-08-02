@@ -146,6 +146,8 @@ def _script_namespace(
 
     Deliberately empty. A script reaches the screen the way a program reaches anything —
 
+    ::
+
         from frank.screen import screen
 
     — and nothing is put into scope for it. The runner used to inject a bound ``screen``, which
