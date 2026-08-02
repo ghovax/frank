@@ -641,6 +641,11 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             "output_tokens": 0,
             "total_tokens": 0,
             "cache_read_tokens": 0,
+            # What a cache could have returned across the session — the tokens each call had
+            # already sent last time. Kept beside the read because the read alone has no honest
+            # denominator: measured against total input it looks like a miss even when every
+            # cacheable token came back, since a token must be sent once before it can be cached.
+            "reachable_tokens": 0,
             "reasoning_tokens": 0,
             "model_calls": 0,
         }
@@ -892,10 +897,14 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         reasoning = int((usage.get("output_token_details") or {}).get("reasoning", 0) or 0)
         if not (input_tokens or output_tokens or total_tokens):
             return None
+        # What the adapter worked out about this request's prefix, read before the totals below
+        # because one of them is now part of it.
+        cache_trace = response.additional_kwargs.get("cache_trace") or {}
         self._token_usage["input_tokens"] += input_tokens
         self._token_usage["output_tokens"] += output_tokens
         self._token_usage["total_tokens"] += total_tokens
         self._token_usage["cache_read_tokens"] += cache_read
+        self._token_usage["reachable_tokens"] += int(cache_trace.get("reachable_tokens", 0) or 0)
         self._token_usage["reasoning_tokens"] += reasoning
         self._token_usage["model_calls"] += 1
         # input_tokens for this (latest) call is the whole prompt — system, history,
@@ -906,10 +915,6 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         context_window = model.context_window() if model is not None else 0
         self._latest_context_tokens = input_tokens + output_tokens
         self._context_window = context_window
-        # What the adapter worked out about this request's prefix, recorded beside the cache
-        # figure it explains. Absent for a model supplied by a caller, which is why every field
-        # has a default rather than the event demanding them.
-        cache_trace = response.additional_kwargs.get("cache_trace") or {}
         return Usage(input_tokens=input_tokens,
             output_tokens=output_tokens,
             total_tokens=total_tokens,

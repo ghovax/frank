@@ -73,6 +73,10 @@
           "default": 0,
           "type": "integer"
         },
+        "reachable_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
         "reasoning_tokens": {
           "default": 0,
           "type": "integer"

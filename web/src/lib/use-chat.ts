@@ -117,6 +117,9 @@ export interface TokenUsage {
   outputTokens: number;
   totalTokens: number;
   cacheReadTokens: number;
+  // What a cache could have returned this session — the denominator `cacheReadTokens` means
+  // something against. See the composer's usage tooltip.
+  cacheReachableTokens: number;
   reasoningTokens: number;
   modelCalls: number;
   // Current context occupancy — the latest call's prompt (system + history + turn)
@@ -739,6 +742,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
         outputTokens: cumulative?.output_tokens ?? 0,
         totalTokens: cumulative?.total_tokens ?? 0,
         cacheReadTokens: cumulative?.cache_read_tokens ?? 0,
+        cacheReachableTokens: cumulative?.reachable_tokens ?? 0,
         reasoningTokens: cumulative?.reasoning_tokens ?? 0,
         modelCalls: cumulative?.model_calls ?? 0,
         contextInputTokens,

@@ -75,7 +75,10 @@ function SessionHoverCard({
   // from the catalogue rather than from the session row, which only ever stored the id; the
   // permission mode is read out of the one definition every client already builds its controls
   // from, so the sidebar cannot come to call a mode something the picker does not.
-  const agentName = agents.find((agent) => agent.id === entry.agent)?.name || entry.agent;
+  // `title` is the agent's own name; `name` is its slug, and reads as a code beside a
+  // human-written conversation title. The same order the agent picker uses.
+  const agent = agents.find((candidate) => candidate.id === entry.agent);
+  const agentName = agent?.title || agent?.name || entry.agent;
   const permissionKey = PERMISSION_MODES.choices.find((choice) => choice.value === entry.permissionMode)?.labelKey;
   return (
     <Box maxW="320px">

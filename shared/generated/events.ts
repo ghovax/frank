@@ -60,6 +60,7 @@ export interface CumulativeUsage {
   input_tokens?: number;
   model_calls?: number;
   output_tokens?: number;
+  reachable_tokens?: number;
   reasoning_tokens?: number;
   total_tokens?: number;
 }

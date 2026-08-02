@@ -177,16 +177,22 @@ function ContextUsageChip({
         <InlineField label={translation("input")}><Text>{tokenUsage.inputTokens.toLocaleString()}</Text></InlineField>
         <InlineField label={translation("output")}><Text>{tokenUsage.outputTokens.toLocaleString()}</Text></InlineField>
         <InlineField label={translation("total")}><Text>{tokenUsage.totalTokens.toLocaleString()}</Text></InlineField>
-        {/* Always shown, unlike the rest, because zero cache reads is the reading worth having.
-            Hiding the row at zero made a session that cached nothing look identical to one where
-            the figure was never reported — and told nobody anything in the one case where the
-            number is the whole story. It is a share of the input, so it says on its own whether
-            the prefix is being reused. */}
+        {/* Always shown, unlike the rest, because zero cache reads is the reading worth having:
+            hiding the row at zero made a session that cached nothing look identical to one where
+            the figure was never reported.
+
+            The share is of what a cache *could* have returned, not of total input. Against total
+            input even a flawless session reads about 70%, because every token is paid for once
+            before it can ever be served from cache — so that number looked like a failure and was
+            not one. This one is 100% when nothing cacheable was missed, which is what somebody
+            reading it wants to know. */}
         <InlineField label={translation("cacheReads")}>
           <Text>
             {tokenUsage.cacheReadTokens.toLocaleString()}
-            {tokenUsage.inputTokens > 0
-              && ` (${Math.round((tokenUsage.cacheReadTokens / tokenUsage.inputTokens) * 100)}%)`}
+            {tokenUsage.cacheReachableTokens > 0
+              && ` / ${tokenUsage.cacheReachableTokens.toLocaleString()} (${
+                Math.round((tokenUsage.cacheReadTokens / tokenUsage.cacheReachableTokens) * 100)
+              }%)`}
           </Text>
         </InlineField>
         {tokenUsage.reasoningTokens > 0 && (

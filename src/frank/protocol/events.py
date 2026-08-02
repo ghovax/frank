@@ -172,6 +172,10 @@ class CumulativeUsage(BaseModel):
     output_tokens: int = 0
     total_tokens: int = 0
     cache_read_tokens: int = 0
+    #: What a cache could have returned across the session, so `cache_read_tokens` has a
+    #: denominator that means something. Against total input a perfect cache still reads about
+    #: 70%, because every token is paid for once before it can ever be served from cache.
+    reachable_tokens: int = 0
     reasoning_tokens: int = 0
     model_calls: int = 0
 

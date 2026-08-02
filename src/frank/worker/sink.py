@@ -251,6 +251,7 @@ class _TurnEventSink:
                         output_tokens=cumulative.get("output_tokens", 0),
                         total_tokens=cumulative.get("total_tokens", 0),
                         cache_read_tokens=cumulative.get("cache_read_tokens", 0),
+                        reachable_tokens=cumulative.get("reachable_tokens", 0),
                         reasoning_tokens=cumulative.get("reasoning_tokens", 0),
                         model_calls=cumulative.get("model_calls", 0),
                     ),
