@@ -215,28 +215,17 @@ const PROSE_FIELD_KEYS = new Set([
 ]);
 
 /**
- * Values that are an enumeration rather than data.
+ * The goal tool's outcome codes, as words.
  *
- * A tool's `status` or `code` is one of a handful of words the harness chose, not a name, a path
- * or an id — so it belongs in the reading font like the label beside it, and it should say what
- * it means. `goal_satisfied` is a symbol from `dispatch.py`; "Satisfied" is what happened.
- *
- * Anything unmapped falls back to monospace, which is the right default: an unrecognised scalar
- * is far more likely to be data than a word.
+ * `goal_satisfied` is a symbol from `dispatch.py`; "Satisfied" is what happened. Read by the
+ * result view below, which is the only place a goal outcome is shown — the call view
+ * deliberately does not repeat it.
  */
-const ENUMERATED_VALUE_KEYS: Record<string, string> = {
+const GOAL_OUTCOME_KEYS: Record<string, string> = {
   goal_active: "goalActive",
   goal_satisfied: "goalSatisfied",
   goal_cleared: "goalCleared",
-  goal_update_error: "goalUpdateError",
-  active: "goalActive",
-  satisfied: "goalSatisfied",
-  cleared: "goalCleared",
 };
-
-// The fields whose values the map above applies to. Scoped, because "active" is a word other
-// tools could reasonably emit as data.
-const ENUMERATED_FIELDS = new Set(["status", "code"]);
 
 // Translation keys for raw argument/result key labels. Falls back to the raw key
 // if unmapped. The actual label text is resolved through the ToolViews namespace.
@@ -680,11 +669,6 @@ function GenericView({ data }: { data: Record<string, unknown> }) {
           ) : PROSE_FIELD_KEYS.has(key) ? (
             // Prose values render as markdown, sized to match the compact field context.
             <MarkdownContent content={asString(value)} fontSize="xs" />
-          ) : ENUMERATED_FIELDS.has(key) && ENUMERATED_VALUE_KEYS[asString(value)] ? (
-            // One of a handful of words the harness chose: read as a word, in the reading font.
-            <Text fontSize="xs">
-              {translation(ENUMERATED_VALUE_KEYS[asString(value)] as Parameters<typeof translation>[0])}
-            </Text>
           ) : (
             // Scalar identifiers/data (names, ids, flags) render in monospace.
             <Mono whiteSpace="pre-wrap">{asString(value)}</Mono>
@@ -812,6 +796,57 @@ function SessionResultView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
+/**
+ * `update_goal`, whose call and result each said the whole thing.
+ *
+ * The result's `code` is `f"goal_{status}"` in `dispatch.py` — derived from the argument, so a
+ * generic dump of both rendered the same fact twice under two labels: "Status / Now working
+ * toward this" from the call, "Outcome / Now working toward this" from the result. Relabelling
+ * could not fix that; only one of them is worth showing.
+ *
+ * The result is the one that is true — a call is a request, and this one can be refused — so the
+ * call shows only what the result cannot: the goal being proposed. Setting a goal states it here
+ * and confirms it there; finishing one carries no argument worth rendering at all, since
+ * `explanation` is already the heading.
+ */
+function UpdateGoalCallView({ args }: { args: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  const goal = asString(args.goal).trim();
+  if (!goal) return null;
+  return (
+    <FieldList>
+      <Field label={translation("goal")}>
+        <MarkdownContent content={goal} fontSize="xs" />
+      </Field>
+    </FieldList>
+  );
+}
+
+/** What the goal is now, and what it was. One outcome, stated once. */
+function UpdateGoalResultView({ data }: { data: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  const code = asString(data.code);
+  const outcome = GOAL_OUTCOME_KEYS[code];
+  const goal = asString(data.goal).trim();
+  const previous = asString(data.previous_goal).trim();
+  if (!outcome) return <ErrorView message={asString(data.message) || code} />;
+  return (
+    <FieldList>
+      <InlineField label={translation("fieldOutcome")}>
+        <Pill colorPalette={code === "goal_active" ? "blue" : "green"}>
+          {translation(outcome as Parameters<typeof translation>[0])}
+        </Pill>
+      </InlineField>
+      {goal ? (
+        <Field label={translation("goal")}><MarkdownContent content={goal} fontSize="xs" /></Field>
+      ) : null}
+      {previous ? (
+        <Field label={translation("previousGoal")}><MarkdownContent content={previous} fontSize="xs" /></Field>
+      ) : null}
+    </FieldList>
+  );
+}
+
 export function ToolCallView({ name, args }: { name: string; args?: Record<string, unknown> }) {
   if (!args) return null;
   const specificView = (() => {
@@ -847,6 +882,8 @@ export function ToolCallView({ name, args }: { name: string; args?: Record<strin
       case "read_session":
       case "end_session":
         return <SessionReferenceCallView args={args} />;
+      case "update_goal":
+        return <UpdateGoalCallView args={args} />;
       default: {
         // The explanation is already the collapsed heading (the tool-call title);
         // strip it so the expanded body never repeats it. MCP calls fall here too.
@@ -1166,6 +1203,7 @@ export function ToolResultView({
     // `message_session` reports only that it was accepted. There is nothing to show: the reply,
     // when there is one, arrives as its own message in the transcript.
     if (name === "message_session") return null;
+    if (name === "update_goal") return <UpdateGoalResultView data={data} />;
     return <GenericView data={data} />;
   }
 

@@ -92,7 +92,7 @@ const INDICATOR_COLOR: Record<SessionIndicator, string> = {
 
 const ACTIVITY_LABEL_KEY: Record<SessionActivity, string> = {
   working: "statusWorking",
-  waiting: "statusWaiting",
+  waiting: "awaitingInput",
   idle: "statusIdle",
   asleep: "statusAsleep",
   ended: "statusEnded",
@@ -786,7 +786,7 @@ export function SessionsSidebar({
         open={pendingWorkspaceDelete !== null}
         onOpenChange={(open) => { if (!open) setPendingWorkspaceDelete(null); }}
         title={translation("deleteWorkspaceTitle")}
-        confirmLabel={translation("deleteWorkspaceConfirm")}
+        confirmLabel={translation("deleteConfirm")}
         danger
         onConfirm={() => void confirmWorkspaceDelete()}
       >

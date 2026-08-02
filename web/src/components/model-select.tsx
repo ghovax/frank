@@ -206,7 +206,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
       ? selectedModel
       : firstKnownModel;
   const effectiveModelId = value || fallbackModelId;
-  const chipModelName = effectiveModelId ? displayModelName(effectiveModelId, models) : translation("modelFallback");
+  const chipModelName = effectiveModelId ? displayModelName(effectiveModelId, models) : translation("model");
   const chipNameIsFallback = effectiveModelId ? modelNameIsFallbackId(effectiveModelId, models) : true;
   const chipProviderLabel = effectiveModelId ? providerName(providerForModel(effectiveModelId, models), providers) : "";
   const chipModel = effectiveModelId ? (models.find((model) => model.id === effectiveModelId) ?? null) : null;

@@ -222,7 +222,7 @@ export function ScheduleForm({
           agents={agents}
           value={draft.agent}
           onChange={(next) => setDraft({ ...draft, agent: next })}
-          placeholder={translation("agentPlaceholder")}
+          placeholder={translation("labelAgent")}
         />
       </ScheduleField>
 

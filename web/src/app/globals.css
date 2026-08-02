@@ -48,9 +48,18 @@ body {
      slightly below the top of the screen for no reason. */
   /* How tall a control is. 32px suits a pointer and is below both Apple's and
      Google's floor for a finger, so it grows on a coarse-pointer device — see
-     the rule further down, which is the same number by another route. Named
-     here so the composer's text box can be sized to match rather than guess. */
+     the rule further down, which is the same number by another route. */
   --control-height: 32px;
+
+  /* And how tall the ones beside the composer's text box are, which is not the
+     same number. Those are Chakra `size="sm"` buttons — `h: 9`, 36px — while the
+     selectors and chips on the row below are the 32px above.
+
+     Both, because the text box has to match whatever is actually next to it, and
+     one variable for two heights got that right in exactly one place: on a coarse
+     pointer the floor lifts everything to 40 and the box matched, while on a
+     pointer it sat 4px short of the send button it stands against. */
+  --composer-control-height: 36px;
 
   --app-gap-top: 8px;
 
@@ -86,7 +95,7 @@ html[data-tauri="true"] {
    of the right height. The 2px is the border, which `border-box` counts and
    `1lh` does not. */
 [data-composer-input] {
-  padding-block: calc((var(--control-height) - 1lh - 2px) / 2);
+  padding-block: calc((var(--composer-control-height) - 1lh - 2px) / 2);
 }
 
 /* Touch targets.
@@ -103,6 +112,8 @@ html[data-tauri="true"] {
 @media (pointer: coarse) {
   :root {
     --control-height: 40px;
+    /* The floor below lifts every control to this, so the two heights converge. */
+    --composer-control-height: 40px;
   }
 
   button:not([data-scope="menu"]):not([data-scope="select"]),

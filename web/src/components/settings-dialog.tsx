@@ -579,7 +579,7 @@ export function SettingsDialog({
     },
     ...(workspaceId ? [{
       id: "locations" as SettingsSection, label: translation("tabLocations"), icon: <LuServer size={14} />,
-      sections: [{ title: translation("locations"), rows: [], block: <WorkspaceLocationsPanel workspaceId={workspaceId} /> }],
+      sections: [{ title: translation("tabLocations"), rows: [], block: <WorkspaceLocationsPanel workspaceId={workspaceId} /> }],
     }] : []),
     // Only with a workspace, like the environments tab and for the same reason: a schedule belongs
     // to one, and there is nothing to show or create without it.
