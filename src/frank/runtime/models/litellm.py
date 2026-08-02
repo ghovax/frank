@@ -36,6 +36,15 @@ from frank.base.message_content import (
 
 litellm.drop_params = True
 
+#: How a reminder announces itself where the provider has no role that can carry one. Anthropic's
+#: Messages API takes only `user` and `assistant` per message — `system` is a top-level parameter,
+#: so a mid-conversation system message does not exist, and LiteLLM resolves that by hoisting it
+#: to the front, ahead of the whole conversation. That is both a lie about when it was said and a
+#: rewrite of the cached prefix. The user role is the only one that stays where it was put, so on
+#: this path the distinction has to live in the text.
+_REMINDER_OPEN = "<systemReminder>\n"
+_REMINDER_CLOSE = "\n</systemReminder>"
+
 
 class ChatLiteLLMModel(BaseChatModel):
     """A LangChain ``BaseChatModel`` backed by LiteLLM, the single route to every
@@ -119,10 +128,10 @@ class ChatLiteLLMModel(BaseChatModel):
         dicts: list[dict[str, Any]] = []
         for message in messages:
             role = ChatLiteLLMModel._role_for(message)
-            entry: dict[str, Any] = {
-                "role": role,
-                "content": message_text(message) if isinstance(message, AIMessage) else message.content,
-            }
+            content = message_text(message) if isinstance(message, AIMessage) else message.content
+            if message.additional_kwargs.get("reminder") and isinstance(content, str):
+                content = f"{_REMINDER_OPEN}{content}{_REMINDER_CLOSE}"
+            entry: dict[str, Any] = {"role": role, "content": content}
             if isinstance(message, AIMessage):
                 tool_calls = ChatLiteLLMModel._tool_calls_to_openai(message.tool_calls)
                 if tool_calls:

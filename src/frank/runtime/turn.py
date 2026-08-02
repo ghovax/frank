@@ -393,8 +393,14 @@ class _RunsTurns:
 
         ``image_blocks`` (OpenAI-shaped ``image_url`` blocks) make a reminder multimodal: the
         user role is the one role every provider accepts images on, which is how a file the
-        model asked to read reaches a vision model."""
-        text = self._prompt_loader.load("reminder", {"content": content.strip()}).strip()
+        model asked to read reaches a vision model.
+
+        The content is stored plain. How a reminder is *marked* as not-the-user is the provider's
+        question, not this one's, and the two answers differ: the Responses API has a `developer`
+        role that stays where it is put, while Anthropic's Messages API has no per-message system
+        role at all — only a top-level parameter — so there the distinction has to live in the
+        text. Each adapter renders this marker the way its own provider can carry it."""
+        text = content.strip()
         # `transient` marks a note that is assembled for one request and never appended to the
         # conversation — so it cannot appear in the next one, and a cache breakpoint placed on it
         # is a breakpoint nothing will ever match.

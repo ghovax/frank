@@ -202,10 +202,15 @@ class ChatCodexModel(BaseChatModel):
                         "arguments": serialized,
                     })
                 continue
-            # HumanMessage and anything else are user input.
+            # A reminder is not the user talking, and the Responses API can say so directly: a
+            # `developer` item stays exactly where it was written, unlike a system message, which
+            # this translation would fold into `instructions` at the front of the request. So the
+            # role carries the distinction here and no wrapper is needed — which is also what the
+            # Codex CLI does with every piece of contextual material it sends.
+            role = "developer" if message.additional_kwargs.get("reminder") else "user"
             items.append({
                 "type": "message",
-                "role": "user",
+                "role": role,
                 "content": [{"type": "input_text", "text": self._text_of(message)}],
             })
         return instructions, items
