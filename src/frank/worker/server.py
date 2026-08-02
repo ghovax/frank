@@ -89,7 +89,8 @@ def build_app(session) -> FastAPI:
                 # has already clamped it and written it to the record; this is what makes it
                 # true for the turn currently in flight rather than only for the next one.
                 mode = str(params.get("permission_mode") or "")
-                return JSONResponse({"result": {"permission_mode": session.set_permission_mode(mode)}})
+                applied = await session.set_permission_mode(mode)
+                return JSONResponse({"result": {"permission_mode": applied}})
             if method == "session/reset":
                 # Settings changed under a live session. Drop the cached runtime so the next
                 # turn rebuilds it against the new configuration, rather than the session

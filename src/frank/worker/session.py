@@ -334,7 +334,7 @@ class SessionExecutor(AgentExecutor):
                 state.runtime.set_locations(locations)
         return len(locations or [])
 
-    def set_permission_mode(self, mode: str) -> str:
+    async def set_permission_mode(self, mode: str) -> str:
         """Adopt a new permission mode for this session, now.
 
         Deliberately not a runtime reset. A reset takes effect on the *next* turn, and the
@@ -362,7 +362,45 @@ class SessionExecutor(AgentExecutor):
         for state in self._contexts.values():
             if state.runtime is not None:
                 state.runtime.set_permission_mode(resolved)
+        await self._reconsider_parked_gates()
         return self._permission_mode
+
+    async def _reconsider_parked_gates(self) -> None:
+        """Re-decide the approvals this session is already stopped on.
+
+        The mode reaching the live runtime settles every call the turn has *yet* to make, and
+        that was taken to be the whole job. It is not: a turn that hit a gate has already ended
+        — `input_required`, final — with its verdict written into the task record, and nothing
+        re-reads that record. So the two moments a person is most likely to reach for this
+        control were the two it did not serve. Switching to `auto` because the fourth approval
+        card was one too many left the fourth card on screen. Switching to `read_only` to stop a
+        write left the write waiting for the approval that would run it.
+
+        Each gate is put back through the same rule, barrier and classifier the preflight uses,
+        and only the ones the new mode *settles* are answered; anything still genuinely a
+        question stays a question. Answering through `resolve_pending_input` rather than
+        rewriting the record, because that is the one path that also resumes the turn once the
+        last gate is answered — a released gate that left the turn parked would be worse than
+        the card it replaced.
+        """
+        tasks = await self._turn_store.turns_for_session(self._session_id)
+        for task in tasks:
+            pending = TurnRecord.from_metadata(task.metadata).pending
+            if pending is None or not pending.gates:
+                continue
+            state = self._contexts.get(task.context_id)
+            runtime = state.runtime if state is not None else None
+            if runtime is None:
+                # No live runtime to ask. The record already carries the new mode, so the gate
+                # is re-decided when the turn resumes and rebuilds one.
+                continue
+            for gate in list(pending.gates):
+                if gate.request_id in pending.answers:
+                    continue
+                verdict = await runtime.reconsider_gate(gate.command, gate.risk, gate.is_bash)
+                if not verdict:
+                    continue
+                await self.resolve_pending_input({"request_id": gate.request_id, "decision": verdict})
 
     def reset_runtimes(self) -> None:
         """Drop cached runtimes so the next turn rebuilds them — used after a

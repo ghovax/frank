@@ -302,6 +302,52 @@ class _DecidesPermissions:
         """
         return rule == "ask" or model_risk in ("medium", "high")
 
+    async def reconsider_gate(self, command: str, risk: str, is_bash: bool) -> str:
+        """Decide a gate the session is *already parked on*, under the mode it is under now.
+
+        A gate is a question that has been asked, and changing the policy does not unask it: the
+        turn that raised it has ended, its verdict sits in the task record, and nothing re-reads
+        that record. So somebody who switches to `auto` precisely *because* they are tired of
+        being asked watches the same card go on asking, and somebody who switches to `read_only`
+        to stop a write watches the write wait patiently for the approval that would run it.
+
+        Answers ``"allow"``, ``"deny"``, or ``""`` for "still a question". Deliberately the same
+        three functions the preflight uses — the rule, the barrier, the classifier — rather than
+        a second policy that could drift from the first. The one thing it will not do is widen a
+        decision the rules deny: a gate is never how a denial reaches somebody.
+        """
+        if not is_bash or not command:
+            # A question for the user, or a gate this cannot re-decide from what was recorded.
+            # Leaving it standing is the safe answer: nobody is worse off for being asked.
+            return ""
+        policy = self._call_policy(None)
+
+        # Tightening first, because a read-only session must not be holding a card that would
+        # run a mutation if somebody pressed Allow.
+        if policy.read_only:
+            classification, _ = self._agent_configuration.tools.bash.read_only_assessment(command)
+            return "deny" if classification == "mutating" else ""
+
+        rule = self._evaluate_bash_permission(command)
+        if rule == "deny":
+            return "deny"
+        if not self._needs_a_second_opinion(rule, risk or "medium"):
+            # The rules allow it and the model called it low-risk — under the mode now in force
+            # this call would never have been gated at all.
+            return "allow"
+        if not policy.auto_permissions:
+            # Interactive: the ambiguous middle is exactly what a person is for.
+            return ""
+        decision = await self._classify_permission(
+            tool_kind="bash", command=command, raw_command=command,
+            default_decision=rule, read_only=False, risk=risk or "medium",
+            explanation="", static_classification="", static_detail="",
+        )
+        if decision.action == "auto_approve":
+            self._record_event("bash_auto_approved", {"command": command, "reason": decision.explanation, "risk": decision.risk})
+            return "allow"
+        return ""
+
     def _new_permission_request_id(self, tool_call_id: str = "") -> str:
         """The id a person's answer is filed under. Derived from the call, not minted fresh.
 

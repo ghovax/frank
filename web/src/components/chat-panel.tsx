@@ -488,7 +488,15 @@ export function ChatPanel({
     saveSettings({ permission_mode: nextMode }).catch((caught) => swallowed({ component: "chat-panel", operation: "save the settings" }, caught));
     if (!sessionId) return;
     setSessionPermissionMode(sessionId, nextMode)
-      .then((applied) => setPermissionModeState(applied))
+      .then((applied) => {
+        setPermissionModeState(applied);
+        // Told to the parent as well, and this is the half that was missing. The server clamps
+        // a request against the parent session and the agent profile's ceiling, so what took
+        // is not always what was asked for — and only the chip was being corrected. The page
+        // went on holding the unclamped value, which is what a *new* session would then start
+        // under: the one place the difference is silently consequential.
+        if (applied !== nextMode) onPermissionModeChange?.(applied);
+      })
       .catch((caught) => {
         // The session kept the mode it had, so the chip must go back to saying so rather
         // than showing a policy that is not being enforced.
