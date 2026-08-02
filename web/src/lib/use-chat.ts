@@ -971,9 +971,13 @@ function replayTurns(turns: A2ATurn[]): {
   tokenUsage: TokenUsage | null;
   keyCounts: Map<string, number>;
 } {
-  const mainTurns = turns
-    .filter((turn) => !(turnState(turn).referenceTurnIds ?? []).length)
-    .sort((first, second) => String(first.status?.timestamp ?? "").localeCompare(String(second.status?.timestamp ?? "")));
+  // Left in the order the server sent them, which is the order they *began* — it sorts each
+  // turn by where its first message landed in the append-only history, and that append order is
+  // the chronology. Re-sorting here by `status.timestamp` sorted by when each turn *ended*
+  // instead, and the two disagree whenever turns overlap: a short turn that starts later can
+  // finish first, and did — a session was replayed with its final answer at the top and every
+  // tool call after it, because the turn holding them took nineteen seconds longer to close.
+  const mainTurns = turns.filter((turn) => !(turnState(turn).referenceTurnIds ?? []).length);
   const state: ReduceState = newReduceState();
   for (const turn of mainTurns) {
     // A turn's full message stream is its history PLUS its trailing status

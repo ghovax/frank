@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import fcntl
 import logging
 import os
 import signal
@@ -86,11 +87,32 @@ async def serve(assignment: dict, ready_fd: int = -1, lifeline_fd: int = -1) -> 
     )
     await session.start()
 
-    # A socket left behind by a previous process would make bind fail; the daemon unlinks on
-    # reap, but a hard kill leaves one, so clear the path before claiming it.
+    # Claim the session before touching its socket, and hold the claim for as long as this
+    # process lives.
+    #
+    # A session is one conversation, and one conversation cannot have two writers. The daemon
+    # tries to arrange that — a wake lock, a sleeping check, a reachability check — but every one
+    # of those is an *inference* about whether a worker exists, and an inference that is wrong
+    # once forks a second worker. Which used to be enough, because the line below unlinks the
+    # socket path unconditionally: the newcomer took the path from the incumbent, both served the
+    # same session id, each with its own runtime and its own copy of the conversation, and a
+    # single question came back answered twice.
+    #
+    # A lock makes the arrangement a fact instead of an intention. The kernel releases it when
+    # the holder dies, however it dies, so the stale-socket case the unlink was written for still
+    # works: no live holder means the lock is free, and the newcomer is the rightful owner.
+    socket_path.parent.mkdir(parents=True, exist_ok=True)
+    claim = os.open(str(socket_path) + ".lock", os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(claim, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        os.close(claim)
+        _report(ready_fd, {"ready": False, "reason": "this session already has a worker"})
+        await session.aclose()
+        return 1
+    # Now that nothing else can be serving it, a socket still on disk is a dead process's leavings.
     with contextlib.suppress(OSError):
         socket_path.unlink(missing_ok=True)
-    socket_path.parent.mkdir(parents=True, exist_ok=True)
 
     import uvicorn
 
@@ -183,6 +205,10 @@ async def serve(assignment: dict, ready_fd: int = -1, lifeline_fd: int = -1) -> 
         await session.aclose()
         with contextlib.suppress(OSError):
             socket_path.unlink(missing_ok=True)
+        # The kernel would drop this when the process exits anyway; closing it here means an
+        # orderly shutdown hands the session on without waiting for that.
+        with contextlib.suppress(OSError):
+            os.close(claim)
     return 0
 
 

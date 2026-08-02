@@ -894,7 +894,20 @@ class SessionExecutor(AgentExecutor):
         self._context(self._session_id)
 
     async def start_turn(self, parts: list, metadata: dict) -> str:
-        """Drive a turn from an inbound message, returning its task id."""
+        """Start a turn from an inbound message and answer with its task id.
+
+        Answers as soon as the turn *has* an id, not when the turn is over. This used to drain
+        the whole event stream before returning, so `message/send` stayed open for the entire
+        turn — and the relay that carries it gives up after two minutes. A turn that ran longer
+        therefore looked to the daemon exactly like a session with no worker at all, and the
+        cure for that is to fork one: two workers on one session id, each with its own runtime
+        and its own copy of the conversation, both answering the same message. The person
+        watching saw their question answered twice, out of order.
+
+        The stream is still drained, because closing it early would cancel the turn — but in a
+        task of its own, held in `_startup_resume_tasks` so it is not collected mid-flight. The
+        events were never wanted here: they reach the client over its attach stream.
+        """
         handler = self._agent_handler()
         if handler is None:
             raise RuntimeError("This session has no request handler.")
@@ -906,11 +919,26 @@ class SessionExecutor(AgentExecutor):
             context_id=self._session_id,
             metadata=turn_metadata_envelope(metadata) if metadata else None,
         )
-        turn_id = ""
-        async for event in handler.on_message_send_stream(MessageSendParams(message=message)):
-            if isinstance(event, Task) and not turn_id:
-                turn_id = event.id
-        return turn_id
+        identified: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+
+        async def drive() -> None:
+            try:
+                async for event in handler.on_message_send_stream(MessageSendParams(message=message)):
+                    if isinstance(event, Task) and not identified.done():
+                        identified.set_result(event.id)
+            except Exception as error:  # noqa: BLE001 — a failed turn must still answer the send
+                if not identified.done():
+                    identified.set_exception(error)
+                else:
+                    logger.exception("the turn raised after it had started")
+            finally:
+                if not identified.done():
+                    identified.set_result("")
+
+        turn = asyncio.create_task(drive())
+        self._startup_resume_tasks.add(turn)
+        turn.add_done_callback(self._startup_resume_tasks.discard)
+        return await identified
 
     def _title_from_first_message(self, parts: list) -> None:
         """Name the session after what it was first asked to do.
