@@ -128,7 +128,7 @@ export function MachinesPanel() {
         <Text textStyle="sectionLabel" color="fg.muted">{translation("pairingLink")}</Text>
         <Flex gap={2} align="center">
           <Input
-            size="sm"
+            size="xs"
             flex={1}
             value={link}
             placeholder={translation("pairingLinkPlaceholder")}
@@ -137,7 +137,7 @@ export function MachinesPanel() {
               if (event.key === "Enter") void save();
             }}
           />
-          <Button size="sm" variant="solid" colorPalette="blue" loading={saving} disabled={!link.trim()} onClick={() => void save()}>
+          <Button size="xs" variant="solid" colorPalette="blue" loading={saving} disabled={!link.trim()} onClick={() => void save()}>
             {translation("saveConnection")}
           </Button>
         </Flex>

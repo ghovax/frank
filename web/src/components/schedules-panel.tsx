@@ -120,7 +120,7 @@ export function SchedulesPanel({ workspaceId, agents }: { workspaceId: string; a
   return (
     <Flex direction="column" gap={3} w="100%">
       {schedules.length === 0 && !adding ? (
-        <Text fontSize="sm" color="fg.muted">{translation("empty")}</Text>
+        <Text fontSize="xs" color="fg.muted">{translation("empty")}</Text>
       ) : null}
 
       {schedules.map((schedule) => (

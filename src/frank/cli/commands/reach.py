@@ -577,8 +577,21 @@ def _serve(arguments, payload: dict) -> int:
             "frank: the interface has not been built, so this will serve the control plane but no "
             "screens. Run `cd web && bun run build` in a checkout, or install the packaged build."
         )
+    def where_is_the_daemon() -> tuple[str, str]:
+        """The daemon's address and token, read fresh.
+
+        The proxy calls this when a connection is refused. `frank reach` is meant to be left
+        running while daemons come and go beneath it — a phone that started a session and went in
+        a pocket should not need somebody at the Mac to restart a listener — and the daemon takes
+        a new ephemeral port and a new token on every boot."""
+        return (
+            f"http://127.0.0.1:{int(daemon_port_path().read_text().strip())}",
+            daemon_token_path().read_text().strip(),
+        )
+
     application = build_application(
         f"http://127.0.0.1:{daemon_port}", daemon_token, interface, interface_url=develop,
+        rediscover=where_is_the_daemon,
     )
     guarded = require_token(application, payload["token"])
 

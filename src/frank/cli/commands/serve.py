@@ -28,7 +28,7 @@ import contextlib
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 # Requests whose bodies are streamed rather than buffered, and headers that must not be copied
 # between the two hops. `Host` would name this server rather than the daemon; the hop-by-hop
@@ -62,6 +62,10 @@ RUNTIME_PATH = "/__frank/runtime.json"
 
 
 logger = logging.getLogger("frank.serve")
+
+# Requests this proxy may send a second time. A body arrives as a one-shot stream, so anything
+# carrying one cannot be replayed without silently forwarding an empty one; these carry none.
+_REPLAYABLE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "DELETE"})
 
 
 def interface_directory() -> Optional[Path]:
@@ -100,10 +104,21 @@ def _wants_interface(path: str) -> bool:
     return path in _INTERFACE_PATHS or path.startswith(_INTERFACE_PREFIXES)
 
 
-def build_application(daemon_url: str, token: str, directory: Optional[Path], interface_url: str = ""):
+def build_application(
+    daemon_url: str, token: str, directory: Optional[Path], interface_url: str = "",
+    rediscover: Optional[Callable[[], tuple[str, str]]] = None,
+):
     """The ASGI application: the interface at the root, the daemon behind everything else.
 
     `directory` may be ``None``, which means serve no interface and proxy everything.
+
+    `rediscover` is how this survives the daemon restarting under it. The daemon takes a fresh
+    ephemeral port and mints a fresh token on every boot, and a proxy that resolved both once at
+    startup goes on forwarding to a port nobody is listening on — answering 502 to everything,
+    with the daemon up and healthy beside it. Given a callable that re-reads the runtime files,
+    this asks it again the moment a connection is refused, so the next request finds the daemon
+    where it moved to. Left as ``None`` the behaviour is what it was: resolved once, and wrong
+    from the moment the daemon restarts.
 
     `interface_url` replaces the directory with a **running dev server**, which is what makes
     iterating on the interface from a phone bearable: a static export has to be rebuilt for every
@@ -115,7 +130,28 @@ def build_application(daemon_url: str, token: str, directory: Optional[Path], in
     from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
     from starlette.routing import Route, WebSocketRoute
 
+    # Where the daemon is *now*. Mutable because it moves: see `rediscover` above.
+    upstream_daemon = {"url": daemon_url, "token": token}
     client = httpx.AsyncClient(base_url=daemon_url, timeout=None, follow_redirects=False)
+
+    async def find_daemon_again() -> bool:
+        """Re-read where the daemon is. True when it moved, which is when a retry is worth it."""
+        nonlocal client
+        if rediscover is None:
+            return False
+        try:
+            found_url, found_token = rediscover()
+        except Exception as error:  # noqa: BLE001 — a proxy must not die because a file was mid-write
+            logger.debug("could not re-read the daemon's endpoint: %s", error)
+            return False
+        if not found_url or (found_url == upstream_daemon["url"] and found_token == upstream_daemon["token"]):
+            return False
+        logger.info(f"frank: the daemon moved to {found_url}; reconnecting.")
+        upstream_daemon["url"] = found_url
+        upstream_daemon["token"] = found_token
+        previous, client = client, httpx.AsyncClient(base_url=found_url, timeout=None, follow_redirects=False)
+        await previous.aclose()
+        return True
     interface = (
         httpx.AsyncClient(base_url=interface_url, timeout=None, follow_redirects=False)
         if interface_url else None
@@ -158,6 +194,9 @@ def build_application(daemon_url: str, token: str, directory: Optional[Path], in
         return await proxy(request)
 
     async def proxy(request, upstream_client=None, authorise: bool = True) -> Response:
+        # Resolved per call rather than captured, so a reconnection below is picked up by
+        # everything that follows it rather than only by whatever built its client afterwards.
+        to_daemon = upstream_client is None
         upstream_client = upstream_client or client
         upstream = request.url.path
         if request.url.query:
@@ -178,12 +217,38 @@ def build_application(daemon_url: str, token: str, directory: Optional[Path], in
         # handed one — it is not the daemon, and a credential sent to the wrong process is a
         # credential in the wrong log.
         if authorise:
-            headers["Authorization"] = f"Bearer {token}"
+            headers["Authorization"] = f"Bearer {upstream_daemon['token']}"
         outgoing = upstream_client.build_request(
             request.method, upstream, headers=headers, content=request.stream(),
         )
         try:
             response = await upstream_client.send(outgoing, stream=True)
+        except httpx.ConnectError as error:
+            # Nothing is listening there. Either the daemon is down, or it restarted onto another
+            # port — and those are told apart by looking, which is what this does.
+            moved = to_daemon and await find_daemon_again()
+            if not moved:
+                return JSONResponse(
+                    {"error": {"code": "daemon_unreachable", "message": str(error)}}, status_code=502,
+                )
+            # Retried only when this request's body can be produced a second time. A connection
+            # that was refused consumed nothing, but `request.stream()` is a one-shot generator
+            # and re-sending it would forward an empty body — silently, which is worse than the
+            # 502. A method that carries no body has nothing to re-send, and covers every request
+            # a page makes while it is finding out the daemon came back.
+            if request.method.upper() not in _REPLAYABLE_METHODS:
+                return JSONResponse(
+                    {"error": {"code": "daemon_moved", "message": "The daemon restarted; try that again."}},
+                    status_code=503,
+                )
+            headers["Authorization"] = f"Bearer {upstream_daemon['token']}"
+            retried = client.build_request(request.method, upstream, headers=headers)
+            try:
+                response = await client.send(retried, stream=True)
+            except httpx.HTTPError as retry_error:
+                return JSONResponse(
+                    {"error": {"code": "daemon_unreachable", "message": str(retry_error)}}, status_code=502,
+                )
         except httpx.HTTPError as error:
             return JSONResponse(
                 {"error": {"code": "daemon_unreachable", "message": str(error)}}, status_code=502,
@@ -223,7 +288,9 @@ def build_application(daemon_url: str, token: str, directory: Optional[Path], in
         which is why the daemon also accepts the token as a query parameter. That is the form
         used here, and it never leaves this process either."""
 
-        await _relay(websocket, daemon_url, append_token=True)
+        # Read at connect time, not captured at build time: a terminal opened after the daemon
+        # moved should reach the daemon, not the port it used to be on.
+        await _relay(websocket, upstream_daemon["url"], append_token=True)
 
     async def _relay(websocket, base: str, append_token: bool) -> None:
         import websockets as websockets_client
@@ -231,7 +298,7 @@ def build_application(daemon_url: str, token: str, directory: Optional[Path], in
         query = str(websocket.url.query or "")
         if append_token:
             separator = "&" if query else ""
-            query = f"{query}{separator}token={token}"
+            query = f"{query}{separator}token={upstream_daemon['token']}"
         target = (
             base.replace("http://", "ws://", 1).replace("https://", "wss://", 1)
             + websocket.url.path
