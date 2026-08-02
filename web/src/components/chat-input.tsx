@@ -215,7 +215,10 @@ function ContextUsageChip({
       <Flex
         align="center"
         gap={1.5}
-        h={8}
+        // The house control height, not a number. This chip sits in a row of buttons and was
+        // pinned to 32px while they grow to 40 on a coarse pointer, so on a phone it was the one
+        // thing in that row an eye could pick out as the wrong size.
+        h="var(--control-height)"
         px={2}
         borderRadius="md"
         border="1px solid"
@@ -968,7 +971,7 @@ export function ChatInput({
           {onCompact && !!sessionId && !!tokenUsage && tokenUsage.contextTokens > 0 && (isCompacting || compactionUserCount > compactionKeepRecentTurns) && (
             <Button
               variant="outline"
-              h={8}
+              h="var(--control-height)"
               px={2}
               bg="bg"
               borderColor="border"
