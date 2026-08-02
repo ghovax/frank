@@ -221,7 +221,6 @@ function friendlyErrorFromPart(part: A2APart | undefined): FriendlyError | null 
 }
 
 function pushErrorMessage(state: ReduceState, error: FriendlyError, sourceId?: string): void {
-  state.lane = null;
   state.messages = [
     ...state.messages,
     {
@@ -276,7 +275,6 @@ function mergeMcpFinalResult(existing: unknown, finalResult: unknown): unknown {
 interface ReduceState {
   messages: ChatMessage[];
   tasks: ChatTask[];
-  lane: string | null; // id of the open assistant prose block, if any
   tokenUsage: TokenUsage | null; // latest cumulative token totals, if any reported
   // Per-source occurrence counter so every rendered message gets a key derived
   // from the stable server messageId (not its array position). This is what lets
@@ -321,7 +319,6 @@ function newReduceState(): ReduceState {
   return {
     messages: [],
     tasks: [],
-    lane: null,
     tokenUsage: null,
     keyCounts: new Map(),
   };
@@ -329,7 +326,7 @@ function newReduceState(): ReduceState {
 
 // A stable, position-independent id for a rendered message. Derived from the
 // originating A2A messageId plus an occurrence counter (a single message can open
-// more than one prose lane, e.g. text → tool call → text), so re-replaying the
+// more than one prose block, e.g. text → tool call → text), so re-replaying the
 // transcript with older pages prepended keeps every existing key byte-identical.
 // Falls back to a position-based id only when no messageId is available.
 function toolCallMessageId(toolCallId: string | undefined): string {
@@ -497,11 +494,16 @@ function appendAssistantContentBlock(
     throw new Error("Assistant messages require structured content blocks.");
   }
   const existingContentBlocks = message.contentBlocks;
-  const lastContentBlockIndex = existingContentBlocks.length - 1;
-  const lastContentBlock = existingContentBlocks[lastContentBlockIndex];
-  const contentBlocks = lastContentBlock?.identifier === blockIdentifier
+  // Merged by identity, not by position. The identifier names one block the provider is
+  // writing, and a later delta for it belongs in it wherever it has ended up — matching only
+  // the *last* block meant a delta that arrived after any other block had opened was filed as
+  // a second block under a name already taken.
+  const existingIndex = existingContentBlocks.findIndex(
+    (contentBlock) => contentBlock.identifier === blockIdentifier
+  );
+  const contentBlocks = existingIndex >= 0
     ? existingContentBlocks.map((contentBlock, contentBlockIndex) =>
-        contentBlockIndex === lastContentBlockIndex
+        contentBlockIndex === existingIndex
           ? { ...contentBlock, content: contentBlock.content + text }
           : contentBlock
       )
@@ -509,29 +511,50 @@ function appendAssistantContentBlock(
   return { ...message, content: message.content + text, contentBlocks };
 }
 
+/**
+ * The message already holding this block of prose, if there is one.
+ *
+ * Prose is grouped by the identity the model gives it, and by nothing else. An identifier names
+ * one block of text a model call is writing: every delta of it carries the same one, and no two
+ * blocks share one. So a delta whose identifier is already on screen belongs in that message,
+ * however many reasoning deltas, statuses or tool calls arrived in between.
+ *
+ * This replaced a mutable "is a prose message open" flag that ten different events cleared. It
+ * was a guess about ordering standing in for an identity that was right there, and it guessed
+ * wrong whenever the provider interleaved anything mid-sentence: the tail of the sentence became
+ * a second bubble, landing on its own line or below the tool calls that followed it. Only a
+ * reload put it right, because replay rebuilds prose from the finished artifact rather than from
+ * the deltas — which is the clearest sign the deltas were being grouped by the wrong thing.
+ */
+function messageHoldingBlock(state: ReduceState, blockIdentifier: string): string | null {
+  const owner = state.messages.findLast(
+    (message) => message.role === "assistant"
+      && message.contentBlocks?.some((block) => block.identifier === blockIdentifier)
+  );
+  return owner?.id ?? null;
+}
+
 function pushAssistantText(state: ReduceState, text: string, blockIdentifier: string, sourceId?: string): void {
   if (!text) return;
   if (!blockIdentifier) throw new Error("Assistant text requires a content-block identity.");
   finishRunningThinking(state);
-  if (state.lane === null) {
-    const id = stableMessageId(state, "asst", sourceId);
-    state.lane = id;
-    state.messages = [
-      ...state.messages,
-      {
-        id,
-        role: "assistant",
-        content: text,
-        contentBlocks: [{ identifier: blockIdentifier, content: text }],
-        timestamp: new Date().toISOString(),
-      },
-    ];
-  } else {
-    const laneId = state.lane;
+  const owner = messageHoldingBlock(state, blockIdentifier);
+  if (owner !== null) {
     state.messages = state.messages.map((message) =>
-      message.id === laneId ? appendAssistantContentBlock(message, text, blockIdentifier) : message
+      message.id === owner ? appendAssistantContentBlock(message, text, blockIdentifier) : message
     );
+    return;
   }
+  state.messages = [
+    ...state.messages,
+    {
+      id: stableMessageId(state, "asst", sourceId),
+      role: "assistant",
+      content: text,
+      contentBlocks: [{ identifier: blockIdentifier, content: text }],
+      timestamp: new Date().toISOString(),
+    },
+  ];
 }
 
 // Normalize the attachments carried by an `attachments` data payload into the lean
@@ -578,7 +601,6 @@ function reduceInboundMessage(state: ReduceState, message: A2AMessage, peerSende
   // messages, so they never reach this path at all.) A typed user turn always carries
   // prose; an attachment-only turn carries chips.
   if (!text.trim() && attachments.length === 0) return;
-  state.lane = null;
   const meta = {
     ...(attachments.length > 0 ? { attachments } : {}),
     ...(peerSender ? { peerSender } : {}),
@@ -619,7 +641,7 @@ function steeringTextFromPart(part: A2APart | undefined): string {
 
 function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourceId?: string): void {
   // Every event on this stream belongs to this session. A peer is a session of its own
-  // with its own stream, so there is no longer a foreign lane to route away.
+  // with its own stream, so there is no longer a foreign transcript to route away.
   // The one typed reader of a root wire event: switch on the generated union's
   // discriminant so a renamed kind or field is a compile error, not a silent "".
   // `data` stays in scope for the few helpers that take a raw record.
@@ -645,7 +667,6 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
           && !!sourceId && message.id.startsWith(`user-${sourceId}-`),
       );
       if (alreadyShown) break;
-      state.lane = null;
       state.messages = [
         ...state.messages,
         { id: stableMessageId(state, "user", sourceId), role: "user", content: text, timestamp: new Date().toISOString() },
@@ -656,7 +677,6 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       // A context-compaction marker: "started" shows a live compacting indicator,
       // "done" turns it into the separator (or, when nothing was compacted, drops
       // it). Renders as a full-width divider — not an assistant/user bubble.
-      state.lane = null;
       if (event.status === "started") {
         state.messages = [
           ...state.messages,
@@ -728,22 +748,20 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       if (event.code === "waiting_for_tools") finishRunningThinking(state);
       // A status (e.g. goal_check between answer attempts) ends the current prose
       // block, so the next text starts its own message instead of concatenating.
-      state.lane = null;
       break;
     }
     case "thinking":
       // A new reasoning phase ends the current prose block — without this, text
       // emitted after a mid-turn think (or a control tool) merges into the prior
       // message and the thinking card lands out of order.
-      state.lane = null;
       applyThinking(state, event.text ?? "");
       break;
     case "thinking_done":
       finishRunningThinkingWithDuration(state, event.duration_ms ?? 0);
       break;
     case "tool_call": {
-      // Every tool call breaks the prose lane so surrounding text doesn't run together.
-      state.lane = null;
+      // Text either side of a tool call is separate prose, and says so: the model gives
+      // each block its own identity, so nothing here has to force the split.
       finishRunningThinking(state);
       const toolCallId = event.tool_call_id;
       // One row per tool call, always. This used to append unconditionally, which is only
@@ -785,7 +803,6 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
     }
     case "tool_result": {
       finishRunningThinking(state);
-      state.lane = null;
       const toolName = event.tool_name;
       const toolCallId = event.tool_call_id;
       const currentMessage = state.messages.find((message) => messageMatchesToolEvent(message, toolName, toolCallId));
@@ -915,7 +932,6 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
     }
     case "warning": {
       finishRunningThinking(state);
-      state.lane = null;
       const title = event.title ?? "Warning";
       const message = event.message ?? "";
       state.messages = [
@@ -948,7 +964,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
 // already compacted server-side (adjacent same-kind deltas merged), so it is reduced
 // as-is — no client-side compaction pass. Tasks that reference another task are a
 // peer's work, not this session's turns, and are filtered out: a peer is its own
-// session with its own transcript, never a lane inside this one.
+// session with its own transcript, never a branch inside this one.
 function replayTurns(turns: A2ATurn[]): {
   messages: ChatMessage[];
   tasks: ChatTask[];
@@ -960,7 +976,6 @@ function replayTurns(turns: A2ATurn[]): {
     .sort((first, second) => String(first.status?.timestamp ?? "").localeCompare(String(second.status?.timestamp ?? "")));
   const state: ReduceState = newReduceState();
   for (const turn of mainTurns) {
-    state.lane = null;
     // A turn's full message stream is its history PLUS its trailing status
     // message: the A2A TaskManager keeps the latest message on `status.message`
     // and only folds it into `history` on the *next* status update. A turn
@@ -1107,7 +1122,6 @@ export function useChat(
     stateRef.current = {
       messages: replayed.messages,
       tasks: replayed.tasks,
-      lane: null,
       tokenUsage: replayed.tokenUsage,
       keyCounts: replayed.keyCounts,
     };
@@ -1293,7 +1307,6 @@ export function useChat(
       if (rendersIdentically(stateRef.current.messages, replayed.messages)) {
         stateRef.current.tasks = replayed.tasks;
         stateRef.current.tokenUsage = replayed.tokenUsage;
-        stateRef.current.lane = null;
         sessionIdRef.current = initialSessionId;
         setSessionId(initialSessionId);
         flushNow();
@@ -1302,7 +1315,6 @@ export function useChat(
       stateRef.current = {
         messages: replayed.messages,
         tasks: replayed.tasks,
-        lane: null,
         tokenUsage: replayed.tokenUsage,
         keyCounts: replayed.keyCounts,
       };
@@ -1386,8 +1398,7 @@ export function useChat(
 
   const runStream = useCallback(
     (input: ChatInput) => {
-      // Optimistic input message + reset the open prose lane.
-      stateRef.current.lane = null;
+      // Optimistic input message.
       const userMessageId = clientIdentifier();
       const dataParts = input.dataParts ?? [];
       const attachments = dataParts.flatMap((dataPart) => attachmentsFromData(dataPart));
@@ -1430,7 +1441,6 @@ export function useChat(
         // back up if the harness wakes it on its own.
         attachRef.current?.abort();
         attachRef.current = null;
-        stateRef.current.lane = null;
         // A clean turn already settled its cards from the events it emitted; but a Stop, or
         // a connection that drops mid-turn (daemon stall, network loss), ends it with no
         // terminal event, which would otherwise leave every in-flight tool/thinking card

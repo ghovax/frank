@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, AsyncIterator, Callable, Optional, Sequence, cast
+from uuid import uuid4
 
 import litellm
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -250,10 +251,15 @@ class ChatLiteLLMModel(BaseChatModel):
         if isinstance(content, str):
             if not content:
                 return False  # an empty block is not a cacheable prefix, only a malformed one
-            entry["content"] = [{"type": "text", "text": content}]
+            # Annotated rather than inferred: a bare literal reads as `list[dict[str, str]]`, and
+            # the marker written below is a dict, so the block being promoted here would type as
+            # one that cannot hold it.
+            promoted: list[dict[str, Any]] = [{"type": "text", "text": content}]
+            entry["content"] = promoted
         elif not isinstance(content, list) or not content:
             return False
-        last = entry["content"][-1]
+        blocks: list[Any] = entry["content"]
+        last = blocks[-1]
         if not isinstance(last, dict):
             return False
         last[key] = {"type": "ephemeral"}
@@ -347,12 +353,17 @@ class ChatLiteLLMModel(BaseChatModel):
         params = self._completion_kwargs(
             stop=stop, stream=True, stream_options={"include_usage": True}, **kwargs,
         )
+        # One name for the prose this call produces. Everything downstream that asks "is this
+        # delta part of the block already on screen" is asking about *this* call, and nothing
+        # LiteLLM streams answers that — so the answer is minted here, once, and every chunk of
+        # the call carries it.
+        block = f"litellm-{uuid4().hex}-"
         stream = cast(AsyncIterator[Any], await litellm.acompletion(
             messages=self._apply_cache_breakpoints(self._messages_to_dicts(messages), messages),
             **params,
         ))
         async for chunk in stream:
-            generation_chunk = self._litellm_chunk_to_generation_chunk(chunk)
+            generation_chunk = self._litellm_chunk_to_generation_chunk(chunk, block)
             if generation_chunk is not None:
                 yield generation_chunk
 
@@ -393,7 +404,7 @@ class ChatLiteLLMModel(BaseChatModel):
         return cast(UsageMetadata, metadata)
 
     @staticmethod
-    def _litellm_chunk_to_generation_chunk(chunk: Any) -> Optional[ChatGenerationChunk]:
+    def _litellm_chunk_to_generation_chunk(chunk: Any, block: str = "") -> Optional[ChatGenerationChunk]:
         usage_metadata = ChatLiteLLMModel._usage_metadata(getattr(chunk, "usage", None))
         choices = getattr(chunk, "choices", None) or []
         if not choices:
@@ -427,7 +438,7 @@ class ChatLiteLLMModel(BaseChatModel):
         if not reasoning:
             # Some providers nest reasoning under a different attribute.
             reasoning = getattr(delta, "reasoning", None)
-        content_blocks = ChatLiteLLMModel._standard_content_blocks(content, reasoning)
+        content_blocks = ChatLiteLLMModel._standard_content_blocks(content, reasoning, block)
         message = AIMessageChunk(
             content=content_blocks_to_message_content(content_blocks),
             tool_call_chunks=tool_call_chunks,
@@ -438,20 +449,29 @@ class ChatLiteLLMModel(BaseChatModel):
         return ChatGenerationChunk(message=message, generation_info=generation_info)
 
     @staticmethod
-    def _standard_content_blocks(content: Any, reasoning: Any) -> list[ContentBlock]:
+    def _standard_content_blocks(content: Any, reasoning: Any, block: str = "") -> list[ContentBlock]:
+        """Name the blocks in one streamed chunk.
+
+        `block` identifies the model call this chunk belongs to, and it is what makes these
+        identifiers *identify*. They used to be the position within the chunk, which is 0 for
+        every chunk of every call — so a whole session's prose shared one name, and anything
+        downstream that trusted the identifier to mean "this block" was reading a constant. The
+        Responses API hands out a real per-item id; LiteLLM streams no such thing, so the id is
+        minted per stream here and the position distinguishes blocks within a chunk.
+        """
         normalized_blocks: list[ContentBlock] = []
         if reasoning:
             normalized_blocks.append(ReasoningContentBlock(
                 type="reasoning",
                 reasoning=str(reasoning),
-                id="litellm-reasoning",
+                id=f"{block}reasoning",
                 index=0,
             ))
         if content:
             source_blocks = AIMessageChunk(content=content).content_blocks
             for position, source_block in enumerate(source_blocks):
                 normalized_block: dict[str, Any] = dict(source_block)
-                normalized_block["id"] = f"litellm-content-{position}"
+                normalized_block["id"] = f"{block}content-{position}"
                 normalized_block["index"] = position + 1
                 normalized_blocks.append(cast(ContentBlock, normalized_block))
         return normalized_blocks
