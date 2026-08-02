@@ -705,7 +705,15 @@ export interface AgentConfiguration {
   model: string;
   provider: string;
   reasoning_effort: string;
-  permission_mode: PermissionMode;
+  /**
+   * The loosest mode this agent allows, or `null` where it sets no ceiling — which is what a
+   * card that simply does not mention permissions means, and what most of them are.
+   *
+   * It was not nullable, so the editor below always wrote a value: opening an agent's settings
+   * and touching anything pinned a ceiling of `default`, and every mode looser than that became
+   * unreachable for that agent without anybody choosing it.
+   */
+  permission_mode: PermissionMode | null;
   tools_enabled: string[];
   tools_disabled: string[];
   bash: AgentBashConfiguration;
@@ -716,7 +724,8 @@ export interface SaveAgentConfigurationPayload {
   model?: string;
   provider?: string;
   reasoning_effort?: string;
-  permission_mode?: PermissionMode;
+  // `null` clears the ceiling; omitted leaves it as it was.
+  permission_mode?: PermissionMode | null;
   tools_enabled?: string[];
   tools_disabled?: string[];
   bash?: Partial<AgentBashConfiguration>;

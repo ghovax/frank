@@ -657,9 +657,12 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         # mode is chosen at `create` (clamped against the parent's, and against the agent
         # card's own ceiling) and nothing can loosen it afterwards. The read_only/auto
         # booleans the call sites read are derived views of it, never separate state.
+        # `more_restrictive` ignores absent inputs and falls back to the interactive default
+        # with none, which is what a session with neither a requested mode nor a card ceiling
+        # should get.
         self._permission_mode: PermissionMode = PermissionMode.more_restrictive(
             permission_mode, agent_configuration.permission_policy
-        ) if permission_mode else agent_configuration.permission_policy
+        )
         self._a2a_turn_id: str = ""
         # Reads another A2A task (sibling/agent) by id from the shared store,
         # so context-aware agents can coordinate. Injected by the executor.
@@ -982,9 +985,9 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
 
 
     @property
-    def configured_permission_mode(self) -> PermissionMode:
-        """The permission mode the agent's own card declares (its ceiling before a
-        caller's grant tightens it)."""
+    def configured_permission_mode(self) -> Optional[PermissionMode]:
+        """The permission mode the agent's own card declares as its ceiling, or ``None`` where
+        it declares none — which is most cards, and means they bound nothing."""
         return self._agent_configuration.permission_policy
 
     def set_permission_mode(self, mode: PermissionMode) -> PermissionMode:

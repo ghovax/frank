@@ -238,7 +238,7 @@ export function LocationForm({
           <PermissionModeControl
             layout="field"
             value={(value.permission_mode as PermissionMode) ?? "default"}
-            onChange={(next) => set({ permission_mode: next })}
+            onChange={(next) => { if (next) set({ permission_mode: next }); }}
           />
         </Flex>
       )}

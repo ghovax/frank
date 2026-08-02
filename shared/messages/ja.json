@@ -512,6 +512,8 @@
     "currentConnection": "現在の接続",
     "defaults": "デフォルト",
     "deleteRule": "{pattern} を削除",
+    "dictation": "音声入力",
+    "dictationHint": "入力欄に話しかけて入力します。文字起こしはこの Mac 上で行われ、どこにも送信されませんが、初回利用時に約 1 GB のモデルをダウンロードします。",
     "disabled": "無効",
     "discard": "破棄",
     "discardBody": "一部のフィールドに未保存または未完成の値があります。設定を閉じるとそれらは破棄されます。",
@@ -539,6 +541,7 @@
     "loadingAgentConfiguration": "エージェント設定を読み込み中",
     "modelProviders": "モデルプロバイダー",
     "permissionMode": "権限モード",
+    "permissionNoCeiling": "上限なし",
     "profile": "プロファイル",
     "proxyServer": "プロキシサーバー",
     "proxyServerHint": "IP がブロックされたサイト向けに、Web フェッチとダウンロードをプロキシ経由でルーティングします。",
@@ -569,9 +572,7 @@
     "title": "設定",
     "tools": "ツール",
     "userContext": "行動プロフィール",
-    "userContextHint": "作業スタイル（よく使うフォルダ、最近のファイル、アプリ、サイト）のスナップショットを共有し、アシスタントが習慣に合わせられるようにします。既定はオフで、データはこのマシン内に留まります。",
-    "dictation": "音声入力",
-    "dictationHint": "入力欄に話しかけて入力します。文字起こしはこの Mac 上で行われ、どこにも送信されませんが、初回利用時に約 1 GB のモデルをダウンロードします。"
+    "userContextHint": "作業スタイル（よく使うフォルダ、最近のファイル、アプリ、サイト）のスナップショットを共有し、アシスタントが習慣に合わせられるようにします。既定はオフで、データはこのマシン内に留まります。"
   },
   "TerminalPanel": {
     "protocolErrorTitle": "ターミナルプロトコルエラー",

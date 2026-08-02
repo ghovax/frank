@@ -44,7 +44,7 @@ import { AgentSkills } from "./agent-skills";
 import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-display";
 import type { ToolPermission, ToolQuestion } from "@/lib/tool-event";
 
-import { fetchSettings, getWorkspace, revealInFinder, saveSessionDraft, saveSettings, setSessionPermissionMode, subscribeEvents, type AgentCard, type AgentSummary, type Location, type PermissionMode, type SandboxEnforce, type WorktreeStrategy } from "@/lib/api";
+import { fetchSettings, getWorkspace, revealInFinder, saveSessionDraft, saveAgentConfiguration, saveSettings, setSessionPermissionMode, subscribeEvents, type AgentCard, type AgentSummary, type Location, type PermissionMode, type SandboxEnforce, type WorktreeStrategy } from "@/lib/api";
 import { PdfDocumentView } from "./pdf-view";
 import { scrollFade, scrollFadeTopBottom } from "@/lib/scroll-fade";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -481,11 +481,28 @@ export function ChatPanel({
   // chooses what the next one starts under; with a session it also changes *that* session,
   // which the daemon applies to the turn in flight. The chip moves immediately and is
   // corrected if the server clamps the mode (a child is never looser than its parent).
-  function handlePermissionModeChange(nextMode: PermissionMode) {
+  async function handlePermissionModeChange(nextMode: PermissionMode) {
     setPermissionModeState(nextMode);
     onPermissionModeChange?.(nextMode);
     // Persist to server settings so it survives across sessions.
     saveSettings({ permission_mode: nextMode }).catch((caught) => swallowed({ component: "chat-panel", operation: "save the settings" }, caught));
+    // And raise the agent's own ceiling to match, first.
+    //
+    // A card names a mode to declare the loosest its agent may run at, and the daemon meets any
+    // request against it — so an agent pinned at `default` silently swallowed every choice
+    // looser than that: the chip moved, the server clamped it straight back, and nothing said
+    // why. Between a ceiling written once in a settings panel and a person choosing a mode with
+    // the conversation in front of them, the person is the one to believe.
+    //
+    // Awaited before the session call, because that call is where the clamp is applied: saving
+    // afterwards would let this one be clamped by the ceiling it was about to replace. Saving
+    // the card also resets the live runtimes, so the next turn builds against the new ceiling
+    // rather than the cached one.
+    try {
+      await saveAgentConfiguration(agent, { permission_mode: nextMode }, workingDirectory);
+    } catch (caught) {
+      swallowed({ component: "chat-panel", operation: "raise the agent's permission ceiling" }, caught);
+    }
     if (!sessionId) return;
     setSessionPermissionMode(sessionId, nextMode)
       .then((applied) => {

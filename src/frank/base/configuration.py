@@ -1280,7 +1280,16 @@ class AgentConfiguration(BaseModel):
     # declared escalates — medium or high asks, low does not. No classifier, no model call.
     # self_classify: the default rules plus an LLM classifier to approve safe bash calls and
     # escalate the rest. read_only: hard-block all writes. There is no bypass mode.
-    permission_mode: Literal["default", "permissive", "self_classify", "read_only"] = "default"
+    # `None` means the card has no opinion, and that is the default — the same convention as
+    # `sandbox` below, and for the same reason.
+    #
+    # This used to default to `"default"`, which is a *value*, and the control plane reads it as
+    # the loosest mode the profile allows. So every card that simply did not mention permissions
+    # — which is all of them — imposed a ceiling of `default`, and `permissive` and
+    # `self_classify` were unreachable: a person picked one, the daemon clamped it straight back,
+    # and the chip returned to "Ask for approval" with no explanation. A card that wants to bound
+    # its agent still says so and is still obeyed; silence is no longer a bound.
+    permission_mode: Optional[Literal["default", "permissive", "self_classify", "read_only"]] = None
 
     # Written before the mode was renamed, and read after. A `Literal` refuses an unknown string
     # outright, so without this a configuration saying `auto` — which every install that had
@@ -1320,11 +1329,14 @@ class AgentConfiguration(BaseModel):
         return f"{self.provider}/{self.model}"
 
     @property
-    def permission_policy(self) -> PermissionMode:
-        """The card's configured permission mode as the typed value the runtime reasons about.
-        The stored ``permission_mode`` field is the validated wire/persistence string; this is the
-        one place logic reads it as a :class:`PermissionMode`."""
-        return PermissionMode.coerce(self.permission_mode)
+    def permission_policy(self) -> Optional[PermissionMode]:
+        """The card's configured permission mode, or ``None`` where it declares none.
+
+        ``None`` is not a mode and must not be coerced into one: this is a *ceiling*, and every
+        caller passes it to `more_restrictive`, which ignores absent inputs. Coercing it to
+        `DEFAULT` — which is what this did — turned every silent card into a ceiling nobody
+        wrote."""
+        return PermissionMode.parse(self.permission_mode) if self.permission_mode else None
 
     @classmethod
     def from_markdown(cls, path: str | Path) -> AgentConfiguration:

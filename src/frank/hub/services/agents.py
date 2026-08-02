@@ -185,7 +185,11 @@ def _apply_agent_configuration_update(sidecar: dict[str, Any], request: AgentCon
             provider=request.provider if request.provider is not None else ...,
             reasoning_effort=request.reasoning_effort if request.reasoning_effort is not None else ...,
         )
-    if request.permission_mode is not None:
+    # `model_fields_set`, not `is not None`, because `null` here means something: clear the
+    # ceiling. A card names a mode to declare the loosest its agent may run at, and "no ceiling"
+    # is a state the editor has to be able to return to — with `is not None` it could only ever
+    # set one, so a ceiling was a one-way door.
+    if "permission_mode" in request.model_fields_set:
         model.permission_mode = request.permission_mode
     if request.tools_enabled is not None:
         model.set_tools_enabled(request.tools_enabled)

@@ -512,6 +512,8 @@
     "currentConnection": "Current connection",
     "defaults": "Defaults",
     "deleteRule": "Delete {pattern}",
+    "dictation": "Dictation",
+    "dictationHint": "Speak into the composer instead of typing. Transcribed on this Mac — nothing is sent anywhere — but the first use downloads about a gigabyte of model weights.",
     "disabled": "Disabled",
     "discard": "Discard",
     "discardBody": "Some fields have unsaved or incomplete values. Closing settings will discard them.",
@@ -539,6 +541,7 @@
     "loadingAgentConfiguration": "Loading agent configuration",
     "modelProviders": "Model providers",
     "permissionMode": "Permission mode",
+    "permissionNoCeiling": "No ceiling",
     "profile": "Profile",
     "proxyServer": "Proxy server",
     "proxyServerHint": "Routes web fetches and downloads through a proxy for IP-blocked sites.",
@@ -569,9 +572,7 @@
     "title": "Settings",
     "tools": "Tools",
     "userContext": "Work habits",
-    "userContextHint": "Share a snapshot of how you work — frequent folders, recent files, apps, and sites — so the assistant fits your habits. Off by default; stays on this machine.",
-    "dictation": "Dictation",
-    "dictationHint": "Speak into the composer instead of typing. Transcribed on this Mac — nothing is sent anywhere — but the first use downloads about a gigabyte of model weights."
+    "userContextHint": "Share a snapshot of how you work — frequent folders, recent files, apps, and sites — so the assistant fits your habits. Off by default; stays on this machine."
   },
   "TerminalPanel": {
     "protocolErrorTitle": "Terminal protocol error",

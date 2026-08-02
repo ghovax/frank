@@ -233,7 +233,7 @@ export function ScheduleForm({
         <PermissionModeControl
           layout="field"
           value={draft.permissionMode}
-          onChange={(next) => setDraft({ ...draft, permissionMode: next })}
+          onChange={(next) => { if (next) setDraft({ ...draft, permissionMode: next }); }}
         />
       </ScheduleField>
 

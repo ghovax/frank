@@ -955,7 +955,7 @@ export function ChatInput({
               to be restarted to run under a looser one. */}
           <PermissionModeControl
             value={permissionMode}
-            onChange={(mode) => onPermissionModeChange?.(mode)}
+            onChange={(mode) => { if (mode) onPermissionModeChange?.(mode); }}
             responsiveCompact
           />
           {/* The same control Settings shows, not a second rendering of the same fact: one

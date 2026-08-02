@@ -192,12 +192,23 @@ export function PermissionModeControl({
   onChange,
   layout = "chip",
   responsiveCompact = false,
+  unsetLabel,
 }: {
-  value: PermissionMode;
-  onChange: (mode: PermissionMode) => void;
+  value: PermissionMode | null;
+  onChange: (mode: PermissionMode | null) => void;
   size?: "xs" | "sm";
   layout?: "chip" | "field";
   responsiveCompact?: boolean;
+  /**
+   * When given, the control offers this as a first choice meaning "no mode", and `onChange`
+   * answers `null` for it.
+   *
+   * Only an agent card wants this. A card that names a mode is declaring a *ceiling* — the
+   * loosest its agent may ever run at — and most cards mean to declare nothing, which a control
+   * that can only emit a mode cannot express. A session picker has no use for it: a session
+   * always runs under some mode.
+   */
+  unsetLabel?: string;
 }) {
   const translation = useTranslations("SessionControls");
   const permissionChoices: { value: PermissionMode; label: string; description: string; icon: ReactNode; colorPalette?: "blue" | "green" | "orange" }[] = [
@@ -206,20 +217,26 @@ export function PermissionModeControl({
     { value: "self_classify", label: translation("permissionSelfClassifyLabel"), description: translation("permissionSelfClassifyDescription"), icon: <LuBadgeCheck size={13} />, colorPalette: "blue" },
     { value: "read_only", label: translation("permissionReadOnlyLabel"), description: translation("permissionReadOnlyDescription"), icon: <LuEye size={13} />, colorPalette: "green" },
   ];
-  const permissionItems = permissionChoices.map(({ value: itemValue, label }) => ({ value: itemValue, label }));
+  const UNSET = "__unset__";
+  const permissionItems = [
+    ...(unsetLabel ? [{ value: UNSET, label: unsetLabel }] : []),
+    ...permissionChoices.map(({ value: itemValue, label }) => ({ value: itemValue, label })),
+  ];
   const metrics = controlMetrics(layout);
   const collection = createListCollection({ items: permissionItems });
-  const selectedAppearance = permissionAppearance(value);
-  const selectedLabel = permissionItems.find((item) => item.value === value)?.label ?? translation("permissionDefaultLabel");
+  const selectedAppearance = permissionAppearance(value ?? "default");
+  const selectedLabel = permissionItems.find((item) => item.value === (value ?? UNSET))?.label
+    ?? translation("permissionDefaultLabel");
 
   return (
     <Select.Root
       data-composer-permission-control={responsiveCompact ? "" : undefined}
       collection={collection}
-      value={[value]}
+      value={[value ?? UNSET]}
       onValueChange={(details) => {
-        const nextMode = details.value[0] as PermissionMode | undefined;
-        if (nextMode) onChange(nextMode);
+        const chosen = details.value[0];
+        if (!chosen) return;
+        onChange(chosen === UNSET ? null : (chosen as PermissionMode));
       }}
       size="xs"
       w={metrics.width}

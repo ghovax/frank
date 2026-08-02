@@ -539,7 +539,7 @@ export function SettingsDialog({
         {
           title: translation("runtime"),
           rows: [
-            { key: "approvalMode", title: translation("approvalMode"), control: <PermissionModeControl value={permissionMode} onChange={setPermissionMode} /> },
+            { key: "approvalMode", title: translation("approvalMode"), control: <PermissionModeControl value={permissionMode} onChange={(next) => { if (next) setPermissionMode(next); }} /> },
             { key: "filesystemProtection", title: translation("filesystemProtection"), description: sandboxBackend.backend ? undefined : translation("filesystemProtectionUnavailable"), control: <SandboxToggleControl enforce={sandboxEnforce} backend={sandboxBackend.backend} onChange={setSandboxEnforce} /> },
             { key: "gitWorktree", title: translation("gitWorktree"), control: <WorktreeStrategyControl value={worktreeStrategy} onChange={setWorktreeStrategy} /> },
             { key: "compaction", title: translation("compaction"), control: <CompactionToggleControl enabled={autoCompaction} onChange={setAutoCompaction} /> },
@@ -933,8 +933,12 @@ function AgentPermissionsEditor({
             </Box>
           </SettingField>
           <SettingField label={translation("permissionMode")}>
+            {/* The one picker that may answer "none". A card names a mode to declare a
+                *ceiling*, and most cards mean to declare nothing — which the control could not
+                say, so opening this panel pinned one. */}
             <PermissionModeControl
               value={configuration.permission_mode}
+              unsetLabel={translation("permissionNoCeiling")}
               onChange={(permissionModeValue) => updateConfiguration({ permission_mode: permissionModeValue })}
             />
           </SettingField>
