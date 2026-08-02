@@ -132,6 +132,21 @@ class Usage(TurnEvent):
     reasoning_tokens: int = 0
     context_window: int = 0
     cumulative: dict[str, Any] = field(default_factory=dict)
+    #: Whether every byte this request shared with the last one was unchanged. Recorded because
+    #: it is what makes `cache_read_tokens` interpretable: intact with a read of zero means the
+    #: provider missed a prefix it had already been sent, which no different request would fix.
+    prefix_intact: bool = False
+    #: How much of the prefix was unchanged, and so could have come from cache — the ceiling on
+    #: `cache_read_tokens`. An estimate: counted with this harness's tokenizer, not the
+    #: provider's.
+    reachable_tokens: int = 0
+    #: How many segments the request had, and how many of them the previous request already
+    #: carried unchanged — the same measurement `reachable_tokens` counts, in pieces.
+    segments: int = 0
+    shared_segments: int = 0
+    #: The segment that moved, when one did: its position, what is there now, what was there
+    #: before, and whether it stayed put and was rewritten. Fields, not a sentence.
+    divergence: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

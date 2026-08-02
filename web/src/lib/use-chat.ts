@@ -27,7 +27,7 @@ import { toaster } from "@/components/ui/toaster";
 import { swallowed } from "@/lib/swallowed";
 import { useTranslations } from "next-intl";
 import { asArray, asRecord } from "@/lib/coerce";
-import type { WireEvent } from "@shared/generated/events";
+import type { PrefixDivergence, WireEvent } from "@shared/generated/events";
 import { errorMessage } from "@/lib/errors";
 import { clientIdentifier } from "@/lib/identifier";
 
@@ -127,6 +127,14 @@ export interface TokenUsage {
   contextInputTokens: number;
   contextOutputTokens: number;
   contextWindow: number;
+  // What the latest call's cache actually did, and why. A running total cannot say which call
+  // missed, and that is the whole question — a session reading 2% overall was one partial hit
+  // and five outright misses. `prefixIntact` with `contextCacheReadTokens` at zero means the
+  // request was byte-identical as far as it went and the provider missed anyway.
+  contextCacheReadTokens: number;
+  reachableTokens: number;
+  prefixIntact: boolean;
+  divergence: PrefixDivergence | null;
 }
 
 // A turn's input: typed prose plus any structured payloads, which travel as DataParts
@@ -737,6 +745,10 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
         contextOutputTokens,
         contextTokens: contextInputTokens + contextOutputTokens,
         contextWindow: event.context_window ?? 0,
+        contextCacheReadTokens: event.cache_read_tokens ?? 0,
+        reachableTokens: event.reachable_tokens ?? 0,
+        prefixIntact: event.prefix_intact ?? false,
+        divergence: event.divergence ?? null,
       };
       break;
     }

@@ -25,7 +25,7 @@ for the UI; the model reads the same result from the LLM conversation, wrapped i
 from __future__ import annotations
 
 from enum import Enum
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -125,6 +125,31 @@ class StatusEvent(_EventBase):
     code: str = ""
 
 
+class TracedSegment(BaseModel):
+    """Which piece of a request a cache measurement is talking about.
+
+    Fields rather than a formatted label, so a consumer can count how often the tool schemas
+    move or which role tends to be rewritten. ``position`` is the index within the conversation,
+    or ``-1`` for the parts a request has only one of.
+    """
+
+    kind: str = ""
+    position: int = -1
+    role: str = ""
+
+
+class PrefixDivergence(BaseModel):
+    """Where a request stopped matching the one before it."""
+
+    index: int = 0
+    #: What occupies that position now. Absent when the request simply got shorter there.
+    current: Optional[TracedSegment] = None
+    #: What occupied it on the previous call.
+    previous: TracedSegment = Field(default_factory=TracedSegment)
+    #: The piece did not move; its contents changed. The only kind usually worth chasing.
+    rewritten: bool = False
+
+
 class CumulativeUsage(BaseModel):
     """Session-lifetime running totals (monotonic), distinct from the per-call figures
     on :class:`TokenUsageEvent` which describe only the latest model call."""
@@ -166,8 +191,28 @@ class TokenUsageEvent(_EventBase):
     input_tokens: int = 0
     output_tokens: int = 0
     context_window: int = 0
+    # Per-call cache and reasoning, which used to be folded into the cumulative totals and
+    # nowhere else. A running total cannot say which call missed, and "which call missed" is
+    # the whole question — a session reading 2% overall turned out to be one partial hit and
+    # five outright misses, which the cumulative figure hid completely.
+    cache_read_tokens: int = 0
+    reasoning_tokens: int = 0
     # Session-lifetime running totals for this agent's own calls.
     cumulative: CumulativeUsage = Field(default_factory=CumulativeUsage)
+    # What the cache figure means, which the figure alone cannot say. A provider serves the
+    # longest prefix it recognises, so a low read is either a prefix that moved — and
+    # ``divergence`` says which piece — or an unchanged prefix the provider missed anyway,
+    # which is ``prefix_intact`` with a read of zero and is not something a differently shaped
+    # request would cure. ``reachable_tokens`` is the ceiling the read is measured against,
+    # estimated with this harness's tokenizer rather than the provider's.
+    #
+    # Recorded on the event rather than logged: this is asked about days later, of a specific
+    # call in a specific session, and only stored data can answer that.
+    prefix_intact: bool = False
+    reachable_tokens: int = 0
+    segments: int = 0
+    shared_segments: int = 0
+    divergence: Optional[PrefixDivergence] = None
 
 
 class PermissionRequestEvent(_EventBase):

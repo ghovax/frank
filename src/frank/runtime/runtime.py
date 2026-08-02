@@ -906,6 +906,10 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         context_window = model.context_window() if model is not None else 0
         self._latest_context_tokens = input_tokens + output_tokens
         self._context_window = context_window
+        # What the adapter worked out about this request's prefix, recorded beside the cache
+        # figure it explains. Absent for a model supplied by a caller, which is why every field
+        # has a default rather than the event demanding them.
+        cache_trace = response.additional_kwargs.get("cache_trace") or {}
         return Usage(input_tokens=input_tokens,
             output_tokens=output_tokens,
             total_tokens=total_tokens,
@@ -913,6 +917,11 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             reasoning_tokens=reasoning,
             context_window=context_window,
             cumulative=dict(self._token_usage),
+            prefix_intact=bool(cache_trace.get("prefix_intact", False)),
+            reachable_tokens=int(cache_trace.get("reachable_tokens", 0) or 0),
+            segments=int(cache_trace.get("segments", 0) or 0),
+            shared_segments=int(cache_trace.get("shared_segments", 0) or 0),
+            divergence=cache_trace.get("divergence"),
         )
 
     @property

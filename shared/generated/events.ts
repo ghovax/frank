@@ -130,6 +130,33 @@ export interface PermissionRequestEvent {
   tool_name?: string;
 }
 /**
+ * Where a request stopped matching the one before it.
+ *
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * via the `definition` "PrefixDivergence".
+ */
+export interface PrefixDivergence {
+  current?: TracedSegment | null;
+  index?: number;
+  previous?: TracedSegment;
+  rewritten?: boolean;
+}
+/**
+ * Which piece of a request a cache measurement is talking about.
+ *
+ * Fields rather than a formatted label, so a consumer can count how often the tool schemas
+ * move or which role tends to be rewritten. ``position`` is the index within the conversation,
+ * or ``-1`` for the parts a request has only one of.
+ *
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * via the `definition` "TracedSegment".
+ */
+export interface TracedSegment {
+  kind: string;
+  position?: number;
+  role?: string;
+}
+/**
  * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "QuestionEvent".
  */
@@ -185,11 +212,18 @@ export interface ThinkingEvent {
  * via the `definition` "TokenUsageEvent".
  */
 export interface TokenUsageEvent {
+  cache_read_tokens?: number;
   context_window?: number;
   cumulative?: CumulativeUsage;
+  divergence?: PrefixDivergence | null;
   input_tokens?: number;
   kind: "token_usage";
   output_tokens?: number;
+  prefix_intact?: boolean;
+  reachable_tokens?: number;
+  reasoning_tokens?: number;
+  segments?: number;
+  shared_segments?: number;
 }
 /**
  * This interface was referenced by `FrankEvents`'s JSON-Schema

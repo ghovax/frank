@@ -25,9 +25,10 @@ from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResu
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
-from pydantic import SecretStr
+from pydantic import PrivateAttr, SecretStr
 
 from frank.base.serialization import compact
+from frank.runtime.cache_trace import ITEM, TOOLS, Piece, RequestTrace, diagnose, trace
 from frank.base.message_content import (
     REASONING_MODEL_KEY,
     carried_reasoning_for,
@@ -89,6 +90,11 @@ class ChatLiteLLMModel(BaseChatModel):
     # legitimately long generation. LiteLLM forwards it to the underlying HTTP client.
     timeout: Optional[float] = 300.0
     default_headers: dict[str, str] = {}
+
+    #: The last request's segment trace, kept so the next one can be told what moved. Declared
+    #: rather than merely assigned: an undeclared private attribute cannot be set on a Pydantic
+    #: model at all.
+    _previous_trace: Optional[RequestTrace] = PrivateAttr(default=None)
 
     @property
     def _llm_type(self) -> str:
@@ -173,18 +179,24 @@ class ChatLiteLLMModel(BaseChatModel):
                 tool_calls = ChatLiteLLMModel._tool_calls_to_openai(message.tool_calls)
                 if tool_calls:
                     entry["tool_calls"] = tool_calls
-                # The readable text goes back regardless of who wrote it: it is prose, and every
-                # OpenAI-compatible endpoint takes it. Only the signed and encrypted forms are
-                # bound to one model.
+                # Reasoning goes back in exactly one form, the same way prose does.
                 #
-                # DeepSeek wants the field on *every* assistant message, present and empty rather
-                # than absent, and returns empty reasoning of its own that has to be handed back
-                # the same way — so there the key is always written. OpenCode carries the same
-                # special case, and for the same reason.
+                # The provider-native form wins where there is one: a signed thinking block
+                # already contains the thinking *and* the signature that makes it usable, and an
+                # encrypted item is the only form its model can read. Sending the prose beside it
+                # is the same words a second time — 541 tokens of duplicate reasoning on a single
+                # turn when this was measured, paid for again on every later call, since a
+                # conversation carries every past turn.
+                #
+                # The prose is the fallback, for the OpenAI-compatible endpoints that have no
+                # native form. DeepSeek wants the field on *every* assistant message, present and
+                # empty rather than absent, because it returns empty reasoning of its own that has
+                # to be handed back the same way; OpenCode carries the same special case.
+                carried = carried_reasoning_for(message, self.model)
+                entry.update(carried)
                 reasoning = message_reasoning_text(message)
-                if reasoning or self._route() in _ALWAYS_REASONING_ROUTES:
+                if not carried and (reasoning or self._route() in _ALWAYS_REASONING_ROUTES):
                     entry["reasoning_content"] = reasoning
-                entry.update(carried_reasoning_for(message, self.model))
             elif isinstance(message, ToolMessage):
                 entry["tool_call_id"] = message.tool_call_id
             dicts.append(entry)
@@ -444,6 +456,25 @@ class ChatLiteLLMModel(BaseChatModel):
         params.update({key: value for key, value in kwargs.items() if value is not None})
         return params
 
+
+    def _trace_request(self, params: dict[str, Any], sent: list[dict[str, Any]]) -> RequestTrace:
+        """Cut the outgoing request into the pieces a prompt cache matches on, in wire order.
+
+        Tool schemas first, since every OpenAI-shaped request carries them ahead of the
+        conversation, then one segment per message.
+        """
+        pieces = [Piece(kind=TOOLS, text=compact(params.get("tools") or []))]
+        for position, message in enumerate(sent):
+            pieces.append(Piece(kind=ITEM, text=compact(message), position=position,
+                                role=str(message.get("role") or "")))
+        return trace(pieces)
+
+    def _cache_diagnosis(self, current: RequestTrace) -> dict[str, object]:
+        """What this request kept from the last one, and remember it for the next."""
+        diagnosis = diagnose(current, self._previous_trace)
+        self._previous_trace = current
+        return diagnosis
+
     # Streaming generation.
 
     async def _astream(
@@ -465,13 +496,20 @@ class ChatLiteLLMModel(BaseChatModel):
         # LiteLLM streams answers that — so the answer is minted here, once, and every chunk of
         # the call carries it.
         block = f"litellm-{uuid4().hex}-"
-        stream = cast(AsyncIterator[Any], await litellm.acompletion(
-            messages=self._apply_cache_breakpoints(self._messages_to_dicts(messages), messages),
-            **params,
-        ))
+        sent = self._apply_cache_breakpoints(self._messages_to_dicts(messages), messages)
+        # Taken before the request, reported once the response says what the cache did — a hit
+        # figure on its own cannot say whether we moved the prefix or the provider simply missed.
+        current_trace = self._trace_request(params, sent)
+        reported = False
+        stream = cast(AsyncIterator[Any], await litellm.acompletion(messages=sent, **params))
         async for chunk in stream:
             generation_chunk = self._litellm_chunk_to_generation_chunk(chunk, block)
             if generation_chunk is not None:
+                # Attached to the chunk that carries usage, so the diagnosis travels with the
+                # figure it explains and is recorded with it.
+                if generation_chunk.message.usage_metadata and not reported:
+                    reported = True
+                    generation_chunk.message.additional_kwargs["cache_trace"] = self._cache_diagnosis(current_trace)
                 yield generation_chunk
 
     @staticmethod

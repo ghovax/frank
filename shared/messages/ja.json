@@ -490,7 +490,17 @@
     "statusWorking": "実行中",
     "untitledConversation": "無題の会話",
     "untitledWorkspace": "無題のワークスペース",
-    "newSchedule": "新しいスケジュール"
+    "newSchedule": "新しいスケジュール",
+    "fieldAgent": "エージェント",
+    "fieldStatus": "状態",
+    "fieldCreated": "作成日時",
+    "fieldFolder": "フォルダ",
+    "fieldPermissions": "権限",
+    "fieldExitReason": "終了理由",
+    "fieldSession": "セッション",
+    "fieldLocation": "場所",
+    "fieldConversations": "会話数",
+    "fieldWorkspace": "ワークスペース"
   },
   "SettingsDialog": {
     "addRule": "ルールを追加",

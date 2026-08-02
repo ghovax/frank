@@ -299,6 +299,35 @@
       ],
       "type": "object"
     },
+    "PrefixDivergence": {
+      "additionalProperties": false,
+      "description": "Where a request stopped matching the one before it.",
+      "properties": {
+        "current": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TracedSegment"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "index": {
+          "default": 0,
+          "type": "integer"
+        },
+        "previous": {
+          "$ref": "#/$defs/TracedSegment"
+        },
+        "rewritten": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "QuestionEvent": {
       "additionalProperties": false,
       "properties": {
@@ -424,12 +453,27 @@
     "TokenUsageEvent": {
       "additionalProperties": false,
       "properties": {
+        "cache_read_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
         "context_window": {
           "default": 0,
           "type": "integer"
         },
         "cumulative": {
           "$ref": "#/$defs/CumulativeUsage"
+        },
+        "divergence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PrefixDivergence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "input_tokens": {
           "default": 0,
@@ -441,6 +485,26 @@
           "type": "string"
         },
         "output_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "prefix_intact": {
+          "default": false,
+          "type": "boolean"
+        },
+        "reachable_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "reasoning_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "segments": {
+          "default": 0,
+          "type": "integer"
+        },
+        "shared_segments": {
           "default": 0,
           "type": "integer"
         }
@@ -588,6 +652,28 @@
         "error"
       ],
       "type": "string"
+    },
+    "TracedSegment": {
+      "additionalProperties": false,
+      "description": "Which piece of a request a cache measurement is talking about.\n\nFields rather than a formatted label, so a consumer can count how often the tool schemas\nmove or which role tends to be rewritten. ``position`` is the index within the conversation,\nor ``-1`` for the parts a request has only one of.",
+      "properties": {
+        "kind": {
+          "default": "",
+          "type": "string"
+        },
+        "position": {
+          "default": -1,
+          "type": "integer"
+        },
+        "role": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
     },
     "TurnContext": {
       "additionalProperties": false,

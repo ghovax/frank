@@ -490,7 +490,17 @@
     "statusWorking": "Working",
     "untitledConversation": "Untitled conversation",
     "untitledWorkspace": "Untitled workspace",
-    "newSchedule": "New schedule"
+    "newSchedule": "New schedule",
+    "fieldAgent": "Agent",
+    "fieldStatus": "Status",
+    "fieldCreated": "Created",
+    "fieldFolder": "Folder",
+    "fieldPermissions": "Permissions",
+    "fieldExitReason": "Ended",
+    "fieldSession": "Session",
+    "fieldLocation": "Location",
+    "fieldConversations": "Conversations",
+    "fieldWorkspace": "Workspace"
   },
   "SettingsDialog": {
     "addRule": "Add rule",

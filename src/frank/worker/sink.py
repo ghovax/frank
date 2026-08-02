@@ -19,6 +19,7 @@ from frank.protocol.events import (
     ErrorEvent,
     McpEvent as McpWireEvent,
     PermissionRequestEvent,
+    PrefixDivergence,
     QuestionEvent,
     SteeringEvent,
     StatusEvent,
@@ -128,6 +129,13 @@ class _TurnEventSink:
         self._span = telemetry_span
         self._model_identifier = model_identifier
         self._text = _TextPartBuffer(self._emit_text)
+        # Reasoning is buffered on the same terms as prose, and for a reason that has nothing to
+        # do with rendering: every emitted part becomes its own message, and every message its
+        # own row. A turn's thinking arrives as dozens of few-character deltas, so leaving them
+        # unbuffered turned a few kilobytes of reasoning into dozens of inserts — twenty-five
+        # rows for six blocks in one short session. Coalescing them costs nothing on screen,
+        # since the client keys deltas by block and concatenates them anyway.
+        self._thinking = _TextPartBuffer(self._emit_thinking)
         self.final_text = ""
         self.stop_reason = ""
 
@@ -136,8 +144,15 @@ class _TurnEventSink:
             raise ValueError("Buffered assistant text is missing its content-block identity.")
         await self._emit(_text_part(text, key[0]))
 
+    async def _emit_thinking(self, key: tuple[str, ...], text: str) -> None:
+        await self._emit(_event_part(ThinkingEvent(text=text, block_id=key[0] if key else "")))
+
     async def flush(self, force: bool = True) -> None:
+        # Prose before reasoning would reorder a turn that ends mid-thought, so each buffer is
+        # drained in the order its content was produced: the pushers below keep only one of the
+        # two non-empty at a time, which makes the order here immaterial and the invariant cheap.
         await self._text.flush(force=force)
+        await self._thinking.flush(force=force)
 
     async def emit_compaction(self, event: CompactionStarted | CompactionDone) -> None:
         """Map a runtime compaction event to its ``compaction`` DataPart, so both the
@@ -174,10 +189,13 @@ class _TurnEventSink:
                 content_block_identifier = str(event.block_id)
                 if not content_block_identifier:
                     raise ValueError("Assistant text events require a content-block identity.")
+                # Only ever one of the two buffers holds anything: switching kind drains the
+                # other first, which is what keeps replay in the order things were said.
+                await self._thinking.flush(force=True)
                 await self._text.push(event.text, (content_block_identifier,))
             case Thinking():
-                await self.flush()
-                await self._emit(_event_part(ThinkingEvent(text=event.text, block_id=event.block_id)))
+                await self._text.flush(force=True)
+                await self._thinking.push(event.text, (event.block_id,))
             case ThinkingDone():
                 await self.flush()
                 await self._emit(_event_part(ThinkingDoneEvent(duration_ms=event.duration_ms)))
@@ -221,6 +239,13 @@ class _TurnEventSink:
                     input_tokens=event.input_tokens,
                     output_tokens=event.output_tokens,
                     context_window=event.context_window,
+                    cache_read_tokens=event.cache_read_tokens,
+                    reasoning_tokens=event.reasoning_tokens,
+                    prefix_intact=event.prefix_intact,
+                    reachable_tokens=event.reachable_tokens,
+                    segments=event.segments,
+                    shared_segments=event.shared_segments,
+                    divergence=PrefixDivergence.model_validate(event.divergence) if event.divergence else None,
                     cumulative=CumulativeUsage(
                         input_tokens=cumulative.get("input_tokens", 0),
                         output_tokens=cumulative.get("output_tokens", 0),

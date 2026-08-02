@@ -37,6 +37,7 @@ from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResu
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
+from pydantic import PrivateAttr
 
 from frank.base.credentials import (
     ChatGPTAuthError,
@@ -50,6 +51,7 @@ from frank.base.message_content import (
     message_text,
 )
 from frank.base.model_errors import CONTEXT_OVERFLOW_CODES, ContextWindowExceeded
+from frank.runtime.cache_trace import INSTRUCTIONS, ITEM, TOOLS, Piece, RequestTrace, diagnose, trace
 from frank.base.serialization import compact, upstream_detail
 from frank.base.subscription import (
     RESPONSES_URL,
@@ -97,6 +99,11 @@ class ChatCodexModel(BaseChatModel):
     # A generous bound so a dead connection cannot hang a turn forever, matching
     # ChatLiteLLMModel; the streaming loop only checks aborts between chunks.
     timeout: Optional[float] = 300.0
+
+    #: The last request's segment trace, kept so the next one can be told what moved. Declared
+    #: rather than merely assigned: a leading underscore on a Pydantic model is a private
+    #: attribute, and one that is not declared cannot be set at all.
+    _previous_trace: Optional[RequestTrace] = PrivateAttr(default=None)
 
     @property
     def _llm_type(self) -> str:
@@ -443,6 +450,24 @@ class ChatCodexModel(BaseChatModel):
         )
         return ChatGenerationChunk(message=message)
 
+
+    def _trace_payload(self, payload: dict[str, Any]) -> RequestTrace:
+        """Cut the outgoing request into the pieces a prompt cache matches on, in wire order.
+
+        Instructions first, then the tool schemas, then one segment per input item — which is
+        exactly how the endpoint reads a prefix, so a segment index here is an offset there.
+        """
+        pieces = [
+            Piece(kind=INSTRUCTIONS, text=payload.get("instructions") or ""),
+            Piece(kind=TOOLS, text=compact(payload.get("tools") or [])),
+        ]
+        for position, item in enumerate(payload.get("input") or []):
+            # A Responses item is identified by its type; a message item carries a role as well,
+            # and the role is the more telling of the two, so it wins where there is one.
+            pieces.append(Piece(kind=ITEM, text=compact(item), position=position,
+                                role=str(item.get("role") or item.get("type") or "")))
+        return trace(pieces)
+
     @staticmethod
     def _usage(usage: Any) -> Optional[UsageMetadata]:
         if not usage:
@@ -467,6 +492,13 @@ class ChatCodexModel(BaseChatModel):
 
     # Streaming generation (the path the harness actually uses).
 
+
+    def _cache_diagnosis(self, current: RequestTrace) -> dict[str, object]:
+        """What this request kept from the last one, and remember it for the next."""
+        diagnosis = diagnose(current, self._previous_trace)
+        self._previous_trace = current
+        return diagnosis
+
     async def _astream(
         self,
         messages: Sequence[BaseMessage],
@@ -476,6 +508,10 @@ class ChatCodexModel(BaseChatModel):
     ) -> AsyncIterator[ChatGenerationChunk]:
         payload = self._build_payload(messages, stream=True, **kwargs)
         headers = await self._headers()
+        # Taken before the request and held until the response says what the cache did, because
+        # the figure alone cannot say *why*. See `frank.runtime.cache_trace`.
+        current_trace = self._trace_payload(payload)
+        reported = False
         # Carried so a failure can name the model that refused the request and the window it was
         # measured against — the two things that make "too large" actionable rather than a verdict.
         state: dict[str, Any] = {"saw_tool_call": False, "model": self.model,
@@ -489,6 +525,11 @@ class ChatCodexModel(BaseChatModel):
                 async for line in response.aiter_lines():
                     chunk = self._line_to_chunk(line, state)
                     if chunk is not None:
+                        # Attached to the chunk that carries usage, so the diagnosis travels
+                        # with the figure it explains and is recorded with it.
+                        if chunk.message.usage_metadata and not reported:
+                            reported = True
+                            chunk.message.additional_kwargs["cache_trace"] = self._cache_diagnosis(current_trace)
                         yield chunk
 
     @staticmethod

@@ -20,10 +20,15 @@ export function GitStatusBar({ status }: { status: DirectoryStatus }) {
   const translation = useTranslations("GitStatusBar");
   const format = useFormatter();
 
+  // Spelled out in full. The bar itself is where brevity is worth paying for; the hover card
+  // is what someone opens *because* they want the detail, and an abbreviated month there is a
+  // saving nobody asked for — the year included, since a commit date is often not this one.
   const formatCommitDate = (value: string): string => {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "";
-    return format.dateTime(date, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    return format.dateTime(date, {
+      year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit",
+    });
   };
 
   if (!status.valid || !status.isGitRepository) return null;
@@ -36,7 +41,12 @@ export function GitStatusBar({ status }: { status: DirectoryStatus }) {
 
   const detail = (
     <Box whiteSpace="nowrap">
-      <Text fontWeight="semibold" mb={1} color="fg">{branchLabel}</Text>
+      {/* The same glyph the bar wears, at the same size and gap, so the card reads as that
+          branch rather than as a heading that happens to be a branch name. */}
+      <Flex align="center" gap={1} mb={1} color="fg">
+        <LuGitBranch size={12} />
+        <Text fontWeight="semibold">{branchLabel}</Text>
+      </Flex>
       <Flex direction="column" ps={2} gap={1}>
         {status.gitCommitSubject && <InlineField label={translation("commit")}><Text truncate maxW="260px">{status.gitCommitSubject}</Text></InlineField>}
         {status.gitCommitAuthor && <InlineField label={translation("author")}><Text>{status.gitCommitAuthor}</Text></InlineField>}
