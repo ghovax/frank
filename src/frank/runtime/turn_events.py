@@ -201,6 +201,10 @@ class CompactionDone(TurnEvent):
     # site and never added here, and no test drove a supplied strategy to its end.
     tokens_after: int = 0
     observations_added: int = 0
+    # How large the memory itself has become. Reported because the whole schedule of a long
+    # session turns on it — how often the Reflector runs, and how many times an early finding is
+    # rewritten before anyone reads it — and it was previously a number nobody could see.
+    log_tokens: int = 0
 
 
 # The closed union of every turn event, so a consumer can dispatch with ``match`` and prove

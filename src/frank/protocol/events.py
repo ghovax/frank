@@ -152,6 +152,7 @@ class CompactionEvent(_EventBase):
     messages_after: int = 0
     tokens_before: int = 0
     tokens_after: int = 0
+    log_tokens: int = 0
 
 
 class SteeringEvent(_EventBase):

@@ -8,6 +8,10 @@
           "default": "compaction",
           "type": "string"
         },
+        "log_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
         "messages_after": {
           "default": 0,
           "type": "integer"

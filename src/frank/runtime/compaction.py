@@ -153,22 +153,36 @@ class _CompactsContext:
         drops everything else — which is a strong signal, since it otherwise summarises far more
         aggressively than this does.
 
+        The **first** one is kept whatever the budget says. Everything else is taken most-recent
+        first until the budget runs out, which is the right order for work in progress and the
+        wrong one for the message that said what the work is. That one is the task definition:
+        every later instruction is a refinement of it, and read without it they are a list of
+        adjustments to something nobody remembers. It is also the cheapest thing here to
+        guarantee — one message — and the most expensive to lose, because nothing downstream can
+        tell that the goal it is serving is a reconstruction.
+
         Harness notes are excluded: they carry the harness's voice, not the user's, and their
         content is either regenerated every turn or already recorded.
         """
-        budget = int(self._usable_context() * self._global_configuration.compaction.verbatim_user_fraction)
-        if budget <= 0:
+        spoken = [
+            message for message in folded
+            if isinstance(message, HumanMessage) and not message.additional_kwargs.get("harness_note")
+        ]
+        if not spoken:
             return []
-        carried: list = []
-        spent = 0
-        for message in reversed(folded):
-            if not isinstance(message, HumanMessage) or message.additional_kwargs.get("harness_note"):
-                continue
+        budget = int(self._usable_context() * self._global_configuration.compaction.verbatim_user_fraction)
+        first, rest = spoken[0], spoken[1:]
+        carried = [first]
+        spent = message_tokens(first)
+        for message in reversed(rest):
             size = message_tokens(message)
             if spent + size > budget:
                 break
             carried.append(message)
             spent += size
+        # Back into the order they were said in: `first` is already at the front, and the rest
+        # were collected newest-first.
+        carried[1:] = list(reversed(carried[1:]))
         carried.reverse()
         return carried
 
@@ -239,15 +253,27 @@ class _CompactsContext:
 
     async def _reflect(self, observations: list[dict]) -> list[dict]:
         """Merge and condense the structured memory. Keeps the original entries if
-        reflection returns nothing, so it never loses memory."""
-        instructions = self._prompt_loader.load(
-            "reflector", {"observations": compact(observations)}
-        )
+        reflection returns nothing, so it never loses memory.
+
+        ``goal`` entries are held back and passed through untouched. They record what was asked
+        for and what it rules out, and they are the one category a condensing pass is
+        categorically unfit to judge: deciding an objective "no longer bears on the work" is a
+        decision about the work, not about the memory. Everything else here is the agent's own
+        findings, and those are fair to merge.
+
+        This is the same rule that keeps the user's messages out of the Observer's hands, applied
+        one level up — and it matters more here, because reflection runs repeatedly over a long
+        session and each pass is another chance to quietly generalise a constraint into a
+        preference."""
+        goals = [entry for entry in observations if entry.get("category") == "goal"]
+        rest = [entry for entry in observations if entry.get("category") != "goal"]
+        if not rest:
+            return observations
         reflected = await self._emit_observations([
-            SystemMessage(content=instructions),
+            SystemMessage(content=self._prompt_loader.load("reflector", {"observations": compact(rest)})),
             HumanMessage(content="Record the condensed memory now."),
         ])
-        return reflected or observations
+        return [*goals, *reflected] if reflected else observations
 
     async def compact(self, reason: str = "manual") -> AsyncIterator[TurnEvent]:
         """Observational-memory compaction (replaces wholesale summarization). The
@@ -337,6 +363,7 @@ class _CompactsContext:
             messages_after=len(self._conversation),
             tokens_before=tokens_before,
             tokens_after=self._latest_context_tokens,
+            log_tokens=count_tokens(compact(merged)),
         )
 
 

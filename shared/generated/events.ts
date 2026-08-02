@@ -38,6 +38,7 @@ export interface FrankEvents {}
  */
 export interface CompactionEvent {
   kind: "compaction";
+  log_tokens?: number;
   messages_after?: number;
   messages_before?: number;
   ok?: boolean;
