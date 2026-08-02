@@ -42,12 +42,16 @@ export interface ChoiceSet<Value extends string = string> {
   choices: ChoiceDefinition<Value>[];
 }
 
-export type PermissionModeValue = "default" | "auto" | "read_only";
+export type PermissionModeValue = "default" | "permissive" | "self_classify" | "read_only";
 export type SandboxEnforceValue = "required" | "off";
 export type WorktreeStrategyValue = "none" | "branch" | "worktree";
 export type BooleanValue = "on" | "off";
 
-/** How much the agent asks before acting. Three choices, and the only one with a real spectrum. */
+/**
+ * How much the agent asks before acting. The one control here with a real spectrum, ordered from
+ * the most asking to the least — which is also the order somebody moves along as a session earns
+ * trust, so the list reads the way the decision does.
+ */
 export const PERMISSION_MODES: ChoiceSet<PermissionModeValue> = {
   namespace: "SessionControls",
   titleNamespace: "SettingsDialog",
@@ -60,9 +64,16 @@ export const PERMISSION_MODES: ChoiceSet<PermissionModeValue> = {
       glyph: "hand",
     },
     {
-      value: "auto",
-      labelKey: "permissionAutoLabel",
-      descriptionKey: "permissionAutoDescription",
+      value: "permissive",
+      labelKey: "permissionPermissiveLabel",
+      descriptionKey: "permissionPermissiveDescription",
+      glyph: "zap",
+      palette: "orange",
+    },
+    {
+      value: "self_classify",
+      labelKey: "permissionSelfClassifyLabel",
+      descriptionKey: "permissionSelfClassifyDescription",
       glyph: "badge-check",
       palette: "blue",
     },

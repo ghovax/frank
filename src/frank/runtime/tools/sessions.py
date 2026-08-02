@@ -233,7 +233,7 @@ def build_create_session_tool(agent_names: list[str]) -> BaseTool:
             Field(default="", description="Where the peer works. Defaults to your working directory."),
         ),
         permission_mode=(
-            Literal["", "default", "auto", "read_only"],
+            Literal["", "default", "permissive", "self_classify", "read_only"],
             Field(default="", description="The peer's permission mode. Defaults to yours."),
         ),
         title=(str, Field(default="", description="A short label for the session list.")),

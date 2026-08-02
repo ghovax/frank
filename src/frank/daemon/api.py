@@ -349,7 +349,7 @@ async def _session_permission_mode(params: dict) -> dict:
     requested = PermissionMode.parse(params.get("permission_mode"))
     if requested is None:
         raise RpcError(
-            "permission_mode must be one of: default, auto, read_only.",
+            "permission_mode must be one of: default, permissive, self_classify, read_only.",
             status_code=400,
             code="invalid_permission_mode",
         )

@@ -48,7 +48,7 @@ class AgentConfigurationResponse(BaseModel):
     model: str = ""
     provider: str = ""
     reasoning_effort: str = "high"
-    permission_mode: Literal["default", "auto", "read_only"]
+    permission_mode: Literal["default", "permissive", "self_classify", "read_only"]
     tools_enabled: list[str]
     tools_disabled: list[str]
     bash: AgentBashConfigurationResponse
@@ -65,7 +65,7 @@ class AgentConfigurationUpdateRequest(BaseModel):
     model: str | None = None
     provider: str | None = None
     reasoning_effort: str | None = None
-    permission_mode: Literal["default", "auto", "read_only"] | None = None
+    permission_mode: Literal["default", "permissive", "self_classify", "read_only"] | None = None
     tools_enabled: list[str] | None = None
     tools_disabled: list[str] | None = None
     bash: AgentBashConfigurationRequest | None = None
@@ -96,7 +96,7 @@ class SettingsUpdateRequest(BaseModel):
     jina_api_key: str | None = None
     firecrawl_api_key: str | None = None
     web_fetch_proxy_url: str | None = None
-    permission_mode: Literal["default", "auto", "read_only"] | None = None
+    permission_mode: Literal["default", "permissive", "self_classify", "read_only"] | None = None
     sandbox: dict | None = None
     # Per-provider API keys (the opencode gateway's key lives under "opencode").
     provider_keys: dict[str, str] | None = None

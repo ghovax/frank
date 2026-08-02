@@ -652,8 +652,8 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("-a", "--agent", required=True,
                         help="agent profile to run; required, because nothing can guess it for you")
     create.add_argument("-C", "--directory", help="working directory")
-    create.add_argument("-m", "--mode", choices=["default", "auto", "read_only"],
-                        help="permission mode, fixed for the session's life")
+    create.add_argument("-m", "--mode", choices=["default", "permissive", "self_classify", "read_only"],
+                        help="the permission mode this session starts under; it can be changed later, and the change reaches the turn in flight")
     create.add_argument("-w", "--workspace", help="workspace the session belongs to — the set of locations it may act in")
     create.add_argument("-P", "--parent", help="parent session; the child is clamped to no looser a mode")
     create.add_argument("-t", "--title", help="a human label for the session list")
@@ -671,7 +671,7 @@ def build_parser() -> argparse.ArgumentParser:
     schedule_create.add_argument("-w", "--workspace", required=True,
                                  help="workspace id, or a path inside one")
     schedule_create.add_argument("-m", "--mode", required=True,
-                                 choices=["default", "auto", "read_only"],
+                                 choices=["default", "permissive", "self_classify", "read_only"],
                                  help="permission mode; required, because nobody is watching when "
                                       "this runs and an unstated mode is one nobody chose")
     schedule_create.add_argument("--timezone", default=_local_timezone(),

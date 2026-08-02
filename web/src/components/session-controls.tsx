@@ -43,7 +43,14 @@ function permissionAppearance(permissionMode: PermissionMode) {
       borderColor: "border",
       colorPalette: undefined,
     },
-    auto: {
+    permissive: {
+      icon: <LuZap size={13} />,
+      color: "orange.fg",
+      background: "orange.subtle",
+      borderColor: "orange.muted",
+      colorPalette: "orange",
+    },
+    self_classify: {
       icon: <LuBadgeCheck size={13} />,
       color: "blue.fg",
       background: "blue.subtle",
@@ -193,9 +200,10 @@ export function PermissionModeControl({
   responsiveCompact?: boolean;
 }) {
   const translation = useTranslations("SessionControls");
-  const permissionChoices: { value: PermissionMode; label: string; description: string; icon: ReactNode; colorPalette?: "blue" | "green" }[] = [
+  const permissionChoices: { value: PermissionMode; label: string; description: string; icon: ReactNode; colorPalette?: "blue" | "green" | "orange" }[] = [
     { value: "default", label: translation("permissionDefaultLabel"), description: translation("permissionDefaultDescription"), icon: <LuHand size={13} /> },
-    { value: "auto", label: translation("permissionAutoLabel"), description: translation("permissionAutoDescription"), icon: <LuBadgeCheck size={13} />, colorPalette: "blue" },
+    { value: "permissive", label: translation("permissionPermissiveLabel"), description: translation("permissionPermissiveDescription"), icon: <LuZap size={13} />, colorPalette: "orange" },
+    { value: "self_classify", label: translation("permissionSelfClassifyLabel"), description: translation("permissionSelfClassifyDescription"), icon: <LuBadgeCheck size={13} />, colorPalette: "blue" },
     { value: "read_only", label: translation("permissionReadOnlyLabel"), description: translation("permissionReadOnlyDescription"), icon: <LuEye size={13} />, colorPalette: "green" },
   ];
   const permissionItems = permissionChoices.map(({ value: itemValue, label }) => ({ value: itemValue, label }));

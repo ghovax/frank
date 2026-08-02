@@ -335,7 +335,7 @@ class _DecidesPermissions:
             # The rules allow it and the model called it low-risk — under the mode now in force
             # this call would never have been gated at all.
             return "allow"
-        if not policy.auto_permissions:
+        if not policy.self_classifies:
             # Interactive: the ambiguous middle is exactly what a person is for.
             return ""
         decision = await self._classify_permission(
@@ -475,7 +475,7 @@ class _DecidesPermissions:
                 # rules said and whatever risk the model had declared — the one path that
                 # skipped the barrier, and the one that fires most often.
                 if (
-                    policy.auto_permissions
+                    policy.self_classifies
                     and permission_decision != "deny"
                     and self._needs_a_second_opinion(permission_decision, risk or "medium")
                 ):
@@ -521,7 +521,7 @@ class _DecidesPermissions:
                 plan.denial = {"code": "", "message": f"Command '{raw_command}' is not permitted.", "denied_injection": True, "raw_command": raw_command}
                 return plan
             elif self._needs_a_second_opinion(permission_decision, risk):
-                if policy.auto_permissions:
+                if policy.self_classifies:
                     decision = await self._classify_permission(
                         tool_kind="bash", command=raw_command, raw_command=raw_command,
                         default_decision=permission_decision, read_only=read_only,
@@ -556,7 +556,7 @@ class _DecidesPermissions:
             if not read_only and risk in ("medium", "high"):
                 action = f"MCP {tool_arguments.get('server', '')}.{tool_arguments.get('tool_name', '')}"
                 explanation = tool_arguments.get("explanation", "")
-                if policy.auto_permissions:
+                if policy.self_classifies:
                     decision = await self._classify_permission(
                         tool_kind="mcp", command=action,
                         raw_command=compact(tool_arguments.get("arguments") or {}),
@@ -613,7 +613,7 @@ class _DecidesPermissions:
                 plan.denial = {"code": "", "message": deny_message, "denied_injection": False, "raw_command": ""}
                 return plan
             if (static_classification != "read_only" or risk in ("medium", "high")):
-                if policy.auto_permissions:
+                if policy.self_classifies:
                     decision = await self._classify_permission(
                         tool_kind="screen", command="control_screen", raw_command=script,
                         default_decision="ask", read_only=(static_classification == "read_only"),

@@ -928,8 +928,8 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
 
 
     @property
-    def _auto_permissions(self) -> bool:
-        return self._permission_mode.is_auto
+    def _self_classifies(self) -> bool:
+        return self._permission_mode.is_self_classifying
 
     def abort(self) -> None:
         # Stop tears down only the live turn: signal the loop to end and kill every

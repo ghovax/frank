@@ -678,7 +678,7 @@ export async function refreshRemoteAgent(name: string): Promise<{ health: string
 export const FRANK_METADATA_KEY = "urn:frank:ext:turn:v1";
 export const CONTENT_BLOCK_METADATA_KEY = "urn:frank:ext:content-block:v1";
 
-export type PermissionMode = "default" | "auto" | "read_only";
+export type PermissionMode = "default" | "permissive" | "self_classify" | "read_only";
 export type WorktreeStrategy = "none" | "branch" | "worktree";
 
 export interface AgentSummary {

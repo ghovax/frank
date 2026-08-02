@@ -32,7 +32,7 @@ frank create [-a AGENT] [-C DIRECTORY] [-m MODE] [-p PROJECT] [-P PARENT] [-t TI
 |------|--------------|
 | `-a`, `--agent` | **Required.** The agent profile to run. There is no default: which agent does the work is the one thing nothing can guess for you. |
 | `-C`, `--directory` | The working directory. Project-local agents, skills and MCP servers are resolved from here. |
-| `-m`, `--mode` | `default`, `auto`, or `read_only`. Fixed for the session's life. |
+| `-m`, `--mode` | `default`, `permissive`, `self_classify`, or `read_only`. The mode a session *starts* under; the person running it can change it later, and the change reaches the turn in flight. |
 | `-p`, `--project` | The project this session belongs to. |
 | `-P`, `--parent` | The session creating this one. The child is clamped to no looser a mode than its parent, and is reaped when the parent ends. Defaults to `$FRANK_SESSION_ID`, which every session exports — so this command run from inside a session creates a child of it rather than an orphan. |
 | `-t`, `--title` | A label for the session list. Left unset, the session names itself after its first message. |

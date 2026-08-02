@@ -185,11 +185,12 @@ It also clamps the confinement against the session that created it. Path sets in
 
 | Mode | Behaviour |
 |------|-----------|
-| `default` | Ask before risky actions; allow safe ones. |
-| `auto` | Auto-approve low-risk actions, ask for the rest. |
+| `default` | Follow the per-command rules; ask about anything they do not name. |
+| `permissive` | The same rules, but an unnamed command runs. Only the risk the model declared escalates: `low` runs, `medium` and `high` ask. No classifier, so no extra model call. |
+| `self_classify` | As `permissive`, plus a classifier that judges what the barrier could not settle — it approves the provably safe and escalates the rest. |
 | `read_only` | Allow reads; deny writes and side effects. |
 
-There is **no bypass mode**, and no standing "always allow": the only runtime decisions are allow-once and deny. A session's mode is chosen when the harness creates it and can be changed afterwards by the person running it; a session can never change its own. A session created by another is never looser than its parent, and tightening a session tightens the subtree it created.
+They are listed from the most asking to the least, which is the order restrictiveness runs in and the order a session moves along as it earns trust. There is **no bypass mode**, and no standing "always allow": the only runtime decisions are allow-once and deny. A session's mode is chosen when the harness creates it and can be changed afterwards by the person running it; a session can never change its own. A session created by another is never looser than its parent, and tightening a session tightens the subtree it created.
 
 Bash additionally honours per-command rules on each agent (`sudo *: deny`, `rm *: ask`, …) — see [Agents and skills](agents-and-skills.md).
 

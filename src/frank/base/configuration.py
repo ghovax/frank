@@ -763,15 +763,30 @@ class ProviderCredential(Section):
 class AgentDefaults(Section):
     """What a session gets when its creator did not say."""
 
-    permission_mode: Literal["default", "auto", "read_only"] = Field(
+    permission_mode: Literal["default", "permissive", "self_classify", "read_only"] = Field(
         "default",
         description=(
-            "default asks before risky actions and allows safe ones; auto approves low-risk "
-            "actions and asks for the rest; read_only allows reads and denies every write and "
+            "default asks before anything its rules do not name; permissive runs what the "
+            "model called low-risk and asks about the rest; self_classify adds a classifier "
+            "that can vouch for the rest; read_only allows reads and denies every write and "
             "side effect. A default, not a ceiling: `frank create --mode` overrides it, and a "
             "child is clamped against its parent either way."
         ),
     )
+
+    # Written before the mode was renamed, and read after. A `Literal` refuses an unknown string
+    # outright, so without this a configuration saying `auto` — which every install that had
+    # chosen it says — stops the daemon at load with a validation error rather than starting
+    # under the mode it names. `PermissionMode.parse` knows the old spelling; this is the hook
+    # that lets it be consulted, and the value is rewritten the next time the file is saved.
+    @field_validator("permission_mode", mode="before")
+    @classmethod
+    def _accept_renamed_mode(cls, value):
+        from frank.base.permission_mode import PermissionMode
+
+        parsed = PermissionMode.parse(value) if isinstance(value, str) else None
+        return str(parsed) if parsed is not None else value
+
 
 
 class Configuration(Section):
@@ -1260,10 +1275,26 @@ class AgentConfiguration(BaseModel):
     model: Optional[str] = None
     provider: Optional[str] = None
     reasoning_effort: str = "high"
-    # default: per-command permission rules. auto: use the default rules plus an
-    # LLM classifier to auto-approve safe bash calls and escalate the rest.
-    # read_only: hard-block all writes (investigation sessions). There is no bypass mode.
-    permission_mode: Literal["default", "auto", "read_only"] = "default"
+    # default: per-command permission rules, and anything unmatched is asked about.
+    # permissive: the same rules, but an unmatched command runs and only the risk the model
+    # declared escalates — medium or high asks, low does not. No classifier, no model call.
+    # self_classify: the default rules plus an LLM classifier to approve safe bash calls and
+    # escalate the rest. read_only: hard-block all writes. There is no bypass mode.
+    permission_mode: Literal["default", "permissive", "self_classify", "read_only"] = "default"
+
+    # Written before the mode was renamed, and read after. A `Literal` refuses an unknown string
+    # outright, so without this a configuration saying `auto` — which every install that had
+    # chosen it says — stops the daemon at load with a validation error rather than starting
+    # under the mode it names. `PermissionMode.parse` knows the old spelling; this is the hook
+    # that lets it be consulted, and the value is rewritten the next time the file is saved.
+    @field_validator("permission_mode", mode="before")
+    @classmethod
+    def _accept_renamed_mode(cls, value):
+        from frank.base.permission_mode import PermissionMode
+
+        parsed = PermissionMode.parse(value) if isinstance(value, str) else None
+        return str(parsed) if parsed is not None else value
+
     # An agent's own confinement, narrowing the global one. An investigator and a build agent
     # genuinely want different filesystems, and the harness already accepts that agents differ in
     # what they may do. Unset means "whatever the machine's configuration says"; set, it is still
