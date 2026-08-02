@@ -27,16 +27,22 @@ class Observation(BaseModel):
 
     category: Literal["decision", "fact", "artifact", "goal", "open"] = Field(
         description=(
-            "decision — a choice or approach the agent committed to; "
-            "fact — something learned about the codebase, system, or world; "
-            "artifact — a file/path/resource created or modified (record the exact path); "
-            "goal — the user's objective, preference, or constraint; "
-            "open — an unfinished thread or an agreed next step."
+            "decision — a choice that was committed to, and why it beat the alternative; "
+            "fact — something established about the codebase, system, or world, and whether it "
+            "was verified or assumed; "
+            "artifact — a file, path, command or resource created, changed, or found to matter "
+            "(record the exact identifier); "
+            "goal — an objective or constraint, and what it rules out; "
+            "open — work unfinished, agreed but not done, or blocked, with its next concrete step."
         )
     )
     detail: str = Field(
-        description="A terse, information-dense note. Record outcomes and state, and keep "
-        "concrete identifiers (paths, ids, names, commands, numbers) exact."
+        description=(
+            "One dense note written for a model that will resume this work with no memory of "
+            "the turns behind it. State outcomes, not narration. Keep every concrete identifier "
+            "— paths, ids, names, commands, numbers, versions, error codes — exactly as written, "
+            "and keep measurements as measurements: they cannot be re-derived by thinking."
+        )
     )
 
 

@@ -809,6 +809,7 @@ export interface CompactionSettings {
   condense_log_at_fraction: number;
   output_reserve_fraction: number;
   recent_working_set_fraction: number;
+  verbatim_user_fraction: number;
 }
 
 export interface Settings {
@@ -856,6 +857,7 @@ const DEFAULT_COMPACTION: CompactionSettings = {
   condense_log_at_fraction: 0.3,
   output_reserve_fraction: 0.1,
   recent_working_set_fraction: 0.25,
+  verbatim_user_fraction: 0.1,
 };
 
 // Persist the context-reclaiming settings (automatic on/off, pruning, and the thresholds).

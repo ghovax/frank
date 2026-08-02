@@ -38,9 +38,17 @@ class _CompactsContext:
     async def _emit_observations(self, request: list) -> list[dict]:
         """Run one Observer/Reflector call and read its structured output from the
         model's ``ObservationBatch`` tool call — the shape is guaranteed by tool-calling,
-        not scraped from free text (same pattern as PermissionDecision). Returns []
-        when the model emits no tool call, so a miss simply changes nothing."""
-        model = self._llm.bind_tools([ObservationBatch], tool_choice="auto")
+        not scraped from free text (same pattern as PermissionDecision).
+
+        Required, not offered. Producing this object is the entire purpose of the call, and
+        under ``auto`` a model that answered in prose instead left this with nothing to parse:
+        the fold reported that it had produced nothing, kept the history it was asked to shrink,
+        and the context went on growing. A pass that can decline the only thing it was called
+        for is a pass that fails silently at the moment it is needed most.
+
+        Still returns ``[]`` if a model manages to answer without the call, because losing a
+        fold is better than losing the conversation to an exception."""
+        model = self._llm.bind_tools([ObservationBatch], tool_choice="required")
         response = await model.ainvoke(request)
         if response is None or not response.tool_calls:
             return []
@@ -129,6 +137,41 @@ class _CompactsContext:
         # after a cut that could not be placed anywhere useful.
         return start if 0 < start < len(messages) else 0
 
+    def _carried_user_messages(self, folded: list) -> list:
+        """The user's own messages from the folded turns, kept word for word.
+
+        A summariser is at its worst on exactly this content. Everything else in a conversation
+        is the agent's own work — recoverable, re-derivable, and safe to compress into findings.
+        What the user actually said is neither: it is the specification, and a paraphrase of a
+        specification is a different specification. "Do not commit" becomes "avoid committing for
+        now"; a constraint becomes a preference; an exact phrase the whole task turns on becomes
+        a reasonable-sounding near-miss that nothing later can detect as wrong.
+
+        So these are carried across the fold verbatim, most recent first until the budget runs
+        out, and the observation log records what they *imply* rather than what they said. The
+        Codex CLI does the same thing and for the same reason — it keeps the user's messages and
+        drops everything else — which is a strong signal, since it otherwise summarises far more
+        aggressively than this does.
+
+        Harness notes are excluded: they carry the harness's voice, not the user's, and their
+        content is either regenerated every turn or already recorded.
+        """
+        budget = int(self._usable_context() * self._global_configuration.compaction.verbatim_user_fraction)
+        if budget <= 0:
+            return []
+        carried: list = []
+        spent = 0
+        for message in reversed(folded):
+            if not isinstance(message, HumanMessage) or message.additional_kwargs.get("harness_note"):
+                continue
+            size = message_tokens(message)
+            if spent + size > budget:
+                break
+            carried.append(message)
+            spent += size
+        carried.reverse()
+        return carried
+
     def _compaction_state(self, reason: str = "auto"):
         """What a supplied strategy is given. Passed, never reached for."""
         from frank.base.ports import CompactionState
@@ -175,10 +218,17 @@ class _CompactsContext:
             return False
         return self._observer_boundary() > 0
 
-    async def _observe(self, older: list, existing: list[dict]) -> list[dict]:
+    async def _fold_into_observations(self, older: list, existing: list[dict]) -> list[dict]:
         """Fold the older messages into new structured observations to append. The
         messages are handed to the model as-is; the existing memory is shown so it does
-        not duplicate what is already recorded."""
+        not duplicate what is already recorded.
+
+        Named for what it does rather than for the Observer that does it. As `_observe` it was
+        shadowed by `AgentRuntime._observe`, the audit sink — a mixin loses to a method the class
+        defines itself — so a fold called the audit trail with `(older, existing)` as its
+        `(kind, data)` and then awaited its `None`. Nothing caught it because nothing reached it:
+        the boundary this used to depend on answered 0 for every conversation, so the fold
+        returned before ever calling this.""",
         existing_json = compact(existing) if existing else "[]"
         instructions = self._prompt_loader.load("observer", {"existing_observations": existing_json})
         return await self._emit_observations([
@@ -248,7 +298,7 @@ class _CompactsContext:
             messages_before=messages_before,
             tokens_before=tokens_before,
         )
-        new_observations = await self._observe(older, existing)
+        new_observations = await self._fold_into_observations(older, existing)
         if not new_observations:
             # Produced nothing parseable — leave history untouched rather than drop it.
             yield CompactionDone(reason=reason, ok=False,
@@ -265,7 +315,15 @@ class _CompactsContext:
             merged = await self._reflect(merged)
         # Replace in place: the conversation list object is shared with the executor's
         # per-context store, so mutating the same object keeps that binding.
-        self._conversation[:] = [self._build_observation_message(merged), *recent]
+        # What the user said, then what was learned from it, then the live tail. The log sits
+        # closest to the recent turns because it is the freshest synthesis of everything behind
+        # them; the user's own words sit behind it because they are the oldest authority and the
+        # one thing in here that was not written by a model.
+        self._conversation[:] = [
+            *self._carried_user_messages(older),
+            self._build_observation_message(merged),
+            *recent,
+        ]
         # Occupancy no longer describes the conversation, so it is measured again rather than
         # zeroed. Zeroing was enough while the only question afterwards was "do not fold again
         # immediately", which any small number answers. It is not enough now that something runs

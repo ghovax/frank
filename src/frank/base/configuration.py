@@ -430,6 +430,14 @@ class CompactionConfiguration(Section):
             "of tool results."
         ),
     )
+    verbatim_user_fraction: float = Field(
+        0.1,
+        description=(
+            "Share of the usable window that carries the user's own messages through a fold, "
+            "word for word. Their instructions are the specification, and a paraphrase of a "
+            "specification is a different specification."
+        ),
+    )
 
 
 class ContextShareConfiguration(Section):
