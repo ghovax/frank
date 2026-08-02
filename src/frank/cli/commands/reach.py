@@ -38,6 +38,7 @@ import contextlib
 import logging
 import json
 import os
+import re
 import secrets
 import socket
 import subprocess
@@ -158,19 +159,47 @@ def _tailscale_command() -> str:
     )
 
 
+# A link Tailscale prints when something has to be switched on for the whole tailnet, which is a
+# thing only a person with the admin console open can do.
+_CONSOLE_LINK = re.compile(r"https://login\.tailscale\.com/\S+")
+
+
 def _tailscale(*arguments: str, timeout: float = 15.0) -> subprocess.CompletedProcess:
     try:
         return subprocess.run(
             [_tailscale_command(), *arguments], capture_output=True, text=True,
-            timeout=timeout, check=False,
+            # Nothing here can answer a prompt, and a command silently waiting on one is
+            # indistinguishable from a command that has hung.
+            stdin=subprocess.DEVNULL, timeout=timeout, check=False,
         )
     except subprocess.TimeoutExpired as error:
+        # What it managed to say before the clock ran out, which is usually the whole answer.
+        #
+        # `tailscale serve` does not fail when a tailnet has not enabled Serve — it prints a link
+        # to enable it and then *waits*, polling until somebody does. Captured and timed out,
+        # that read as "Tailscale is not answering", which is both wrong and unactionable: the
+        # one thing that would have fixed it was the link nobody ever saw.
+        said = _said(error.stdout) + _said(error.stderr)
+        if (link := _CONSOLE_LINK.search(said)) is not None:
+            raise TailscaleUnavailable(
+                "Tailscale is waiting for something to be switched on for your tailnet. Open this, "
+                "turn it on, then run this again.",
+                link.group(0),
+            ) from error
         raise TailscaleUnavailable(
             f"Tailscale did not answer `{' '.join(arguments)}` within {timeout:.0f}s. Open the "
-            "Tailscale app and check it is connected."
+            "Tailscale app and check it is connected.",
+            " ".join(said.split()),
         ) from error
     except OSError as error:
         raise TailscaleUnavailable(f"Tailscale would not run: {error}") from error
+
+
+def _said(stream) -> str:
+    """Whatever a stream held, as text. `TimeoutExpired` carries bytes or `None`."""
+    if stream is None:
+        return ""
+    return stream.decode("utf-8", "replace") if isinstance(stream, bytes) else str(stream)
 
 
 def tailnet_name() -> str:
@@ -222,13 +251,22 @@ def ensure_served(port: int) -> None:
     address answers with a connection error, which is what a phone shows as "not answering"
     either way — and re-asserting it on every start is cheaper than a teardown that could only
     ever be best-effort. `tailscale serve --https=443 off` removes it."""
-    completed = _tailscale("serve", "--bg", "--https=443", f"http://127.0.0.1:{port}", timeout=60.0)
+    # Twenty seconds, not a minute. Configuring a serve takes well under a second when it is
+    # going to work at all; the only thing a longer wait buys is a longer wait before the link
+    # that explains why it will not.
+    completed = _tailscale("serve", "--bg", "--https=443", f"http://127.0.0.1:{port}", timeout=20.0)
     if completed.returncode == 0:
         return
     message = (completed.stderr or completed.stdout or "").strip()
     # The one failure worth naming, because it is the one a person cannot guess: certificates are
     # off for the whole tailnet until somebody turns them on, and every machine on it fails this
     # way until they do.
+    if (link := _CONSOLE_LINK.search(message)) is not None:
+        raise TailscaleUnavailable(
+            "Tailscale is waiting for something to be switched on for your tailnet. Open this, "
+            "turn it on, then run this again.",
+            link.group(0),
+        )
     lowered = message.lower()
     if "https" in lowered and ("enable" in lowered or "certificate" in lowered):
         raise TailscaleUnavailable(

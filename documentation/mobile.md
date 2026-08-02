@@ -150,7 +150,7 @@ No layer is configured to be safe; each one *is* safe because of what it binds t
 
 1. Install it. On this machine that is `~/.config/nix-darwin` → `homebrew.casks` → `tailscale-app`, then `rebuild`. The standalone variant rather than the App Store one: Tailscale recommends it, and it is the one that carries the full CLI. Never run both.
 2. Sign in from the Tailscale app, and install the phone's client from the App Store and sign in with the same account.
-3. Turn on **HTTPS Certificates** in the [admin console](https://login.tailscale.com/admin/dns), under DNS. Without it Tailscale cannot obtain a certificate for your machine's name, and `frank reach` will say so and stop.
+3. Turn on two things for the tailnet, both in the admin console and both once. **HTTPS Certificates**, under [DNS](https://login.tailscale.com/admin/dns), without which Tailscale cannot obtain a certificate for your machine's name. And **Serve**, which `frank reach` will hand you a one-click link for the first time it needs it — Tailscale prints that link and then waits, polling, for somebody to follow it.
 4. In the Mac app's settings, switch on the CLI integration, which puts `tailscale` on `PATH`. Frank also looks inside `/Applications/Tailscale.app` if it is not there.
 
 ### The token, and how it gets into the page
