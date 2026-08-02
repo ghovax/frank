@@ -43,7 +43,12 @@ from frank.base.credentials import (
     load_tokens,
     valid_tokens,
 )
-from frank.base.message_content import content_blocks_to_message_content, message_text
+from frank.base.message_content import (
+    REASONING_MODEL_KEY,
+    carried_reasoning_for,
+    content_blocks_to_message_content,
+    message_text,
+)
 from frank.base.model_errors import CONTEXT_OVERFLOW_CODES, ContextWindowExceeded
 from frank.base.serialization import compact, upstream_detail
 from frank.base.subscription import (
@@ -183,8 +188,7 @@ class ChatCodexModel(BaseChatModel):
                 # happened, and reasoning that arrives after the call it explains describes
                 # nothing. The blobs are opaque and encrypted — they are not read here, only
                 # carried, which is the whole of what `store: false` asks of a client.
-                for item in message.additional_kwargs.get("reasoning_items") or []:
-                    items.append(item)
+                items.extend(carried_reasoning_for(message, self.model).get("reasoning_items") or [])
                 text = self._text_of(message)
                 if text:
                     items.append({
@@ -328,7 +332,7 @@ class ChatCodexModel(BaseChatModel):
                     "id": item.get("id"),
                     "summary": item.get("summary") or [],
                     "encrypted_content": item["encrypted_content"],
-                })
+                }, model=str(state.get("model") or ""))
             return None
         if event_type == "response.output_item.added":
             item = data.get("item") or {}
@@ -419,6 +423,7 @@ class ChatCodexModel(BaseChatModel):
         content_block: ContentBlock | None = None,
         tool_call_chunk: Optional[ToolCallChunk] = None,
         reasoning_item: Optional[dict[str, Any]] = None,
+        model: str = "",
     ) -> ChatGenerationChunk:
         content_blocks = [content_block] if content_block is not None else []
         message = AIMessageChunk(
@@ -428,7 +433,13 @@ class ChatCodexModel(BaseChatModel):
             # accumulates into the turn's reasoning in the order it arrived. Deliberately
             # carrying no `index`: that is the key LangChain merges list entries *by*, and these
             # are a sequence to append to, not slots to overwrite.
-            additional_kwargs={"reasoning_items": [reasoning_item]} if reasoning_item else {},
+            #
+            # The model rides along because the blob is encrypted *to a model*: a session that
+            # changes model between turns must not hand the new one thinking it cannot decrypt.
+            additional_kwargs=(
+                {"reasoning_items": [reasoning_item], REASONING_MODEL_KEY: model}
+                if reasoning_item else {}
+            ),
         )
         return ChatGenerationChunk(message=message)
 

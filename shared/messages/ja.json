@@ -634,7 +634,16 @@
     "searchCodeBare": "コードを検索中",
     "controlScreenScript": "{script} を実行中",
     "controlScreenSurface": "{surface}を操作中",
-    "controlScreenBare": "画面を操作中"
+    "controlScreenBare": "画面を操作中",
+    "createSession": "{agent} のセッションを作成中",
+    "createSessionBare": "セッションを作成中",
+    "messageSession": "セッションにメッセージを送信中",
+    "readSession": "セッションを読み込み中",
+    "listSessions": "セッションを一覧表示中",
+    "endSession": "セッションを終了中",
+    "listRemoteAgents": "リモートエージェントを一覧表示中",
+    "messageRemoteAgent": "{name} にメッセージを送信中",
+    "messageRemoteAgentBare": "リモートエージェントにメッセージを送信中"
   },
   "ToolGroup": {
     "thinking": "思考中",

@@ -119,12 +119,22 @@ class _RunsTurns:
                 # which a person can change mid-session, and anything changeable in here rewrites
                 # the front of every request. It rides in the turn context instead.
             })
-            # Also conditional: it opens by asserting "you are running as a session… another
-            # session may have created you", and tells the model to answer its parent with
-            # `message_session`. A library-embedded runtime is none of those things and has no
-            # such tool.
+            # Also conditional: it asserts "you are running as a session", which a
+            # library-embedded runtime is not, and which has no peer tools either.
+            #
+            # The instruction to report to a parent is conditional *within* it, on there being a
+            # parent, and it names the real id. It used to ship to every session that merely had
+            # the tool, phrased as "if `parent_session` is in your context" — so a session that
+            # nobody created still read an instruction to report, and one duly sent its findings
+            # to a session literally named `parent_session`. A placeholder in a prompt is a
+            # value to whoever reads it; the way not to have it mistaken for an id is not to
+            # write one.
+            parent_report = (
+                self._prompt_loader.load("parent_report", {"parent": self._parent_session})
+                if self._parent_session else ""
+            )
             agent_context = (
-                self._prompt_loader.load("agent_context", {})
+                self._prompt_loader.load("agent_context", {"parent_report": parent_report})
                 if "message_session" in {tool.name for tool in self._tools} else ""
             )
             # The opt-in user-context section is its own template, rendered into the prompt's

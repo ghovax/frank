@@ -15,7 +15,14 @@ from frank.runtime.background import current_background_jobs, current_tool_call_
 from frank.base.tuning import Tunable, active_tuning, clip_to_tokens
 from frank.base.serialization import compact
 from frank.runtime.tools import context as tool_context
+
 from frank.base.configuration import PromptLoader
+#: Why a tool call is happening, in the words the person watching will read. Every tool takes
+#: one, because the transcript is the only place a call explains itself: a command and its
+#: arguments say what ran, never why, and a call that cannot say why is a call somebody has to
+#: reverse-engineer to trust. Written once here so the twenty-odd tools that ask for it cannot
+#: drift into asking for twenty slightly different things.
+EXPLANATION = "A concise, user-facing reason this action is needed for the current task. Always required."
 
 # bash is synchronous by default: the model chooses whether a command backgrounds
 # (background=true), so backgrounding is never a surprise it has to reason about.
@@ -44,7 +51,7 @@ async def bash(
     command: str,
     location: str = "",
     read_only: bool = False,
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
     risk: Literal["low", "medium", "high"] = "low",
     background: bool = False,
     timeout: float = Tunable.bash_sync_window_seconds.default,
@@ -218,7 +225,7 @@ async def bash(
 @tool
 async def search_web(
     query: str,
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
     result_count: int = 5,
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/search_web.md."""
@@ -293,7 +300,7 @@ async def search_web(
 
 
 @tool
-async def list_mcp_tools(server: str = "", explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+async def list_mcp_tools(server: str = "", explanation: str = Field(..., description=EXPLANATION)) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/list_mcp_tools.md."""
     try:
         result = await _require_mcp_client_manager().list_tools(server)
@@ -308,7 +315,7 @@ async def call_mcp_tool(
     tool_name: str,
     arguments: dict[str, Any] | None = None,
     read_only: bool = False,
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/call_mcp_tool.md."""
@@ -334,7 +341,7 @@ async def call_mcp_tool_with_events(
 
 
 @tool
-async def list_mcp_resources(server: str = "", explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+async def list_mcp_resources(server: str = "", explanation: str = Field(..., description=EXPLANATION)) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/list_mcp_resources.md."""
     try:
         result = await _require_mcp_client_manager().list_resources(server)
@@ -344,7 +351,7 @@ async def list_mcp_resources(server: str = "", explanation: str = Field(..., des
 
 
 @tool
-async def read_mcp_resource(server: str, uri: str, explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+async def read_mcp_resource(server: str, uri: str, explanation: str = Field(..., description=EXPLANATION)) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/read_mcp_resource.md."""
     try:
         result = await _require_mcp_client_manager().read_resource(server, uri)
@@ -356,26 +363,26 @@ async def read_mcp_resource(server: str, uri: str, explanation: str = Field(...,
 @tool
 async def wait_for(
     seconds: float,
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/wait_for.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
-def read_turn(turn_id: str = "", explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+def read_turn(turn_id: str = "", explanation: str = Field(..., description=EXPLANATION)) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/read_turn.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
-def set_tasks(tasks: list[dict]) -> str:
+def set_tasks(tasks: list[dict], explanation: str = Field(..., description=EXPLANATION)) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/set_tasks.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
-def update_tasks(updates: list[dict]) -> str:
+def update_tasks(updates: list[dict], explanation: str = Field(..., description=EXPLANATION)) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/update_tasks.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -384,7 +391,7 @@ def update_tasks(updates: list[dict]) -> str:
 def update_goal(
     goal: str = "",
     status: Literal["active", "satisfied", "cleared"] = "active",
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/update_goal.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -396,7 +403,7 @@ def read_file(
     location: str = "",
     offset: int = 1,
     limit: int | None = 2048,
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/read_file.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -407,7 +414,7 @@ def search_code(
     query: str,
     top_k: int = 10,
     reindex: bool = False,
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/search_code.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -420,7 +427,7 @@ def edit_file(
     replace_with: str,
     location: str = "",
     replace_all: bool = False,
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/edit_file.md."""
@@ -432,7 +439,7 @@ def write_file(
     file_path: str,
     content: str,
     location: str = "",
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/write_file.md."""
@@ -446,7 +453,7 @@ async def fetch_url(
     timeout: float = Tunable.slow_tool_sync_window_seconds.default,
     hard_deadline: float = 30,
     background: bool = False,
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/fetch_url.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -460,7 +467,7 @@ async def download_file(
     timeout: float = Tunable.slow_tool_sync_window_seconds.default,
     hard_deadline: float = 120,
     background: bool = False,
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/download_file.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -470,7 +477,7 @@ async def download_file(
 async def control_screen(
     script: str,
     target: str = "",
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/control_screen.md."""
@@ -480,14 +487,14 @@ async def control_screen(
 @tool
 def ask_user(
     questions: list[dict],
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/ask_user.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
-def load_skill(name: str, explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+def load_skill(name: str, explanation: str = Field(..., description=EXPLANATION)) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/load_skill.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 

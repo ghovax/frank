@@ -30,9 +30,9 @@ interface ToolDisplayInfo {
 export function getToolCallDisplay(
   name: string,
   args: Record<string, unknown> | undefined,
-  t: ToolDisplayTranslator,
+  translation: ToolDisplayTranslator,
 ): ToolDisplayInfo {
-  const display = toolCallDisplay(name, args, t);
+  const display = toolCallDisplay(name, args, translation);
   return {
     icon: glyph(display.glyph),
     iconColor: display.tint,

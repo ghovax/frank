@@ -29,12 +29,32 @@ from pydantic import SecretStr
 
 from frank.base.serialization import compact
 from frank.base.message_content import (
+    REASONING_MODEL_KEY,
+    carried_reasoning_for,
     content_blocks_to_message_content,
     message_reasoning_text,
     message_text,
 )
 
 litellm.drop_params = True
+
+#: The one thing worth asking for on a Responses request, and the reason to make the request a
+#: Responses one at all: the model's own thinking, encrypted, so the next call can hand it back.
+_ENCRYPTED_REASONING = ["reasoning.encrypted_content"]
+
+#: Routes that want `reasoning_content` on every assistant message, present and empty rather than
+#: absent. DeepSeek rejects a history where some assistant turns carry the field and others do not.
+_ALWAYS_REASONING_ROUTES = ("deepseek",)
+
+#: Providers whose reasoning is only recoverable through the Responses API. OpenAI's Chat
+#: Completions endpoint neither returns encrypted reasoning nor accepts it back, so a reasoning
+#: model routed there forgets its own thinking at every tool hop and derives it again, and the
+#: prefix stops matching what was cached. There is no flag that fixes this on the chat endpoint —
+#: the round-trip only exists on the other one, which is why the Codex CLI speaks nothing but
+#: Responses and OpenCode sends every OpenAI-family reasoning model the same way. LiteLLM enters
+#: its own Responses bridge on a `responses/` segment in the model id.
+_RESPONSES_ROUTES = ("openai", "azure")
+
 
 class ChatLiteLLMModel(BaseChatModel):
     """A LangChain ``BaseChatModel`` backed by LiteLLM, the single route to every
@@ -93,6 +113,34 @@ class ChatLiteLLMModel(BaseChatModel):
             "reasoning_effort": self.reasoning_effort,
         }
 
+    def _speaks_responses(self) -> bool:
+        """Whether this model's reasoning is only round-trippable over the Responses API.
+
+        Asked of LiteLLM's own model map rather than guessed from the name, because the map is
+        what LiteLLM consults when it decides which endpoint to speak — so the answer here and
+        the endpoint actually used cannot drift apart. A model already carrying a `responses/`
+        segment says so itself; one whose declared mode is `responses` is routed there without
+        being asked. What is left is the case this exists for: a reasoning model on `openai` or
+        `azure` whose mode is `chat`, which is where the reasoning was being lost.
+        """
+        route, _, remainder = self.model.partition("/")
+        if remainder.startswith("responses/"):
+            return True
+        if route.lower() not in _RESPONSES_ROUTES:
+            return False
+        try:
+            info = litellm.get_model_info(self.model)
+        except Exception:  # noqa: BLE001 — an unknown id is a custom endpoint; leave it alone
+            return False
+        return info.get("mode") == "responses" or bool(info.get("supports_reasoning"))
+
+    def _request_model(self) -> str:
+        """The model id to send, which is the Responses one when reasoning depends on it."""
+        route, separator, remainder = self.model.partition("/")
+        if not self._speaks_responses() or not separator or remainder.startswith("responses/"):
+            return self.model
+        return f"{route}/responses/{remainder}"
+
     # Tool binding.
 
     def bind_tools(
@@ -113,8 +161,7 @@ class ChatLiteLLMModel(BaseChatModel):
 
     # Message translation between LangChain messages and LiteLLM request dicts.
 
-    @staticmethod
-    def _messages_to_dicts(messages: Sequence[BaseMessage]) -> list[dict[str, Any]]:
+    def _messages_to_dicts(self, messages: Sequence[BaseMessage]) -> list[dict[str, Any]]:
         dicts: list[dict[str, Any]] = []
         for message in messages:
             role = ChatLiteLLMModel._role_for(message)
@@ -126,13 +173,57 @@ class ChatLiteLLMModel(BaseChatModel):
                 tool_calls = ChatLiteLLMModel._tool_calls_to_openai(message.tool_calls)
                 if tool_calls:
                     entry["tool_calls"] = tool_calls
+                # The readable text goes back regardless of who wrote it: it is prose, and every
+                # OpenAI-compatible endpoint takes it. Only the signed and encrypted forms are
+                # bound to one model.
+                #
+                # DeepSeek wants the field on *every* assistant message, present and empty rather
+                # than absent, and returns empty reasoning of its own that has to be handed back
+                # the same way — so there the key is always written. OpenCode carries the same
+                # special case, and for the same reason.
                 reasoning = message_reasoning_text(message)
-                if reasoning:
+                if reasoning or self._route() in _ALWAYS_REASONING_ROUTES:
                     entry["reasoning_content"] = reasoning
+                entry.update(carried_reasoning_for(message, self.model))
             elif isinstance(message, ToolMessage):
                 entry["tool_call_id"] = message.tool_call_id
             dicts.append(entry)
         return dicts
+
+    def _reasoning_to_carry(self, source: Any) -> dict[str, Any]:
+        """Whatever of the provider's own reasoning this message can hand back next time.
+
+        A streamed thinking block arrives twice. First as deltas — a slice of text and no
+        signature, which is display material and nothing more; Anthropic rejects an unsigned
+        block outright rather than ignoring it. Then, when the signature lands, as one whole
+        block carrying the full text *and* the signature. Only the second kind is history, so
+        only the second kind is kept: taking both would send the same thinking several times
+        over and get the request refused for the partials.
+        """
+        carried: dict[str, Any] = {}
+        blocks = [
+            block for block in ChatLiteLLMModel._plain(getattr(source, "thinking_blocks", None))
+            if block.get("type") == "redacted_thinking" or block.get("signature")
+        ]
+        if blocks:
+            carried["thinking_blocks"] = blocks
+        items = ChatLiteLLMModel._plain(getattr(source, "reasoning_items", None))
+        if items:
+            carried["reasoning_items"] = items
+        if carried:
+            carried[REASONING_MODEL_KEY] = self.model
+        return carried
+
+    @staticmethod
+    def _plain(value: Any) -> list[dict[str, Any]]:
+        """A list of provider objects as plain dicts, so it survives being checkpointed to JSON."""
+        plain: list[dict[str, Any]] = []
+        for entry in value or []:
+            if isinstance(entry, dict):
+                plain.append(dict(entry))
+            elif hasattr(entry, "model_dump"):
+                plain.append(entry.model_dump(exclude_none=True))
+        return plain
 
     #: What makes a model want explicit cache breakpoints: being a Claude, wherever it is served
     #: from. Deliberately a property of the *model* and not of the provider — Claude reaches this
@@ -298,7 +389,7 @@ class ChatLiteLLMModel(BaseChatModel):
 
     def _completion_kwargs(self, **kwargs: Any) -> dict[str, Any]:
         params: dict[str, Any] = {
-            "model": self.model,
+            "model": self._request_model(),
             "temperature": self.temperature,
         }
         if self.api_key is not None:
@@ -331,6 +422,23 @@ class ChatLiteLLMModel(BaseChatModel):
             # which is why `_apply_cache_breakpoints` leaves its traffic alone. Asking for
             # automatic caching is the whole of our side of that bargain.
             params["extra_body"] = {**params.get("extra_body", {}), "gateway": {"caching": "auto"}}
+        if self._speaks_responses():
+            # Ask for the encrypted reasoning, and decline to have the conversation kept.
+            #
+            # These two go together and are meaningless apart. `store: false` says the provider
+            # holds nothing between calls, which is the only honest arrangement when the client
+            # owns the transcript — and it is what makes `include` necessary, because with
+            # nothing stored the encrypted item is the sole way the model's thinking reaches the
+            # next call. Asking for one without the other either leaks the conversation into a
+            # provider's storage or loses the reasoning. Both references send exactly this pair.
+            #
+            # `extra_body` is how they reach LiteLLM's Responses bridge, which lifts the keys it
+            # recognises to the top level of the request it builds.
+            params["extra_body"] = {
+                **params.get("extra_body", {}),
+                "include": _ENCRYPTED_REASONING,
+                "store": False,
+            }
         # Caller-supplied kwargs (tools, tool_choice, parallel_tool_calls, stop)
         # override the model defaults so bind_tools() bindings reach LiteLLM.
         params.update({key: value for key, value in kwargs.items() if value is not None})
@@ -402,8 +510,7 @@ class ChatLiteLLMModel(BaseChatModel):
             metadata["output_token_details"] = {"reasoning": reasoning}
         return cast(UsageMetadata, metadata)
 
-    @staticmethod
-    def _litellm_chunk_to_generation_chunk(chunk: Any, block: str = "") -> Optional[ChatGenerationChunk]:
+    def _litellm_chunk_to_generation_chunk(self, chunk: Any, block: str = "") -> Optional[ChatGenerationChunk]:
         usage_metadata = ChatLiteLLMModel._usage_metadata(getattr(chunk, "usage", None))
         choices = getattr(chunk, "choices", None) or []
         if not choices:
@@ -442,6 +549,9 @@ class ChatLiteLLMModel(BaseChatModel):
             content=content_blocks_to_message_content(content_blocks),
             tool_call_chunks=tool_call_chunks,
             usage_metadata=usage_metadata,
+            # Chunk merging concatenates these lists, so the finished message ends up holding
+            # every signed block of the turn, in the order the model produced them.
+            additional_kwargs=self._reasoning_to_carry(delta),
         )
         finish_reason = getattr(choice, "finish_reason", None)
         generation_info = {"finish_reason": finish_reason} if finish_reason else None
@@ -489,7 +599,7 @@ class ChatLiteLLMModel(BaseChatModel):
             messages=self._apply_cache_breakpoints(self._messages_to_dicts(messages), messages),
             **params,
         )
-        return ChatLiteLLMModel._response_to_result(response)
+        return self._response_to_result(response)
 
     def _generate(
         self,
@@ -503,10 +613,9 @@ class ChatLiteLLMModel(BaseChatModel):
             messages=self._apply_cache_breakpoints(self._messages_to_dicts(messages), messages),
             **params,
         )
-        return ChatLiteLLMModel._response_to_result(response)
+        return self._response_to_result(response)
 
-    @staticmethod
-    def _response_to_result(response: Any) -> ChatResult:
+    def _response_to_result(self, response: Any) -> ChatResult:
         import json as _json
 
         choices = getattr(response, "choices", None) or []
@@ -537,5 +646,6 @@ class ChatLiteLLMModel(BaseChatModel):
             # every conversation was named "Untitled conversation".
             tool_calls=list(tool_calls or []),
             usage_metadata=ChatLiteLLMModel._usage_metadata(getattr(response, "usage", None)),
+            additional_kwargs=self._reasoning_to_carry(message_obj),
         )
         return ChatResult(generations=[ChatGeneration(message=message)])

@@ -245,6 +245,13 @@ export function ChatPanel({
   const trimmedWorkingDirectory = (workingDirectory ?? "").trim();
   const directoryPending = !!trimmedWorkingDirectory && (directoryStatus.checking || directoryStatus.path !== trimmedWorkingDirectory);
   const chatReady = isConnected && !directoryPending;
+  // The one condition under which the transcript is actually in the DOM. Everything that
+  // touches scroll position reads it, and so does the render — they used to disagree. The
+  // render waited for `chatReady`; the layout effect below and the resize observer watched
+  // only `isHistoryLoading`. So the frame that finally put messages on screen was one
+  // neither of them ran on: nothing pinned the view and nothing was left observing the
+  // content, and opening a session landed at the top of the whole conversation.
+  const transcriptVisible = chatReady && !isHistoryLoading;
 
   // The workspace's locations, for the terminal location picker (and any location-aware
   // panels). Refreshed live when the workspace config changes.
@@ -417,7 +424,7 @@ export function ChatPanel({
   // replaces the old anchor + rAF tangle that fought itself and yanked the reader.
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
-    if (!container || isHistoryLoading) return;
+    if (!container || !transcriptVisible) return;
     const firstKey = messages.length > 0 ? messages[0].id : "";
     const count = messages.length;
     const previous = scrollMetricsRef.current;
@@ -434,13 +441,13 @@ export function ChatPanel({
     }
     scrollMetricsRef.current = { scrollHeight: container.scrollHeight, firstKey, count };
     lastScrollTopRef.current = container.scrollTop;
-  }, [messages, queuedMessages, isHistoryLoading]);
+  }, [messages, queuedMessages, transcriptVisible]);
 
   // Late-growing content (images, streamed text) keeps the bottom in view
   // — but only while pinned, so a reader who scrolled up is never dragged down.
   // Re-runs when the transcript container actually mounts (it is absent during the
   // loading/empty states), otherwise the observer would never attach.
-  const timelineMounted = !isHistoryLoading && !historyError && messages.length > 0;
+  const timelineMounted = transcriptVisible && !historyError && messages.length > 0;
   useEffect(() => {
     const content = scrollContentRef.current;
     const container = scrollContainerRef.current;
@@ -826,7 +833,7 @@ export function ChatPanel({
         </Flex>
         <Box position="relative" flex={1} minH={0} display="flex" flexDirection="column">
         <Box ref={scrollContainerRef} flex={1} minH={0} display="flex" flexDirection="column" overflowY="auto" px={4} py={3} onScroll={handleScroll} css={transcriptPinned ? scrollFade : scrollFadeTopBottom} style={{ overflowAnchor: "none", scrollbarGutter: "stable both-edges" }}>
-          {!chatReady || isHistoryLoading ? (
+          {!transcriptVisible ? (
             <Flex h="100%" />
           ) : historyError ? (
             <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2}>
@@ -1022,7 +1029,7 @@ export function ChatPanel({
             </AnimatePresence>
           )}
         </Box>
-        {!isAtBottom && !isHistoryLoading && !historyError && messages.length > 0 && (
+        {!isAtBottom && timelineMounted && (
           <Button
             variant="outline"
             position="absolute"

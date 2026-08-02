@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 
+from frank.base.message_content import forget_carried_reasoning
 from frank.base.tuning import count_tokens
 from frank.runtime.internals import ObservationBatch, conversation_tokens, message_tokens
 from frank.runtime.turn_events import CompactionDone, CompactionStarted, TurnEvent
@@ -16,6 +17,26 @@ from frank.base.serialization import compact
 
 
 logger = logging.getLogger(__name__)
+
+
+def _without_provider_reasoning(messages: list) -> list:
+    """The same messages, with the provider-native reasoning cut out of them.
+
+    Compaction is where a conversation stops being the one the model thought its way through:
+    the turns behind the boundary are gone, replaced by a summary. Reasoning that referred back
+    to them now refers to nothing, and a provider does not shrug that off — an encrypted item
+    whose context has vanished fails the request rather than being ignored. Both the Codex CLI
+    and OpenCode cut here for exactly this reason; OpenCode states the rule outright, that
+    provider-native assistant, reasoning and tool payloads never survive a compaction boundary.
+
+    Nothing is lost that a reader would notice. The readable thinking is a content block and
+    stays where it was; only the signed and encrypted forms go, and they were only ever usable
+    against a prefix that no longer exists. The cache is not a consideration either way: the
+    prefix changed the moment the summary replaced the head of the conversation.
+    """
+    for message in messages:
+        forget_carried_reasoning(message)
+    return messages
 
 
 class _CompactsContext:
@@ -294,7 +315,7 @@ class _CompactsContext:
             yield CompactionStarted(
                 reason=reason, messages_before=messages_before, tokens_before=tokens_before,
             )
-            self._conversation[:] = await self._compaction.compact(state)
+            self._conversation[:] = _without_provider_reasoning(await self._compaction.compact(state))
             yield CompactionDone(
                 reason=reason, ok=True,
                 messages_before=messages_before, messages_after=len(self._conversation),
@@ -348,7 +369,7 @@ class _CompactsContext:
         self._conversation[:] = [
             *self._carried_user_messages(older),
             self._build_observation_message(merged),
-            *recent,
+            *_without_provider_reasoning(recent),
         ]
         # Occupancy no longer describes the conversation, so it is measured again rather than
         # zeroed. Zeroing was enough while the only question afterwards was "do not fold again

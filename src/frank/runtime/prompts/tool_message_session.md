@@ -1,6 +1,6 @@
 Send a message to another session: one you created, or the one that created you.
 
-**This is how you report back.** If a session created you, its id is in your context as `parent_session`. When you have finished the work it asked for, send your answer there — that is the deliverable, and it is the only thing that reaches whoever is waiting. It cannot see your transcript, your tool calls, or your reasoning, so the message must stand on its own: what you found, the evidence for it, what you changed, and anything still uncertain.
+**Upward, this is how you report back.** A message to the session that created you is the deliverable, and it is the only thing that reaches whoever is waiting: they cannot see your transcript, your tool calls, or your reasoning, so it must stand on its own — what you found, the evidence for it, what you changed, and anything still uncertain.
 
 Sending it does not end your turn and does not stop you working. Send when you have the answer, then finish however you normally would.
 

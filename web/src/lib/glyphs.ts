@@ -3,7 +3,8 @@ import {
   LuBadgeCheck, LuBox, LuCircleAlert, LuCircleSlash, LuCircleX, LuCopy, LuDownload, LuEye,
   LuFilePen, LuFilePlus, LuFileText, LuFolder, LuGitBranch, LuGlobe, LuHand, LuListChecks,
   LuMessageCircleQuestion, LuMic, LuMicOff, LuMoon, LuMousePointerClick, LuPlug, LuSearchCode,
-  LuServer, LuSparkles, LuTarget, LuTerminal, LuUserRoundX, LuUserSearch, LuWrench, LuZap,
+  LuRadioTower, LuServer, LuSparkles, LuTarget, LuTerminal, LuUserRoundX, LuUsers, LuUserSearch,
+  LuWrench, LuZap,
 } from "react-icons/lu";
 
 /**
@@ -31,6 +32,8 @@ export const GLYPHS: Record<string, IconType> = {
   "plug": LuPlug,
   "list-checks": LuListChecks,
   "server": LuServer,
+  "users": LuUsers,
+  "radio-tower": LuRadioTower,
   "wrench": LuWrench,
   "circle-alert": LuCircleAlert,
   "circle-x": LuCircleX,

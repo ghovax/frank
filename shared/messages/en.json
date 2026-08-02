@@ -634,7 +634,16 @@
     "searchCodeBare": "Searching code",
     "controlScreenScript": "Running {script}",
     "controlScreenSurface": "Controlling the {surface}",
-    "controlScreenBare": "Controlling the screen"
+    "controlScreenBare": "Controlling the screen",
+    "createSession": "Creating a {agent} session",
+    "createSessionBare": "Creating a session",
+    "messageSession": "Messaging a session",
+    "readSession": "Reading a session",
+    "listSessions": "Listing sessions",
+    "endSession": "Ending a session",
+    "listRemoteAgents": "Listing remote agents",
+    "messageRemoteAgent": "Messaging {name}",
+    "messageRemoteAgentBare": "Messaging a remote agent"
   },
   "ToolGroup": {
     "thinking": "Thinking",
