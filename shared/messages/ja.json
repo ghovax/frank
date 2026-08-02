@@ -169,7 +169,10 @@
     "environmentsAvailable": "利用可能な環境",
     "environmentsDescription": "この会話が作業できる場所 — この Mac 上のフォルダ、または SSH ホスト上のフォルダです。",
     "switchToLight": "ライトテーマに切り替え",
-    "switchToDark": "ダークテーマに切り替え"
+    "switchToDark": "ダークテーマに切り替え",
+    "disconnectedTitle": "Frank に接続していません",
+    "disconnectedDescription": "デーモンが応答していません。停止または再起動された可能性があります。",
+    "reconnect": "再接続"
   },
   "Common": {
     "cancel": "キャンセル",
@@ -494,10 +497,8 @@
     "fieldAgent": "エージェント",
     "fieldStatus": "状態",
     "fieldCreated": "作成日時",
-    "fieldFolder": "フォルダ",
     "fieldPermissions": "権限",
     "fieldExitReason": "終了理由",
-    "fieldSession": "セッション",
     "fieldLocation": "場所",
     "fieldConversations": "会話数",
     "fieldWorkspace": "ワークスペース"

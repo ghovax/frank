@@ -19,6 +19,7 @@ import { DropdownMenu, MenuOption } from "@/components/ui/menu";
 import { PanelBody, PanelCard } from "@/components/ui/panel";
 import { Tooltip } from "@/components/ui/tooltip";
 import { deleteWorkspace, listWorkspaces, listSshHosts, revealInFinder, subscribeEvents, type AgentSummary, type PermissionMode, type Workspace, type SshHost } from "@/lib/api";
+import { PERMISSION_MODES } from "@shared/controls";
 import { locationTargetAddress, workspaceLabel } from "./location-status";
 import { NewScheduleDialog } from "./new-schedule-dialog";
 import { NewWorkspaceDialog } from "./new-workspace-dialog";
@@ -62,11 +63,20 @@ export interface SessionEntry {
 // two harder to read. A row's own tooltip used to be its title repeated back, which told a
 // reader nothing they were not already looking at.
 
-function SessionHoverCard({ entry, statusLabel }: { entry: SessionEntry; statusLabel: string }) {
+function SessionHoverCard({
+  entry, statusLabel, agents,
+}: { entry: SessionEntry; statusLabel: string; agents: AgentSummary[] }) {
   const translation = useTranslations("SessionsSidebar");
+  const permissions = useTranslations("SessionControls");
   const format = useFormatter();
   const title = entry.title || translation("untitledConversation");
   const created = new Date(entry.createdAt);
+  // Both of these are identifiers on the wire and names on screen. The agent's own name comes
+  // from the catalogue rather than from the session row, which only ever stored the id; the
+  // permission mode is read out of the one definition every client already builds its controls
+  // from, so the sidebar cannot come to call a mode something the picker does not.
+  const agentName = agents.find((agent) => agent.id === entry.agent)?.name || entry.agent;
+  const permissionKey = PERMISSION_MODES.choices.find((choice) => choice.value === entry.permissionMode)?.labelKey;
   return (
     <Box maxW="320px">
       <Flex align="center" gap={1} mb={1} color="fg">
@@ -74,7 +84,7 @@ function SessionHoverCard({ entry, statusLabel }: { entry: SessionEntry; statusL
         <Text fontWeight="semibold" truncate>{title}</Text>
       </Flex>
       <Flex direction="column" ps={2} gap={1}>
-        <InlineField label={translation("fieldAgent")}><Text>{entry.agent}</Text></InlineField>
+        <InlineField label={translation("fieldAgent")}><Text>{agentName}</Text></InlineField>
         <InlineField label={translation("fieldStatus")}>
           <Text color={entry.failed ? "red.fg" : entry.awaitingInput ? "yellow.fg" : undefined}>{statusLabel}</Text>
         </InlineField>
@@ -83,18 +93,14 @@ function SessionHoverCard({ entry, statusLabel }: { entry: SessionEntry; statusL
             <Text>{format.dateTime(created, { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Text>
           </InlineField>
         )}
-        {entry.workingDirectory ? (
-          <InlineField label={translation("fieldFolder")}>
-            <Text fontFamily="mono" wordBreak="break-all">{entry.workingDirectory}</Text>
+        {permissionKey ? (
+          <InlineField label={translation("fieldPermissions")}>
+            <Text>{permissions(permissionKey as Parameters<typeof permissions>[0])}</Text>
           </InlineField>
         ) : null}
-        <InlineField label={translation("fieldPermissions")}><Text>{entry.permissionMode}</Text></InlineField>
         {entry.exitReason ? (
           <InlineField label={translation("fieldExitReason")}><Text color="fg.muted">{entry.exitReason}</Text></InlineField>
         ) : null}
-        <InlineField label={translation("fieldSession")}>
-          <Text fontFamily="mono" wordBreak="break-all" color="fg.muted">{entry.sessionId}</Text>
-        </InlineField>
       </Flex>
     </Box>
   );
@@ -267,6 +273,7 @@ function MarqueeTitle({ text }: { text: string }) {
 // gestures never compete for the same click.
 function SessionTreeRow({
   node,
+  agents,
   activeSessionId,
   unseenCompletions,
   expandedSessions,
@@ -275,6 +282,7 @@ function SessionTreeRow({
   onRequestDelete,
 }: {
   node: SessionTreeNode;
+  agents: AgentSummary[];
   activeSessionId: string | null;
   unseenCompletions: Set<string>;
   expandedSessions: Set<string>;
@@ -387,7 +395,13 @@ function SessionTreeRow({
               ) : undefined}
               title={
                 <Tooltip
-                  content={<SessionHoverCard entry={entry} statusLabel={entry.awaitingInput ? translation("awaitingInput") : statusLabel} />}
+                  content={
+                    <SessionHoverCard
+                      entry={entry}
+                      agents={agents}
+                      statusLabel={entry.awaitingInput ? translation("awaitingInput") : statusLabel}
+                    />
+                  }
                   rich
                   openDelay={350}
                   positioning={{ placement: "right" }}
@@ -447,6 +461,7 @@ function SessionTreeRow({
               <SessionTreeRow
                 key={child.entry.sessionId}
                 node={child}
+                agents={agents}
                 activeSessionId={activeSessionId}
                 unseenCompletions={unseenCompletions}
                 expandedSessions={expandedSessions}
@@ -808,6 +823,7 @@ export function SessionsSidebar({
                           <SessionTreeRow
                             key={node.entry.sessionId}
                             node={node}
+                            agents={agents}
                             activeSessionId={activeSessionId}
                             unseenCompletions={unseenCompletions}
                             expandedSessions={expandedSessions}

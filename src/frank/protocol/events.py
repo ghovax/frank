@@ -24,6 +24,7 @@ for the UI; the model reads the same result from the LLM conversation, wrapped i
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated, Any, Literal, Optional, Union
 
@@ -70,6 +71,19 @@ class ToolMetadata(BaseModel):
 
 class _EventBase(BaseModel):
     """Base of the wire-event union. Every event contributes its own `kind` literal."""
+
+    #: When this event was made, ISO-8601 in UTC.
+    #
+    #: On every event rather than on the few that seemed to want one, because which events want
+    #: one is not knowable in advance: the transcript's own order answers "what happened next"
+    #: but never "how long after", and that second question is the one asked of stored data
+    #: afterwards. Two calls seconds apart and two calls minutes apart are indistinguishable in
+    #: an append-only log, and the difference between them decides whether a prompt cache was
+    #: still warm — which could not be checked at all until this existed.
+    #
+    #: Stamped when the event is constructed, which is where the thing being described happened;
+    #: a time added on the way to disk would measure the writer, not the event.
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 class TextEvent(_EventBase):

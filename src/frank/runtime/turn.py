@@ -5,6 +5,7 @@ agent messaging, completion), and the tool batch — plus turn-message assembly,
 system prompt, steering drain, and turn recording."""
 from __future__ import annotations
 
+import json
 import logging
 from contextlib import suppress
 from datetime import datetime, timezone
@@ -224,6 +225,37 @@ class _RunsTurns:
                 payload["user_context"] = user_context
         note = self._reminder_message(compact(payload))
         note.additional_kwargs["environment_note"] = True
+        self._conversation.append(note)
+
+
+    def _append_turn_context(self) -> None:
+        """Append this turn's context to the conversation, if it says anything new.
+
+        The same treatment the environment note gets, and for the same reason: a message that is
+        appended and kept extends the cached prefix, while one assembled for a single request and
+        dropped guarantees the next request differs where it used to sit.
+
+        Emitted only on change, which is what keeps that affordable. Of the fields here only
+        ``now`` moves every turn, and a fresh clock reading is not worth a message of its own — it
+        rides along whenever something that matters has actually changed (the directory, the
+        goal, the task list, background work, the reachable locations) and is otherwise left to
+        the wall clock the model can read for itself. So a session doing steady work appends
+        nothing at all, and one whose situation changed appends the picture once.
+        """
+        context = json.loads(self._build_dynamic_context())
+        previous: dict[str, Any] = {}
+        for message in reversed(self._conversation):
+            recorded = message.additional_kwargs.get("turn_context")
+            if isinstance(recorded, dict):
+                previous = recorded
+                break
+        def without_the_clock(picture: dict[str, Any]) -> dict[str, Any]:
+            return {key: value for key, value in picture.items() if key != "now"}
+
+        if previous and without_the_clock(previous) == without_the_clock(context):
+            return
+        note = self._reminder_message(compact(context))
+        note.additional_kwargs["turn_context"] = context
         self._conversation.append(note)
 
     def _build_dynamic_context(self) -> str:
@@ -481,10 +513,8 @@ class _RunsTurns:
         # The turn runs until the model is done or the user interrupts it — there is no
         # iteration count and no stuck-detector. The goal reconsideration flag lets an active
         # goal nudge the model once each time it stops, without a nudge counter; it is instance
-        # state so the no-tool-calls phase can advance it across iterations. Dynamic per-turn
-        # context is injected on the first model call only, tracked by a local below.
+        # state so the no-tool-calls phase can advance it across iterations.
         self._awaiting_goal_reconsideration = False
-        first_turn_message = True
 
         turn_tool_calls_log: list[dict] = []
         turn_tool_results_log: list[dict] = []
@@ -534,6 +564,9 @@ class _RunsTurns:
             self._conversation.append(turn_message)
             # The event-log recorder only wants prose from LangChain's standard blocks.
             recorded_user_message = message_text(turn_message)
+        # After the turn's message, so the freshest picture is the last thing the model reads,
+        # and once per turn rather than per iteration — a tool hop changes nothing this describes.
+        self._append_turn_context()
         self._turn_started_at = datetime.now(timezone.utc)
 
         while True:
@@ -569,8 +602,7 @@ class _RunsTurns:
                 async for compaction_event in self.compact(reason="auto"):
                     yield compaction_event
 
-            messages = self._build_turn_messages(first_turn_message)
-            first_turn_message = False
+            messages = self._build_turn_messages()
 
             # Phase 1 — the model call. Yields the thinking/answer stream and hands back
             # the assembled response, or a terminal (cancelled) / steering condition.
@@ -645,7 +677,7 @@ class _RunsTurns:
             for steering_event in await self._drain_steering_messages():
                 yield steering_event
 
-    def _build_turn_messages(self, first_iteration: bool) -> list:
+    def _build_turn_messages(self) -> list:
         """The message list for this iteration's model call: the static system prompt,
         the conversation, and — only on the turn's first iteration — the dynamic context.
 
@@ -658,20 +690,15 @@ class _RunsTurns:
         would then invalidate the ENTIRE conversation cache on every turn). As a tail
         note, everything before it still prefix-matches the provider cache.
 
-        It is also marked ``transient``, which is what keeps it from spending one of Anthropic's
-        four cache breakpoints. Those are placed on the last messages of the request, and this
-        one is never in the *next* request — its timestamp alone guarantees it — so a breakpoint
-        written here could never be read back. Marked, it is skipped, and both trailing
-        breakpoints land on conversation that will still be there to match."""
-        dynamic_parts = (
-            [self._reminder_message(self._build_dynamic_context(), transient=True)]
-            if first_iteration else []
-        )
-        return (
-            [SystemMessage(content=self._build_static_system_prompt())]
-            + self._conversation
-            + dynamic_parts
-        )
+        The per-turn context is *in* that conversation rather than assembled beside it — see
+        :meth:`_append_turn_context`. It used to ride here as a transient note appended to the
+        request and dropped afterwards, which made the last item of every first-iteration request
+        an item the next request did not have. Measured over a real session, that was the only
+        divergence the harness produced anywhere: five of twelve calls, every one of them at the
+        final position. It cost little, because everything before it still matched, but "the
+        request is append-only except for one item" is a weaker promise than the one this is
+        supposed to make, and it is not a promise worth keeping weak for 112 tokens."""
+        return [SystemMessage(content=self._build_static_system_prompt())] + self._conversation
 
     def _refuse_if_over_window(self, messages: list) -> None:
         """Refuse a request that cannot fit, before it is sent, and say so with numbers.

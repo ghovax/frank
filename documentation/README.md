@@ -26,7 +26,7 @@ the words the others use, so it comes first:
 
 | Guide | What's in it |
 |-------|--------------|
-| [Architecture](architecture.md) | The vocabulary, the four layers, and how a message becomes work |
+| [Architecture](architecture.md) | The vocabulary, the four layers, how a message becomes work, and [what is recorded about prompt caching](architecture.md#prompt-caching-and-what-is-recorded-about-it) |
 | [Installation](installation.md) | Download and Gatekeeper, or building from source |
 | [As a library](library.md) | `frank.Session` in your own process, and every seam you can replace |
 | [The `frank` command](cli.md) | Every verb, the session states, JSON and exit codes |

@@ -186,7 +186,7 @@ async def _watch_agents_and_skills() -> None:
     if not watched:
         return
     try:
-        async for changes in awatch(*watched):
+        async for changes in awatch(*watched, stop_event=hub_state.shutting_down):
             paths = [str(path) for _change, path in changes]
             if any(path.endswith("mcp.json") for path in paths):
                 await _reload_mcp()
@@ -216,6 +216,7 @@ async def _watch_configuration() -> None:
             str(path.parent),
             recursive=False,
             watch_filter=lambda _change, changed: Path(changed).name == path.name,
+            stop_event=hub_state.shutting_down,
         ):
             # Serialised against UI-driven saves, and the digest is re-checked *inside* the
             # lock so a save that landed while we waited is recognised as ours.
@@ -246,6 +247,7 @@ async def _watch_ssh_hosts() -> None:
             str(ssh_config.parent),
             recursive=False,
             watch_filter=lambda _change, changed: Path(changed).name == "config",
+            stop_event=hub_state.shutting_down,
         ):
             state.broadcaster.publish({"type": "hosts_changed"})
     except asyncio.CancelledError:

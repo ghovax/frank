@@ -496,9 +496,12 @@ async def _serve() -> int:
         else happens to wake it — which is how a `stop` came back as "still running"."""
         await stopping.wait()
         # Streams first, servers second. An open SSE response — someone left `frank attach`
-        # running in another terminal — holds the connection until it yields its last frame,
-        # and uvicorn will not finish draining until it does. Closing the buses here is what
-        # keeps `daemon stop` from waiting on a watcher that is itself waiting on the stop.
+        # running in another terminal, or the app is showing a Git status bar — holds the
+        # connection until it yields its last frame, and uvicorn will not finish draining until
+        # it does. Everything long-lived is told to stop here, before either listener is asked
+        # to drain: the two buses by closing them, and every stream that waits on something
+        # slower than a request by `hub_state.shutting_down`, which they race.
+        hub_state.shutting_down.set()
         state.event_bus.complete_all()
         state.broadcaster.close()
         socket_server.should_exit = True

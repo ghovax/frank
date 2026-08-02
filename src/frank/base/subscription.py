@@ -70,15 +70,29 @@ USER_AGENT = (
 )
 
 
-def request_headers(tokens: ChatGPTTokens) -> dict[str, str]:
+def request_headers(tokens: ChatGPTTokens, session_id: str = "") -> dict[str, str]:
     """The header set the endpoint expects: a bearer token, the account to bill, an originator
-    and User-Agent naming us, a per-request session id, and the streaming negotiation."""
+    and User-Agent naming us, the conversation this request belongs to, and the streaming
+    negotiation.
+
+    `session-id` is the conversation's id, and it is the whole of why prompt caching worked or
+    did not. It used to be a fresh `uuid4()` per request — described in this docstring as "a
+    per-request session id", which is what it was and exactly what it should never have been.
+    The endpoint routes a cache lookup by it, so a new id every call sent every call to a shard
+    that had never seen the prefix: measured across three sessions, every request after the
+    first carried a byte-identical, strictly-extending prefix and still read zero cached tokens,
+    with one 5,632-token partial that landed whenever a random id happened to repeat a route.
+
+    The Codex CLI sends its conversation id here (`build_session_headers`), and the same value
+    again as `prompt_cache_key`. So do we. A caller with no conversation — the models catalogue
+    fetch — still gets a random one, because a request that is not part of a conversation has
+    no prefix to find and nothing to gain by pretending otherwise."""
     return {
         "Authorization": f"Bearer {tokens.access_token}",
         "ChatGPT-Account-Id": tokens.account_id,
         "originator": ORIGINATOR,
         "User-Agent": USER_AGENT,
-        "session-id": str(uuid.uuid4()),
+        "session-id": session_id or str(uuid.uuid4()),
         "Content-Type": "application/json",
         "Accept": "text/event-stream",
     }

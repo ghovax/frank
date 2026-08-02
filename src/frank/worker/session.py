@@ -26,6 +26,7 @@ from langchain_core.messages import messages_from_dict
 
 from frank.base.background_tasks import spawn_background_task
 from frank.base.catalogue import machine_catalogue
+from frank.base.tuning import Tunable, active_tuning
 from frank.base.file_leases import FileLeaseManager
 from frank.base.configuration import Configuration
 from frank.base.background_store import get_background_job_store
@@ -959,14 +960,22 @@ class SessionExecutor(AgentExecutor):
     async def _generate_title(self, first_message: str) -> None:
         """Ask the configured model for a short title, and hand it to the daemon.
 
-        The schema is bound as a tool with automatic choice rather than through structured
-        output: reasoning models reject both a json_schema response format and the forced tool
-        choice structured output relies on, but take an ordinary tool call — the same shape the
-        agent's own turns use. Reasoning is dialled down because a title is trivial and must
-        stay cheap; the agent's configured effort is for the work, not for naming it.
+        The schema is bound as a tool, the same shape the agent's own turns use, and the choice
+        is **required**. Producing that object is the entire purpose of the call, so a call that
+        may decline it is a call that can fail without failing — which is exactly what happened:
+        the choice was `auto`, a model that answered in prose instead left `tool_calls` empty,
+        the method returned on the spot, and the only trace was a sidebar full of "Untitled
+        conversation" with nothing anywhere saying why. A schema the model cannot refuse removes
+        that outcome by construction rather than detecting it.
 
-        Silent on every failure: an unnamed session is a cosmetic loss, and a session must
-        never fail because it could not think of a title for itself."""
+        (`auto` had been chosen on the belief that reasoning models reject a forced tool choice.
+        They do reject a `json_schema` response format, which is why this is a tool at all, but
+        the forcing is fine — the compaction pass has required its own tool all along.)
+
+        Attempts are bounded and each one is reported, because "could not name one session" is
+        cosmetic while "cannot name any session" is a fault, and at the old silence the two were
+        indistinguishable. Reasoning is dialled down because a title is trivial and must stay
+        cheap; the agent's configured effort is for the work, not for naming it."""
         from langchain_core.messages import HumanMessage, SystemMessage
 
         from frank.base.configuration import PromptLoader
@@ -987,17 +996,30 @@ class SessionExecutor(AgentExecutor):
             model = build_chat_model(
                 model_identifier, self._global_configuration, titling_configuration,
                 self._runtime_working_directory,
-            ).bind_tools([SessionTitle], tool_choice="auto")
+            ).bind_tools([SessionTitle], tool_choice="required")
             prompt = PromptLoader(Path(__file__).resolve().parent.parent / "runtime" / "prompts")
-            response = await model.ainvoke([
+            request = [
                 SystemMessage(content=prompt.load("session_title", {})),
                 HumanMessage(content=first_message),
-            ])
-            if not response.tool_calls:
-                return
-            title = (SessionTitle.model_validate(response.tool_calls[0]["args"]).title or "").strip()
-            if title:
-                await self._turn_store.publish_title(title)
+            ]
+            attempts = active_tuning().amount(Tunable.session_title_attempts)
+            for attempt in range(1, attempts + 1):
+                response = await model.ainvoke(request)
+                if not response.tool_calls:
+                    logger.warning(
+                        "the model returned no title for session %s (attempt %d of %d)",
+                        self._session_id, attempt, attempts,
+                    )
+                    continue
+                title = (SessionTitle.model_validate(response.tool_calls[0]["args"]).title or "").strip()
+                if title:
+                    await self._turn_store.publish_title(title)
+                    return
+                logger.warning(
+                    "the model returned an empty title for session %s (attempt %d of %d)",
+                    self._session_id, attempt, attempts,
+                )
+            logger.warning("gave up naming session %s after %d attempts", self._session_id, attempts)
         except Exception:  # noqa: BLE001 — a session is not worth failing over its own name
             # Not `debug`. Failing to name a session is cosmetic; failing to name *every*
             # session is a fault, and at debug level the difference was invisible — a sidebar

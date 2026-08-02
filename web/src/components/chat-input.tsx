@@ -835,7 +835,10 @@ export function ChatInput({
               resize="none"
             />
           </Box>
-          <Flex align="flex-end" gap={1.5} flexShrink={0}>
+          {/* The same gap as the row of controls below this one. Dictate, attach and send sat at
+              1.5 while everything beneath them sat at 2, so the composer had two rhythms stacked
+              on top of each other and the closer one read as a mistake rather than as a group. */}
+          <Flex align="flex-end" gap={2} flexShrink={0}>
             <Input
               ref={fileInputRef}
               type="file"

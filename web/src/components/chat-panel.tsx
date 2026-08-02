@@ -13,7 +13,7 @@ import {
   Text,
   VStack,
 } from "@chakra-ui/react";
-import { LuAppWindow, LuArrowDown, LuChevronLeft, LuChevronRight, LuClock, LuDownload, LuEllipsis, LuFile, LuFolderOpen, LuHistory, LuMaximize2, LuMinimize2, LuMessageSquare, LuMoon, LuMousePointerClick, LuPanelLeftClose, LuPanelLeftOpen, LuRotateCcw, LuRotateCw, LuSettings, LuSun, LuTerminal, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
+import { LuAppWindow, LuArrowDown, LuChevronLeft, LuChevronRight, LuClock, LuDownload, LuEllipsis, LuFile, LuFolderOpen, LuHistory, LuMaximize2, LuMinimize2, LuMessageSquare, LuMoon, LuMousePointerClick, LuPanelLeftClose, LuPanelLeftOpen, LuPlugZap, LuRotateCcw, LuRotateCw, LuSettings, LuSun, LuTerminal, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { FadeIn } from "@/components/ui/fade-in";
 import { useFormatter, useTranslations } from "next-intl";
@@ -92,7 +92,16 @@ interface ChatPanelProps {
   onSandboxEnforceChange?: (enforce: SandboxEnforce) => void;
   worktreeStrategy?: WorktreeStrategy;
   onWorktreeStrategyChange?: (strategy: WorktreeStrategy) => void | Promise<void>;
+  // Whether this panel is ready to hold a conversation. Distinct from whether the daemon is
+  // reachable: it is also false for the moment at startup before the active session is known,
+  // which is a wait, not a failure.
   isConnected?: boolean;
+  // Whether the daemon itself is unreachable — the one state with a remedy, and the only one
+  // that earns the error screen. Kept apart from `isConnected` because conflating them showed
+  // "not connected" every time the session list was merely still loading.
+  connectionLost?: boolean;
+  // Asks the page to fetch everything a lost daemon took away.
+  onReconnect?: () => void;
   onStreamingChange?: (isStreaming: boolean) => void;
   historyOpen?: boolean;
   onToggleHistory?: () => void;
@@ -217,6 +226,8 @@ export function ChatPanel({
   worktreeStrategy = "none",
   onWorktreeStrategyChange,
   isConnected = false,
+  connectionLost = false,
+  onReconnect,
   onStreamingChange,
   historyOpen = false,
   onToggleHistory,
@@ -833,7 +844,27 @@ export function ChatPanel({
         </Flex>
         <Box position="relative" flex={1} minH={0} display="flex" flexDirection="column">
         <Box ref={scrollContainerRef} flex={1} minH={0} display="flex" flexDirection="column" overflowY="auto" px={4} py={3} onScroll={handleScroll} css={transcriptPinned ? scrollFade : scrollFadeTopBottom} style={{ overflowAnchor: "none", scrollbarGutter: "stable both-edges" }}>
-          {!transcriptVisible ? (
+          {connectionLost ? (
+            // A lost daemon used to be a blank pane and a dead composer — the interface simply
+            // stopped working, and said nothing. It is a state worth naming, and the only state
+            // here whose remedy is a single button, so it gets one.
+            <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2}>
+              <EmptyState.Root>
+                <EmptyState.Content>
+                  <EmptyState.Indicator>
+                    <LuPlugZap />
+                  </EmptyState.Indicator>
+                  <VStack gap={1}>
+                    <EmptyState.Title>{translation("disconnectedTitle")}</EmptyState.Title>
+                    <EmptyState.Description>{translation("disconnectedDescription")}</EmptyState.Description>
+                  </VStack>
+                  <Button variant="solid" colorPalette="blue" onClick={onReconnect}>
+                    {translation("reconnect")}
+                  </Button>
+                </EmptyState.Content>
+              </EmptyState.Root>
+            </Flex>
+          ) : !transcriptVisible ? (
             <Flex h="100%" />
           ) : historyError ? (
             <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2}>

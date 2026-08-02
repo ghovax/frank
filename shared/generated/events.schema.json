@@ -35,6 +35,9 @@
           ],
           "type": "string"
         },
+        "timestamp": {
+          "type": "string"
+        },
         "tokens_after": {
           "default": 0,
           "type": "integer"
@@ -92,6 +95,9 @@
         "state": {
           "default": "completed",
           "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
         }
       },
       "required": [
@@ -126,6 +132,9 @@
           ],
           "default": null
         },
+        "timestamp": {
+          "type": "string"
+        },
         "title": {
           "default": "",
           "type": "string"
@@ -157,6 +166,9 @@
         },
         "server": {
           "default": "",
+          "type": "string"
+        },
+        "timestamp": {
           "type": "string"
         },
         "tool": {
@@ -284,6 +296,9 @@
           "default": "",
           "type": "string"
         },
+        "timestamp": {
+          "type": "string"
+        },
         "tool_call_id": {
           "default": "",
           "type": "string"
@@ -345,6 +360,9 @@
         "request_id": {
           "type": "string"
         },
+        "timestamp": {
+          "type": "string"
+        },
         "tool_call_id": {
           "default": "",
           "type": "string"
@@ -367,6 +385,9 @@
           "const": "status",
           "default": "status",
           "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
         }
       },
       "required": [
@@ -385,6 +406,9 @@
         "text": {
           "default": "",
           "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
         }
       },
       "required": [
@@ -401,6 +425,9 @@
           "type": "string"
         },
         "text": {
+          "type": "string"
+        },
+        "timestamp": {
           "type": "string"
         }
       },
@@ -420,6 +447,9 @@
         "kind": {
           "const": "thinking_done",
           "default": "thinking_done",
+          "type": "string"
+        },
+        "timestamp": {
           "type": "string"
         }
       },
@@ -442,6 +472,9 @@
         },
         "text": {
           "default": "",
+          "type": "string"
+        },
+        "timestamp": {
           "type": "string"
         }
       },
@@ -507,6 +540,9 @@
         "shared_segments": {
           "default": 0,
           "type": "integer"
+        },
+        "timestamp": {
+          "type": "string"
         }
       },
       "required": [
@@ -523,6 +559,9 @@
         "kind": {
           "const": "tool_call",
           "default": "tool_call",
+          "type": "string"
+        },
+        "timestamp": {
           "type": "string"
         },
         "tool_call_id": {
@@ -629,6 +668,9 @@
         "status": {
           "$ref": "#/$defs/ToolStatus"
         },
+        "timestamp": {
+          "type": "string"
+        },
         "tool_call_id": {
           "type": "string"
         },
@@ -726,6 +768,9 @@
         },
         "message": {
           "default": "",
+          "type": "string"
+        },
+        "timestamp": {
           "type": "string"
         },
         "title": {

@@ -7,6 +7,7 @@ from typing import cast
 from watchfiles import awatch
 import asyncio
 import subprocess
+from contextlib import suppress
 from frank.protocol.dtos import (
     DirectoryRevealRequest,
     DirectoryValidationRequest,
@@ -16,6 +17,13 @@ from frank.rest.services.filesystem import _GIT_STATUS_WATCH_FILTER, _git_status
 from frank.base.serialization import compact
 
 router = APIRouter()
+
+async def _idle(seconds: float) -> bool:
+    """Sleep, unless the daemon is stopping. Answers whether it is."""
+    with suppress(asyncio.TimeoutError):
+        await asyncio.wait_for(state.shutting_down.wait(), timeout=seconds)
+    return state.shutting_down.is_set()
+
 
 @router.get("/messages/history")
 async def get_message_history(working_directory: str = ""):
@@ -56,13 +64,23 @@ async def git_status_stream(directory: str, request: Request):
 
         watch_paths = _git_status_watch_paths(directory, payload)
         if not watch_paths:
+            # Waits on the client going away *or* the daemon going down, whichever comes first.
+            # Sleeping only on the client meant a directory with nothing to watch still held the
+            # connection open for up to half a minute past a stop.
             while not await request.is_disconnected():
-                await asyncio.sleep(30)
+                if await _idle(30):
+                    return
             return
 
         try:
-            async for changes in awatch(*watch_paths, watch_filter=_GIT_STATUS_WATCH_FILTER, debounce=500):
-                if await request.is_disconnected():
+            # `stop_event` is why this can be shut down at all: without it the loop is parked in
+            # Rust waiting for a filesystem change that may never come, and no amount of asking
+            # the server to drain reaches it.
+            async for changes in awatch(
+                *watch_paths, watch_filter=_GIT_STATUS_WATCH_FILTER, debounce=500,
+                stop_event=state.shutting_down,
+            ):
+                if state.shutting_down.is_set() or await request.is_disconnected():
                     break
                 typed_changes = cast(set[tuple[object, str]], changes)
                 if not await asyncio.to_thread(_git_status_changes_relevant, directory, payload, typed_changes):

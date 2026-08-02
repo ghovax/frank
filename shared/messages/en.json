@@ -169,7 +169,10 @@
     "environmentsAvailable": "Environments available",
     "environmentsDescription": "The places this conversation can work in — a folder on this Mac, or one on an SSH host.",
     "switchToLight": "Switch to light theme",
-    "switchToDark": "Switch to dark theme"
+    "switchToDark": "Switch to dark theme",
+    "disconnectedTitle": "Not connected to Frank",
+    "disconnectedDescription": "The daemon is not answering. It may have stopped, or been restarted.",
+    "reconnect": "Reconnect"
   },
   "Common": {
     "cancel": "Cancel",
@@ -494,10 +497,8 @@
     "fieldAgent": "Agent",
     "fieldStatus": "Status",
     "fieldCreated": "Created",
-    "fieldFolder": "Folder",
     "fieldPermissions": "Permissions",
     "fieldExitReason": "Ended",
-    "fieldSession": "Session",
     "fieldLocation": "Location",
     "fieldConversations": "Conversations",
     "fieldWorkspace": "Workspace"

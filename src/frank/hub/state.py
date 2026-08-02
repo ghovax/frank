@@ -40,6 +40,18 @@ async_engine: Any = None
 global_configuration: Any = None
 # Guards a read-modify-write of the configuration file against two clients saving at once.
 configuration_lock = asyncio.Lock()
+
+#: Set once the daemon has been told to stop, before its listeners are asked to drain.
+#:
+#: A long-lived response has to be able to end itself, because nothing else can end it: the
+#: server will not finish draining until the response yields its last frame, so a stream parked
+#: on something that may never happen holds the whole daemon open. `frank attach` was accounted
+#: for — its bus is closed on the way down — but the Git status feed was not, and it waits on a
+#: filesystem change. With the desktop app open, `daemon stop` therefore never returned and
+#: `daemon restart` refused to start a successor; with the app closed, the same daemon exited in
+#: two seconds. Enumerating the streams that need closing is what produced that gap, so this is
+#: the other shape: one signal, and every stream that can outlive a request races it.
+shutting_down = asyncio.Event()
 last_written_configuration_digest: Optional[str] = None
 
 # Shared connections. One of each per process, because a stdio MCP server cannot be shared

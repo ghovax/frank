@@ -1256,6 +1256,18 @@ export async function fetchMcpTools(workingDirectory?: string): Promise<McpServe
 const eventListeners = new Set<(event: { type: string }) => void>();
 let sharedEventStream: { close: () => void } | null = null;
 
+//: Told whenever the shared stream connects or drops, so the interface can show it.
+const connectionListeners = new Set<(connected: boolean) => void>();
+let lastReportedConnection: boolean | null = null;
+
+/** Watch whether the daemon is reachable. Answers with an unsubscribe. */
+export function subscribeConnection(listener: (connected: boolean) => void): () => void {
+  connectionListeners.add(listener);
+  if (lastReportedConnection !== null) listener(lastReportedConnection);
+  ensureEventStream();
+  return () => { connectionListeners.delete(listener); };
+}
+
 function ensureEventStream(): void {
   if (sharedEventStream) return;
   sharedEventStream = openEventStream("/events", (raw) => {
@@ -1266,6 +1278,10 @@ function ensureEventStream(): void {
     } catch {
       // ignore malformed
     }
+  }, (connected) => {
+    if (connected === lastReportedConnection) return;
+    lastReportedConnection = connected;
+    connectionListeners.forEach((listener) => listener(connected));
   });
 }
 
@@ -1871,10 +1887,19 @@ async function pumpEventStream(
 // request on the capability token and EventSource cannot carry an Authorization header.
 // Reconnection therefore becomes ours to own — EventSource retried by itself, and the
 // shared bus relies on that to survive a daemon restart.
-function openEventStream(path: string, onData: (raw: string) => void): { close: () => void } {
+function openEventStream(
+  path: string,
+  onData: (raw: string) => void,
+  onHealth?: (connected: boolean) => void,
+): { close: () => void } {
   const controller = new AbortController();
   let closed = false;
 
+  // This loop has always reconnected on its own, once a second, forever — but it told nobody
+  // whether it was connected, so the interface could not say the daemon had gone and could not
+  // say when it came back. Reporting it is what turns a silent retry into a state a person can
+  // see. Reported on every transition rather than every attempt, so a daemon that is down for a
+  // while does not drive a render a second.
   const run = async () => {
     while (!closed) {
       try {
@@ -1882,12 +1907,16 @@ function openEventStream(path: string, onData: (raw: string) => void): { close: 
           signal: controller.signal,
           headers: { Accept: "text/event-stream" },
         });
-        if (response.ok && response.body) await pumpEventStream(response.body, onData);
+        if (response.ok && response.body) {
+          onHealth?.(true);
+          await pumpEventStream(response.body, onData);
+        }
       } catch {
         // A deliberate close and a dropped connection arrive the same way here; the
         // `closed` flag below is what tells them apart.
       }
       if (closed) return;
+      onHealth?.(false);
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   };

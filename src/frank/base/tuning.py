@@ -263,6 +263,12 @@ class Tunable(Enum):
 
     # The control plane and the processes it supervises.
     warm_workers = Default(2, Scaling.NONE)
+    session_title_attempts = Default(
+        3, Scaling.NONE,
+        """How many times a session asks the model to name itself before giving up. More than
+        one because the answer is a single tool call the model can fail to make, and a session
+        with no name is one nobody can find again in a sidebar.""",
+    )
     prototype_start_seconds = Default(120.0, Scaling.TIME)
     prototype_restart_seconds = Default(
         5.0, Scaling.TIME,

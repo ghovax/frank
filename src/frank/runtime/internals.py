@@ -202,7 +202,9 @@ def _cap_model_result_payload(result: str, *, code: str = "tool_result_truncated
     for key in sorted(kept, key=lambda key: len(compact(kept[key])), reverse=True):
         if not over(kept) or not isinstance(kept[key], str):
             continue
-        elsewhere = count_tokens(rendered_with({k: v for k, v in kept.items() if k != key}))
+        elsewhere = count_tokens(rendered_with(
+            {other: value for other, value in kept.items() if other != key}
+        ))
         excerpt, clipped = clip_to_tokens(kept[key], max(1, budget - elsewhere))
         if clipped:
             omitted[f"{key} (clipped)"] = len(kept[key]) - len(excerpt)

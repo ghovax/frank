@@ -166,6 +166,79 @@ A session's permission mode is chosen when the session is created and can be cha
    - **MCP**, against the session's own connections. Stateful connections and stdio subprocesses do not cross a process boundary, so a session connects its own rather than sharing the daemon's.
 5. Results stream back as structured events. The session posts them to the daemon, which is the only writer of `history.db`, and fans them out to whoever is attached.
 
+## Prompt caching, and what is recorded about it
+
+Every provider here bills a cached prefix at a fraction of a fresh one, and a conversation is
+almost entirely prefix: the system prompt, the tool schemas, and every turn that came before.
+So a session's cost is decided less by what it does than by whether the request it sends still
+matches the one before it. Two rules follow, and the harness holds both.
+
+**The request is append-only, without exception.** Each call adds to the end and rewrites
+nothing. The instructions and the tool schemas are stable for the life of a session. The
+observation log a fold produces is a user-role message rather than a system one — a
+mid-conversation system message is hoisted to the front of the request by every provider, so
+rewriting it would discard the cache for the whole conversation each time compaction ran to save
+context. And everything the model is told about the current turn is a message *in* the
+conversation, kept, rather than something assembled for one request.
+
+That last one was learned from the measurement below. Per-turn context — the time, the working
+directory, the goal, the task list, background work, the reachable locations — used to be
+appended to the request and dropped afterwards, on the reasoning that a stale timestamp should
+not accumulate. It was the only thing in the harness that was not append-only, and it showed up
+as a divergence on five of twelve calls in the first session that was measured, always at the
+final position. It is appended and kept now, and emitted only when it says something new: of
+those fields only the clock moves every turn, and a fresh clock reading does not earn a message
+of its own. A session doing steady work therefore appends nothing, and one whose situation
+changed appends the picture once.
+
+The only thing that ever invalidates a prefix is compaction, which replaces the head of the
+conversation with a summary. That is the point of it, and it is why provider-native reasoning is
+dropped at the same boundary.
+
+**The cache is asked for by name.** A provider does not keep one global store; it routes a lookup
+by hashing the head of the prefix *together with* a key, so requests that share a key land where
+their prefix is. Every provider is sent `prompt_cache_key` set to the session id — one session is
+one conversation is one prefix. Claude additionally gets explicit `cache_control` breakpoints,
+two at the front over the tools and prompt and two at the moving end, since Anthropic caches
+nothing unless asked.
+
+That still leaves the question a bill cannot answer. A provider serves the longest prefix it
+recognises, so a low cache read is either a request that stopped matching — in which case
+something here moved it — or one that matched and was not served, which nothing here can fix.
+Those want opposite responses and look identical from the outside.
+
+So every model call records how it compared to the one before it. The request is cut into the
+segments the wire is built from — the instructions, the tool schemas, then one per conversation
+item — and each is digested and counted; the next call's segments are compared against them.
+`frank.runtime.cache_trace` does the measuring and both model adapters carry it.
+
+| Recorded on each `token_usage` event | What it says |
+|---|---|
+| `timestamp` | When the call happened, ISO-8601 UTC. Every streamed event carries one — the transcript's order says what came next, never how long after, and a prompt cache goes cold with time |
+| `input_tokens`, `output_tokens` | The call's own size, not a running total |
+| `cache_read_tokens`, `reasoning_tokens` | The call's own cache read and reasoning spend |
+| `prefix_intact` | Whether every segment shared with the previous call was unchanged |
+| `reachable_tokens` | Tokens of unchanged prefix — the ceiling `cache_read_tokens` is measured against. An estimate: counted with this harness's tokenizer, not the provider's |
+| `segments`, `shared_segments` | The same comparison in pieces rather than tokens |
+| `divergence` | When the prefix moved: `index`, the segment `current` and `previous` (each a `kind`, `position` and `role`), and `rewritten` — the piece stayed in place and its contents changed |
+| `cumulative` | Session-lifetime totals, as before |
+
+Recorded rather than logged, because the question is asked days later of a particular call in a
+particular session, and only stored data answers that. The events live in `history.db` beside the
+transcript and replay with it, so a past session can be audited as readily as a running one.
+
+Reading them together is what makes a diagnosis. `prefix_intact` true with `cache_read_tokens`
+at zero means the provider was handed bytes it had already been sent and returned nothing for
+them — routing, not the request, and no differently shaped request would help. A `divergence`
+with `rewritten` true is the opposite: something here rewrote a message in place, and the
+`position` and `role` say which.
+
+Two caveats when querying. The first call of a session has nothing to compare against and always
+reports `prefix_intact` false, as does the first call after a worker restart, since the
+comparison lives on the model object; filter on `shared_segments > 0` to exclude them. And
+`reachable_tokens` can exceed `input_tokens` by a few percent, because the two are counted with
+different tokenizers — a *large* disagreement is itself worth looking at.
+
 ## Where to go next
 
 - Configure providers and behavior: [Configuration guide](configuration.md).

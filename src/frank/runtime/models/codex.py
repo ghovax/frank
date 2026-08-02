@@ -279,13 +279,14 @@ class ChatCodexModel(BaseChatModel):
         payload["include"] = ["reasoning.encrypted_content"]
         return payload
 
-    @staticmethod
-    async def _headers() -> dict[str, str]:
+    async def _headers(self) -> dict[str, str]:
         """The request headers, with a freshly-valid access token.
 
-        Static because it needs nothing from the instance: the token store is per-account and
-        per-machine, not per-model."""
-        return request_headers(await valid_tokens())
+        No longer static: the headers carry this conversation's id, which the endpoint routes a
+        cache lookup by. The token store is still per-account and per-machine, and that is what
+        being static used to be justified by — but a request that cannot say which conversation
+        it belongs to cannot be sent to where that conversation's prefix already is."""
+        return request_headers(await valid_tokens(), self.session_id)
 
     @staticmethod
     def _http_error(status: int, body: str) -> Exception:
@@ -578,7 +579,7 @@ class ChatCodexModel(BaseChatModel):
         if tokens is None or tokens.is_expired():
             raise ChatGPTAuthError("Not signed in to ChatGPT (or the session expired).")
         payload = self._build_payload(messages, stream=True, **kwargs)
-        headers = request_headers(tokens)
+        headers = request_headers(tokens, self.session_id)
         # Carried so a failure can name the model that refused the request and the window it was
         # measured against — the two things that make "too large" actionable rather than a verdict.
         state: dict[str, Any] = {"saw_tool_call": False, "model": self.model,

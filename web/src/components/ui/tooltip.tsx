@@ -87,7 +87,20 @@ export const Tooltip = React.forwardRef<HTMLDivElement, TooltipProps>(
       : {}
 
     return (
-      <ChakraTooltip.Root {...rest} {...touch}>
+      // Two defaults overturned, both because this application streams into a pane that scrolls
+      // itself.
+      //
+      // `closeOnScroll` is on by default, and it means what it says: *any* scroll shuts every
+      // open tooltip. While a turn streams, the transcript is auto-scrolled to its bottom on
+      // every chunk — so a tooltip could not be read at all during the one period when its
+      // numbers are moving and someone would most want to watch them. It reads as the interface
+      // fighting the pointer. The reason the default exists is a tooltip left floating away from
+      // what it describes, and that does not apply here: the positioner follows its anchor.
+      //
+      // `interactive` is off by default, which means the card vanishes the moment the pointer
+      // crosses from the trigger onto it — so the contents cannot be selected, and a wide card
+      // cannot even be traversed. These carry fielded numbers and paths people copy.
+      <ChakraTooltip.Root closeOnScroll={false} interactive {...rest} {...touch}>
         <ChakraTooltip.Trigger
           asChild
           onClick={coarsePointer ? () => setTapped((shown) => !shown) : undefined}

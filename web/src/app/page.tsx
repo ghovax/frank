@@ -9,7 +9,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Point
 // animate its open/close (opacity + slide) without losing its flex-layout props.
 const MotionFlex = motion.create(Flex);
 import { useRouter, useSearchParams } from "next/navigation";
-import { deleteSession, fetchAccessibility, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchSessionDraft, fetchSessions, fetchSettings, getWorkspace, listWorkspaces, rememberLastSession, saveAgentConfiguration, saveSettings, setSandboxEnforce, subscribeEvents, updateComputerControlSetting, type AgentCard, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
+import { deleteSession, fetchAccessibility, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchSessionDraft, fetchSessions, fetchSettings, getWorkspace, listWorkspaces, rememberLastSession, saveAgentConfiguration, saveSettings, setSandboxEnforce, subscribeConnection, subscribeEvents, updateComputerControlSetting, type AgentCard, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
 import { useTray } from "@/lib/use-tray";
 import { playAttentionSound, playTurnEndSound, primeSounds } from "@/lib/sounds";
@@ -298,6 +298,30 @@ function Workspace() {
     setSessions(mapped);
     setSessionsLoaded(true);
   }, [mapSessions]);
+
+  // Everything a lost connection took away, asked for again.
+  //
+  // `isConnected` had exactly one writer and no reader that could do anything about it: the
+  // daemon going away disabled the composer and left the transcript blank, with nothing on
+  // screen saying why and no way to try again short of relaunching. A flag that reports a
+  // failure without offering the remedy is half a feature.
+  // The daemon's reachability, from the one thing already watching it continuously. A failed
+  // `fetchAgents` used to be the only writer, so a daemon that died after a successful start
+  // was never noticed at all — the composer simply stopped working. The stream drops the moment
+  // the daemon does, and reconnects by itself, so this both raises the notice and clears it.
+  useEffect(() => subscribeConnection((connected) => {
+    setIsConnected(connected);
+    if (connected) reconnectRef.current?.();
+  }), []);
+
+  const reconnectRef = useRef<(() => void) | null>(null);
+  const reconnect = useCallback(() => {
+    loadAgents();
+    loadAgentCards();
+    loadModelCatalog();
+    loadSessions();
+  }, [loadAgents, loadAgentCards, loadModelCatalog, loadSessions]);
+  reconnectRef.current = reconnect;
 
   // Coalesce the burst of sessions_changed events a single turn emits (running→true, title
   // generated, message saved, running→false) into one trailing refetch, so the session list
@@ -827,6 +851,8 @@ function Workspace() {
           worktreeStrategy={worktreeStrategy}
           onWorktreeStrategyChange={handleWorktreeStrategyChange}
           isConnected={isConnected && activeSessionConnectionReady}
+          connectionLost={!isConnected}
+          onReconnect={reconnect}
           onStreamingChange={handleStreamingChange}
           historyOpen={historyOpen}
           onToggleHistory={() => setHistoryOpen((current) => !current)}

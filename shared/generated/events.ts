@@ -44,6 +44,7 @@ export interface CompactionEvent {
   ok?: boolean;
   reason?: string;
   status: "started" | "done";
+  timestamp?: string;
   tokens_after?: number;
   tokens_before?: number;
 }
@@ -69,6 +70,7 @@ export interface CumulativeUsage {
 export interface DoneEvent {
   kind: "done";
   state?: string;
+  timestamp?: string;
 }
 /**
  * This interface was referenced by `FrankEvents`'s JSON-Schema
@@ -79,6 +81,7 @@ export interface ErrorEvent {
   kind: "error";
   message?: string;
   status?: number | null;
+  timestamp?: string;
   title?: string;
   tool_call_id?: string;
   tool_name?: string;
@@ -91,6 +94,7 @@ export interface McpEvent {
   event?: Record<string, unknown>;
   kind: "mcp_event";
   server?: string;
+  timestamp?: string;
   tool?: string;
   tool_call_id: string;
 }
@@ -126,6 +130,7 @@ export interface PermissionRequestEvent {
   kind: "permission_request";
   request_id: string;
   risk?: string;
+  timestamp?: string;
   tool_call_id?: string;
   tool_name?: string;
 }
@@ -164,6 +169,7 @@ export interface QuestionEvent {
   kind: "question";
   questions?: Record<string, unknown>[];
   request_id: string;
+  timestamp?: string;
   tool_call_id?: string;
 }
 /**
@@ -173,6 +179,7 @@ export interface QuestionEvent {
 export interface StatusEvent {
   code?: string;
   kind: "status";
+  timestamp?: string;
 }
 /**
  * This interface was referenced by `FrankEvents`'s JSON-Schema
@@ -181,6 +188,7 @@ export interface StatusEvent {
 export interface SteeringEvent {
   kind: "steering";
   text?: string;
+  timestamp?: string;
 }
 /**
  * This interface was referenced by `FrankEvents`'s JSON-Schema
@@ -189,6 +197,7 @@ export interface SteeringEvent {
 export interface TextEvent {
   kind: "text";
   text: string;
+  timestamp?: string;
 }
 /**
  * This interface was referenced by `FrankEvents`'s JSON-Schema
@@ -197,6 +206,7 @@ export interface TextEvent {
 export interface ThinkingDoneEvent {
   duration_ms?: number;
   kind: "thinking_done";
+  timestamp?: string;
 }
 /**
  * This interface was referenced by `FrankEvents`'s JSON-Schema
@@ -206,6 +216,7 @@ export interface ThinkingEvent {
   block_id?: string;
   kind: "thinking";
   text?: string;
+  timestamp?: string;
 }
 /**
  * This interface was referenced by `FrankEvents`'s JSON-Schema
@@ -224,6 +235,7 @@ export interface TokenUsageEvent {
   reasoning_tokens?: number;
   segments?: number;
   shared_segments?: number;
+  timestamp?: string;
 }
 /**
  * This interface was referenced by `FrankEvents`'s JSON-Schema
@@ -232,6 +244,7 @@ export interface TokenUsageEvent {
 export interface ToolCallEvent {
   arguments?: Record<string, unknown>;
   kind: "tool_call";
+  timestamp?: string;
   tool_call_id: string;
   tool_name: string;
 }
@@ -261,6 +274,7 @@ export interface ToolResultEvent {
   kind: "tool_result";
   metadata: ToolMetadata;
   status: ToolStatus;
+  timestamp?: string;
   tool_call_id: string;
   tool_name: string;
 }
@@ -288,5 +302,6 @@ export interface WarningEvent {
   code?: string;
   kind: "warning";
   message?: string;
+  timestamp?: string;
   title?: string;
 }
