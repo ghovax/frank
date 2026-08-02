@@ -896,7 +896,7 @@ class Configuration(Section):
         }
 
     def configured_provider_bases(self) -> dict[str, str]:
-        """Configured (non-empty) base URLs per provider (opencode/custom only)."""
+        """Configured non-empty base URLs per provider."""
         return {
             identifier: credential.base_url
             for identifier, credential in self.providers.items()

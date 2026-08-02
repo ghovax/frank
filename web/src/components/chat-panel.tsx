@@ -97,7 +97,7 @@ interface ChatPanelProps {
   historyOpen?: boolean;
   onToggleHistory?: () => void;
   models?: { id: string; name: string; provider: string; available: boolean }[];
-  modelProviders?: { id: string; name: string; openai_compatible: boolean }[];
+  modelProviders?: { id: string; name: string; openai_compatible: boolean; credential_id: string }[];
   recentModels?: { id: string; name: string; provider: string }[];
   agentModel?: string;
   onAgentModelChange: (modelIdentifier: string) => void | Promise<void>;

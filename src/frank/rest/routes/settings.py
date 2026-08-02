@@ -173,6 +173,7 @@ async def list_models_endpoint():
             "id": provider.identifier,
             "name": provider.name,
             "openai_compatible": provider.openai_compatible,
+            "credential_id": provider.credential_identifier or provider.identifier,
         }
         for provider in PROVIDERS.values()
     ]

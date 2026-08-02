@@ -628,6 +628,23 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
     case "steering": {
       const text = (event.text ?? "").trim();
       if (!text) break;
+      // Delivered once, however many times it arrives.
+      //
+      // A steering message reaches the transcript through an event on the *agent* stream, and
+      // that stream is re-read: attaching to a session replays the turns it already holds, so
+      // the same event is reduced again when the next turn opens. Every other event survives
+      // that — a tool row replaces the row with its id, assistant text is rebuilt from the
+      // artifact — but this one appended, so the message a person had steered with appeared a
+      // second time under a fresh key, one turn later.
+      //
+      // Keyed on the message it arrived in *and* its text, not on the text alone: two steering
+      // messages drained into one opening share a source and are genuinely two, while a replay
+      // repeats both together.
+      const alreadyShown = state.messages.some(
+        (message) => message.role === "user" && message.content === text
+          && !!sourceId && message.id.startsWith(`user-${sourceId}-`),
+      );
+      if (alreadyShown) break;
       state.lane = null;
       state.messages = [
         ...state.messages,

@@ -100,9 +100,9 @@ class SettingsUpdateRequest(BaseModel):
     web_fetch_proxy_url: str | None = None
     permission_mode: Literal["default", "permissive", "self_classify", "read_only"] | None = None
     sandbox: dict | None = None
-    # Per-provider API keys (the opencode gateway's key lives under "opencode").
+    # Per-provider API keys. Both OpenCode gateways use the key under "opencode".
     provider_keys: dict[str, str] | None = None
-    # Base URLs for the OpenAI-compatible providers (opencode, custom).
+    # Base URLs for providers with user-configurable OpenAI-compatible endpoints.
     provider_base_urls: dict[str, str] | None = None
     worktree_strategy: Literal["none", "branch", "worktree"] | None = None
 

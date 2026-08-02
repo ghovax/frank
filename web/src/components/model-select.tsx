@@ -124,7 +124,7 @@ function providerName(providerId: string, providers: ProviderOption[]): string {
 function providerPlaceholder(providerId: string): string {
   if (providerId === "anthropic") return "sk-ant-...";
   if (providerId === "openai") return "sk-...";
-  if (providerId === "opencode") return "opencode_...";
+  if (providerId === "opencode" || providerId === "opencode_go") return "opencode_...";
   if (providerId === "openrouter") return "sk-or-...";
   if (providerId === "xai") return "xai-...";
   if (providerId === "deepseek") return "sk-...";
@@ -211,7 +211,8 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
   const chipProviderLabel = effectiveModelId ? providerName(providerForModel(effectiveModelId, models), providers) : "";
   const chipModel = effectiveModelId ? (models.find((model) => model.id === effectiveModelId) ?? null) : null;
   const selectedProviderLabel = providerName(selectedProvider, providers);
-  const selectedProviderKey = providerKeys[selectedProvider] ?? "";
+  const selectedProviderCredentialId = providers.find((provider) => provider.id === selectedProvider)?.credential_id ?? selectedProvider;
+  const selectedProviderKey = providerKeys[selectedProviderCredentialId] ?? "";
 
   // Whether Apply is allowed: a model is picked AND its provider can actually serve
   // it. Rather than blocking selection, we let any model be chosen and only enable
@@ -267,7 +268,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
           // sign-in, saved out-of-band — so never write a provider key for one.
           provider_keys: selectedProviderIsSubscription
             ? {}
-            : { [selectedProvider]: selectedProviderKey.trim() },
+            : { [selectedProviderCredentialId]: selectedProviderKey.trim() },
           provider_base_urls: selectedProviderIsCustom ? { custom: customBaseUrl.trim() } : {},
           worktree_strategy: settings.worktree_strategy,
         });
@@ -493,7 +494,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                         placeholder={providerPlaceholder(selectedProvider)}
                         value={selectedProviderKey}
                         disabled={saving}
-                        onChange={(next) => setProviderKeys((current) => ({ ...current, [selectedProvider]: next }))}
+                        onChange={(next) => setProviderKeys((current) => ({ ...current, [selectedProviderCredentialId]: next }))}
                       />
                     )}
                   </Box>

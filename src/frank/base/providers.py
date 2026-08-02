@@ -8,13 +8,11 @@ from dataclasses import dataclass
 class ProviderDefinition:
     """One routable LLM provider.
 
-    The ``litellm_prefix`` is the LiteLLM model prefix (the segment before the
-    first ``/`` in the model string LiteLLM receives). OpenAI-compatible servers
-    (the OpenCode Go gateway, a user-declared custom server, and the
-    OpenAI-compatible SaaS family) all ride the ``"openai"`` prefix with a custom
-    ``api_base``; first-party clouds use their native prefix (``anthropic``,
-    ``gemini``, …). The env-var list mirrors opencode's provider credential table
-    and is consulted, in order, only when no key is stored in configuration.
+    The ``litellm_prefix`` is the default LiteLLM model prefix (the segment before
+    the first ``/`` in the model string LiteLLM receives). A catalog model can
+    override it when a gateway serves different models through different protocols.
+    ``credential_identifier`` lets related gateways share one stored API key; an
+    empty value means that the provider's own identifier owns the credential.
     """
 
     identifier: str
@@ -23,6 +21,8 @@ class ProviderDefinition:
     env_vars: tuple[str, ...] = ()
     default_base_url: str = ""
     openai_compatible: bool = False
+    uses_custom_base_url: bool = False
+    credential_identifier: str = ""
     # Whether this provider is surfaced as a pickable source of models in the UI.
     # The opencode gateway and any custom server are; the bare "custom" bucket is
     # addressed by the custom provider instead.
@@ -37,19 +37,28 @@ class ProviderDefinition:
     native: bool = False
 
 
-# The order here is the order models are grouped in the picker. opencode first so
-# the out-of-the-box default stays the most prominent, then the first-party clouds,
-# then the OpenAI-compatible SaaS family, then the user's own server.
+# The order here is the order models are grouped in the picker. OpenCode's two
+# gateways come first, followed by first-party clouds, SaaS providers, and the
+# user's own server.
 PROVIDERS: dict[str, ProviderDefinition] = {
     provider.identifier: provider
     for provider in [
         ProviderDefinition(
             identifier="opencode",
+            name="OpenCode Zen",
+            litellm_prefix="openai",
+            env_vars=("OPENCODE_API_KEY",),
+            default_base_url="https://opencode.ai/zen/v1",
+            uses_custom_base_url=True,
+        ),
+        ProviderDefinition(
+            identifier="opencode_go",
             name="OpenCode Go",
             litellm_prefix="openai",
             env_vars=("OPENCODE_API_KEY",),
             default_base_url="https://opencode.ai/zen/go/v1",
-            openai_compatible=True,
+            uses_custom_base_url=True,
+            credential_identifier="opencode",
         ),
         ProviderDefinition(
             identifier="anthropic",
@@ -329,17 +338,16 @@ def resolve_api_key(
     provider_identifier: str,
     configured_keys: dict[str, str],
 ) -> str:
-    """Resolve a provider's API key: an explicit configured value wins, then the
-    provider's env vars in order. Returns an empty string when nothing is set, so
-    ``available_models`` can treat a provider as locked until credentials arrive."""
-    configured = configured_keys.get(provider_identifier, "")
-    if configured:
-        return configured
+    """Resolve a provider key from its shared credential, then its environment."""
     definition = PROVIDERS.get(provider_identifier)
     if definition is None:
         return ""
-    for env_var in definition.env_vars:
-        value = os.environ.get(env_var, "")
+    credential_identifier = definition.credential_identifier or provider_identifier
+    configured = configured_keys.get(credential_identifier, "")
+    if configured:
+        return configured
+    for environment_variable in definition.env_vars:
+        value = os.environ.get(environment_variable, "")
         if value:
             return value
     return ""
@@ -349,9 +357,7 @@ def resolve_base_url(
     provider_identifier: str,
     configured_bases: dict[str, str],
 ) -> str:
-    """Resolve a provider's base URL: an explicit configured value wins, then the
-    provider's default. Only meaningful for OpenAI-compatible providers; the
-    first-party clouds ignore it (LiteLLM knows their endpoints)."""
+    """Resolve a provider's explicit base URL or its registered default."""
     configured = configured_bases.get(provider_identifier, "")
     if configured:
         return configured

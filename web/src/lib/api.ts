@@ -1025,6 +1025,7 @@ export interface ProviderOption {
   id: string;
   name: string;
   openai_compatible: boolean;
+  credential_id: string;
 }
 
 export interface ModelsResponse {

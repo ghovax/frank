@@ -27,8 +27,10 @@ The harness is multi-provider. Credentials are keyed by **provider id** under a 
 
 ```yaml
 providers:
-  opencode:                         # OpenAI-compatible — takes a base_url
+  opencode:                         # One key unlocks OpenCode Zen and OpenCode Go
     api_key: ""
+    base_url: "https://opencode.ai/zen/v1"
+  opencode_go:                     # Optional endpoint override; key comes from opencode
     base_url: "https://opencode.ai/zen/go/v1"
   anthropic:  { api_key: "" }        # first-party clouds omit base_url (LiteLLM knows the endpoint)
   openai:     { api_key: "" }
@@ -43,7 +45,7 @@ providers:
     base_url: ""
 ```
 
-**Key/base-url resolution** (`providers.py`): an explicit configured value (file or UI) **wins**; otherwise the provider's conventional env var is read (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`/`GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `XAI_API_KEY`, `DEEPSEEK_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`). `base_url` only matters for the OpenAI-compatible providers (`opencode`, `custom`); first-party clouds ignore it.
+**Key/base-url resolution** (`providers.py`): an explicit configured value (file or UI) **wins**; otherwise the provider's conventional env var is read (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`/`GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `XAI_API_KEY`, `DEEPSEEK_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`). OpenCode Zen and Go share the `opencode` key but keep separate endpoints. First-party clouds ignore `base_url`; custom OpenAI-compatible providers use it.
 
 **Three ways to change this, all live:** `frank configure providers.anthropic.api_key <key>`, the Settings dialog, or editing the file — the daemon watches it and reloads. A credential change asks running sessions to rebuild their runtime on the next turn, so it takes effect without restarting anything.
 
