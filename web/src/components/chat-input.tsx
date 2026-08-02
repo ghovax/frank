@@ -797,6 +797,8 @@ export function ChatInput({
           >
             <Textarea
               ref={inputRef}
+              // Sized in `globals.css`, where the control height it has to match is defined.
+              data-composer-input=""
               size="sm"
               variant="outline"
               placeholder={
