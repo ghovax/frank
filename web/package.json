@@ -11,7 +11,8 @@
     "check:events": "uv run --project .. python ../scripts/generate_event_schema.py --check && json2ts -i ../shared/generated/events.schema.json -o \"${TMPDIR:-/tmp}/frank-events.check.ts\" --unreachableDefinitions && diff -u ../shared/generated/events.ts \"${TMPDIR:-/tmp}/frank-events.check.ts\"",
     "tauri": "cargo tauri",
     "tauri:dev": "cargo tauri dev",
-    "tauri:build": "cargo tauri build"
+    "tauri:build": "cargo tauri build --bundles app",
+    "tauri:dmg": "cargo tauri build"
   },
   "dependencies": {
     "@chakra-ui/react": "^3.36.0",
