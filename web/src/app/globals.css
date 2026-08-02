@@ -355,73 +355,86 @@ samp {
   transition: transform var(--marquee-duration, 0s) linear;
 }
 
-/* On hover the trailing ⋯ actions appear over the row's right edge. Fade EVERY title's
-   right edge beneath them — not just a scrolling one — so a title too short to scroll but
-   long enough to reach the dots dissolves under them instead of showing straight through the
-   plain (transparent) button. Short titles that end before the fade zone are unaffected.
+/* Everything below is what a *pointer* does, and none of it is what a finger does.
 
-   The clear zone is 44px against a 32px button, so the dots keep about 12px of clean space
-   on their left rather than sitting against a letter. It was 26px, which is narrower than the
-   button itself — the last 6px of title ran underneath it. Keep this in step with
-   MARQUEE_TAIL_CLEARANCE in sessions-sidebar.tsx, which parks a scrolled title at the same
-   edge.
+   Gated on `hover: hover`, and this is a correctness fix rather than a tidy-up. WebKit gives the
+   first tap on an element whose `:hover` changes what is rendered to the hover state, and only
+   the second tap fires the click — so on a phone, opening a conversation took two taps and the
+   first one appeared to do nothing. The reveal below is exactly that kind of rule.
 
-   Scoped to titles that do NOT overflow. An overflowing one gets the same treatment through the
-   variables on its own two-layer mask above — and if this rule matched it too it would win, being
-   the last `mask-image` declared for it, and quietly replace that mask with a single layer. The
-   left fade would then be absent for the whole hover, not just the return. */
-.sidebar-row:hover .sidebar-title:not([data-overflow="true"]),
-.sidebar-row:focus-within .sidebar-title:not([data-overflow="true"]) {
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 68px), transparent calc(100% - 44px));
-  mask-image: linear-gradient(to right, #000 calc(100% - 68px), transparent calc(100% - 44px));
+   A device with no hover gets the settled state instead: the actions are simply present (see the
+   coarse-pointer rule after this block), and titles do not travel, because nothing is ever
+   pointed at. */
+@media (hover: hover) {
+  /* On hover the trailing ⋯ actions appear over the row's right edge. Fade EVERY title's
+     right edge beneath them — not just a scrolling one — so a title too short to scroll but
+     long enough to reach the dots dissolves under them instead of showing straight through the
+     plain (transparent) button. Short titles that end before the fade zone are unaffected.
+
+     The clear zone is 44px against a 32px button, so the dots keep about 12px of clean space
+     on their left rather than sitting against a letter. It was 26px, which is narrower than the
+     button itself — the last 6px of title ran underneath it. Keep this in step with
+     MARQUEE_TAIL_CLEARANCE in sessions-sidebar.tsx, which parks a scrolled title at the same
+     edge.
+
+     Scoped to titles that do NOT overflow. An overflowing one gets the same treatment through the
+     variables on its own two-layer mask above — and if this rule matched it too it would win, being
+     the last `mask-image` declared for it, and quietly replace that mask with a single layer. The
+     left fade would then be absent for the whole hover, not just the return. */
+  .sidebar-row:hover .sidebar-title:not([data-overflow="true"]),
+  .sidebar-row:focus-within .sidebar-title:not([data-overflow="true"]) {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 68px), transparent calc(100% - 44px));
+    mask-image: linear-gradient(to right, #000 calc(100% - 68px), transparent calc(100% - 44px));
+  }
+
+  /* A scrolling (overflowing) title fades its left edge as it travels off — and keeps fading it all
+     the way back, because the property animates rather than the mask switching. Variables only. */
+  .sidebar-row:hover .sidebar-title[data-overflow="true"],
+  .sidebar-row:focus-within .sidebar-title[data-overflow="true"] {
+    --sidebar-title-left-fade: 12px;
+    --sidebar-title-right-solid: calc(100% - 46px);
+    --sidebar-title-right-clear: calc(100% - 26px);
+  }
+
+  .sidebar-row:hover .sidebar-title-inner,
+  .sidebar-row:focus-within .sidebar-title-inner {
+    transform: translateX(calc(-1 * var(--marquee-overflow, 0px)));
+  }
+
+  /* A workspace row *contains* its session rows, and the rules above are descendant selectors —
+     so hovering one conversation matched every title inside that workspace and faded all of them
+     at once, which read as the whole list reacting to one row. These put the nested rows back:
+     a row inside a hovered row that is not itself hovered is not the row being pointed at.
+
+     A row that is not being pointed at must go back to how it looks at rest — which for an
+     overflowing title is the idle right-edge fade, not no mask at all. Removing the mask
+     outright meant that pointing anywhere in the sidebar stripped the fade from every other
+     title at once (a workspace row contains them all), so the list appeared to lose its fades
+     the moment the cursor entered it and regain them one row at a time on hover. */
+  .sidebar-row:hover .sidebar-row:not(:hover):not(:focus-within) .sidebar-title[data-overflow="true"],
+  .sidebar-row:focus-within .sidebar-row:not(:hover):not(:focus-within) .sidebar-title[data-overflow="true"] {
+    /* Variables only — no `mask-image` here. This is the rule that matches the row you have just
+       pointed away from when the pointer lands on a neighbour, which is the common case, so
+       re-declaring the mask here is what stripped the left fade mid-journey. Setting the variable
+       back to zero lets it animate down over the same 0.96s the text takes to come home. */
+    --sidebar-title-left-fade: 0px;
+    --sidebar-title-right-solid: 82%;
+    --sidebar-title-right-clear: 98%;
+  }
+
+  /* A title short enough not to overflow has no mask at rest. */
+  .sidebar-row:hover .sidebar-row:not(:hover):not(:focus-within) .sidebar-title:not([data-overflow="true"]),
+  .sidebar-row:focus-within .sidebar-row:not(:hover):not(:focus-within) .sidebar-title:not([data-overflow="true"]) {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .sidebar-row:hover .sidebar-row:not(:hover):not(:focus-within) .sidebar-title-inner,
+  .sidebar-row:focus-within .sidebar-row:not(:hover):not(:focus-within) .sidebar-title-inner {
+    transform: none;
+  }
 }
 
-/* A scrolling (overflowing) title fades its left edge as it travels off — and keeps fading it all
-   the way back, because the property animates rather than the mask switching. Variables only. */
-.sidebar-row:hover .sidebar-title[data-overflow="true"],
-.sidebar-row:focus-within .sidebar-title[data-overflow="true"] {
-  --sidebar-title-left-fade: 12px;
-  --sidebar-title-right-solid: calc(100% - 46px);
-  --sidebar-title-right-clear: calc(100% - 26px);
-}
-
-.sidebar-row:hover .sidebar-title-inner,
-.sidebar-row:focus-within .sidebar-title-inner {
-  transform: translateX(calc(-1 * var(--marquee-overflow, 0px)));
-}
-
-/* A workspace row *contains* its session rows, and the rules above are descendant selectors —
-   so hovering one conversation matched every title inside that workspace and faded all of them
-   at once, which read as the whole list reacting to one row. These put the nested rows back:
-   a row inside a hovered row that is not itself hovered is not the row being pointed at.
-
-   A row that is not being pointed at must go back to how it looks at rest — which for an
-   overflowing title is the idle right-edge fade, not no mask at all. Removing the mask
-   outright meant that pointing anywhere in the sidebar stripped the fade from every other
-   title at once (a workspace row contains them all), so the list appeared to lose its fades
-   the moment the cursor entered it and regain them one row at a time on hover. */
-.sidebar-row:hover .sidebar-row:not(:hover):not(:focus-within) .sidebar-title[data-overflow="true"],
-.sidebar-row:focus-within .sidebar-row:not(:hover):not(:focus-within) .sidebar-title[data-overflow="true"] {
-  /* Variables only — no `mask-image` here. This is the rule that matches the row you have just
-     pointed away from when the pointer lands on a neighbour, which is the common case, so
-     re-declaring the mask here is what stripped the left fade mid-journey. Setting the variable
-     back to zero lets it animate down over the same 0.96s the text takes to come home. */
-  --sidebar-title-left-fade: 0px;
-  --sidebar-title-right-solid: 82%;
-  --sidebar-title-right-clear: 98%;
-}
-
-/* A title short enough not to overflow has no mask at rest. */
-.sidebar-row:hover .sidebar-row:not(:hover):not(:focus-within) .sidebar-title:not([data-overflow="true"]),
-.sidebar-row:focus-within .sidebar-row:not(:hover):not(:focus-within) .sidebar-title:not([data-overflow="true"]) {
-  -webkit-mask-image: none;
-  mask-image: none;
-}
-
-.sidebar-row:hover .sidebar-row:not(:hover):not(:focus-within) .sidebar-title-inner,
-.sidebar-row:focus-within .sidebar-row:not(:hover):not(:focus-within) .sidebar-title-inner {
-  transform: none;
-}
 
 @media (prefers-reduced-motion: reduce) {
   .running-title-shimmer {

@@ -31,6 +31,7 @@ import { InlineField } from "./ui/display";
 import { Strong } from "./ui/semantic";
 import { swallowed } from "@/lib/swallowed";
 import { errorMessage } from "@/lib/errors";
+import { useCoarsePointer } from "@/lib/pointer";
 
 interface ChatInputProps {
   // Returns the session id when the send created one, which the composer ignores — it is
@@ -162,6 +163,10 @@ function ContextUsageChip({
   chatgptUsage?: ChatGPTUsage | null;
 }) {
   const translation = useTranslations("ChatInput");
+  const coarsePointer = useCoarsePointer();
+  const [usageOpen, setUsageOpen] = useState(false);
+  // After the hooks, never before: an early return above them would change how many run between
+  // one render and the next, which React forbids for good reason.
   if (!tokenUsage || tokenUsage.contextTokens <= 0) return null;
   const hasContext = tokenUsage.contextWindow > 0;
   const contextFraction = hasContext ? tokenUsage.contextTokens / tokenUsage.contextWindow : 0;
@@ -211,8 +216,14 @@ function ContextUsageChip({
       openDelay={200}
       closeDelay={60}
       positioning={{ placement: "top" }}
+      // On a phone this chip is the only way to see what the context is doing, and a tooltip is
+      // the one thing a finger cannot ask for: the tooltip machine opens on hover and has no
+      // click to open with, so on touch the numbers behind it were simply unreachable. Held open
+      // here instead, toggled by tapping the chip — which has no other job, so the tap is free.
+      {...(coarsePointer ? { open: usageOpen, onOpenChange: (event: { open: boolean }) => setUsageOpen(event.open) } : {})}
     >
       <Flex
+        onClick={coarsePointer ? () => setUsageOpen((shown) => !shown) : undefined}
         align="center"
         gap={1.5}
         // The house control height, not a number. This chip sits in a row of buttons and was

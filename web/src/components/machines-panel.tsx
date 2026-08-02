@@ -25,6 +25,7 @@ import {
   addMachine, forgetMachine, listMachines, machineAddress, subscribeEvents, type Machine,
 } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
+import { useOrigin } from "@/lib/pointer";
 import { swallowed } from "@/lib/swallowed";
 
 export function MachinesPanel() {
@@ -32,6 +33,15 @@ export function MachinesPanel() {
   const [machines, setMachines] = useState<Machine[]>([]);
   const [link, setLink] = useState("");
   const [saving, setSaving] = useState(false);
+  /**
+   * Which of these is serving this page, if any.
+   *
+   * The list knew every machine except the one you were looking at, and offered to connect you
+   * to it — a button whose whole effect is to reload the page you are already on. The answer was
+   * in the address bar all along: this page is served *by* a machine, so its origin is that
+   * machine's endpoint, and the row that matches is the one you are in.
+   */
+  const origin = useOrigin();
 
   const refresh = useCallback(() => {
     listMachines()
@@ -101,14 +111,27 @@ export function MachinesPanel() {
                   {/* The address, because it is what tells two similarly named machines apart. */}
                   <Text fontSize="xs" color="fg.subtle" truncate>{machine.endpoint.replace(/^https:\/\//, "")}</Text>
                 </Box>
-                <Button size="xs" variant="outline" onClick={() => void open(machine)}>
-                  <LuArrowUpRight />
-                  {translation("connect")}
-                </Button>
+                {machine.endpoint === origin ? (
+                  // Not a disabled button. There is nothing to do here, and a greyed-out control
+                  // invites somebody to work out why it will not work; a state does not.
+                  <Flex align="center" gap={1.5} color="green.fg" flexShrink={0}>
+                    <Box boxSize="1.5" borderRadius="full" bg="green.solid" />
+                    <Text fontSize="xs">{translation("connected")}</Text>
+                  </Flex>
+                ) : (
+                  <Button size="xs" variant="outline" onClick={() => void open(machine)}>
+                    <LuArrowUpRight />
+                    {translation("connect")}
+                  </Button>
+                )}
                 <IconButton
                   size="xs"
                   variant="ghost"
                   colorPalette="red"
+                  // Forgetting the machine you are currently using would throw away the token for
+                  // the page you are reading, which is a thing to do deliberately from somewhere
+                  // else rather than by accident from here.
+                  disabled={machine.endpoint === origin}
                   aria-label={translation("deleteConnection", { url: machine.endpoint })}
                   onClick={() => {
                     void forgetMachine(machine.id).then(refresh).catch((caught) =>

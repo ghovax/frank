@@ -250,13 +250,21 @@ function SessionTreeRow({
           // the status dot inward — so a row with nothing to report still looked like it was
           // holding space open on the right. Taking it out of layout entirely lets the dot sit
           // flush against the edge, and the ⋯ pushes it aside only while the row is hovered.
-          "& [data-row-actions]": { display: "none" },
-          "&:hover [data-row-actions]": { display: "flex" },
-          "&:focus-within [data-row-actions]": { display: "flex" },
-          // Same nesting problem as the title mask in globals.css: a workspace row contains its
-          // session rows, so its `:hover` revealed every nested row's actions at once.
-          "&:hover .sidebar-row:not(:hover):not(:focus-within) [data-row-actions]": {
-            display: "none",
+          //
+          // All of which describes a pointer, and is why the reveal is gated on there being one.
+          // Hiding a control behind hover on a touch device hides it for good — there is no
+          // gesture that produces hover, so the ⋯ menu was unreachable on a phone — and worse,
+          // WebKit gives the first tap on a row whose `:hover` changes what is rendered to the
+          // hover state, so opening a conversation took two taps and the first did nothing.
+          "@media (hover: hover)": {
+            "& [data-row-actions]": { display: "none" },
+            "&:hover [data-row-actions]": { display: "flex" },
+            "&:focus-within [data-row-actions]": { display: "flex" },
+            // Same nesting problem as the title mask in globals.css: a workspace row contains its
+            // session rows, so its `:hover` revealed every nested row's actions at once.
+            "&:hover .sidebar-row:not(:hover):not(:focus-within) [data-row-actions]": {
+              display: "none",
+            },
           },
         }}
       >
