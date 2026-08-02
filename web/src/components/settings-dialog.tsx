@@ -3,13 +3,14 @@
 import { Alert, Box, Button, Dialog, EmptyState, Flex, IconButton, Input, Portal, Spinner, Text, VStack } from "@chakra-ui/react";
 import { swallowed } from "@/lib/swallowed";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { LuClock, LuEye, LuEyeOff, LuKeyRound, LuPlug, LuPlus, LuSearch, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
+import { LuClock, LuEye, LuEyeOff, LuKeyRound, LuMonitor, LuPlug, LuPlus, LuSearch, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
 import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, restartDaemon, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateDictationSetting, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel, type SandboxEnforce } from "@/lib/api";
 import { ModelSelect } from "./model-select";
 import { ChatGPTAuthControl } from "./chatgpt-auth";
 import { CursorAuthControl } from "./cursor-auth";
 import { WorkspaceLocationsPanel } from "./workspace-locations";
 import { RemoteAgentsPanel } from "./remote-agents-panel";
+import { MachinesPanel } from "./machines-panel";
 import { SchedulesPanel } from "./schedules-panel";
 import { SimpleSelect } from "./ui/simple-select";
 import { useColorMode } from "./ui/color-mode";
@@ -571,6 +572,10 @@ export function SettingsDialog({
         },
         { title: translation("modelProviders"), rows: [], block: <Flex direction="column" gap={5} w="100%"><ChatGPTAuthControl /><CursorAuthControl /></Flex> },
       ],
+    },
+    {
+      id: "connection" as SettingsSection, label: translation("tabConnection"), icon: <LuMonitor size={14} />,
+      sections: [{ title: translation("tabConnection"), rows: [], block: <MachinesPanel /> }],
     },
     ...(workspaceId ? [{
       id: "locations" as SettingsSection, label: translation("tabLocations"), icon: <LuServer size={14} />,

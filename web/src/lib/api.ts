@@ -385,6 +385,72 @@ export interface WorkspaceCreateInput {
   locations: LocationInput[];
 }
 
+/**
+ * Another Frank this one knows how to reach.
+ *
+ * Without its token, deliberately: `machineAddress` is the one call that hands one over, so a
+ * list that renders on screen and sits in a memory snapshot carries no credential.
+ */
+export interface Machine {
+  id: string;
+  name: string;
+  endpoint: string;
+  created_at: string;
+}
+
+export async function listMachines(): Promise<Machine[]> {
+  const response = await apiFetch(`/machines`);
+  if (!response.ok) return [];
+  const data = await response.json();
+  return Array.isArray(data.machines) ? (data.machines as Machine[]) : [];
+}
+
+/** Remember a machine from the `frank://pair#…` link `frank reach` prints. */
+export async function addMachine(link: string): Promise<Machine> {
+  const response = await apiFetch(`/machines`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ link }),
+  });
+  if (!response.ok) {
+    let detail = "";
+    try {
+      detail = String((await response.json())?.detail ?? "");
+    } catch {
+      // A body that is not JSON says nothing the status did not.
+    }
+    throw new Error(detail || `Could not add that machine (${response.status}).`);
+  }
+  return await response.json() as Machine;
+}
+
+/**
+ * The URL that opens a machine, token and all.
+ *
+ * Asked for at the moment somebody chooses to go, which is the whole reason it is its own call.
+ * Going there is a *navigation* rather than a change of API base: a page cannot script another
+ * origin — `frank reach` answers no `access-control-allow-origin`, because letting arbitrary
+ * pages talk to a listener holding full control of a machine is exactly what it is guarding
+ * against — so the interface hands the browser the address and the machine serves its own.
+ */
+export async function machineAddress(machineId: string): Promise<string> {
+  const response = await apiFetch(`/machines/${encodeURIComponent(machineId)}/address`);
+  if (!response.ok) throw new Error(`Could not open that machine (${response.status}).`);
+  return String((await response.json())?.url ?? "");
+}
+
+export async function renameMachine(machineId: string, name: string): Promise<void> {
+  await apiFetch(`/machines/${encodeURIComponent(machineId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function forgetMachine(machineId: string): Promise<void> {
+  await apiFetch(`/machines/${encodeURIComponent(machineId)}`, { method: "DELETE" });
+}
+
 export async function listSshHosts(): Promise<SshHost[]> {
   const response = await apiFetch(`/hosts`);
   if (!response.ok) return [];

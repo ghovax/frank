@@ -19,7 +19,7 @@ from fastapi import FastAPI
 # share a name with something else in scope (`sessions`, `settings`), and a plain
 # `from .routes import settings` would shadow it.
 ROUTE_MODULES = (
-    "agents", "dictation", "filesystem", "mcp",
+    "agents", "dictation", "filesystem", "machines", "mcp",
     "workspaces", "schedules", "remote_agents", "sessions", "settings", "terminals", "uploads",
 )
 

@@ -159,6 +159,18 @@ class WorkspaceCreateRequest(BaseModel):
     locations: list[LocationInput] = Field(min_length=1)
 
 
+class MachineRequest(BaseModel):
+    """A machine to remember, as the `frank://pair#…` link `frank reach` prints."""
+
+    link: str
+
+
+class MachineNameRequest(BaseModel):
+    """What to call a machine here."""
+
+    name: str
+
+
 class WorkspaceLastSessionRequest(BaseModel):
     """Which conversation a workspace was last opened at. The empty string means none — what a
     client sends when it lands on a workspace with nothing to reopen."""

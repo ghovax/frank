@@ -206,6 +206,14 @@ That is the whole application. Everything else is `web/src`.
 
 What the two clients share beyond that lives in [`shared/`](../shared/README.md) and is read by the desktop too: the message catalogue, the wire event union, workspace naming, status colours, and the tool glyph vocabulary.
 
+### The same set of machines on both
+
+The phone keeps its machines in the keychain and shows them as its home screen. The desktop keeps the same set in the daemon's database and shows it under Settings → Connection, added from the same `frank://pair#…` link. Which Frank you are talking to is one question with one shape on both clients, rather than a feature one of them has.
+
+Opening one from the desktop is a *navigation*, not a change of API base, and that is not a shortcut: a page cannot script another origin, because `frank reach` answers no `access-control-allow-origin` — letting arbitrary pages talk to a listener holding full control of a machine is precisely what it guards against. So the interface asks for the address and the browser goes there, and that machine serves its own interface, first party to itself, exactly as it does for a phone.
+
+The token is stored. It is a bearer credential with full control of the machine it belongs to, at rest in `~/.local/share/frank/history.db` alongside the OAuth credentials that were already there. The list route does not return it — `GET /machines/{id}/address` is the only call that hands one over, so what renders on screen and sits in a memory snapshot carries no credential.
+
 ### Dictation
 
 There is nothing here about it, and that is the point. The page calls `getUserMedia` and records through its own `AudioWorklet`, exactly as it does on the desktop — because over Tailscale the page is a secure context and the browser hands it a microphone.
