@@ -74,9 +74,9 @@ class _CompactsContext:
         *before the entire conversation*. This message is rewritten by every fold. As a system
         message it therefore rewrote the first bytes of every request, discarding the provider's
         prompt cache for the whole conversation each time the fold ran to save context. It was
-        the one message in the tree still doing what `_harness_note_message` exists to prevent.
+        the one message in the tree still doing what `_reminder_message` exists to prevent.
         """
-        return self._harness_note_message(
+        return self._reminder_message(
             self._prompt_loader.load("observation_log", {"observations": compact(observations)}),
             marks={"observation_log": True, "observations": observations},
         )
@@ -161,12 +161,12 @@ class _CompactsContext:
         guarantee — one message — and the most expensive to lose, because nothing downstream can
         tell that the goal it is serving is a reconstruction.
 
-        Harness notes are excluded: they carry the harness's voice, not the user's, and their
+        Reminders are excluded: they carry the harness's voice, not the user's, and their
         content is either regenerated every turn or already recorded.
         """
         spoken = [
             message for message in folded
-            if isinstance(message, HumanMessage) and not message.additional_kwargs.get("harness_note")
+            if isinstance(message, HumanMessage) and not message.additional_kwargs.get("reminder")
         ]
         if not spoken:
             return []

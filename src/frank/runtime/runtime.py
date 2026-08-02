@@ -868,7 +868,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             background_job_id=identifier,
         )
         status, code = _model_result_status(capped_result, ok=True, backgrounded=False)
-        self._conversation.append(self._harness_note_message(
+        self._conversation.append(self._reminder_message(
             _model_visible_tool_result(
                 capped_result, metadata, status, code, kind="background_result",
             ),
@@ -1123,9 +1123,9 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
                 background_job_id=completion.identifier,
             )
             # Append-only: the scheduled placeholder ToolMessage stays put and the
-            # result lands as a *new* message (a user-role harness note — a system
+            # result lands as a *new* message (a user-role reminder — a system
             # role here would be hoisted into Anthropic's top-level system param and
-            # bust the whole prefix; see _harness_note_message). Rewriting the
+            # bust the whole prefix; see _reminder_message). Rewriting the
             # placeholder in place would change the conversation mid-stream and
             # invalidate the provider's prompt cache from that point on — re-billing
             # the whole suffix. The placeholder already satisfies its tool_call, so
@@ -1135,7 +1135,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             background_status, background_code = _model_result_status(
                 capped_result, ok=True, backgrounded=False,
             )
-            self._conversation.append(self._harness_note_message(
+            self._conversation.append(self._reminder_message(
                 _model_visible_tool_result(
                     capped_result, background_metadata, background_status, background_code,
                     kind="background_result",

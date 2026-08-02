@@ -197,7 +197,7 @@ class _RunsTurns:
             user_context = _maybe_json(probe_user_context())
             if isinstance(user_context, dict) and user_context:
                 payload["user_context"] = user_context
-        note = self._harness_note_message(compact(payload))
+        note = self._reminder_message(compact(payload))
         note.additional_kwargs["environment_note"] = True
         self._conversation.append(note)
 
@@ -370,33 +370,35 @@ class _RunsTurns:
                 answers[gate.request_id] = "allow" if verdict.allow else "deny"
         return answers
 
-    def _harness_note_message(
+    def _reminder_message(
         self, content: str, image_blocks: list[dict] | None = None, transient: bool = False,
         marks: dict[str, Any] | None = None,
     ) -> HumanMessage:
-        """Wrap a harness-injected note in a user-role message carrying a
-        ``<systemReminder>`` block.
+        """A reminder: something neither the user nor the model said, put into the conversation
+        as a user-role message carrying a ``<systemReminder>`` block.
 
-        The role is deliberate — this is what keeps the conversation strictly
-        append-only for the provider's prompt cache. A mid-conversation
-        ``role:"system"`` message is HOISTED by LiteLLM into Anthropic's top-level
-        ``system`` parameter, which renders before the entire message history; every
-        such note therefore rewrites the prompt prefix and invalidates the cache for
-        the whole conversation. A user-role note stays exactly where it was appended,
-        so the prefix never changes — only grows — on every provider. The wrapper
-        itself lives in the ``harness_note`` prompt template (wording stays in
-        files, not code); it tells the model this is authoritative harness
-        guidance, not user input (see the Harness Guidance section of the system
-        prompt). The ``harness_note`` marker keeps these notes from counting as
-        user turns in the compaction boundary. ``image_blocks`` (OpenAI-shaped
-        ``image_url`` blocks) turn the note multimodal — the user role is the one
-        role every provider accepts images on, which is how a read image reaches
-        a vision model."""
-        text = self._prompt_loader.load("harness_note", {"content": content.strip()}).strip()
+        The role is deliberate, and it is what keeps the conversation strictly append-only for
+        the provider's prompt cache. A mid-conversation ``role:"system"`` message does not stay
+        where it is put — LiteLLM hoists it into Anthropic's top-level ``system`` parameter, and
+        the Responses translation folds it into ``instructions`` — so it renders before the
+        entire history, and writing one rewrites the prefix and discards the cache for the whole
+        conversation. A user-role reminder stays exactly where it was appended, on every
+        provider, so the prefix only ever grows.
+
+        The wrapper lives in the ``reminder`` prompt template, so the wording stays in a file
+        rather than in code; it tells the model this is authoritative guidance from the system
+        it is running in, not something the user typed. The ``reminder`` marker is how everything
+        downstream tells the two apart — most importantly the fold, which carries the user's own
+        messages across verbatim and must not mistake one of these for one of those.
+
+        ``image_blocks`` (OpenAI-shaped ``image_url`` blocks) make a reminder multimodal: the
+        user role is the one role every provider accepts images on, which is how a file the
+        model asked to read reaches a vision model."""
+        text = self._prompt_loader.load("reminder", {"content": content.strip()}).strip()
         # `transient` marks a note that is assembled for one request and never appended to the
         # conversation — so it cannot appear in the next one, and a cache breakpoint placed on it
         # is a breakpoint nothing will ever match.
-        tags = {"harness_note": True, **({"transient": True} if transient else {}), **(marks or {})}
+        tags = {"reminder": True, **({"transient": True} if transient else {}), **(marks or {})}
         if image_blocks:
             return HumanMessage(content=[{"type": "text", "text": text}, *image_blocks], additional_kwargs=tags)
         return HumanMessage(content=text, additional_kwargs=tags)
@@ -490,11 +492,11 @@ class _RunsTurns:
             # attached image) so a vision model actually sees the pixels. LangChain's
             # HumanMessage accepts either, and the model adapter passes the content
             # straight through to the provider. A harness-initiated turn (an autonomous
-            # wake, a report reminder) enters as a <systemReminder> harness note so the
+            # wake, a report reminder) enters as a reminder so the
             # model treats it as its own observation, not as something the user said — in
-            # a user-role message so the append stays cache-safe (_harness_note_message).
+            # a user-role message so the append stays cache-safe (_reminder_message).
             turn_message = (
-                self._harness_note_message(user_message)
+                self._reminder_message(user_message)
                 if as_system_note and isinstance(user_message, str)
                 else HumanMessage(content=user_message)
             )
@@ -620,7 +622,7 @@ class _RunsTurns:
         the first iteration of a turn, when the user just sent a message; subsequent
         iterations (after tool calls) skip it to avoid re-sending the same per-turn
         metadata on every LLM call within the turn. It rides as a transient user-role
-        harness note at the very tail of the request — never as a system message (LiteLLM
+        reminder at the very tail of the request — never as a system message (LiteLLM
         would hoist it into Anthropic's top-level system param, whose fresh timestamp
         would then invalidate the ENTIRE conversation cache on every turn). As a tail
         note, everything before it still prefix-matches the provider cache.
@@ -631,7 +633,7 @@ class _RunsTurns:
         written here could never be read back. Marked, it is skipped, and both trailing
         breakpoints land on conversation that will still be there to match."""
         dynamic_parts = (
-            [self._harness_note_message(self._build_dynamic_context(), transient=True)]
+            [self._reminder_message(self._build_dynamic_context(), transient=True)]
             if first_iteration else []
         )
         return (
@@ -780,11 +782,11 @@ class _RunsTurns:
             # message.tool_calls, never invalid_tool_calls — so a ToolMessage response
             # would be orphaned, and strict providers (e.g. DeepSeek) reject that with
             # "Messages with role 'tool' must follow a tool_calls message". Correct the
-            # model with a harness note and let it retry. Model-facing; not surfaced.
+            # model with a reminder and let it retry. Model-facing; not surfaced.
             if response.content:
                 self._conversation.append(response)
             for invalid in response.invalid_tool_calls:
-                self._conversation.append(self._harness_note_message(
+                self._conversation.append(self._reminder_message(
                     self._invalid_tool_call_content(cast(dict, invalid)),
                 ))
             step.directive = _CONTINUE
@@ -810,7 +812,7 @@ class _RunsTurns:
             # nudge counter and no ceiling.
             self._awaiting_goal_reconsideration = True
             goal_continuation = self._prompt_loader.load("goal_continuation", {"goal": self._active_goal})
-            self._conversation.append(self._harness_note_message(goal_continuation))
+            self._conversation.append(self._reminder_message(goal_continuation))
             yield Status(code="goal_check",
             )
             step.directive = _CONTINUE

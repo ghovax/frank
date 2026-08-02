@@ -413,7 +413,7 @@ class _DispatchesTools:
 
     def _append_tool_results(self, response, outcomes: dict[str, dict]) -> None:
         """Append a ToolMessage for every tool_call of ``response`` (the AIMessage is
-        already at the tail of the conversation), plus the image/denied harness notes.
+        already at the tail of the conversation), plus the image/denied reminders.
         The ToolMessage block stays contiguous: providers require every tool_call's
         result in the immediately-following turn, so notes come after the whole block.
         An aborted or un-run tool records ``(interrupted)`` so every call still gets a
@@ -459,23 +459,23 @@ class _DispatchesTools:
                 )
             image_followup_notes.extend(outcome.get("image_followups") or [])
         # Images read this round attach right after the tool block, as image-bearing
-        # harness notes — the append-only, every-provider way for a vision model to see
+        # reminders — the append-only, every-provider way for a vision model to see
         # pixels a tool produced.
         for followup in image_followup_notes:
             note_text = self._prompt_loader.load("image_read_note", {"path": followup.get("path", "")})
-            self._conversation.append(self._harness_note_message(
+            self._conversation.append(self._reminder_message(
                 note_text,
                 image_blocks=[{"type": "image_url", "image_url": {"url": followup["data_uri"]}}],
             ))
         for denied_message in denied_command_notes:
-            self._conversation.append(self._harness_note_message(denied_message))
+            self._conversation.append(self._reminder_message(denied_message))
 
         # Malformed tool calls serialized alongside valid ones: correct them with a
-        # harness note (not a ToolMessage — invalid calls aren't in the serialized
+        # reminder (not a ToolMessage — invalid calls aren't in the serialized
         # tool_calls, so a ToolMessage would be orphaned and rejected by strict
         # providers). Model-facing; not surfaced to the user.
         for invalid in response.invalid_tool_calls:
-            self._conversation.append(self._harness_note_message(
+            self._conversation.append(self._reminder_message(
                 self._invalid_tool_call_content(cast(dict, invalid)),
             ))
 
@@ -758,7 +758,7 @@ class _DispatchesTools:
         # pixels ride along as a data URI on the event under `model_image` —
         # a model-facing side channel _run_one_tool strips before the event
         # reaches the UI, then attaches to the conversation after the tool
-        # block as an image-bearing harness note.
+        # block as an image-bearing reminder.
         if Path(file_path).suffix.lower() in file_tools.IMAGE_FILE_SUFFIXES:
             result, image_data_uri = await asyncio.to_thread(
                 file_tools.read_image_file,
