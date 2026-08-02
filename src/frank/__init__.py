@@ -86,6 +86,30 @@ from frank.base.ports import (
     describe_unmet,
 )
 from frank.base.schedules import ScheduleError, is_due, next_firing, validate as validate_schedule
+# The vocabulary `stream()` speaks. Exported because a caller driving a turn has to dispatch on
+# these, and reaching into `frank.runtime.turn_events` to name the thing a public method yields
+# is the library telling you where its front door is and then handing you the side entrance.
+# `TurnEventUnion` is closed, so a `match` over it can prove exhaustiveness with `assert_never`
+# and a variant added later becomes a type error rather than a silently dropped branch.
+from frank.runtime.turn_events import (
+    Checkpoint,
+    CompactionDone,
+    CompactionStarted,
+    Done,
+    EventType,
+    Mcp,
+    Status,
+    Steering,
+    Suspended,
+    TextChunk,
+    Thinking,
+    ThinkingDone,
+    ToolCall,
+    ToolResult,
+    TurnEvent,
+    TurnEventUnion,
+    Usage,
+)
 
 __all__ = [
     "AgentConfiguration",
@@ -94,13 +118,19 @@ __all__ = [
     "Approvals",
     "Catalogue",
     "CatalogueLike",
+    "Checkpoint",
     "Checkpoints",
     "Compaction",
+    "CompactionDone",
+    "CompactionStarted",
     "CompactionState",
     "Credentials",
     "Configuration",
+    "Done",
+    "EventType",
     "Instruction",
     "JobStore",
+    "Mcp",
     "KeepRecentTurns",
     "MaximumToolCalls",
     "MemoryCheckpoints",
@@ -111,9 +141,20 @@ __all__ = [
     "PermissionMode",
     "Session",
     "ScheduleError",
+    "Status",
+    "Steering",
+    "Suspended",
+    "TextChunk",
+    "Thinking",
+    "ThinkingDone",
+    "ToolCall",
     "ToolMiddleware",
+    "ToolResult",
+    "TurnEvent",
+    "TurnEventUnion",
     "TurnHook",
     "Skill",
+    "Usage",
     "is_due",
     "next_firing",
     "validate_schedule",
@@ -441,11 +482,25 @@ class Session:
             {"conversation": [dump_message(message) for message in self.conversation]},
         )
 
-    async def stream(self, message: str) -> AsyncIterator[Any]:
-        """Drive one turn, yielding each :class:`~frank.runtime.turn_events.TurnEvent`.
+    async def stream(self, message: str) -> AsyncIterator[TurnEventUnion]:
+        """Drive one turn, yielding each :class:`TurnEvent`.
 
         The events are the harness's own vocabulary — text chunks, tool calls, tool results,
-        usage, suspensions — the same ones a session streams to a client over its socket.
+        usage, compaction, suspensions — the same ones a session streams to a client over its
+        socket, and every one of them is exported from ``frank``. The union is closed, so a
+        ``match`` over it can prove exhaustiveness with ``assert_never``.
+
+        Folding announces itself here like anything else, which is how a program watches its
+        own memory being rewritten::
+
+            async for event in session.stream("keep going"):
+                match event:
+                    case CompactionStarted(tokens_before=before):
+                        log.info("folding at %d tokens", before)
+                    case CompactionDone(ok=True, messages_before=b, messages_after=a):
+                        log.info("folded %d messages into %d", b, a)
+                    case Usage(cumulative=totals):
+                        meter.record(totals)
 
         The conversation is checkpointed when the turn ends, including when it ends badly: a
         turn that raises has still changed the conversation, and losing that is worse than
@@ -479,6 +534,33 @@ class Session:
             if isinstance(event, Done):
                 answer = event.text or answer
         return answer
+
+    async def compact(self) -> AsyncIterator[TurnEventUnion]:
+        """Fold the conversation now, yielding the same events an automatic fold does.
+
+        The manual counterpart to the automatic trigger, and the same call the desktop's Compact
+        button makes through the daemon. It runs a pass regardless of how full the context is —
+        that is what makes it manual — so a program that meters its own spend can fold on its own
+        terms rather than waiting for the threshold, and one that has just finished a noisy phase
+        can put it behind itself before starting the next.
+
+        A pass with nothing to fold yields nothing and changes nothing, so calling this
+        speculatively is safe. The conversation is checkpointed afterwards, because a fold is a
+        change to it and losing that would leave the store describing a conversation that no
+        longer exists::
+
+            async for event in session.compact():
+                match event:
+                    case CompactionDone(ok=False):
+                        log.warning("nothing was folded; history is untouched")
+        """
+        if not self._restored:
+            await self.restore()
+        try:
+            async for event in self.runtime.compact(reason="manual"):
+                yield event
+        finally:
+            await self.save()
 
     @property
     def conversation(self) -> list:

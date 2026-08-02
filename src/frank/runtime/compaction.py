@@ -267,6 +267,7 @@ class _CompactsContext:
             messages_before=messages_before,
             messages_after=len(self._conversation),
             tokens_before=tokens_before,
+            tokens_after=self._latest_context_tokens,
         )
 
 

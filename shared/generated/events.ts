@@ -43,6 +43,7 @@ export interface CompactionEvent {
   ok?: boolean;
   reason?: string;
   status: "started" | "done";
+  tokens_after?: number;
   tokens_before?: number;
 }
 /**

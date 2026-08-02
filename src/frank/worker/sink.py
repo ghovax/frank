@@ -158,6 +158,7 @@ class _TurnEventSink:
                 messages_before=event.messages_before,
                 messages_after=event.messages_after,
                 tokens_before=event.tokens_before,
+                tokens_after=event.tokens_after,
             )))
 
     async def handle(self, event: TurnEventUnion) -> bool:

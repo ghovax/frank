@@ -196,6 +196,10 @@ class CompactionDone(TurnEvent):
     messages_before: int = 0
     messages_after: int = 0
     tokens_before: int = 0
+    # What the fold actually reclaimed. Reported by every strategy, including a supplied one —
+    # which used to pass this and crash on it, because the field had been written at the call
+    # site and never added here, and no test drove a supplied strategy to its end.
+    tokens_after: int = 0
     observations_added: int = 0
 
 

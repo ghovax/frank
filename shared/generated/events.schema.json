@@ -31,6 +31,10 @@
           ],
           "type": "string"
         },
+        "tokens_after": {
+          "default": 0,
+          "type": "integer"
+        },
         "tokens_before": {
           "default": 0,
           "type": "integer"
