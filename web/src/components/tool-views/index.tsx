@@ -199,6 +199,10 @@ function UpdateTasksCallView({ args }: { args: Record<string, unknown> }) {
 const PROSE_FIELD_KEYS = new Set([
   "explanation",
   "goal",
+  // A goal is a sentence somebody wrote, whether it is the current one or the one just
+  // finished — monospace made the second read as an identifier.
+  "previous_goal",
+  "message",
   "prompt",
   "reason",
   "summary",
@@ -210,9 +214,48 @@ const PROSE_FIELD_KEYS = new Set([
   "response",
 ]);
 
+/**
+ * Values that are an enumeration rather than data.
+ *
+ * A tool's `status` or `code` is one of a handful of words the harness chose, not a name, a path
+ * or an id — so it belongs in the reading font like the label beside it, and it should say what
+ * it means. `goal_satisfied` is a symbol from `dispatch.py`; "Satisfied" is what happened.
+ *
+ * Anything unmapped falls back to monospace, which is the right default: an unrecognised scalar
+ * is far more likely to be data than a word.
+ */
+const ENUMERATED_VALUE_KEYS: Record<string, string> = {
+  goal_active: "goalActive",
+  goal_satisfied: "goalSatisfied",
+  goal_cleared: "goalCleared",
+  goal_update_error: "goalUpdateError",
+  active: "goalActive",
+  satisfied: "goalSatisfied",
+  cleared: "goalCleared",
+};
+
+// The fields whose values the map above applies to. Scoped, because "active" is a word other
+// tools could reasonably emit as data.
+const ENUMERATED_FIELDS = new Set(["status", "code"]);
+
 // Translation keys for raw argument/result key labels. Falls back to the raw key
 // if unmapped. The actual label text is resolved through the ToolViews namespace.
 const FIELD_LABEL_KEYS: Record<string, string> = {
+  // The goal tool, whose fields fell through to this list unmapped and so were labelled with
+  // their own raw keys — `status`, `previous_goal` — beside ones that had been translated.
+  status: "fieldStatus",
+  goal: "goal",
+  previous_goal: "previousGoal",
+  message: "message",
+  error: "error",
+  result: "result",
+  matched: "matched",
+  targets: "targets",
+  tasks: "tasks",
+  violation: "violation",
+  current: "current",
+  ok: "ok",
+  turn_id: "turnId",
   server: "fieldServer",
   tool_name: "fieldToolName",
   arguments: "fieldArguments",
@@ -224,7 +267,12 @@ const FIELD_LABEL_KEYS: Record<string, string> = {
   result_count: "results",
   job_id: "turnId",
   question: "question",
-  code: "fieldStatus",
+  // Not `fieldStatus`, which is what it used to be and is what made two rows of a goal call
+  // both read "Status". They are different facts: `status` is the call's lifecycle — ok, error,
+  // running — and `code` is what the tool decided. `tool_status_from_result` in
+  // `protocol/events.py` depends on `status` meaning the first of those, so neither is
+  // redundant; they were only named as though they were.
+  code: "fieldOutcome",
   // file / search tools (arguments)
   file_path: "filePath",
   offset: "offset",
@@ -632,6 +680,11 @@ function GenericView({ data }: { data: Record<string, unknown> }) {
           ) : PROSE_FIELD_KEYS.has(key) ? (
             // Prose values render as markdown, sized to match the compact field context.
             <MarkdownContent content={asString(value)} fontSize="xs" />
+          ) : ENUMERATED_FIELDS.has(key) && ENUMERATED_VALUE_KEYS[asString(value)] ? (
+            // One of a handful of words the harness chose: read as a word, in the reading font.
+            <Text fontSize="xs">
+              {translation(ENUMERATED_VALUE_KEYS[asString(value)] as Parameters<typeof translation>[0])}
+            </Text>
           ) : (
             // Scalar identifiers/data (names, ids, flags) render in monospace.
             <Mono whiteSpace="pre-wrap">{asString(value)}</Mono>
@@ -680,7 +733,7 @@ function MessageSessionCallView({ args }: { args: Record<string, unknown> }) {
         <Mono>{asString(args.session)}</Mono>
       </InlineField>
       {message && (
-        <Field label={translation("peerMessage")}>
+        <Field label={translation("message")}>
           <MarkdownContent content={message} />
         </Field>
       )}
@@ -749,7 +802,7 @@ function SessionResultView({ data }: { data: Record<string, unknown> }) {
         <InlineField label={translation("peerMode")}>{asString(data.permission_mode)}</InlineField>
       )}
       {asString(data.status) && (
-        <InlineField label={translation("peerStatus")}>
+        <InlineField label={translation("fieldStatus")}>
           <Pill colorPalette={STATUS_PALETTE[taskLifecycleKind(asString(data.status))]}>
             {asString(data.status)}
           </Pill>
