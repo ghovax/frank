@@ -159,6 +159,16 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
   );
   const providerCollection = useMemo(() => createListCollection({ items: providerItems }), [providerItems]);
 
+  const providerIsCustom = selectedProvider === "custom";
+  // The two experimental subscription providers sign in over OAuth instead of taking an
+  // API key, so each swaps the key field for its own sign-in control.
+  const providerIsChatGPT = selectedProvider === "chatgpt";
+  const providerIsCursor = selectedProvider === "cursor";
+  const providerIsSubscription = providerIsChatGPT || providerIsCursor;
+  const credentialId = providers.find((provider) => provider.id === selectedProvider)?.credential_id ?? selectedProvider;
+  const providerKey = providerKeys[credentialId] ?? "";
+  const keyEntered = providerKey.trim().length > 0;
+
   const recentIds = useMemo(() => new Set(recent.map((model) => model.id)), [recent]);
   const modelItems = useMemo<ModelItem[]>(() => {
     const providerModels = models
@@ -175,10 +185,21 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
         if (byRelease !== 0) return byRelease;
         return left.name.localeCompare(right.name);
       });
-    const items = providerModels.map((model) => ({ value: model.id, label: model.name, available: model.available }));
+    // A key typed into this dialog counts, before it is applied. `available` is what the server
+    // knew when it answered — whether a credential was already stored — so a provider whose key
+    // is being entered right now had every one of its models greyed, and stayed greyed however
+    // much was typed, because nothing here re-read the field. That reads as "you may not have
+    // these", which is the opposite of what is true at that moment.
+    //
+    // Only for key-based providers. On a subscription, `available` means the plan includes that
+    // particular model, and no amount of typing changes it.
+    const unlockedByTyping = keyEntered && !providerIsSubscription;
+    const items = providerModels.map((model) => ({
+      value: model.id, label: model.name, available: model.available || unlockedByTyping,
+    }));
     items.push({ value: CUSTOM_MODEL, label: translation("selectUnlisted"), available: true });
     return items;
-  }, [models, recentIds, selectedProvider, translation]);
+  }, [models, recentIds, selectedProvider, translation, keyEntered, providerIsSubscription]);
   // Every model stays selectable (unavailable ones are only greyed as a hint) —
   // the Apply button, not the dropdown, is what gates on having a usable credential.
   const modelCollection = useMemo(() => createListCollection({ items: modelItems }), [modelItems]);
@@ -191,18 +212,12 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
   const customModelItem = modelItems.find((item) => item.value === CUSTOM_MODEL) ?? null;
   // The user-declared custom provider has no catalog models: skip the model
   // dropdown entirely and go straight to a free-form model id plus an endpoint.
-  const selectedProviderIsCustom = selectedProvider === "custom";
-  // The two experimental subscription providers sign in over OAuth instead of taking an
-  // API key, so each swaps the key field for its own sign-in control.
-  const selectedProviderIsChatGPT = selectedProvider === "chatgpt";
-  const selectedProviderIsCursor = selectedProvider === "cursor";
-  const selectedProviderIsSubscription = selectedProviderIsChatGPT || selectedProviderIsCursor;
-  const inCustomMode = customMode || selectedProviderIsCustom;
-  const selectedModelIsInProvider = !!selectedModel && providerForModel(selectedModel, models) === selectedProvider;
+  const inCustomMode = customMode || providerIsCustom;
+  const modelIsInProvider = !!selectedModel && providerForModel(selectedModel, models) === selectedProvider;
   const typedModel = modelSuffix.trim() ? `${selectedProvider}/${modelSuffix.trim()}` : "";
   const activeSelectedModel = inCustomMode
     ? typedModel
-    : selectedModelIsInProvider
+    : modelIsInProvider
       ? selectedModel
       : firstKnownModel;
   const effectiveModelId = value || fallbackModelId;
@@ -210,9 +225,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
   const chipNameIsFallback = effectiveModelId ? modelNameIsFallbackId(effectiveModelId, models) : true;
   const chipProviderLabel = effectiveModelId ? providerName(providerForModel(effectiveModelId, models), providers) : "";
   const chipModel = effectiveModelId ? (models.find((model) => model.id === effectiveModelId) ?? null) : null;
-  const selectedProviderLabel = providerName(selectedProvider, providers);
-  const selectedProviderCredentialId = providers.find((provider) => provider.id === selectedProvider)?.credential_id ?? selectedProvider;
-  const selectedProviderKey = providerKeys[selectedProviderCredentialId] ?? "";
+  const providerLabel = providerName(selectedProvider, providers);
 
   // Whether Apply is allowed: a model is picked AND its provider can actually serve
   // it. Rather than blocking selection, we let any model be chosen and only enable
@@ -221,11 +234,10 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
   // provider, a signed-in plan that includes the specific model.
   const activeModelOption = models.find((model) => model.id === activeSelectedModel);
   const providerUnlocked = models.some((model) => model.provider === selectedProvider && model.available);
-  const keyEntered = selectedProviderKey.trim().length > 0;
   const canApply = (() => {
     if (!activeSelectedModel) return false;
-    if (selectedProviderIsCustom) return true;
-    if (selectedProviderIsSubscription) return !!activeModelOption?.available;
+    if (providerIsCustom) return true;
+    if (providerIsSubscription) return !!activeModelOption?.available;
     if (activeModelOption) return activeModelOption.available || keyEntered;
     return providerUnlocked || keyEntered; // a typed model id on a keyed provider
   })();
@@ -266,10 +278,10 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
           composio_api_key: settings.composio_api_key,
           // A subscription provider has no API key — its credential is the OAuth
           // sign-in, saved out-of-band — so never write a provider key for one.
-          provider_keys: selectedProviderIsSubscription
+          provider_keys: providerIsSubscription
             ? {}
-            : { [selectedProviderCredentialId]: selectedProviderKey.trim() },
-          provider_base_urls: selectedProviderIsCustom ? { custom: customBaseUrl.trim() } : {},
+            : { [credentialId]: providerKey.trim() },
+          provider_base_urls: providerIsCustom ? { custom: customBaseUrl.trim() } : {},
           worktree_strategy: settings.worktree_strategy,
         });
       }
@@ -380,7 +392,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                     </Select.Root>
                   </Box>
 
-                  {selectedProviderIsCustom ? null : (
+                  {providerIsCustom ? null : (
                   <Box>
                     <Text textStyle="fieldLabel" mb={1}>
                       {translation("model")}
@@ -484,22 +496,22 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                   ) : null}
 
                   <Box>
-                    {selectedProviderIsChatGPT ? (
+                    {providerIsChatGPT ? (
                       <ChatGPTAuthControl />
-                    ) : selectedProviderIsCursor ? (
+                    ) : providerIsCursor ? (
                       <CursorAuthControl />
                     ) : (
                       <SecretField
-                        label={translation("providerApiKey", { provider: selectedProviderLabel })}
+                        label={translation("providerApiKey", { provider: providerLabel })}
                         placeholder={providerPlaceholder(selectedProvider)}
-                        value={selectedProviderKey}
+                        value={providerKey}
                         disabled={saving}
-                        onChange={(next) => setProviderKeys((current) => ({ ...current, [selectedProviderCredentialId]: next }))}
+                        onChange={(next) => setProviderKeys((current) => ({ ...current, [credentialId]: next }))}
                       />
                     )}
                   </Box>
 
-                  {selectedProviderIsCustom ? (
+                  {providerIsCustom ? (
                     <Box>
                       <Text textStyle="fieldLabel" mb={1}>
                         {translation("endpoint")}

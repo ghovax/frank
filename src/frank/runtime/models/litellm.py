@@ -79,6 +79,9 @@ class ChatLiteLLMModel(BaseChatModel):
     #: The conversation this model serves, sent as the provider's prompt cache key. See
     #: :meth:`_completion_kwargs` for why a cache is not reachable without it.
     session_id: str = ""
+    #: The window models.dev advertises, for the models LiteLLM's own map has never heard of.
+    #: See :meth:`context_window`.
+    context_length: int = 0
     temperature: float = 0.0
     reasoning_effort: Optional[str] = None
     maximum_tokens: Optional[int] = None
@@ -101,14 +104,28 @@ class ChatLiteLLMModel(BaseChatModel):
         return "litellm"
 
     def context_window(self) -> int:
-        """The model's maximum input context in tokens, from LiteLLM's model-info
-        map. Used to show how full the context is. Returns 0 when the model is not
-        in the map (a custom or unknown endpoint), which callers treat as unknown."""
+        """The model's maximum input context in tokens. Zero means genuinely unknown.
+
+        Two sources, because neither covers everything. LiteLLM's map knows the models it routes
+        natively and nothing about a gateway's — a model reached through an OpenAI-compatible
+        endpoint is just a name to it, so it answered zero, and zero is what blanked the
+        composer's context ring on every gateway provider. The models.dev catalogue knows those,
+        having been fetched under whichever provider publishes them.
+
+        The smaller wins when both answer. They disagree — 200K against 1M for the same Claude,
+        one quoting the standard window and the other a beta — and over-reporting is the harmful
+        direction: every window-scaled budget divides by this number, so believing the larger
+        figure sizes each cap for room that is not there and reports a conversation as far
+        emptier than it is."""
+        catalogued = max(0, int(self.context_length or 0))
         try:
             info = litellm.get_model_info(self.model)
-        except Exception:  # noqa: BLE001 — unknown model ids raise; treat as unknown
-            return 0
-        return int(info.get("max_input_tokens") or info.get("max_tokens") or 0)
+            live = int(info.get("max_input_tokens") or info.get("max_tokens") or 0)
+        except Exception:  # noqa: BLE001 — an unknown id is a custom endpoint, not a failure
+            live = 0
+        if live and catalogued:
+            return min(live, catalogued)
+        return live or catalogued
 
     @property
     def _identifying_params(self) -> dict[str, Any]:

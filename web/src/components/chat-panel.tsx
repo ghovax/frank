@@ -736,7 +736,7 @@ export function ChatPanel({
     return () => setPermissionNotificationHandler(null);
   }, [handlePermission]);
 
-  const handleSidePanelResizeStart = useCallback((event: PointerEvent<HTMLDivElement>) => {
+  const startSidePanelResize = useCallback((event: PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = sidePanelWidth;
@@ -1201,7 +1201,7 @@ export function ChatPanel({
             w={2}
             cursor="col-resize"
             zIndex={1}
-            onPointerDown={handleSidePanelResizeStart}
+            onPointerDown={startSidePanelResize}
           />
             <PanelTiles
               gap={8}

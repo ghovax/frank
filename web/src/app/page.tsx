@@ -422,7 +422,7 @@ function Workspace() {
   const activeSession = sessions.find((entry) => entry.sessionId === activeSessionId);
   // A session used to have to wait for its backend to be activated before it could be
   // opened. There is one backend now, so a session is openable as soon as it is known.
-  const activeSessionConnectionReady = !activeSessionId || sessionsLoaded || !!activeSession;
+  const activeSessionKnown = !activeSessionId || sessionsLoaded || !!activeSession;
   const activeSessionRunning = activeSession ? isSessionBusy(activeSession) : false;
 
   // The composer draft belongs to the session, not to the registry listing, so it is read
@@ -833,7 +833,7 @@ function Workspace() {
           agentCard={selectedCard}
           onAgentChange={handleAgentChange}
           initialSettingsSection={settingsSectionParam ?? undefined}
-          initialSessionId={activeSessionConnectionReady ? activeSessionId : null}
+          initialSessionId={activeSessionKnown ? activeSessionId : null}
           initialPermissionMode={activeSession?.permissionMode ?? selectedPermissionMode}
           sessionTitle={activeSession?.title}
           initialInputDraft={activeSessionDraft}
@@ -850,7 +850,7 @@ function Workspace() {
           onSandboxEnforceChange={handleSandboxEnforceChange}
           worktreeStrategy={worktreeStrategy}
           onWorktreeStrategyChange={handleWorktreeStrategyChange}
-          isConnected={isConnected && activeSessionConnectionReady}
+          isConnected={isConnected && activeSessionKnown}
           connectionLost={!isConnected}
           onReconnect={reconnect}
           onStreamingChange={handleStreamingChange}

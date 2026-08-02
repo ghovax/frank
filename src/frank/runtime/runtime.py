@@ -170,11 +170,17 @@ def build_chat_model(
         global_configuration.configured_provider_keys(),
         global_configuration.configured_provider_bases(),
     )
+    # The catalogue's window travels with the model, the same way it already does on the Codex
+    # path. LiteLLM knows nothing about a gateway's models, so without this the window was zero
+    # for every one of them — and a zero window is not a small window, it is no fill ring, no
+    # scaled budget, and no over-context guard.
+    catalogued = find_model(model_identifier)
     return ChatLiteLLMModel.model_validate({
         "model": resolved["model"],
         "api_key": SecretStr(resolved["api_key"]) if resolved["api_key"] else None,
         "api_base": resolved["api_base"] or None,
         "session_id": session_id,
+        "context_length": catalogued.context_length if catalogued else 0,
         "temperature": 0,
         "reasoning_effort": agent_configuration.reasoning_effort,
     })
@@ -900,11 +906,22 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         # What the adapter worked out about this request's prefix, read before the totals below
         # because one of them is now part of it.
         cache_trace = response.additional_kwargs.get("cache_trace") or {}
+        # What could have been served, which is never less than what *was*.
+        #
+        # The estimate comes from comparing this request against the last one this process sent,
+        # so it is zero whenever there is no last one — the first call of a session, and every
+        # call after the session slept, because waking forks a fresh worker that has never sent
+        # anything. The provider's cache does not forget across that boundary, so it happily
+        # returned tokens against an estimate of zero, and the running totals came out at 106%.
+        # The provider's own figure is the authority on what it had: an estimate below it is an
+        # estimate that is wrong, and the two counts differ by a few percent anyway for having
+        # been made with different tokenizers.
+        reachable = max(int(cache_trace.get("reachable_tokens", 0) or 0), cache_read)
         self._token_usage["input_tokens"] += input_tokens
         self._token_usage["output_tokens"] += output_tokens
         self._token_usage["total_tokens"] += total_tokens
         self._token_usage["cache_read_tokens"] += cache_read
-        self._token_usage["reachable_tokens"] += int(cache_trace.get("reachable_tokens", 0) or 0)
+        self._token_usage["reachable_tokens"] += reachable
         self._token_usage["reasoning_tokens"] += reasoning
         self._token_usage["model_calls"] += 1
         # input_tokens for this (latest) call is the whole prompt — system, history,
@@ -923,7 +940,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             context_window=context_window,
             cumulative=dict(self._token_usage),
             prefix_intact=bool(cache_trace.get("prefix_intact", False)),
-            reachable_tokens=int(cache_trace.get("reachable_tokens", 0) or 0),
+            reachable_tokens=reachable,
             segments=int(cache_trace.get("segments", 0) or 0),
             shared_segments=int(cache_trace.get("shared_segments", 0) or 0),
             divergence=cache_trace.get("divergence"),
