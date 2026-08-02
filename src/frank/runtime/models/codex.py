@@ -86,6 +86,9 @@ class ChatCodexModel(BaseChatModel):
     reasoning_effort: Optional[str] = None
     temperature: float = 0.0
     context_length: int = 0
+    #: The conversation this model serves, sent as ``prompt_cache_key``. See
+    #: :meth:`_build_payload`.
+    session_id: str = ""
     # A generous bound so a dead connection cannot hang a turn forever, matching
     # ChatLiteLLMModel; the streaming loop only checks aborts between chunks.
     timeout: Optional[float] = 300.0
@@ -160,6 +163,13 @@ class ChatCodexModel(BaseChatModel):
                 })
                 continue
             if isinstance(message, AIMessage):
+                # The model's own prior thinking, handed straight back. It has to come before the
+                # calls it produced: the endpoint reads this list as the turn in the order it
+                # happened, and reasoning that arrives after the call it explains describes
+                # nothing. The blobs are opaque and encrypted — they are not read here, only
+                # carried, which is the whole of what `store: false` asks of a client.
+                for item in message.additional_kwargs.get("reasoning_items") or []:
+                    items.append(item)
                 text = self._text_of(message)
                 if text:
                     items.append({
@@ -215,8 +225,23 @@ class ChatCodexModel(BaseChatModel):
         if tools:
             payload["tools"] = [self._to_responses_tool(tool) for tool in tools]
             payload["tool_choice"] = kwargs.get("tool_choice") or "auto"
+        if self.session_id:
+            # Which cache to look in. The endpoint routes a cache lookup by hashing the leading
+            # couple of hundred tokens of the prefix *together with* this key, and OpenAI's own
+            # guidance for GPT-5.6 and later is that it must be set for the reliable matching to
+            # apply at all. Sending nothing is why an append-only conversation still missed: 41
+            # of 66 calls in one session reported zero cached tokens against a prefix that had
+            # not changed. One session is one conversation is one prefix.
+            payload["prompt_cache_key"] = self.session_id
         if self.reasoning_effort:
             payload["reasoning"] = {"effort": self.reasoning_effort, "summary": "auto"}
+            # Ask for the reasoning back in a form that can be handed over again. `store: false`
+            # means the endpoint keeps nothing between calls, so a reasoning model that is not
+            # given its own prior thinking starts each tool hop from the text alone and derives
+            # it again — paying for the same reasoning repeatedly, and losing the thread that
+            # made the last tool call make sense. The content is opaque to us; it round-trips
+            # through `_to_responses_input` untouched.
+            payload["include"] = ["reasoning.encrypted_content"]
         return payload
 
     @staticmethod
@@ -266,6 +291,21 @@ class ChatCodexModel(BaseChatModel):
             return cls._chunk(content_block=cls._text_content_block(data))
         if event_type in ("response.reasoning_summary_text.delta", "response.reasoning_text.delta"):
             return cls._chunk(content_block=cls._reasoning_content_block(data))
+        if event_type == "response.output_item.done":
+            # A finished reasoning item, kept so the next call can hand it back (see
+            # `_to_responses_input`). Only the encrypted form is worth keeping: the summary is
+            # for the reader, and it is the `encrypted_content` the endpoint will accept as the
+            # model's own thinking. Riding in `additional_kwargs` means it merges across chunks,
+            # survives persistence, and reaches a runtime rebuilt from a checkpoint.
+            item = data.get("item") or {}
+            if item.get("type") == "reasoning" and item.get("encrypted_content"):
+                return cls._chunk(reasoning_item={
+                    "type": "reasoning",
+                    "id": item.get("id"),
+                    "summary": item.get("summary") or [],
+                    "encrypted_content": item["encrypted_content"],
+                })
+            return None
         if event_type == "response.output_item.added":
             item = data.get("item") or {}
             if item.get("type") == "function_call":
@@ -354,11 +394,17 @@ class ChatCodexModel(BaseChatModel):
     def _chunk(
         content_block: ContentBlock | None = None,
         tool_call_chunk: Optional[ToolCallChunk] = None,
+        reasoning_item: Optional[dict[str, Any]] = None,
     ) -> ChatGenerationChunk:
         content_blocks = [content_block] if content_block is not None else []
         message = AIMessageChunk(
             content=content_blocks_to_message_content(content_blocks),
             tool_call_chunks=[tool_call_chunk] if tool_call_chunk else [],
+            # Merging two chunks concatenates the lists under a key, so one item per chunk
+            # accumulates into the turn's reasoning in the order it arrived. Deliberately
+            # carrying no `index`: that is the key LangChain merges list entries *by*, and these
+            # are a sequence to append to, not slots to overwrite.
+            additional_kwargs={"reasoning_items": [reasoning_item]} if reasoning_item else {},
         )
         return ChatGenerationChunk(message=message)
 

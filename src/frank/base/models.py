@@ -80,7 +80,13 @@ _MODELS_DEV_PROVIDER_MAP: dict[str, str] = {
     "oci": "oci",
     "databricks": "databricks",
     "zai": "zai",
+    "azure": "azure",
+    "alibaba": "alibaba",
+    "vercel": "vercel",
     # Mismatched names
+    "amazon-bedrock": "amazon_bedrock",
+    "google-vertex": "google_vertex",
+    "google-vertex-anthropic": "google_vertex_anthropic",
     "fireworks-ai": "fireworks_ai",
     "novita-ai": "novita",
     "moonshotai": "moonshot",
@@ -290,6 +296,26 @@ def available_models(configured_keys: dict[str, str]) -> list[ModelDefinition]:
     return [model for model in list_models() if model.provider in unlocked_providers]
 
 
+def _gateway_api_base(provider_base_url: str, litellm_prefix: str) -> str:
+    """The base URL to hand LiteLLM for a gateway that speaks several wire protocols.
+
+    A gateway like OpenCode Zen serves Anthropic, Gemini and OpenAI traffic from one host, so the
+    provider's base URL names the host and the model's protocol decides the path. LiteLLM builds
+    that path itself for every protocol *except* one, and the exception is the reason this exists:
+    for `anthropic` it appends `/v1/messages` unless the base already ends that way, which would
+    turn `…/zen/v1` into `…/zen/v1/v1/messages`. Ending the base at `/v1/messages` ourselves is
+    what makes that append a no-op.
+
+    Gemini deliberately gets nothing. LiteLLM's `_check_custom_proxy` already renders a custom
+    Gemini base as `{base}/models/{model}:{generateContent|streamGenerateContent}` — including
+    picking the streaming verb per call — so composing that path here would double it, and would
+    also need a second base URL just to carry the streaming variant.
+    """
+    if litellm_prefix == "anthropic":
+        return f"{provider_base_url.rstrip('/')}/messages"
+    return provider_base_url
+
+
 def resolve_litellm(
     model_identifier: str,
     configured_keys: dict[str, str],
@@ -304,8 +330,14 @@ def resolve_litellm(
     if definition is None:
         raise ValueError(f"Unknown provider in model id: {model_identifier!r}")
     catalog_model = find_model(model_identifier)
-    litellm_prefix = catalog_model.litellm_prefix if catalog_model else definition.litellm_prefix
-    api_base = (
+    # The catalogue's prefix is an *override*, set only where one gateway serves several wire
+    # protocols; every other model leaves it empty, meaning "the provider's own". Reading it as
+    # the answer whenever a catalogue entry existed dropped the prefix entirely — `anthropic/
+    # claude-sonnet-4-5` resolved to `/claude-sonnet-4-5`, which routes nowhere. It only bites
+    # once the catalogue is warm, so a cold start looked fine and every provider in models.dev
+    # broke the moment it was fetched.
+    litellm_prefix = (catalog_model.litellm_prefix if catalog_model else "") or definition.litellm_prefix
+    provider_base_url = (
         resolve_base_url(provider_identifier, configured_bases)
         if definition.uses_custom_base_url or definition.openai_compatible
         else ""
@@ -313,5 +345,8 @@ def resolve_litellm(
     return {
         "model": f"{litellm_prefix}/{suffix}",
         "api_key": resolve_api_key(provider_identifier, configured_keys),
-        "api_base": api_base,
+        "api_base": (
+            _gateway_api_base(provider_base_url, litellm_prefix)
+            if definition.uses_custom_base_url else provider_base_url
+        ),
     }

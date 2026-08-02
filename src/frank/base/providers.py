@@ -66,6 +66,55 @@ PROVIDERS: dict[str, ProviderDefinition] = {
             litellm_prefix="anthropic",
             env_vars=("ANTHROPIC_API_KEY",),
         ),
+        # The three big clouds' own resale of the frontier models. Each carries the same
+        # families as a first-party provider but bills through an existing cloud account, which
+        # for most organisations is the only way they are reachable at all.
+        ProviderDefinition(
+            identifier="amazon_bedrock",
+            name="Amazon Bedrock",
+            litellm_prefix="bedrock",
+            # Bedrock's own API keys first, then the classic access-key pair. Only presence is
+            # read here — LiteLLM picks the whole credential set out of the environment itself,
+            # including the region and any assumed role, which is more than one string can carry.
+            env_vars=("AWS_BEARER_TOKEN_BEDROCK", "AWS_ACCESS_KEY_ID"),
+        ),
+        ProviderDefinition(
+            identifier="google_vertex",
+            name="Google Vertex AI",
+            litellm_prefix="vertex_ai",
+            env_vars=("GOOGLE_APPLICATION_CREDENTIALS", "VERTEXAI_PROJECT"),
+        ),
+        ProviderDefinition(
+            identifier="google_vertex_anthropic",
+            name="Claude on Vertex AI",
+            # The same LiteLLM route: it reads Claude on Vertex from the model id rather than
+            # from a separate provider. Kept as its own entry because models.dev lists it as one,
+            # so its catalogue arrives separately and the picker can say which cloud is billing.
+            litellm_prefix="vertex_ai",
+            env_vars=("GOOGLE_APPLICATION_CREDENTIALS", "VERTEXAI_PROJECT"),
+            credential_identifier="google_vertex",
+        ),
+        ProviderDefinition(
+            identifier="azure",
+            name="Azure OpenAI",
+            litellm_prefix="azure",
+            env_vars=("AZURE_API_KEY",),
+            # Every Azure account has its own resource host, so there is no default worth
+            # registering — the base URL is the deployment.
+            uses_custom_base_url=True,
+        ),
+        ProviderDefinition(
+            identifier="alibaba",
+            name="Alibaba Model Studio",
+            litellm_prefix="dashscope",
+            env_vars=("DASHSCOPE_API_KEY",),
+        ),
+        ProviderDefinition(
+            identifier="vercel",
+            name="Vercel AI Gateway",
+            litellm_prefix="vercel_ai_gateway",
+            env_vars=("VERCEL_AI_GATEWAY_API_KEY", "AI_GATEWAY_API_KEY"),
+        ),
         ProviderDefinition(
             identifier="openai",
             name="OpenAI",

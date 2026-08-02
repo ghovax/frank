@@ -204,6 +204,37 @@ def _cap_model_result_payload(result: str, *, code: str = "tool_result_truncated
     return rendered_with(kept)
 
 
+def message_tokens(message: Any) -> int:
+    """How much of the context window one conversation message occupies.
+
+    Counts what is actually *sent*, which is more than the message's prose. A turn that calls
+    tools carries most of its weight in the tool calls' arguments and the results that come back,
+    and a sizing routine that read only text blocks would look at a conversation of a hundred
+    shell results and see almost nothing. That undercount is not academic: it is measured against
+    the model's window to decide whether to fold history, and a fold that never triggers is how a
+    context reaches the wall.
+
+    An approximation either way — the encoding is one general tokenizer standing in for every
+    model's own, and the provider's own framing is not modelled — so it is right for deciding
+    *when* a conversation has grown too large, and not for deciding whether one more token fits.
+    """
+    from frank.base.message_content import message_text
+
+    total = count_tokens(message_text(message))
+    for tool_call in getattr(message, "tool_calls", None) or []:
+        arguments = tool_call.get("args")
+        total += count_tokens(
+            arguments if isinstance(arguments, str) else compact(arguments)
+        )
+        total += count_tokens(str(tool_call.get("name") or ""))
+    return total
+
+
+def conversation_tokens(messages: Any) -> int:
+    """:func:`message_tokens` over a whole message list."""
+    return sum(message_tokens(message) for message in messages)
+
+
 def _utc_timestamp(datetime_value: datetime) -> str:
     return datetime_value.isoformat()
 

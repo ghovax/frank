@@ -803,11 +803,12 @@ export interface ProviderCredential {
 }
 
 export interface CompactionSettings {
-  // Automatic Observational-Memory compaction on/off (manual always works).
-  auto: boolean;
-  observer_context_fraction: number;
-  reflector_observation_fraction: number;
-  keep_recent_turns: number;
+  // Reclaiming context on its own as it fills (manual compaction always works).
+  automatic: boolean;
+  reclaim_at_fraction: number;
+  condense_log_at_fraction: number;
+  output_reserve_fraction: number;
+  recent_working_set_fraction: number;
 }
 
 export interface Settings {
@@ -850,13 +851,14 @@ const DEFAULT_SANDBOX: SandboxSettings = {
 };
 
 const DEFAULT_COMPACTION: CompactionSettings = {
-  auto: false,
-  observer_context_fraction: 0.6,
-  reflector_observation_fraction: 0.3,
-  keep_recent_turns: 6,
+  automatic: false,
+  reclaim_at_fraction: 0.85,
+  condense_log_at_fraction: 0.3,
+  output_reserve_fraction: 0.1,
+  recent_working_set_fraction: 0.25,
 };
 
-// Persist the Observational-Memory compaction settings (auto on/off + thresholds).
+// Persist the context-reclaiming settings (automatic on/off, pruning, and the thresholds).
 export async function updateCompactionSettings(changes: Partial<CompactionSettings>): Promise<void> {
   await apiFetch(`/settings/compaction`, {
     method: "POST",

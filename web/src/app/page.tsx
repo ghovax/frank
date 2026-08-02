@@ -161,7 +161,7 @@ function Workspace() {
   const [modelProviders, setModelProviders] = useState<ProviderOption[]>([]);
   const [recentModels, setRecentModels] = useState<{ id: string; name: string; provider: string }[]>([]);
   const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionMode>("default");
-  const [compactionKeepRecentTurns, setCompactionKeepRecentTurns] = useState(8);
+  const [compactionReclaimAtFraction, setCompactionReclaimAtFraction] = useState(0.85);
   const [historyOpen, setHistoryOpen] = useState(true);
   // Default sidebar width: enough for typical session titles without eating the
   // transcript. Paired with the panel-region default in chat-panel.tsx (480) —
@@ -316,7 +316,7 @@ function Workspace() {
           setSandboxEnforceState(settings.sandbox.enforce);
           setSandboxBackend(settings.sandbox_backend);
           setWorktreeStrategy(settings.worktree_strategy);
-          setCompactionKeepRecentTurns(settings.compaction?.keep_recent_turns ?? 6);
+          setCompactionReclaimAtFraction(settings.compaction?.reclaim_at_fraction ?? 0.85);
         })
         .catch((caught) => swallowed({ component: "workspace-page", operation: "list the agents" }, caught));
     };
@@ -835,7 +835,7 @@ function Workspace() {
           recentModels={recentModels}
           agentModel={agentModel}
           onAgentModelChange={handleAgentModelChange}
-          compactionKeepRecentTurns={compactionKeepRecentTurns}
+          compactionReclaimAtFraction={compactionReclaimAtFraction}
         />
       </Box>
     </Flex>

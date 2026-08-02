@@ -592,6 +592,12 @@
         "background": {
           "tsType": "Record<string, unknown>"
         },
+        "locations": {
+          "items": {
+            "tsType": "Record<string, unknown>"
+          },
+          "type": "array"
+        },
         "now": {
           "default": "",
           "type": "string"

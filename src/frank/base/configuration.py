@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 import json
+import logging
 import os
 from frank.base import environment_variables
 import re
@@ -12,10 +13,13 @@ from pathlib import Path
 from typing import Any, ClassVar, Literal, Optional
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from frank.base.paths import configuration_file_path, database_file_path  # noqa: F401 — re-exported
 from frank.base.permission_mode import PermissionMode
+
+
+logger = logging.getLogger(__name__)
 
 
 # Where state lives is the placement layer's business, not this module's: it follows the
@@ -344,27 +348,87 @@ class WorkspaceConfiguration(Section):
     )
 
 
+#: Compaction settings that were renamed, and the name that now carries their value. A section
+#: refuses keys it does not define, on purpose — so without this a rename does not merely ignore
+#: an old setting, it stops the whole configuration file from loading, and the daemon with it.
+_COMPACTION_RENAMED = {
+    "auto": "automatic",
+    "observer_context_fraction": "reclaim_at_fraction",
+    "reflector_observation_fraction": "condense_log_at_fraction",
+}
+
+#: Compaction settings that are gone with nothing standing in for them. `keep_recent_turns`
+#: counted user turns, which is the measure this section stopped using — an unattended run is one
+#: turn and hundreds of tool results — and the pruning pass beside it was removed once it was
+#: shown to be unreachable. Dropped rather than translated, and said out loud rather than
+#: silently, because a setting that can no longer take effect should be reported, not obeyed.
+_COMPACTION_REMOVED = (
+    "keep_recent_turns", "preserve_recent_tokens", "prune", "prune_tool_results",
+    "pruned_result_tokens",
+)
+
+
 class CompactionConfiguration(Section):
     """Conversation memory management, modelled on Mastra's Observational Memory: as raw
     history grows, an Observer folds older turns into a dense, timestamped observation
     log kept at the front of the context; a Reflector condenses that log when it grows
     large. Fractions are of the model's context window.
 
-    ``auto`` is on by default: a self-managing turn runs unbounded, so its context must be
-    kept within the window automatically rather than relying on a tool-call ceiling to stop
-    it first. Manual (button-triggered) compaction always works regardless of ``auto``."""
+    ``automatic`` is on by default: a self-managing turn runs unbounded, so its context must be
+    kept within the window on its own rather than relying on a tool-call ceiling to stop it
+    first. Manual (button-triggered) compaction always works regardless of it.
 
-    auto: bool = Field(
-        True, description="Fold history automatically as it grows. Manual compaction works either way."
+    Every fraction here is of the window a conversation may actually occupy — the model's window
+    less the room reserved for the answer — rather than of the raw number, so "85% full" is 85%
+    of what is really available to fill."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _carry_old_names(cls, values):
+        if not isinstance(values, dict):
+            return values
+        carried = dict(values)
+        for old, new in _COMPACTION_RENAMED.items():
+            if old in carried:
+                # An explicit new name wins: somebody who wrote both meant the current one.
+                carried.setdefault(new, carried[old])
+                carried.pop(old)
+        for gone in _COMPACTION_REMOVED:
+            if carried.pop(gone, None) is not None:
+                logger.warning(
+                    "ignoring compaction.%s: the setting no longer exists. Remove it from your "
+                    "configuration file.", gone,
+                )
+        return carried
+
+    automatic: bool = Field(
+        True, description="Reclaim context on its own as it fills. Manual compaction works either way."
     )
-    observer_context_fraction: float = Field(
-        0.6, description="Run the Observer once live context passes this share of the window."
+    reclaim_at_fraction: float = Field(
+        0.85,
+        description=(
+            "Fold once the conversation passes this share of the usable window. Late on purpose: "
+            "a fold is the one thing that rewrites the prefix a provider had cached, so the "
+            "fewer of them the better."
+        ),
     )
-    reflector_observation_fraction: float = Field(
-        0.3, description="Run the Reflector once the observation log itself passes this share."
+    condense_log_at_fraction: float = Field(
+        0.3, description="Condense the observation log once the log itself passes this share."
     )
-    keep_recent_turns: int = Field(
-        6, description="Recent turns always kept verbatim, never folded into observations."
+    output_reserve_fraction: float = Field(
+        0.1,
+        description=(
+            "Share of the window held back for the answer, so folding still has room to run. "
+            "The rest is the usable window every other fraction here is measured against."
+        ),
+    )
+    recent_working_set_fraction: float = Field(
+        0.25,
+        description=(
+            "Share of the usable window kept verbatim rather than folded into the log. Sized "
+            "in tokens rather than turns because an unattended run is one turn and hundreds "
+            "of tool results."
+        ),
     )
 
 

@@ -127,6 +127,7 @@ def build_chat_model(
     global_configuration: Configuration,
     agent_configuration: AgentConfiguration,
     working_directory: str,
+    session_id: str = "",
 ) -> BaseChatModel:
     """Build the chat model for a provider-qualified (``provider/model``) id.
 
@@ -140,7 +141,12 @@ def build_chat_model(
     ``working_directory`` is only consulted by the cursor provider, whose request context
     wants to know where the client believes it is running. It is required even so: a default
     would exist only to spare a caller from passing what it already has, and the caller that
-    took the default would be the one silently telling Cursor it is running nowhere."""
+    took the default would be the one silently telling Cursor it is running nowhere.
+
+    ``session_id`` becomes the provider's prompt cache key, so that a conversation's growing
+    prefix is looked for in one place rather than wherever a request happens to be routed. It
+    does default, because a library caller building a bare model has no session and the only
+    cost of omitting it is the cache miss it already had."""
     provider_identifier, model_suffix = model_identifier.split("/", 1)
     if provider_identifier == "chatgpt":
         catalog_entry = find_model(model_identifier)
@@ -148,6 +154,7 @@ def build_chat_model(
             model=model_suffix,
             reasoning_effort=agent_configuration.reasoning_effort,
             context_length=catalog_entry.context_length if catalog_entry else 0,
+            session_id=session_id,
         )
     if provider_identifier == "cursor":
         catalog_entry = find_model(model_identifier)
@@ -167,6 +174,7 @@ def build_chat_model(
         "model": resolved["model"],
         "api_key": SecretStr(resolved["api_key"]) if resolved["api_key"] else None,
         "api_base": resolved["api_base"] or None,
+        "session_id": session_id,
         "temperature": 0,
         "reasoning_effort": agent_configuration.reasoning_effort,
     })
@@ -559,7 +567,8 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         # tracer and rate limiter in that ecosystem — so accepting one is the whole of the model
         # seam, with no interface of ours in the middle.
         self._llm = model if model is not None else build_chat_model(
-            effective_model, global_configuration, agent_configuration, self._working_directory
+            effective_model, global_configuration, agent_configuration, self._working_directory,
+            session_id,
         )
 
         self._file_lease_manager = file_lease_manager
@@ -710,9 +719,12 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             permission_mode_default=self._agent_configuration.permission_policy,
             executors=carried,
         )
-        # The environments and their policies are stated to the model in the system prompt, so
-        # the prompt has to be rebuilt or the next turn would name a set that no longer exists.
-        self._cached_system_prompt = None
+        # The system prompt is deliberately left alone. The environments and their policies are
+        # stated to the model in the *turn context*, which is rebuilt every turn anyway, so the
+        # next turn already names the current set. Dropping the cached prompt here used to be
+        # required and is now merely expensive: it is the front of every request, so rebuilding
+        # it discards the provider's prompt cache for the whole conversation — a full-price
+        # re-read of everything, to restate something that was not in it.
 
     def _build_locations(
         self,
@@ -1000,14 +1012,19 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         point — a person changing this is reacting to what the session is doing right now.
 
         Clamped against the agent card's ceiling exactly as the constructor clamps it, so this
-        can only ever be as loose as the profile itself allows. The cached system prompt is
-        dropped because it states the policy (and the locations' effective modes) to the model,
-        and a prompt describing the old one would be the harness lying about its own rules."""
+        can only ever be as loose as the profile itself allows.
+
+        The model is told about the change through the turn context, which is rebuilt on every
+        turn, so the next one already describes the policy now in force. It used to be told
+        through the system prompt, which meant this had to discard the cached prompt — and the
+        prompt is the front of every request, so a person toggling the mode threw away the
+        provider's cache for the entire conversation and paid to re-read all of it. Enforcement
+        was never the thing that lagged: `_call_policy` reads this field at call time, so the
+        very next tool call is judged by the new mode either way."""
         resolved = PermissionMode.more_restrictive(mode, self._agent_configuration.permission_policy)
         if resolved is self._permission_mode:
             return resolved
         self._permission_mode = resolved
-        self._cached_system_prompt = None
         return resolved
 
     def set_a2a_turn_id(self, turn_id: str) -> None:

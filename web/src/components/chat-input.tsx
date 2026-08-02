@@ -79,13 +79,15 @@ interface ChatInputProps {
   // True while a compaction pass is running, so the Compact control reflects the
   // in-progress state (spinner + disabled) rather than inviting another click.
   isCompacting?: boolean;
-  // How many of the most recent user turns are kept verbatim during compaction
-  // (the server's compaction.keep_recent_turns). The manual compact button is
-  // available once there are more user messages than this threshold.
-  compactionKeepRecentTurns: number;
-  // How many user messages exist in the current session. Used together with
-  // compactionKeepRecentTurns to decide whether compaction would be meaningful.
-  compactionUserCount: number;
+  // The share of the context window at which the server starts reclaiming on its own
+  // (compaction.reclaim_at_fraction). The manual button appears at half of it, so there is
+  // always a stretch where compacting is a choice rather than something already done for you.
+  //
+  // It used to appear once the session had more *user messages* than the server's keep-recent
+  // count — which measured the wrong thing entirely. An unattended run is one instruction and
+  // hundreds of tool results, so the count stayed at one while the context filled, and the
+  // button stayed hidden through exactly the session that needed it.
+  compactionReclaimAtFraction: number;
 }
 
 // A filling circle for how full the model's context window is. The arc grows with
@@ -274,8 +276,7 @@ export function ChatInput({
   tokenUsage,
   onCompact,
   isCompacting = false,
-  compactionKeepRecentTurns,
-  compactionUserCount,
+  compactionReclaimAtFraction,
 }: ChatInputProps) {
   const translation = useTranslations("ChatInput");
   const chatgptUsage = useChatGPTUsage(agentModel, isStreaming);
@@ -728,10 +729,7 @@ export function ChatInput({
         confirmIcon={<LuFoldVertical size={14} />}
         onConfirm={() => onCompact?.()}
       >
-        {translation.rich("compactBody", {
-          count: compactionKeepRecentTurns,
-          b: (chunks) => <Strong>{chunks}</Strong>,
-        })}
+        {translation.rich("compactBody", { b: (chunks) => <Strong>{chunks}</Strong> })}
       </ConfirmDialog>
 
       {/* Message input */}
@@ -968,7 +966,12 @@ export function ChatInput({
           />
         </Flex>
         <Flex align="center" gap={2} flexShrink={0} justify="flex-end">
-          {onCompact && !!sessionId && !!tokenUsage && tokenUsage.contextTokens > 0 && (isCompacting || compactionUserCount > compactionKeepRecentTurns) && (
+          {/* Offered from half the threshold the server reclaims at, so there is a window in
+              which compacting is your call before it becomes the harness's. Measured against how
+              full the context actually is — the one fact that says whether folding would help. */}
+          {onCompact && !!sessionId && !!tokenUsage && tokenUsage.contextWindow > 0
+            && (isCompacting
+              || tokenUsage.contextTokens / tokenUsage.contextWindow >= compactionReclaimAtFraction / 2) && (
             <Button
               variant="outline"
               h="var(--control-height)"

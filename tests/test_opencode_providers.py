@@ -81,16 +81,50 @@ def test_resolver_uses_each_gateway_endpoint_and_model_protocol(open_code_catalo
         "api_key": "shared-key",
         "api_base": "https://opencode.ai/zen/v1",
     }
+    # Anthropic is the one protocol whose path we finish ourselves: LiteLLM appends
+    # `/v1/messages` to a custom base unless it already ends that way, so stopping at the
+    # gateway's `/v1` would ask for `…/zen/v1/v1/messages`.
     assert resolve_litellm("opencode/claude", configured_keys, {}) == {
         "model": "anthropic/claude",
+        "api_key": "shared-key",
+        "api_base": "https://opencode.ai/zen/v1/messages",
+    }
+    # Gemini keeps the bare gateway base. LiteLLM's `_check_custom_proxy` renders it as
+    # `{base}/models/{model}:{generateContent|streamGenerateContent}` and chooses the verb per
+    # call, so anything composed here would be composed a second time.
+    assert resolve_litellm("opencode/gemini", configured_keys, {}) == {
+        "model": "gemini/gemini",
         "api_key": "shared-key",
         "api_base": "https://opencode.ai/zen/v1",
     }
     assert resolve_litellm("opencode_go/qwen", configured_keys, {}) == {
         "model": "anthropic/qwen",
         "api_key": "shared-key",
-        "api_base": "https://opencode.ai/zen/go/v1",
+        "api_base": "https://opencode.ai/zen/go/v1/messages",
     }
+
+
+def test_a_catalog_model_without_an_override_keeps_its_provider_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A per-model prefix is an override, and an absent one means "the provider's own".
+
+    Only the multi-protocol gateways set it; every other model in the catalogue leaves it empty.
+    Reading it as the answer whenever a catalogue entry existed dropped the prefix altogether, so
+    `anthropic/claude-…` resolved to `/claude-…` and routed nowhere — and only once the catalogue
+    had been fetched, which is why a cold start looked healthy.
+    """
+    payload = {"anthropic": {"models": {"claude-sonnet-4-5": {"name": "Claude Sonnet 4.5"}}}}
+    monkeypatch.setattr(model_catalog.httpx, "get", lambda *_arguments, **_keywords: CatalogResponse(payload))
+    model_catalog.clear_catalogue_cache()
+    try:
+        catalogued = model_catalog.find_model("anthropic/claude-sonnet-4-5")
+        assert catalogued is not None and catalogued.litellm_prefix == ""
+        assert resolve_litellm("anthropic/claude-sonnet-4-5", {"anthropic": "key"}, {})["model"] == (
+            "anthropic/claude-sonnet-4-5"
+        )
+    finally:
+        model_catalog.clear_catalogue_cache()
 
 
 def test_one_open_code_key_unlocks_both_catalogs(open_code_catalog: list[ModelDefinition]) -> None:

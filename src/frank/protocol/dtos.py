@@ -132,10 +132,11 @@ class DictationUpdateRequest(BaseModel):
 
 class CompactionUpdateRequest(BaseModel):
     """Observational-memory compaction settings. Only provided fields are changed."""
-    auto: bool | None = None
-    observer_context_fraction: float | None = None
-    reflector_observation_fraction: float | None = None
-    keep_recent_turns: int | None = None
+    automatic: bool | None = None
+    reclaim_at_fraction: float | None = None
+    condense_log_at_fraction: float | None = None
+    output_reserve_fraction: float | None = None
+    recent_working_set_fraction: float | None = None
 
 
 class MCPToolCallRequest(BaseModel):

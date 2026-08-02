@@ -4,12 +4,18 @@ Observational Memory: deciding when to compact, running the Observer/Reflector m
 rewriting the conversation into a dense observation log so an unbounded turn never overflows."""
 from __future__ import annotations
 
-from frank.runtime.internals import ObservationBatch
+import logging
+
+from frank.base.tuning import count_tokens
+from frank.runtime.internals import ObservationBatch, conversation_tokens, message_tokens
 from frank.runtime.turn_events import CompactionDone, CompactionStarted, TurnEvent
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from pydantic import ValidationError
 from typing import AsyncIterator
 from frank.base.serialization import compact
+
+
+logger = logging.getLogger(__name__)
 
 
 class _CompactsContext:
@@ -17,12 +23,6 @@ class _CompactsContext:
 
     Observational memory — the Observer and Reflector — plus the token arithmetic that decides
     when either runs."""
-
-    @staticmethod
-    def _estimate_tokens(text: str) -> int:
-        """Fast local token estimate (~4 chars/token) for sizing the observation log,
-        which has no provider usage figure of its own."""
-        return len(text) // 4
 
     def _observation_message(self) -> SystemMessage | None:
         """The observation-log system message (the folded conversation memory), if one
@@ -62,22 +62,61 @@ class _CompactsContext:
             additional_kwargs={"observation_log": True, "observations": observations},
         )
 
-    def _observer_boundary(self) -> int:
-        """Index splitting the conversation into ``[older to fold] | [recent kept
-        verbatim]``. Cuts at a user-turn boundary (a HumanMessage) so tool_call/
-        tool_result pairing stays intact and the kept tail is a whole number of recent
-        turns. Returns 0 when nothing is old enough to fold."""
-        keep = max(1, self._global_configuration.compaction.keep_recent_turns)
-        human_indices = [
-            index for index, message in enumerate(self._conversation)
-            if isinstance(message, HumanMessage)
-            # Harness notes ride in user-role messages for cache reasons but are
-            # not user turns — they must not shift the keep-recent boundary.
-            and not message.additional_kwargs.get("harness_note")
-        ]
-        if len(human_indices) <= keep:
+    def _usable_context(self) -> int:
+        """How much of the window a conversation may occupy before it must be folded.
+
+        Not the whole window. A request that exactly fills it leaves the model nowhere to answer,
+        and leaves compaction — itself a model call — nowhere to run. A window of zero means "not
+        known yet" and answers zero rather than inventing a budget."""
+        window = self._context_window
+        if window <= 0:
             return 0
-        return human_indices[-keep]
+        return max(0, window - int(window * self._global_configuration.compaction.output_reserve_fraction))
+
+    def _recent_working_set(self) -> int:
+        """The tokens of recent conversation treated as still in use — the tail kept verbatim
+        rather than folded into the log.
+
+        A share of the usable window rather than a fixed count, so it scales with the model
+        instead of being one figure chosen for one window size."""
+        return int(self._usable_context() * self._global_configuration.compaction.recent_working_set_fraction)
+
+    def _observer_boundary(self) -> int:
+        """Index splitting the conversation into ``[older to fold] | [recent kept verbatim]``.
+
+        Chosen by *size*, not by counting user turns, and that is the whole point. The tail used
+        to be "the last N user messages", which silently assumed a conversation alternates. An
+        agentic run does not: one instruction can be followed by two hundred tool results, and
+        under a turn count that whole run reads as a single turn with nothing old enough to fold.
+        A session doing exactly that grew to 286k tokens against a 272k window and never folded
+        once, because the boundary was 0 every time it was asked.
+
+        So the tail is a token budget, filled backwards from the end. When one turn alone exceeds
+        the budget the cut lands *inside* it, which is what makes a long unattended run
+        compactable at all.
+
+        The cut is then advanced to a safe point: never onto a ToolMessage, because a tool result
+        whose call has been folded away is an orphan the provider rejects. Everything before the
+        cut goes to the Observer; the tail is sent verbatim. Returns 0 when nothing can be folded.
+        """
+        messages = self._conversation
+        budget = self._recent_working_set()
+        start = len(messages)
+        carried = 0
+        for index in range(len(messages) - 1, -1, -1):
+            carried += message_tokens(messages[index])
+            if carried > budget and index < len(messages) - 1:
+                break
+            start = index
+        # A tool result must stay with the call it answers, so walk forward off any ToolMessage
+        # the budget happened to land on. An AIMessage left holding calls whose results moved
+        # into the tail would be the same break seen from the other side, so this skips the
+        # whole group rather than just its first message.
+        while start < len(messages) and isinstance(messages[start], ToolMessage):
+            start += 1
+        # Nothing to fold: either the whole conversation fits the tail, or the tail is everything
+        # after a cut that could not be placed anywhere useful.
+        return start if 0 < start < len(messages) else 0
 
     def _compaction_state(self, reason: str = "auto"):
         """What a supplied strategy is given. Passed, never reached for."""
@@ -90,18 +129,38 @@ class _CompactsContext:
             reason=reason,
         )
 
+    def _at_folding_threshold(self) -> bool:
+        """Whether the live context has grown enough that folding is worth what it costs.
+
+        Deliberately late. A fold is the only thing here that rewrites the conversation, and a
+        rewritten prefix is a prompt cache thrown away — so every fold is paid for twice, once in
+        the two model calls it takes and again in the full-price re-read on the call after. Held
+        context, by contrast, is cheap while the cache holds: a provider bills a cached prefix at
+        a fraction of a fresh one. So the conversation is left alone for as long as it safely can
+        be, and the reserve below the window is what keeps "as long as it can be" from becoming
+        one turn too long.
+
+        Simulated across session lengths, folding at 0.85 of the usable window came to ~0.94x the
+        tokens of folding at 0.6, and folding later still was *worse* — at 0.95 each fold has a
+        larger head for the Observer to read, and that is paid every time. There is no version of
+        this that waits for the window to be exceeded: by then the request has already failed."""
+        usable = self._usable_context()
+        return usable > 0 and self._latest_context_tokens >= (
+            self._global_configuration.compaction.reclaim_at_fraction * usable
+        )
+
     def _should_compact(self) -> bool:
         """Auto-compaction trigger.
 
-        A supplied strategy answers this itself. The default is: enabled in configuration,
-        live context past the observer fraction of the window, and something old enough to
-        fold. Manual compaction ignores this and always runs a pass."""
+        A supplied strategy answers this itself. The default is: enabled in configuration, live
+        context past the observer fraction of the *usable* window, and something to fold. Measured
+        against the usable window rather than the raw one so the fraction means what it says —
+        against the raw number, "60% full" was already past the point where a fold had room to
+        run. Manual compaction ignores this and always runs a pass."""
         if self._compaction is not None:
             return bool(self._compaction.should_compact(self._compaction_state()))
         compaction = self._global_configuration.compaction
-        if not compaction.auto or self._context_window <= 0:
-            return False
-        if self._latest_context_tokens < compaction.observer_context_fraction * self._context_window:
+        if not compaction.automatic or not self._at_folding_threshold():
             return False
         return self._observer_boundary() > 0
 
@@ -162,7 +221,16 @@ class _CompactsContext:
         existing = self._observations_of(observation_message)
         # Fold every older message except the existing observation block (it is rebuilt).
         older = [message for message in self._conversation[:boundary] if message is not observation_message]
-        recent = list(self._conversation[boundary:])
+        # The log is excluded from the tail as well as from the fold. It is rebuilt and placed at
+        # the front below, so a boundary that happened to leave it on the recent side would put
+        # two copies of the memory in the conversation rather than moving it.
+        recent = [message for message in self._conversation[boundary:] if message is not observation_message]
+        if not older:
+            # The boundary landed just past the observation log with nothing but the log behind
+            # it — which happens once a folded conversation's tail alone fills the budget. There
+            # is nothing to fold, and asking the Observer to summarize an empty list would spend
+            # a model call on every iteration to be told so.
+            return
         tokens_before = self._latest_context_tokens
         messages_before = len(self._conversation)
         yield CompactionStarted(reason=reason,
@@ -180,15 +248,20 @@ class _CompactsContext:
             return
         merged = [*existing, *new_observations]
         compaction = self._global_configuration.compaction
-        merged_tokens = self._estimate_tokens(compact(merged))
-        if self._context_window > 0 and merged_tokens > compaction.reflector_observation_fraction * self._context_window:
+        merged_tokens = count_tokens(compact(merged))
+        usable = self._usable_context()
+        if usable > 0 and merged_tokens > compaction.condense_log_at_fraction * usable:
             merged = await self._reflect(merged)
         # Replace in place: the conversation list object is shared with the executor's
         # per-context store, so mutating the same object keeps that binding.
         self._conversation[:] = [self._build_observation_message(merged), *recent]
-        # Occupancy no longer reflects the (smaller) context; reset so auto-compaction
-        # does not immediately re-fire before the next real model call.
-        self._latest_context_tokens = 0
+        # Occupancy no longer describes the conversation, so it is measured again rather than
+        # zeroed. Zeroing was enough while the only question afterwards was "do not fold again
+        # immediately", which any small number answers. It is not enough now that something runs
+        # *after* a fold and has to know whether the fold was sufficient: a zero would report
+        # every conversation as empty and the fallback could never fire. Counting the real thing
+        # answers both, and answers the second one honestly.
+        self._latest_context_tokens = conversation_tokens(self._conversation)
         yield CompactionDone(reason=reason, ok=True,
             observations_added=len(new_observations),
             messages_before=messages_before,

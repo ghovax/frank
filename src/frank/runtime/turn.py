@@ -19,6 +19,8 @@ from frank.runtime.internals import (
     _STREAM_EXHAUSTED,
     _stream_next,
     _ToolPlan,
+    _maybe_json,
+    conversation_tokens,
 )
 from frank.runtime.prompt.environment import probe_local_environment, probe_user_context
 from frank.protocol.events import TurnContext
@@ -26,7 +28,6 @@ from frank.base.instructions import instructions_payload
 from frank.base.memories import memories_payload
 from frank.base.message_content import message_content_deltas, message_text
 from frank.base.model_errors import ContextWindowExceeded, over_context_window
-from frank.base.tuning import count_tokens
 from frank.base.skills import enabled_skills, skills_for_agent, skills_payload
 from frank.runtime.turn_events import (
     Checkpoint,
@@ -66,14 +67,21 @@ class _RunsTurns:
 
     def _locations_summary(self) -> list[dict]:
         """The workspace's locations as the model sees them: the `location` URI to pass,
-        plus name/kind/base_directory/permission so it can choose the right one per tool call."""
+        plus name/kind/base_directory/permission so it can choose the right one per tool call.
+
+        The permission reported is the mode a call against that location would actually be judged
+        by — `_call_policy`'s answer — rather than the mode recorded on the location. Those differ
+        in the ordinary case: a location that names no mode of its own records `default`, meaning
+        "whatever the session is", so reporting the record told the model `default` no matter what
+        the session had been set to. Now that this rides in the turn context and is rebuilt every
+        turn, it can state the live answer, which is the only version worth stating."""
         return [
             {
                 "location": resolved.uri,
                 "name": resolved.name,
                 "kind": resolved.kind,
                 "base_directory": resolved.base_directory,
-                "permission_mode": resolved.permission_mode,
+                "permission_mode": self._call_policy(resolved).mode,
             }
             for resolved in self._locations.values()
         ]
@@ -107,9 +115,9 @@ class _RunsTurns:
                 "session_worktree_strategy": self._global_configuration.workspace.strategy,
                 "platform": platform.system(),
                 "today_date": datetime.now().strftime("%Y-%m-%d"),
-                # The workspace's locations. Filesystem/shell tools take a `location` (its
-                # URI); it is required when there is more than one, optional when one.
-                "locations": self._locations_summary(),
+                # `locations` is deliberately absent: it carries each location's permission mode,
+                # which a person can change mid-session, and anything changeable in here rewrites
+                # the front of every request. It rides in the turn context instead.
             })
             # Also conditional: it opens by asserting "you are running as a session… another
             # session may have created you", and tells the model to answer its parent with
@@ -120,16 +128,13 @@ class _RunsTurns:
                 if "message_session" in {tool.name for tool in self._tools} else ""
             )
             # The opt-in user-context section is its own template, rendered into the prompt's
-            # `user_environment` slot only when enabled and the probe found something — so the
-            # section (heading and all) simply is not there when off.
+            # `user_environment` slot only when enabled — so the section (heading and all) simply
+            # is not there when off. Only the standing guidance lives here; the snapshot it
+            # describes travels with each turn, because it is read fresh from the machine and
+            # would otherwise differ between one worker and the next.
             user_environment = ""
-            user_context = getattr(self._global_configuration, "user_context", None)
-            if user_context is not None and user_context.enabled:
-                user_context_snapshot = probe_user_context()
-                if user_context_snapshot not in ("", "{}"):
-                    user_environment = self._prompt_loader.load(
-                        "user_context", {"user_context_snapshot": user_context_snapshot}
-                    )
+            if self._user_context_enabled():
+                user_environment = self._prompt_loader.load("user_context", {})
             # The computer/browser tools are opt-in, so their guidance (what each is for, and
             # to pick the right one rather than force one) only enters the prompt when they do.
             computer_control_guidance = ""
@@ -151,7 +156,6 @@ class _RunsTurns:
             self._cached_system_prompt = self._prompt_loader.load("system_prompt", {
                 "system_prompt": self._system_prompt,
                 "context": context_json,
-                "system_environment": probe_local_environment(),
                 "user_environment": user_environment,
                 "instructions": compact(instructions_payload(self._catalogue.instructions())),
                 "skills": compact(skills_payload(agent_skills)),
@@ -163,11 +167,47 @@ class _RunsTurns:
             })
         return self._cached_system_prompt
 
+    def _user_context_enabled(self) -> bool:
+        user_context = getattr(self._global_configuration, "user_context", None)
+        return user_context is not None and bool(user_context.enabled)
+
+    def _ensure_environment_note(self) -> None:
+        """Put the machine snapshot into the conversation once, at the session's first message.
+
+        Minted once and then left alone, which is the whole point. It describes a machine, and a
+        machine does not change between two turns of a conversation in any way worth re-reading;
+        what it *does* do is read the live environment and the shell history, so producing it
+        again later yields different bytes for reasons the user never caused.
+
+        That is why it cannot live in the system prompt. The prompt is rebuilt whenever a worker
+        wakes — a worker is created per activation — and it sits at the very front of the
+        request, which is exactly where a prompt cache matches. A snapshot that differed because
+        the user had opened a terminal since the last wake therefore missed the cache for every
+        call of that session.
+
+        Appended to the conversation instead, it is written once, travels in the checkpoint, and
+        is part of the cached prefix from the second call onward. Appending is safe at any point,
+        so a conversation that predates this simply gains one on its next turn.
+        """
+        if any(message.additional_kwargs.get("environment_note") for message in self._conversation):
+            return
+        snapshot = _maybe_json(probe_local_environment())
+        payload: dict[str, Any] = {"machine": snapshot if isinstance(snapshot, dict) else {}}
+        if self._user_context_enabled():
+            user_context = _maybe_json(probe_user_context())
+            if isinstance(user_context, dict) and user_context:
+                payload["user_context"] = user_context
+        note = self._harness_note_message(compact(payload))
+        note.additional_kwargs["environment_note"] = True
+        self._conversation.append(note)
+
     def _build_dynamic_context(self) -> str:
         """The structured per-turn context injected at the end of the message list: the current
-        time, where the agent is, its goal, its tasks, and its background work. Empty goal/tasks
-        are omitted so the model isn't fed noise. Standing behavioural guidance lives once in the
-        system prompt, not re-injected here."""
+        time, where the agent is, its goal, its tasks, its background work, the machine it runs
+        on and the locations it may reach. Empty goal/tasks are omitted so the model isn't fed
+        noise. Standing behavioural guidance lives once in the system prompt, not re-injected
+        here — what lives here is everything that can *differ*, so that the system prompt in
+        front of it stays byte-identical and the provider's cache keeps matching it."""
         context = TurnContext(
             now=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
             pwd=self._working_directory or str(Path.cwd()),
@@ -179,6 +219,7 @@ class _RunsTurns:
                 "recent_events": self._execution_history[-20:],
             },
             screen=self._screen_context(),
+            locations=self._locations_summary(),
         )
         return context.model_dump_json(exclude_defaults=True)
 
@@ -329,7 +370,9 @@ class _RunsTurns:
                 answers[gate.request_id] = "allow" if verdict.allow else "deny"
         return answers
 
-    def _harness_note_message(self, content: str, image_blocks: list[dict] | None = None) -> HumanMessage:
+    def _harness_note_message(
+        self, content: str, image_blocks: list[dict] | None = None, transient: bool = False,
+    ) -> HumanMessage:
         """Wrap a harness-injected note in a user-role message carrying a
         ``<systemReminder>`` block.
 
@@ -349,12 +392,13 @@ class _RunsTurns:
         role every provider accepts images on, which is how a read image reaches
         a vision model."""
         text = self._prompt_loader.load("harness_note", {"content": content.strip()}).strip()
+        # `transient` marks a note that is assembled for one request and never appended to the
+        # conversation — so it cannot appear in the next one, and a cache breakpoint placed on it
+        # is a breakpoint nothing will ever match.
+        marks = {"harness_note": True, **({"transient": True} if transient else {})}
         if image_blocks:
-            return HumanMessage(
-                content=[{"type": "text", "text": text}, *image_blocks],
-                additional_kwargs={"harness_note": True},
-            )
-        return HumanMessage(content=text, additional_kwargs={"harness_note": True})
+            return HumanMessage(content=[{"type": "text", "text": text}, *image_blocks], additional_kwargs=marks)
+        return HumanMessage(content=text, additional_kwargs=marks)
 
     def _invalid_tool_call_content(self, invalid: dict) -> str:
         """Build the message for a malformed tool call — used both as the tool
@@ -436,6 +480,9 @@ class _RunsTurns:
             # this new message instead of answered. Close its dangling tool calls (an
             # AIMessage carrying tool_calls with no ToolMessages) so appending this turn
             # keeps the conversation valid for the provider.
+            # Before the first message of the session, so the snapshot sits at the front of the
+            # conversation and every later call prefix-matches over it.
+            self._ensure_environment_note()
             self._close_dangling_tool_calls()
             # A turn's input is usually plain text, but an attachment turn carries a
             # multimodal content list (a text block plus one image_url block per
@@ -479,10 +526,11 @@ class _RunsTurns:
             for steering_event in await self._drain_steering_messages():
                 yield steering_event
 
-            # Auto-compaction: if the last call left the context near the window,
-            # summarize the older history before making another call that could
-            # overflow. The reserved buffer guarantees room to run the compaction
-            # itself; compact() resets the occupancy so this cannot re-fire in a loop.
+            # Keeping the context inside the window. Folding is the whole of it: it replaces
+            # an unbounded head with a fixed-size observation log, so what it saves compounds
+            # over the rest of the run rather than being spent once. The reserved buffer
+            # guarantees room to run the fold itself, and compact() re-measures the occupancy
+            # so this cannot re-fire in a loop.
             if self._should_compact():
                 async for compaction_event in self.compact(reason="auto"):
                     yield compaction_event
@@ -574,9 +622,15 @@ class _RunsTurns:
         harness note at the very tail of the request — never as a system message (LiteLLM
         would hoist it into Anthropic's top-level system param, whose fresh timestamp
         would then invalidate the ENTIRE conversation cache on every turn). As a tail
-        note, everything before it still prefix-matches the provider cache."""
+        note, everything before it still prefix-matches the provider cache.
+
+        It is also marked ``transient``, which is what keeps it from spending one of Anthropic's
+        four cache breakpoints. Those are placed on the last messages of the request, and this
+        one is never in the *next* request — its timestamp alone guarantees it — so a breakpoint
+        written here could never be read back. Marked, it is skipped, and both trailing
+        breakpoints land on conversation that will still be there to match."""
         dynamic_parts = (
-            [self._harness_note_message(self._build_dynamic_context())]
+            [self._harness_note_message(self._build_dynamic_context(), transient=True)]
             if first_iteration else []
         )
         return (
@@ -602,11 +656,17 @@ class _RunsTurns:
         Conservative on purpose (see :func:`over_context_window`): the count uses one general
         tokenizer as a proxy for every model's own, so it is approximate, and refusing a request
         the model would have taken is the worse of the two mistakes. Anything this misses the
-        provider still catches, and is still classified properly when it does."""
+        provider still catches, and is still classified properly when it does.
+
+        Conservative is not the same as blind, though, and this used to be both. Reading only
+        each message's prose meant a tool call's arguments and the size of what came back were
+        counted as nothing — so a conversation that was almost entirely tool traffic measured
+        near zero, and one request went out at 272,640 tokens against a 272,000 window without
+        this noticing. :func:`conversation_tokens` counts what is actually sent."""
         window = self._context_window
         if window <= 0:
             return                              # the catalogue is cold; it says nothing about room
-        tokens = sum(count_tokens(message_text(message)) for message in messages)
+        tokens = conversation_tokens(messages)
         if not over_context_window(tokens, window):
             return
         # Recorded so the indicator agrees with the refusal instead of reporting the reading from

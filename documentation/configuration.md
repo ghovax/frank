@@ -198,13 +198,19 @@ Bash additionally honours per-command rules on each agent (`sudo *: deny`, `rm *
 
 ```yaml
 compaction:
-  auto: true
-  observer_context_fraction: 0.6
-  reflector_observation_fraction: 0.3
-  keep_recent_turns: 6
+  automatic: true
+  reclaim_at_fraction: 0.85
+  condense_log_at_fraction: 0.3
+  output_reserve_fraction: 0.1
+  recent_working_set_fraction: 0.25
 ```
 
-`auto` compacts as the context fills. `keep_recent_turns` is how many turns stay verbatim after a compaction.
+When a conversation outgrows the window, the older half is folded into a dense observation log and the recent part is kept word for word:
+
+- `output_reserve_fraction` is held back for the answer the model is about to write; everything else here is a share of what remains, so a fraction means what it says.
+- `reclaim_at_fraction` is when the fold runs. It is late on purpose. A fold is the one thing that rewrites the conversation, and a rewritten prefix is a prompt cache thrown away — so it is paid for twice, once in the model calls it takes and again in the full-price re-read on the next call. Held context is cheap by comparison while the cache holds. Folding earlier costs more, and folding later is worse again, because a larger backlog is a larger thing for the Observer to read.
+- `recent_working_set_fraction` is how much stays verbatim. Measured in tokens rather than turns, because an unattended run is one instruction and several hundred tool results, and a turn count reads that as nothing worth folding.
+- `condense_log_at_fraction` is when the log itself is condensed, once it has grown large enough to be worth rewriting.
 
 ## Tool tuning
 

@@ -111,15 +111,23 @@ workspace:
 
 
 # Keeping a long conversation alive
-# When the context fills, the turn is summarised rather than truncated. The two fractions divide
-# the window between reading what happened and writing the summary of it.
+
+# When the context fills, the older half is folded into a dense observation log and the recent
+# part is kept word for word, rather than the conversation being truncated.
 
 compaction:
-  auto: true
-  observer_context_fraction: 0.6
-  reflector_observation_fraction: 0.3
-  # Turns kept verbatim after a compaction, so the immediate thread of work survives it.
-  keep_recent_turns: 6
+  automatic: true
+  # When to fold. Late on purpose: a fold rewrites the conversation, which throws away the prompt
+  # cache the provider was holding, and held context is cheap by comparison while that cache lasts.
+  reclaim_at_fraction: 0.85
+  # When the observation log has itself grown large enough to be worth condensing.
+  condense_log_at_fraction: 0.3
+  # Held back for the answer the model is about to write. Every other fraction here is a share of
+  # what is left after it.
+  output_reserve_fraction: 0.1
+  # How much recent conversation stays verbatim. Tokens rather than turns, because an unattended
+  # run is one instruction and several hundred tool results.
+  recent_working_set_fraction: 0.25
 
 # An opt-in snapshot of this machine and its habits, offered to the agent at the start of a
 # session. Off by default: it is about you, not about the code.

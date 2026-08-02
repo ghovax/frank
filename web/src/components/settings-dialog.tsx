@@ -184,8 +184,8 @@ export function SettingsDialog({
         setSavedSandboxEnforce(settings.sandbox.enforce);
         setWorktreeStrategy(settings.worktree_strategy);
         setSavedWorktreeStrategy(settings.worktree_strategy);
-        setAutoCompaction(settings.compaction?.auto ?? false);
-        setSavedAutoCompaction(settings.compaction?.auto ?? false);
+        setAutoCompaction(settings.compaction?.automatic ?? false);
+        setSavedAutoCompaction(settings.compaction?.automatic ?? false);
         setUserContextEnabled(settings.user_context_enabled);
         setSavedUserContextEnabled(settings.user_context_enabled);
         setComputerControlEnabled(settings.computer_control_enabled);
@@ -297,7 +297,7 @@ export function SettingsDialog({
           reconcile(settings.permission_mode, fields.permissionMode, fields.savedPermissionMode, setPermissionMode, setSavedPermissionMode);
           reconcile(settings.sandbox.enforce, fields.sandboxEnforce, fields.savedSandboxEnforce, setSandboxEnforce, setSavedSandboxEnforce);
           reconcile(settings.worktree_strategy, fields.worktreeStrategy, fields.savedWorktreeStrategy, setWorktreeStrategy, setSavedWorktreeStrategy);
-          reconcile(settings.compaction?.auto ?? false, fields.autoCompaction, fields.savedAutoCompaction, setAutoCompaction, setSavedAutoCompaction);
+          reconcile(settings.compaction?.automatic ?? false, fields.autoCompaction, fields.savedAutoCompaction, setAutoCompaction, setSavedAutoCompaction);
           reconcile(settings.user_context_enabled, fields.userContextEnabled, fields.savedUserContextEnabled, setUserContextEnabled, setSavedUserContextEnabled);
           reconcile(settings.computer_control_enabled, fields.computerControlEnabled, fields.savedComputerControlEnabled, setComputerControlEnabled, setSavedComputerControlEnabled);
           reconcile(settings.dictation_enabled, fields.dictationEnabled, fields.savedDictationEnabled, setDictationEnabled, setSavedDictationEnabled);
@@ -413,7 +413,7 @@ export function SettingsDialog({
         void onWorktreeStrategyChange?.(worktreeStrategy);
       }
       if (autoCompaction !== savedAutoCompaction) {
-        await updateCompactionSettings({ auto: autoCompaction });
+        await updateCompactionSettings({ automatic: autoCompaction });
         setSavedAutoCompaction(autoCompaction);
       }
       if (userContextEnabled !== savedUserContextEnabled) {

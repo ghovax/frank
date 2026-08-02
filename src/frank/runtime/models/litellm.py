@@ -55,6 +55,9 @@ class ChatLiteLLMModel(BaseChatModel):
     model: str
     api_key: Optional[SecretStr] = None
     api_base: Optional[str] = None
+    #: The conversation this model serves, sent as the provider's prompt cache key. See
+    #: :meth:`_completion_kwargs` for why a cache is not reachable without it.
+    session_id: str = ""
     temperature: float = 0.0
     reasoning_effort: Optional[str] = None
     maximum_tokens: Optional[int] = None
@@ -131,6 +134,131 @@ class ChatLiteLLMModel(BaseChatModel):
             dicts.append(entry)
         return dicts
 
+    #: What makes a model want explicit cache breakpoints: being a Claude, wherever it is served
+    #: from. Deliberately a property of the *model* and not of the provider — Claude reaches this
+    #: harness as `anthropic/claude-…`, `openrouter/anthropic/claude-…`, `bedrock/anthropic.claude-…`,
+    #: `vertex_ai/claude-…`, through the OpenCode Zen gateway and through resellers like
+    #: Databricks, and every one of those wants the same markers. Gating on the provider instead
+    #: got it wrong in both directions at once: it put Anthropic's markers on
+    #: `openrouter/openai/gpt-…`, which is not Claude and does not want them, while missing Claude
+    #: anywhere the provider was not one of two named prefixes.
+    _CACHE_BREAKPOINT_MARKERS = ("claude", "anthropic")
+
+    #: Routes whose models take the same explicit breakpoints regardless of family. Alibaba's
+    #: Model Studio implements Anthropic-style `cache_control` across its own Qwen models, so the
+    #: marker is right there even though nothing about the model says Claude.
+    _CACHE_BREAKPOINT_ROUTES = ("dashscope",)
+
+    #: The one route that must never be marked. A gateway does its own caching (see
+    #: `_completion_kwargs`), and a breakpoint aimed at the model behind it would be describing a
+    #: request the gateway is going to rewrite.
+    _GATEWAY_ROUTE = "vercel_ai_gateway"
+
+    #: How many breakpoints to place, and where. Anthropic honours at most four, so they are
+    #: spent where they pay: two at the front covering the tools and the system prompt, which
+    #: never change, and two at the moving end of the conversation. The trailing pair is what
+    #: makes an append-only conversation cache *incrementally* — each call writes a breakpoint
+    #: just behind the newest messages, and the next call reads it as the prefix it starts from.
+    _LEADING_BREAKPOINTS = 2
+    _TRAILING_BREAKPOINTS = 2
+
+    #: GitHub Copilot resells Claude but reads a differently named marker, and LiteLLM has no
+    #: translation for it — so the plain one would ride all the way to Copilot's endpoint and mean
+    #: nothing there. Named per-route rather than assumed, because "which word does this endpoint
+    #: read" is exactly the kind of thing that differs quietly and costs a cache silently.
+    #:
+    #: Bedrock is deliberately *not* here even though its own wire format calls the thing a
+    #: `cachePoint`. LiteLLM's Converse transform reads OpenAI-style `cache_control` and builds
+    #: that block itself, so Bedrock's own spelling would produce a key nothing reads — the one
+    #: place where copying an implementation written against a different SDK would have
+    #: introduced the bug rather than avoided it.
+    _CACHE_CONTROL_KEYS = {"github_copilot": "copilot_cache_control"}
+    _DEFAULT_CACHE_CONTROL_KEY = "cache_control"
+
+    def _route(self) -> str:
+        """The LiteLLM provider this model is addressed through — the first path segment."""
+        return self.model.split("/", 1)[0].lower()
+
+    def _cache_control_key(self) -> str:
+        return self._CACHE_CONTROL_KEYS.get(self._route(), self._DEFAULT_CACHE_CONTROL_KEY)
+
+    def _apply_cache_breakpoints(
+        self, dicts: list[dict[str, Any]], messages: Sequence[BaseMessage] = (),
+    ) -> list[dict[str, Any]]:
+        """Mark the messages the provider should cache up to.
+
+        Anthropic caches nothing unless asked. There were no breakpoints anywhere in this harness,
+        which meant every Claude call re-read and re-billed the whole conversation at full rate —
+        a worse deal than the OpenAI path, and invisible, because a request with no cache still
+        succeeds and simply costs more.
+
+        The trailing pair skips anything the harness marked ``transient``. A transient note is
+        assembled for one request and is gone from the next, so a breakpoint on it can never be
+        read back — it would burn one of the four Anthropic allows and return nothing. Skipping
+        it puts both trailing breakpoints on conversation that will still be there to match.
+        """
+        route = self._route()
+        if route == self._GATEWAY_ROUTE:
+            return dicts
+        model = self.model.lower()
+        if not (any(marker in model for marker in self._CACHE_BREAKPOINT_MARKERS)
+                or route in self._CACHE_BREAKPOINT_ROUTES):
+            return dicts
+        # `dicts` is built one-for-one from `messages`, in order, so the index is the join.
+        transient = {
+            index for index, message in enumerate(messages)
+            if getattr(message, "additional_kwargs", {}).get("transient")
+        }
+        durable = [
+            entry for index, entry in enumerate(dicts)
+            if entry["role"] != "system" and index not in transient
+        ]
+        # Disjoint by construction — one selects system messages and the other excludes them — so
+        # the two never mark the same message, and together they never exceed the four
+        # breakpoints Anthropic honours.
+        system = [entry for entry in dicts if entry["role"] == "system"][: self._LEADING_BREAKPOINTS]
+        for entry in system:
+            self._mark_cached(entry, self._cache_control_key())
+        # Walk back until the trailing breakpoints are actually *placed*, rather than taking the
+        # last two entries and hoping. Not every message can carry one: an assistant turn that is
+        # pure tool calls has empty content and no block to attach to, and it is the single most
+        # common message at the end of an agentic request — so taking the last two silently spent
+        # one of Anthropic's four on nothing at all.
+        placed = 0
+        for entry in reversed(durable):
+            if placed >= self._TRAILING_BREAKPOINTS:
+                break
+            if self._mark_cached(entry, self._cache_control_key()):
+                placed += 1
+        return dicts
+
+    @staticmethod
+    def _mark_cached(entry: dict[str, Any], key: str = "cache_control") -> bool:
+        """Put the breakpoint where LiteLLM will find it for this role, and say whether it went.
+
+        A tool result carries it on the message, because that is where LiteLLM reads it when
+        building Anthropic's `tool_result` block. Every other role carries it on the last content
+        block, which means promoting plain string content to a one-block list — the marker has
+        nowhere to live on a bare string.
+
+        Answers ``False`` when there is nothing to attach to, so the caller can try the message
+        before instead of quietly losing a breakpoint."""
+        if entry["role"] == "tool":
+            entry[key] = {"type": "ephemeral"}
+            return True
+        content = entry.get("content")
+        if isinstance(content, str):
+            if not content:
+                return False  # an empty block is not a cacheable prefix, only a malformed one
+            entry["content"] = [{"type": "text", "text": content}]
+        elif not isinstance(content, list) or not content:
+            return False
+        last = entry["content"][-1]
+        if not isinstance(last, dict):
+            return False
+        last[key] = {"type": "ephemeral"}
+        return True
+
     @staticmethod
     def _role_for(message: BaseMessage) -> str:
         # LangChain's message types map onto the OpenAI role names LiteLLM expects.
@@ -182,6 +310,22 @@ class ChatLiteLLMModel(BaseChatModel):
             params["timeout"] = self.timeout
         if self.default_headers:
             params["extra_headers"] = self.default_headers
+        if self.session_id:
+            # Which cache to look in. A prompt cache is not one global store: a provider routes
+            # the lookup by hashing the first couple of hundred tokens of the prefix *together
+            # with* this key, so requests that share a key land on the machine holding their
+            # prefix. Without it an unchanged conversation is sprayed across machines and mostly
+            # misses — measured here at 41 of 66 calls reporting zero cached tokens on a prefix
+            # that had not changed at all. One session is one conversation is one prefix, so the
+            # session id is the key. LiteLLM drops the parameter for providers that have no such
+            # concept (`drop_params`), so this is safe to send everywhere.
+            params["prompt_cache_key"] = self.session_id
+        if self._route() == self._GATEWAY_ROUTE:
+            # A gateway sits in front of many providers and rewrites the request for whichever
+            # one it routes to, so it is the only thing positioned to place the breakpoints —
+            # which is why `_apply_cache_breakpoints` leaves its traffic alone. Asking for
+            # automatic caching is the whole of our side of that bargain.
+            params["extra_body"] = {**params.get("extra_body", {}), "gateway": {"caching": "auto"}}
         # Caller-supplied kwargs (tools, tool_choice, parallel_tool_calls, stop)
         # override the model defaults so bind_tools() bindings reach LiteLLM.
         params.update({key: value for key, value in kwargs.items() if value is not None})
@@ -204,7 +348,7 @@ class ChatLiteLLMModel(BaseChatModel):
             stop=stop, stream=True, stream_options={"include_usage": True}, **kwargs,
         )
         stream = cast(AsyncIterator[Any], await litellm.acompletion(
-            messages=self._messages_to_dicts(messages),
+            messages=self._apply_cache_breakpoints(self._messages_to_dicts(messages), messages),
             **params,
         ))
         async for chunk in stream:
@@ -323,7 +467,7 @@ class ChatLiteLLMModel(BaseChatModel):
     ) -> ChatResult:
         params = self._completion_kwargs(stop=stop, **kwargs)
         response = await litellm.acompletion(
-            messages=self._messages_to_dicts(messages),
+            messages=self._apply_cache_breakpoints(self._messages_to_dicts(messages), messages),
             **params,
         )
         return ChatLiteLLMModel._response_to_result(response)
@@ -337,7 +481,7 @@ class ChatLiteLLMModel(BaseChatModel):
     ) -> ChatResult:
         params = self._completion_kwargs(stop=stop, **kwargs)
         response = litellm.completion(
-            messages=self._messages_to_dicts(messages),
+            messages=self._apply_cache_breakpoints(self._messages_to_dicts(messages), messages),
             **params,
         )
         return ChatLiteLLMModel._response_to_result(response)

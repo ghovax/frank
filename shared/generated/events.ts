@@ -238,6 +238,7 @@ export interface ToolResultEvent {
 export interface TurnContext {
   active_goal?: string;
   background?: Record<string, unknown>;
+  locations?: Record<string, unknown>[];
   now?: string;
   pwd?: string;
   screen?: Record<string, unknown>;
