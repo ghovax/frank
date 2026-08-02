@@ -150,7 +150,9 @@ No layer is configured to be safe; each one *is* safe because of what it binds t
 
 1. Install it. On this machine that is `~/.config/nix-darwin` → `homebrew.casks` → `tailscale-app`, then `rebuild`. The standalone variant rather than the App Store one: Tailscale recommends it, and it is the one that carries the full CLI. Never run both.
 2. Sign in from the Tailscale app, and install the phone's client from the App Store and sign in with the same account.
-3. Turn on two things for the tailnet, both in the admin console and both once. **HTTPS Certificates**, under [DNS](https://login.tailscale.com/admin/dns), without which Tailscale cannot obtain a certificate for your machine's name. And **Serve**, which `frank reach` will hand you a one-click link for the first time it needs it — Tailscale prints that link and then waits, polling, for somebody to follow it.
+3. Turn on three things for the tailnet, once each, **in this order**. **MagicDNS**, under [DNS](https://login.tailscale.com/admin/dns) — without it the machine's name resolves nowhere. Then **HTTPS Certificates**, on the same page and only offered once MagicDNS is on; without it Tailscale will not issue a certificate for that name, and `tailscale serve` happily listens on 443 with nothing to present. Then **Serve**, which `frank reach` hands you a one-click link for the first time it needs it — Tailscale prints that link and then waits, polling, for somebody to follow it.
+
+The order is the part worth knowing: with MagicDNS off, the HTTPS switch does nothing, so it is possible to believe both are on while neither is. `frank reach` checks MagicDNS itself and stops rather than announcing an address that cannot serve TLS.
 4. In the Mac app's settings, switch on the CLI integration, which puts `tailscale` on `PATH`. Frank also looks inside `/Applications/Tailscale.app` if it is not there.
 
 ### The token, and how it gets into the page

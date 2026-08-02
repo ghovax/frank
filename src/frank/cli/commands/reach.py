@@ -231,6 +231,23 @@ def tailnet_name() -> str:
             "This machine has no MagicDNS name, so there is no address a certificate can be "
             "issued for. Turn MagicDNS on in the Tailscale admin console under DNS."
         )
+    # Checked separately from the name, because a tailnet can hand out names with MagicDNS off
+    # and then neither of the two things this depends on works: the name does not resolve for
+    # anything trying to reach it, and Tailscale will not issue a certificate for it — HTTPS
+    # certificates are gated behind MagicDNS, so the admin console's HTTPS switch does nothing
+    # until this one is on.
+    #
+    # Worth the extra field rather than left to fail later. Without it `tailscale serve` succeeds,
+    # this announces `Serving on https://…`, and the failure surfaces as a TLS error on a phone —
+    # which is a long way from the switch that fixes it.
+    if not (status.get("CurrentTailnet") or {}).get("MagicDNSEnabled"):
+        raise TailscaleUnavailable(
+            "MagicDNS is off for your tailnet, so this machine's name resolves nowhere and "
+            "Tailscale will not issue a certificate for it. Turn on MagicDNS in the admin "
+            "console under DNS, and then HTTPS Certificates below it — in that order, because "
+            "the second is only available once the first is on.",
+            "https://login.tailscale.com/admin/dns",
+        )
     return name
 
 
