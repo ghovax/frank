@@ -372,6 +372,7 @@ class _RunsTurns:
 
     def _harness_note_message(
         self, content: str, image_blocks: list[dict] | None = None, transient: bool = False,
+        marks: dict[str, Any] | None = None,
     ) -> HumanMessage:
         """Wrap a harness-injected note in a user-role message carrying a
         ``<systemReminder>`` block.
@@ -395,10 +396,10 @@ class _RunsTurns:
         # `transient` marks a note that is assembled for one request and never appended to the
         # conversation — so it cannot appear in the next one, and a cache breakpoint placed on it
         # is a breakpoint nothing will ever match.
-        marks = {"harness_note": True, **({"transient": True} if transient else {})}
+        tags = {"harness_note": True, **({"transient": True} if transient else {}), **(marks or {})}
         if image_blocks:
-            return HumanMessage(content=[{"type": "text", "text": text}, *image_blocks], additional_kwargs=marks)
-        return HumanMessage(content=text, additional_kwargs=marks)
+            return HumanMessage(content=[{"type": "text", "text": text}, *image_blocks], additional_kwargs=tags)
+        return HumanMessage(content=text, additional_kwargs=tags)
 
     def _invalid_tool_call_content(self, invalid: dict) -> str:
         """Build the message for a malformed tool call — used both as the tool

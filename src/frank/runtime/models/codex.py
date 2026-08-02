@@ -147,13 +147,28 @@ class ChatCodexModel(BaseChatModel):
         standard Responses home for system text) — no Codex preamble. Tool
         calls/results become top-level ``function_call`` / ``function_call_output``
         items (Responses does not nest them in a message)."""
-        system_texts: list[str] = []
+        instructions = ""
         items: list[dict[str, Any]] = []
         for message in messages:
             if isinstance(message, SystemMessage):
                 text = self._text_of(message)
-                if text:
-                    system_texts.append(text)
+                # Only the *first* one is `instructions`, and only because that is the static
+                # prompt this harness puts at the head of every request. Everything after it
+                # stays where it was written, as a developer-role item — which is what the Codex
+                # CLI does with every piece of contextual material it sends.
+                #
+                # Joining them all was a rewrite of the first bytes of the request. Anything
+                # later in the list — the observation log, most of all — was lifted out of its
+                # position and prepended to the prompt, so a fold aimed at saving context threw
+                # away the provider's cache for the entire conversation on its way past.
+                if not instructions:
+                    instructions = text
+                elif text:
+                    items.append({
+                        "type": "message",
+                        "role": "developer",
+                        "content": [{"type": "input_text", "text": text}],
+                    })
                 continue
             if isinstance(message, ToolMessage):
                 items.append({
@@ -193,7 +208,6 @@ class ChatCodexModel(BaseChatModel):
                 "role": "user",
                 "content": [{"type": "input_text", "text": self._text_of(message)}],
             })
-        instructions = "\n\n".join(text for text in system_texts if text)
         return instructions, items
 
     @staticmethod
@@ -221,10 +235,13 @@ class ChatCodexModel(BaseChatModel):
         }
         if instructions:
             payload["instructions"] = instructions
+        # Sent whether or not there are tools, matching the Codex CLI: it is a constant in every
+        # request it builds, and a field that appears and disappears is a field that can move the
+        # bytes in front of the conversation.
+        payload["tool_choice"] = kwargs.get("tool_choice") or "auto"
         tools = kwargs.get("tools")
         if tools:
             payload["tools"] = [self._to_responses_tool(tool) for tool in tools]
-            payload["tool_choice"] = kwargs.get("tool_choice") or "auto"
         if self.session_id:
             # Which cache to look in. The endpoint routes a cache lookup by hashing the leading
             # couple of hundred tokens of the prefix *together with* this key, and OpenAI's own
@@ -233,15 +250,17 @@ class ChatCodexModel(BaseChatModel):
             # of 66 calls in one session reported zero cached tokens against a prefix that had
             # not changed. One session is one conversation is one prefix.
             payload["prompt_cache_key"] = self.session_id
-        if self.reasoning_effort:
-            payload["reasoning"] = {"effort": self.reasoning_effort, "summary": "auto"}
-            # Ask for the reasoning back in a form that can be handed over again. `store: false`
-            # means the endpoint keeps nothing between calls, so a reasoning model that is not
-            # given its own prior thinking starts each tool hop from the text alone and derives
-            # it again — paying for the same reasoning repeatedly, and losing the thread that
-            # made the last tool call make sense. The content is opaque to us; it round-trips
-            # through `_to_responses_input` untouched.
-            payload["include"] = ["reasoning.encrypted_content"]
+        # Both unconditional, as in the Codex CLI. `reasoning` is always present — with a null
+        # effort when none is configured — and `include` is a constant there, never gated on
+        # anything. Asking for the encrypted reasoning back is what makes `store: false` workable
+        # at all: the endpoint keeps nothing between calls, so a model not handed its own prior
+        # thinking derives it again at every tool hop, paying for the same reasoning repeatedly
+        # and losing the thread that made the last call make sense. The content is opaque here
+        # and round-trips through `_to_responses_input` untouched.
+        payload["reasoning"] = {
+            "effort": self.reasoning_effort or None, "summary": "auto",
+        }
+        payload["include"] = ["reasoning.encrypted_content"]
         return payload
 
     @staticmethod

@@ -24,12 +24,14 @@ class _CompactsContext:
     Observational memory — the Observer and Reflector — plus the token arithmetic that decides
     when either runs."""
 
-    def _observation_message(self) -> SystemMessage | None:
-        """The observation-log system message (the folded conversation memory), if one
-        exists. Tagged in ``additional_kwargs`` so it survives persistence + reload and
-        can be found and appended to."""
+    def _observation_message(self):
+        """The observation log (the folded conversation memory), if one exists.
+
+        Found by its marker rather than by its type. The marker survives persistence and reload,
+        and the type is not something to depend on — see :meth:`_build_observation_message` for
+        why it is emphatically not a system message."""
         for message in self._conversation:
-            if isinstance(message, SystemMessage) and message.additional_kwargs.get("observation_log"):
+            if message.additional_kwargs.get("observation_log"):
                 return message
         return None
 
@@ -52,14 +54,23 @@ class _CompactsContext:
         raw = message.additional_kwargs.get("observations") if message else None
         return list(raw) if isinstance(raw, list) else []
 
-    def _build_observation_message(self, observations: list[dict]) -> SystemMessage:
-        """The observation log the main agent passively reads: the structured entries
-        dumped as JSON into the render template. The list itself rides in
-        ``additional_kwargs`` so a later pass appends to structured data, not to prose."""
-        rendered = compact(observations)
-        return SystemMessage(
-            content=self._prompt_loader.load("observation_log", {"observations": rendered}),
-            additional_kwargs={"observation_log": True, "observations": observations},
+    def _build_observation_message(self, observations: list[dict]):
+        """The observation log the main agent passively reads: the structured entries dumped as
+        JSON into the render template. The list itself rides in ``additional_kwargs`` so a later
+        pass appends to structured data, not to prose.
+
+        A **user-role** message, for the reason every other harness-written note is one, and the
+        stakes here are the highest in the tree. A mid-conversation ``system`` message is hoisted
+        — by LiteLLM into Anthropic's top-level ``system`` parameter, and by this harness's own
+        Responses translation into ``instructions`` — so wherever it sits in the list, it renders
+        *before the entire conversation*. This message is rewritten by every fold. As a system
+        message it therefore rewrote the first bytes of every request, discarding the provider's
+        prompt cache for the whole conversation each time the fold ran to save context. It was
+        the one message in the tree still doing what `_harness_note_message` exists to prevent.
+        """
+        return self._harness_note_message(
+            self._prompt_loader.load("observation_log", {"observations": compact(observations)}),
+            marks={"observation_log": True, "observations": observations},
         )
 
     def _usable_context(self) -> int:
