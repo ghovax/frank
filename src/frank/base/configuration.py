@@ -5,6 +5,7 @@ import json
 import logging
 import os
 from frank.base import environment_variables
+from frank.base.tuning import Scaling
 import re
 import shlex
 import shutil
@@ -441,10 +442,21 @@ class CompactionConfiguration(Section):
 
 
 class ContextShareConfiguration(Section):
-    """What proportion of the live context window one result may fill."""
+    """What proportion of the live context window one result may fill.
 
-    text: float = Field(0.25, description="Share one result's text may fill — output, fetched pages.")
-    results: float = Field(0.15, description="Share a set of results may fill — matches, lines, records.")
+    The defaults are read from the scaling families rather than written again here. They are the
+    values every baseline in `tuning` is calibrated against — at exactly these fractions each
+    family's multiplier is 1.0 — so a copy typed out in this file is a copy that can disagree with
+    the arithmetic that assumes it, silently and in a direction nobody would think to check."""
+
+    text: float = Field(
+        Scaling.TEXT.value.calibrated,
+        description="Share one result's text may fill — output, fetched pages.",
+    )
+    results: float = Field(
+        Scaling.RESULTS.value.calibrated,
+        description="Share a set of results may fill — matches, lines, records.",
+    )
 
 
 class TuningConfiguration(Section):

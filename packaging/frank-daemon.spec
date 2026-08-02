@@ -148,6 +148,30 @@ for _asset_subdir in ("messages", "scripts"):
                 _destination = _os.path.join("frank", "computer", _asset_subdir, _relative)
                 datas.append((_os.path.join(_dirpath, _asset_name), _destination))
 
+# The tokenizer's vocabulary, fetched once at build time and carried in the image.
+#
+# `tiktoken` is a hard dependency but ships no vocabulary: `get_encoding` downloads
+# `o200k_base` from a blob store on first use and caches it under a sha1 of that URL. So a
+# frozen build that had never run was one network failure away from having no tokenizer, and
+# the tokenizer is what every size cap in the harness is measured with. Downloading it here
+# — where the network is a given and a failure stops the build — puts the file in the bundle
+# and makes the runtime path offline by construction. `frank.base.tuning` points
+# `TIKTOKEN_CACHE_DIR` at it.
+_VOCABULARY_URL = "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"
+import hashlib as _hashlib
+import urllib.request as _urllib_request
+
+_vocabulary_cache = _os.path.join(_repo_root, "packaging", "build", "tiktoken-cache")
+_os.makedirs(_vocabulary_cache, exist_ok=True)
+_vocabulary_file = _os.path.join(_vocabulary_cache, _hashlib.sha1(_VOCABULARY_URL.encode()).hexdigest())
+if not _os.path.isfile(_vocabulary_file):
+    print(f"[frank-daemon.spec] fetching the tokenizer vocabulary from {_VOCABULARY_URL}")
+    with _urllib_request.urlopen(_VOCABULARY_URL, timeout=120) as _response:
+        _payload = _response.read()
+    with open(_vocabulary_file, "wb") as _handle:
+        _handle.write(_payload)
+datas.append((_vocabulary_file, _os.path.join("frank", "tokenizer")))
+
 # Distributions whose runtime version is read via importlib.metadata.
 for distribution in [
     "litellm",
