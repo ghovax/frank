@@ -693,6 +693,11 @@ export function ChatInput({
         // they go last rather than being capped into ellipses early.
         "@container (max-width: 560px)": {
           "& [data-composer-agent-label], & [data-composer-model-label], & [data-composer-context-percent]": { display: "none" },
+          // Said here as well as on the elements themselves. The `flexWrap` props are one edit
+          // away from being changed by somebody adding a control, and an easy one to miss; this
+          // is where the rest of the narrow-screen behaviour is stated, so the rule that matters
+          // most at a narrow width belongs here too.
+          "& [data-composer-row], & [data-composer-selectors]": { flexWrap: "nowrap" },
         },
         // Never two rows.
         //
@@ -709,6 +714,7 @@ export function ChatInput({
         // as four. If something is ever added that genuinely does not fit, reduce it the way the
         // rules above reduce everything else — a second line under a text box reads as a layout
         // that has come apart, not as one adapting.
+
       }}
     >
       <ConfirmDialog
@@ -751,7 +757,21 @@ export function ChatInput({
             ) : null}
           </Flex>
         ) : null}
-        <Flex align="stretch" gap={2}>
+        {/*
+          `flex-end`, not `stretch`, and the difference is where the composer's text sits.
+
+          Stretched, the text box takes the height of whatever is tallest in this row — the send
+          and attach buttons beside it. A `textarea` lays its text along the top of its content
+          box and has no way to centre it, so every pixel by which those buttons out-measure one
+          line of text became empty space *under* the text, and the text read as sitting high.
+          Which engine you looked in decided whether you saw it: buttons do not come out to the
+          same intrinsic height in WebKit as in Blink, and neither does a line box.
+
+          Aligned to the bottom instead, the text box is exactly as tall as what it holds, so a
+          single line fills it and is centred by construction. The buttons sit on its bottom edge,
+          which is also where they belong as it grows.
+        */}
+        <Flex align="flex-end" gap={2}>
           <Box
             ref={dropZoneRef}
             display="flex"
