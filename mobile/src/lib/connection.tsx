@@ -1,15 +1,18 @@
 /**
- * Which Frank this phone talks to, and whether it can reach it right now.
+ * Which machines this phone knows, which one it is talking to, and whether it can reach it.
  *
- * Pairing hands over a small payload: a name, a token, and a list of addresses the machine
- * answers on, best first. The list is the interesting part. A phone is at home on Wi-Fi in the
- * evening and on a mobile network in the morning, and no single address is right for both — the
- * LAN one is the fastest when it works and useless when it does not, and the tailnet one works
- * from anywhere and is a slower path to a machine three metres away.
+ * Plural, and that is the shape of the whole file. A phone that can reach one Frank is a phone
+ * pointed at a desk; the point of reaching a machine over a tailnet is that there may be several
+ * of them and you are not next to any of them. So a pairing is not *the* pairing — it is one
+ * entry in a set, and choosing between them is an ordinary thing to do rather than a repair.
  *
- * So the app does not pick an address once. It **races** them on every connect, in the order the
- * pairing gave, and keeps whichever answered. That is what makes an endpoint feel stable without
- * anything having a fixed IP: the address changes and the connection does not.
+ * A machine is identified by its address. One `frank reach` is one endpoint, so pairing the same
+ * machine twice updates the entry it already has rather than growing a second one with a stale
+ * token — which is what makes re-pairing after `frank reach rotate` do the obvious thing.
+ *
+ * Nothing is raced or discovered. The address a machine gives is its name on the tailnet, and
+ * that does not change; an earlier version carried a ranked list of addresses and tried them in
+ * turn, which was machinery for coping with addresses that stop working.
  */
 
 import * as SecureStore from "expo-secure-store";
@@ -20,26 +23,19 @@ import { AppState, Platform } from "react-native";
 
 import { configure, probe } from "./api";
 
-/** What `frank reach pair` encodes into its QR code. */
+/** What `frank reach pair` encodes into its link. */
 export interface Pairing {
   version: number;
   name: string;
   token: string;
-  /**
-   * The machine's address on the tailnet, e.g. `https://mac.tailnet.ts.net`.
-   *
-   * One, and singular on purpose. This used to be a ranked list the app raced to see which
-   * answered — an advertised address, the tailnet, the LAN — which was machinery for coping with
-   * addresses that might stop working. A tailnet name does not stop working, so there is nothing
-   * left to race and nothing left to fall back to.
-   */
+  /** The machine's address on the tailnet, e.g. `https://mac.tailnet.ts.net`. */
   endpoint: string;
 }
 
 export type ConnectionStatus =
-  /** Nothing has been paired, so there is nothing to connect to. */
-  | "unpaired"
-  /** Asking the machine whether it is there. */
+  /** No machine is chosen. The list is what is on screen. */
+  | "idle"
+  /** Asking the chosen machine whether it is there. */
   | "connecting"
   /** It answered and the token was accepted. */
   | "online"
@@ -49,20 +45,43 @@ export type ConnectionStatus =
   | "rejected";
 
 interface ConnectionValue {
+  /** Every machine this phone has been paired with, in the order they were added. */
+  machines: Pairing[];
+  /** The one being talked to, or `null` when the list is what is on screen. */
+  active: Pairing | null;
   status: ConnectionStatus;
-  pairing: Pairing | null;
-  /** The machine's address, once it has answered. */
-  endpoint: string;
-  pair: (pairing: Pairing) => Promise<void>;
-  unpair: () => Promise<void>;
+  /** Remember a machine, and go to it. Replaces an entry with the same address. */
+  add: (pairing: Pairing) => Promise<void>;
+  /** Go to one already known. */
+  select: (endpoint: string) => void;
+  /** Stop talking to whichever machine is active, without forgetting it. */
+  leave: () => void;
+  /** Forget a machine and its token. */
+  forget: (endpoint: string) => Promise<void>;
+  /** Ask the active machine again whether it is there. */
   reconnect: () => void;
-  /** Call this machine something else on this phone. */
-  rename: (name: string) => Promise<void>;
+  /**
+   * Call a machine something else, on this phone only.
+   *
+   * The pairing arrives carrying the host's own name, which is whatever DHCP and the ISP left it
+   * — `Giovannis-MBP`, and worse on some networks. That is a fine default and a poor label, and
+   * the machine is not the right place to fix it: the name is what *this* phone calls it, and
+   * another device pairing with the same Mac may reasonably call it something else.
+   */
+  rename: (endpoint: string, name: string) => Promise<void>;
 }
 
-const STORAGE_KEY = "frank.pairing";
+const STORAGE_KEY = "frank.pairings";
 
 const ConnectionContext = createContext<ConnectionValue | null>(null);
+
+/** A pairing code that would not do, named by which entry in `PairScreen` says so. */
+export class PairingError extends Error {
+  constructor(readonly reason: "notAPairingCode" | "missingTokenOrAddress") {
+    super(reason);
+    this.name = "PairingError";
+  }
+}
 
 /**
  * Read a `frank://pair#…` link, or a bare base64 payload pasted out of one.
@@ -74,14 +93,6 @@ const ConnectionContext = createContext<ConnectionValue | null>(null);
  * to reach the catalogue through, and an English sentence written here would be one no screen
  * could translate — the language of a message belongs to whatever is about to show it.
  */
-/** A pairing code that would not do, named by which entry in `PairScreen` says so. */
-export class PairingError extends Error {
-  constructor(readonly reason: "notAPairingCode" | "missingTokenOrAddress" | "noAddress") {
-    super(reason);
-    this.name = "PairingError";
-  }
-}
-
 export function parsePairing(input: string): Pairing {
   const trimmed = input.trim();
   const fragment = trimmed.includes("#") ? trimmed.slice(trimmed.indexOf("#") + 1) : trimmed;
@@ -111,47 +122,46 @@ export function parsePairing(input: string): Pairing {
 }
 
 /**
- * Secrets go to the keychain, not to AsyncStorage — this payload is a bearer token with full
- * control of somebody's laptop. On web there is no keychain, and `expo-secure-store` says so by
- * being unavailable; the browser build is a development surface, so it falls back to
- * `localStorage` rather than refusing to run.
+ * Secrets go to the keychain, not to AsyncStorage — these are bearer tokens with full control of
+ * somebody's laptop. On web there is no keychain, and `expo-secure-store` says so by being
+ * unavailable; the browser build is a development surface, so it falls back to `localStorage`
+ * rather than refusing to run.
  */
 const store = {
-  async get(): Promise<string | null> {
-    if (Platform.OS === "web") return globalThis.localStorage?.getItem(STORAGE_KEY) ?? null;
-    return SecureStore.getItemAsync(STORAGE_KEY);
+  async read(): Promise<Pairing[]> {
+    const raw = Platform.OS === "web"
+      ? globalThis.localStorage?.getItem(STORAGE_KEY) ?? null
+      : await SecureStore.getItemAsync(STORAGE_KEY);
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as Pairing[]).filter((entry) => entry?.endpoint && entry?.token) : [];
+    } catch {
+      // Unreadable is the same as absent: there is nothing to salvage from a corrupt token, and
+      // the way out — pair again — is the same either way.
+      return [];
+    }
   },
-  async set(value: string): Promise<void> {
+  async write(machines: Pairing[]): Promise<void> {
+    const raw = JSON.stringify(machines);
     if (Platform.OS === "web") {
-      globalThis.localStorage?.setItem(STORAGE_KEY, value);
+      globalThis.localStorage?.setItem(STORAGE_KEY, raw);
       return;
     }
-    await SecureStore.setItemAsync(STORAGE_KEY, value, {
+    await SecureStore.setItemAsync(STORAGE_KEY, raw, {
       keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
     });
-  },
-  async clear(): Promise<void> {
-    if (Platform.OS === "web") {
-      globalThis.localStorage?.removeItem(STORAGE_KEY);
-      return;
-    }
-    await SecureStore.deleteItemAsync(STORAGE_KEY);
   },
 };
 
 export function ConnectionProvider({ children }: { children: ReactNode }) {
-  const [pairing, setPairing] = useState<Pairing | null>(null);
-  const [status, setStatus] = useState<ConnectionStatus>("connecting");
-  const [endpoint, setEndpoint] = useState("");
+  const [machines, setMachines] = useState<Pairing[]>([]);
+  const [active, setActive] = useState<Pairing | null>(null);
+  const [status, setStatus] = useState<ConnectionStatus>("idle");
   const attempt = useRef<AbortController | null>(null);
 
-  const connect = useCallback(async (current: Pairing | null) => {
+  const connect = useCallback(async (machine: Pairing) => {
     attempt.current?.abort();
-    if (current === null) {
-      setStatus("unpaired");
-      setEndpoint("");
-      return;
-    }
     const controller = new AbortController();
     attempt.current = controller;
     setStatus("connecting");
@@ -166,11 +176,10 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
     // So on web the pairing is taken at its word and the browser is left to find out, which it
     // does perfectly well: opening the endpoint either shows Frank or shows the browser's own
     // "cannot connect", and that is a truthful answer arrived at by something that is actually
-    // allowed to ask. Widening CORS to buy back a probe would mean letting any page a person
-    // visits script a listener holding a token with full control of their machine.
+    // allowed to ask.
     const answer = Platform.OS === "web"
       ? "ok"
-      : await probe(current.endpoint, current.token, controller.signal);
+      : await probe(machine.endpoint, machine.token, controller.signal);
     if (controller.signal.aborted) return;
     if (answer === "unreachable") {
       setStatus("offline");
@@ -182,75 +191,77 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
     }
     // Configured before the status changes, so nothing renders as "online" with the API still
     // pointing at the previous machine.
-    configure(current.endpoint, current.token);
-    setEndpoint(current.endpoint);
+    configure(machine.endpoint, machine.token);
     setStatus("online");
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    store.get()
-      .then((stored) => {
-        if (cancelled) return;
-        const found = stored ? (JSON.parse(stored) as Pairing) : null;
-        setPairing(found);
-        void connect(found);
-      })
-      .catch(() => {
-        if (!cancelled) setStatus("unpaired");
-      });
+    store.read()
+      .then((found) => { if (!cancelled) setMachines(found); })
+      .catch(() => { if (!cancelled) setMachines([]); });
     return () => { cancelled = true; };
-  }, [connect]);
+  }, []);
 
   // A phone that has been in a pocket has had its streams dropped and possibly its network
-  // changed. Coming back to the foreground is the moment to find out which endpoint works now,
-  // and it costs one request when the answer is "the same one".
-  const pairingRef = useRef<Pairing | null>(null);
-  useEffect(() => { pairingRef.current = pairing; }, [pairing]);
+  // changed. Coming back to the foreground is the moment to find out whether the machine it was
+  // talking to is still there, and it costs one request when the answer is yes.
+  const activeRef = useRef<Pairing | null>(null);
+  useEffect(() => { activeRef.current = active; }, [active]);
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active" && pairingRef.current !== null) void connect(pairingRef.current);
+      if (state === "active" && activeRef.current !== null) void connect(activeRef.current);
     });
     return () => subscription.remove();
   }, [connect]);
 
-  const pair = useCallback(async (next: Pairing) => {
-    await store.set(JSON.stringify(next));
-    setPairing(next);
+  const add = useCallback(async (next: Pairing) => {
+    // Keyed on the address, so pairing the same machine again replaces its token rather than
+    // leaving a second entry holding one that no longer works.
+    const merged = [...machines.filter((entry) => entry.endpoint !== next.endpoint), next];
+    await store.write(merged);
+    setMachines(merged);
+    setActive(next);
     await connect(next);
+  }, [machines, connect]);
+
+  const select = useCallback((endpoint: string) => {
+    const machine = machines.find((entry) => entry.endpoint === endpoint);
+    if (machine === undefined) return;
+    setActive(machine);
+    void connect(machine);
+  }, [machines, connect]);
+
+  const leave = useCallback(() => {
+    attempt.current?.abort();
+    configure("", "");
+    setActive(null);
+    setStatus("idle");
+  }, []);
+
+  const forget = useCallback(async (endpoint: string) => {
+    const remaining = machines.filter((entry) => entry.endpoint !== endpoint);
+    await store.write(remaining);
+    setMachines(remaining);
+    if (activeRef.current?.endpoint === endpoint) leave();
+  }, [machines, leave]);
+
+  const reconnect = useCallback(() => {
+    if (activeRef.current !== null) void connect(activeRef.current);
   }, [connect]);
 
-  const unpair = useCallback(async () => {
-    attempt.current?.abort();
-    await store.clear();
-    configure("", "");
-    setPairing(null);
-    setEndpoint("");
-    setStatus("unpaired");
-  }, []);
-
-  const reconnect = useCallback(() => { void connect(pairingRef.current); }, [connect]);
-
-  /**
-   * Rename the machine, on this phone only.
-   *
-   * The pairing arrives carrying the host's own name, which is whatever DHCP and the ISP left
-   * it — `Giovannis-MBP`, and worse on some networks. That is a fine default and a poor label,
-   * and the machine is not the right place to fix it: the name is what *this* phone calls it,
-   * and another device pairing with the same Mac may reasonably call it something else.
-   */
-  const rename = useCallback(async (name: string) => {
-    const current = pairingRef.current;
+  const rename = useCallback(async (endpoint: string, name: string) => {
     const trimmed = name.trim();
-    if (current === null || !trimmed || trimmed === current.name) return;
-    const renamed = { ...current, name: trimmed };
-    await store.set(JSON.stringify(renamed));
-    setPairing(renamed);
-  }, []);
+    if (!trimmed) return;
+    const renamed = machines.map((entry) => (entry.endpoint === endpoint ? { ...entry, name: trimmed } : entry));
+    await store.write(renamed);
+    setMachines(renamed);
+    setActive((current) => (current?.endpoint === endpoint ? { ...current, name: trimmed } : current));
+  }, [machines]);
 
   const value = useMemo<ConnectionValue>(
-    () => ({ status, pairing, endpoint, pair, unpair, reconnect, rename }),
-    [status, pairing, endpoint, pair, unpair, reconnect, rename],
+    () => ({ machines, active, status, add, select, leave, forget, reconnect, rename }),
+    [machines, active, status, add, select, leave, forget, reconnect, rename],
   );
 
   return <ConnectionContext.Provider value={value}>{children}</ConnectionContext.Provider>;

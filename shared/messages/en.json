@@ -275,22 +275,22 @@
     "behindUpstream": "{count} behind upstream"
   },
   "InterfaceScreen": {
+    "daemonRefused": "The daemon refused.",
     "lookingFor": "Looking for {machine}…",
+    "microphoneRefused": "Frank was not allowed to use the microphone. Grant it in Settings and try again.",
+    "noLongerPaired": "This device is no longer paired.",
     "notAnswering": "{machine} is not answering. It may be asleep, or off this network.",
+    "notPaired": "Not paired with a Frank yet.",
+    "openFrank": "Open Frank",
+    "otherMachines": "Other machines",
+    "pairedWith": "Frank is paired with {machine}.",
+    "thisMachine": "your Mac",
+    "transcriptionFailed": "Transcription failed ({status}).",
     "tried": "Tried {address}",
     "tryAgain": "Try again",
-    "pairAgain": "Pair again",
-    "pairedWith": "Frank is paired with {machine}.",
-    "openFrank": "Open Frank",
     "wouldNotLoad": "The interface would not load",
     "wouldNotLoadBody": "{machine} answered, but did not serve the screens — it may be running a build that was never made.",
-    "thisMachine": "your Mac",
-    "microphoneRefused": "Frank was not allowed to use the microphone. Grant it in Settings and try again.",
-    "wrongSampleRate": "This phone recorded at {recorded} Hz and the model needs {expected} Hz.",
-    "transcriptionFailed": "Transcription failed ({status}).",
-    "notPaired": "Not paired with a Frank yet.",
-    "noLongerPaired": "This device is no longer paired.",
-    "daemonRefused": "The daemon refused."
+    "wrongSampleRate": "This phone recorded at {recorded} Hz and the model needs {expected} Hz."
   },
   "LocationForm": {
     "local": "Local",
@@ -310,6 +310,16 @@
   "LocationStatus": {
     "uri": "URI",
     "hostNotFound": "Host not found in ~/.ssh/config"
+  },
+  "MachinesScreen": {
+    "title": "Machines",
+    "noneTitle": "No machines yet",
+    "noneBody": "Run frank reach on a Mac and pair with the link it prints.",
+    "pairAnother": "Pair a machine",
+    "forgetTitle": "Forget {machine}?",
+    "forgetBody": "This phone will lose its token for that machine. Pairing again needs a new link from it.",
+    "forget": "Forget",
+    "cancel": "Cancel"
   },
   "ModelSelect": {
     "visionBadge": "Vision — accepts image input",

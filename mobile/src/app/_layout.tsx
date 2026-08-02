@@ -61,7 +61,10 @@ function Navigation() {
           animation: "slide_from_right",
         }}
       >
+        {/* The machines list is the root; the interface is pushed onto it, so the edge swipe
+            goes back to the list. Pairing is a modal over whichever of those is showing. */}
         <Stack.Screen name="index" />
+        <Stack.Screen name="interface" />
         <Stack.Screen name="pair" options={{ presentation: "modal", animation: "slide_from_bottom" }} />
       </Stack>
     </>

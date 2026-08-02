@@ -275,22 +275,22 @@
     "behindUpstream": "アップストリームより {count} コミット遅延"
   },
   "InterfaceScreen": {
+    "daemonRefused": "デーモンが拒否しました。",
     "lookingFor": "{machine} を探しています…",
+    "microphoneRefused": "Frank はマイクの使用を許可されていません。設定で許可してから再試行してください。",
+    "noLongerPaired": "この端末のペアリングは解除されています。",
     "notAnswering": "{machine} が応答しません。スリープ中か、このネットワークにいない可能性があります。",
+    "notPaired": "まだ Frank とペアリングしていません。",
+    "openFrank": "Frank を開く",
+    "otherMachines": "ほかのマシン",
+    "pairedWith": "Frank は {machine} とペアリングされています。",
+    "thisMachine": "お使いの Mac",
+    "transcriptionFailed": "文字起こしに失敗しました ({status})。",
     "tried": "試行したアドレス: {address}",
     "tryAgain": "再試行",
-    "pairAgain": "再ペアリング",
-    "pairedWith": "Frank は {machine} とペアリングされています。",
-    "openFrank": "Frank を開く",
     "wouldNotLoad": "画面を読み込めませんでした",
     "wouldNotLoadBody": "{machine} は応答しましたが画面を返しませんでした。ビルドされていない可能性があります。",
-    "thisMachine": "お使いの Mac",
-    "microphoneRefused": "Frank はマイクの使用を許可されていません。設定で許可してから再試行してください。",
-    "wrongSampleRate": "このスマートフォンは {recorded} Hz で録音しましたが、モデルには {expected} Hz が必要です。",
-    "transcriptionFailed": "文字起こしに失敗しました ({status})。",
-    "notPaired": "まだ Frank とペアリングしていません。",
-    "noLongerPaired": "この端末のペアリングは解除されています。",
-    "daemonRefused": "デーモンが拒否しました。"
+    "wrongSampleRate": "このスマートフォンは {recorded} Hz で録音しましたが、モデルには {expected} Hz が必要です。"
   },
   "LocationForm": {
     "local": "ローカル",
@@ -310,6 +310,16 @@
   "LocationStatus": {
     "uri": "URI",
     "hostNotFound": "~/.ssh/config にホストが見つかりません"
+  },
+  "MachinesScreen": {
+    "title": "マシン",
+    "noneTitle": "マシンがまだありません",
+    "noneBody": "Mac で frank reach を実行し、表示されたリンクでペアリングしてください。",
+    "pairAnother": "マシンをペアリング",
+    "forgetTitle": "{machine} を削除しますか？",
+    "forgetBody": "このスマートフォンからそのマシンのトークンが失われます。再度ペアリングするには新しいリンクが必要です。",
+    "forget": "削除",
+    "cancel": "キャンセル"
   },
   "ModelSelect": {
     "visionBadge": "ビジョン — 画像入力に対応",

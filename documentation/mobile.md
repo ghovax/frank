@@ -192,12 +192,15 @@ The interface is a web page, so the mobile layout is a browser window at the rig
 ```
 mobile/src
   app/
-    index.tsx        a WebView onto the machine's own interface
-    pair.tsx         the camera, and the token going into the keychain
-  lib/connection.tsx whether the machine is answering, and holding the pairing
+    index.tsx        the machines this phone knows — the app's home
+    interface.tsx    a WebView onto one machine's own interface
+    pair.tsx         the camera, and a token going into the keychain
+  lib/connection.tsx the set of machines, and whether the chosen one answers
   lib/intl.tsx       the same message catalogue the desktop reads
-  theme/             tokens, for the two screens above and nothing else
+  theme/             tokens, for the screens above and nothing else
 ```
+
+The list is the root of the stack and the interface is pushed onto it, so the edge swipe every iOS app has goes back to it. That is the one navigation the page cannot offer: the interface is served by a single machine, talks to a single machine, and has no idea the others exist. It costs the page its own back gesture, which it can afford — it is a single-page application with its own history controls.
 
 That is the whole application. Everything else is `web/src`.
 

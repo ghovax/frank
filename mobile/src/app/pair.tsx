@@ -33,7 +33,7 @@ export default function PairScreen() {
   const translation = useTranslations("PairScreen");
   const theme = useTheme();
   const insets = useEdgeInsets();
-  const { pair, pairing } = useConnection();
+  const { add, machines } = useConnection();
   const { link } = useLocalSearchParams<{ link?: string }>();
   const [permission, requestPermission] = useCameraPermissions();
   // The camera is the default everywhere it exists. On web there is no `frank reach pair` QR to
@@ -62,9 +62,13 @@ export default function PairScreen() {
     setBusy(true);
     setFailure("");
     if (Platform.OS !== "web") await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    await pair(parsed);
-    router.replace("/");
-  }, [pair, translation]);
+    await add(parsed);
+    // Straight to the machine that was just paired, over the list rather than instead of it —
+    // dismissing to the list and making somebody tap the row they just created is a step that
+    // exists only because the code was entered on a different screen.
+    router.dismissTo("/");
+    router.push("/interface");
+  }, [add, translation]);
 
   // Ask for the camera as soon as the scanner is what is on screen.
   //
@@ -118,7 +122,7 @@ export default function PairScreen() {
     <View style={[styles.screen, { backgroundColor: theme.colors.bg, paddingTop: insets.top + theme.space[2] }]}>
       <View style={[styles.header, { paddingHorizontal: theme.space[4], paddingBottom: theme.space[3] }]}>
         <Text variant="heading" style={{ flex: 1 }}>{translation("title")}</Text>
-        {pairing ? (
+        {machines.length > 0 ? (
           <Pressable onPress={() => goBack()} hitSlop={12}>
             <X size={22} color={theme.colors.fgMuted} />
           </Pressable>
