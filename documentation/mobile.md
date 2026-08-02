@@ -42,7 +42,7 @@ Set Tailscale up on both devices, once. The four steps are under [Setting Tailsc
 
 Two servers, each in its own terminal, plus the daemon, which `frank reach` starts if it is not already up.
 
-Start the door the phone comes in by. It prints its pairing QR and then serves.
+Start the door the phone comes in by. It prints its pairing link and then serves.
 
 ```bash
 frank reach
@@ -54,12 +54,10 @@ Start the bundler that delivers the app to Expo Go. It prints its own QR.
 cd mobile && bun run start
 ```
 
-Then, on the phone: scan the **Expo** QR to load the app, and once it opens on its pairing screen, scan the **`frank reach`** QR to point it at your machine. Two codes, in that order — one loads the app, the other tells it where Frank is.
-
-A QR drawn in the terminal needs the right window size, font and colours to be scannable at all, and degrades to noise rather than to a smaller code when any of those is wrong. `--image` writes a PNG instead and opens it, which a camera reads without argument:
+Then, on the phone: scan the **Expo** QR to load the app, and once it opens on its pairing screen, paste the link `frank reach` printed. `frank reach pair` prints it on its own, one line on stdout, so it pipes:
 
 ```bash
-frank reach pair --image
+frank reach pair | pbcopy
 ```
 
 ### When the QR does not print
@@ -121,7 +119,6 @@ The serve configuration outlives the command, deliberately. It costs nothing whi
 | Flag | What it does |
 |---|---|
 | `-p`, `--port` | The loopback port Tailscale proxies to. Default 8825. Nothing listens on a network interface, so this only matters if something else already has the port. |
-| `--image` | Save the pairing code as a PNG and open it, rather than drawing it in the terminal. |
 | `--interface` | Serve the interface from a running dev server instead of the built export. |
 
 `frank reach pair` prints the pairing code without starting a server. `frank reach rotate` mints a new token, which unpairs every device holding the old one.
@@ -157,7 +154,7 @@ The order is the part worth knowing: with MagicDNS off, the HTTPS switch does no
 
 ### The token, and how it gets into the page
 
-The reach token is minted once, kept in `~/.local/share/frank/reach-token` at mode 0600, and unaffected by restarts — unlike the daemon's own capability token, which is new on every boot and would unpair a device every time the machine woke up. It carries full control of the daemon: the QR code is meant for a phone, not for a room.
+The reach token is minted once, kept in `~/.local/share/frank/reach-token` at mode 0600, and unaffected by restarts — unlike the daemon's own capability token, which is new on every boot and would unpair a device every time the machine woke up. It carries full control of the daemon: the link is meant for a phone, not for a room.
 
 The app opens `https://endpoint/?token=…` exactly once. `frank reach` answers that document with an `HttpOnly` session cookie, and every script, font, event stream and websocket the page asks for afterwards carries the token without the page ever holding it. A page cannot attach a credential to its own subresources; a cookie is attached by the transport, and no script can read it back out. The cookie is stripped before anything reaches the daemon, as the header and query forms are.
 
@@ -188,7 +185,6 @@ The interface is a web page, so the mobile layout is a browser window at the rig
 | `frank reach` says Tailscale is not connected | Open the Tailscale app and sign in. It says exactly which of the four setup steps above is missing. |
 | Expo Go says to run `eas init` | Ignore it. EAS is the cloud build service; this project has no EAS configuration and local development needs none. |
 | Expo Go's server list is empty | Discovery is mDNS, which on iOS needs Local Network permission — Settings → Expo Go → Local Network. Not needed if you open the `exp://` URL directly. |
-| The terminal QR will not scan | `frank reach pair --image`, which writes a PNG and opens it. |
 | The pairing screen will not open the camera | It asks on arrival now. If it was refused once, iOS will not ask again — the screen offers Settings, or use the Paste link tab. |
 
 ## How it is put together

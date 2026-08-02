@@ -784,12 +784,6 @@ def build_parser() -> argparse.ArgumentParser:
              "network interface; only change this if something else already has the port",
     )
     reach.add_argument(
-        "--image", nargs="?", const="~/Downloads", default="",
-        help="save the pairing code as a PNG and open it, instead of drawing it in the terminal "
-             "— which needs the right size, font and colours to be readable at all. Takes a file "
-             "or a directory; defaults to ~/Downloads",
-    )
-    reach.add_argument(
         "--interface", nargs="?", const="http://127.0.0.1:3000", default="",
         help="serve the interface from a running dev server instead of the built export, so a "
              "change reaches the phone without `bun run build`. Defaults to Next's own port",

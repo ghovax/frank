@@ -60,7 +60,6 @@ dependencies = [
     # `frank reach pair` prints its pairing link as a QR code, because the alternative is asking
     # somebody to type a 43-character token into a phone. Pure Python and dependency-free, which
     # matters for something the frozen build has to carry.
-    "segno>=1.6.6",
 ]
 
 [project.scripts]

@@ -34,7 +34,6 @@ how it binds, not of a setting somebody could get wrong.
 from __future__ import annotations
 
 import base64
-import contextlib
 import logging
 import json
 import os
@@ -42,7 +41,6 @@ import re
 import secrets
 import socket
 import subprocess
-import sys
 from pathlib import Path
 from typing import Optional
 
@@ -488,32 +486,7 @@ def _presented_token(scope, parse_qsl, urlencode) -> tuple[str, bytes, bool]:
     return "", scope.get("query_string", b""), False
 
 
-def _write_image(uri: str, destination: str) -> Path:
-    """Save the pairing code as a PNG, and open it.
-
-    A QR drawn in half-block characters needs a terminal of the right size, the right font and
-    the right colours, and a phone camera that will focus on glowing text — and when any of those
-    is not true it degrades to a wall of noise rather than to a smaller code. An image has none
-    of those requirements: it opens in a viewer, at whatever size the window is, in black on
-    white, which is what a camera was built to read.
-
-    `scale` is pixels per module; large enough to lock on from a comfortable distance, with the
-    quiet zone the specification asks for so the code is not flush against the window edge.
-    """
-    import segno
-
-    path = Path(destination).expanduser()
-    if path.is_dir():
-        path = path / "frank-pairing.png"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    segno.make(uri, error="m").save(path, scale=12, border=4, dark="#000000", light="#ffffff")
-    if sys.platform == "darwin":
-        with contextlib.suppress(OSError, subprocess.SubprocessError):
-            subprocess.run(["open", str(path)], check=False, timeout=5)
-    return path
-
-
-def _describe(payload: dict, image: str = "") -> None:
+def _describe(payload: dict) -> None:
     """Say how to pair a device.
 
     Split the way the rest of this command line splits it: the link is *data* and goes to stdout,
@@ -521,14 +494,11 @@ def _describe(payload: dict, image: str = "") -> None:
     about what to do with it and goes to stderr, so a reader never has to filter sentences out of
     the thing it came for.
 
-    There is no QR drawn in the terminal. One needs the right window size, the right font and the
-    right colours to be scannable at all, and when any of those is wrong it degrades to a wall of
-    noise rather than to a smaller code — so it was a picture that mostly could not be used, in
-    the middle of the output that could. `--image` writes a real PNG and opens it, which is what
-    a camera was built to read."""
+    A link and nothing else. This drew a QR in the terminal, then wrote one to a PNG and opened
+    it, and neither earned its place: the terminal one needed the right window size, font and
+    colours to be scannable at all, and the PNG was a second way to move a string that copies and
+    pastes perfectly well."""
     logger.info(f"Pair a device with Frank on {payload['name']}, at {payload['endpoint']}.")
-    if image:
-        logger.info(f"Pairing code saved to {_write_image(pairing_uri(payload), image)}.")
     logger.info(
         "This link carries a token with full control of this daemon. Send it to a phone, not to "
         "a room."
@@ -552,7 +522,7 @@ def run(arguments) -> int:
         return 1
 
     if action == "pair":
-        _describe(payload, getattr(arguments, "image", "") or "")
+        _describe(payload)
         return 0
 
     return _serve(arguments, payload)
@@ -620,7 +590,7 @@ def _serve(arguments, payload: dict) -> int:
         _report(error)
         return 1
 
-    _describe(payload, getattr(arguments, "image", "") or "")
+    _describe(payload)
     logger.info(f"Serving on {payload['endpoint']}. Scan the code with Frank on your phone, or paste the link.")
 
     # No TLS here. Tailscale terminates it, with a certificate issued for this machine's tailnet
