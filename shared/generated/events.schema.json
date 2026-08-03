@@ -736,6 +736,9 @@
         "background": {
           "tsType": "Record<string, unknown>"
         },
+        "confinement": {
+          "tsType": "Record<string, unknown>"
+        },
         "locations": {
           "items": {
             "tsType": "Record<string, unknown>"
