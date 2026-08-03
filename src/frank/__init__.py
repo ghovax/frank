@@ -358,7 +358,6 @@ class Session:
         Exposed because a library that hides its own core forces every non-obvious use into a
         fork. Everything below is a convenience over it."""
         if self._runtime is None:
-            from frank.base.confinement import Profile
             from frank.base.tuning import set_tuning, tuning_from_policy
             from frank.runtime.runtime import AgentRuntime
 
@@ -411,7 +410,12 @@ class Session:
                 working_directory=self._runtime_directory,
                 project_directory=self._directory,
                 permission_mode=self._permission_mode,
-                sandbox=self._sandbox if self._sandbox is not None else Profile(),
+                # Handed over as the caller gave it, including `None`. The runtime normalises
+                # every shape in one place, and `None` there means the configured default rather
+                # than an empty `Profile()` — which is what this line used to substitute, and
+                # which denies every write, in the directory the caller just named as the
+                # session's workspace.
+                sandbox=self._sandbox,
                 session_access=self._peers,
                 mcp_manager=self._mcp_manager,
                 catalogue=catalogue,

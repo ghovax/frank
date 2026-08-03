@@ -405,6 +405,11 @@ class _PreflightGate:
     deny_message: str = ""
     # For an egress gate, the remote agent name (an "always allow" is remembered).
     egress_agent: str = ""
+    # For an access gate, the widening being asked for. Carried on the gate so that approving it
+    # records the grant, rather than the resolver having to reconstruct from the arguments what
+    # the preflight already parsed — two parses of one request is two chances to disagree about
+    # what the person actually approved.
+    access_request: Any = None
 
     def to_dict(self) -> dict:
         return {

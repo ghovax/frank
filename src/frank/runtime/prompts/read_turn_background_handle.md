@@ -1,1 +1,5 @@
-The ID `{{ job_id }}` is a background *{{ kind }}* job handle, not a turn you can read. Its result is delivered to you automatically as a separate completed message when ready — do not read_turn or poll for it. If it has not arrived yet, just continue; it will appear on its own. read_turn is only for sibling turns handed to you from outside; a peer session is read with read_session, and a peer's answer arrives on its own as a message.
+The identifier `{{ job_id }}` is a handle for a background *{{ kind }}* job. It is not a turn, and you cannot read it.
+
+Its result reaches you on its own, as a separate completed message. Do not call `read_turn` on it, and do not poll for it. If it has not arrived, carry on. It will appear.
+
+`read_turn` reads a sibling turn that came to you from outside. To look at a peer session, use `read_session`. A peer's answer arrives on its own, as a message.

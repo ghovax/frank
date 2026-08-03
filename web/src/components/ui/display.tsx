@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Flex, Span, Text, type SpanProps } from "@chakra-ui/react";
+import { Box, Flex, List, Span, Text, type SpanProps } from "@chakra-ui/react";
 import type { ReactNode } from "react";
 import { Pre } from "./semantic";
 
@@ -78,6 +78,29 @@ export function MonoBlock({ children, maxH = 64 }: { children: ReactNode; maxH?:
     >
       {children}
     </Pre>
+  );
+}
+
+/**
+ * Several monospace values as a real bullet list — one item per value.
+ *
+ * For a field that holds a set rather than one thing: the paths an access request names, or
+ * anything else where the entries are peers. A joined string is wrong for these twice over. It
+ * reads as one value when it is several, and whatever character joins them is a decision that
+ * belongs to a locale, not to a component: a comma and a space is an English convention, and
+ * Japanese joins with a different mark entirely. A list has no separator to get wrong.
+ */
+export function MonoList({ items }: { items: string[] }) {
+  return (
+    <List.Root pl={4} fontSize="xs" listStyleType="disc">
+      {items.map((item) => (
+        <List.Item key={item} mb={0.5} _last={{ mb: 0 }}>
+          <Span fontFamily="var(--app-font-mono)" wordBreak="break-all">
+            {item}
+          </Span>
+        </List.Item>
+      ))}
+    </List.Root>
   );
 }
 

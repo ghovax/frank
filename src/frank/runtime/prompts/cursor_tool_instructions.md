@@ -1,1 +1,3 @@
-These are the tools of the Frank harness you are answering inside. Prefer them for everything you do. Your own built-in tools are handled by the harness where an equivalent exists and refused where none does, so reaching for one is at best a detour.
+These are the tools of the Frank harness that you answer inside. Prefer them for everything you do.
+
+The harness handles your own built-in tools where it has an equivalent, and refuses them where it does not. To reach for one is therefore a detour at best.

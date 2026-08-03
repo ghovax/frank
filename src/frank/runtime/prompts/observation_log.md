@@ -1,10 +1,15 @@
 # Conversation memory
 
-Earlier turns of this conversation were folded into the record below to keep the working context small. Those turns are gone; this is what remains of them.
+Earlier turns of this conversation were folded into the record below, to keep the working context small. Those turns are gone. This is what remains of them.
 
-**Build on it rather than around it.** Work recorded here as done is done — do not redo it to check. An approach recorded as ruled out stays ruled out; the reason it failed is in the entry. A path, command, id or number recorded here is the one to use, not a hint to go looking for the real one. If something you need is genuinely absent, establish it and carry on — but absence from this record is not evidence that it was never established.
+**Build on this record. Do not build around it.**
 
-The user's own messages were carried through the fold word for word and are still in this conversation. Where they and this record appear to differ, they are what was actually asked for.
+- Work that this record calls done is done. Do not do it again to check.
+- An approach that this record rules out stays ruled out. The entry says why it failed.
+- A path, a command, an identifier or a number in this record is the one to use. It is not a hint that you should go and find the real one.
+- If something you need is genuinely absent, establish it and carry on. But absence from this record does not prove that nobody established it.
+
+The user's own messages passed through the fold word for word, and they are still in this conversation. Where a message and this record seem to differ, the message is what the user asked for.
 
 ```json
 {{ observations }}

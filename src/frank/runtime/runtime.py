@@ -310,6 +310,41 @@ def _all_available_tools(
     return available
 
 
+def _as_profile(sandbox: Any):
+    """Whatever a caller called a sandbox, as the :class:`Profile` the runtime works with.
+
+    Four shapes reach this. A `Profile` passes through. A dict is what the daemon puts in an
+    assignment, so it is read the way the worker reads it. A `SandboxConfiguration` is what
+    somebody who read the configuration documentation naturally reaches for, and it knows how to
+    become a profile. `None` means the caller expressed no preference, which is not the same as
+    asking for nothing — see below.
+    """
+    from frank.base.confinement import Profile
+
+    if sandbox is None:
+        # Deliberately the configured default, not `Profile()`.
+        #
+        # `Profile()` has empty path tuples, and an empty writable set is not "unconfined" — it
+        # is "may write nowhere". So a library session built without a `sandbox=` produced an
+        # agent whose `bash` could not write to the directory the caller had just named as its
+        # workspace: every write came back `Operation not permitted`. The daemon never met this,
+        # because it always resolves a profile from configuration first.
+        from frank.base.configuration import SandboxConfiguration
+
+        return SandboxConfiguration().to_profile()
+    if isinstance(sandbox, Profile):
+        return sandbox
+    if isinstance(sandbox, dict):
+        return Profile.from_dict(sandbox)
+    to_profile = getattr(sandbox, "to_profile", None)
+    if callable(to_profile):
+        return to_profile()
+    raise TypeError(
+        f"sandbox must be a confinement Profile, a SandboxConfiguration, or the dict form of "
+        f"either — got {type(sandbox).__name__}."
+    )
+
+
 def _build_tool_context(
     global_configuration: Configuration,
     *,
@@ -537,9 +572,15 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         # What every child this runtime spawns is confined to. Resolved by the daemon at session
         # creation and clamped there; held rather than re-derived, so a configuration edit cannot
         # widen a session that is already running.
-        from frank.base.confinement import Profile
+        from frank.base.confinement import Grant
 
-        self._sandbox = sandbox if sandbox is not None else Profile()
+        # Normalised, because callers already hand this three different shapes and only one of
+        # them worked. The worker converts a dict first, the library passed whatever it was
+        # given straight through, and a person reaching for the documented `SandboxConfiguration`
+        # got a pydantic model installed as the confinement — where every later `.describe()`,
+        # `.widened()` and `spawn_recipe()` raises `AttributeError` deep inside a turn rather
+        # than at the call that made the mistake. One conversion here settles it for every path.
+        self._sandbox = _as_profile(sandbox)
         self._agent_configuration = agent_configuration
         self._global_configuration = global_configuration
         self._working_directory = working_directory or str(Path.home())
@@ -555,7 +596,12 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         )
 
         effective_model = agent_configuration.model_identifier
-        if not effective_model:
+        # Only a runtime that must *build* a client needs to be told which one. A caller who
+        # brought their own has already answered the question, and this refused them anyway —
+        # while naming `model=` as one of the three ways out, which made the message a promise
+        # the code did not keep. The identifier is still worth having when it is there, because
+        # the context window is looked up from it, but its absence degrades rather than refuses.
+        if not effective_model and model is None:
             raise ValueError(
                 f"Agent '{agent_configuration.identifier}' names no model. Set `provider` and "
                 "`model` in its profile, pass `model_identifier=\"provider/model\"` to "
@@ -707,6 +753,17 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             session_access=session_access,
             mcp_manager=mcp_manager,
         )
+        # What a person has approved this session reaching beyond its configured profile. Held
+        # for the session rather than for the call that asked, because a grant re-asked on every
+        # command of a build produces a column of gates that nobody reads by the fourth — and how
+        # often somebody is asked is itself a security property, pointing the opposite way to
+        # intuition. An approval asked too often teaches the person to approve without looking.
+        #
+        # Deliberately not carried in `self._sandbox`. That profile is what a peer clamps against
+        # when this session creates one, so a grant recorded there would flow to every child: a
+        # person who allowed one write for a build would have silently allowed it for four peers
+        # doing something else, and asking narrowly then delegating widely would launder it.
+        self._access_grants: list[Grant] = []
 
     def set_locations(self, locations: list[dict] | None) -> None:
         """Adopt the workspace's environments as they are now.

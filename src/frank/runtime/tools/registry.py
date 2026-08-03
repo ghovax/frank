@@ -24,6 +24,28 @@ from frank.base.configuration import PromptLoader
 #: drift into asking for twenty slightly different things.
 EXPLANATION = "A concise, user-facing reason this action is needed for the current task. Always required."
 
+#: What a call reaches for beyond the confinement it already has, and whether it changes anything.
+#:
+#: One argument where there were two. `read_only` used to be a separate flag answering "does this
+#: mutate", weighed only where the static scan of the command could not decide — a narrow job,
+#: carried by a wire of its own. `access_request` answers the same question and a larger one with
+#: it: not merely whether the call writes, but *where* it reaches. That is the version worth
+#: asking, because reach is structural and checkable where a bare boolean was neither.
+#:
+#: It is a difference against the profile, never an inventory of the call. A command working
+#: inside what the session already holds omits it, which is nearly every command, so the ordinary
+#: case costs no tokens and the argument's presence is itself the signal that something is being
+#: asked for.
+ACCESS_REQUEST = (
+    "What this call needs beyond what the session already holds — a difference against the "
+    "confinement listed in your context, not a list of everything the call touches. Omit it "
+    "entirely when the call works inside paths already writable or readable, which is the usual "
+    "case. When present it must set `mutates`. Use `writes`/`reads` for paths outside the "
+    "confinement and `network` only where the confinement denies the network. A granted path "
+    "stays granted for the rest of the session; ask for the narrowest thing that does the work, "
+    "and never use a path granted for one purpose to do something else."
+)
+
 # bash is synchronous by default: the model chooses whether a command backgrounds
 # (background=true), so backgrounding is never a surprise it has to reason about.
 # A synchronous command blocks and returns its real output up to its ``timeout`` (a
@@ -39,6 +61,56 @@ EXPLANATION = "A concise, user-facing reason this action is needed for the curre
 # tuning timeout multiplier at each call site.
 
 
+#: What a kernel refusal looks like coming back through a shell. Matched on the message rather
+#: than on an errno, because the errno never reaches here: the shell prints its own sentence and
+#: exits, so the text is the only evidence there is.
+_SANDBOX_REFUSAL_PHRASES = (
+    "operation not permitted",
+    "permission denied",
+    "read-only file system",
+)
+
+
+def _sandbox_refusal_note(return_code: int, output: str, profile, workspace: str) -> dict:
+    """What to say when a command probably died on the confinement rather than on its own work.
+
+    A boundary that refuses in errno is a boundary nobody can act on. `Operation not permitted`
+    names no path, says nothing about what would have been permitted, and reads as a broken tool
+    — so the usual response is to run the same command again.
+
+    **This is a hint and not an attribution.** Seatbelt writes the denied path to the system log
+    and Landlock returns a bare `EACCES`; neither can be tied back to one child reliably, and a
+    note naming the wrong path would be worse than one naming none. So it states what is
+    certainly true — where this session may write — and leaves the model to match that against
+    what it was trying to do. Returned as structured data rather than pasted into the output,
+    because the output is the command's and this is the harness's.
+    """
+    if return_code == 0 or not output:
+        return {}
+    lowered = output.lower()
+    if not any(phrase in lowered for phrase in _SANDBOX_REFUSAL_PHRASES):
+        return {}
+    from frank.base import confinement as _confinement
+
+    writable = [
+        resolved for entry in profile.filesystem.writable
+        if (resolved := _confinement.expand(entry, workspace=workspace))
+    ]
+    return {
+        "note": (
+            "This may be the sandbox rather than the command. A path outside the confinement is "
+            "refused by the operating system, which reports it as a permission error without "
+            "naming the path."
+        ),
+        "writable": writable,
+        "network": profile.network,
+        "remedy": (
+            "Write somewhere already listed, or re-issue the call with an access_request naming "
+            "the path you need."
+        ),
+    }
+
+
 def _require_mcp_client_manager():
     manager = tool_context.current().mcp_manager
     if manager is None:
@@ -50,7 +122,7 @@ def _require_mcp_client_manager():
 async def bash(
     command: str,
     location: str = "",
-    read_only: bool = False,
+    access_request: dict[str, Any] | None = Field(None, description=ACCESS_REQUEST),
     explanation: str = Field(..., description=EXPLANATION),
     risk: Literal["low", "medium", "high"] = "low",
     background: bool = False,
@@ -175,7 +247,7 @@ async def bash(
         if not output:
             return compact({"code": result_code, "status": result_status, "output": "", "output_file": str(output_path), "truncated": False, "pid": process_id, "size": 0, "returncode": return_code})
         inline_output, truncated = clip_to_tokens(output, active_tuning().amount(Tunable.output_tokens))
-        return compact({
+        result = {
             "code": result_code,
             "status": result_status,
             "output": inline_output,
@@ -184,7 +256,11 @@ async def bash(
             "pid": process_id,
             "size": len(output),
             "returncode": return_code,
-        })
+        }
+        refusal = _sandbox_refusal_note(return_code, inline_output, profile, workspace)
+        if refusal:
+            result["sandbox"] = refusal
+        return compact(result)
 
     jobs = current_background_jobs()
     job_id = jobs.spawn(
@@ -192,7 +268,7 @@ async def bash(
         arguments={
             "command": command,
             "location": location,
-            "read_only": read_only,
+            "access_request": access_request,
             "explanation": explanation,
             "risk": risk,
             "background": background,
@@ -314,7 +390,7 @@ async def call_mcp_tool(
     server: str,
     tool_name: str,
     arguments: dict[str, Any] | None = None,
-    read_only: bool = False,
+    access_request: dict[str, Any] | None = Field(None, description=ACCESS_REQUEST),
     explanation: str = Field(..., description=EXPLANATION),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:

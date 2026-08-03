@@ -295,6 +295,16 @@ class Tunable(Enum):
         a moment rather than the whole action.""",
     )
 
+    goal_blocked_turns = Default(
+        3, Scaling.NONE,
+        """How many consecutive turns the same condition must stop a goal before the agent may
+        report it blocked. One failure is not an impasse, and a goal abandoned on the first
+        refusal is one nobody asked to abandon. How many failures do constitute an impasse
+        depends on the work, which is why this is a setting and not a number in a prompt — the
+        value here is what the agent is told, so the instruction and the threshold cannot
+        drift apart.""",
+    )
+
     # The control plane and the processes it supervises.
     warm_workers = Default(2, Scaling.NONE)
     session_title_attempts = Default(

@@ -26,9 +26,9 @@ from __future__ import annotations
 
 import contextvars
 from dataclasses import dataclass, field, replace
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
-from frank.base.confinement import Profile
+from frank.base.confinement import Grant, Profile
 
 
 @dataclass(frozen=True)
@@ -55,6 +55,27 @@ class ToolContext:
     # How this session reaches its peers. Supplied by the worker, which is the layer that
     # knows which session this is; the runtime deliberately carries no identity of its own.
     session_access: Any = None
+
+    def with_grants(self, grants: "Sequence[Grant]") -> "ToolContext":
+        """This context with approved widenings folded into the profile the child will run under.
+
+        Derived rather than assigned, for exactly the reason :meth:`for_directory` is. The
+        confinement a tool reads is per-task, and a grant approved in one turn must not silently
+        widen a compaction or an autonomous wake running beside it in the same worker.
+
+        Applied here rather than at the profile's source so that `sandbox` stays what a person
+        configured. Two turns can then be asked the same question — what may this session reach —
+        and get the standing answer and the granted one apart from each other.
+        """
+        if not grants:
+            return self
+        profile = self.sandbox
+        for grant in grants:
+            profile = profile.widened(
+                reads=grant.reads, writes=grant.writes,
+                network=grant.network, workspace=self.workspace,
+            )
+        return replace(self, sandbox=profile)
 
     def for_directory(self, directory: str) -> "ToolContext":
         """This context with its workspace repointed, for a call that runs somewhere else.

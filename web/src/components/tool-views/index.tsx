@@ -18,8 +18,10 @@ import {
   InlineField,
   Mono,
   MonoBlock,
+  MonoList,
 } from "../ui/display";
 import { asArray, asRecord, asString } from "@/lib/coerce";
+import { declaredNonMutating, requestedAccess } from "@/lib/tool-display";
 import { Pill } from "../ui/pill";
 import { STATUS_PALETTE, taskLifecycleKind } from "@/lib/status";
 import { hasBackgroundJobId, type ToolEventStatus } from "@/lib/tool-event";
@@ -43,7 +45,8 @@ function tryParse(content: string): unknown {
 function BashCallView({ args }: { args: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   const command = stripCdPrefix(asString(args.command));
-  const readOnly = args.read_only !== false;
+  const readOnly = declaredNonMutating(args);
+  const access = requestedAccess(args);
   const risk = asString(args.risk) || "low";
   // Display label for each bash risk level. Falls back to the raw value when
   // unmapped so an unexpected level still renders something readable.
@@ -59,6 +62,19 @@ function BashCallView({ args }: { args: Record<string, unknown> }) {
         <MonoBlock>{command}</MonoBlock>
       </Field>
       <InlineField label={translation("readOnly")}>{readOnly ? translation("yes") : translation("no")}</InlineField>
+      {access.writes.length > 0 && (
+        <Field label={translation("accessWrite")}>
+          <MonoList items={access.writes} />
+        </Field>
+      )}
+      {access.reads.length > 0 && (
+        <Field label={translation("accessRead")}>
+          <MonoList items={access.reads} />
+        </Field>
+      )}
+      {access.network && (
+        <InlineField label={translation("accessNetwork")}>{translation("yes")}</InlineField>
+      )}
       <InlineField label={translation("risk")}>{riskText}</InlineField>
     </FieldList>
   );
@@ -248,7 +264,7 @@ const FIELD_LABEL_KEYS: Record<string, string> = {
   server: "fieldServer",
   tool_name: "fieldToolName",
   arguments: "fieldArguments",
-  read_only: "readOnly",
+  access_request: "accessRequested",
   explanation: "explanation",
   risk: "risk",
   uri: "fieldUri",

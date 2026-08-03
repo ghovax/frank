@@ -344,6 +344,16 @@ class TurnContext(BaseModel):
     # machine does not need restating every turn, and restating it would cost its own size on
     # each one; appended once, it is cached with everything else from the second call onward.
     locations: list[dict[str, Any]] = Field(default_factory=list)
+    # What the operating system will actually permit a tool child, and what has been granted on
+    # top of it. Here, and not in the system prompt, for the reason `locations` is here: a grant
+    # approved mid-session changes it, and anything changeable in the cached prefix rewrites the
+    # front of every request.
+    #
+    # It is here *at all* because it was nowhere. A session was told its permission mode and
+    # never its confinement, so the first it learned of the boundary was an `Operation not
+    # permitted` that named no path — a boundary you can only discover by hitting it is one you
+    # hit repeatedly.
+    confinement: dict[str, Any] = Field(default_factory=dict)
     # Where a screen script can be pointed, and what may be called there. Present only when the
     # screen tool is enabled. It is here rather than in the system prompt because the system
     # prompt is cached for the session and windows open and close within one: a cached list of

@@ -1,1 +1,1 @@
-List the sessions you created, with their state. Yours only — not every session on the machine.
+List the sessions you created, with the state of each. Yours only, and not every session on this machine.

@@ -30,6 +30,7 @@ from frank.base.memories import memories_payload
 from frank.base.message_content import message_content_deltas, message_text
 from frank.base.model_errors import ContextWindowExceeded, over_context_window
 from frank.base.skills import enabled_skills, skills_for_agent, skills_payload
+from frank.base.tuning import Tunable, active_tuning
 from frank.runtime.turn_events import (
     Checkpoint,
     Done,
@@ -170,7 +171,10 @@ class _RunsTurns:
             # leaving a bare `[]` in the prompt.
             instruction_files = "".join(
                 self._prompt_loader.load("instruction_file", {
-                    "metadata": compact({"source": entry["source"]}),
+                    # Whatever the payload carries, and nothing invented for what it does not.
+                    # `scope` is absent for a document that came from somewhere other than a
+                    # file, and the prompt says what that absence means.
+                    "metadata": compact({key: entry[key] for key in ("source", "scope") if key in entry}),
                     "content": entry["content"].strip(),
                 })
                 for entry in instructions_payload(self._catalogue.instructions())
@@ -277,8 +281,30 @@ class _RunsTurns:
             },
             screen=self._screen_context(),
             locations=self._locations_summary(),
+            confinement=self._confinement_summary(),
         )
         return context.model_dump_json(exclude_defaults=True)
+
+    def _confinement_summary(self) -> dict:
+        """The boundary the operating system will enforce, as the model needs to read it.
+
+        The session's *configured* profile, plus the grants approved so far — not the widened
+        profile the two combine into. Those are different facts and the difference is the point:
+        one is what a person set up, the other is what this session has since been allowed, and a
+        model that cannot tell them apart cannot tell a standing permission from one it asked for
+        and must not spend on something else.
+
+        Absent entirely where nothing enforces a profile, because a list of paths captioned with
+        a boundary that does not exist is worse than no list — it invites the model to route
+        around a wall that is not there.
+        """
+        profile = getattr(self._tool_context, "sandbox", None)
+        if profile is None or self._global_configuration.sandbox.enforce == "off":
+            return {}
+        summary = profile.describe(workspace=self._working_directory or "")
+        if self._access_grants:
+            summary["granted"] = [grant.as_dict() for grant in self._access_grants]
+        return summary
 
     def _screen_context(self) -> dict:
         """Every place a screen script can be pointed at, and what may be called in each.
@@ -869,7 +895,12 @@ class _RunsTurns:
             # a model that keeps working is nudged fresh each time it next stops, with no
             # nudge counter and no ceiling.
             self._awaiting_goal_reconsideration = True
-            goal_continuation = self._prompt_loader.load("goal_continuation", {"goal": self._active_goal})
+            # The threshold is rendered from the same setting anything else would read, so the
+            # number the model is told and the number in the configuration cannot drift apart.
+            goal_continuation = self._prompt_loader.load("goal_continuation", {
+                "goal": self._active_goal,
+                "blocked_turns": active_tuning().amount(Tunable.goal_blocked_turns),
+            })
             self._conversation.append(self._reminder_message(goal_continuation))
             yield Status(code="goal_check",
             )

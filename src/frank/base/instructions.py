@@ -23,10 +23,17 @@ class Instruction:
 
     The model sees `source`, so it can say which file or which label a convention came from
     rather than asserting it without provenance.
+
+    It also sees `scope`: the directory this document governs, which is the directory the
+    document sits in. Without it the prompt could state a precedence rule and the model had
+    nothing to apply it to — a home-wide `CLAUDE.md` and a project `AGENTS.md` arrived as two
+    unlabelled bodies of text, and which one won a disagreement was left to whichever the model
+    read last.
     """
 
     source: str
     content: str
+    scope: str = ""
 
 
 def as_instructions(value: str | Iterable[Instruction] | None) -> list[Instruction]:
@@ -44,12 +51,29 @@ def as_instructions(value: str | Iterable[Instruction] | None) -> list[Instructi
 
 
 def instructions_payload(instructions: Sequence[Instruction]) -> list[dict[str, str]]:
-    """The structured instruction data injected into an agent's system context."""
-    return [
-        {"source": instruction.source, "content": instruction.content}
+    """The structured instruction data injected into an agent's system context.
+
+    Ordered shallowest scope first, so the documents arrive in the order the precedence rule
+    reads them: the general ones, then the ones that override them. A model applying "the more
+    deeply nested one wins" against a list in arbitrary order has to sort it first, and a rule
+    that needs work before it can be applied is a rule that will sometimes not be."""
+    payload = [
+        {
+            "source": instruction.source,
+            # Absent rather than filled with a word. An instruction supplied in code has no
+            # directory, and to invent one — "everywhere" — would put a value in the field that
+            # reads like a path and is not one. A model applying the precedence rule to it has
+            # nothing to compare. An absent key says the same thing and cannot be misread.
+            **({"scope": instruction.scope} if instruction.scope else {}),
+            "content": instruction.content,
+        }
         for instruction in instructions
         if instruction.content.strip()
     ]
+    # Shallowest scope first, so the documents arrive in the order the precedence rule reads
+    # them. An instruction with no scope sorts first: it is the most general thing there is,
+    # and everything with a directory overrides it.
+    return sorted(payload, key=lambda entry: entry.get("scope", "").count("/"))
 
 
 __all__ = ["Instruction", "as_instructions", "instructions_payload"]

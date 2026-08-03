@@ -614,7 +614,8 @@
     "running": "Running",
     "write": "Write",
     "highRisk": "High risk",
-    "mediumRisk": "Medium risk"
+    "mediumRisk": "Medium risk",
+    "accessRequested": "Access"
   },
   "ToolDisplay": {
     "webSearch": "Browsing for \"{query}\"",
@@ -796,7 +797,11 @@
     "url": "URL",
     "validation": "Validation",
     "violation": "Violation",
-    "yes": "Yes"
+    "yes": "Yes",
+    "accessRequested": "Access requested",
+    "accessRead": "Reads from",
+    "accessWrite": "Writes to",
+    "accessNetwork": "Network access"
   },
   "WorkspaceLocationsPanel": {
     "loadError": "Could not load workspace environments",

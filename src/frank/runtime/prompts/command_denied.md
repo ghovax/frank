@@ -1,5 +1,5 @@
-The following commands were **denied** by the user-defined security policy:
+The user's security policy **denied** these commands:
 
 {{ commands }}
 
-Do not attempt to bypass this restriction by rephrasing, chaining, or encoding the command. Instead, ask the user to run it manually or choose a different approach.
+Do not try to get around this. Do not rephrase the command, chain it, or encode it. Ask the user to run it themselves, or take a different approach.

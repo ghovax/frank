@@ -863,7 +863,7 @@ export interface Settings {
 const DEFAULT_SANDBOX: SandboxSettings = {
   enforce: "required",
   network: true,
-  filesystem: { readable: [], writable: [], deny: [] },
+  filesystem: { readable: [], writable: [], deny: [], grantable: [] },
   limits: {},
   umask: null,
   nice: 0,
@@ -1197,7 +1197,7 @@ export type SandboxEnforce = "required" | "preferred" | "off";
 export interface SandboxSettings {
   enforce: SandboxEnforce;
   network: boolean;
-  filesystem: { readable: string[]; writable: string[]; deny: string[] };
+  filesystem: { readable: string[]; writable: string[]; deny: string[]; grantable: string[] };
   limits: Record<string, number>;
   umask: string | null;
   nice: number;

@@ -614,7 +614,8 @@
     "running": "実行中",
     "write": "書き込み",
     "highRisk": "高リスク",
-    "mediumRisk": "中リスク"
+    "mediumRisk": "中リスク",
+    "accessRequested": "アクセス"
   },
   "ToolDisplay": {
     "webSearch": "「{query}」を検索中",
@@ -796,7 +797,11 @@
     "url": "URL",
     "validation": "検証",
     "violation": "違反",
-    "yes": "はい"
+    "yes": "はい",
+    "accessRequested": "要求したアクセス",
+    "accessRead": "読み取り元",
+    "accessWrite": "書き込み先",
+    "accessNetwork": "ネットワークアクセス"
   },
   "WorkspaceLocationsPanel": {
     "loadError": "ワークスペースの環境を読み込めませんでした",

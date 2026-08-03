@@ -1,7 +1,7 @@
-This is a read-only agent — it may not modify the system.
+This agent is read-only. It may not change the system.
 
-**The reason for rejection is:**
+**The reason for the refusal:**
 
 {{ violation }}
 
-Do not write files; return your findings as your final message instead.
+Do not write files. Return what you found as your final message instead.

@@ -1,8 +1,10 @@
 Update the status of one or more tasks at once.
 
-Mark a task ``in_progress`` when work starts, ``completed`` only when it is actually done, and ``blocked`` when reality prevents progress. Update on real state changes—not as busy-work—and never end with completed work still shown as unresolved.
+Mark a task `in_progress` when the work starts. Mark it `completed` only when it is truly done. Mark it `blocked` where reality stops the work.
+
+Update on a real change of state, never as busy-work. Never end a turn with completed work still shown as unresolved.
 
 Arguments:
-  - updates: List of update objects. Each object has:
-        - task_id (required): The task identifier (e.g. "task-...").
-        - status (required): One of 'pending', 'in_progress', 'completed', 'blocked'.
+  - updates: A list of update objects. Each holds:
+        - task_id (required): The task identifier, such as "task-...".
+        - status (required): One of 'pending', 'in_progress', 'completed' or 'blocked'.

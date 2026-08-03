@@ -142,9 +142,10 @@ What a session's tool children may do: a `bash` command, or a `control_screen` s
 sandbox:
   enforce: required
   filesystem:
-    readable: ["~/.config", "~/.ssh", "~/.gitconfig", "~/.cargo", "~/.npmrc"]
-    writable: ["$WORKSPACE", "$TMPDIR", "$XDG_CACHE_HOME"]
-    deny:     ["~/Documents", "~/Desktop", "~/Downloads", "~/Library/Mail"]
+    readable:  ["~/.config", "~/.ssh", "~/.gitconfig", "~/.cargo", "~/.npmrc"]
+    writable:  ["$WORKSPACE", "$TMPDIR", "/tmp", "$XDG_CACHE_HOME"]
+    deny:      ["~/Documents", "~/Desktop", "~/Downloads", "~/Library/Mail"]
+    grantable: []
   network: true
   limits:
     RLIMIT_CORE: 0
@@ -161,6 +162,12 @@ Almost every field is a Unix primitive under its own name. `limits` are [`setrli
 **The filesystem.** The system stays readable — `/usr` and `/etc` are not secrets, and denying them breaks every command while protecting nothing. The lists govern *your home*, which is closed by default. `readable` is the allowlist that keeps toolchains working. `writable` is narrower still, and `deny` wins over both.
 
 The shipped defaults keep credential and configuration directories readable. To break `git push` in order to protect a key is a bad trade. What the defaults close is the personal data that no toolchain touches. `$WORKSPACE` is the session's own directory.
+
+`/tmp` is listed beside `$TMPDIR` because on macOS the two are different places: `$TMPDIR` expands to a per-user directory under `/var/folders`. A writable set that named only `$TMPDIR` refused `/tmp`, which is the scratch path every convention points at and the first one anything reaches for.
+
+**Asking for more.** An agent that needs a path outside these lists asks for it, on the call that needs it, with `access_request`. The request goes through the same rules, classifier and approval prompt as anything else. An approval holds for the rest of that session, and it never reaches a peer: a session it creates clamps against the *configured* profile, not the granted one.
+
+`grantable` lists the paths an agent may be given without a prompt. It is empty by default, so every request is asked about. A path under `deny` is never grantable, whatever `grantable` says — that list is what you declared off-limits before the session started, and nothing decided at runtime reaches past it.
 
 **The backend.** macOS uses [`sandbox-exec`](https://keith.github.io/xcode-man-pages/sandbox-exec.1.html) with a generated Seatbelt profile; Linux uses [Landlock](https://docs.kernel.org/userspace-api/landlock.html) plus a network namespace. Apple has **deprecated `sandbox-exec` since 10.15**, and Frank depends on it anyway. Nothing else on macOS confines a single child process:
 
@@ -188,7 +195,7 @@ It also clamps the confinement against the session that created it. Path sets in
 | `default` | Follow the per-command rules; ask about anything they do not name. |
 | `permissive` | The same rules, but an unnamed command runs. Only the risk the model declared escalates: `low` runs, `medium` and `high` ask. No classifier, so no extra model call. |
 | `self_classify` | As `permissive`, plus a classifier that judges what the barrier could not settle — it approves the provably safe and escalates the rest. |
-| `read_only` | Allow reads; deny writes and side effects. |
+| `read_only` | Allow reads; deny writes and side effects. The session's confinement is narrowed to match, so the kernel refuses a write the command scan did not catch. |
 
 They are listed from the most asking to the least, which is the order restrictiveness runs in and the order a session moves along as it earns trust. There is **no bypass mode**, and no standing "always allow": the only runtime decisions are allow-once and deny. A session's mode is chosen when the harness creates it and can be changed afterwards by the person running it; a session can never change its own. A session created by another is never looser than its parent, and tightening a session tightens the subtree it created.
 

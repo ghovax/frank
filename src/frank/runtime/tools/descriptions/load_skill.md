@@ -1,7 +1,7 @@
-Load a specialized skill's instructions into the conversation.
+Load a skill's instructions into the conversation.
 
-When a task matches a skill listed in ``Available skills``, load that skill before acting rather than guessing its workflow. The result injects the full instructions and references to any scripts, files, or resources it provides.
+Where a task matches a skill in "Available skills", load that skill before you act. Do not guess its workflow. The result brings in the full instructions, and the references to any scripts, files or resources the skill provides.
 
 Arguments:
-  - name: The skill name, matching one listed in "Available skills".
-  - explanation: A concise, user-facing reason for loading this skill.
+  - name: The skill name, as "Available skills" lists it.
+  - explanation: A short reason for loading it, in the words the user reads.

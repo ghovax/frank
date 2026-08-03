@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import logging
 import os
 import sys
@@ -122,7 +123,7 @@ def _public(record: SessionRecord) -> dict:
     return record.public()
 
 
-def _resolve_sandbox(agent: str, working_directory: str, parent) -> dict:
+def _resolve_sandbox(agent: str, working_directory: str, parent, mode=None) -> dict:
     """The confinement a new session gets: the machine's, narrowed by the agent's, clamped by its
     creator's.
 
@@ -145,6 +146,22 @@ def _resolve_sandbox(agent: str, working_directory: str, parent) -> dict:
         profile = agent_profile.to_profile().clamp(profile)
     if parent is not None:
         profile = profile.clamp(confinement.Profile.from_dict(parent.sandbox))
+    # A read-only session is read-only at the kernel, not only in a scan of the command text.
+    #
+    # It was only ever the latter. `permission_mode` never reached this function, so the profile
+    # a read-only session ran under was the ordinary one and every enforcement rested on
+    # `read_only_assessment` guessing right from a command string. Where that guess is wrong —
+    # a script, a build step writing its own cache, a write the shell computes — the write
+    # landed, in a session somebody had explicitly set read-only.
+    #
+    # The text scan stays, and is still the first thing to refuse: it refuses before anything
+    # runs and explains itself in words, where the kernel refuses late and says EACCES. This is
+    # the floor underneath it, not its replacement.
+    if mode is not None and getattr(mode, "is_read_only", False):
+        profile = dataclasses.replace(
+            profile,
+            filesystem=dataclasses.replace(profile.filesystem, writable=(), grantable=()),
+        )
     if profile.enforce == confinement.ENFORCE_REQUIRED and not confinement.backend_name():
         raise RpcError(
             f"Confinement is required and this machine has no backend for it ({confinement.describe_backend()}). "
@@ -215,7 +232,7 @@ async def _session_create(params: dict) -> dict:
         _agent_permission_ceiling(agent, working_directory),
     )
 
-    sandbox = _resolve_sandbox(agent, working_directory, parent)
+    sandbox = _resolve_sandbox(agent, working_directory, parent, mode)
 
     # `create` registers the session in memory; the durable write is awaited here, off the
     # loop, because the worker about to be started will look this row up.

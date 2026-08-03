@@ -1,1 +1,1 @@
-Frank declines this built-in tool. Use the tools provided to you under the "frank" server instead — they are the only ones this client can run.
+Frank declines this built-in tool. Use the tools under the "frank" server instead. They are the only tools this client can run.

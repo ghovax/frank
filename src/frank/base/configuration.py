@@ -265,10 +265,23 @@ class FilesystemConfiguration(Section):
         description="Paths under your home a tool child may read. The system is readable and is not listed.",
     )
     writable: list[str] = Field(
-        default=["$WORKSPACE", "$TMPDIR", "$XDG_CACHE_HOME", "~/.cache"],
+        default=["$WORKSPACE", "$TMPDIR", "/tmp", "$XDG_CACHE_HOME", "~/.cache"],
         description=(
             "Paths a tool child may write. Deliberately narrower than readable, because a wrong "
             "write is the failure people actually meet. $WORKSPACE is the session's own directory."
+        ),
+    )
+    # `/tmp` is listed beside `$TMPDIR` because on macOS they are not the same place. `$TMPDIR`
+    # expands to a per-user directory under `/var/folders`, so a session whose writable set named
+    # only `$TMPDIR` was refused at `/tmp` — the one scratch path every convention points at, and
+    # the first one anything reaches for. What came back was `Operation not permitted`, naming no
+    # path, which reads as a broken tool rather than a boundary. Nothing of the user's lives in
+    # `/tmp`; it is world-writable already, and cleared by the system.
+    grantable: list[str] = Field(
+        default=[],
+        description=(
+            "Paths an agent may be granted at runtime without asking a person. Empty means every "
+            "request is asked about. Paths under deny are never grantable, whatever is listed here."
         ),
     )
     deny: list[str] = Field(
@@ -327,6 +340,7 @@ class SandboxConfiguration(Section):
                 readable=tuple(self.filesystem.readable),
                 writable=tuple(self.filesystem.writable),
                 deny=tuple(self.filesystem.deny),
+                grantable=tuple(self.filesystem.grantable),
             ),
             network=self.network,
             limits={name: int(value) for name, value in self.limits.items()},

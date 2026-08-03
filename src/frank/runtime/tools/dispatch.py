@@ -12,6 +12,7 @@ import statistics
 from dataclasses import replace
 from datetime import datetime, timezone
 from frank.base import telemetry as _telemetry
+from frank.base.confinement import parse_access_request
 from frank.runtime.internals import (
     _background_handle_kind,
     _cap_model_result_payload,
@@ -335,10 +336,13 @@ class _DispatchesTools:
             risk = arguments.get("risk", "low")
             if risk not in ("low", "medium", "high"):
                 return ("invalid_risk", f"risk must be one of 'low', 'medium', 'high', got '{risk}'.")
-            # Omitted read_only is treated as mutating — the conservative default.
-            read_only = arguments.get("read_only", False)
-            if not isinstance(read_only, bool):
-                return ("invalid_read_only", "read_only must be a boolean.")
+        # Every tool that spawns a child or reaches outside the process may carry one. Validated
+        # here, once, rather than at each handler: a malformed request must fail as a tool error
+        # the model can correct, never as a grant nobody wrote.
+        if "access_request" in arguments:
+            _, complaint = parse_access_request(arguments.get("access_request"))
+            if complaint:
+                return ("invalid_access_request", complaint)
         if tool_name == "call_mcp_tool":
             if not arguments.get("server"):
                 return ("invalid_mcp_server", "server is required.")
@@ -531,7 +535,12 @@ class _DispatchesTools:
         # capability clients, and this session's view of its peers. Bound per call rather than
         # installed per process, so two turns open at once — a compaction alongside a user's —
         # cannot see each other's.
-        tool_context.bind(self._tool_context)
+        #
+        # The grants approved so far are folded in here, at the one point every tool passes
+        # through, rather than at each tool that spawns a child. A widening applied in five
+        # places is a widening that will be forgotten in one of them, and the one it is forgotten
+        # in is a tool that fails on a permission the user already granted.
+        tool_context.bind(self._tool_context.with_grants(self._access_grants))
 
         # Coerce any list/dict argument the model passed as a JSON string into its native
         # value up front, so validation and dispatch both see the real container.
@@ -674,10 +683,13 @@ class _DispatchesTools:
                 # A derived context, not a mutation: this used to rewrite the process-wide
                 # confinement profile, so a `bash` call naming its own directory narrowed the
                 # sandbox of every other turn open in the same worker.
-                tool_context.bind(self._tool_context.for_directory(str(directory_path)))
-        read_only = tool_arguments.get("read_only", False)
-        if isinstance(read_only, str):
-            read_only = read_only.lower() == "true"
+                tool_context.bind(
+                    self._tool_context.for_directory(str(directory_path)).with_grants(self._access_grants)
+                )
+        requested, _ = parse_access_request(tool_arguments.get("access_request"))
+        # Absent or silent means no claim, and no claim is treated as mutating — the conservative
+        # reading, and the one the lease below depends on.
+        declared_read_only = requested is not None and requested.mutates is False
 
         # An agent may be forbidden from backgrounding work — a long-lived shell subtree
         # outlives the turn that started it, which is exactly what some agents should not be
@@ -703,7 +715,7 @@ class _DispatchesTools:
         lease_token = ""
         # Filesystem leases guard this machine's working trees; a remote command
         # mutates the remote host, so no local lease applies.
-        if not read_only and not policy.is_remote:
+        if not declared_read_only and not policy.is_remote:
             try:
                 lease_token = await self._acquire_filesystem_lease(
                     scope="worktree",

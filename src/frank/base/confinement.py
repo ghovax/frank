@@ -73,6 +73,11 @@ class Filesystem:
     readable: tuple[str, ...] = ()
     writable: tuple[str, ...] = ()
     deny: tuple[str, ...] = ()
+    # Paths a runtime grant may open without asking a person. Not an allowance in itself: a path
+    # listed here is reachable only once the agent has actually requested it, which is what keeps
+    # it different from `writable`. Nothing is listed by default, so every request is asked about
+    # until somebody decides otherwise.
+    grantable: tuple[str, ...] = ()
 
     def intersect(self, parent: "Filesystem") -> "Filesystem":
         """This filesystem clamped against a parent's: never wider, and the parent's denials are
@@ -82,7 +87,108 @@ class Filesystem:
             readable=_contained_in(self.readable, parent.readable),
             writable=_contained_in(self.writable, parent.writable),
             deny=tuple(dict.fromkeys(self.deny + parent.deny)),
+            # What may be granted without asking narrows exactly as an allowance does: a child
+            # cannot be handed a quieter approval path than its parent holds.
+            grantable=_contained_in(self.grantable, parent.grantable),
         )
+
+
+@dataclass(frozen=True)
+class AccessRequest:
+    """What one call says it needs beyond the confinement it already has.
+
+    ``mutates`` is the claim that used to be the separate ``read_only`` argument, and it is
+    three-valued on purpose. ``False`` says the call changes nothing; ``True`` says it does;
+    ``None`` says the model made no claim, because it omitted the request entirely. The third
+    case has to stay distinguishable from the second — treating "said nothing" as "said it
+    mutates" would be safe but would lose the signal that nothing was declared, which is what
+    the static scan needs to know before it decides whether `unknown` should escalate.
+    """
+
+    mutates: Optional[bool] = None
+    reads: tuple[str, ...] = ()
+    writes: tuple[str, ...] = ()
+    network: bool = False
+
+    @property
+    def wants_widening(self) -> bool:
+        """Whether this asks for anything at all. A request that only declares ``mutates`` is a
+        statement about the call, not a request for access, and must not raise a gate."""
+        return bool(self.reads or self.writes or self.network)
+
+
+def parse_access_request(value: object) -> tuple[Optional[AccessRequest], str]:
+    """One tool argument as an :class:`AccessRequest`, or a sentence saying why it is not.
+
+    Returns ``(None, "")`` for an absent request, which is the ordinary case and not an error.
+    Validation is strict about the shape and forgiving about nothing: a malformed request is
+    refused rather than partially understood, because the half that parsed would become a grant
+    request nobody wrote.
+    """
+    if value is None:
+        return None, ""
+    if not isinstance(value, dict):
+        return None, "access_request must be an object."
+    unknown = sorted(set(value) - {"mutates", "reads", "writes", "network"})
+    if unknown:
+        return None, f"access_request does not accept: {', '.join(unknown)}."
+    if "mutates" not in value:
+        return None, "access_request must state `mutates` when it is present."
+    if not isinstance(value.get("mutates"), bool):
+        return None, "access_request.mutates must be a boolean."
+    network = value.get("network", False)
+    if not isinstance(network, bool):
+        return None, "access_request.network must be a boolean."
+
+    paths: dict[str, tuple[str, ...]] = {}
+    for name in ("reads", "writes"):
+        entries = value.get(name) or []
+        if isinstance(entries, str):
+            entries = [entries]
+        if not isinstance(entries, list) or any(not isinstance(entry, str) for entry in entries):
+            return None, f"access_request.{name} must be a list of paths."
+        cleaned = tuple(entry.strip() for entry in entries if entry.strip())
+        # A request for the whole filesystem is not a request; it is a way of not being asked
+        # again. Refused at the surface rather than left for the classifier, so that the answer
+        # is the same however the session is configured to decide.
+        for entry in cleaned:
+            if entry in ("/", "~", "/*", "~/", "~/*"):
+                return None, (
+                    f"access_request.{name} may not name the whole filesystem ({entry}). "
+                    "Ask for the narrowest path that does the work."
+                )
+        paths[name] = cleaned
+
+    return AccessRequest(
+        mutates=bool(value["mutates"]),
+        reads=paths["reads"], writes=paths["writes"], network=network,
+    ), ""
+
+
+@dataclass(frozen=True)
+class Grant:
+    """One widening a person approved, and what it was approved for.
+
+    Held by the session rather than by the call, because a grant re-asked on every command in a
+    build produces a row of gates nobody reads by the fourth. How often somebody is asked is
+    itself a security property, and it does not point the way intuition says: an approval asked
+    too often trains the person to approve without looking.
+
+    ``purpose`` is the explanation the call carried when the grant was approved. It is kept so
+    the person can see, in the listing, what they said yes to — a path with no reason beside it
+    is a permission nobody can audit later."""
+
+    reads: tuple[str, ...] = ()
+    writes: tuple[str, ...] = ()
+    network: bool = False
+    purpose: str = ""
+    granted_at: str = ""
+
+    def as_dict(self) -> dict:
+        return {
+            "reads": list(self.reads), "writes": list(self.writes),
+            "network": self.network, "purpose": self.purpose, "granted_at": self.granted_at,
+        }
 
 
 @dataclass(frozen=True)
@@ -136,9 +242,76 @@ class Profile:
                 # whole purpose is to narrow.
                 writable=_contained_in(tuple(writable), self.filesystem.writable, workspace=workspace),
                 deny=self.filesystem.deny,
+                # Explicitly nothing. A narrowed child is a helper the harness spawns for one
+                # bridged purpose, not a session anybody negotiates with, so there is no route
+                # by which it could ask for more and nothing to gain by leaving one open.
+                grantable=(),
             ),
             network=self.network and network,
         )
+
+    def widened(
+        self, *, reads: Iterable[str] = (), writes: Iterable[str] = (),
+        network: bool = False, workspace: str = "",
+    ) -> "Profile":
+        """This profile plus what a person approved for one call. The mirror of :meth:`narrowed`.
+
+        A grant is the answer to the question the confinement could not previously be asked. The
+        profile says a session may write to four directories; the work in front of it needs a
+        fifth; and until now the only way to say so was to edit the configuration, which is not
+        something that can happen inside a turn.
+
+        **The deny list wins, unconditionally.** A path under `deny` is not widenable by any
+        grant, however it was approved — that list is what a person declared never-negotiable
+        before any of this started, and a runtime decision must not be able to reach past a
+        standing one. Everything else a person approves is allowed, because the person is the
+        authority the gate exists to consult.
+
+        Nothing here narrows. A grant that names a path already writable is a no-op rather than a
+        replacement, which is what makes applying several in sequence safe.
+        """
+        denied = [Path(resolved) for entry in self.filesystem.deny if (resolved := expand(entry, workspace=workspace))]
+
+        def permitted(paths: Iterable[str]) -> tuple[str, ...]:
+            kept = []
+            for entry in paths:
+                resolved = expand(entry, workspace=workspace)
+                if not resolved:
+                    continue
+                candidate = Path(resolved)
+                if any(candidate == root or candidate.is_relative_to(root) for root in denied):
+                    continue
+                kept.append(entry)
+            return tuple(kept)
+
+        granted_reads = permitted(reads)
+        granted_writes = permitted(writes)
+        return replace(
+            self,
+            filesystem=Filesystem(
+                # A granted write implies the read that goes with it. Every tool that writes a
+                # file reads it first — `edit_file` must, and a shell redirect into an existing
+                # file opens it — so a grant that gave the write alone would be approved, applied,
+                # and then fail on the read half in a way nobody could explain from the profile.
+                readable=tuple(dict.fromkeys(self.filesystem.readable + granted_reads + granted_writes)),
+                writable=tuple(dict.fromkeys(self.filesystem.writable + granted_writes)),
+                deny=self.filesystem.deny,
+                grantable=self.filesystem.grantable,
+            ),
+            network=self.network or network,
+        )
+
+    def grants_without_asking(self, paths: Iterable[str], *, workspace: str = "") -> bool:
+        """Whether every one of ``paths`` lies inside what a person already said may be granted.
+
+        The quiet path, and it is deliberately all-or-nothing: a request that reaches one listed
+        path and one unlisted one is asked about whole. Approving the half that was pre-cleared
+        and gating the rest would split one intent into two decisions and show the person a
+        request that no longer matches what the agent asked for."""
+        listed = tuple(paths)
+        if not listed or not self.filesystem.grantable:
+            return False
+        return len(_contained_in(listed, self.filesystem.grantable, workspace=workspace)) == len(listed)
 
     def as_dict(self) -> dict:
         """The form that travels to a worker and out to a client."""
@@ -147,12 +320,53 @@ class Profile:
                 "readable": list(self.filesystem.readable),
                 "writable": list(self.filesystem.writable),
                 "deny": list(self.filesystem.deny),
+                "grantable": list(self.filesystem.grantable),
             },
             "network": self.network,
             "limits": dict(self.limits),
             "umask": self.umask,
             "nice": self.nice,
             "enforce": self.enforce,
+        }
+
+    def describe(self, *, workspace: str = "") -> dict:
+        """This profile as the model is told it: resolved paths, and nothing it cannot act on.
+
+        Resolved rather than written the way the configuration writes it, because the whole
+        confusion this exists to end is that `$TMPDIR` is not `/tmp`. A model asked whether it
+        may write to `/tmp` cannot expand a shell variable in its head, and one shown
+        `$TMPDIR` in a list will read it as covering the obvious temporary directory. It does
+        not: on macOS it expands to a per-user path under `/var/folders`.
+
+        The system is readable and is deliberately absent, for the reason the configuration
+        gives about its own defaults — `/usr` and `/etc` are not secrets, and listing them
+        would bury the handful of entries that decide anything.
+        """
+        backend = backend_name()
+        if not backend:
+            # Nothing on this machine can enforce a path. To list writable, readable and denied
+            # directories here would describe a boundary that does not exist — the worst kind of
+            # thing to tell a model, because it reads exactly like a real one and would have it
+            # route around a wall that is not there, or ask for access it already holds.
+            #
+            # `enforce` decides whether a session may run at all in this state; that refusal
+            # happens at creation. What this says is only what is true now.
+            return {"enforced": False}
+
+        def resolved(entries: Iterable[str]) -> list[str]:
+            seen: list[str] = []
+            for entry in entries:
+                path = expand_for_display(entry, workspace=workspace)
+                if path and path not in seen:
+                    seen.append(path)
+            return seen
+
+        return {
+            "writable": resolved(self.filesystem.writable),
+            "readable": resolved(self.filesystem.readable),
+            "denied": resolved(self.filesystem.deny),
+            "network": self.network,
+            "enforced_by": backend,
         }
 
     @classmethod
@@ -166,6 +380,7 @@ class Profile:
                 readable=tuple(filesystem.get("readable") or ()),
                 writable=tuple(filesystem.get("writable") or ()),
                 deny=tuple(filesystem.get("deny") or ()),
+                grantable=tuple(filesystem.get("grantable") or ()),
             ),
             network=bool(data.get("network", True)),
             limits={str(key): int(value) for key, value in (data.get("limits") or {}).items()},
@@ -188,6 +403,26 @@ def expand(path: str, *, workspace: str = "") -> str:
         return str(Path(text).resolve(strict=False))
     except OSError:
         return ""
+
+
+def expand_for_display(path: str, *, workspace: str = "") -> str:
+    """One configured path as a person or a model would write it, not as the kernel stores it.
+
+    The same expansion as :func:`expand` — `$WORKSPACE`, environment variables, `~` — but it
+    stops short of following symbolic links. That last step is right for enforcement and wrong
+    for display, and on macOS the difference is the whole point: `/tmp` is a symlink to
+    `/private/tmp`, so a resolved listing tells a model that it may write to `/private/tmp` and
+    says nothing about the path it was actually going to use.
+
+    The model would then read the list, fail to find `/tmp`, and either ask for access it
+    already holds or route around a wall that is not there. Both are the confusion this listing
+    exists to end, reintroduced by the formatting.
+    """
+    text = path.replace("$WORKSPACE", workspace or "")
+    text = os.path.expandvars(os.path.expanduser(text))
+    if not text or "$" in text:
+        return ""
+    return str(Path(text))
 
 
 def _contained_in(paths: Iterable[str], allowed: Iterable[str], *, workspace: str = "") -> tuple[str, ...]:

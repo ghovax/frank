@@ -1,3 +1,3 @@
-List the agents registered on other hosts, with their live health.
+List the agents registered on other hosts, with the health of each.
 
-A remote agent is not a peer session: it runs on someone else's machine, at their cost, with no access to this filesystem and no shared history. Reach for one only when the work genuinely belongs on that host.
+A remote agent is not a peer session. It runs on somebody else's machine, at their cost. It cannot reach this filesystem, and it shares no history with you. Reach for one only where the work truly belongs on that host.
