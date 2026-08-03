@@ -656,11 +656,21 @@ class _TurnRunner:
         daemon's notice when the session is eventually reaped stays the backstop for everything
         this does not catch.
 
+        Never after the *person* has spoken to this session, and that exception is the whole of a
+        bug worth naming. A delegated session is addressable: you can open it in the interface and
+        talk to it, which is the ordinary way to ask a peer what it meant. Nudging after such a
+        turn told the session it owed its parent an answer when what had just happened was
+        somebody saying hello — so it dutifully sent "Hello, how can I help?" up the tree, as a
+        report. The obligation belongs to the work the parent briefed, not to a conversation the
+        parent is not in; and a person reading the transcript needs no reminder relayed for them.
+
         Spawned rather than awaited, because this runs inside the ending turn's teardown and the
         reminder is itself a turn — driving it inline would re-enter the machinery that is
         currently unwinding."""
         peers = getattr(self._executor, "_peers", None)
         if peers is None or not self._completed or self._report_reminder:
+            return
+        if self._turn_kind == TurnKind.USER:
             return
         if not getattr(peers, "_parent_session", "") or peers.reported_to_parent:
             return
