@@ -6,6 +6,7 @@ import {
   type ColorModeProviderProps,
 } from "./color-mode"
 import { LocaleProvider } from "@/lib/i18n/locale-provider"
+import { PreferencesProvider } from "@/lib/preferences"
 
 // The app's design language lives here as theme-level defaults, so component call sites
 // stay lean and only pass size/radius when they intentionally deviate:
@@ -157,9 +158,13 @@ export function Provider(props: ColorModeProviderProps) {
   return (
     <ClientOnly fallback={null}>
       <ChakraProvider value={system}>
-        <LocaleProvider>
-          <ColorModeProvider {...props} />
-        </LocaleProvider>
+        {/* Nothing below renders until the daemon has said what it remembers: the theme and
+            the locale are read from that answer. */}
+        <PreferencesProvider>
+          <LocaleProvider>
+            <ColorModeProvider {...props} />
+          </LocaleProvider>
+        </PreferencesProvider>
       </ChakraProvider>
     </ClientOnly>
   )

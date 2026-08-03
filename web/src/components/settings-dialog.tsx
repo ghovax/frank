@@ -22,6 +22,7 @@ import { AgentSelectControl, CompactionToggleControl, ComputerControlToggleContr
 import { useScrollEdgeFade } from "@/lib/scroll-fade";
 import { Section } from "./ui/semantic";
 import { errorMessage } from "@/lib/errors";
+import { usePreferences } from "@/lib/preferences";
 
 export type SettingsSection = "general" | "locations" | "schedules" | "agents" | "connection";
 
@@ -480,6 +481,7 @@ export function SettingsDialog({
   }
 
   const { theme: appTheme, setTheme: setAppTheme } = useColorMode();
+  const { updatePreferences } = usePreferences();
   const { locale, setLocale } = useLocale();
   const [settingsSearch, setSettingsSearch] = useState("");
   const query = settingsSearch.trim().toLowerCase();
@@ -511,7 +513,10 @@ export function SettingsDialog({
             <Alert.Description fontSize="xs">{translation("computerControlBody")}</Alert.Description>
           </Alert.Content>
           <Button colorPalette="orange" variant="solid" flexShrink={0} onClick={() => {
-            try { localStorage.setItem("frank:pendingComputerControlEnable", "1"); } catch { /* private mode */ }
+            // Recorded on the daemon, not here: the grant only reaches a freshly started
+            // daemon, so the request has to outlive this page — and after the relaunch it is
+            // the daemon that still knows it was asked for.
+            updatePreferences({ computer_control_awaiting_grant: true });
             setAwaitingGrantReturn(true);
             void openAccessibilitySettings();
           }}>

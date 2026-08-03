@@ -17,6 +17,11 @@ class Base(DeclarativeBase):
     pass
 
 
+# The key of the one row in ``interface_preferences``. Named rather than spelled as a literal
+# at both the reader and the writer, which is how the two come to disagree.
+SOLE_INTERFACE = "interface"
+
+
 class SessionRecord(Base):
     """A chat session — one A2A context, and the durable half of what the registry knows.
 
@@ -136,6 +141,39 @@ class WorkspaceRecord(Base):
     # Empty when the workspace has never been opened, which is the one time landing on a blank
     # composer is right.
     last_session_id: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
+class InterfacePreferenceRecord(Base):
+    """How the interface should look and where it should open — one row, named columns.
+
+    The colour mode, the language, the workspace to reopen, and whether someone has asked for
+    computer control while macOS has not granted Accessibility yet. Every one of these used to
+    live in the browser's ``localStorage`` (and, in the desktop app, in a second SQLite database
+    of its own), which made "what theme is Frank in" a question with one answer per client and
+    no way to reconcile them. They are here for the same reason ``last_session_id`` is on the
+    workspace: none of it is a fact about a browser. A tab, the desktop app and the phone are
+    three views of one daemon.
+
+    A single row, addressed by a constant id, rather than a table of name/value pairs. The set
+    is small, fixed, and typed — a bag of strings would put the schema in the interface's
+    keystrokes and make every read a parse.
+    """
+
+    __tablename__ = "interface_preferences"
+
+    # There is one interface, so there is one row. The column exists because a table needs a
+    # key, not because there is a second set of preferences somewhere.
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=SOLE_INTERFACE)
+    # "system" follows the operating system; "light" and "dark" are the explicit choices.
+    color_mode: Mapped[str] = mapped_column(String, nullable=False, default="system")
+    # A BCP-47 tag the interface has messages for; empty means it has not been chosen.
+    locale: Mapped[str] = mapped_column(String, nullable=False, default="")
+    # The workspace a fresh launch reopens. Empty until one has been opened.
+    last_workspace_id: Mapped[str] = mapped_column(String, nullable=False, default="")
+    # Set when computer control is asked for while Accessibility is not granted. macOS only
+    # exposes the grant to a freshly started daemon, so the request has to outlive the process
+    # that took it; the interface completes it after the relaunch.
+    computer_control_awaiting_grant: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class ScheduleRecord(Base):

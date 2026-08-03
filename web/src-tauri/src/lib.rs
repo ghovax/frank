@@ -33,7 +33,6 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri::webview::WebviewBuilder;
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Runtime, WebviewUrl};
-use tauri_plugin_sql::{Migration, MigrationKind};
 
 const LOCAL_HOST: &str = "127.0.0.1";
 // Only a fallback: the daemon picks a free port at startup and publishes it.
@@ -507,26 +506,17 @@ fn update_tray_recent(app: AppHandle, items: Vec<RecentItem>) -> Result<(), Stri
     Ok(())
 }
 
-// Application entry point: register Tauri plugins, migrations, commands, and the tray.
+// Application entry point: register Tauri plugins, commands, and the tray.
+//
+// This window used to carry a SQLite database of its own, holding the colour mode, the locale
+// and which workspace to reopen. It is gone: those are the daemon's, in the same database as
+// the sessions, so the desktop app, a browser tab and the phone answer "what theme is Frank
+// in" the same way instead of each holding a private copy.
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let migrations = vec![
-        Migration {
-            version: 1,
-            description: "create_app_state",
-            sql: include_str!("../migrations/001_create_app_state.sql"),
-            kind: MigrationKind::Up,
-        },
-    ];
-
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(
-            tauri_plugin_sql::Builder::default()
-                .add_migrations("sqlite:internal.db", migrations)
-                .build(),
-        )
         .manage(SshTunnels(Mutex::new(HashMap::new())))
         .invoke_handler(tauri::generate_handler![
             local_daemon,

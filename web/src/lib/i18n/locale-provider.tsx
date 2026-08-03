@@ -1,19 +1,15 @@
 "use client";
 
-// Runtime locale for the app. Modeled on color-mode.tsx: reads the persisted locale on
-// mount (Tauri SQLite app_state, or localStorage in a plain browser) and re-renders the
-// whole tree with the matching messages when it changes — no navigation, no route change,
-// because locale here is a setting, not a URL segment. This is the client-only next-intl
-// wiring that a static export (output: "export", no server/middleware) requires.
+// Runtime locale for the app. Modeled on color-mode.tsx: reads the locale the daemon has
+// stored and re-renders the whole tree with the matching messages when it changes — no
+// navigation, no route change, because locale here is a setting, not a URL segment. This is
+// the client-only next-intl wiring that a static export (output: "export", no
+// server/middleware) requires.
 
 import * as React from "react";
 import { NextIntlClientProvider } from "next-intl";
-import { getAppState, isTauri, setAppState } from "@/lib/app-state";
+import { usePreferences } from "@/lib/preferences";
 import { DEFAULT_LOCALE, MESSAGES, isLocale, type Locale } from "@shared/locales";
-import { swallowed } from "@/lib/swallowed";
-
-const LOCALE_KEY = "locale";
-const LOCALE_LS_KEY = "frank.locale";
 
 interface LocaleContextValue {
   locale: Locale;
@@ -23,31 +19,11 @@ interface LocaleContextValue {
 const LocaleContext = React.createContext<LocaleContextValue | null>(null);
 
 export function LocaleProvider({ children }: React.PropsWithChildren) {
-  const [locale, setLocaleState] = React.useState<Locale>(() => {
-    // Plain browser: hydrate synchronously from localStorage to avoid a flash of English.
-    if (typeof window === "undefined" || isTauri()) return DEFAULT_LOCALE;
-    try {
-      const stored = window.localStorage.getItem(LOCALE_LS_KEY);
-      if (isLocale(stored)) return stored;
-    } catch {
-      /* localStorage may be unavailable */
-    }
-    return DEFAULT_LOCALE;
-  });
-
-  // Tauri: the SQLite app_state read is async, so load after mount.
-  React.useEffect(() => {
-    if (!isTauri()) return;
-    let cancelled = false;
-    getAppState(LOCALE_KEY)
-      .then((stored) => {
-        if (!cancelled && isLocale(stored)) setLocaleState(stored);
-      })
-      .catch((caught) => swallowed({ component: "locale", operation: "read the stored preference" }, caught));
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // The daemon's answer is the state: change the language in the desktop app and a browser
+  // window looking at the same daemon follows, with nothing here to keep in step.
+  const { preferences, updatePreferences } = usePreferences();
+  const stored = preferences.locale;
+  const locale: Locale = isLocale(stored) ? stored : DEFAULT_LOCALE;
 
   // Keep <html lang> accurate for a11y (the root layout hardcodes lang="en").
   React.useEffect(() => {
@@ -55,17 +31,8 @@ export function LocaleProvider({ children }: React.PropsWithChildren) {
   }, [locale]);
 
   const setLocale = React.useCallback((next: Locale) => {
-    setLocaleState(next);
-    if (isTauri()) {
-      void setAppState(LOCALE_KEY, next);
-      return;
-    }
-    try {
-      window.localStorage.setItem(LOCALE_LS_KEY, next);
-    } catch {
-      /* best-effort */
-    }
-  }, []);
+    updatePreferences({ locale: next });
+  }, [updatePreferences]);
 
   const value = React.useMemo(() => ({ locale, setLocale }), [locale, setLocale]);
 

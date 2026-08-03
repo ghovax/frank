@@ -13,7 +13,7 @@ import {
   Text,
   VStack,
 } from "@chakra-ui/react";
-import { LuAppWindow, LuArrowDown, LuChevronLeft, LuChevronRight, LuClock, LuDownload, LuEllipsis, LuFile, LuFolderOpen, LuHistory, LuMaximize2, LuMinimize2, LuMessageSquare, LuMoon, LuMousePointerClick, LuPanelLeftClose, LuPanelLeftOpen, LuPlugZap, LuRotateCcw, LuRotateCw, LuSettings, LuSun, LuTerminal, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
+import { LuAppWindow, LuArrowDown, LuChevronLeft, LuChevronRight, LuClock, LuDownload, LuEllipsis, LuFile, LuFolderOpen, LuGitBranch, LuHistory, LuMaximize2, LuMinimize2, LuMessageSquare, LuMoon, LuMousePointerClick, LuPanelLeftClose, LuPanelLeftOpen, LuPlugZap, LuRotateCcw, LuRotateCw, LuSettings, LuSun, LuTerminal, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { FadeIn } from "@/components/ui/fade-in";
 import { useFormatter, useTranslations } from "next-intl";
@@ -31,6 +31,8 @@ import { ChatInput } from "./chat-input";
 import { QuestionOverlay } from "./question-overlay";
 import { SettingsDialog, type SettingsSection } from "./settings-dialog";
 import { BackgroundJobsPanel } from "./background-jobs-panel";
+import { DelegatedWorkPanel } from "./delegated-work-panel";
+import type { SessionEntry } from "./session-row";
 import { GitStatusBar } from "./git-status-bar";
 import { LocationChip } from "./location-status";
 import { SectionHeader } from "./ui/section-header";
@@ -58,9 +60,15 @@ import { errorMessage } from "@/lib/errors";
 // the left — without losing its flex-layout props.
 const MotionBox = motion.create(Box);
 
-type SidePanelKey = "background";
+// The panels that can share the right-hand region. Two so far: the terminal/background pair,
+// and the work this workspace's conversations have delegated to other sessions.
+export type SidePanelKey = "background" | "delegated";
 
 const MAXIMUM_OPEN_SIDE_PANELS = 2;
+
+// One shared empty set for a caller that tracks no unread completions, so the tree panel is
+// not handed a fresh Set on every render and made to re-render for it.
+const EMPTY_UNSEEN_COMPLETIONS: Set<string> = new Set();
 
 
 interface ChatPanelProps {
@@ -79,6 +87,28 @@ interface ChatPanelProps {
   // Deletes the session by id (aborts it, drops its tasks and record, then routes
   // the user back to a blank chat). Absent when there is no active session.
   onDeleteSession?: (sessionId: string) => void;
+  // Every session the client knows about, for the delegated-work panel — which needs the whole
+  // list, not just this conversation, because what it draws is exactly the relationships
+  // *between* sessions. The panel filters to the open workspace itself.
+  sessions?: SessionEntry[];
+  // Sessions that finished while you were looking elsewhere, so a row in the panel carries the
+  // same unread mark it carries in the sidebar.
+  unseenCompletions?: Set<string>;
+  // The conversation the sidebar has selected — this one, or the one that created it. The
+  // delegated-work panel is about that conversation, so reading a delegated session does not
+  // change what the panel is showing out from under the click that opened it.
+  rootSessionId?: string | null;
+  // Opens a session from the panel. The page owns which conversation is open (it is in the
+  // URL), so the panel asks rather than switches.
+  onResumeSession?: (entry: SessionEntry) => void;
+  // Which side panels are open, and how wide the region is. Held by the page rather than here
+  // because this component is remounted whenever the conversation changes — so a panel opened
+  // to pick a delegated session closed the moment it was used, which is the one gesture it
+  // exists for. Opening a conversation should change the transcript and nothing else.
+  openSidePanels: SidePanelKey[];
+  onOpenSidePanelsChange: (panels: SidePanelKey[]) => void;
+  sidePanelWidth: number;
+  onSidePanelWidthChange: (width: number) => void;
   initialPermissionMode?: PermissionMode;
   onPermissionModeChange?: (mode: PermissionMode) => void;
   sessionRunning?: boolean;
@@ -213,6 +243,14 @@ export function ChatPanel({
   sessionTitle,
   initialInputDraft = "",
   onDeleteSession,
+  sessions = [],
+  unseenCompletions,
+  rootSessionId = null,
+  onResumeSession,
+  openSidePanels,
+  onOpenSidePanelsChange,
+  sidePanelWidth,
+  onSidePanelWidthChange,
   initialPermissionMode = "default",
   onPermissionModeChange,
   sessionRunning = false,
@@ -314,11 +352,8 @@ export function ChatPanel({
   // question prompt on a tool call). Read via a ref inside handleSend so a new
   // message is queued rather than steered while a decision is outstanding.
   const hasInputRequiredRef = useRef(false);
-  const [openSidePanels, setOpenSidePanels] = useState<SidePanelKey[]>([]);
   const backgroundPanelOpen = openSidePanels.includes("background");
-  // Default right-region width: comfortable for one panel without dwarfing the
-  // transcript (pairs with the sidebar default of 240 in page.tsx). Drag grows it.
-  const [sidePanelWidth, setSidePanelWidth] = useState(480);
+  const delegatedPanelOpen = openSidePanels.includes("delegated");
   const { colorMode, toggleColorMode } = useColorMode();
   // Whether the transcript is scrolled to (or near) the bottom. Drives the floating
   // "jump to latest" affordance so a reader who scrolled up to read history can
@@ -348,12 +383,9 @@ export function ChatPanel({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const setSidePanelOpen = useCallback((panel: SidePanelKey, open: boolean) => {
-    setOpenSidePanels((currentPanels) => {
-      const remainingPanels = currentPanels.filter((openPanel) => openPanel !== panel);
-      if (!open) return remainingPanels;
-      return [...remainingPanels, panel].slice(-MAXIMUM_OPEN_SIDE_PANELS);
-    });
-  }, []);
+    const remainingPanels = openSidePanels.filter((openPanel) => openPanel !== panel);
+    onOpenSidePanelsChange(open ? [...remainingPanels, panel].slice(-MAXIMUM_OPEN_SIDE_PANELS) : remainingPanels);
+  }, [openSidePanels, onOpenSidePanelsChange]);
 
   useEffect(() => {
     if (openSidePanels.length === 0 || !historyOpen || !window.matchMedia("(max-width: 1199px)").matches) return;
@@ -361,11 +393,9 @@ export function ChatPanel({
   }, [openSidePanels.length, historyOpen, onToggleHistory]);
 
   const markSidePanelActive = useCallback((panel: SidePanelKey) => {
-    setOpenSidePanels((currentPanels) => {
-      if (!currentPanels.includes(panel) || currentPanels[currentPanels.length - 1] === panel) return currentPanels;
-      return [...currentPanels.filter((openPanel) => openPanel !== panel), panel];
-    });
-  }, []);
+    if (!openSidePanels.includes(panel) || openSidePanels[openSidePanels.length - 1] === panel) return;
+    onOpenSidePanelsChange([...openSidePanels.filter((openPanel) => openPanel !== panel), panel]);
+  }, [openSidePanels, onOpenSidePanelsChange]);
 
   // Pinned == the viewport is at (or within a hair of) the bottom. That single
   // fact drives everything: pinned means follow new content, unpinned means the
@@ -607,6 +637,26 @@ export function ChatPanel({
     message.role === "tool_call" && message.content === "bash" &&
     (message.meta?.status === "running" || message.meta?.status === "input_required")
   ).length;
+  // How many sessions the open conversation has delegated, at any depth — the dot on the
+  // delegated-work button. Counted against that conversation rather than the workspace, because
+  // that is what the panel behind the button shows: a button whose dot promises something the
+  // panel does not hold is a button that teaches you to ignore it.
+  const delegatedSessionCount = useMemo(() => {
+    if (!rootSessionId) return 0;
+    const childrenOf = new Map<string, string[]>();
+    for (const session of sessions) {
+      if (!session.parentSessionId) continue;
+      childrenOf.set(session.parentSessionId, [...(childrenOf.get(session.parentSessionId) ?? []), session.sessionId]);
+    }
+    let total = 0;
+    const pending = [rootSessionId];
+    while (pending.length > 0) {
+      const next = childrenOf.get(pending.pop() as string) ?? [];
+      total += next.length;
+      pending.push(...next);
+    }
+    return total;
+  }, [sessions, rootSessionId]);
   // A compaction pass is live while its timeline marker is still "running" — drives
   // the Compact control's in-progress state (spinner + disabled).
   const isCompacting = messages.some(
@@ -754,7 +804,7 @@ export function ChatPanel({
       // Clamp to the same bounds the region's CSS enforces (minW 360 / maxW 80vw,
       // capped at 900) so the drag can never fight the styled limits.
       const nextWidth = Math.min(Math.min(900, Math.round(window.innerWidth * 0.8)), Math.max(360, startWidth + startX - moveEvent.clientX));
-      setSidePanelWidth(nextWidth);
+      onSidePanelWidthChange(nextWidth);
     }
 
     function handlePointerUp() {
@@ -768,7 +818,7 @@ export function ChatPanel({
     document.body.style.userSelect = "none";
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp, { once: true });
-  }, [sidePanelWidth]);
+  }, [sidePanelWidth, onSidePanelWidthChange]);
 
   return (
     <Flex h="100%" minW={0} position="relative">
@@ -798,6 +848,17 @@ export function ChatPanel({
           </Text>
           <GitStatusBar status={directoryStatus} />
           <Flex align="center" gap={1} flexShrink={0}>
+            {/* What this workspace's conversations have handed to other sessions. The dot
+                marks a workspace where something actually has been delegated — until then
+                there is nothing behind this button to look at. */}
+            <ToolbarAction
+              label={translation("delegatedWork")}
+              icon={<LuGitBranch size={14} />}
+              active={delegatedPanelOpen}
+              colorPalette="purple"
+              indicator={delegatedSessionCount > 0}
+              onClick={() => setSidePanelOpen("delegated", !delegatedPanelOpen)}
+            />
             <ToolbarAction
               label={translation("terminalAndBackground")}
               icon={<LuTerminal size={14} />}
@@ -1183,7 +1244,7 @@ export function ChatPanel({
           the resize handle overlaps the boundary as an absolute strip rather than consuming a
           column of space — mirroring the left sidebar's handle. */}
       <AnimatePresence initial={false}>
-      {backgroundPanelOpen && (
+      {openSidePanels.length > 0 && (
         <MotionBox
           key="panel-region"
           data-layout="side-panel-region"
@@ -1232,6 +1293,22 @@ export function ChatPanel({
                       sessionId={sessionId}
                       workingDirectory={workingDirectory || homeDirectory || ""}
                       locations={workspaceLocations}
+                    />
+                  ),
+                },
+                delegatedPanelOpen && {
+                  key: "delegated",
+                  onActivate: () => markSidePanelActive("delegated"),
+                  content: (
+                    <DelegatedWorkPanel
+                      sessions={sessions}
+                      rootSessionId={rootSessionId}
+                      activeSessionId={sessionId}
+                      unseenCompletions={unseenCompletions ?? EMPTY_UNSEEN_COMPLETIONS}
+                      agents={agents}
+                      onResume={(entry) => onResumeSession?.(entry)}
+                      onDeleteSession={(entry) => onDeleteSession?.(entry.sessionId)}
+                      onClose={() => setSidePanelOpen("delegated", false)}
                     />
                   ),
                 },

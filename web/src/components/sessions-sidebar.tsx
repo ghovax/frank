@@ -2,112 +2,45 @@
 
 // The chat-history sidebar as a self-contained unit: the workspaces list, a new-session
 // row, and each workspace's sorted sessions (status dot + marquee title + options menu),
-// nested as a tree so the sessions a session creates sit under the one that created them.
-// It owns nothing about layout (the
+// one flat list. It owns nothing about layout (the
 // page wraps it in the resizable panel, and the collapsed state wraps the very same component
 // in a hover popover), so the list looks and behaves identically wherever it is shown.
+//
+// It lists the conversations you started, and only those. A session composes by creating
+// peers, so its children are ordinary sessions — but nesting them here showed one row where
+// eight conversations existed, and listing them flat filled the sidebar with rows nobody
+// began. Both are answers to a question this list is not asking: it answers "which
+// conversation do I want", and what those conversations went and delegated is the
+// delegated-work panel's to answer.
 
-import { Alert, Box, Button, Flex, IconButton, Input, Kbd, Menu, Span, Text, VStack } from "@chakra-ui/react";
+import { Alert, Box, Button, Flex, IconButton, Input, Kbd, Menu, Text, VStack } from "@chakra-ui/react";
 import { swallowed } from "@/lib/swallowed";
-import { useFormatter, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { useLocale } from "@/lib/i18n/locale-provider";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { LuArrowDownUp, LuChevronDown, LuChevronRight, LuClock, LuEllipsis, LuFolderOpen, LuFolderPlus, LuMessagesSquare, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
+import { useCallback, useEffect, useState } from "react";
+import { LuArrowDownUp, LuChevronDown, LuClock, LuEllipsis, LuFolderOpen, LuFolderPlus, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FrankMark } from "@/components/ui/frank-mark";
 import { DropdownMenu, MenuOption } from "@/components/ui/menu";
 import { PanelBody, PanelCard } from "@/components/ui/panel";
 import { Tooltip } from "@/components/ui/tooltip";
-import { deleteWorkspace, listWorkspaces, listSshHosts, revealInFinder, subscribeEvents, type AgentSummary, type PermissionMode, type Workspace, type SshHost } from "@/lib/api";
-import { PERMISSION_MODES } from "@shared/controls";
+import { deleteWorkspace, listWorkspaces, listSshHosts, subscribeEvents, type AgentSummary, type Workspace, type SshHost } from "@/lib/api";
 import { locationTargetAddress, workspaceLabel } from "./location-status";
 import { NewScheduleDialog } from "./new-schedule-dialog";
 import { NewWorkspaceDialog } from "./new-workspace-dialog";
-import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
+import { SessionRow, type SessionEntry } from "./session-row";
 import { InlineField } from "./ui/display";
+import { TreeRow } from "./ui/tree-row";
 import { toaster } from "./ui/toaster";
 import { errorMessage } from "@/lib/errors";
 
-// A session's process lifecycle, as the daemon's registry reports it — not the turn's.
-// What a session is doing, as the daemon derives it. Distinct from whether it *exists*,
-// which is `lifecycle` and is the durable half: a session with no process is asleep, not
-// gone, and the next message to it forks a new worker in about 60ms.
-export type SessionActivity = "working" | "waiting" | "idle" | "asleep" | "ended";
+// A session row, its status vocabulary and its hover card all live in `session-row.tsx`,
+// shared with the session-tree panel so a conversation reads the same in both.
 
-export interface SessionEntry {
-  sessionId: string;
-  // The session that created this one, empty for a session the user started. A session
-  // composes by creating peers, so its children are ordinary sessions that would land
-  // flat in this list unless they are nested under the row that created them.
-  parentSessionId: string;
-  workspaceId: string;
-  agent: string;
-  title: string;
-  createdAt: string;
-  workingDirectory: string;
-  activity: SessionActivity;
-  // Whether this session has ended for good, as opposed to merely having no process.
-  ended: boolean;
-  // Set when an ended session ended badly.
-  failed: boolean;
-  awaitingInput: boolean;
-  // Why an ended session ended, when the daemon knows — shown on the status dot.
-  exitReason: string;
-  permissionMode: PermissionMode;
-}
-
-
-// The hover cards. Both follow the Git bar's shape — a titled heading with the glyph that
+// The workspace hover card follows the Git bar's shape — a titled heading with the glyph that
 // stands for the thing, then label/value rows — because that is already the vocabulary this
 // interface uses for "here is what I know about this", and a second one would only make the
-// two harder to read. A row's own tooltip used to be its title repeated back, which told a
-// reader nothing they were not already looking at.
-
-function SessionHoverCard({
-  entry, statusLabel, agents,
-}: { entry: SessionEntry; statusLabel: string; agents: AgentSummary[] }) {
-  const translation = useTranslations("SessionsSidebar");
-  const permissions = useTranslations("SessionControls");
-  const format = useFormatter();
-  const title = entry.title || translation("untitledConversation");
-  const created = new Date(entry.createdAt);
-  // Both of these are identifiers on the wire and names on screen. The agent's own name comes
-  // from the catalogue rather than from the session row, which only ever stored the id; the
-  // permission mode is read out of the one definition every client already builds its controls
-  // from, so the sidebar cannot come to call a mode something the picker does not.
-  // `title` is the agent's own name; `name` is its slug, and reads as a code beside a
-  // human-written conversation title. The same order the agent picker uses.
-  const agent = agents.find((candidate) => candidate.id === entry.agent);
-  const agentName = agent?.title || agent?.name || entry.agent;
-  const permissionKey = PERMISSION_MODES.choices.find((choice) => choice.value === entry.permissionMode)?.labelKey;
-  return (
-    <Box maxW="320px">
-      <Flex align="center" gap={1} mb={1} color="fg">
-        <LuMessagesSquare size={12} />
-        <Text fontWeight="semibold" truncate>{title}</Text>
-      </Flex>
-      <Flex direction="column" ps={2} gap={1}>
-        <InlineField label={translation("fieldAgent")}><Text>{agentName}</Text></InlineField>
-        <InlineField label={translation("fieldStatus")}>
-          <Text color={entry.failed ? "red.fg" : entry.awaitingInput ? "yellow.fg" : undefined}>{statusLabel}</Text>
-        </InlineField>
-        {Number.isNaN(created.getTime()) ? null : (
-          <InlineField label={translation("fieldCreated")}>
-            <Text>{format.dateTime(created, { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Text>
-          </InlineField>
-        )}
-        {permissionKey ? (
-          <InlineField label={translation("fieldPermissions")}>
-            <Text>{permissions(permissionKey as Parameters<typeof permissions>[0])}</Text>
-          </InlineField>
-        ) : null}
-        {entry.exitReason ? (
-          <InlineField label={translation("fieldExitReason")}><Text color="fg.muted">{entry.exitReason}</Text></InlineField>
-        ) : null}
-      </Flex>
-    </Box>
-  );
-}
+// two harder to read.
 
 function WorkspaceHoverCard({
   label, workspace, sessionCount,
@@ -140,76 +73,6 @@ function WorkspaceHoverCard({
 
 export type SessionSort = "recent" | "active";
 
-// The status a session's dot reflects. "working" means it is doing something — a soft
-// pulsing gray dot, shown even while it's the active session ("not finished yet"). "done"
-// means it finished since you last looked — a solid blue dot, suppressed for the active
-// session (you're already looking at it). Plus the two alerts: a crashed session, and one
-// parked on a decision only you can make.
-//
-// A sleeping or idle session shows no dot at all — there is nothing to report, and a mark
-// against every row would say nothing while making the few that matter harder to find. The
-// dot sits at the row's trailing edge, beside the ⋯, and takes no space when absent. It used
-// to hold a fixed slot on the leading edge so that quiet rows lined up with busy ones; that
-// alignment was bought with a permanent indent on every title in the list, for a mark most
-// rows never show. Nothing shifts as sessions change state, because the ⋯ it sits beside
-// keeps its own width whether or not it is visible.
-type SessionIndicator = "working" | "problem" | "attention" | "done";
-
-function sessionIndicator(
-  entry: SessionEntry,
-  isActive: boolean,
-  unseenCompletions: Set<string>,
-): SessionIndicator | null {
-  if (entry.failed) return "problem";
-  if (entry.awaitingInput || entry.activity === "waiting") return "attention";
-  if (entry.activity === "working") return "working";
-  if (!isActive && unseenCompletions.has(entry.sessionId)) return "done";
-  return null;
-}
-
-const INDICATOR_COLOR: Record<SessionIndicator, string> = {
-  working: "gray.solid",
-  problem: "red.solid",
-  attention: "yellow.solid",
-  done: "blue.solid",
-};
-
-const ACTIVITY_LABEL_KEY: Record<SessionActivity, string> = {
-  working: "statusWorking",
-  waiting: "awaitingInput",
-  idle: "statusIdle",
-  asleep: "statusAsleep",
-  ended: "statusEnded",
-};
-
-// A session and everything it created. The daemon hands the registry out flat (each row
-// carrying its parent), so the nesting is derived here rather than being a shape the
-// sidebar has to flatten again to search or sort.
-interface SessionTreeNode {
-  entry: SessionEntry;
-  children: SessionTreeNode[];
-}
-
-function buildSessionTree(entries: SessionEntry[]): SessionTreeNode[] {
-  const nodes = new Map(entries.map((entry) => [entry.sessionId, { entry, children: [] as SessionTreeNode[] }]));
-  const roots: SessionTreeNode[] = [];
-  for (const node of nodes.values()) {
-    // A child whose parent is not in this list (filtered out by the search, or living in
-    // another workspace) is promoted to a root rather than dropped — a session is never
-    // unreachable because of where its parent happens to be.
-    const parent = node.entry.parentSessionId ? nodes.get(node.entry.parentSessionId) : undefined;
-    if (parent && parent !== node) parent.children.push(node);
-    else roots.push(node);
-  }
-  return roots;
-}
-
-// Every session in a subtree, including its root — so a collapsed parent can still say
-// what is hiding inside it.
-function collectEntries(node: SessionTreeNode): SessionEntry[] {
-  return [node.entry, ...node.children.flatMap(collectEntries)];
-}
-
 // Row geometry, shared by the New-session row, the session rows, and the footer so their
 // leading glyphs, text, and left edge all line up on one grid — the reference sidebar's
 // single-column rhythm. Kept as constants (not magic numbers repeated per element).
@@ -217,268 +80,6 @@ const ROW_MINIMUM_H = "30px";
 // Just wide enough to hold the 14px row glyph / 8px status dot centered — kept tight so
 // titles hug the left edge of the pill rather than floating in from a wide empty gutter.
 const LEADING_SLOT = "14px";
-// The corner radius the whole row family shares — the app's standard `md` default corner.
-const ROW_RADIUS = "md";
-
-// Extra left-shift, beyond the raw overflow, so a fully-scrolled title comes to rest with
-// its end clear of the row's trailing ⋯ actions rather than sliding underneath them. The
-// button is 32px wide, so this is that plus a margin, and it matches the clear zone of the
-// hover mask in globals.css — the two describe the same edge and drifted apart once already.
-const MARQUEE_TAIL_CLEARANCE = 44;
-
-// A session title that scrolls its overflow on hover (see `.sidebar-title` in globals.css). It
-// measures how far the text overruns its box, adds the tail clearance, and hands the CSS both
-// the travel distance and a matching duration (a fixed 50px/s, the reference's cadence) so long
-// and short titles scroll at the same speed. The mask/animation itself is pure CSS, driven by
-// the row hover.
-function MarqueeTitle({ text }: { text: string }) {
-  const outerRef = useRef<HTMLSpanElement>(null);
-  const innerRef = useRef<HTMLSpanElement>(null);
-  const [overflow, setOverflow] = useState(0);
-
-  useEffect(() => {
-    const outer = outerRef.current;
-    const inner = innerRef.current;
-    if (!outer || !inner) return;
-    const measure = () => setOverflow(Math.max(0, Math.round(inner.scrollWidth - outer.clientWidth)));
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(outer);
-    observer.observe(inner);
-    return () => observer.disconnect();
-  }, [text]);
-
-  const travel = overflow > 0 ? overflow + MARQUEE_TAIL_CLEARANCE : 0;
-  return (
-    <Span
-      ref={outerRef}
-      className="sidebar-title"
-      // The sidebar sits one step below the app's default text size: it is a list to scan,
-      // not prose to read, and a smaller face fits more of a title before the marquee has to
-      // do any work. The workspace row above matches this deliberately, so a name and the
-      // conversations under it read as one list rather than two.
-      textStyle="xs"
-      data-overflow={overflow > 0 ? "true" : undefined}
-      style={{
-        ["--marquee-overflow" as string]: `${travel}px`,
-        ["--marquee-duration" as string]: `${(travel * 0.02).toFixed(2)}s`,
-      }}
-    >
-      <Span ref={innerRef} className="sidebar-title-inner">{text}</Span>
-    </Span>
-  );
-}
-
-// One session row, plus — nested beneath it, behind a chevron — the sessions it
-// created. Children start collapsed: a task that fans out puts one row in the list, not
-// one per child, which is the whole reason the hierarchy is rendered at all. The row
-// itself always resumes the session; only the chevron toggles the subtree, so the two
-// gestures never compete for the same click.
-function SessionTreeRow({
-  node,
-  agents,
-  activeSessionId,
-  unseenCompletions,
-  expandedSessions,
-  onToggleExpanded,
-  onResume,
-  onRequestDelete,
-}: {
-  node: SessionTreeNode;
-  agents: AgentSummary[];
-  activeSessionId: string | null;
-  unseenCompletions: Set<string>;
-  expandedSessions: Set<string>;
-  onToggleExpanded: (sessionId: string) => void;
-  onResume: (entry: SessionEntry) => void;
-  onRequestDelete: (entry: SessionEntry) => void;
-}) {
-  const translation = useTranslations("SessionsSidebar");
-  const entry = node.entry;
-  const isActive = entry.sessionId === activeSessionId;
-  const indicator = sessionIndicator(entry, isActive, unseenCompletions);
-  const title = entry.title || translation("untitledConversation");
-  const hasChildren = node.children.length > 0;
-  const expanded = expandedSessions.has(entry.sessionId);
-  // What a collapsed parent is hiding. Without this the tree would swallow exactly the
-  // signals the sidebar exists to raise — a child parked on a permission prompt, or one
-  // that crashed — behind a chevron the user has no reason to open.
-  const hidden = hasChildren && !expanded ? node.children.flatMap(collectEntries) : [];
-  const hiddenAttention = hidden.some((child) => child.awaitingInput);
-  const hiddenProblem = hidden.some((child) => child.failed);
-  const statusLabel = translation(
-    (entry.failed ? "statusFailed" : ACTIVITY_LABEL_KEY[entry.activity]) as Parameters<typeof translation>[0]
-  );
-  const statusTooltip = (
-    <Box>
-      <Text color="fg">{entry.awaitingInput ? translation("awaitingInput") : statusLabel}</Text>
-      {entry.exitReason ? <Text color="fg.muted">{entry.exitReason}</Text> : null}
-    </Box>
-  );
-
-  return (
-    <Box minW={0}>
-      <Box
-        className="sidebar-row"
-        borderRadius={ROW_RADIUS}
-        bg={isActive ? "blue.subtle" : undefined}
-        _hover={{ bg: isActive ? "blue.muted" : "bg.subtle" }}
-        transition="background-color 0.12s"
-        // The row draws the selected and hover background, and `DisclosureRow` inside it is a
-        // fixed-height strip with no padding of its own — so without this the highlight ended
-        // exactly at the glyph and the last letter of the title, which read as a label crammed
-        // into a box rather than a row that happens to be selected.
-        px={2}
-        py={1}
-        css={{
-          // Hidden with `display`, not with opacity. An invisible button still occupies its
-          // width, and because the actions are laid over the row's right edge that width pushed
-          // the status dot inward — so a row with nothing to report still looked like it was
-          // holding space open on the right. Taking it out of layout entirely lets the dot sit
-          // flush against the edge, and the ⋯ pushes it aside only while the row is hovered.
-          //
-          // All of which describes a pointer, and is why the reveal is gated on there being one.
-          // Hiding a control behind hover on a touch device hides it for good — there is no
-          // gesture that produces hover, so the ⋯ menu was unreachable on a phone — and worse,
-          // WebKit gives the first tap on a row whose `:hover` changes what is rendered to the
-          // hover state, so opening a conversation took two taps and the first did nothing.
-          "@media (hover: hover)": {
-            "& [data-row-actions]": { display: "none" },
-            "&:hover [data-row-actions]": { display: "flex" },
-            "&:focus-within [data-row-actions]": { display: "flex" },
-            // Same nesting problem as the title mask in globals.css: a workspace row contains its
-            // session rows, so its `:hover` revealed every nested row's actions at once.
-            "&:hover .sidebar-row:not(:hover):not(:focus-within) [data-row-actions]": {
-              display: "none",
-            },
-          },
-        }}
-      >
-        <Flex align="center" gap={0.5} minW={0}>
-          {hasChildren ? (
-            <Button
-              type="button"
-              aria-label={expanded ? translation("hideChildSessions") : translation("showChildSessions")}
-              variant="plain"
-              h={5}
-              minW={0}
-              px={1}
-              gap={0.5}
-              flexShrink={0}
-              color={hiddenProblem ? "red.fg" : hiddenAttention ? "yellow.fg" : "fg.subtle"}
-              _hover={{ bg: "transparent", color: "fg" }}
-              _focusVisible={{ outline: "none", boxShadow: "none", color: "fg" }}
-              onClick={() => onToggleExpanded(entry.sessionId)}
-            >
-              {expanded ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}
-              {expanded ? null : <Text fontSize="2xs" lineHeight="1">{hidden.length}</Text>}
-            </Button>
-          ) : null}
-          <Box flex={1} minW={0}>
-            <DisclosureRow
-              fill
-              tone={isActive ? "active" : "muted"}
-              onActivate={() => onResume(entry)}
-              // The status leads the row, and only when there is one. `DisclosureRow` renders no
-              // glyph slot at all for a row that passes no icon, so a quiet session spends
-              // nothing on the left and its title starts at the row's edge — which is what the
-              // fixed slot got wrong before, holding an indent open on every row for a mark most
-              // of them never show. Leading rather than trailing because it belongs to the
-              // conversation, not to the controls: pinned to the right it read as another button
-              // and sat hard against the edge.
-              icon={indicator ? (
-                <Tooltip content={statusTooltip} rich openDelay={350} positioning={{ placement: "right" }}>
-                  <Box
-                    boxSize="1.5"
-                    borderRadius="full"
-                    bg={INDICATOR_COLOR[indicator]}
-                    className={indicator === "working" ? "status-dot-pulse" : undefined}
-                  />
-                </Tooltip>
-              ) : undefined}
-              title={
-                <Tooltip
-                  content={
-                    <SessionHoverCard
-                      entry={entry}
-                      agents={agents}
-                      statusLabel={entry.awaitingInput ? translation("awaitingInput") : statusLabel}
-                    />
-                  }
-                  rich
-                  openDelay={350}
-                  positioning={{ placement: "right" }}
-                >
-                  <Box minW={0} color={isActive ? "blue.fg" : undefined}>
-                    <MarqueeTitle text={title} />
-                  </Box>
-                </Tooltip>
-              }
-              actionsOverlay
-              actions={
-                <Box data-row-actions>
-                  <DropdownMenu
-                    trigger={
-                      <IconButton
-                        aria-label={translation("sessionOptions")}
-                        variant="plain"
-                        boxSize={5}
-                        color="fg.subtle"
-                        _hover={{ bg: "transparent", color: "fg" }}
-                        _active={{ bg: "transparent" }}
-                        _focusVisible={{ outline: "none", boxShadow: "none", color: "fg" }}
-                        css={{ "&[data-state=open]": { background: "transparent", color: "var(--chakra-colors-fg)" } }}
-                      >
-                        <LuEllipsis size={13} />
-                      </IconButton>
-                    }
-                    minW="180px"
-                    positioning={{ placement: "bottom-end" }}
-                  >
-                    <Menu.Item
-                      value="reveal"
-                      fontSize="xs"
-                      disabled={!entry.workingDirectory}
-                      onClick={() => { if (entry.workingDirectory) void revealInFinder(entry.workingDirectory); }}
-                    >
-                      <LuFolderOpen size={14} />
-                      <Box flex={1}>{translation("openFolder")}</Box>
-                    </Menu.Item>
-                    <MenuOption value="delete" danger icon={<LuTrash2 size={14} />} onClick={() => onRequestDelete(entry)}>
-                      {translation("deleteSession")}
-                    </MenuOption>
-                  </DropdownMenu>
-                </Box>
-              }
-            />
-          </Box>
-        </Flex>
-      </Box>
-
-      {/* The children hang off the same hairline rule every other disclosure body uses,
-          so a created subtree reads as part of its parent rather than as a new list. */}
-      {hasChildren && expanded ? (
-        <Box ml={1.5} pl={3.5} py={1} borderLeft="2px solid" borderColor="border.muted">
-          <VStack gap={1} align="stretch">
-            {node.children.map((child) => (
-              <SessionTreeRow
-                key={child.entry.sessionId}
-                node={child}
-                agents={agents}
-                activeSessionId={activeSessionId}
-                unseenCompletions={unseenCompletions}
-                expandedSessions={expandedSessions}
-                onToggleExpanded={onToggleExpanded}
-                onResume={onResume}
-                onRequestDelete={onRequestDelete}
-              />
-            ))}
-          </VStack>
-        </Box>
-      ) : null}
-    </Box>
-  );
-}
 
 export function SessionsSidebar({
   sessions,
@@ -521,17 +122,6 @@ export function SessionsSidebar({
   const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
   const [newScheduleOpen, setNewScheduleOpen] = useState(false);
   const [workspaceOpenOverrides, setWorkspaceOpenOverrides] = useState<Record<string, boolean>>({});
-  // Which parents have their child sessions showing. Collapsed is the default and the
-  // state is additive (an id is present only once opened), so a session that fans out
-  // mid-view never expands the list under the reader.
-  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(() => new Set());
-  const toggleSessionExpanded = useCallback((sessionId: string) => {
-    setExpandedSessions((current) => {
-      const next = new Set(current);
-      if (!next.delete(sessionId)) next.add(sessionId);
-      return next;
-    });
-  }, []);
   const [search, setSearch] = useState("");
   const searchQuery = search.trim().toLowerCase();
   const shownSessions = searchQuery
@@ -594,7 +184,12 @@ export function SessionsSidebar({
   const visibleWorkspaces = workspaces
     .map((workspace) => ({
       workspace,
-      sessions: shownSessions.filter((session) => session.workspaceId === workspace.id),
+      // Only the conversations *you* started. A session a session created is real work and is
+      // listed — in the delegated-work panel, under the conversation that asked for it. Here it
+      // would be a row nobody began, indistinguishable from one that was.
+      sessions: shownSessions.filter(
+        (session) => session.workspaceId === workspace.id && !session.parentSessionId,
+      ),
     }))
     .filter(({ sessions: workspaceSessions }) => !searchQuery || workspaceSessions.length > 0);
 
@@ -791,54 +386,37 @@ export function SessionsSidebar({
               );
 
               return (
-                <Box
+                <TreeRow
                   key={workspace.id}
-                  className="sidebar-row"
-                  borderRadius={ROW_RADIUS}
-                  pr={2}
-                  py={1}
+                  disclosure={workspaceOpen ? "open" : "closed"}
+                  disclosureLabel={workspaceOpen ? translation("hideWorkspace") : translation("showWorkspace")}
+                  onDisclosureChange={(nextOpen) => {
+                    setWorkspaceOpenOverrides((current) => ({ ...current, [workspaceOpenKey]: nextOpen }));
+                    if (nextOpen) onSwitchWorkspace(workspace.id);
+                  }}
+                  onActivate={() => onSwitchWorkspace(workspace.id)}
+                  glyph={<LuFolderOpen size={13} />}
+                  label={
+                    <Tooltip content={tooltipContent} rich openDelay={350} positioning={{ placement: "right" }}>
+                      <Box minW={0} w="full"><Text textStyle="xs" truncate>{label}</Text></Box>
+                    </Tooltip>
+                  }
+                  actions={workspaceActions}
                 >
-                  <DisclosureRow
-                    fill
-                    open={workspaceOpen}
-                    onOpenChange={(nextOpen) => {
-                      setWorkspaceOpenOverrides((current) => ({ ...current, [workspaceOpenKey]: nextOpen }));
-                      if (nextOpen) onSwitchWorkspace(workspace.id);
-                    }}
-                    onActivate={() => onSwitchWorkspace(workspace.id)}
-                    icon={<Box color="fg.muted"><LuFolderOpen /></Box>}
-                    title={
-                      <Tooltip content={tooltipContent} rich openDelay={350} positioning={{ placement: "right" }}>
-                        <Box minW={0}><DisclosureLabel>{label}</DisclosureLabel></Box>
-                      </Tooltip>
-                    }
-                    actions={workspaceActions}
-                  >
-                    {workspaceSessions.length > 0 ? (
-                      // The workspace row pads itself by 2 so its own highlight clears the label,
-                      // but that padding also inset this list — which then adds its own 2 on
-                      // each row. The result was a conversation's ⋯ sitting 8px inside the
-                      // workspace's ⋯, reading as two columns that nearly line up. Give the
-                      // right-hand padding back to the nested rows so the trailing controls
-                      // share one edge; the left inset is the disclosure rail and stays.
-                      <VStack gap={1} align="stretch" mr={-2}>
-                        {buildSessionTree(workspaceSessions).map((node) => (
-                          <SessionTreeRow
-                            key={node.entry.sessionId}
-                            node={node}
-                            agents={agents}
-                            activeSessionId={activeSessionId}
-                            unseenCompletions={unseenCompletions}
-                            expandedSessions={expandedSessions}
-                            onToggleExpanded={toggleSessionExpanded}
-                            onResume={onResume}
-                            onRequestDelete={setPendingDelete}
-                          />
-                        ))}
-                      </VStack>
-                    ) : undefined}
-                  </DisclosureRow>
-                </Box>
+                  <VStack gap={1} align="stretch">
+                    {workspaceSessions.map((entry) => (
+                      <SessionRow
+                        key={entry.sessionId}
+                        entry={entry}
+                        agents={agents}
+                        isActive={entry.sessionId === activeSessionId}
+                        unseenCompletions={unseenCompletions}
+                        onResume={onResume}
+                        onRequestDelete={setPendingDelete}
+                      />
+                    ))}
+                  </VStack>
+                </TreeRow>
               );
             })}
           </VStack>

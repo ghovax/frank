@@ -1,7 +1,8 @@
 "use client";
 
 import { Box, Flex } from "@chakra-ui/react";
-import { SessionsSidebar, type SessionEntry, type SessionSort, type SessionActivity } from "@/components/sessions-sidebar";
+import { SessionsSidebar, type SessionSort } from "@/components/sessions-sidebar";
+import type { SessionActivity, SessionEntry } from "@/components/session-row";
 import { AnimatePresence, motion } from "motion/react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 
@@ -10,37 +11,49 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Point
 const MotionFlex = motion.create(Flex);
 import { useRouter, useSearchParams } from "next/navigation";
 import { deleteSession, fetchAccessibility, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchSessionDraft, fetchSessions, fetchSettings, getWorkspace, listWorkspaces, rememberLastSession, saveAgentConfiguration, saveSettings, setSandboxEnforce, subscribeConnection, subscribeEvents, updateComputerControlSetting, type AgentCard, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
-import { ChatPanel } from "@/components/chat-panel";
+import { ChatPanel, type SidePanelKey } from "@/components/chat-panel";
 import { useTray } from "@/lib/use-tray";
 import { playAttentionSound, playTurnEndSound, primeSounds } from "@/lib/sounds";
 import { swallowed } from "@/lib/swallowed";
+import { usePreferences } from "@/lib/preferences";
 
 // SessionEntry and the sessions-sidebar UI live in the SessionsSidebar component (the
 // chat history is its own unit); this page owns the data + the notification tracking.
 
 // The last workspace the user was in, remembered so a fresh launch reopens it (there is no
-// landing page to pick from). Best-effort localStorage — a cleared/absent value just falls
-// back to the first available workspace.
-const LAST_WORKSPACE_KEY = "frank:lastWorkspace";
-function readLastWorkspace(): string | null {
-  try { return localStorage.getItem(LAST_WORKSPACE_KEY); } catch { return null; }
-}
-function writeLastWorkspace(workspaceId: string): void {
-  try { localStorage.setItem(LAST_WORKSPACE_KEY, workspaceId); } catch { /* ignore */ }
-}
-
-// The last conversation is remembered too — but by the daemon, on the workspace record, not
-// here. Opening onto an empty composer is the right answer exactly once, the first time, when
-// there is nothing to return to; every launch after that the thing you almost certainly want is
-// the conversation you were in, and having to find it in the sidebar is a step that exists only
-// because the application forgot.
+// landing page to pick from) — and the last conversation within it, which the daemon keeps on
+// the workspace record itself. Opening onto an empty composer is the right answer exactly once,
+// the first time, when there is nothing to return to; every launch after that the thing you
+// almost certainly want is the conversation you were in, and having to find it in the sidebar
+// is a step that exists only because the application forgot.
 //
-// Which window you were in is a fact about the browser, so the workspace above stays local. Which
-// conversation you were in is a fact about the machine — the desktop app, a browser tab and the
-// phone are three views of one daemon, and kept per-client each would reopen somewhere different.
-// The phone settles it: its storage goes whenever the webview is cleared, so a remembered
-// conversation that lived there would not survive the thing it exists to survive.
+// Both live on the daemon. Neither is a fact about a browser: the desktop app, a tab and the
+// phone are three views of one daemon, and kept per-client each would reopen somewhere
+// different. The phone settles it — its storage goes whenever the webview is cleared, so a
+// memory that lived there would not survive the thing it exists to survive.
 
+
+// The conversation a session belongs to: itself if you started it, otherwise the one at the top
+// of the chain that created it. It is what the sidebar highlights and what the delegated-work
+// panel is scoped to, so opening a delegated session leaves the sidebar exactly where it was —
+// the conversation you picked is still the conversation you are in, you are just reading one of
+// the sessions underneath it.
+//
+// Derived rather than stored. A second piece of state saying "which row is selected" would be a
+// second answer to a question the open session already answers, free to disagree with it.
+function rootSessionOf(sessions: SessionEntry[], sessionId: string | null): string | null {
+  if (!sessionId) return null;
+  const byId = new Map(sessions.map((session) => [session.sessionId, session]));
+  const seen = new Set<string>();
+  let current = byId.get(sessionId);
+  while (current?.parentSessionId && !seen.has(current.sessionId)) {
+    seen.add(current.sessionId);
+    const parent = byId.get(current.parentSessionId);
+    if (!parent) break;
+    current = parent;
+  }
+  return current?.sessionId ?? sessionId;
+}
 
 // A session that is actually working. The daemon derives this for us now: `activity` is
 // "working" only while a turn is in flight, where the old process-lifecycle field reported
@@ -52,6 +65,12 @@ function isSessionBusy(session: SessionEntry): boolean {
 function Workspace() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  // Where this interface opens and what it looks like, as the daemon has it. `readLastWorkspace`
+  // and `writeLastWorkspace` used to be two functions over `localStorage`; they are a field and
+  // a write now, and the phone agrees with this window about both.
+  const { preferences, updatePreferences } = usePreferences();
+  const readLastWorkspace = () => preferences.last_workspace_id;
+  const writeLastWorkspace = (workspaceId: string) => updatePreferences({ last_workspace_id: workspaceId });
   // The app opens straight into a workspace workspace — there is no landing page. The workspace
   // is addressed by `?workspace=` (deep-linkable, static-export friendly). When none is given
   // (a fresh open), resolve one: the last workspace used, else the first available. The server
@@ -64,15 +83,16 @@ function Workspace() {
   // the grant to the freshly-started server, so this runs on launch (not while the previous
   // instance was live) and only when the permission is actually present.
   useEffect(() => {
-    if (typeof window === "undefined" || localStorage.getItem("frank:pendingComputerControlEnable") !== "1") return;
+    if (!preferences.computer_control_awaiting_grant) return;
     let cancelled = false;
     void fetchAccessibility().then(async (granted) => {
       if (cancelled || !granted) return;
       await updateComputerControlSetting(true);
-      localStorage.removeItem("frank:pendingComputerControlEnable");
+      updatePreferences({ computer_control_awaiting_grant: false });
     });
     return () => { cancelled = true; };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preferences.computer_control_awaiting_grant]);
 
   // Which conversation the daemon last saw this workspace opened at: `null` until it has said,
   // then an id or `""` for none. The restore below waits for it rather than racing it — arriving
@@ -100,6 +120,10 @@ function Workspace() {
       })
       .catch((caught) => swallowed({ component: "workspace-page", operation: "read the home directory" }, caught));
     return () => { cancelled = true; };
+    // `readLastWorkspace`/`writeLastWorkspace` close over the preferences and are rebuilt every
+    // render; naming them here would re-run this on every render rather than when the workspace
+    // it is resolving actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId, router]);
 
   useEffect(() => {
@@ -163,6 +187,13 @@ function Workspace() {
   const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionMode>("default");
   const [compactionReclaimAtFraction, setCompactionReclaimAtFraction] = useState(0.85);
   const [historyOpen, setHistoryOpen] = useState(true);
+  // The right-hand panels, held here rather than inside ChatPanel because that component is
+  // remounted on every conversation switch. Opening a delegated session from its panel used to
+  // close the panel it was opened from; now the transcript changes and nothing else does.
+  const [openSidePanels, setOpenSidePanels] = useState<SidePanelKey[]>([]);
+  // Default right-region width: comfortable for one panel without dwarfing the transcript
+  // (pairs with the sidebar default below). Drag grows it.
+  const [sidePanelWidth, setSidePanelWidth] = useState(480);
   // Default sidebar width: enough for typical session titles without eating the
   // transcript. Paired with the panel-region default in chat-panel.tsx (480) —
   // both open at their comfortable minimum and grow by drag, never the reverse.
@@ -486,6 +517,12 @@ function Workspace() {
     [sortedSessions, workspaceId],
   );
 
+  // Which sidebar row is lit, and what the delegated-work panel is about.
+  const rootSessionId = useMemo(
+    () => rootSessionOf(sessions, activeSessionId),
+    [sessions, activeSessionId],
+  );
+
   const refreshSessions = useCallback(() => {
     loadSessions()
       .catch((caught) => swallowed({ component: "workspace-page", operation: "save the settings" }, caught));
@@ -594,6 +631,28 @@ function Workspace() {
     params.set("session", entry.sessionId);
     router.replace(`?${params.toString()}`, { scroll: false });
     if (isCompactViewport()) setHistoryOpen(false);
+  }
+
+  // Opening a session from the delegated-work panel.
+  //
+  // Deliberately not `handleResumeSession`. That one is the sidebar's: it remounts the chat (a
+  // fresh `chatKey`), which is right when you are moving between conversations you started and
+  // wrong here — the remount tears down the panel region and rebuilds it, and the panel you
+  // clicked flashes as it goes. `useChat` follows `initialSessionId` on its own, so changing
+  // which session is open is enough. The workspace does not change either: a delegated session
+  // is inside the workspace you are already in.
+  function handleOpenDelegatedSession(entry: SessionEntry) {
+    setUnseenCompletions((current) => {
+      if (!current.has(entry.sessionId)) return current;
+      const next = new Set(current);
+      next.delete(entry.sessionId);
+      return next;
+    });
+    setActiveSessionId(entry.sessionId);
+    void rememberLastSession(entry.workspaceId || workspaceId, entry.sessionId);
+    const params = new URLSearchParams(window.location.search);
+    params.set("session", entry.sessionId);
+    router.replace(`?${params.toString()}`, { scroll: false });
   }
 
   // Keep the native menu-bar tray's recent list in sync, and let its "New Chat"
@@ -799,7 +858,7 @@ function Workspace() {
           <SessionsSidebar
             sessions={sortedSessions}
             sessionsLoaded={sessionsLoaded}
-            activeSessionId={activeSessionId}
+            activeSessionId={rootSessionId}
             sessionSort={sessionSort}
             onSessionSortChange={setSessionSort}
             unseenCompletions={unseenCompletions}
@@ -838,6 +897,14 @@ function Workspace() {
           sessionTitle={activeSession?.title}
           initialInputDraft={activeSessionDraft}
           onDeleteSession={activeSessionId ? handleDeleteSession : undefined}
+          sessions={sessions}
+          unseenCompletions={unseenCompletions}
+          rootSessionId={rootSessionId}
+          onResumeSession={handleOpenDelegatedSession}
+          openSidePanels={openSidePanels}
+          onOpenSidePanelsChange={setOpenSidePanels}
+          sidePanelWidth={sidePanelWidth}
+          onSidePanelWidthChange={setSidePanelWidth}
           onPermissionModeChange={setSelectedPermissionMode}
           sessionRunning={activeSessionRunning}
           onSessionCreated={handleSessionCreated}

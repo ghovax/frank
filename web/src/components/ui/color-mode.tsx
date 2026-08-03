@@ -4,14 +4,13 @@ import type { IconButtonProps, SpanProps } from "@chakra-ui/react"
 import { ClientOnly, IconButton, Skeleton, Span } from "@chakra-ui/react"
 import * as React from "react"
 import { LuMoon, LuSun } from "react-icons/lu"
-import { getAppState, isTauri, setAppState } from "@/lib/app-state"
+import { usePreferences } from "@/lib/preferences"
 
 export type ColorMode = "light" | "dark"
 
 export interface ColorModeProviderProps extends React.PropsWithChildren {
   defaultTheme?: ColorMode | "system"
   forcedTheme?: ColorMode
-  storageKey?: string
 }
 
 export interface UseColorModeReturn {
@@ -25,45 +24,17 @@ export interface UseColorModeReturn {
 }
 
 const ColorModeContext = React.createContext<UseColorModeReturn | null>(null)
-const colorModeStorageKey = "theme"
-
-function isStoredTheme(value: string | null): value is ColorMode | "system" {
-  return value === "light" || value === "dark" || value === "system"
-}
 
 export function ColorModeProvider({
   children,
   defaultTheme = "system",
   forcedTheme,
-  storageKey = colorModeStorageKey,
 }: ColorModeProviderProps) {
-  const [theme, setThemeState] = React.useState<ColorMode | "system">(() => {
-    if (typeof window === "undefined") return forcedTheme ?? defaultTheme
-    if (isTauri()) return forcedTheme ?? defaultTheme
-
-    try {
-      const storedTheme = localStorage.getItem(storageKey)
-      if (!forcedTheme && isStoredTheme(storedTheme)) return storedTheme
-    } catch {
-      // localStorage can be unavailable in restricted browser contexts.
-    }
-
-    return forcedTheme ?? defaultTheme
-  })
+  // The daemon's answer is the state. There is no copy of it here to keep in step, which is
+  // what makes a change in another window arrive as an ordinary re-render.
+  const { preferences, updatePreferences } = usePreferences()
+  const theme = forcedTheme ?? preferences.color_mode ?? defaultTheme
   const [systemColorMode, setSystemColorMode] = React.useState<ColorMode>("light")
-
-  React.useEffect(() => {
-    if (forcedTheme || !isTauri()) return
-    let cancelled = false
-    getAppState(storageKey)
-      .then((storedTheme) => {
-        if (!cancelled && isStoredTheme(storedTheme)) setThemeState(storedTheme)
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [forcedTheme, storageKey])
 
   React.useEffect(() => {
     const query = window.matchMedia("(prefers-color-scheme: dark)")
@@ -87,19 +58,9 @@ export function ColorModeProvider({
   const setTheme = React.useCallback(
     (nextTheme: ColorMode | "system") => {
       if (forcedTheme) return
-
-      setThemeState(nextTheme)
-      if (isTauri()) {
-        void setAppState(storageKey, nextTheme)
-        return
-      }
-      try {
-        localStorage.setItem(storageKey, nextTheme)
-      } catch {
-        // localStorage can be unavailable in restricted browser contexts.
-      }
+      updatePreferences({ color_mode: nextTheme })
     },
-    [forcedTheme, storageKey],
+    [forcedTheme, updatePreferences],
   )
 
   const setColorMode = React.useCallback(

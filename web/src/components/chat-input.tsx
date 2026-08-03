@@ -19,7 +19,7 @@ import { DictationRecordingError, startDictation, type Dictation } from "@/lib/d
 import { toaster } from "./ui/toaster";
 import { ChatGPTUsageMeters } from "./chatgpt-usage-meters";
 import { AgentSelectControl, PermissionModeControl, SandboxToggleControl } from "./session-controls";
-import { isTauri } from "@/lib/app-state";
+import { isTauri } from "@/lib/tauri";
 import { pickDesktopFilePaths, watchDesktopFileDrop } from "@/lib/desktop-files";
 import { AttachmentChip } from "./attachment-chips";
 import { Tooltip } from "./ui/tooltip";

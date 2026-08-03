@@ -49,17 +49,6 @@ function runningInTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-function readStoredValue(key: string, fallback: string): string {
-  if (typeof window === "undefined") return fallback;
-  if (runningInTauri()) return fallback;
-  try {
-    return window.localStorage.getItem(key) || fallback;
-  } catch {
-    // localStorage can be unavailable in restricted contexts.
-    return fallback;
-  }
-}
-
 let API_BASE = DEFAULT_API_BASE;
 
 // The token for the daemon we are actually talking to. Two sources, and the distinction
@@ -1053,6 +1042,42 @@ export interface ProviderOption {
 export interface ModelsResponse {
   models: ModelOption[];
   providers: ProviderOption[];
+}
+
+// How the interface should look and where it should open. It lives in the daemon's database
+// rather than in this browser, so a tab, the desktop app and the phone are one Frank rather
+// than three that happen to look alike. The server is the source of truth; this asks it.
+export interface InterfacePreferences {
+  color_mode: "system" | "light" | "dark";
+  locale: string;
+  last_workspace_id: string;
+  computer_control_awaiting_grant: boolean;
+}
+
+export const DEFAULT_INTERFACE_PREFERENCES: InterfacePreferences = {
+  color_mode: "system",
+  locale: "",
+  last_workspace_id: "",
+  computer_control_awaiting_grant: false,
+};
+
+export async function fetchPreferences(): Promise<InterfacePreferences> {
+  const response = await apiFetch(`/preferences`);
+  // Every one of these has a working default, so an unreachable daemon reads as "nothing
+  // chosen yet" rather than as an error raised into the provider that renders the application.
+  if (!response.ok) return DEFAULT_INTERFACE_PREFERENCES;
+  return (await response.json()) as InterfacePreferences;
+}
+
+// Only the fields being changed are sent, and the whole of what is now stored comes back.
+export async function savePreferences(changes: Partial<InterfacePreferences>): Promise<InterfacePreferences> {
+  const response = await apiFetch(`/preferences`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
+  if (!response.ok) throw new Error("Could not save the preference.");
+  return (await response.json()) as InterfacePreferences;
 }
 
 // API credentials stored in the daemon's configuration.yaml (under $XDG_CONFIG_HOME/frank).

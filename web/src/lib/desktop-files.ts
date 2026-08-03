@@ -4,7 +4,7 @@
 // the plain-browser build never touch them (there the composer falls back to the web
 // <input>/dataTransfer byte path).
 
-import { isTauri } from "@/lib/app-state";
+import { isTauri } from "@/lib/tauri";
 
 // Open the native file picker and return the chosen absolute paths (empty if cancelled).
 export async function pickDesktopFilePaths(): Promise<string[]> {

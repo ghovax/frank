@@ -163,6 +163,20 @@ class WorkspaceCreateRequest(BaseModel):
     locations: list[LocationInput] = Field(min_length=1)
 
 
+class InterfacePreferencesUpdateRequest(BaseModel):
+    """A partial change to how the interface looks and where it opens.
+
+    Every field is optional and only the ones present are written: the theme toggle knows
+    nothing about the locale, and making it send one would let a stale copy overwrite a change
+    another window made between the read and the write.
+    """
+
+    color_mode: Literal["system", "light", "dark"] | None = None
+    locale: str | None = None
+    last_workspace_id: str | None = None
+    computer_control_awaiting_grant: bool | None = None
+
+
 class MachineRequest(BaseModel):
     """A machine to remember, as the `frank://pair#…` link `frank reach` prints."""
 

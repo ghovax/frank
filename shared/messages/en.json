@@ -177,7 +177,8 @@
     "disconnectedDescription": "The daemon is not answering. It may have stopped, or been restarted.",
     "reconnect": "Reconnect",
     "reasonReadsOutsideWorkspace": "{count, plural, one {This command reads a file outside the working directory.} other {This command reads files outside the working directory.}}",
-    "reasonAccessRequest": "{count, plural, one {This call asks to reach a path outside what the session may touch.} other {This call asks to reach paths outside what the session may touch.}}"
+    "reasonAccessRequest": "{count, plural, one {This call asks to reach a path outside what the session may touch.} other {This call asks to reach paths outside what the session may touch.}}",
+    "delegatedWork": "Work delegated to other sessions"
   },
   "Common": {
     "cancel": "Cancel",
@@ -476,7 +477,7 @@
     "deleteWorkspaceTitle": "Delete this workspace?",
     "deleteSession": "Delete session",
     "deleteTitle": "Delete this conversation?",
-    "hideChildSessions": "Hide the sessions this one created",
+    "hideChildSessions": "Hide what this conversation delegated",
     "newConversation": "New conversation",
     "newWorkspace": "New workspace",
     "newest": "Newest",
@@ -488,7 +489,7 @@
     "workspaces": "Workspaces",
     "searchPlaceholder": "Search conversations",
     "sessionOptions": "Session options",
-    "showChildSessions": "Show the sessions this one created",
+    "showChildSessions": "Show what this conversation delegated",
     "sortBy": "Sort by",
     "sortSessions": "Sort sessions",
     "statusAsleep": "Asleep",
@@ -506,7 +507,9 @@
     "fieldExitReason": "Ended",
     "fieldLocation": "Location",
     "fieldConversations": "Conversations",
-    "fieldWorkspace": "Workspace"
+    "fieldWorkspace": "Workspace",
+    "hideWorkspace": "Hide this workspace's conversations",
+    "showWorkspace": "Show this workspace's conversations"
   },
   "SettingsDialog": {
     "addRule": "Add rule",
@@ -810,5 +813,11 @@
     "loadError": "Could not load workspace environments",
     "saveError": "Could not save workspace environments",
     "saveChanges": "Save changes"
+  },
+  "DelegatedWorkPanel": {
+    "title": "Delegated work",
+    "collapsePanel": "Collapse panel",
+    "emptyTitle": "Nothing delegated yet",
+    "emptyDescription": "When this conversation hands work to another session, it appears here."
   }
 }

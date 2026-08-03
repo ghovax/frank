@@ -177,7 +177,8 @@
     "disconnectedDescription": "デーモンが応答していません。停止または再起動された可能性があります。",
     "reconnect": "再接続",
     "reasonReadsOutsideWorkspace": "このコマンドは作業ディレクトリの外にあるファイルを読み取ります。",
-    "reasonAccessRequest": "この呼び出しは、セッションが触れられる範囲の外にあるパスへのアクセスを求めています。"
+    "reasonAccessRequest": "この呼び出しは、セッションが触れられる範囲の外にあるパスへのアクセスを求めています。",
+    "delegatedWork": "他のセッションに任せた作業"
   },
   "Common": {
     "cancel": "キャンセル",
@@ -476,7 +477,7 @@
     "deleteWorkspaceTitle": "このワークスペースを削除しますか？",
     "deleteSession": "セッションを削除",
     "deleteTitle": "この会話を削除しますか？",
-    "hideChildSessions": "このセッションが作成したセッションを非表示",
+    "hideChildSessions": "この会話が任せた作業を非表示",
     "newConversation": "新しい会話",
     "newWorkspace": "新規ワークスペース",
     "newest": "新しい順",
@@ -488,7 +489,7 @@
     "workspaces": "ワークスペース",
     "searchPlaceholder": "会話を検索",
     "sessionOptions": "セッションのオプション",
-    "showChildSessions": "このセッションが作成したセッションを表示",
+    "showChildSessions": "この会話が任せた作業を表示",
     "sortBy": "並べ替え",
     "sortSessions": "セッションを並べ替え",
     "statusAsleep": "スリープ中",
@@ -506,7 +507,9 @@
     "fieldExitReason": "終了理由",
     "fieldLocation": "場所",
     "fieldConversations": "会話数",
-    "fieldWorkspace": "ワークスペース"
+    "fieldWorkspace": "ワークスペース",
+    "hideWorkspace": "このワークスペースの会話を非表示",
+    "showWorkspace": "このワークスペースの会話を表示"
   },
   "SettingsDialog": {
     "addRule": "ルールを追加",
@@ -810,5 +813,11 @@
     "loadError": "ワークスペースの環境を読み込めませんでした",
     "saveError": "ワークスペースの環境を保存できませんでした",
     "saveChanges": "変更を保存"
+  },
+  "DelegatedWorkPanel": {
+    "title": "任せた作業",
+    "collapsePanel": "パネルを閉じる",
+    "emptyTitle": "まだ何も任せていません",
+    "emptyDescription": "この会話が別のセッションに作業を任せると、ここに表示されます。"
   }
 }
