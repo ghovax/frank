@@ -15,7 +15,7 @@ absent from the verbs a session token may use — so widening is the human's act
 model's.
 
 There is deliberately **no bypass mode**. An agent that runs with no gate at all is the one
-configuration whose blast radius is unbounded, and sessions now spawn sessions without a
+configuration whose blast radius is unbounded, and sessions now create sessions without a
 human in the loop, so the mode that disables the loop entirely is not offered. The loosest
 policy available is :attr:`SELF_CLASSIFY`, which still classifies every call and escalates
 anything it cannot prove safe.
@@ -56,20 +56,16 @@ class PermissionMode(StrEnum):
     @classmethod
     def parse(cls, value: str | PermissionMode | None) -> Optional[PermissionMode]:
         """The mode a string names, or ``None`` when it names no known mode — so a caller can
-        tell 'absent or invalid' apart from a real choice. A stored ``bypass`` from before
-        that mode was removed parses as ``None`` and therefore falls back to the interactive
-        default rather than silently granting the loosest policy.
+        tell 'absent or invalid' apart from a real choice.
 
-        A stored ``auto`` is different in kind and is translated rather than dropped: that mode
-        was not removed, it was renamed. ``auto`` said how the decision arrived and not who made
-        it, which is the part worth knowing — a second model classifies the call. The policy is
-        unchanged, so reading the old spelling as the new one is finishing the rename in data
-        somebody wrote before it, not reviving a mode. Dropping it instead would silently move a
-        session that had chosen the loosest policy to the strictest one that still works."""
+        The four spellings above are the whole of it. A name this does not know — ``bypass`` from
+        before that mode was removed, ``auto`` from before ``self_classify`` was named for who
+        makes the decision — is not a mode, and reading it as one would mean two spellings for a
+        policy and configuration files that disagree about which is real. It falls back to the
+        interactive default, which is the safe end of the order and the one a person can see
+        being applied."""
         if isinstance(value, cls):
             return value
-        if isinstance(value, str) and value in _RENAMED:
-            return _RENAMED[value]
         try:
             return cls(value)
         except ValueError:
@@ -92,9 +88,9 @@ class PermissionMode(StrEnum):
     def more_restrictive(cls, *modes: str | PermissionMode | None) -> PermissionMode:
         """The more restrictive of the given modes — a meet on the restrictiveness order.
         Unknown or absent inputs are ignored; with none given the interactive default applies.
-        This is the child-session clamp: a spawned session runs at the more restrictive of its
+        This is the child-session clamp: a created session runs at the more restrictive of its
         parent's mode and the mode its creator asked for, so a child can never be looser than
-        the session that spawned it."""
+        the session that created it."""
         candidates = [mode for mode in (cls.parse(value) for value in modes) if mode is not None]
         return max(candidates, key=lambda mode: mode.restrictiveness) if candidates else cls.DEFAULT
 
@@ -115,23 +111,20 @@ class PermissionMode(StrEnum):
 
         This is the one thing ``PERMISSIVE`` changes, and the whole of what it changes. Every
         other difference between the modes falls out of these three flags being false together:
-        not interactive, so an unmatched command is allowed; not auto, so no classifier is
-        consulted and the declared risk stands; not read-only, so writes are not blocked. The
+        not interactive, so an unmatched command is allowed; not self-classifying, so no
+        classifier is consulted and the declared risk stands; not read-only, so writes are not
+        blocked. The
         result is exactly "run what the model called low-risk, ask about the rest"."""
         return self is PermissionMode.DEFAULT
 
 
-# Spellings that named a mode that still exists. Read on the way in and never written, so the
-# old name disappears from anything this touches the first time it is saved.
-_RENAMED: dict[str, PermissionMode] = {"auto": PermissionMode.SELF_CLASSIFY}
-
-
 _RESTRICTIVENESS: dict[PermissionMode, int] = {
     PermissionMode.SELF_CLASSIFY: 0,
-    # Above `auto` because it escalates everything the model called medium or high, where `auto`
-    # gives the classifier a chance to vouch for it; below `default` because it runs what
-    # `default` would have asked about. The clamp reads this, so a child of a `permissive`
-    # parent may be `permissive`, `default` or `read_only`, and never `auto`.
+    # Above `self_classify` because it escalates everything the model called medium or high,
+    # where `self_classify` gives the classifier a chance to vouch for it; below `default`
+    # because it runs what `default` would have asked about. The clamp reads this, so a child of
+    # a `permissive` parent may be `permissive`, `default` or `read_only`, and never
+    # `self_classify`.
     PermissionMode.PERMISSIVE: 1,
     PermissionMode.DEFAULT: 2,
     PermissionMode.READ_ONLY: 3,
