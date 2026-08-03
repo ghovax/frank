@@ -47,7 +47,7 @@
     "cancelToolFailedBody": "サーバーは取り消しを確認しませんでした。接続を確認して、再試行してください。",
     "cancelToolFailedTitle": "そのツール呼び出しを停止できませんでした",
     "compactFailedBody": "サーバーは圧縮を開始しませんでした。接続を確認して、もう一度試してください。",
-    "compactFailedTitle": "コンテキストを圧縮できませんでした",
+    "compactFailedTitle": "会話を圧縮できませんでした",
     "decisionFailedTitle": "決定を送信できませんでした",
     "inactiveBody": "この要求はすでに有効ではありません。ターンが次に進んだ可能性があります。",
     "networkBody": "サーバーが応答しませんでした。接続を確認して、もう一度試してください。",
@@ -83,10 +83,10 @@
     "compact": "コンパクト",
     "compactBody": "古い会話を要約にまとめ、直近の作業はそのまま保持します。コンテキストウィンドウに空きができますが、要約された詳細は完全には復元できなくなります。",
     "compactConfirm": "今すぐコンパクト",
-    "compactTitle": "コンテキストをコンパクトにしますか？",
+    "compactTitle": "会話を圧縮しますか？",
     "compactTooltip": "直近の作業はそのまま保持しつつ、古い履歴を要約してコンテキストを解放します",
     "compacting": "コンパクト化中…",
-    "compactingTooltip": "コンテキストをコンパクト化しています…",
+    "compactingTooltip": "会話を圧縮中…",
     "dictationCouldNotOpen": "マイクを開けませんでした: {reason}",
     "dictationFailed": "音声入力を処理できませんでした",
     "dictationInsecureOrigin": "ブラウザーは安全な接続でしかマイクを開きません。このページは安全な接続で読み込まれていません。HTTPS で配信される Tailscale のアドレスからこの Mac に接続してください。",
@@ -118,7 +118,9 @@
     "total": "合計",
     "uploading": "アップロード中 {count}",
     "usageThisTurn": "今回のターンの使用量",
-    "window": "ウィンドウ"
+    "window": "ウィンドウ",
+    "stopUnavailableWhileCompacting": "会話を圧縮中です。途中で停止することはできません。",
+    "placeholderCompacting": "会話の圧縮中にメッセージを予約…"
   },
   "ChatMessage": {
     "errorTitle": "問題が発生しました",
@@ -127,8 +129,8 @@
     "showLess": "折りたたむ",
     "showMore": "もっと見る",
     "compactedTooltip": "{before, plural, other {# 件のメッセージを {after} 件に要約しました}}",
-    "compactingContext": "コンテキストを要約しています…",
-    "contextCompacted": "コンテキストを要約しました",
+    "compactingContext": "会話を圧縮中…",
+    "contextCompacted": "会話を圧縮しました",
     "fromPeerSession": "ピアセッションから"
   },
   "ChatPanel": {

@@ -824,9 +824,15 @@ export function ChatInput({
                     ? translation("placeholderInvalidPath")
                     : attachments.length > 0
                       ? translation("placeholderAttachments")
-                      : isStreaming
-                        ? translation("placeholderStreaming")
-                        : translation("placeholderDefault")
+                      : isCompacting
+                        // Compaction is a turn, so the streaming placeholder claimed a message
+                        // would be queued "for the next turn" while the only turn running was
+                        // the fold. It is queued, and it drains when the fold is done — which is
+                        // what this says instead.
+                        ? translation("placeholderCompacting")
+                        : isStreaming
+                          ? translation("placeholderStreaming")
+                          : translation("placeholderDefault")
               }
               value={inputValue}
               onChange={(event) => setInputValue(event.target.value)}
@@ -918,7 +924,13 @@ export function ChatInput({
                 variant="solid"
                 loading={stopPending}
                 loadingText={translation("stopping")}
-                disabled={stopPending}
+                // Not while the conversation is being folded. Compaction runs as a turn, so
+                // `isStreaming` is true throughout it and Stop was offered for something it does
+                // not describe: the model is not working on the request, the harness is making
+                // room to keep working on it. Pressing it interrupted housekeeping the session
+                // would then have to do again.
+                disabled={stopPending || isCompacting}
+                title={isCompacting ? translation("stopUnavailableWhileCompacting") : undefined}
               >
                 <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
                   <LuSquare />

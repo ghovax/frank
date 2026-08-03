@@ -47,7 +47,7 @@
     "cancelToolFailedBody": "The server did not confirm the cancellation. Check the connection and retry.",
     "cancelToolFailedTitle": "Couldn't stop that tool call",
     "compactFailedBody": "The server did not start compaction. Check the connection and try again.",
-    "compactFailedTitle": "Couldn't compact the context",
+    "compactFailedTitle": "Couldn't compact the conversation",
     "decisionFailedTitle": "Couldn't submit your decision",
     "inactiveBody": "This request is no longer active — the turn may have already moved on.",
     "networkBody": "The server did not respond. Check the connection and try again.",
@@ -83,10 +83,10 @@
     "compact": "Compact",
     "compactBody": "This folds the older conversation into a dense summary and keeps the most recent work verbatim. It frees up the context window, but the summarized detail can no longer be recalled in full.",
     "compactConfirm": "Compact now",
-    "compactTitle": "Compact the context?",
+    "compactTitle": "Compact the conversation?",
     "compactTooltip": "Fold the older history into a summary to free up context, keeping recent work verbatim",
     "compacting": "Compacting…",
-    "compactingTooltip": "Compacting the context…",
+    "compactingTooltip": "Compacting the conversation…",
     "dictationCouldNotOpen": "The microphone could not be opened: {reason}",
     "dictationFailed": "Couldn't take that dictation",
     "dictationInsecureOrigin": "A browser only opens a microphone over a secure connection, and this page did not arrive over one. Reach this machine over its Tailscale address, which is served over HTTPS.",
@@ -118,7 +118,9 @@
     "total": "Total",
     "uploading": "Uploading {count}",
     "usageThisTurn": "Usage for this turn",
-    "window": "Window"
+    "window": "Window",
+    "stopUnavailableWhileCompacting": "The conversation is being compacted; it cannot be stopped mid-fold.",
+    "placeholderCompacting": "Queue a message while the conversation is compacted..."
   },
   "ChatMessage": {
     "errorTitle": "Something went wrong",
@@ -127,8 +129,8 @@
     "showLess": "Show less",
     "showMore": "Show more",
     "compactedTooltip": "{before, plural, =1 {Compacted # message down to {after}} other {Compacted # messages down to {after}}}",
-    "compactingContext": "Compacting context…",
-    "contextCompacted": "Context compacted",
+    "compactingContext": "Compacting the conversation…",
+    "contextCompacted": "Conversation compacted",
     "fromPeerSession": "From a peer session"
   },
   "ChatPanel": {
