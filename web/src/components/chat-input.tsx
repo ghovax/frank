@@ -38,7 +38,11 @@ interface ChatInputProps {
   onSend: (text: string, dataParts?: Record<string, unknown>[]) => void | Promise<void | string>;
   onAbort: () => void | Promise<void>;
   isStreaming: boolean;
+  // The connection is gone. Nothing can be sent, and saying why is the point.
   disabled?: boolean;
+  // A decision prompt is open. The composer is closed for a different reason and says a
+  // different thing: the turn is waiting on the person, not on the network.
+  awaitingDecision?: boolean;
   sessionId?: string | null;
   initialDraft?: string;
   onDraftChange?: (draft: string) => void;
@@ -274,6 +278,7 @@ export function ChatInput({
   initialDraft = "",
   onDraftChange,
   workingDirectory,
+  awaitingDecision,
   directoryValid = false,
   agents,
   selectedAgent,
@@ -298,6 +303,8 @@ export function ChatInput({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
+  // Every control closes for either reason; only the placeholder distinguishes them.
+  const composerClosed = disabled || !!awaitingDecision;
   const [inputValue, setInputValue] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploadingCount, setUploadingCount] = useState(0);
@@ -818,26 +825,31 @@ export function ChatInput({
               size="sm"
               variant="outline"
               placeholder={
+                // Ordered by what the person can do about it. A lost connection and an open
+                // decision both close the composer, and they used to share one message — so a
+                // question waiting to be answered announced itself as a network problem.
                 disabled
                   ? translation("placeholderConnecting")
-                  : !directoryValid
-                    ? translation("placeholderInvalidPath")
-                    : attachments.length > 0
-                      ? translation("placeholderAttachments")
-                      : isCompacting
-                        // Compaction is a turn, so the streaming placeholder claimed a message
-                        // would be queued "for the next turn" while the only turn running was
-                        // the fold. It is queued, and it drains when the fold is done — which is
-                        // what this says instead.
-                        ? translation("placeholderCompacting")
-                        : isStreaming
-                          ? translation("placeholderStreaming")
-                          : translation("placeholderDefault")
+                  : awaitingDecision
+                    ? translation("placeholderAwaitingDecision")
+                    : !directoryValid
+                      ? translation("placeholderInvalidPath")
+                      : attachments.length > 0
+                        ? translation("placeholderAttachments")
+                        : isCompacting
+                          // Compaction is a turn, so the streaming placeholder claimed a message
+                          // would be queued "for the next turn" while the only turn running was
+                          // the fold. It is queued, and it drains when the fold is done — which
+                          // is what this says instead.
+                          ? translation("placeholderCompacting")
+                          : isStreaming
+                            ? translation("placeholderStreaming")
+                            : translation("placeholderDefault")
               }
               value={inputValue}
               onChange={(event) => setInputValue(event.target.value)}
               onKeyDown={handleKeyDown}
-              disabled={disabled}
+              disabled={composerClosed}
               rows={1}
               fieldSizing="content"
               maxH="44"
@@ -891,7 +903,7 @@ export function ChatInput({
                   // hidden — a button that vanishes and reappears is harder to trust than one
                   // that says it is not ready yet.
                   loading={transcribing || dictationState === "loading"}
-                  disabled={disabled || !directoryValid || dictationState === "loading"}
+                  disabled={composerClosed || !directoryValid || dictationState === "loading"}
                 >
                   {recording ? <LuMicOff /> : <LuMic />}
                 </IconButton>
@@ -911,7 +923,7 @@ export function ChatInput({
                 variant="outline"
                 bg="bg"
                 borderColor="border"
-                disabled={disabled || !directoryValid}
+                disabled={composerClosed || !directoryValid}
               >
                 <LuPaperclip />
               </IconButton>
@@ -945,7 +957,7 @@ export function ChatInput({
                 variant="solid"
                 loading={sendPending}
                 loadingText={translation("sending")}
-                disabled={sendPending || disabled || !directoryValid || uploadingCount > 0 || !inputValue.trim()}
+                disabled={sendPending || composerClosed || !directoryValid || uploadingCount > 0 || !inputValue.trim()}
               >
                 <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
                   <LuArrowUp />

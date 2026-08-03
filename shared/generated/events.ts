@@ -121,6 +121,26 @@ export interface ModelToolResult {
   tool_name: string;
 }
 /**
+ * Why approval is needed, as data rather than as a sentence.
+ *
+ * The harness used to build the sentence itself — "Sandbox approval required: this command
+ * reads outside the working directory (/a, /b)." — and hand a client the finished English.
+ * That put user-facing prose in the one place that cannot translate it: the daemon has no
+ * locale, the string never reached the message catalogue, and a Japanese interface rendered
+ * an English clause with a colon and a parenthetical in the middle of its own layout.
+ *
+ * So the harness states the *facts* and the client writes the sentence. `kind` selects the
+ * message; the paths ride as data the message interpolates. A reason the client does not
+ * recognise falls back to the model's own explanation, which is prose either way.
+ *
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * via the `definition` "PermissionReason".
+ */
+export interface PermissionReason {
+  kind: string;
+  paths?: string[];
+}
+/**
  * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "PermissionRequestEvent".
  */
@@ -129,6 +149,7 @@ export interface PermissionRequestEvent {
   command?: string;
   explanation?: string;
   kind: "permission_request";
+  reason?: PermissionReason | null;
   request_id: string;
   risk?: string;
   timestamp?: string;

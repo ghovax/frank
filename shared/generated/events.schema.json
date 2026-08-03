@@ -274,6 +274,25 @@
       ],
       "type": "object"
     },
+    "PermissionReason": {
+      "additionalProperties": false,
+      "description": "Why approval is needed, as data rather than as a sentence.\n\nThe harness used to build the sentence itself \u2014 \"Sandbox approval required: this command\nreads outside the working directory (/a, /b).\" \u2014 and hand a client the finished English.\nThat put user-facing prose in the one place that cannot translate it: the daemon has no\nlocale, the string never reached the message catalogue, and a Japanese interface rendered\nan English clause with a colon and a parenthetical in the middle of its own layout.\n\nSo the harness states the *facts* and the client writes the sentence. `kind` selects the\nmessage; the paths ride as data the message interpolates. A reason the client does not\nrecognise falls back to the model's own explanation, which is prose either way.",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "paths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
     "PermissionRequestEvent": {
       "additionalProperties": false,
       "properties": {
@@ -292,6 +311,17 @@
           "const": "permission_request",
           "default": "permission_request",
           "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionReason"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "request_id": {
           "type": "string"

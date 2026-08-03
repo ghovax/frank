@@ -120,7 +120,8 @@
     "usageThisTurn": "Usage for this turn",
     "window": "Window",
     "stopUnavailableWhileCompacting": "The conversation is being compacted; it cannot be stopped mid-fold.",
-    "placeholderCompacting": "Queue a message while the conversation is compacted..."
+    "placeholderCompacting": "Queue a message while the conversation is compacted...",
+    "placeholderAwaitingDecision": "Answer the request above to continue"
   },
   "ChatMessage": {
     "errorTitle": "Something went wrong",
@@ -174,7 +175,9 @@
     "switchToDark": "Switch to dark theme",
     "disconnectedTitle": "Not connected to Frank",
     "disconnectedDescription": "The daemon is not answering. It may have stopped, or been restarted.",
-    "reconnect": "Reconnect"
+    "reconnect": "Reconnect",
+    "reasonReadsOutsideWorkspace": "{count, plural, one {This command reads a file outside the working directory.} other {This command reads files outside the working directory.}}",
+    "reasonAccessRequest": "{count, plural, one {This call asks to reach a path outside what the session may touch.} other {This call asks to reach paths outside what the session may touch.}}"
   },
   "Common": {
     "cancel": "Cancel",

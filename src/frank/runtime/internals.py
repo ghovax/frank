@@ -397,6 +397,11 @@ class _PreflightGate:
     # ``arguments["explanation"]``, which is why the model wants the call at all. A person
     # deciding wants both: what is being attempted, and what made it stop here.
     explanation: str = ""
+    # Why approval is needed, as facts rather than as a sentence, so the client writes the
+    # prose in its own language. Set where the harness itself is the reason; left unset where
+    # the reason is somebody's prose — a classifier's verdict or the model's own words — which
+    # no catalogue could translate anyway.
+    reason: Any = None
     risk: str = ""
     questions: list = field(default_factory=list)
     # A bash command approval remembers an "always allow" as a session rule.

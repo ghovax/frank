@@ -42,7 +42,7 @@ import { DropdownMenu } from "@/components/ui/menu";
 import { PermissionOverlay } from "./permission-overlay";
 import { AgentSkills } from "./agent-skills";
 import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-display";
-import type { ToolPermission, ToolQuestion } from "@/lib/tool-event";
+import { permissionReasonPaths, permissionReasonText, type ToolPermission, type ToolQuestion } from "@/lib/tool-event";
 
 import { fetchSettings, getWorkspace, revealInFinder, saveSessionDraft, saveAgentConfiguration, saveSettings, setSessionPermissionMode, subscribeEvents, type AgentCard, type AgentSummary, type Location, type PermissionMode, type SandboxEnforce, type WorktreeStrategy } from "@/lib/api";
 import { PdfDocumentView } from "./pdf-view";
@@ -649,7 +649,7 @@ export function ChatPanel({
   // card, though in practice a card carries only one.
   let pendingPrompt: (
     | { kind: "question"; question: ToolQuestion }
-    | { kind: "permission"; permission: ToolPermission; title: string; detail?: string; command?: string; arguments?: Record<string, unknown> }
+    | { kind: "permission"; permission: ToolPermission; title: string; detail?: string; detailPaths?: string[]; command?: string; arguments?: Record<string, unknown> }
     | null
   ) = null;
   {
@@ -673,7 +673,16 @@ export function ChatPanel({
           // model's own `explanation`, via the same display helper the tool card uses), and
           // the detail says what made this stop for approval.
           title: getToolCallDisplay(name, args, tToolDisplay).label,
-          detail: permission.explanation || undefined,
+          // The harness's structured reason wins, because it is the only one this interface
+          // can say in the reader's language. It used to send a finished English sentence —
+          // "Sandbox approval required: this command reads outside the working directory
+          // (/a, /b)." — which no catalogue could reach, so a Japanese window rendered an
+          // English clause with a colon and a parenthetical inside its own layout.
+          detail: permissionReasonText(permission.reason, translation) || permission.explanation || undefined,
+          // The paths travel as data, so the overlay lists them. Folding them into the
+          // sentence would join a set with a separator this component chose, which is a
+          // locale's decision — and would render several values as one.
+          detailPaths: permissionReasonPaths(permission.reason),
           command: command || undefined,
           arguments: args,
         };
@@ -1103,6 +1112,7 @@ export function ChatPanel({
                       permission={pendingPrompt.permission}
                       title={pendingPrompt.title}
                       detail={pendingPrompt.detail}
+                      detailPaths={pendingPrompt.detailPaths}
                       command={pendingPrompt.command}
                       arguments={pendingPrompt.arguments}
                       onPermission={handlePermission}
@@ -1134,7 +1144,12 @@ export function ChatPanel({
           onSend={handleSend}
           onAbort={abort}
           isStreaming={isStreaming}
-          disabled={!isConnected || !!pendingPrompt}
+          // Two reasons the composer is closed, kept apart because they read as different
+          // things to the person looking at it. One boolean for both meant a decision prompt
+          // reported "connecting to the server", which is not what is happening and sends
+          // somebody to check their network instead of answering the question in front of them.
+          disabled={!isConnected}
+          awaitingDecision={!!pendingPrompt}
           sessionId={sessionId}
           initialDraft={initialInputDraft}
           onDraftChange={handleInputDraftChange}

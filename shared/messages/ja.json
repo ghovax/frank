@@ -120,7 +120,8 @@
     "usageThisTurn": "今回のターンの使用量",
     "window": "ウィンドウ",
     "stopUnavailableWhileCompacting": "会話を圧縮中です。途中で停止することはできません。",
-    "placeholderCompacting": "会話の圧縮中にメッセージを予約…"
+    "placeholderCompacting": "会話の圧縮中にメッセージを予約…",
+    "placeholderAwaitingDecision": "上のリクエストに回答すると続行できます"
   },
   "ChatMessage": {
     "errorTitle": "問題が発生しました",
@@ -174,7 +175,9 @@
     "switchToDark": "ダークテーマに切り替え",
     "disconnectedTitle": "Frank に接続していません",
     "disconnectedDescription": "デーモンが応答していません。停止または再起動された可能性があります。",
-    "reconnect": "再接続"
+    "reconnect": "再接続",
+    "reasonReadsOutsideWorkspace": "このコマンドは作業ディレクトリの外にあるファイルを読み取ります。",
+    "reasonAccessRequest": "この呼び出しは、セッションが触れられる範囲の外にあるパスへのアクセスを求めています。"
   },
   "Common": {
     "cancel": "キャンセル",

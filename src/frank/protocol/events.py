@@ -238,6 +238,23 @@ class TokenUsageEvent(_EventBase):
     divergence: Optional[PrefixDivergence] = None
 
 
+class PermissionReason(BaseModel):
+    """Why approval is needed, as data rather than as a sentence.
+
+    The harness used to build the sentence itself — "Sandbox approval required: this command
+    reads outside the working directory (/a, /b)." — and hand a client the finished English.
+    That put user-facing prose in the one place that cannot translate it: the daemon has no
+    locale, the string never reached the message catalogue, and a Japanese interface rendered
+    an English clause with a colon and a parenthetical in the middle of its own layout.
+
+    So the harness states the *facts* and the client writes the sentence. `kind` selects the
+    message; the paths ride as data the message interpolates. A reason the client does not
+    recognise falls back to the model's own explanation, which is prose either way."""
+
+    kind: str
+    paths: list[str] = Field(default_factory=list)
+
+
 class PermissionRequestEvent(_EventBase):
     kind: Literal["permission_request"] = "permission_request"
     request_id: str
@@ -248,8 +265,12 @@ class PermissionRequestEvent(_EventBase):
     tool_name: str = ""
     arguments: dict[str, Any] = Field(default_factory=dict)
     command: str = ""
-    # Why approval is needed. The model's own reason for wanting the call lives in
-    # ``arguments["explanation"]``; both are shown.
+    # Why approval is needed, in the client's own words. Absent where the reason is prose the
+    # harness did not author — a classifier's verdict, or the model's own account of itself.
+    reason: Optional[PermissionReason] = None
+    # Why approval is needed, where the text is somebody's prose rather than a fact about the
+    # call. The model's own reason for wanting the call lives in ``arguments["explanation"]``;
+    # both are shown.
     explanation: str = ""
     risk: str = ""
 

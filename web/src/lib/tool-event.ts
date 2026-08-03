@@ -7,9 +7,20 @@ export type ToolEventStatus = "running" | "completed" | "done" | "failed" | "inp
 // command — and, once approved, its output — read together.
 export type PermissionDecision = "deny" | "allow_once";
 
+// Why approval is needed, as facts rather than as a finished sentence. The harness sends
+// this instead of English prose so the interface writes the sentence in its own language;
+// `kind` selects the message and `paths` are interpolated into it.
+export interface PermissionReason {
+  kind: string;
+  paths?: string[];
+}
+
 export interface ToolPermission {
   requestId: string;
+  // Prose the harness did not author — a classifier's verdict, or the model's own account of
+  // itself. Untranslatable by construction, and shown as it came.
   explanation?: string;
+  reason?: PermissionReason;
   risk?: string;
   decision?: PermissionDecision;
 }
@@ -65,4 +76,45 @@ export function toolStatus(status: unknown): ToolEventStatus | undefined {
 
 export function hasBackgroundJobId(result: unknown): boolean {
   return String(asRecord(result).job_id ?? "").trim().length > 0;
+}
+
+// The harness's structured reason as a sentence, in the caller's language, or "" when there
+// is none or the interface does not recognise the kind.
+//
+// This exists so that no user-facing sentence is ever assembled on the server. The daemon has
+// no locale: prose built there reaches every interface in one language and never passes
+// through the message catalogue, which is how "Sandbox approval required: …" ended up inside
+// a Japanese window. The harness sends `kind` and the paths; whoever draws the prompt writes
+// the sentence.
+//
+// The sentence only. The paths are *data*, and they render as a list beside it — never joined
+// into the message. A separator is a locale's decision, not a component's, and a set of paths
+// flattened into one string reads as one value when it is several.
+export type PermissionReasonTranslator = (
+  key: "reasonReadsOutsideWorkspace" | "reasonAccessRequest",
+  values: { count: number },
+) => string;
+
+export function permissionReasonText(
+  reason: PermissionReason | undefined,
+  translation: PermissionReasonTranslator,
+): string {
+  if (!reason?.kind) return "";
+  const count = (reason.paths ?? []).filter(Boolean).length;
+  switch (reason.kind) {
+    case "reads_outside_workspace":
+      return translation("reasonReadsOutsideWorkspace", { count });
+    case "access_request":
+      return translation("reasonAccessRequest", { count });
+    default:
+      // An unknown kind is a newer harness talking to an older interface. Saying nothing lets
+      // the model's own explanation stand, which is better than inventing a sentence for a
+      // reason this build does not understand.
+      return "";
+  }
+}
+
+// The paths a reason names, for the list that renders beside its sentence.
+export function permissionReasonPaths(reason: PermissionReason | undefined): string[] {
+  return (reason?.paths ?? []).filter(Boolean);
 }

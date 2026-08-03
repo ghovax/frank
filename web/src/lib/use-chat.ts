@@ -83,11 +83,6 @@ export interface MessageMeta {
   messagesAfter?: number;
   durationMs?: number;
   attachments?: MessageAttachment[];
-  // On a `thinking` row: this one was opened by the client the moment the turn was sent,
-  // before the session had said anything. It becomes a real reasoning row if reasoning
-  // arrives, and is removed if the turn produces anything else first — so the wait is
-  // visible without inventing a thinking phase that never happened.
-  opening?: boolean;
   // On a `peer` message: which session sent it. The transcript shows a report as coming
   // from somewhere, and "somewhere" has an id.
   peerSender?: string;
@@ -356,9 +351,31 @@ function stableMessageId(state: ReduceState, prefix: string, sourceId: string | 
     state.keyCounts.set("", issued + 1);
     return `${prefix}-anon-${issued}`;
   }
-  const seen = state.keyCounts.get(sourceId) ?? 0;
-  state.keyCounts.set(sourceId, seen + 1);
-  return `${prefix}-${sourceId}-${seen}`;
+  // A message that has an id *is* that id, and the row is the same row every time it is
+  // reduced. The counter that used to be appended here made identity depend on how many
+  // times a reducer happened to see the message: the copy rendered optimistically on send
+  // and the copy that came back from the server carried the same `messageId` and still
+  // landed on two different keys, so the transcript showed the message twice until a replay
+  // rebuilt the state from scratch and it collapsed back to one.
+  //
+  // Deterministic here, and idempotent at the insert (see `upsertMessage`). Together those
+  // two make a duplicate unrepresentable rather than merely unlikely — whichever path
+  // reduces the message, and however many times.
+  return `${prefix}-${sourceId}`;
+}
+
+function upsertMessage(state: ReduceState, message: ChatMessage): void {
+  // Replace in place when the row already exists, append when it does not. The transcript is
+  // a projection of messages the server owns, and the same message arriving twice — once
+  // optimistically, once echoed — must converge on one row rather than accumulate.
+  const index = state.messages.findIndex((existing) => existing.id === message.id);
+  if (index === -1) {
+    state.messages = [...state.messages, message];
+    return;
+  }
+  state.messages = state.messages.map((existing, position) =>
+    position === index ? { ...existing, ...message, meta: { ...existing.meta, ...message.meta } } : existing
+  );
 }
 
 function asChatTask(value: unknown): ChatTask | null {
@@ -390,33 +407,22 @@ function isRunningThinkingMessage(message: ChatMessage): boolean {
   return message.role === "thinking" && message.meta?.status === "running";
 }
 
-// A thinking row the client opened on send, which the session has not yet claimed by
-// reasoning into it. It is a statement about the client waiting, not about the model, so it
-// is dropped rather than closed when the turn turns out to have gone somewhere else.
-function isOpeningPlaceholder(message: ChatMessage): boolean {
-  return isRunningThinkingMessage(message) && !!message.meta?.opening && message.content === "";
-}
-
 function finishRunningThinking(state: ReduceState): void {
-  state.messages = state.messages
-    .filter((message) => !isOpeningPlaceholder(message))
-    .map((message) =>
-      isRunningThinkingMessage(message)
-        ? { ...message, meta: { ...message.meta, status: "done" } }
-        : message
-    );
+  state.messages = state.messages.map((message) =>
+    isRunningThinkingMessage(message)
+      ? { ...message, meta: { ...message.meta, status: "done" } }
+      : message
+  );
 }
 
 // Close the in-flight thinking message and record the server-measured duration,
 // so the indicator flips from "Thinking" to "Thought for Ns".
 function finishRunningThinkingWithDuration(state: ReduceState, durationMs: number): void {
-  state.messages = state.messages
-    .filter((message) => !isOpeningPlaceholder(message))
-    .map((message) =>
-      isRunningThinkingMessage(message)
-        ? { ...message, meta: { ...message.meta, status: "done", durationMs } }
-        : message
-    );
+  state.messages = state.messages.map((message) =>
+    isRunningThinkingMessage(message)
+      ? { ...message, meta: { ...message.meta, status: "done", durationMs } }
+      : message
+  );
 }
 
 // Open the "Thinking" row the moment a turn is sent, before anything comes back.
@@ -427,23 +433,23 @@ function finishRunningThinkingWithDuration(state: ReduceState, durationMs: numbe
 // a send that had not registered. The row carries no claim about the model; it says the turn is
 // under way, which is true from the instant it is sent. Reasoning that arrives flows into this
 // same row, so nothing jumps when it does.
-function beginOpeningThinking(state: ReduceState): void {
-  if (state.messages.some(isRunningThinkingMessage)) return;
-  state.messages = [
-    ...state.messages,
-    {
-      id: `status-${state.messages.length}`,
-      role: "thinking",
-      content: "",
-      timestamp: new Date().toISOString(),
-      meta: { status: "running", opening: true },
-    },
-  ];
-}
-
+// Close the tool cards that were still spinning when the turn ended, so a card cannot
+// outlive its turn.
+//
+// `input_required` is deliberately NOT swept, and that is the whole point of this function
+// having a narrow rule. A suspension *is* how a turn ends: the turn parks, the stream closes,
+// and this runs — so sweeping a pending decision to `completed` erased the prompt a person
+// was being asked to answer, seconds after it appeared and before they could reach it. The
+// gate stayed open on the daemon, so the session was then stuck on a question with no card,
+// and only reopening the session brought it back, because replay rebuilds it from the
+// persisted turn.
+//
+// A spinner and a question are not the same thing. A spinner has nobody left to finish it
+// once the stream is gone; a question is waiting for a person and stays valid until they
+// answer it or Stop settles it, which the Stop path does explicitly.
 function finishActiveTools(state: ReduceState): void {
   state.messages = state.messages.map((message) =>
-    message.role === "tool_call" && (message.meta?.status === "running" || message.meta?.status === "input_required")
+    message.role === "tool_call" && message.meta?.status === "running"
       ? { ...message, meta: { ...message.meta, status: "completed" } }
       : message
   );
@@ -466,7 +472,7 @@ function applyThinking(state: ReduceState, text: string): void {
   // reasoning phase and stops being provisional — even for a bare ping with no text yet.
   state.messages = state.messages.map((message, messageIndex) =>
     messageIndex === index
-      ? { ...message, content: message.content + text, meta: { ...message.meta, opening: undefined } }
+      ? { ...message, content: message.content + text }
       : message
   );
 }
@@ -616,16 +622,13 @@ function reduceInboundMessage(state: ReduceState, message: A2AMessage, peerSende
     ...(attachments.length > 0 ? { attachments } : {}),
     ...(peerSender ? { peerSender } : {}),
   };
-  state.messages = [
-    ...state.messages,
-    {
-      id: stableMessageId(state, peerSender ? "peer" : "user", message.messageId),
-      role: peerSender ? "peer" : "user",
-      content: text,
-      timestamp: new Date().toISOString(),
-      ...(Object.keys(meta).length > 0 ? { meta } : {}),
-    },
-  ];
+  upsertMessage(state, {
+    id: stableMessageId(state, peerSender ? "peer" : "user", message.messageId),
+    role: peerSender ? "peer" : "user",
+    content: text,
+    timestamp: new Date().toISOString(),
+    ...(Object.keys(meta).length > 0 ? { meta } : {}),
+  });
 }
 
 // The single reduction of one part. Replay walks a stored message's parts through this;
@@ -884,6 +887,9 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       const permission = {
         requestId: event.request_id,
         explanation: event.explanation || undefined,
+        // The harness's own reason, as facts. Rendered into a sentence by whoever draws the
+        // prompt, in the language they are drawing it in.
+        reason: event.reason ?? undefined,
         risk: event.risk || undefined,
       };
       const attachedPermission = state.messages.some(
@@ -1438,19 +1444,21 @@ export function useChat(
       const dataParts = input.dataParts ?? [];
       const attachments = dataParts.flatMap((dataPart) => attachmentsFromData(dataPart));
       const meta = attachments.length > 0 ? { attachments } : {};
-      stateRef.current.messages = [
-        ...stateRef.current.messages,
-        {
-          id: stableMessageId(stateRef.current, "user", userMessageId),
-          role: "user",
-          content: input.text,
-          timestamp: new Date().toISOString(),
-          ...(Object.keys(meta).length > 0 ? { meta } : {}),
-        },
-      ];
-      // Opened in the same paint as the user's own message, so the turn is visibly under way
-      // from the keystroke rather than from the model's first token.
-      beginOpeningThinking(stateRef.current);
+      // Keyed by the id this send will carry, so the echo lands on this row rather than
+      // beside it. The optimistic copy is a *preview* of a message the server owns, not a
+      // second message, and giving it the server's identity is what makes it one.
+      upsertMessage(stateRef.current, {
+        id: stableMessageId(stateRef.current, "user", userMessageId),
+        role: "user",
+        content: input.text,
+        timestamp: new Date().toISOString(),
+        ...(Object.keys(meta).length > 0 ? { meta } : {}),
+      });
+      // No thinking row is opened here. The session says when it is thinking, and until it
+      // does, the honest answer is that it has not started. A row invented from the keystroke
+      // made the interface claim reasoning that no model had begun — and on a turn that
+      // opened with a tool call rather than reasoning, it claimed something that never
+      // happened at all. Stop and the composer already say a turn is under way.
       flush();
 
       isStreamingRef.current = true;

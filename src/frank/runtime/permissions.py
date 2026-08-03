@@ -11,6 +11,7 @@ from frank.runtime.internals import (
     _ToolPlan,
 )
 from frank.base.confinement import parse_access_request
+from frank.protocol.events import PermissionReason
 from frank.runtime.locations import (
     _LOCATION_TOOLS,
     PermissionDecision,
@@ -633,10 +634,27 @@ class _DecidesPermissions:
             outside_reads = self._not_already_granted(outside_reads)
             # Sandbox read approval (reads outside the working directory).
             if outside_reads:
-                paths = ", ".join(outside_reads)
-                sandbox_message = (
-                    f"Sandbox approval required: this command reads outside the working directory ({paths})."
-                )
+                # What a person is shown: facts, not a sentence. The interface writes the
+                # prose, in whatever language it is drawing in.
+                sandbox_reason = PermissionReason(kind="reads_outside_workspace", paths=list(outside_reads))
+                # What the *model* is told, from the prompt corpus like every other piece of
+                # model-facing prose in this harness. It reaches one reader — the classifier
+                # deciding whether this call can be approved without asking — as
+                # `model_explanation` in that prompt's JSON.
+                #
+                # A template rather than a literal, because that is where model-facing text
+                # belongs: it is edited beside the prompt it argues with, it can say more than
+                # a line of Python comfortably holds, and the paths go in as a list instead of
+                # being comma-joined into a sentence.
+                #
+                # It also rides along on the gate as `explanation`, but only as the fallback
+                # arm of the interface's `reason || explanation`: every gate carrying this
+                # carries `sandbox_reason` too, so a client that understands the reason never
+                # renders it. An older build against a newer daemon shows it rather than
+                # showing nothing.
+                outside_workspace_note = self._prompt_loader.load("outside_workspace_read", {
+                    "paths": ", ".join(outside_reads),
+                })
                 # A sandbox read escalates to the user like any other gate — the turn parks
                 # in place and resumes on the answer — rather than hard-denying. A session
                 # created by another parks the same way: its request reaches a person through
@@ -654,7 +672,7 @@ class _DecidesPermissions:
                     decision = await self._classify_permission(
                         tool_kind="bash", command=raw_command, raw_command=raw_command,
                         default_decision=permission_decision, read_only=read_only,
-                        risk=risk or "medium", explanation=explanation or sandbox_message,
+                        risk=risk or "medium", explanation=explanation or outside_workspace_note,
                         static_classification=static_classification, static_detail=static_detail,
                         outside_reads=outside_reads, access_request=access_request,
                     )
@@ -664,8 +682,9 @@ class _DecidesPermissions:
                         plan.gates.append(_PreflightGate(
                             request_id=self._new_permission_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
                             kind="permission", command=raw_command,
-                            explanation=decision.explanation or sandbox_message, risk=decision.risk, is_bash=True,
-                            deny_message="Sandbox read was not approved by the user.",
+                            explanation=decision.explanation or outside_workspace_note, risk=decision.risk, is_bash=True,
+                            reason=None if decision.explanation else sandbox_reason,
+                            deny_message="You did not approve reading outside the working directory.",
                         ))
                 else:
                     if permission_decision == "deny":
@@ -673,8 +692,9 @@ class _DecidesPermissions:
                         return plan
                     plan.gates.append(_PreflightGate(
                         request_id=self._new_permission_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
-                        kind="permission", command=raw_command, explanation=sandbox_message, risk="medium", is_bash=True,
-                        deny_message="Sandbox read was not approved by the user.",
+                        kind="permission", command=raw_command, explanation=outside_workspace_note, risk="medium", is_bash=True,
+                        reason=sandbox_reason,
+                        deny_message="You did not approve reading outside the working directory.",
                     ))
             # Read-only enforcement is a hard block (no human in the loop).
             if policy.read_only:
