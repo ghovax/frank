@@ -993,52 +993,53 @@ class SessionExecutor(AgentExecutor):
             if not model_identifier or not model_is_authorized(model_identifier, self._global_configuration):
                 return
             titling_configuration = configuration.model_copy(update={"reasoning_effort": "low"})
-            built = build_chat_model(
+            model = build_chat_model(
                 model_identifier, self._global_configuration, titling_configuration,
                 self._runtime_working_directory,
-            )
+            ).bind_tools([SessionTitle], tool_choice="auto")
             prompt = PromptLoader(Path(__file__).resolve().parent.parent / "runtime" / "prompts")
             request = [
                 SystemMessage(content=prompt.load("session_title", {})),
                 HumanMessage(content=first_message),
             ]
-            # Forced first, then offered.
+            # The tool is offered, and the prompt is what insists on it.
             #
-            # Neither choice works everywhere, which is why this is a sequence rather than a
-            # setting. `required` is what makes the answer reliable — producing the object is the
-            # whole purpose of the call, and a model free to decline it does, silently. But a
-            # thinking model behind OpenCode Go refuses the request outright: *400, Thinking mode
-            # does not support this tool_choice*. So the guarantee is taken where it is on offer
-            # and dropped where it is not, rather than picking one and being wrong for half the
-            # providers this harness routes to.
+            # Forcing it is the obvious way to guarantee the object, and it cannot be used: a
+            # thinking model behind a gateway refuses the request outright — *400, Thinking mode
+            # does not support this tool_choice* — and refuses it whatever is sent for
+            # `reasoning_effort`, including nothing at all, because the model thinks by default
+            # and the incompatibility is with the forcing itself. Measured against the live
+            # provider on all three settings before giving up on it.
+            #
+            # `auto` is accepted everywhere, so the guarantee moves into the instruction and the
+            # attempts below cover a model that ignores it. A tool call is what this wants: the
+            # answer arrives as a typed field rather than as text somebody has to guess the
+            # shape of.
             attempts = active_tuning().amount(Tunable.session_title_attempts)
-            for choice in ("required", "auto"):
-                model = built.bind_tools([SessionTitle], tool_choice=choice)
-                for attempt in range(1, attempts + 1):
-                    try:
-                        response = await model.ainvoke(request)
-                    except Exception as error:  # noqa: BLE001 — the next choice may be accepted
-                        logger.warning(
-                            "naming session %s was refused with tool_choice=%s (%s); %s",
-                            self._session_id, choice, type(error).__name__,
-                            "trying without forcing it" if choice == "required" else "giving up",
-                        )
-                        break
-                    if not response.tool_calls:
-                        logger.warning(
-                            "the model returned no title for session %s (tool_choice=%s, attempt %d of %d)",
-                            self._session_id, choice, attempt, attempts,
-                        )
-                        continue
-                    title = (SessionTitle.model_validate(response.tool_calls[0]["args"]).title or "").strip()
-                    if title:
-                        await self._turn_store.publish_title(title)
-                        return
+            for attempt in range(1, attempts + 1):
+                try:
+                    response = await model.ainvoke(request)
+                except Exception:  # noqa: BLE001 — one bad call is not worth the session's name
                     logger.warning(
-                        "the model returned an empty title for session %s (tool_choice=%s, attempt %d of %d)",
-                        self._session_id, choice, attempt, attempts,
+                        "naming session %s failed (attempt %d of %d)",
+                        self._session_id, attempt, attempts, exc_info=True,
                     )
-            logger.warning("gave up naming session %s", self._session_id)
+                    continue
+                if not response.tool_calls:
+                    logger.warning(
+                        "the model answered without calling the title tool for session %s "
+                        "(attempt %d of %d)", self._session_id, attempt, attempts,
+                    )
+                    continue
+                title = (SessionTitle.model_validate(response.tool_calls[0]["args"]).title or "").strip()
+                if title:
+                    await self._turn_store.publish_title(title)
+                    return
+                logger.warning(
+                    "the model returned an empty title for session %s (attempt %d of %d)",
+                    self._session_id, attempt, attempts,
+                )
+            logger.warning("gave up naming session %s after %d attempts", self._session_id, attempts)
         except Exception:  # noqa: BLE001 — a session is not worth failing over its own name
             # Not `debug`. Failing to name a session is cosmetic; failing to name *every*
             # session is a fault, and at debug level the difference was invisible — a sidebar
