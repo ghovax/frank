@@ -100,11 +100,25 @@ async function resolveDaemonEndpoint(): Promise<void> {
   }
 }
 
-// Resolved once and memoized: the endpoint is fixed for the life of the daemon the
-// shell started, and every request would otherwise pay an IPC round trip.
+// Resolved once and memoized, because every request would otherwise pay an IPC round trip.
+// Memoized for the life of *a daemon*, though, not of the page — see `forgetDaemonEndpoint`.
 function ensureDaemonEndpoint(): Promise<void> {
   if (!daemonEndpointPromise) daemonEndpointPromise = resolveDaemonEndpoint();
   return daemonEndpointPromise;
+}
+
+/**
+ * Drop the memoized endpoint so the next request resolves it again.
+ *
+ * A daemon mints a fresh token at boot and binds an ephemeral port, so both change when it
+ * restarts — and the memo held the old pair for as long as the page lived. Every subsequent
+ * request carried a token the new daemon had never issued. It went unnoticed on the REST paths,
+ * which reconnect through code that re-reads it, and was unmissable on the terminal, whose
+ * websocket handshake answers a wrong token with a bare 403 and whose retry loop then tried the
+ * same wrong token once a second.
+ */
+export function forgetDaemonEndpoint(): void {
+  daemonEndpointPromise = null;
 }
 
 export interface ApiRequestOptions {
@@ -189,7 +203,11 @@ async function rpc<T>(
 
 // The address the client is currently talking to.
 
-export function terminalWebSocketUrl(options: { sessionId?: string | null; workingDirectory?: string; terminalKey?: string; locationKind?: string; locationBaseDirectory?: string; locationHostAlias?: string; rows?: number; columns?: number } = {}): string {
+// Async, unlike its siblings, and for the reason `apiFetch` is: the token has to be resolved
+// before it can be attached. A synchronous builder returned a URL with no token whenever the
+// panel mounted before the endpoint had been read, and a websocket with no token is a 403.
+export async function terminalWebSocketUrl(options: { sessionId?: string | null; workingDirectory?: string; terminalKey?: string; locationKind?: string; locationBaseDirectory?: string; locationHostAlias?: string; rows?: number; columns?: number } = {}): Promise<string> {
+  await ensureDaemonEndpoint();
   const params = new URLSearchParams();
   if (options.sessionId) params.set("session_id", options.sessionId);
   if (options.workingDirectory) params.set("working_directory", options.workingDirectory);
@@ -1281,6 +1299,9 @@ function ensureEventStream(): void {
   }, (connected) => {
     if (connected === lastReportedConnection) return;
     lastReportedConnection = connected;
+    // Whatever comes back may be a different daemon, on a different port, with a different
+    // token. Forgetting the endpoint here is what makes the reconnection reach it.
+    if (!connected) forgetDaemonEndpoint();
     connectionListeners.forEach((listener) => listener(connected));
   });
 }

@@ -132,7 +132,16 @@ function ToolMessageCard({ message }: ChatMessageProps) {
   );
 }
 
-function UserMessageCard({ message }: { message: ChatMessage }) {
+// A message addressed to this session: the person's own, or one a peer sent it.
+//
+// One card for both. They are the same thing structurally — an inbound message that starts a
+// turn — and a peer's used to have a card of its own that had drifted into a poorer version of
+// this one: no attachments, no collapse for a long report, and a left border where everything
+// else in the transcript uses a bubble. What actually distinguishes them is authorship, and a
+// banner says that in words, which is both more legible than a different shape and the only part
+// a reader needs. The sending session's id is not shown: it identifies a process, and nobody
+// reading a conversation is addressing one.
+function UserMessageCard({ message, banner = "" }: { message: ChatMessage; banner?: string }) {
   const translation = useTranslations("ChatMessage");
   const attachments = (message.meta?.attachments as MessageAttachment[] | undefined) ?? [];
   const contentRef = useRef<HTMLDivElement>(null);
@@ -148,6 +157,12 @@ function UserMessageCard({ message }: { message: ChatMessage }) {
 
   return (
     <Flex direction="column" alignSelf="flex-end" align="flex-end" gap={1.5} maxW="80%">
+      {banner && (
+        <Flex align="center" gap={1.5} color="fg.muted">
+          <ActivityIcon><LuMessagesSquare /></ActivityIcon>
+          <Text fontSize="xs" fontWeight="medium">{banner}</Text>
+        </Flex>
+      )}
       {attachments.length > 0 && <AttachmentChips attachments={attachments} />}
       {message.content.trim() && (
         <Box
@@ -194,46 +209,6 @@ function UserMessageCard({ message }: { message: ChatMessage }) {
   );
 }
 
-// A message another session sent this one — a peer reporting its result, or a parent
-// following up. Deliberately not the user's card: it is left-aligned, labelled with the
-// session it came from, and never wears the right-aligned bubble that means "you said
-// this". Rendering it as a user message would attribute a peer's words to the person
-// watching, who did not write them.
-function PeerMessageCard({ message }: { message: ChatMessage }) {
-  const translation = useTranslations("ChatMessage");
-  const sender = message.meta?.peerSender ?? "";
-  return (
-    <Flex direction="column" alignSelf="flex-start" gap={1.5} maxW="80%" w="100%">
-      <Flex align="center" gap={1.5}>
-        <ActivityIcon><LuMessagesSquare /></ActivityIcon>
-        <Text fontSize="xs" color="fg.muted" fontWeight="medium">
-          {translation("fromPeerSession")}
-        </Text>
-        {sender && (
-          <Text fontSize="xs" color="fg.subtle" fontFamily="mono" truncate>
-            {sender}
-          </Text>
-        )}
-      </Flex>
-      {message.content.trim() && (
-        <Box
-          minW={0}
-          bg="bg.subtle"
-          borderLeft="2px solid"
-          borderColor="border.emphasized"
-          px={2.5}
-          py={1.5}
-          borderRadius="md"
-          maxW="100%"
-        >
-          <MarkdownContent content={message.content} />
-        </Box>
-      )}
-    </Flex>
-  );
-}
-
-
 export const ChatMessageItem = memo(function ChatMessageItem({ message, onRetry, streaming = false }: ChatMessageProps) {
   const translation = useTranslations("ChatMessage");
   switch (message.role) {
@@ -242,7 +217,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onRetry,
     }
 
     case "peer": {
-      return <PeerMessageCard message={message} />;
+      return <UserMessageCard message={message} banner={translation("fromPeerSession")} />;
     }
 
     case "assistant": {

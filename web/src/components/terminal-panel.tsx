@@ -153,7 +153,7 @@ export function TerminalSurface({
       });
     };
 
-    const openSocket = (resetBeforeReplay = false) => {
+    const openSocket = async (resetBeforeReplay = false) => {
       if (disposed || terminalRef.current !== terminal) return;
       if (resetBeforeReplay) {
         terminal.reset();
@@ -161,7 +161,10 @@ export function TerminalSurface({
       fitAndResize();
       socketHadError = false;
       setConnectionStatus({ state: "connecting", label: "Connecting terminal" });
-      socket = new WebSocket(terminalWebSocketUrl({
+      // Awaited, because the address and the token are what a restarted daemon changes and
+      // this is where they are read. Re-checked afterwards: resolving can take a moment, and
+      // the panel may have been torn down in it.
+      const url = await terminalWebSocketUrl({
         sessionId,
         workingDirectory,
         terminalKey,
@@ -170,7 +173,9 @@ export function TerminalSurface({
         locationHostAlias: location?.host_alias,
         rows: terminal.rows || 24,
         columns: terminal.cols || 80,
-      }));
+      });
+      if (disposed || terminalRef.current !== terminal) return;
+      socket = new WebSocket(url);
 
       socket.addEventListener("open", () => {
         fitAndResize();
@@ -231,7 +236,7 @@ export function TerminalSurface({
             `terminal_closed:${event.code}:${event.reason || "no_reason"}`,
           );
         }
-        reconnectTimer = window.setTimeout(() => openSocket(true), 1000);
+        reconnectTimer = window.setTimeout(() => { void openSocket(true); }, 1000);
       });
     };
 
@@ -250,7 +255,7 @@ export function TerminalSurface({
     window.addEventListener("resize", scheduleFitAndResize);
     void host.ownerDocument.fonts.ready.finally(() => {
       if (terminalRef.current !== terminal) return;
-      openSocket();
+      void openSocket();
       scheduleFitAndResize();
     });
 
