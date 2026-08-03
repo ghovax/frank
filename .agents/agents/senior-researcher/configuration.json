@@ -1,10 +1,10 @@
 {
   "preset": {
-    "model": "gpt-5.6-luna",
-    "provider": "chatgpt",
+    "model": "deepseek-v4-flash",
+    "provider": "opencode_go",
     "reasoningEffort": "high"
   },
-  "permissionMode": "default",
+  "permissionMode": "permissive",
   "tools": {
     "enabledBuiltinTools": [],
     "bash": {
