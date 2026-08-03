@@ -120,7 +120,22 @@ def _message_parts(params: dict) -> list[Part]:
             if entry.get("kind") == "text":
                 parts.append(Part(root=TextPart(text=str(entry.get("text", "")))))
             else:
-                parts.append(Part(root=DataPart(data=dict(entry))))
+                # The part's `data`, not the part. This wrapped the whole entry — `kind`
+                # included — so what reached the model and the store was
+                # `{"kind": "data", "data": {"urn:…": {…}}}`: the real payload one level
+                # deeper than every reader looks for it.
+                #
+                # Nothing raised. `part_payload` looks up the extension key, finds it absent,
+                # and answers `{}` — so an attached file became an empty structured payload
+                # in silence. The model was never told about it, and the client's chip
+                # vanished the moment the optimistic message was replaced by the echo it
+                # could no longer read attachments out of.
+                #
+                # A caller may still send a bare payload object with no `data` key; that is
+                # what a hand-written A2A client does, and it was the only shape that worked
+                # before, so it keeps working.
+                payload = entry.get("data") if isinstance(entry.get("data"), dict) else entry
+                parts.append(Part(root=DataPart(data=dict(payload))))
         if parts:
             return parts
     return [Part(root=TextPart(text=str(params.get("text", ""))))]

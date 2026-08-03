@@ -764,6 +764,22 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         # person who allowed one write for a build would have silently allowed it for four peers
         # doing something else, and asking narrowly then delegating widely would launder it.
         self._access_grants: list[Grant] = []
+        # The exact files the person attached to this conversation. Kept beside the grants and
+        # applied the same way, but arrived at differently: a grant answers something the model
+        # asked for, and this answers something the person handed over. That difference is what
+        # lets it outrank the deny list where a grant may not.
+        self._attached_files: list[str] = []
+
+    def note_attachments(self, paths: Sequence[str]) -> None:
+        """Record the files the user attached, so a tool may read them where they live.
+
+        Called by the turn as it ingests a message. Additive across the conversation, because
+        a file attached three turns ago is still the file being discussed, and re-reading it
+        must not fail because the turn that introduced it has passed.
+        """
+        for path in paths:
+            if path and path not in self._attached_files:
+                self._attached_files.append(path)
 
     def set_locations(self, locations: list[dict] | None) -> None:
         """Adopt the workspace's environments as they are now.

@@ -65,6 +65,34 @@ def _attachment(path: Path, name: str, mime_type: str, size: int) -> dict[str, A
     }
 
 
+def attachment_from_path(path: Path | str) -> dict[str, Any]:
+    """The attachment record for a local file the user handed over, referenced in place.
+
+    One implementation for the two front doors. The HTTP route serves the desktop app; the
+    library calls it directly, because a program embedding this harness has no HTTP to post
+    to and should not have to invent the record's shape to attach a file. Two spellings of one
+    record is how the two drift, and the model reads whichever it is given.
+
+    Raises ``FileNotFoundError`` when the path is not a regular file, which is the honest
+    answer for something the caller named.
+    """
+    resolved = Path(path).expanduser().resolve(strict=True)
+    if not resolved.is_file():
+        raise FileNotFoundError(f"{resolved} is not a regular file.")
+    name = resolved.name
+    return {
+        "upload_id": f"ref-{time.strftime('%Y%m%d%H%M%S', time.gmtime())}-{os.urandom(4).hex()}",
+        "title": name,
+        "filename": name,
+        "path": str(resolved),
+        "mime_type": mimetypes.guess_type(name)[0] or "application/octet-stream",
+        "size": resolved.stat().st_size,
+        # Referenced in place, so there is nothing stored under a digest. The field stays
+        # present and empty so every consumer sees one attachment shape.
+        "sha256": "",
+    }
+
+
 async def ingest_file_part(
     part: FilePart,
     home_directory: Path,

@@ -33,14 +33,13 @@ from frank.protocol.metadata import (
     turn_metadata,
 )
 from frank.protocol.parts import (
+    _all_attachments,
     _attachment_warning_event,
     _event_part,
-    _image_attachments,
-    _image_content_block,
     _ingest_incoming_file_parts,
     _input_response_payload,
-    _model_supports_vision,
     _structured_data_payloads,
+    compose_turn_input,
     _text_part,
     _work_habits_acknowledgement_parts,
 )
@@ -48,7 +47,6 @@ from frank.protocol.turn_record import TurnKind, TurnRecord
 from frank.runtime.runtime import AgentRuntime
 from frank.runtime.turn_events import SuspensionGate
 from frank.worker.sink import _TurnEventSink
-from frank.base.serialization import compact
 
 if TYPE_CHECKING:
     # Imported for the annotation only: `session` imports this module, so a real import here
@@ -509,30 +507,33 @@ class _TurnRunner:
             # transcript.
             self._turn_input = _PROMPTS.load("background_resume_note", {})
         elif self._structured_payloads:
-            # The structured metadata — attachment file paths — always rides along as a
-            # text block so the model can act on the attachments with its tools. Images are
-            # inlined only when the agent model advertises vision support; otherwise the
-            # model gets path access and the interface receives a non-fatal warning.
-            text_payload = compact({
-                "text": self._user_text,
-                "data_parts": self._structured_payloads,
-            })
-            image_attachments = _image_attachments(self._structured_payloads)
+            # Give the tools read access to exactly the files the person attached, where they
+            # live. Without this the model is handed a path it cannot open: attachments come
+            # from `~/Downloads`, `~/Desktop` and `~/Documents` more often than from anywhere
+            # else, and the confinement denies all three. The file is not copied — a copy is a
+            # snapshot under a name the user never chose, of a file they may still be editing.
+            if runtime is not None:
+                runtime.note_attachments([
+                    str(attachment.get("path") or "")
+                    for attachment in _all_attachments(self._structured_payloads)
+                ])
+            # The structured metadata — attachment file paths — always rides along as a text
+            # block so the model can act on the attachments with its tools. Images are inlined
+            # only when the agent model advertises vision support; otherwise the model gets
+            # path access and the interface receives a non-fatal warning.
+            #
+            # The composition itself is shared with the library front door, so attaching a
+            # file reaches the model the same way whether a person dragged it into the app or
+            # a program passed a path to `Session.ask`.
             model_identifier = runtime.effective_model_identifier if runtime is not None else ""
-            image_blocks = []
-            if image_attachments and _model_supports_vision(model_identifier):
-                image_blocks = [
-                    block
-                    for attachment in image_attachments
-                    if (block := _image_content_block(attachment)) is not None
-                ]
-            elif image_attachments:
-                await self._emit(_event_part(_attachment_warning_event(len(image_attachments), model_identifier)))
-            if image_blocks:
-                self._turn_input = [{"type": "text", "text": text_payload}, *image_blocks]
-                self._turn_has_images = True
-            else:
-                self._turn_input = text_payload
+            self._turn_input, images_not_inlined = compose_turn_input(
+                self._user_text, self._structured_payloads, model_identifier,
+            )
+            self._turn_has_images = isinstance(self._turn_input, list)
+            if images_not_inlined:
+                await self._emit(_event_part(
+                    _attachment_warning_event(images_not_inlined, model_identifier)
+                ))
         else:
             self._turn_input = self._user_text
         # No `runtime.set_pending_attachments(...)` here any more. `AgentRuntime` lost that

@@ -56,6 +56,16 @@ class ToolContext:
     # knows which session this is; the runtime deliberately carries no identity of its own.
     session_access: Any = None
 
+    def with_attachments(self, paths: "Sequence[str]") -> "ToolContext":
+        """This context with read access to the exact files the user attached this turn.
+
+        Derived like everything else here, so one turn's attachment cannot widen a compaction
+        or an autonomous wake running beside it in the same worker.
+        """
+        if not paths:
+            return self
+        return replace(self, sandbox=self.sandbox.with_attachments(paths))
+
     def with_grants(self, grants: "Sequence[Grant]") -> "ToolContext":
         """This context with approved widenings folded into the profile the child will run under.
 

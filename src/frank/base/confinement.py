@@ -78,6 +78,18 @@ class Filesystem:
     # it different from `writable`. Nothing is listed by default, so every request is asked about
     # until somebody decides otherwise.
     grantable: tuple[str, ...] = ()
+    # Exact files the person handed to this session, and the one thing that outranks `deny`.
+    #
+    # `deny` stops the agent from *going looking* through a directory. It was never meant to stop
+    # somebody from passing it one named file, and treating those as the same thing is what made
+    # an attachment from `~/Downloads` unreadable — which is where almost every attachment comes
+    # from. The model cannot put anything in this list: there is no tool that attaches a file, so
+    # the only way a path arrives here is that a person chose it in the interface.
+    #
+    # Exact files only, never a directory. That is the whole of why this is safe: an allowance
+    # for `~/Downloads/report.pdf` opens that file and tells the agent nothing about what else
+    # is in the folder.
+    attached: tuple[str, ...] = ()
 
     def intersect(self, parent: "Filesystem") -> "Filesystem":
         """This filesystem clamped against a parent's: never wider, and the parent's denials are
@@ -90,6 +102,11 @@ class Filesystem:
             # What may be granted without asking narrows exactly as an allowance does: a child
             # cannot be handed a quieter approval path than its parent holds.
             grantable=_contained_in(self.grantable, parent.grantable),
+            # Deliberately dropped. A file the person attached to one conversation was handed
+            # to *that* session, and a peer it creates is doing different work for a different
+            # reason. Carrying the allowance down would turn one deliberate act into a standing
+            # exemption across a subtree the person never saw.
+            attached=(),
         )
 
 
@@ -297,8 +314,35 @@ class Profile:
                 writable=tuple(dict.fromkeys(self.filesystem.writable + granted_writes)),
                 deny=self.filesystem.deny,
                 grantable=self.filesystem.grantable,
+                # Carried, not rebuilt. A grant and an attachment are independent routes, and
+                # applying one must not quietly revoke the other.
+                attached=self.filesystem.attached,
             ),
             network=self.network or network,
+        )
+
+    def with_attachments(self, paths: Iterable[str]) -> "Profile":
+        """This profile plus read access to exactly the files a person attached.
+
+        Not a grant, and deliberately a separate route. A grant answers a request the *model*
+        made, so `deny` must beat it — a model asking to read `~/Documents/tax.pdf` is the
+        attack that list exists for. An attachment is the opposite direction: a person picked
+        one file in the interface and handed it over. Nothing the model does can put a path
+        here, because no tool attaches a file.
+
+        So `deny` does not apply, and the allowance is per file. Somebody who attaches
+        `~/Downloads/report.pdf` has opened that document and nothing else — not the folder,
+        not its siblings.
+        """
+        files = tuple(path for path in paths if path)
+        if not files:
+            return self
+        return replace(
+            self,
+            filesystem=replace(
+                self.filesystem,
+                attached=tuple(dict.fromkeys(self.filesystem.attached + files)),
+            ),
         )
 
     def grants_without_asking(self, paths: Iterable[str], *, workspace: str = "") -> bool:
@@ -562,6 +606,14 @@ def build_sbpl(profile: Profile, *, workspace: str = "") -> str:
         resolved = expand(entry, workspace=workspace)
         if resolved:
             lines.append(f"(deny file-read* file-write* (subpath {_quote_sbpl(resolved)}))")
+    # After the denials, and therefore beating them — which is the entire point, and is only
+    # correct because a person put each of these here by attaching that exact file. `literal`
+    # rather than `subpath`: the allowance is the one file and cannot widen to its directory,
+    # even if a directory path somehow reached this list.
+    for entry in profile.filesystem.attached:
+        resolved = expand(entry, workspace=workspace)
+        if resolved:
+            lines.append(f"(allow file-read* (literal {_quote_sbpl(resolved)}))")
     # Metadata everywhere, content nowhere it was not granted. Denying `file-read*` across a
     # home directory also denies `file-read-metadata` on every directory *above* an allowance,
     # and a path cannot be reached without traversing its ancestors — so a subpath allowance

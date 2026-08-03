@@ -47,6 +47,15 @@ to join. See :mod:`frank.base.ports`::
         async with Session(assistant, directory="/srv/checkout", approvals=AllowReads()) as session:
             print(await session.ask("what changed here recently?"))
 
+**Attachments.** A file is handed over by path, the same act as dragging one into the desktop
+app, and it is referenced where it lives rather than copied::
+
+    await session.ask("what is this?", attachments=["~/Downloads/report.pdf"])
+
+The session gains read access to those exact files — and only those — so a path inside a
+directory the sandbox otherwise denies still opens. An image is inlined when the model
+advertises vision; anything else arrives as a path the agent opens with its file tools.
+
 **What a library session is not.** It is an object in your process, not a process of its own,
 so it has none of the three properties the daemon exists to provide: it is not addressable
 from outside, it does not outlive the program that made it, and it is not crash-isolated from
@@ -62,6 +71,7 @@ you are asking for the daemon.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, AsyncIterator, Mapping, Optional, Sequence
 
@@ -123,6 +133,8 @@ from frank.runtime.turn_events import (
     TurnEventUnion,
     Usage,
 )
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "AgentConfiguration",
@@ -499,8 +511,54 @@ class Session:
             {"conversation": [dump_message(message) for message in self.conversation]},
         )
 
-    async def stream(self, message: str) -> AsyncIterator[TurnEventUnion]:
+    def _compose(self, message: str, attachments: Sequence[str | Path]) -> object:
+        """The model-facing input for a turn, including the files the caller attached.
+
+        The same composition the daemon performs for a message from the desktop app, reached
+        through the same function — so a program embedding this harness attaches a file the
+        way its own client does, rather than through a shape it had to reverse-engineer.
+
+        The attached paths are also recorded on the runtime, which is what makes them readable
+        at all: `~/Downloads`, `~/Desktop` and `~/Documents` are denied to a confined tool
+        child, and a path the model cannot open is not an attachment.
+        """
+        if not attachments:
+            return message
+        from frank.protocol.files import attachment_from_path
+        from frank.protocol.parts import attachment_payload, compose_turn_input
+
+        records = [attachment_from_path(path) for path in attachments]
+        runtime = self.runtime
+        runtime.note_attachments([record["path"] for record in records])
+        turn_input, images_not_inlined = compose_turn_input(
+            message, [attachment_payload(records)], runtime.effective_model_identifier,
+        )
+        if images_not_inlined:
+            # The daemon raises a warning event to its client; a library caller may have no
+            # client to raise one to, so this goes to the log it does have. Silence would be
+            # worse: the model gets the path and not the pixels, and nothing would say why.
+            logger.warning(
+                "%d attached image(s) were not inlined: %s does not advertise vision support. "
+                "The model has the file paths and can open them with its tools.",
+                images_not_inlined, runtime.effective_model_identifier or "the session model",
+            )
+        return turn_input
+
+    async def stream(
+        self, message: str, *, attachments: Sequence[str | Path] = (),
+    ) -> AsyncIterator[TurnEventUnion]:
         """Drive one turn, yielding each :class:`TurnEvent`.
+
+        ``attachments`` are local file paths the caller is handing to the agent, exactly as a
+        person dragging a file into the desktop app would::
+
+            async for event in session.stream("what is this?", attachments=["~/Downloads/report.pdf"]):
+                ...
+
+        Each file is referenced where it lives — nothing is copied — and the session gains
+        read access to those exact files for the rest of its life. An image is inlined when
+        the model advertises vision; anything else reaches the model as a path it opens with
+        its file tools. A path that is not a regular file raises ``FileNotFoundError``.
 
         The events are the harness's own vocabulary — text chunks, tool calls, tool results,
         usage, compaction, suspensions — the same ones a session streams to a client over its
@@ -525,13 +583,15 @@ class Session:
         if not self._restored:
             await self.restore()
         try:
-            async for event in self.runtime.stream(message):
+            async for event in self.runtime.stream(self._compose(message, attachments)):
                 yield event
         finally:
             await self.save()
 
-    async def ask(self, message: str) -> str:
+    async def ask(self, message: str, *, attachments: Sequence[str | Path] = ()) -> str:
         """Drive one turn and answer with the agent's prose.
+
+        ``attachments`` are local file paths handed to the agent, as in :meth:`stream`.
 
         A suspension has nowhere to go by default — there is no client to raise a permission
         prompt to — so a turn that needs a human decision raises rather than hanging on a gate
@@ -540,7 +600,7 @@ class Session:
         from frank.runtime.turn_events import Done, Suspended
 
         answer = ""
-        async for event in self.stream(message):
+        async for event in self.stream(message, attachments=attachments):
             if isinstance(event, Suspended):
                 raise PermissionError(
                     "This turn needs a human decision, and nothing is answering gates. Pass "

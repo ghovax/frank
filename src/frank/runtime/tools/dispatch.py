@@ -540,7 +540,9 @@ class _DispatchesTools:
         # through, rather than at each tool that spawns a child. A widening applied in five
         # places is a widening that will be forgotten in one of them, and the one it is forgotten
         # in is a tool that fails on a permission the user already granted.
-        tool_context.bind(self._tool_context.with_grants(self._access_grants))
+        tool_context.bind(
+            self._tool_context.with_grants(self._access_grants).with_attachments(self._attached_files)
+        )
 
         # Coerce any list/dict argument the model passed as a JSON string into its native
         # value up front, so validation and dispatch both see the real container.
@@ -684,7 +686,8 @@ class _DispatchesTools:
                 # confinement profile, so a `bash` call naming its own directory narrowed the
                 # sandbox of every other turn open in the same worker.
                 tool_context.bind(
-                    self._tool_context.for_directory(str(directory_path)).with_grants(self._access_grants)
+                    self._tool_context.for_directory(str(directory_path))
+                    .with_grants(self._access_grants).with_attachments(self._attached_files)
                 )
         requested, _ = parse_access_request(tool_arguments.get("access_request"))
         # Absent or silent means no claim, and no claim is treated as mutating — the conservative
