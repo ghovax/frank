@@ -286,7 +286,7 @@ class _TurnEventSink:
                 )))
             case Steering():
                 await self.flush()
-                await self._emit(_event_part(SteeringEvent(text=event.text)))
+                await self._emit(_event_part(SteeringEvent(text=event.text, message_id=event.message_id)))
             case CompactionStarted() | CompactionDone():
                 await self.flush()
                 await self.emit_compaction(event)

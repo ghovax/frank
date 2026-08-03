@@ -670,17 +670,32 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       // artifact — but this one appended, so the message a person had steered with appeared a
       // second time under a fresh key, one turn later.
       //
-      // Keyed on the message it arrived in *and* its text, not on the text alone: two steering
-      // messages drained into one opening share a source and are genuinely two, while a replay
-      // repeats both together.
-      const alreadyShown = state.messages.some(
-        (message) => message.role === "user" && message.content === text
-          && !!sourceId && message.id.startsWith(`user-${sourceId}-`),
-      );
+      // Keyed on the id this client gave the message when it sent it, which the session now
+      // echoes back. That is what makes the live copy and the persisted copy one message: a
+      // replay of the turn rebuilds the list from the server's own record, and the entry it
+      // produces lands on the same key rather than beside it. Keying on the text meant the two
+      // were different messages that happened to read alike, so both were on screen until the
+      // rebuild dropped one — visible as a duplicate that flickered away.
+      //
+      // The fallback is the old rule, for a steering message this client did not send: keyed on
+      // the arrival *and* the text, since two drained into one opening are genuinely two while a
+      // replay repeats both together.
+      const identifier = (event.message_id ?? "").trim();
+      const alreadyShown = identifier
+        ? state.messages.some((message) => message.id === `user-${identifier}`)
+        : state.messages.some(
+          (message) => message.role === "user" && message.content === text
+            && !!sourceId && message.id.startsWith(`user-${sourceId}-`),
+        );
       if (alreadyShown) break;
       state.messages = [
         ...state.messages,
-        { id: stableMessageId(state, "user", sourceId), role: "user", content: text, timestamp: new Date().toISOString() },
+        {
+          id: identifier ? `user-${identifier}` : stableMessageId(state, "user", sourceId),
+          role: "user",
+          content: text,
+          timestamp: new Date().toISOString(),
+        },
       ];
       break;
     }
@@ -1515,10 +1530,17 @@ export function useChat(
             // We are driving, so our own state already includes the message we just
             // sent and replacing it would drop it from view until it persists.
             if (frame.kind !== "live") return;
-            acknowledgeSteering(steeringTextFromPart(frame.part));
+            const steered = steeringTextFromPart(frame.part);
+            acknowledgeSteering(steered);
             notifyTurnError(frame.part);
             reduceAgentPart(stateRef.current, frame.part);
-            flush();
+            // A steered message moves from the composer's queue into the transcript, and those
+            // are two pieces of state. The ordinary flush defers to the next animation frame,
+            // so the chip vanished in one commit and the message appeared in the next — one
+            // frame in which the message was in both places, or in neither. Flushing this one
+            // synchronously puts both updates in the same commit, which is what makes the
+            // handoff a move rather than a flicker.
+            if (steered) flushNow(); else flush();
           },
           finishTurn,
         );
@@ -1564,7 +1586,7 @@ export function useChat(
         }
       })();
     },
-    [agent, workingDirectory, worktreeStrategy, permissionMode, workspaceId, flush, setQueue, acknowledgeSteering, notifyTurnError]
+    [agent, workingDirectory, worktreeStrategy, permissionMode, workspaceId, flush, flushNow, setQueue, acknowledgeSteering, notifyTurnError]
   );
 
   useEffect(() => {

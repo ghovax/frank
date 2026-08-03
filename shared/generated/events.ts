@@ -188,6 +188,7 @@ export interface StatusEvent {
  */
 export interface SteeringEvent {
   kind: "steering";
+  message_id?: string;
   text?: string;
   timestamp?: string;
 }

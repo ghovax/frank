@@ -1005,11 +1005,11 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         "started" placeholder, exactly as if the model had backgrounded it."""
         return self._background.request_background(tool_call_identifier)
 
-    def enqueue_steering(self, message: str) -> bool:
+    def enqueue_steering(self, message: str, message_id: str = "") -> bool:
         text = message.strip()
         if not text:
             return False
-        self._steering_messages.put_nowait(text)
+        self._steering_messages.put_nowait((text, message_id))
         self._steering_available.set()
         return True
 

@@ -391,9 +391,9 @@ class _RunsTurns:
     async def _drain_steering_messages(self) -> list[TurnEvent]:
         events: list[TurnEvent] = []
         while not self._steering_messages.empty():
-            message = self._steering_messages.get_nowait()
+            message, message_id = self._steering_messages.get_nowait()
             self._conversation.append(HumanMessage(content=message))
-            events.append(Steering(text=message))
+            events.append(Steering(text=message, message_id=message_id))
         if self._steering_messages.empty():
             self._steering_available.clear()
         return events

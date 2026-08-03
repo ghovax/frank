@@ -1048,7 +1048,7 @@ class SessionExecutor(AgentExecutor):
                 "could not generate a title for session %s", self._session_id, exc_info=True
             )
 
-    def inject(self, text: str) -> bool:
+    def inject(self, text: str, message_id: str = "") -> bool:
         """Deliver a message into the turn that is already running, at its next safe point.
 
         This is what makes a peer's question reach a session that is mid-tool rather than
@@ -1057,7 +1057,7 @@ class SessionExecutor(AgentExecutor):
         state = self._contexts.get(self._session_id)
         if state is None or not state.running or state.runtime is None:
             return False
-        return state.runtime.enqueue_steering(text)
+        return state.runtime.enqueue_steering(text, message_id)
 
     async def resolve_pending_input(self, payload: dict) -> bool:
         """Record a human's answer to a parked gate and resume the turn once every gate in the

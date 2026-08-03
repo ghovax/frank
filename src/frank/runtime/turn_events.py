@@ -193,6 +193,8 @@ class DeniedInjection(TurnEvent):
 class Steering(TurnEvent):
     TYPE = EventType.STEERING
     text: str = ""
+    #: The id the sender gave it, so a client can match this against the message it already has.
+    message_id: str = ""
 
 
 @dataclass(frozen=True)

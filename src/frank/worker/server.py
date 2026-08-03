@@ -138,7 +138,11 @@ async def _send(session, params: dict) -> dict:
             for entry in (params.get("parts") or [])
             if isinstance(entry, dict) and entry.get("kind") == "text"
         ) or str(params.get("text", ""))
-        if session.inject(text):
+        # The sender's own id for this message, carried through so the steering event can name
+        # it. A client that showed the message the moment it typed it needs to recognise its own
+        # copy when the session echoes it back, and text alone cannot do that.
+        message_id = str((params.get("metadata") or {}).get("messageId") or "")
+        if session.inject(text, message_id):
             return {"accepted": True, "injected": True}
         # The turn ended between the check and the injection; fall through and start a fresh
         # one rather than silently dropping the message.

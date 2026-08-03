@@ -201,6 +201,11 @@ class CompactionEvent(_EventBase):
 class SteeringEvent(_EventBase):
     kind: Literal["steering"] = "steering"
     text: str = ""
+    #: The id the sender gave this message, carried back so a client can recognise the message
+    #: it already knows about. Without it the only handle was the text, and a client that had
+    #: shown the message optimistically could not tell its own copy from the one the session
+    #: persisted — so both were on screen until a replay rebuilt the list and dropped one.
+    message_id: str = ""
 
 
 class TokenUsageEvent(_EventBase):

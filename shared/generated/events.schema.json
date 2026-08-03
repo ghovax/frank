@@ -407,6 +407,10 @@
           "default": "steering",
           "type": "string"
         },
+        "message_id": {
+          "default": "",
+          "type": "string"
+        },
         "text": {
           "default": "",
           "type": "string"
