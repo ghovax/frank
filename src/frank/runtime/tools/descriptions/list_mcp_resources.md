@@ -1,7 +1,7 @@
-List resources exposed by configured MCP servers.
+List the resources that the configured MCP servers offer.
 
-Use this to discover resource URIs before calling ``read_mcp_resource``. Pass a server name to inspect one configured server or leave it empty to inspect every enabled server.
+Use this to find a resource URI before you call `read_mcp_resource`. Name one server to inspect it, or leave the name empty to inspect every enabled server.
 
 Arguments:
-  - server: Optional configured MCP server name. Leave empty to list every enabled server.
-  - explanation: A concise, user-facing reason for inspecting resources.
+  - server: The name of one configured MCP server. Leave it empty to list every enabled server.
+  - explanation: A short reason for the inspection, in the words the user reads.

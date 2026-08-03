@@ -12,6 +12,7 @@ import statistics
 from dataclasses import replace
 from datetime import datetime, timezone
 from frank.base import telemetry as _telemetry
+from frank.base.confinement import parse_access_request
 from frank.runtime.internals import (
     _background_handle_kind,
     _cap_model_result_payload,
@@ -335,10 +336,13 @@ class _DispatchesTools:
             risk = arguments.get("risk", "low")
             if risk not in ("low", "medium", "high"):
                 return ("invalid_risk", f"risk must be one of 'low', 'medium', 'high', got '{risk}'.")
-            # Omitted read_only is treated as mutating — the conservative default.
-            read_only = arguments.get("read_only", False)
-            if not isinstance(read_only, bool):
-                return ("invalid_read_only", "read_only must be a boolean.")
+        # Every tool that spawns a child or reaches outside the process may carry one. Validated
+        # here, once, rather than at each handler: a malformed request must fail as a tool error
+        # the model can correct, never as a grant nobody wrote.
+        if "access_request" in arguments:
+            _, complaint = parse_access_request(arguments.get("access_request"))
+            if complaint:
+                return ("invalid_access_request", complaint)
         if tool_name == "call_mcp_tool":
             if not arguments.get("server"):
                 return ("invalid_mcp_server", "server is required.")
@@ -413,7 +417,7 @@ class _DispatchesTools:
 
     def _append_tool_results(self, response, outcomes: dict[str, dict]) -> None:
         """Append a ToolMessage for every tool_call of ``response`` (the AIMessage is
-        already at the tail of the conversation), plus the image/denied harness notes.
+        already at the tail of the conversation), plus the image/denied reminders.
         The ToolMessage block stays contiguous: providers require every tool_call's
         result in the immediately-following turn, so notes come after the whole block.
         An aborted or un-run tool records ``(interrupted)`` so every call still gets a
@@ -459,23 +463,23 @@ class _DispatchesTools:
                 )
             image_followup_notes.extend(outcome.get("image_followups") or [])
         # Images read this round attach right after the tool block, as image-bearing
-        # harness notes — the append-only, every-provider way for a vision model to see
+        # reminders — the append-only, every-provider way for a vision model to see
         # pixels a tool produced.
         for followup in image_followup_notes:
             note_text = self._prompt_loader.load("image_read_note", {"path": followup.get("path", "")})
-            self._conversation.append(self._harness_note_message(
+            self._conversation.append(self._reminder_message(
                 note_text,
                 image_blocks=[{"type": "image_url", "image_url": {"url": followup["data_uri"]}}],
             ))
         for denied_message in denied_command_notes:
-            self._conversation.append(self._harness_note_message(denied_message))
+            self._conversation.append(self._reminder_message(denied_message))
 
         # Malformed tool calls serialized alongside valid ones: correct them with a
-        # harness note (not a ToolMessage — invalid calls aren't in the serialized
+        # reminder (not a ToolMessage — invalid calls aren't in the serialized
         # tool_calls, so a ToolMessage would be orphaned and rejected by strict
         # providers). Model-facing; not surfaced to the user.
         for invalid in response.invalid_tool_calls:
-            self._conversation.append(self._harness_note_message(
+            self._conversation.append(self._reminder_message(
                 self._invalid_tool_call_content(cast(dict, invalid)),
             ))
 
@@ -531,7 +535,14 @@ class _DispatchesTools:
         # capability clients, and this session's view of its peers. Bound per call rather than
         # installed per process, so two turns open at once — a compaction alongside a user's —
         # cannot see each other's.
-        tool_context.bind(self._tool_context)
+        #
+        # The grants approved so far are folded in here, at the one point every tool passes
+        # through, rather than at each tool that spawns a child. A widening applied in five
+        # places is a widening that will be forgotten in one of them, and the one it is forgotten
+        # in is a tool that fails on a permission the user already granted.
+        tool_context.bind(
+            self._tool_context.with_grants(self._access_grants).with_attachments(self._attached_files)
+        )
 
         # Coerce any list/dict argument the model passed as a JSON string into its native
         # value up front, so validation and dispatch both see the real container.
@@ -674,10 +685,14 @@ class _DispatchesTools:
                 # A derived context, not a mutation: this used to rewrite the process-wide
                 # confinement profile, so a `bash` call naming its own directory narrowed the
                 # sandbox of every other turn open in the same worker.
-                tool_context.bind(self._tool_context.for_directory(str(directory_path)))
-        read_only = tool_arguments.get("read_only", False)
-        if isinstance(read_only, str):
-            read_only = read_only.lower() == "true"
+                tool_context.bind(
+                    self._tool_context.for_directory(str(directory_path))
+                    .with_grants(self._access_grants).with_attachments(self._attached_files)
+                )
+        requested, _ = parse_access_request(tool_arguments.get("access_request"))
+        # Absent or silent means no claim, and no claim is treated as mutating — the conservative
+        # reading, and the one the lease below depends on.
+        declared_read_only = requested is not None and requested.mutates is False
 
         # An agent may be forbidden from backgrounding work — a long-lived shell subtree
         # outlives the turn that started it, which is exactly what some agents should not be
@@ -703,7 +718,7 @@ class _DispatchesTools:
         lease_token = ""
         # Filesystem leases guard this machine's working trees; a remote command
         # mutates the remote host, so no local lease applies.
-        if not read_only and not policy.is_remote:
+        if not declared_read_only and not policy.is_remote:
             try:
                 lease_token = await self._acquire_filesystem_lease(
                     scope="worktree",
@@ -758,7 +773,7 @@ class _DispatchesTools:
         # pixels ride along as a data URI on the event under `model_image` —
         # a model-facing side channel _run_one_tool strips before the event
         # reaches the UI, then attaches to the conversation after the tool
-        # block as an image-bearing harness note.
+        # block as an image-bearing reminder.
         if Path(file_path).suffix.lower() in file_tools.IMAGE_FILE_SUFFIXES:
             result, image_data_uri = await asyncio.to_thread(
                 file_tools.read_image_file,

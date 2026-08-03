@@ -89,7 +89,8 @@ def build_app(session) -> FastAPI:
                 # has already clamped it and written it to the record; this is what makes it
                 # true for the turn currently in flight rather than only for the next one.
                 mode = str(params.get("permission_mode") or "")
-                return JSONResponse({"result": {"permission_mode": session.set_permission_mode(mode)}})
+                applied = await session.set_permission_mode(mode)
+                return JSONResponse({"result": {"permission_mode": applied}})
             if method == "session/reset":
                 # Settings changed under a live session. Drop the cached runtime so the next
                 # turn rebuilds it against the new configuration, rather than the session
@@ -119,7 +120,22 @@ def _message_parts(params: dict) -> list[Part]:
             if entry.get("kind") == "text":
                 parts.append(Part(root=TextPart(text=str(entry.get("text", "")))))
             else:
-                parts.append(Part(root=DataPart(data=dict(entry))))
+                # The part's `data`, not the part. This wrapped the whole entry — `kind`
+                # included — so what reached the model and the store was
+                # `{"kind": "data", "data": {"urn:…": {…}}}`: the real payload one level
+                # deeper than every reader looks for it.
+                #
+                # Nothing raised. `part_payload` looks up the extension key, finds it absent,
+                # and answers `{}` — so an attached file became an empty structured payload
+                # in silence. The model was never told about it, and the client's chip
+                # vanished the moment the optimistic message was replaced by the echo it
+                # could no longer read attachments out of.
+                #
+                # A caller may still send a bare payload object with no `data` key; that is
+                # what a hand-written A2A client does, and it was the only shape that worked
+                # before, so it keeps working.
+                payload = entry.get("data") if isinstance(entry.get("data"), dict) else entry
+                parts.append(Part(root=DataPart(data=dict(payload))))
         if parts:
             return parts
     return [Part(root=TextPart(text=str(params.get("text", ""))))]
@@ -137,7 +153,11 @@ async def _send(session, params: dict) -> dict:
             for entry in (params.get("parts") or [])
             if isinstance(entry, dict) and entry.get("kind") == "text"
         ) or str(params.get("text", ""))
-        if session.inject(text):
+        # The sender's own id for this message, carried through so the steering event can name
+        # it. A client that showed the message the moment it typed it needs to recognise its own
+        # copy when the session echoes it back, and text alone cannot do that.
+        message_id = str((params.get("metadata") or {}).get("messageId") or "")
+        if session.inject(text, message_id):
             return {"accepted": True, "injected": True}
         # The turn ended between the check and the injection; fall through and start a fresh
         # one rather than silently dropping the message.

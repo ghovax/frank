@@ -38,11 +38,14 @@ export interface FrankEvents {}
  */
 export interface CompactionEvent {
   kind: "compaction";
+  log_tokens?: number;
   messages_after?: number;
   messages_before?: number;
   ok?: boolean;
   reason?: string;
   status: "started" | "done";
+  timestamp?: string;
+  tokens_after?: number;
   tokens_before?: number;
 }
 /**
@@ -57,6 +60,7 @@ export interface CumulativeUsage {
   input_tokens?: number;
   model_calls?: number;
   output_tokens?: number;
+  reachable_tokens?: number;
   reasoning_tokens?: number;
   total_tokens?: number;
 }
@@ -67,6 +71,7 @@ export interface CumulativeUsage {
 export interface DoneEvent {
   kind: "done";
   state?: string;
+  timestamp?: string;
 }
 /**
  * This interface was referenced by `FrankEvents`'s JSON-Schema
@@ -77,6 +82,7 @@ export interface ErrorEvent {
   kind: "error";
   message?: string;
   status?: number | null;
+  timestamp?: string;
   title?: string;
   tool_call_id?: string;
   tool_name?: string;
@@ -89,6 +95,7 @@ export interface McpEvent {
   event?: Record<string, unknown>;
   kind: "mcp_event";
   server?: string;
+  timestamp?: string;
   tool?: string;
   tool_call_id: string;
 }
@@ -114,6 +121,26 @@ export interface ModelToolResult {
   tool_name: string;
 }
 /**
+ * Why approval is needed, as data rather than as a sentence.
+ *
+ * The harness used to build the sentence itself — "Sandbox approval required: this command
+ * reads outside the working directory (/a, /b)." — and hand a client the finished English.
+ * That put user-facing prose in the one place that cannot translate it: the daemon has no
+ * locale, the string never reached the message catalogue, and a Japanese interface rendered
+ * an English clause with a colon and a parenthetical in the middle of its own layout.
+ *
+ * So the harness states the *facts* and the client writes the sentence. `kind` selects the
+ * message; the paths ride as data the message interpolates. A reason the client does not
+ * recognise falls back to the model's own explanation, which is prose either way.
+ *
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * via the `definition` "PermissionReason".
+ */
+export interface PermissionReason {
+  kind: string;
+  paths?: string[];
+}
+/**
  * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "PermissionRequestEvent".
  */
@@ -122,10 +149,39 @@ export interface PermissionRequestEvent {
   command?: string;
   explanation?: string;
   kind: "permission_request";
+  reason?: PermissionReason | null;
   request_id: string;
   risk?: string;
+  timestamp?: string;
   tool_call_id?: string;
   tool_name?: string;
+}
+/**
+ * Where a request stopped matching the one before it.
+ *
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * via the `definition` "PrefixDivergence".
+ */
+export interface PrefixDivergence {
+  current?: TracedSegment | null;
+  index?: number;
+  previous?: TracedSegment;
+  rewritten?: boolean;
+}
+/**
+ * Which piece of a request a cache measurement is talking about.
+ *
+ * Fields rather than a formatted label, so a consumer can count how often the tool schemas
+ * move or which role tends to be rewritten. ``position`` is the index within the conversation,
+ * or ``-1`` for the parts a request has only one of.
+ *
+ * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * via the `definition` "TracedSegment".
+ */
+export interface TracedSegment {
+  kind: string;
+  position?: number;
+  role?: string;
 }
 /**
  * This interface was referenced by `FrankEvents`'s JSON-Schema
@@ -135,6 +191,7 @@ export interface QuestionEvent {
   kind: "question";
   questions?: Record<string, unknown>[];
   request_id: string;
+  timestamp?: string;
   tool_call_id?: string;
 }
 /**
@@ -144,6 +201,7 @@ export interface QuestionEvent {
 export interface StatusEvent {
   code?: string;
   kind: "status";
+  timestamp?: string;
 }
 /**
  * This interface was referenced by `FrankEvents`'s JSON-Schema
@@ -151,7 +209,9 @@ export interface StatusEvent {
  */
 export interface SteeringEvent {
   kind: "steering";
+  message_id?: string;
   text?: string;
+  timestamp?: string;
 }
 /**
  * This interface was referenced by `FrankEvents`'s JSON-Schema
@@ -160,6 +220,7 @@ export interface SteeringEvent {
 export interface TextEvent {
   kind: "text";
   text: string;
+  timestamp?: string;
 }
 /**
  * This interface was referenced by `FrankEvents`'s JSON-Schema
@@ -168,6 +229,7 @@ export interface TextEvent {
 export interface ThinkingDoneEvent {
   duration_ms?: number;
   kind: "thinking_done";
+  timestamp?: string;
 }
 /**
  * This interface was referenced by `FrankEvents`'s JSON-Schema
@@ -177,17 +239,26 @@ export interface ThinkingEvent {
   block_id?: string;
   kind: "thinking";
   text?: string;
+  timestamp?: string;
 }
 /**
  * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "TokenUsageEvent".
  */
 export interface TokenUsageEvent {
+  cache_read_tokens?: number;
   context_window?: number;
   cumulative?: CumulativeUsage;
+  divergence?: PrefixDivergence | null;
   input_tokens?: number;
   kind: "token_usage";
   output_tokens?: number;
+  prefix_intact?: boolean;
+  reachable_tokens?: number;
+  reasoning_tokens?: number;
+  segments?: number;
+  shared_segments?: number;
+  timestamp?: string;
 }
 /**
  * This interface was referenced by `FrankEvents`'s JSON-Schema
@@ -196,6 +267,7 @@ export interface TokenUsageEvent {
 export interface ToolCallEvent {
   arguments?: Record<string, unknown>;
   kind: "tool_call";
+  timestamp?: string;
   tool_call_id: string;
   tool_name: string;
 }
@@ -225,6 +297,7 @@ export interface ToolResultEvent {
   kind: "tool_result";
   metadata: ToolMetadata;
   status: ToolStatus;
+  timestamp?: string;
   tool_call_id: string;
   tool_name: string;
 }
@@ -238,6 +311,8 @@ export interface ToolResultEvent {
 export interface TurnContext {
   active_goal?: string;
   background?: Record<string, unknown>;
+  confinement?: Record<string, unknown>;
+  locations?: Record<string, unknown>[];
   now?: string;
   pwd?: string;
   screen?: Record<string, unknown>;
@@ -251,5 +326,6 @@ export interface WarningEvent {
   code?: string;
   kind: "warning";
   message?: string;
+  timestamp?: string;
   title?: string;
 }

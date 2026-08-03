@@ -9,7 +9,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Point
 // animate its open/close (opacity + slide) without losing its flex-layout props.
 const MotionFlex = motion.create(Flex);
 import { useRouter, useSearchParams } from "next/navigation";
-import { deleteSession, fetchAccessibility, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchSessionDraft, fetchSessions, fetchSettings, getWorkspace, listWorkspaces, saveAgentConfiguration, saveSettings, setSandboxEnforce, subscribeEvents, updateComputerControlSetting, type AgentCard, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
+import { deleteSession, fetchAccessibility, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchSessionDraft, fetchSessions, fetchSettings, getWorkspace, listWorkspaces, rememberLastSession, saveAgentConfiguration, saveSettings, setSandboxEnforce, subscribeConnection, subscribeEvents, updateComputerControlSetting, type AgentCard, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
 import { useTray } from "@/lib/use-tray";
 import { playAttentionSound, playTurnEndSound, primeSounds } from "@/lib/sounds";
@@ -28,6 +28,18 @@ function readLastWorkspace(): string | null {
 function writeLastWorkspace(workspaceId: string): void {
   try { localStorage.setItem(LAST_WORKSPACE_KEY, workspaceId); } catch { /* ignore */ }
 }
+
+// The last conversation is remembered too — but by the daemon, on the workspace record, not
+// here. Opening onto an empty composer is the right answer exactly once, the first time, when
+// there is nothing to return to; every launch after that the thing you almost certainly want is
+// the conversation you were in, and having to find it in the sidebar is a step that exists only
+// because the application forgot.
+//
+// Which window you were in is a fact about the browser, so the workspace above stays local. Which
+// conversation you were in is a fact about the machine — the desktop app, a browser tab and the
+// phone are three views of one daemon, and kept per-client each would reopen somewhere different.
+// The phone settles it: its storage goes whenever the webview is cleared, so a remembered
+// conversation that lived there would not survive the thing it exists to survive.
 
 
 // A session that is actually working. The daemon derives this for us now: `activity` is
@@ -62,6 +74,12 @@ function Workspace() {
     return () => { cancelled = true; };
   }, []);
 
+  // Which conversation the daemon last saw this workspace opened at: `null` until it has said,
+  // then an id or `""` for none. The restore below waits for it rather than racing it — arriving
+  // late and switching the conversation out from under someone is worse than opening a moment
+  // later on the right one.
+  const [rememberedSession, setRememberedSession] = useState<string | null>(null);
+
   useEffect(() => {
     if (workspaceId) {
       writeLastWorkspace(workspaceId);
@@ -73,7 +91,9 @@ function Workspace() {
         if (cancelled) return;
         const last = readLastWorkspace();
         const target = last && workspaces.some((workspace) => workspace.id === last) ? last : workspaces[0]?.id;
-        if (!target) return;
+        // Nothing to open into — release the restore below, which is waiting on a workspace that
+        // is never going to arrive, so it can settle on the empty composer rather than on nothing.
+        if (!target) { setRememberedSession(""); return; }
         const params = new URLSearchParams(window.location.search);
         params.set("workspace", target);
         router.replace(`?${params.toString()}`, { scroll: false });
@@ -81,6 +101,22 @@ function Workspace() {
       .catch((caught) => swallowed({ component: "workspace-page", operation: "read the home directory" }, caught));
     return () => { cancelled = true; };
   }, [workspaceId, router]);
+
+  useEffect(() => {
+    // No workspace yet means the effect above is still choosing one; it will set this itself if
+    // it turns out there is none to choose.
+    if (!workspaceId) return;
+    let cancelled = false;
+    getWorkspace(workspaceId)
+      .then((workspace) => { if (!cancelled) setRememberedSession(workspace?.last_session_id ?? ""); })
+      .catch((caught) => {
+        // A workspace that would not load is not a reason to hang on the loading screen; the
+        // empty composer is a fine place to land.
+        if (!cancelled) setRememberedSession("");
+        swallowed({ component: "workspace-page", operation: "read the last conversation" }, caught);
+      });
+    return () => { cancelled = true; };
+  }, [workspaceId]);
 
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [agentCards, setAgentCards] = useState<AgentCard[]>([]);
@@ -125,7 +161,7 @@ function Workspace() {
   const [modelProviders, setModelProviders] = useState<ProviderOption[]>([]);
   const [recentModels, setRecentModels] = useState<{ id: string; name: string; provider: string }[]>([]);
   const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionMode>("default");
-  const [compactionKeepRecentTurns, setCompactionKeepRecentTurns] = useState(8);
+  const [compactionReclaimAtFraction, setCompactionReclaimAtFraction] = useState(0.85);
   const [historyOpen, setHistoryOpen] = useState(true);
   // Default sidebar width: enough for typical session titles without eating the
   // transcript. Paired with the panel-region default in chat-panel.tsx (480) —
@@ -263,6 +299,30 @@ function Workspace() {
     setSessionsLoaded(true);
   }, [mapSessions]);
 
+  // Everything a lost connection took away, asked for again.
+  //
+  // `isConnected` had exactly one writer and no reader that could do anything about it: the
+  // daemon going away disabled the composer and left the transcript blank, with nothing on
+  // screen saying why and no way to try again short of relaunching. A flag that reports a
+  // failure without offering the remedy is half a feature.
+  // The daemon's reachability, from the one thing already watching it continuously. A failed
+  // `fetchAgents` used to be the only writer, so a daemon that died after a successful start
+  // was never noticed at all — the composer simply stopped working. The stream drops the moment
+  // the daemon does, and reconnects by itself, so this both raises the notice and clears it.
+  useEffect(() => subscribeConnection((connected) => {
+    setIsConnected(connected);
+    if (connected) reconnectRef.current?.();
+  }), []);
+
+  const reconnectRef = useRef<(() => void) | null>(null);
+  const reconnect = useCallback(() => {
+    loadAgents();
+    loadAgentCards();
+    loadModelCatalog();
+    loadSessions();
+  }, [loadAgents, loadAgentCards, loadModelCatalog, loadSessions]);
+  reconnectRef.current = reconnect;
+
   // Coalesce the burst of sessions_changed events a single turn emits (running→true, title
   // generated, message saved, running→false) into one trailing refetch, so the session list
   // settles once instead of re-rendering three or four times in quick succession.
@@ -280,7 +340,7 @@ function Workspace() {
           setSandboxEnforceState(settings.sandbox.enforce);
           setSandboxBackend(settings.sandbox_backend);
           setWorktreeStrategy(settings.worktree_strategy);
-          setCompactionKeepRecentTurns(settings.compaction?.keep_recent_turns ?? 6);
+          setCompactionReclaimAtFraction(settings.compaction?.reclaim_at_fraction ?? 0.85);
         })
         .catch((caught) => swallowed({ component: "workspace-page", operation: "list the agents" }, caught));
     };
@@ -362,7 +422,7 @@ function Workspace() {
   const activeSession = sessions.find((entry) => entry.sessionId === activeSessionId);
   // A session used to have to wait for its backend to be activated before it could be
   // opened. There is one backend now, so a session is openable as soon as it is known.
-  const activeSessionConnectionReady = !activeSessionId || sessionsLoaded || !!activeSession;
+  const activeSessionKnown = !activeSessionId || sessionsLoaded || !!activeSession;
   const activeSessionRunning = activeSession ? isSessionBusy(activeSession) : false;
 
   // The composer draft belongs to the session, not to the registry listing, so it is read
@@ -385,6 +445,30 @@ function Workspace() {
       .catch((caught) => swallowed({ component: "workspace-page", operation: "read the accessibility state" }, caught));
     return () => { cancelled = true; };
   }, [activeSessionId]);
+
+  // Open the last conversation when nothing else says which to open.
+  //
+  // Once, and only on a launch that arrived without a `session` in the URL — a deep link says
+  // which conversation it means, and a person who has just pressed "New conversation" is asking
+  // for the empty composer, not to be sent back where they came from. The ref is what keeps this
+  // to the first opportunity rather than every time the session list refreshes.
+  //
+  // The remembered one if it still exists, and otherwise the most recent, which is what the list
+  // is already sorted by. Both can miss — a machine you have never opened here has neither — and
+  // that lands on the empty composer, which is the right answer the first time.
+  const restoredInitialSession = useRef(false);
+  useEffect(() => {
+    if (restoredInitialSession.current || !sessionsLoaded || rememberedSession === null) return;
+    restoredInitialSession.current = true;
+    if (activeSessionId) return;
+    const candidates = sessions.filter((entry) => !workspaceId || entry.workspaceId === workspaceId);
+    if (candidates.length === 0) return;
+    const target = candidates.find((entry) => entry.sessionId === rememberedSession) ?? candidates[0];
+    void handleResumeSession(target);
+    // `handleResumeSession` is redefined every render and is not a dependency anything wants to
+    // re-run on; the ref above is what bounds this to once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionsLoaded, sessions, workspaceId, activeSessionId, rememberedSession]);
 
   // Sidebar sort: "recent" (newest first, the load order) or "active" (sessions
   // needing attention or running float to the top, then newest). The sidebar groups
@@ -410,6 +494,8 @@ function Workspace() {
   const handleSessionCreated = useCallback(
     (sessionId: string) => {
       setActiveSessionId(sessionId);
+      // A conversation you just started is the one you were last in.
+      void rememberLastSession(workspaceId, sessionId);
       const params = new URLSearchParams(window.location.search);
       params.set("session", sessionId);
       router.replace(`?${params.toString()}`, { scroll: false });
@@ -417,7 +503,7 @@ function Workspace() {
       refreshSessions();
       setTimeout(refreshSessions, 5000);
     },
-    [isCompactViewport, refreshSessions, router]
+    [isCompactViewport, refreshSessions, router, workspaceId]
   );
 
   const handleStreamingChange = useCallback((streaming: boolean) => {
@@ -496,6 +582,7 @@ function Workspace() {
     // The restoration effect rebinds the working directory to this session's
     // own persisted folder; no need to set (or re-record) it here.
     setActiveSessionId(entry.sessionId);
+    void rememberLastSession(entry.workspaceId || workspaceId, entry.sessionId);
     setChatKey((current) => current + 1);
     const params = new URLSearchParams(window.location.search);
     if (entry.workspaceId) {
@@ -669,7 +756,9 @@ function Workspace() {
       minW={0}
       bg="bg"
       overflow="hidden"
-      pt="calc(var(--titlebar-height, 0px) + 8px)"
+      pt="var(--app-inset-top, 8px)"
+      pl="var(--safe-left, 0px)"
+      pr="var(--safe-right, 0px)"
       boxSizing="border-box"
     >
       <AnimatePresence initial={false}>
@@ -681,7 +770,12 @@ function Workspace() {
             minW={{ base: "100%", md: "240px" }}
             ml={{ md: 2 }}
             mb={{ md: 2 }}
-            h={{ base: "100dvh", md: "auto" }}
+            // On a phone this panel *is* the screen, so its bottom edge is the device's — the
+            // last conversation in the list would otherwise sit under the home indicator.
+            pb={{ base: "var(--safe-bottom, 0px)", md: 0 }}
+            // `100%` rather than `100dvh`: the parent has already reserved the top
+            // inset, so a full-viewport child overflows the screen by exactly that much.
+            h={{ base: "100%", md: "auto" }}
             flexShrink={0}
             position="relative"
             minH={0}
@@ -739,7 +833,7 @@ function Workspace() {
           agentCard={selectedCard}
           onAgentChange={handleAgentChange}
           initialSettingsSection={settingsSectionParam ?? undefined}
-          initialSessionId={activeSessionConnectionReady ? activeSessionId : null}
+          initialSessionId={activeSessionKnown ? activeSessionId : null}
           initialPermissionMode={activeSession?.permissionMode ?? selectedPermissionMode}
           sessionTitle={activeSession?.title}
           initialInputDraft={activeSessionDraft}
@@ -756,7 +850,9 @@ function Workspace() {
           onSandboxEnforceChange={handleSandboxEnforceChange}
           worktreeStrategy={worktreeStrategy}
           onWorktreeStrategyChange={handleWorktreeStrategyChange}
-          isConnected={isConnected && activeSessionConnectionReady}
+          isConnected={isConnected && activeSessionKnown}
+          connectionLost={!isConnected}
+          onReconnect={reconnect}
           onStreamingChange={handleStreamingChange}
           historyOpen={historyOpen}
           onToggleHistory={() => setHistoryOpen((current) => !current)}
@@ -765,7 +861,7 @@ function Workspace() {
           recentModels={recentModels}
           agentModel={agentModel}
           onAgentModelChange={handleAgentModelChange}
-          compactionKeepRecentTurns={compactionKeepRecentTurns}
+          compactionReclaimAtFraction={compactionReclaimAtFraction}
         />
       </Box>
     </Flex>

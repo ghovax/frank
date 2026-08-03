@@ -3,7 +3,7 @@
 import { Box, Flex } from "@chakra-ui/react";
 import type { ReactNode } from "react";
 import { useTranslations } from "next-intl";
-import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-display";
+import { declaredNonMutating, getToolCallDisplay, requestedAccess, type ToolDisplayTranslator } from "@/lib/tool-display";
 import { ToolCallLabel } from "./tool-label";
 import type { ToolEvent, ToolEventStatus } from "@/lib/tool-event";
 import { hasBackgroundJobId } from "@/lib/tool-event";
@@ -39,16 +39,18 @@ export function ToolStatusBadge({ status }: { status: ToolEventStatus }) {
   return <Pill colorPalette={STATUS_PALETTE[toolStatusKind(status)]}>{translation(labelKey)}</Pill>;
 }
 
-// Always-visible safety markers for a tool call: a write badge when it can modify
-// state (read_only === false), and its risk level when medium/high. Read-only /
-// low-risk calls stay bare.
+// Always-visible safety markers for a tool call: a write badge unless the call declared it
+// changes nothing, an access badge when it asked to reach past its sandbox, and its risk level
+// when medium/high. A declared-read-only, low-risk call stays bare.
 export function ToolRiskBadges({ arguments: toolArguments }: { arguments?: Record<string, unknown> }) {
   const translation = useTranslations("ToolCard");
   if (!toolArguments) return null;
-  const readOnly = toolArguments.read_only !== false;
+  const readOnly = declaredNonMutating(toolArguments);
+  const access = requestedAccess(toolArguments);
   const risk = typeof toolArguments.risk === "string" ? toolArguments.risk : "";
   const badges: ReactNode[] = [];
   if (!readOnly) badges.push(<Pill key="write" colorPalette="orange">{translation("write")}</Pill>);
+  if (access.any) badges.push(<Pill key="access" colorPalette="purple">{translation("accessRequested")}</Pill>);
   if (risk === "medium" || risk === "high") {
     badges.push(
       <Pill key="risk" colorPalette={risk === "high" ? "red" : "yellow"}>

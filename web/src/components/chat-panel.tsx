@@ -13,7 +13,7 @@ import {
   Text,
   VStack,
 } from "@chakra-ui/react";
-import { LuAppWindow, LuArrowDown, LuChevronLeft, LuChevronRight, LuClock, LuDownload, LuEllipsis, LuFile, LuFolderOpen, LuHistory, LuMaximize2, LuMinimize2, LuMessageSquare, LuMoon, LuMousePointerClick, LuPanelLeftClose, LuPanelLeftOpen, LuRotateCcw, LuRotateCw, LuSettings, LuSun, LuTerminal, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
+import { LuAppWindow, LuArrowDown, LuChevronLeft, LuChevronRight, LuClock, LuDownload, LuEllipsis, LuFile, LuFolderOpen, LuHistory, LuMaximize2, LuMinimize2, LuMessageSquare, LuMoon, LuMousePointerClick, LuPanelLeftClose, LuPanelLeftOpen, LuPlugZap, LuRotateCcw, LuRotateCw, LuSettings, LuSun, LuTerminal, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { FadeIn } from "@/components/ui/fade-in";
 import { useFormatter, useTranslations } from "next-intl";
@@ -42,9 +42,9 @@ import { DropdownMenu } from "@/components/ui/menu";
 import { PermissionOverlay } from "./permission-overlay";
 import { AgentSkills } from "./agent-skills";
 import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-display";
-import type { ToolPermission, ToolQuestion } from "@/lib/tool-event";
+import { permissionReasonPaths, permissionReasonText, type ToolPermission, type ToolQuestion } from "@/lib/tool-event";
 
-import { fetchSettings, getWorkspace, revealInFinder, saveSessionDraft, saveSettings, setSessionPermissionMode, subscribeEvents, type AgentCard, type AgentSummary, type Location, type PermissionMode, type SandboxEnforce, type WorktreeStrategy } from "@/lib/api";
+import { fetchSettings, getWorkspace, revealInFinder, saveSessionDraft, saveAgentConfiguration, saveSettings, setSessionPermissionMode, subscribeEvents, type AgentCard, type AgentSummary, type Location, type PermissionMode, type SandboxEnforce, type WorktreeStrategy } from "@/lib/api";
 import { PdfDocumentView } from "./pdf-view";
 import { scrollFade, scrollFadeTopBottom } from "@/lib/scroll-fade";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -92,16 +92,25 @@ interface ChatPanelProps {
   onSandboxEnforceChange?: (enforce: SandboxEnforce) => void;
   worktreeStrategy?: WorktreeStrategy;
   onWorktreeStrategyChange?: (strategy: WorktreeStrategy) => void | Promise<void>;
+  // Whether this panel is ready to hold a conversation. Distinct from whether the daemon is
+  // reachable: it is also false for the moment at startup before the active session is known,
+  // which is a wait, not a failure.
   isConnected?: boolean;
+  // Whether the daemon itself is unreachable — the one state with a remedy, and the only one
+  // that earns the error screen. Kept apart from `isConnected` because conflating them showed
+  // "not connected" every time the session list was merely still loading.
+  connectionLost?: boolean;
+  // Asks the page to fetch everything a lost daemon took away.
+  onReconnect?: () => void;
   onStreamingChange?: (isStreaming: boolean) => void;
   historyOpen?: boolean;
   onToggleHistory?: () => void;
   models?: { id: string; name: string; provider: string; available: boolean }[];
-  modelProviders?: { id: string; name: string; openai_compatible: boolean }[];
+  modelProviders?: { id: string; name: string; openai_compatible: boolean; credential_id: string }[];
   recentModels?: { id: string; name: string; provider: string }[];
   agentModel?: string;
   onAgentModelChange: (modelIdentifier: string) => void | Promise<void>;
-  compactionKeepRecentTurns: number;
+  compactionReclaimAtFraction: number;
 }
 
 type TimelineItem =
@@ -217,6 +226,8 @@ export function ChatPanel({
   worktreeStrategy = "none",
   onWorktreeStrategyChange,
   isConnected = false,
+  connectionLost = false,
+  onReconnect,
   onStreamingChange,
   historyOpen = false,
   onToggleHistory,
@@ -225,7 +236,7 @@ export function ChatPanel({
   recentModels = [],
   agentModel = "",
   onAgentModelChange,
-  compactionKeepRecentTurns,
+  compactionReclaimAtFraction,
 }: ChatPanelProps) {
   const translation = useTranslations("ChatPanel");
   const tToolDisplay = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
@@ -245,6 +256,13 @@ export function ChatPanel({
   const trimmedWorkingDirectory = (workingDirectory ?? "").trim();
   const directoryPending = !!trimmedWorkingDirectory && (directoryStatus.checking || directoryStatus.path !== trimmedWorkingDirectory);
   const chatReady = isConnected && !directoryPending;
+  // The one condition under which the transcript is actually in the DOM. Everything that
+  // touches scroll position reads it, and so does the render — they used to disagree. The
+  // render waited for `chatReady`; the layout effect below and the resize observer watched
+  // only `isHistoryLoading`. So the frame that finally put messages on screen was one
+  // neither of them ran on: nothing pinned the view and nothing was left observing the
+  // content, and opening a session landed at the top of the whole conversation.
+  const transcriptVisible = chatReady && !isHistoryLoading;
 
   // The workspace's locations, for the terminal location picker (and any location-aware
   // panels). Refreshed live when the workspace config changes.
@@ -417,7 +435,7 @@ export function ChatPanel({
   // replaces the old anchor + rAF tangle that fought itself and yanked the reader.
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
-    if (!container || isHistoryLoading) return;
+    if (!container || !transcriptVisible) return;
     const firstKey = messages.length > 0 ? messages[0].id : "";
     const count = messages.length;
     const previous = scrollMetricsRef.current;
@@ -434,13 +452,13 @@ export function ChatPanel({
     }
     scrollMetricsRef.current = { scrollHeight: container.scrollHeight, firstKey, count };
     lastScrollTopRef.current = container.scrollTop;
-  }, [messages, queuedMessages, isHistoryLoading]);
+  }, [messages, queuedMessages, transcriptVisible]);
 
   // Late-growing content (images, streamed text) keeps the bottom in view
   // — but only while pinned, so a reader who scrolled up is never dragged down.
   // Re-runs when the transcript container actually mounts (it is absent during the
   // loading/empty states), otherwise the observer would never attach.
-  const timelineMounted = !isHistoryLoading && !historyError && messages.length > 0;
+  const timelineMounted = transcriptVisible && !historyError && messages.length > 0;
   useEffect(() => {
     const content = scrollContentRef.current;
     const container = scrollContainerRef.current;
@@ -481,14 +499,39 @@ export function ChatPanel({
   // chooses what the next one starts under; with a session it also changes *that* session,
   // which the daemon applies to the turn in flight. The chip moves immediately and is
   // corrected if the server clamps the mode (a child is never looser than its parent).
-  function handlePermissionModeChange(nextMode: PermissionMode) {
+  async function handlePermissionModeChange(nextMode: PermissionMode) {
     setPermissionModeState(nextMode);
     onPermissionModeChange?.(nextMode);
     // Persist to server settings so it survives across sessions.
     saveSettings({ permission_mode: nextMode }).catch((caught) => swallowed({ component: "chat-panel", operation: "save the settings" }, caught));
+    // And raise the agent's own ceiling to match, first.
+    //
+    // A card names a mode to declare the loosest its agent may run at, and the daemon meets any
+    // request against it — so an agent pinned at `default` silently swallowed every choice
+    // looser than that: the chip moved, the server clamped it straight back, and nothing said
+    // why. Between a ceiling written once in a settings panel and a person choosing a mode with
+    // the conversation in front of them, the person is the one to believe.
+    //
+    // Awaited before the session call, because that call is where the clamp is applied: saving
+    // afterwards would let this one be clamped by the ceiling it was about to replace. Saving
+    // the card also resets the live runtimes, so the next turn builds against the new ceiling
+    // rather than the cached one.
+    try {
+      await saveAgentConfiguration(agent, { permission_mode: nextMode }, workingDirectory);
+    } catch (caught) {
+      swallowed({ component: "chat-panel", operation: "raise the agent's permission ceiling" }, caught);
+    }
     if (!sessionId) return;
     setSessionPermissionMode(sessionId, nextMode)
-      .then((applied) => setPermissionModeState(applied))
+      .then((applied) => {
+        setPermissionModeState(applied);
+        // Told to the parent as well, and this is the half that was missing. The server clamps
+        // a request against the parent session and the agent profile's ceiling, so what took
+        // is not always what was asked for — and only the chip was being corrected. The page
+        // went on holding the unclamped value, which is what a *new* session would then start
+        // under: the one place the difference is silently consequential.
+        if (applied !== nextMode) onPermissionModeChange?.(applied);
+      })
       .catch((caught) => {
         // The session kept the mode it had, so the chip must go back to saying so rather
         // than showing a policy that is not being enforced.
@@ -606,7 +649,7 @@ export function ChatPanel({
   // card, though in practice a card carries only one.
   let pendingPrompt: (
     | { kind: "question"; question: ToolQuestion }
-    | { kind: "permission"; permission: ToolPermission; title: string; detail?: string; command?: string; arguments?: Record<string, unknown> }
+    | { kind: "permission"; permission: ToolPermission; title: string; detail?: string; detailPaths?: string[]; command?: string; arguments?: Record<string, unknown> }
     | null
   ) = null;
   {
@@ -630,7 +673,16 @@ export function ChatPanel({
           // model's own `explanation`, via the same display helper the tool card uses), and
           // the detail says what made this stop for approval.
           title: getToolCallDisplay(name, args, tToolDisplay).label,
-          detail: permission.explanation || undefined,
+          // The harness's structured reason wins, because it is the only one this interface
+          // can say in the reader's language. It used to send a finished English sentence —
+          // "Sandbox approval required: this command reads outside the working directory
+          // (/a, /b)." — which no catalogue could reach, so a Japanese window rendered an
+          // English clause with a colon and a parenthetical inside its own layout.
+          detail: permissionReasonText(permission.reason, translation) || permission.explanation || undefined,
+          // The paths travel as data, so the overlay lists them. Folding them into the
+          // sentence would join a set with a separator this component chose, which is a
+          // locale's decision — and would render several values as one.
+          detailPaths: permissionReasonPaths(permission.reason),
           command: command || undefined,
           arguments: args,
         };
@@ -693,7 +745,7 @@ export function ChatPanel({
     return () => setPermissionNotificationHandler(null);
   }, [handlePermission]);
 
-  const handleSidePanelResizeStart = useCallback((event: PointerEvent<HTMLDivElement>) => {
+  const startSidePanelResize = useCallback((event: PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = sidePanelWidth;
@@ -801,7 +853,27 @@ export function ChatPanel({
         </Flex>
         <Box position="relative" flex={1} minH={0} display="flex" flexDirection="column">
         <Box ref={scrollContainerRef} flex={1} minH={0} display="flex" flexDirection="column" overflowY="auto" px={4} py={3} onScroll={handleScroll} css={transcriptPinned ? scrollFade : scrollFadeTopBottom} style={{ overflowAnchor: "none", scrollbarGutter: "stable both-edges" }}>
-          {!chatReady || isHistoryLoading ? (
+          {connectionLost ? (
+            // A lost daemon used to be a blank pane and a dead composer — the interface simply
+            // stopped working, and said nothing. It is a state worth naming, and the only state
+            // here whose remedy is a single button, so it gets one.
+            <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2}>
+              <EmptyState.Root>
+                <EmptyState.Content>
+                  <EmptyState.Indicator>
+                    <LuPlugZap />
+                  </EmptyState.Indicator>
+                  <VStack gap={1}>
+                    <EmptyState.Title>{translation("disconnectedTitle")}</EmptyState.Title>
+                    <EmptyState.Description>{translation("disconnectedDescription")}</EmptyState.Description>
+                  </VStack>
+                  <Button variant="solid" colorPalette="blue" onClick={onReconnect}>
+                    {translation("reconnect")}
+                  </Button>
+                </EmptyState.Content>
+              </EmptyState.Root>
+            </Flex>
+          ) : !transcriptVisible ? (
             <Flex h="100%" />
           ) : historyError ? (
             <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2}>
@@ -997,7 +1069,7 @@ export function ChatPanel({
             </AnimatePresence>
           )}
         </Box>
-        {!isAtBottom && !isHistoryLoading && !historyError && messages.length > 0 && (
+        {!isAtBottom && timelineMounted && (
           <Button
             variant="outline"
             position="absolute"
@@ -1040,6 +1112,7 @@ export function ChatPanel({
                       permission={pendingPrompt.permission}
                       title={pendingPrompt.title}
                       detail={pendingPrompt.detail}
+                      detailPaths={pendingPrompt.detailPaths}
                       command={pendingPrompt.command}
                       arguments={pendingPrompt.arguments}
                       onPermission={handlePermission}
@@ -1056,14 +1129,27 @@ export function ChatPanel({
             at every width. `both-edges` reserves the gutter symmetrically (left AND right) so the
             centered column stays on the panel's true centre and the left/right insets match,
             rather than a single-edge gutter nudging everything off-centre. */}
+        {/* The bottom padding is the phone's home indicator, which sits over the last few
+            millimetres of the screen and would otherwise sit over the send button. Zero
+            everywhere else. */}
         {chatReady && (
-        <Box px={4} overflowY="hidden" style={{ scrollbarGutter: "stable both-edges" }}>
+        <Box
+          px={4}
+          pb="var(--safe-bottom, 0px)"
+          overflowY="hidden"
+          style={{ scrollbarGutter: "stable both-edges" }}
+        >
         <Box w="full" maxW="80rem" mx="auto">
         <ChatInput
           onSend={handleSend}
           onAbort={abort}
           isStreaming={isStreaming}
-          disabled={!isConnected || !!pendingPrompt}
+          // Two reasons the composer is closed, kept apart because they read as different
+          // things to the person looking at it. One boolean for both meant a decision prompt
+          // reported "connecting to the server", which is not what is happening and sends
+          // somebody to check their network instead of answering the question in front of them.
+          disabled={!isConnected}
+          awaitingDecision={!!pendingPrompt}
           sessionId={sessionId}
           initialDraft={initialInputDraft}
           onDraftChange={handleInputDraftChange}
@@ -1085,8 +1171,7 @@ export function ChatPanel({
           tokenUsage={tokenUsage}
           onCompact={compact}
           isCompacting={isCompacting}
-          compactionKeepRecentTurns={compactionKeepRecentTurns}
-          compactionUserCount={messages.filter((message) => message.role === "user").length}
+          compactionReclaimAtFraction={compactionReclaimAtFraction}
         />
         </Box>
         </Box>
@@ -1108,7 +1193,8 @@ export function ChatPanel({
           minW={{ base: "100%", md: "min(360px, 55%)" }}
           maxW={{ base: "100%", md: "80vw" }}
           pr={2}
-          pb={2}
+          // Full-screen at `base`, so its bottom edge is the device's rather than the panel's.
+          pb={{ base: "calc(var(--safe-bottom, 0px) + 0.5rem)", md: 2 }}
           position={{ base: "absolute", md: "relative" }}
           inset={{ base: 0, md: "auto" }}
           zIndex={{ base: 3, md: "auto" }}
@@ -1130,7 +1216,7 @@ export function ChatPanel({
             w={2}
             cursor="col-resize"
             zIndex={1}
-            onPointerDown={handleSidePanelResizeStart}
+            onPointerDown={startSidePanelResize}
           />
             <PanelTiles
               gap={8}

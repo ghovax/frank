@@ -19,17 +19,19 @@ Start with the layer you are actually using.
 | **Embed the harness in your own program** — `import frank`, no daemon, no socket | [As a library](library.md) |
 | **Drive it from a terminal** — create, send, attach, approve | [The `frank` command](cli.md) |
 | **Use the macOS app** | [The desktop app](app.md) |
+| **Reach it from your phone** — a stable address, and the Expo client | [The phone](mobile.md) |
 
 Then the rest, in the order they build on each other. [Architecture](architecture.md) defines
 the words the others use, so it comes first:
 
 | Guide | What's in it |
 |-------|--------------|
-| [Architecture](architecture.md) | The vocabulary, the four layers, and how a message becomes work |
+| [Architecture](architecture.md) | The vocabulary, the four layers, how a message becomes work, and [what is recorded about prompt caching](architecture.md#prompt-caching-and-what-is-recorded-about-it) |
 | [Installation](installation.md) | Download and Gatekeeper, or building from source |
 | [As a library](library.md) | `frank.Session` in your own process, and every seam you can replace |
 | [The `frank` command](cli.md) | Every verb, the session states, JSON and exit codes |
 | [The desktop app](app.md) | The window, decisions, environments, and screen control |
+| [The phone](mobile.md) | `frank reach`, pairing, and the mobile client |
 | [Agents and skills](agents-and-skills.md) | Authoring agents, skills, memory, and MCP servers |
 | [Configuration](configuration.md) | Providers, keys, permissions, MCP, and every config key |
 | [Tools](tools.md) | The full tool surface, including screen control (`control_screen`) |

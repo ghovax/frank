@@ -8,6 +8,10 @@
           "default": "compaction",
           "type": "string"
         },
+        "log_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
         "messages_after": {
           "default": 0,
           "type": "integer"
@@ -30,6 +34,13 @@
             "done"
           ],
           "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "tokens_after": {
+          "default": 0,
+          "type": "integer"
         },
         "tokens_before": {
           "default": 0,
@@ -62,6 +73,10 @@
           "default": 0,
           "type": "integer"
         },
+        "reachable_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
         "reasoning_tokens": {
           "default": 0,
           "type": "integer"
@@ -83,6 +98,9 @@
         },
         "state": {
           "default": "completed",
+          "type": "string"
+        },
+        "timestamp": {
           "type": "string"
         }
       },
@@ -118,6 +136,9 @@
           ],
           "default": null
         },
+        "timestamp": {
+          "type": "string"
+        },
         "title": {
           "default": "",
           "type": "string"
@@ -149,6 +170,9 @@
         },
         "server": {
           "default": "",
+          "type": "string"
+        },
+        "timestamp": {
           "type": "string"
         },
         "tool": {
@@ -250,6 +274,25 @@
       ],
       "type": "object"
     },
+    "PermissionReason": {
+      "additionalProperties": false,
+      "description": "Why approval is needed, as data rather than as a sentence.\n\nThe harness used to build the sentence itself \u2014 \"Sandbox approval required: this command\nreads outside the working directory (/a, /b).\" \u2014 and hand a client the finished English.\nThat put user-facing prose in the one place that cannot translate it: the daemon has no\nlocale, the string never reached the message catalogue, and a Japanese interface rendered\nan English clause with a colon and a parenthetical in the middle of its own layout.\n\nSo the harness states the *facts* and the client writes the sentence. `kind` selects the\nmessage; the paths ride as data the message interpolates. A reason the client does not\nrecognise falls back to the model's own explanation, which is prose either way.",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "paths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
     "PermissionRequestEvent": {
       "additionalProperties": false,
       "properties": {
@@ -269,11 +312,25 @@
           "default": "permission_request",
           "type": "string"
         },
+        "reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionReason"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "request_id": {
           "type": "string"
         },
         "risk": {
           "default": "",
+          "type": "string"
+        },
+        "timestamp": {
           "type": "string"
         },
         "tool_call_id": {
@@ -291,6 +348,35 @@
       ],
       "type": "object"
     },
+    "PrefixDivergence": {
+      "additionalProperties": false,
+      "description": "Where a request stopped matching the one before it.",
+      "properties": {
+        "current": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TracedSegment"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "index": {
+          "default": 0,
+          "type": "integer"
+        },
+        "previous": {
+          "$ref": "#/$defs/TracedSegment"
+        },
+        "rewritten": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "QuestionEvent": {
       "additionalProperties": false,
       "properties": {
@@ -306,6 +392,9 @@
           "type": "array"
         },
         "request_id": {
+          "type": "string"
+        },
+        "timestamp": {
           "type": "string"
         },
         "tool_call_id": {
@@ -330,6 +419,9 @@
           "const": "status",
           "default": "status",
           "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
         }
       },
       "required": [
@@ -345,8 +437,15 @@
           "default": "steering",
           "type": "string"
         },
+        "message_id": {
+          "default": "",
+          "type": "string"
+        },
         "text": {
           "default": "",
+          "type": "string"
+        },
+        "timestamp": {
           "type": "string"
         }
       },
@@ -364,6 +463,9 @@
           "type": "string"
         },
         "text": {
+          "type": "string"
+        },
+        "timestamp": {
           "type": "string"
         }
       },
@@ -383,6 +485,9 @@
         "kind": {
           "const": "thinking_done",
           "default": "thinking_done",
+          "type": "string"
+        },
+        "timestamp": {
           "type": "string"
         }
       },
@@ -406,6 +511,9 @@
         "text": {
           "default": "",
           "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
         }
       },
       "required": [
@@ -416,12 +524,27 @@
     "TokenUsageEvent": {
       "additionalProperties": false,
       "properties": {
+        "cache_read_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
         "context_window": {
           "default": 0,
           "type": "integer"
         },
         "cumulative": {
           "$ref": "#/$defs/CumulativeUsage"
+        },
+        "divergence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PrefixDivergence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "input_tokens": {
           "default": 0,
@@ -435,6 +558,29 @@
         "output_tokens": {
           "default": 0,
           "type": "integer"
+        },
+        "prefix_intact": {
+          "default": false,
+          "type": "boolean"
+        },
+        "reachable_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "reasoning_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "segments": {
+          "default": 0,
+          "type": "integer"
+        },
+        "shared_segments": {
+          "default": 0,
+          "type": "integer"
+        },
+        "timestamp": {
+          "type": "string"
         }
       },
       "required": [
@@ -451,6 +597,9 @@
         "kind": {
           "const": "tool_call",
           "default": "tool_call",
+          "type": "string"
+        },
+        "timestamp": {
           "type": "string"
         },
         "tool_call_id": {
@@ -557,6 +706,9 @@
         "status": {
           "$ref": "#/$defs/ToolStatus"
         },
+        "timestamp": {
+          "type": "string"
+        },
         "tool_call_id": {
           "type": "string"
         },
@@ -581,6 +733,28 @@
       ],
       "type": "string"
     },
+    "TracedSegment": {
+      "additionalProperties": false,
+      "description": "Which piece of a request a cache measurement is talking about.\n\nFields rather than a formatted label, so a consumer can count how often the tool schemas\nmove or which role tends to be rewritten. ``position`` is the index within the conversation,\nor ``-1`` for the parts a request has only one of.",
+      "properties": {
+        "kind": {
+          "default": "",
+          "type": "string"
+        },
+        "position": {
+          "default": -1,
+          "type": "integer"
+        },
+        "role": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
     "TurnContext": {
       "additionalProperties": false,
       "description": "The structured per-turn context injected at the end of the message list: the current time,\nwhere the agent is, its goal, its tasks, and its background work.",
@@ -591,6 +765,15 @@
         },
         "background": {
           "tsType": "Record<string, unknown>"
+        },
+        "confinement": {
+          "tsType": "Record<string, unknown>"
+        },
+        "locations": {
+          "items": {
+            "tsType": "Record<string, unknown>"
+          },
+          "type": "array"
         },
         "now": {
           "default": "",
@@ -626,6 +809,9 @@
         },
         "message": {
           "default": "",
+          "type": "string"
+        },
+        "timestamp": {
           "type": "string"
         },
         "title": {

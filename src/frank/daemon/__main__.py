@@ -27,6 +27,8 @@ import sys
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.requests import HTTPConnection
+from starlette.websockets import WebSocketClose
 from tenacity import AsyncRetrying, RetryError, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from frank.base.paths import (
@@ -233,27 +235,48 @@ def build_app() -> FastAPI:
             self.application = application
 
         async def __call__(self, scope, receive, send):
-            if scope["type"] != "http":
-                return await self.application(scope, receive, send)
-            request = Request(scope)
-            if request.url.path in {"/health"}:
-                return await self.application(scope, receive, send)
-            # A CORS preflight, which a browser sends without credentials by specification and
-            # which asks only whether the real request may follow. Demanding a token here rejects
-            # the question rather than the request, and the real one is then never sent at all.
+            # Websockets are checked here too, and that is not a widening of the policy — it is
+            # the policy finally being applied where it was always meant to. This read
+            # `scope["type"] != "http"`, which passed every handshake straight through; the only
+            # websocket route is `/terminal`, which is a PTY, or an SSH login shell to a
+            # configured host. Anything that could open a TCP connection to the loopback port got
+            # a shell without presenting anything. Clients were already sending the token — the
+            # query parameter below exists for exactly this transport — and nothing read it.
             #
-            # The middleware order already keeps these from reaching this point — CORS is
-            # outermost and answers them itself — so this is the belt to that pair of braces:
-            # the failure it prevents is silent, remote from its cause, and was diagnosed once
-            # already.
-            if request.method == "OPTIONS" and "access-control-request-method" in request.headers:
+            # `lifespan`, and whatever else a server invents, is not a request and carries no
+            # credential to check.
+            if scope["type"] not in {"http", "websocket"}:
                 return await self.application(scope, receive, send)
-            header = request.headers.get("Authorization", "")
+
+            # `HTTPConnection` rather than `Request`: a websocket scope is not a request and
+            # `Request` will not take one. What is read below — the path, the headers, the query
+            # string — is common to both, and is precisely what `HTTPConnection` is for.
+            connection = HTTPConnection(scope)
+
+            if scope["type"] == "http":
+                if connection.url.path in {"/health"}:
+                    return await self.application(scope, receive, send)
+                # A CORS preflight, which a browser sends without credentials by specification and
+                # which asks only whether the real request may follow. Demanding a token here
+                # rejects the question rather than the request, and the real one is then never
+                # sent at all.
+                #
+                # The middleware order already keeps these from reaching this point — CORS is
+                # outermost and answers them itself — so this is the belt to that pair of braces:
+                # the failure it prevents is silent, remote from its cause, and was diagnosed once
+                # already.
+                #
+                # HTTP only, and there is nothing to add for websockets: a handshake is not
+                # preflighted, and there is no unauthenticated websocket path to exempt.
+                if scope.get("method") == "OPTIONS" and "access-control-request-method" in connection.headers:
+                    return await self.application(scope, receive, send)
+
+            header = connection.headers.get("Authorization", "")
             # A WebSocket handshake and an <img>/<iframe> URL cannot carry a header, so the
             # terminal passes the same token as a query parameter.
             presented = (
                 header[len("Bearer "):] if header.startswith("Bearer ")
-                else request.query_params.get("token", "")
+                else connection.query_params.get("token", "")
             )
             # Who the *kernel* says is calling, which no token can contradict. A session's own
             # shell can read the daemon's 0600 token file — same user, same machine — so a token
@@ -274,15 +297,28 @@ def build_app() -> FastAPI:
             # request body claims.
             caller = state.registry.session_for_token(presented) if (presented and state.registry) else None
             if caller is None:
-                response = JSONResponse(
-                    {"error": {"code": "unauthorized", "message": "Bad or missing token."}},
-                    status_code=401,
-                )
-                return await response(scope, receive, send)
+                return await self._refuse(scope, receive, send)
             # The kernel's answer wins over the token's when both are available: a session holding
             # another session's token is still itself.
             scope["state"]["calling_session"] = peer_session or caller.id
             return await self.application(scope, receive, send)
+
+        @staticmethod
+        async def _refuse(scope, receive, send) -> None:
+            """Say no in the shape the caller's transport understands.
+
+            A websocket is closed *without being accepted*, which is what ASGI calls refusing a
+            handshake and what the server turns into an HTTP failure. Accepting first and closing
+            after would look like a connection that was allowed and then dropped — and would give
+            the route a moment in which it believed it had a client."""
+            if scope["type"] == "websocket":
+                # 1008 is "policy violation", which is the closest the protocol has to a 401.
+                return await WebSocketClose(code=1008)(scope, receive, send)
+            response = JSONResponse(
+                {"error": {"code": "unauthorized", "message": "Bad or missing token."}},
+                status_code=401,
+            )
+            return await response(scope, receive, send)
 
     app.add_middleware(Authenticate)
     # Added *after* `Authenticate`, and the order is the whole point: `add_middleware` prepends,
@@ -460,9 +496,12 @@ async def _serve() -> int:
         else happens to wake it — which is how a `stop` came back as "still running"."""
         await stopping.wait()
         # Streams first, servers second. An open SSE response — someone left `frank attach`
-        # running in another terminal — holds the connection until it yields its last frame,
-        # and uvicorn will not finish draining until it does. Closing the buses here is what
-        # keeps `daemon stop` from waiting on a watcher that is itself waiting on the stop.
+        # running in another terminal, or the app is showing a Git status bar — holds the
+        # connection until it yields its last frame, and uvicorn will not finish draining until
+        # it does. Everything long-lived is told to stop here, before either listener is asked
+        # to drain: the two buses by closing them, and every stream that waits on something
+        # slower than a request by `hub_state.shutting_down`, which they race.
+        hub_state.shutting_down.set()
         state.event_bus.complete_all()
         state.broadcaster.close()
         socket_server.should_exit = True

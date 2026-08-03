@@ -5,6 +5,7 @@ agent messaging, completion), and the tool batch — plus turn-message assembly,
 system prompt, steering drain, and turn recording."""
 from __future__ import annotations
 
+import json
 import logging
 from contextlib import suppress
 from datetime import datetime, timezone
@@ -19,6 +20,8 @@ from frank.runtime.internals import (
     _STREAM_EXHAUSTED,
     _stream_next,
     _ToolPlan,
+    _maybe_json,
+    conversation_tokens,
 )
 from frank.runtime.prompt.environment import probe_local_environment, probe_user_context
 from frank.protocol.events import TurnContext
@@ -26,8 +29,8 @@ from frank.base.instructions import instructions_payload
 from frank.base.memories import memories_payload
 from frank.base.message_content import message_content_deltas, message_text
 from frank.base.model_errors import ContextWindowExceeded, over_context_window
-from frank.base.tuning import count_tokens
 from frank.base.skills import enabled_skills, skills_for_agent, skills_payload
+from frank.base.tuning import Tunable, active_tuning
 from frank.runtime.turn_events import (
     Checkpoint,
     Done,
@@ -66,14 +69,21 @@ class _RunsTurns:
 
     def _locations_summary(self) -> list[dict]:
         """The workspace's locations as the model sees them: the `location` URI to pass,
-        plus name/kind/base_directory/permission so it can choose the right one per tool call."""
+        plus name/kind/base_directory/permission so it can choose the right one per tool call.
+
+        The permission reported is the mode a call against that location would actually be judged
+        by — `_call_policy`'s answer — rather than the mode recorded on the location. Those differ
+        in the ordinary case: a location that names no mode of its own records `default`, meaning
+        "whatever the session is", so reporting the record told the model `default` no matter what
+        the session had been set to. Now that this rides in the turn context and is rebuilt every
+        turn, it can state the live answer, which is the only version worth stating."""
         return [
             {
                 "location": resolved.uri,
                 "name": resolved.name,
                 "kind": resolved.kind,
                 "base_directory": resolved.base_directory,
-                "permission_mode": resolved.permission_mode,
+                "permission_mode": self._call_policy(resolved).mode,
             }
             for resolved in self._locations.values()
         ]
@@ -107,29 +117,36 @@ class _RunsTurns:
                 "session_worktree_strategy": self._global_configuration.workspace.strategy,
                 "platform": platform.system(),
                 "today_date": datetime.now().strftime("%Y-%m-%d"),
-                # The workspace's locations. Filesystem/shell tools take a `location` (its
-                # URI); it is required when there is more than one, optional when one.
-                "locations": self._locations_summary(),
+                # `locations` is deliberately absent: it carries each location's permission mode,
+                # which a person can change mid-session, and anything changeable in here rewrites
+                # the front of every request. It rides in the turn context instead.
             })
-            # Also conditional: it opens by asserting "you are running as a session… another
-            # session may have created you", and tells the model to answer its parent with
-            # `message_session`. A library-embedded runtime is none of those things and has no
-            # such tool.
+            # Also conditional: it asserts "you are running as a session", which a
+            # library-embedded runtime is not, and which has no peer tools either.
+            #
+            # The instruction to report to a parent is conditional *within* it, on there being a
+            # parent, and it names the real id. It used to ship to every session that merely had
+            # the tool, phrased as "if `parent_session` is in your context" — so a session that
+            # nobody created still read an instruction to report, and one duly sent its findings
+            # to a session literally named `parent_session`. A placeholder in a prompt is a
+            # value to whoever reads it; the way not to have it mistaken for an id is not to
+            # write one.
+            parent_report = (
+                self._prompt_loader.load("parent_report", {"parent": self._parent_session})
+                if self._parent_session else ""
+            )
             agent_context = (
-                self._prompt_loader.load("agent_context", {})
+                self._prompt_loader.load("agent_context", {"parent_report": parent_report})
                 if "message_session" in {tool.name for tool in self._tools} else ""
             )
             # The opt-in user-context section is its own template, rendered into the prompt's
-            # `user_environment` slot only when enabled and the probe found something — so the
-            # section (heading and all) simply is not there when off.
+            # `user_environment` slot only when enabled — so the section (heading and all) simply
+            # is not there when off. Only the standing guidance lives here; the snapshot it
+            # describes travels with each turn, because it is read fresh from the machine and
+            # would otherwise differ between one worker and the next.
             user_environment = ""
-            user_context = getattr(self._global_configuration, "user_context", None)
-            if user_context is not None and user_context.enabled:
-                user_context_snapshot = probe_user_context()
-                if user_context_snapshot not in ("", "{}"):
-                    user_environment = self._prompt_loader.load(
-                        "user_context", {"user_context_snapshot": user_context_snapshot}
-                    )
+            if self._user_context_enabled():
+                user_environment = self._prompt_loader.load("user_context", {})
             # The computer/browser tools are opt-in, so their guidance (what each is for, and
             # to pick the right one rather than force one) only enters the prompt when they do.
             computer_control_guidance = ""
@@ -148,26 +165,110 @@ class _RunsTurns:
                 self._prompt_loader.load("mcp_servers", {})
                 if "call_mcp_tool" in available else ""
             )
+            # Whole documents, so each is laid out by its own template rather than serialised
+            # into a JSON array of escaped strings: metadata as JSON, the document as itself.
+            # Empty when the machine and project supply none, which drops the section instead of
+            # leaving a bare `[]` in the prompt.
+            instruction_files = "".join(
+                self._prompt_loader.load("instruction_file", {
+                    # Whatever the payload carries, and nothing invented for what it does not.
+                    # `scope` is absent for a document that came from somewhere other than a
+                    # file, and the prompt says what that absence means.
+                    "metadata": compact({key: entry[key] for key in ("source", "scope") if key in entry}),
+                    "content": entry["content"].strip(),
+                })
+                for entry in instructions_payload(self._catalogue.instructions())
+            ).strip()
+            instructions = (
+                self._prompt_loader.load("instructions", {"files": instruction_files})
+                if instruction_files else ""
+            )
             self._cached_system_prompt = self._prompt_loader.load("system_prompt", {
                 "system_prompt": self._system_prompt,
                 "context": context_json,
-                "system_environment": probe_local_environment(),
                 "user_environment": user_environment,
-                "instructions": compact(instructions_payload(self._catalogue.instructions())),
+                "instructions": instructions,
                 "skills": compact(skills_payload(agent_skills)),
                 "memories": compact(memories_payload(memories)),
                 "agent_context": agent_context,
                 "computer_control_guidance": computer_control_guidance,
                 "peer_sessions": peer_sessions,
                 "mcp_servers": mcp_servers,
-            })
+            }).strip()
         return self._cached_system_prompt
+
+    def _user_context_enabled(self) -> bool:
+        user_context = getattr(self._global_configuration, "user_context", None)
+        return user_context is not None and bool(user_context.enabled)
+
+    def _ensure_environment_note(self) -> None:
+        """Put the machine snapshot into the conversation once, at the session's first message.
+
+        Minted once and then left alone, which is the whole point. It describes a machine, and a
+        machine does not change between two turns of a conversation in any way worth re-reading;
+        what it *does* do is read the live environment and the shell history, so producing it
+        again later yields different bytes for reasons the user never caused.
+
+        That is why it cannot live in the system prompt. The prompt is rebuilt whenever a worker
+        wakes — a worker is created per activation — and it sits at the very front of the
+        request, which is exactly where a prompt cache matches. A snapshot that differed because
+        the user had opened a terminal since the last wake therefore missed the cache for every
+        call of that session.
+
+        Appended to the conversation instead, it is written once, travels in the checkpoint, and
+        is part of the cached prefix from the second call onward. Appending is safe at any point,
+        so a conversation that predates this simply gains one on its next turn.
+        """
+        if any(message.additional_kwargs.get("environment_note") for message in self._conversation):
+            return
+        snapshot = _maybe_json(probe_local_environment())
+        payload: dict[str, Any] = {"machine": snapshot if isinstance(snapshot, dict) else {}}
+        if self._user_context_enabled():
+            user_context = _maybe_json(probe_user_context())
+            if isinstance(user_context, dict) and user_context:
+                payload["user_context"] = user_context
+        note = self._reminder_message(compact(payload))
+        note.additional_kwargs["environment_note"] = True
+        self._conversation.append(note)
+
+
+    def _append_turn_context(self) -> None:
+        """Append this turn's context to the conversation, if it says anything new.
+
+        The same treatment the environment note gets, and for the same reason: a message that is
+        appended and kept extends the cached prefix, while one assembled for a single request and
+        dropped guarantees the next request differs where it used to sit.
+
+        Emitted only on change, which is what keeps that affordable. Of the fields here only
+        ``now`` moves every turn, and a fresh clock reading is not worth a message of its own — it
+        rides along whenever something that matters has actually changed (the directory, the
+        goal, the task list, background work, the reachable locations) and is otherwise left to
+        the wall clock the model can read for itself. So a session doing steady work appends
+        nothing at all, and one whose situation changed appends the picture once.
+        """
+        context = json.loads(self._build_dynamic_context())
+        previous: dict[str, Any] = {}
+        for message in reversed(self._conversation):
+            recorded = message.additional_kwargs.get("turn_context")
+            if isinstance(recorded, dict):
+                previous = recorded
+                break
+        def without_the_clock(picture: dict[str, Any]) -> dict[str, Any]:
+            return {key: value for key, value in picture.items() if key != "now"}
+
+        if previous and without_the_clock(previous) == without_the_clock(context):
+            return
+        note = self._reminder_message(compact(context))
+        note.additional_kwargs["turn_context"] = context
+        self._conversation.append(note)
 
     def _build_dynamic_context(self) -> str:
         """The structured per-turn context injected at the end of the message list: the current
-        time, where the agent is, its goal, its tasks, and its background work. Empty goal/tasks
-        are omitted so the model isn't fed noise. Standing behavioural guidance lives once in the
-        system prompt, not re-injected here."""
+        time, where the agent is, its goal, its tasks, its background work, the machine it runs
+        on and the locations it may reach. Empty goal/tasks are omitted so the model isn't fed
+        noise. Standing behavioural guidance lives once in the system prompt, not re-injected
+        here — what lives here is everything that can *differ*, so that the system prompt in
+        front of it stays byte-identical and the provider's cache keeps matching it."""
         context = TurnContext(
             now=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
             pwd=self._working_directory or str(Path.cwd()),
@@ -179,8 +280,31 @@ class _RunsTurns:
                 "recent_events": self._execution_history[-20:],
             },
             screen=self._screen_context(),
+            locations=self._locations_summary(),
+            confinement=self._confinement_summary(),
         )
         return context.model_dump_json(exclude_defaults=True)
+
+    def _confinement_summary(self) -> dict:
+        """The boundary the operating system will enforce, as the model needs to read it.
+
+        The session's *configured* profile, plus the grants approved so far — not the widened
+        profile the two combine into. Those are different facts and the difference is the point:
+        one is what a person set up, the other is what this session has since been allowed, and a
+        model that cannot tell them apart cannot tell a standing permission from one it asked for
+        and must not spend on something else.
+
+        Absent entirely where nothing enforces a profile, because a list of paths captioned with
+        a boundary that does not exist is worse than no list — it invites the model to route
+        around a wall that is not there.
+        """
+        profile = getattr(self._tool_context, "sandbox", None)
+        if profile is None or self._global_configuration.sandbox.enforce == "off":
+            return {}
+        summary = profile.describe(workspace=self._working_directory or "")
+        if self._access_grants:
+            summary["granted"] = [grant.as_dict() for grant in self._access_grants]
+        return summary
 
     def _screen_context(self) -> dict:
         """Every place a screen script can be pointed at, and what may be called in each.
@@ -293,9 +417,9 @@ class _RunsTurns:
     async def _drain_steering_messages(self) -> list[TurnEvent]:
         events: list[TurnEvent] = []
         while not self._steering_messages.empty():
-            message = self._steering_messages.get_nowait()
+            message, message_id = self._steering_messages.get_nowait()
             self._conversation.append(HumanMessage(content=message))
-            events.append(Steering(text=message))
+            events.append(Steering(text=message, message_id=message_id))
         if self._steering_messages.empty():
             self._steering_available.clear()
         return events
@@ -329,32 +453,44 @@ class _RunsTurns:
                 answers[gate.request_id] = "allow" if verdict.allow else "deny"
         return answers
 
-    def _harness_note_message(self, content: str, image_blocks: list[dict] | None = None) -> HumanMessage:
-        """Wrap a harness-injected note in a user-role message carrying a
-        ``<systemReminder>`` block.
+    def _reminder_message(
+        self, content: str, image_blocks: list[dict] | None = None, transient: bool = False,
+        marks: dict[str, Any] | None = None,
+    ) -> HumanMessage:
+        """A reminder: something neither the user nor the model said, put into the conversation
+        as a user-role message.
 
-        The role is deliberate — this is what keeps the conversation strictly
-        append-only for the provider's prompt cache. A mid-conversation
-        ``role:"system"`` message is HOISTED by LiteLLM into Anthropic's top-level
-        ``system`` parameter, which renders before the entire message history; every
-        such note therefore rewrites the prompt prefix and invalidates the cache for
-        the whole conversation. A user-role note stays exactly where it was appended,
-        so the prefix never changes — only grows — on every provider. The wrapper
-        itself lives in the ``harness_note`` prompt template (wording stays in
-        files, not code); it tells the model this is authoritative harness
-        guidance, not user input (see the Harness Guidance section of the system
-        prompt). The ``harness_note`` marker keeps these notes from counting as
-        user turns in the compaction boundary. ``image_blocks`` (OpenAI-shaped
-        ``image_url`` blocks) turn the note multimodal — the user role is the one
-        role every provider accepts images on, which is how a read image reaches
-        a vision model."""
-        text = self._prompt_loader.load("harness_note", {"content": content.strip()}).strip()
+        The role is deliberate, and it is what keeps the conversation strictly append-only for
+        the provider's prompt cache. A mid-conversation ``role:"system"`` message does not stay
+        where it is put — LiteLLM hoists it into Anthropic's top-level ``system`` parameter, and
+        the Responses translation folds it into ``instructions`` — so it renders before the
+        entire history, and writing one rewrites the prefix and discards the cache for the whole
+        conversation. A user-role reminder stays exactly where it was appended, on every
+        provider, so the prefix only ever grows.
+
+        The wrapper lives in the ``reminder`` prompt template, so the wording stays in a file
+        rather than in code; it tells the model this is authoritative guidance from the system
+        it is running in, not something the user typed. The ``reminder`` marker is how everything
+        downstream tells the two apart — most importantly the fold, which carries the user's own
+        messages across verbatim and must not mistake one of these for one of those.
+
+        ``image_blocks`` (OpenAI-shaped ``image_url`` blocks) make a reminder multimodal: the
+        user role is the one role every provider accepts images on, which is how a file the
+        model asked to read reaches a vision model.
+
+        The heading it carries lives in the ``reminder`` template, like every other piece of
+        model-facing wording here. On the Responses API the `developer` role says the same thing
+        by itself; elsewhere — Anthropic's Messages API has no per-message system role at all,
+        only a top-level parameter — the text is the only place the distinction can live, so it
+        is written once, here, and reads the same everywhere."""
+        text = self._prompt_loader.load("reminder", {"content": content.strip()}).strip()
+        # `transient` marks a note that is assembled for one request and never appended to the
+        # conversation — so it cannot appear in the next one, and a cache breakpoint placed on it
+        # is a breakpoint nothing will ever match.
+        tags = {"reminder": True, **({"transient": True} if transient else {}), **(marks or {})}
         if image_blocks:
-            return HumanMessage(
-                content=[{"type": "text", "text": text}, *image_blocks],
-                additional_kwargs={"harness_note": True},
-            )
-        return HumanMessage(content=text, additional_kwargs={"harness_note": True})
+            return HumanMessage(content=[{"type": "text", "text": text}, *image_blocks], additional_kwargs=tags)
+        return HumanMessage(content=text, additional_kwargs=tags)
 
     def _invalid_tool_call_content(self, invalid: dict) -> str:
         """Build the message for a malformed tool call — used both as the tool
@@ -403,10 +539,8 @@ class _RunsTurns:
         # The turn runs until the model is done or the user interrupts it — there is no
         # iteration count and no stuck-detector. The goal reconsideration flag lets an active
         # goal nudge the model once each time it stops, without a nudge counter; it is instance
-        # state so the no-tool-calls phase can advance it across iterations. Dynamic per-turn
-        # context is injected on the first model call only, tracked by a local below.
+        # state so the no-tool-calls phase can advance it across iterations.
         self._awaiting_goal_reconsideration = False
-        first_turn_message = True
 
         turn_tool_calls_log: list[dict] = []
         turn_tool_results_log: list[dict] = []
@@ -436,23 +570,29 @@ class _RunsTurns:
             # this new message instead of answered. Close its dangling tool calls (an
             # AIMessage carrying tool_calls with no ToolMessages) so appending this turn
             # keeps the conversation valid for the provider.
+            # Before the first message of the session, so the snapshot sits at the front of the
+            # conversation and every later call prefix-matches over it.
+            self._ensure_environment_note()
             self._close_dangling_tool_calls()
             # A turn's input is usually plain text, but an attachment turn carries a
             # multimodal content list (a text block plus one image_url block per
             # attached image) so a vision model actually sees the pixels. LangChain's
             # HumanMessage accepts either, and the model adapter passes the content
             # straight through to the provider. A harness-initiated turn (an autonomous
-            # wake, a report reminder) enters as a <systemReminder> harness note so the
+            # wake, a report reminder) enters as a reminder so the
             # model treats it as its own observation, not as something the user said — in
-            # a user-role message so the append stays cache-safe (_harness_note_message).
+            # a user-role message so the append stays cache-safe (_reminder_message).
             turn_message = (
-                self._harness_note_message(user_message)
+                self._reminder_message(user_message)
                 if as_system_note and isinstance(user_message, str)
                 else HumanMessage(content=user_message)
             )
             self._conversation.append(turn_message)
             # The event-log recorder only wants prose from LangChain's standard blocks.
             recorded_user_message = message_text(turn_message)
+        # After the turn's message, so the freshest picture is the last thing the model reads,
+        # and once per turn rather than per iteration — a tool hop changes nothing this describes.
+        self._append_turn_context()
         self._turn_started_at = datetime.now(timezone.utc)
 
         while True:
@@ -479,16 +619,16 @@ class _RunsTurns:
             for steering_event in await self._drain_steering_messages():
                 yield steering_event
 
-            # Auto-compaction: if the last call left the context near the window,
-            # summarize the older history before making another call that could
-            # overflow. The reserved buffer guarantees room to run the compaction
-            # itself; compact() resets the occupancy so this cannot re-fire in a loop.
+            # Keeping the context inside the window. Folding is the whole of it: it replaces
+            # an unbounded head with a fixed-size observation log, so what it saves compounds
+            # over the rest of the run rather than being spent once. The reserved buffer
+            # guarantees room to run the fold itself, and compact() re-measures the occupancy
+            # so this cannot re-fire in a loop.
             if self._should_compact():
                 async for compaction_event in self.compact(reason="auto"):
                     yield compaction_event
 
-            messages = self._build_turn_messages(first_turn_message)
-            first_turn_message = False
+            messages = self._build_turn_messages()
 
             # Phase 1 — the model call. Yields the thinking/answer stream and hands back
             # the assembled response, or a terminal (cancelled) / steering condition.
@@ -563,7 +703,7 @@ class _RunsTurns:
             for steering_event in await self._drain_steering_messages():
                 yield steering_event
 
-    def _build_turn_messages(self, first_iteration: bool) -> list:
+    def _build_turn_messages(self) -> list:
         """The message list for this iteration's model call: the static system prompt,
         the conversation, and — only on the turn's first iteration — the dynamic context.
 
@@ -571,19 +711,20 @@ class _RunsTurns:
         the first iteration of a turn, when the user just sent a message; subsequent
         iterations (after tool calls) skip it to avoid re-sending the same per-turn
         metadata on every LLM call within the turn. It rides as a transient user-role
-        harness note at the very tail of the request — never as a system message (LiteLLM
+        reminder at the very tail of the request — never as a system message (LiteLLM
         would hoist it into Anthropic's top-level system param, whose fresh timestamp
         would then invalidate the ENTIRE conversation cache on every turn). As a tail
-        note, everything before it still prefix-matches the provider cache."""
-        dynamic_parts = (
-            [self._harness_note_message(self._build_dynamic_context())]
-            if first_iteration else []
-        )
-        return (
-            [SystemMessage(content=self._build_static_system_prompt())]
-            + self._conversation
-            + dynamic_parts
-        )
+        note, everything before it still prefix-matches the provider cache.
+
+        The per-turn context is *in* that conversation rather than assembled beside it — see
+        :meth:`_append_turn_context`. It used to ride here as a transient note appended to the
+        request and dropped afterwards, which made the last item of every first-iteration request
+        an item the next request did not have. Measured over a real session, that was the only
+        divergence the harness produced anywhere: five of twelve calls, every one of them at the
+        final position. It cost little, because everything before it still matched, but "the
+        request is append-only except for one item" is a weaker promise than the one this is
+        supposed to make, and it is not a promise worth keeping weak for 112 tokens."""
+        return [SystemMessage(content=self._build_static_system_prompt())] + self._conversation
 
     def _refuse_if_over_window(self, messages: list) -> None:
         """Refuse a request that cannot fit, before it is sent, and say so with numbers.
@@ -602,11 +743,17 @@ class _RunsTurns:
         Conservative on purpose (see :func:`over_context_window`): the count uses one general
         tokenizer as a proxy for every model's own, so it is approximate, and refusing a request
         the model would have taken is the worse of the two mistakes. Anything this misses the
-        provider still catches, and is still classified properly when it does."""
+        provider still catches, and is still classified properly when it does.
+
+        Conservative is not the same as blind, though, and this used to be both. Reading only
+        each message's prose meant a tool call's arguments and the size of what came back were
+        counted as nothing — so a conversation that was almost entirely tool traffic measured
+        near zero, and one request went out at 272,640 tokens against a 272,000 window without
+        this noticing. :func:`conversation_tokens` counts what is actually sent."""
         window = self._context_window
         if window <= 0:
             return                              # the catalogue is cold; it says nothing about room
-        tokens = sum(count_tokens(message_text(message)) for message in messages)
+        tokens = conversation_tokens(messages)
         if not over_context_window(tokens, window):
             return
         # Recorded so the indicator agrees with the refusal instead of reporting the reading from
@@ -719,11 +866,11 @@ class _RunsTurns:
             # message.tool_calls, never invalid_tool_calls — so a ToolMessage response
             # would be orphaned, and strict providers (e.g. DeepSeek) reject that with
             # "Messages with role 'tool' must follow a tool_calls message". Correct the
-            # model with a harness note and let it retry. Model-facing; not surfaced.
+            # model with a reminder and let it retry. Model-facing; not surfaced.
             if response.content:
                 self._conversation.append(response)
             for invalid in response.invalid_tool_calls:
-                self._conversation.append(self._harness_note_message(
+                self._conversation.append(self._reminder_message(
                     self._invalid_tool_call_content(cast(dict, invalid)),
                 ))
             step.directive = _CONTINUE
@@ -748,8 +895,13 @@ class _RunsTurns:
             # a model that keeps working is nudged fresh each time it next stops, with no
             # nudge counter and no ceiling.
             self._awaiting_goal_reconsideration = True
-            goal_continuation = self._prompt_loader.load("goal_continuation", {"goal": self._active_goal})
-            self._conversation.append(self._harness_note_message(goal_continuation))
+            # The threshold is rendered from the same setting anything else would read, so the
+            # number the model is told and the number in the configuration cannot drift apart.
+            goal_continuation = self._prompt_loader.load("goal_continuation", {
+                "goal": self._active_goal,
+                "blocked_turns": active_tuning().amount(Tunable.goal_blocked_turns),
+            })
+            self._conversation.append(self._reminder_message(goal_continuation))
             yield Status(code="goal_check",
             )
             step.directive = _CONTINUE

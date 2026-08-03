@@ -27,16 +27,22 @@ class Observation(BaseModel):
 
     category: Literal["decision", "fact", "artifact", "goal", "open"] = Field(
         description=(
-            "decision — a choice or approach the agent committed to; "
-            "fact — something learned about the codebase, system, or world; "
-            "artifact — a file/path/resource created or modified (record the exact path); "
-            "goal — the user's objective, preference, or constraint; "
-            "open — an unfinished thread or an agreed next step."
+            "decision — a choice that was committed to, and why it beat the alternative; "
+            "fact — something established about the codebase, system, or world, and whether it "
+            "was verified or assumed; "
+            "artifact — a file, path, command or resource created, changed, or found to matter "
+            "(record the exact identifier); "
+            "goal — an objective or constraint, and what it rules out; "
+            "open — work unfinished, agreed but not done, or blocked, with its next concrete step."
         )
     )
     detail: str = Field(
-        description="A terse, information-dense note. Record outcomes and state, and keep "
-        "concrete identifiers (paths, ids, names, commands, numbers) exact."
+        description=(
+            "One dense note written for a model that will resume this work with no memory of "
+            "the turns behind it. State outcomes, not narration. Keep every concrete identifier "
+            "— paths, ids, names, commands, numbers, versions, error codes — exactly as written, "
+            "and keep measurements as measurements: they cannot be re-derived by thinking."
+        )
     )
 
 
@@ -196,12 +202,45 @@ def _cap_model_result_payload(result: str, *, code: str = "tool_result_truncated
     for key in sorted(kept, key=lambda key: len(compact(kept[key])), reverse=True):
         if not over(kept) or not isinstance(kept[key], str):
             continue
-        elsewhere = count_tokens(rendered_with({k: v for k, v in kept.items() if k != key}))
+        elsewhere = count_tokens(rendered_with(
+            {other: value for other, value in kept.items() if other != key}
+        ))
         excerpt, clipped = clip_to_tokens(kept[key], max(1, budget - elsewhere))
         if clipped:
             omitted[f"{key} (clipped)"] = len(kept[key]) - len(excerpt)
             kept[key] = excerpt
     return rendered_with(kept)
+
+
+def message_tokens(message: Any) -> int:
+    """How much of the context window one conversation message occupies.
+
+    Counts what is actually *sent*, which is more than the message's prose. A turn that calls
+    tools carries most of its weight in the tool calls' arguments and the results that come back,
+    and a sizing routine that read only text blocks would look at a conversation of a hundred
+    shell results and see almost nothing. That undercount is not academic: it is measured against
+    the model's window to decide whether to fold history, and a fold that never triggers is how a
+    context reaches the wall.
+
+    An approximation either way — the encoding is one general tokenizer standing in for every
+    model's own, and the provider's own framing is not modelled — so it is right for deciding
+    *when* a conversation has grown too large, and not for deciding whether one more token fits.
+    """
+    from frank.base.message_content import message_text
+
+    total = count_tokens(message_text(message))
+    for tool_call in getattr(message, "tool_calls", None) or []:
+        arguments = tool_call.get("args")
+        total += count_tokens(
+            arguments if isinstance(arguments, str) else compact(arguments)
+        )
+        total += count_tokens(str(tool_call.get("name") or ""))
+    return total
+
+
+def conversation_tokens(messages: Any) -> int:
+    """:func:`message_tokens` over a whole message list."""
+    return sum(message_tokens(message) for message in messages)
 
 
 def _utc_timestamp(datetime_value: datetime) -> str:
@@ -358,6 +397,11 @@ class _PreflightGate:
     # ``arguments["explanation"]``, which is why the model wants the call at all. A person
     # deciding wants both: what is being attempted, and what made it stop here.
     explanation: str = ""
+    # Why approval is needed, as facts rather than as a sentence, so the client writes the
+    # prose in its own language. Set where the harness itself is the reason; left unset where
+    # the reason is somebody's prose — a classifier's verdict or the model's own words — which
+    # no catalogue could translate anyway.
+    reason: Any = None
     risk: str = ""
     questions: list = field(default_factory=list)
     # A bash command approval remembers an "always allow" as a session rule.
@@ -366,6 +410,11 @@ class _PreflightGate:
     deny_message: str = ""
     # For an egress gate, the remote agent name (an "always allow" is remembered).
     egress_agent: str = ""
+    # For an access gate, the widening being asked for. Carried on the gate so that approving it
+    # records the grant, rather than the resolver having to reconstruct from the arguments what
+    # the preflight already parsed — two parses of one request is two chances to disagree about
+    # what the person actually approved.
+    access_request: Any = None
 
     def to_dict(self) -> dict:
         return {

@@ -27,8 +27,9 @@ import { toaster } from "@/components/ui/toaster";
 import { swallowed } from "@/lib/swallowed";
 import { useTranslations } from "next-intl";
 import { asArray, asRecord } from "@/lib/coerce";
-import type { WireEvent } from "@/lib/generated/events";
+import type { PrefixDivergence, WireEvent } from "@shared/generated/events";
 import { errorMessage } from "@/lib/errors";
+import { clientIdentifier } from "@/lib/identifier";
 
 // Re-export the A2A task shape so components can consume it from one place.
 export type A2ATurn = A2ATurnWire;
@@ -82,11 +83,6 @@ export interface MessageMeta {
   messagesAfter?: number;
   durationMs?: number;
   attachments?: MessageAttachment[];
-  // On a `thinking` row: this one was opened by the client the moment the turn was sent,
-  // before the session had said anything. It becomes a real reasoning row if reasoning
-  // arrives, and is removed if the turn produces anything else first — so the wait is
-  // visible without inventing a thinking phase that never happened.
-  opening?: boolean;
   // On a `peer` message: which session sent it. The transcript shows a report as coming
   // from somewhere, and "somewhere" has an id.
   peerSender?: string;
@@ -116,6 +112,9 @@ export interface TokenUsage {
   outputTokens: number;
   totalTokens: number;
   cacheReadTokens: number;
+  // What a cache could have returned this session — the denominator `cacheReadTokens` means
+  // something against. See the composer's usage tooltip.
+  cacheReachableTokens: number;
   reasoningTokens: number;
   modelCalls: number;
   // Current context occupancy — the latest call's prompt (system + history + turn)
@@ -126,6 +125,14 @@ export interface TokenUsage {
   contextInputTokens: number;
   contextOutputTokens: number;
   contextWindow: number;
+  // What the latest call's cache actually did, and why. A running total cannot say which call
+  // missed, and that is the whole question — a session reading 2% overall was one partial hit
+  // and five outright misses. `prefixIntact` with `contextCacheReadTokens` at zero means the
+  // request was byte-identical as far as it went and the provider missed anyway.
+  contextCacheReadTokens: number;
+  reachableTokens: number;
+  prefixIntact: boolean;
+  divergence: PrefixDivergence | null;
 }
 
 // A turn's input: typed prose plus any structured payloads, which travel as DataParts
@@ -220,7 +227,6 @@ function friendlyErrorFromPart(part: A2APart | undefined): FriendlyError | null 
 }
 
 function pushErrorMessage(state: ReduceState, error: FriendlyError, sourceId?: string): void {
-  state.lane = null;
   state.messages = [
     ...state.messages,
     {
@@ -275,7 +281,6 @@ function mergeMcpFinalResult(existing: unknown, finalResult: unknown): unknown {
 interface ReduceState {
   messages: ChatMessage[];
   tasks: ChatTask[];
-  lane: string | null; // id of the open assistant prose block, if any
   tokenUsage: TokenUsage | null; // latest cumulative token totals, if any reported
   // Per-source occurrence counter so every rendered message gets a key derived
   // from the stable server messageId (not its array position). This is what lets
@@ -320,7 +325,6 @@ function newReduceState(): ReduceState {
   return {
     messages: [],
     tasks: [],
-    lane: null,
     tokenUsage: null,
     keyCounts: new Map(),
   };
@@ -328,11 +332,11 @@ function newReduceState(): ReduceState {
 
 // A stable, position-independent id for a rendered message. Derived from the
 // originating A2A messageId plus an occurrence counter (a single message can open
-// more than one prose lane, e.g. text → tool call → text), so re-replaying the
+// more than one prose block, e.g. text → tool call → text), so re-replaying the
 // transcript with older pages prepended keeps every existing key byte-identical.
 // Falls back to a position-based id only when no messageId is available.
 function toolCallMessageId(toolCallId: string | undefined): string {
-  return `toolcall-${toolCallId || crypto.randomUUID()}`;
+  return `toolcall-${toolCallId || clientIdentifier()}`;
 }
 
 function stableMessageId(state: ReduceState, prefix: string, sourceId: string | undefined): string {
@@ -347,9 +351,31 @@ function stableMessageId(state: ReduceState, prefix: string, sourceId: string | 
     state.keyCounts.set("", issued + 1);
     return `${prefix}-anon-${issued}`;
   }
-  const seen = state.keyCounts.get(sourceId) ?? 0;
-  state.keyCounts.set(sourceId, seen + 1);
-  return `${prefix}-${sourceId}-${seen}`;
+  // A message that has an id *is* that id, and the row is the same row every time it is
+  // reduced. The counter that used to be appended here made identity depend on how many
+  // times a reducer happened to see the message: the copy rendered optimistically on send
+  // and the copy that came back from the server carried the same `messageId` and still
+  // landed on two different keys, so the transcript showed the message twice until a replay
+  // rebuilt the state from scratch and it collapsed back to one.
+  //
+  // Deterministic here, and idempotent at the insert (see `upsertMessage`). Together those
+  // two make a duplicate unrepresentable rather than merely unlikely — whichever path
+  // reduces the message, and however many times.
+  return `${prefix}-${sourceId}`;
+}
+
+function upsertMessage(state: ReduceState, message: ChatMessage): void {
+  // Replace in place when the row already exists, append when it does not. The transcript is
+  // a projection of messages the server owns, and the same message arriving twice — once
+  // optimistically, once echoed — must converge on one row rather than accumulate.
+  const index = state.messages.findIndex((existing) => existing.id === message.id);
+  if (index === -1) {
+    state.messages = [...state.messages, message];
+    return;
+  }
+  state.messages = state.messages.map((existing, position) =>
+    position === index ? { ...existing, ...message, meta: { ...existing.meta, ...message.meta } } : existing
+  );
 }
 
 function asChatTask(value: unknown): ChatTask | null {
@@ -381,33 +407,22 @@ function isRunningThinkingMessage(message: ChatMessage): boolean {
   return message.role === "thinking" && message.meta?.status === "running";
 }
 
-// A thinking row the client opened on send, which the session has not yet claimed by
-// reasoning into it. It is a statement about the client waiting, not about the model, so it
-// is dropped rather than closed when the turn turns out to have gone somewhere else.
-function isOpeningPlaceholder(message: ChatMessage): boolean {
-  return isRunningThinkingMessage(message) && !!message.meta?.opening && message.content === "";
-}
-
 function finishRunningThinking(state: ReduceState): void {
-  state.messages = state.messages
-    .filter((message) => !isOpeningPlaceholder(message))
-    .map((message) =>
-      isRunningThinkingMessage(message)
-        ? { ...message, meta: { ...message.meta, status: "done" } }
-        : message
-    );
+  state.messages = state.messages.map((message) =>
+    isRunningThinkingMessage(message)
+      ? { ...message, meta: { ...message.meta, status: "done" } }
+      : message
+  );
 }
 
 // Close the in-flight thinking message and record the server-measured duration,
 // so the indicator flips from "Thinking" to "Thought for Ns".
 function finishRunningThinkingWithDuration(state: ReduceState, durationMs: number): void {
-  state.messages = state.messages
-    .filter((message) => !isOpeningPlaceholder(message))
-    .map((message) =>
-      isRunningThinkingMessage(message)
-        ? { ...message, meta: { ...message.meta, status: "done", durationMs } }
-        : message
-    );
+  state.messages = state.messages.map((message) =>
+    isRunningThinkingMessage(message)
+      ? { ...message, meta: { ...message.meta, status: "done", durationMs } }
+      : message
+  );
 }
 
 // Open the "Thinking" row the moment a turn is sent, before anything comes back.
@@ -418,23 +433,23 @@ function finishRunningThinkingWithDuration(state: ReduceState, durationMs: numbe
 // a send that had not registered. The row carries no claim about the model; it says the turn is
 // under way, which is true from the instant it is sent. Reasoning that arrives flows into this
 // same row, so nothing jumps when it does.
-function beginOpeningThinking(state: ReduceState): void {
-  if (state.messages.some(isRunningThinkingMessage)) return;
-  state.messages = [
-    ...state.messages,
-    {
-      id: `status-${state.messages.length}`,
-      role: "thinking",
-      content: "",
-      timestamp: new Date().toISOString(),
-      meta: { status: "running", opening: true },
-    },
-  ];
-}
-
+// Close the tool cards that were still spinning when the turn ended, so a card cannot
+// outlive its turn.
+//
+// `input_required` is deliberately NOT swept, and that is the whole point of this function
+// having a narrow rule. A suspension *is* how a turn ends: the turn parks, the stream closes,
+// and this runs — so sweeping a pending decision to `completed` erased the prompt a person
+// was being asked to answer, seconds after it appeared and before they could reach it. The
+// gate stayed open on the daemon, so the session was then stuck on a question with no card,
+// and only reopening the session brought it back, because replay rebuilds it from the
+// persisted turn.
+//
+// A spinner and a question are not the same thing. A spinner has nobody left to finish it
+// once the stream is gone; a question is waiting for a person and stays valid until they
+// answer it or Stop settles it, which the Stop path does explicitly.
 function finishActiveTools(state: ReduceState): void {
   state.messages = state.messages.map((message) =>
-    message.role === "tool_call" && (message.meta?.status === "running" || message.meta?.status === "input_required")
+    message.role === "tool_call" && message.meta?.status === "running"
       ? { ...message, meta: { ...message.meta, status: "completed" } }
       : message
   );
@@ -457,7 +472,7 @@ function applyThinking(state: ReduceState, text: string): void {
   // reasoning phase and stops being provisional — even for a bare ping with no text yet.
   state.messages = state.messages.map((message, messageIndex) =>
     messageIndex === index
-      ? { ...message, content: message.content + text, meta: { ...message.meta, opening: undefined } }
+      ? { ...message, content: message.content + text }
       : message
   );
 }
@@ -496,11 +511,16 @@ function appendAssistantContentBlock(
     throw new Error("Assistant messages require structured content blocks.");
   }
   const existingContentBlocks = message.contentBlocks;
-  const lastContentBlockIndex = existingContentBlocks.length - 1;
-  const lastContentBlock = existingContentBlocks[lastContentBlockIndex];
-  const contentBlocks = lastContentBlock?.identifier === blockIdentifier
+  // Merged by identity, not by position. The identifier names one block the provider is
+  // writing, and a later delta for it belongs in it wherever it has ended up — matching only
+  // the *last* block meant a delta that arrived after any other block had opened was filed as
+  // a second block under a name already taken.
+  const existingIndex = existingContentBlocks.findIndex(
+    (contentBlock) => contentBlock.identifier === blockIdentifier
+  );
+  const contentBlocks = existingIndex >= 0
     ? existingContentBlocks.map((contentBlock, contentBlockIndex) =>
-        contentBlockIndex === lastContentBlockIndex
+        contentBlockIndex === existingIndex
           ? { ...contentBlock, content: contentBlock.content + text }
           : contentBlock
       )
@@ -508,29 +528,50 @@ function appendAssistantContentBlock(
   return { ...message, content: message.content + text, contentBlocks };
 }
 
+/**
+ * The message already holding this block of prose, if there is one.
+ *
+ * Prose is grouped by the identity the model gives it, and by nothing else. An identifier names
+ * one block of text a model call is writing: every delta of it carries the same one, and no two
+ * blocks share one. So a delta whose identifier is already on screen belongs in that message,
+ * however many reasoning deltas, statuses or tool calls arrived in between.
+ *
+ * This replaced a mutable "is a prose message open" flag that ten different events cleared. It
+ * was a guess about ordering standing in for an identity that was right there, and it guessed
+ * wrong whenever the provider interleaved anything mid-sentence: the tail of the sentence became
+ * a second bubble, landing on its own line or below the tool calls that followed it. Only a
+ * reload put it right, because replay rebuilds prose from the finished artifact rather than from
+ * the deltas — which is the clearest sign the deltas were being grouped by the wrong thing.
+ */
+function messageHoldingBlock(state: ReduceState, blockIdentifier: string): string | null {
+  const owner = state.messages.findLast(
+    (message) => message.role === "assistant"
+      && message.contentBlocks?.some((block) => block.identifier === blockIdentifier)
+  );
+  return owner?.id ?? null;
+}
+
 function pushAssistantText(state: ReduceState, text: string, blockIdentifier: string, sourceId?: string): void {
   if (!text) return;
   if (!blockIdentifier) throw new Error("Assistant text requires a content-block identity.");
   finishRunningThinking(state);
-  if (state.lane === null) {
-    const id = stableMessageId(state, "asst", sourceId);
-    state.lane = id;
-    state.messages = [
-      ...state.messages,
-      {
-        id,
-        role: "assistant",
-        content: text,
-        contentBlocks: [{ identifier: blockIdentifier, content: text }],
-        timestamp: new Date().toISOString(),
-      },
-    ];
-  } else {
-    const laneId = state.lane;
+  const owner = messageHoldingBlock(state, blockIdentifier);
+  if (owner !== null) {
     state.messages = state.messages.map((message) =>
-      message.id === laneId ? appendAssistantContentBlock(message, text, blockIdentifier) : message
+      message.id === owner ? appendAssistantContentBlock(message, text, blockIdentifier) : message
     );
+    return;
   }
+  state.messages = [
+    ...state.messages,
+    {
+      id: stableMessageId(state, "asst", sourceId),
+      role: "assistant",
+      content: text,
+      contentBlocks: [{ identifier: blockIdentifier, content: text }],
+      timestamp: new Date().toISOString(),
+    },
+  ];
 }
 
 // Normalize the attachments carried by an `attachments` data payload into the lean
@@ -577,21 +618,17 @@ function reduceInboundMessage(state: ReduceState, message: A2AMessage, peerSende
   // messages, so they never reach this path at all.) A typed user turn always carries
   // prose; an attachment-only turn carries chips.
   if (!text.trim() && attachments.length === 0) return;
-  state.lane = null;
   const meta = {
     ...(attachments.length > 0 ? { attachments } : {}),
     ...(peerSender ? { peerSender } : {}),
   };
-  state.messages = [
-    ...state.messages,
-    {
-      id: stableMessageId(state, peerSender ? "peer" : "user", message.messageId),
-      role: peerSender ? "peer" : "user",
-      content: text,
-      timestamp: new Date().toISOString(),
-      ...(Object.keys(meta).length > 0 ? { meta } : {}),
-    },
-  ];
+  upsertMessage(state, {
+    id: stableMessageId(state, peerSender ? "peer" : "user", message.messageId),
+    role: peerSender ? "peer" : "user",
+    content: text,
+    timestamp: new Date().toISOString(),
+    ...(Object.keys(meta).length > 0 ? { meta } : {}),
+  });
 }
 
 // The single reduction of one part. Replay walks a stored message's parts through this;
@@ -618,7 +655,7 @@ function steeringTextFromPart(part: A2APart | undefined): string {
 
 function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourceId?: string): void {
   // Every event on this stream belongs to this session. A peer is a session of its own
-  // with its own stream, so there is no longer a foreign lane to route away.
+  // with its own stream, so there is no longer a foreign transcript to route away.
   // The one typed reader of a root wire event: switch on the generated union's
   // discriminant so a renamed kind or field is a compile error, not a silent "".
   // `data` stays in scope for the few helpers that take a raw record.
@@ -627,10 +664,41 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
     case "steering": {
       const text = (event.text ?? "").trim();
       if (!text) break;
-      state.lane = null;
+      // Delivered once, however many times it arrives.
+      //
+      // A steering message reaches the transcript through an event on the *agent* stream, and
+      // that stream is re-read: attaching to a session replays the turns it already holds, so
+      // the same event is reduced again when the next turn opens. Every other event survives
+      // that — a tool row replaces the row with its id, assistant text is rebuilt from the
+      // artifact — but this one appended, so the message a person had steered with appeared a
+      // second time under a fresh key, one turn later.
+      //
+      // Keyed on the id this client gave the message when it sent it, which the session now
+      // echoes back. That is what makes the live copy and the persisted copy one message: a
+      // replay of the turn rebuilds the list from the server's own record, and the entry it
+      // produces lands on the same key rather than beside it. Keying on the text meant the two
+      // were different messages that happened to read alike, so both were on screen until the
+      // rebuild dropped one — visible as a duplicate that flickered away.
+      //
+      // The fallback is the old rule, for a steering message this client did not send: keyed on
+      // the arrival *and* the text, since two drained into one opening are genuinely two while a
+      // replay repeats both together.
+      const identifier = (event.message_id ?? "").trim();
+      const alreadyShown = identifier
+        ? state.messages.some((message) => message.id === `user-${identifier}`)
+        : state.messages.some(
+          (message) => message.role === "user" && message.content === text
+            && !!sourceId && message.id.startsWith(`user-${sourceId}-`),
+        );
+      if (alreadyShown) break;
       state.messages = [
         ...state.messages,
-        { id: stableMessageId(state, "user", sourceId), role: "user", content: text, timestamp: new Date().toISOString() },
+        {
+          id: identifier ? `user-${identifier}` : stableMessageId(state, "user", sourceId),
+          role: "user",
+          content: text,
+          timestamp: new Date().toISOString(),
+        },
       ];
       break;
     }
@@ -638,7 +706,6 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       // A context-compaction marker: "started" shows a live compacting indicator,
       // "done" turns it into the separator (or, when nothing was compacted, drops
       // it). Renders as a full-width divider — not an assistant/user bubble.
-      state.lane = null;
       if (event.status === "started") {
         state.messages = [
           ...state.messages,
@@ -693,12 +760,17 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
         outputTokens: cumulative?.output_tokens ?? 0,
         totalTokens: cumulative?.total_tokens ?? 0,
         cacheReadTokens: cumulative?.cache_read_tokens ?? 0,
+        cacheReachableTokens: cumulative?.reachable_tokens ?? 0,
         reasoningTokens: cumulative?.reasoning_tokens ?? 0,
         modelCalls: cumulative?.model_calls ?? 0,
         contextInputTokens,
         contextOutputTokens,
         contextTokens: contextInputTokens + contextOutputTokens,
         contextWindow: event.context_window ?? 0,
+        contextCacheReadTokens: event.cache_read_tokens ?? 0,
+        reachableTokens: event.reachable_tokens ?? 0,
+        prefixIntact: event.prefix_intact ?? false,
+        divergence: event.divergence ?? null,
       };
       break;
     }
@@ -710,22 +782,20 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       if (event.code === "waiting_for_tools") finishRunningThinking(state);
       // A status (e.g. goal_check between answer attempts) ends the current prose
       // block, so the next text starts its own message instead of concatenating.
-      state.lane = null;
       break;
     }
     case "thinking":
       // A new reasoning phase ends the current prose block — without this, text
       // emitted after a mid-turn think (or a control tool) merges into the prior
       // message and the thinking card lands out of order.
-      state.lane = null;
       applyThinking(state, event.text ?? "");
       break;
     case "thinking_done":
       finishRunningThinkingWithDuration(state, event.duration_ms ?? 0);
       break;
     case "tool_call": {
-      // Every tool call breaks the prose lane so surrounding text doesn't run together.
-      state.lane = null;
+      // Text either side of a tool call is separate prose, and says so: the model gives
+      // each block its own identity, so nothing here has to force the split.
       finishRunningThinking(state);
       const toolCallId = event.tool_call_id;
       // One row per tool call, always. This used to append unconditionally, which is only
@@ -767,7 +837,6 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
     }
     case "tool_result": {
       finishRunningThinking(state);
-      state.lane = null;
       const toolName = event.tool_name;
       const toolCallId = event.tool_call_id;
       const currentMessage = state.messages.find((message) => messageMatchesToolEvent(message, toolName, toolCallId));
@@ -818,6 +887,9 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       const permission = {
         requestId: event.request_id,
         explanation: event.explanation || undefined,
+        // The harness's own reason, as facts. Rendered into a sentence by whoever draws the
+        // prompt, in the language they are drawing it in.
+        reason: event.reason ?? undefined,
         risk: event.risk || undefined,
       };
       const attachedPermission = state.messages.some(
@@ -897,7 +969,6 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
     }
     case "warning": {
       finishRunningThinking(state);
-      state.lane = null;
       const title = event.title ?? "Warning";
       const message = event.message ?? "";
       state.messages = [
@@ -930,19 +1001,22 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
 // already compacted server-side (adjacent same-kind deltas merged), so it is reduced
 // as-is — no client-side compaction pass. Tasks that reference another task are a
 // peer's work, not this session's turns, and are filtered out: a peer is its own
-// session with its own transcript, never a lane inside this one.
+// session with its own transcript, never a branch inside this one.
 function replayTurns(turns: A2ATurn[]): {
   messages: ChatMessage[];
   tasks: ChatTask[];
   tokenUsage: TokenUsage | null;
   keyCounts: Map<string, number>;
 } {
-  const mainTurns = turns
-    .filter((turn) => !(turnState(turn).referenceTurnIds ?? []).length)
-    .sort((first, second) => String(first.status?.timestamp ?? "").localeCompare(String(second.status?.timestamp ?? "")));
+  // Left in the order the server sent them, which is the order they *began* — it sorts each
+  // turn by where its first message landed in the append-only history, and that append order is
+  // the chronology. Re-sorting here by `status.timestamp` sorted by when each turn *ended*
+  // instead, and the two disagree whenever turns overlap: a short turn that starts later can
+  // finish first, and did — a session was replayed with its final answer at the top and every
+  // tool call after it, because the turn holding them took nineteen seconds longer to close.
+  const mainTurns = turns.filter((turn) => !(turnState(turn).referenceTurnIds ?? []).length);
   const state: ReduceState = newReduceState();
   for (const turn of mainTurns) {
-    state.lane = null;
     // A turn's full message stream is its history PLUS its trailing status
     // message: the A2A TaskManager keeps the latest message on `status.message`
     // and only folds it into `history` on the *next* status update. A turn
@@ -1089,7 +1163,6 @@ export function useChat(
     stateRef.current = {
       messages: replayed.messages,
       tasks: replayed.tasks,
-      lane: null,
       tokenUsage: replayed.tokenUsage,
       keyCounts: replayed.keyCounts,
     };
@@ -1275,7 +1348,6 @@ export function useChat(
       if (rendersIdentically(stateRef.current.messages, replayed.messages)) {
         stateRef.current.tasks = replayed.tasks;
         stateRef.current.tokenUsage = replayed.tokenUsage;
-        stateRef.current.lane = null;
         sessionIdRef.current = initialSessionId;
         setSessionId(initialSessionId);
         flushNow();
@@ -1284,7 +1356,6 @@ export function useChat(
       stateRef.current = {
         messages: replayed.messages,
         tasks: replayed.tasks,
-        lane: null,
         tokenUsage: replayed.tokenUsage,
         keyCounts: replayed.keyCounts,
       };
@@ -1368,25 +1439,26 @@ export function useChat(
 
   const runStream = useCallback(
     (input: ChatInput) => {
-      // Optimistic input message + reset the open prose lane.
-      stateRef.current.lane = null;
-      const userMessageId = crypto.randomUUID();
+      // Optimistic input message.
+      const userMessageId = clientIdentifier();
       const dataParts = input.dataParts ?? [];
       const attachments = dataParts.flatMap((dataPart) => attachmentsFromData(dataPart));
       const meta = attachments.length > 0 ? { attachments } : {};
-      stateRef.current.messages = [
-        ...stateRef.current.messages,
-        {
-          id: stableMessageId(stateRef.current, "user", userMessageId),
-          role: "user",
-          content: input.text,
-          timestamp: new Date().toISOString(),
-          ...(Object.keys(meta).length > 0 ? { meta } : {}),
-        },
-      ];
-      // Opened in the same paint as the user's own message, so the turn is visibly under way
-      // from the keystroke rather than from the model's first token.
-      beginOpeningThinking(stateRef.current);
+      // Keyed by the id this send will carry, so the echo lands on this row rather than
+      // beside it. The optimistic copy is a *preview* of a message the server owns, not a
+      // second message, and giving it the server's identity is what makes it one.
+      upsertMessage(stateRef.current, {
+        id: stableMessageId(stateRef.current, "user", userMessageId),
+        role: "user",
+        content: input.text,
+        timestamp: new Date().toISOString(),
+        ...(Object.keys(meta).length > 0 ? { meta } : {}),
+      });
+      // No thinking row is opened here. The session says when it is thinking, and until it
+      // does, the honest answer is that it has not started. A row invented from the keystroke
+      // made the interface claim reasoning that no model had begun — and on a turn that
+      // opened with a tool call rather than reasoning, it claimed something that never
+      // happened at all. Stop and the composer already say a turn is under way.
       flush();
 
       isStreamingRef.current = true;
@@ -1412,7 +1484,6 @@ export function useChat(
         // back up if the harness wakes it on its own.
         attachRef.current?.abort();
         attachRef.current = null;
-        stateRef.current.lane = null;
         // A clean turn already settled its cards from the events it emitted; but a Stop, or
         // a connection that drops mid-turn (daemon stall, network loss), ends it with no
         // terminal event, which would otherwise leave every in-flight tool/thinking card
@@ -1467,10 +1538,17 @@ export function useChat(
             // We are driving, so our own state already includes the message we just
             // sent and replacing it would drop it from view until it persists.
             if (frame.kind !== "live") return;
-            acknowledgeSteering(steeringTextFromPart(frame.part));
+            const steered = steeringTextFromPart(frame.part);
+            acknowledgeSteering(steered);
             notifyTurnError(frame.part);
             reduceAgentPart(stateRef.current, frame.part);
-            flush();
+            // A steered message moves from the composer's queue into the transcript, and those
+            // are two pieces of state. The ordinary flush defers to the next animation frame,
+            // so the chip vanished in one commit and the message appeared in the next — one
+            // frame in which the message was in both places, or in neither. Flushing this one
+            // synchronously puts both updates in the same commit, which is what makes the
+            // handoff a move rather than a flicker.
+            if (steered) flushNow(); else flush();
           },
           finishTurn,
         );
@@ -1516,7 +1594,7 @@ export function useChat(
         }
       })();
     },
-    [agent, workingDirectory, worktreeStrategy, permissionMode, workspaceId, flush, setQueue, acknowledgeSteering, notifyTurnError]
+    [agent, workingDirectory, worktreeStrategy, permissionMode, workspaceId, flush, flushNow, setQueue, acknowledgeSteering, notifyTurnError]
   );
 
   useEffect(() => {
@@ -1528,7 +1606,7 @@ export function useChat(
       const trimmed = text.trim();
       if (!trimmed) return Promise.resolve();
       if (isStreamingRef.current) {
-        const pending = { id: crypto.randomUUID(), text: trimmed, steering: false, dataParts };
+        const pending = { id: clientIdentifier(), text: trimmed, steering: false, dataParts };
         const context = sessionIdRef.current;
         // Steering is no longer a separate call: a message to a live session is sent the
         // same way as any other and injected at the next safe point. The chip says so

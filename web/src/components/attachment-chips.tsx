@@ -132,7 +132,11 @@ function AttachmentLightbox({
       <Portal>
         <Dialog.Backdrop />
         <Dialog.Positioner>
-          <Dialog.Content maxW="min(1100px, 92vw)" maxH="90vh" overflow="hidden">
+          <Dialog.Content
+            maxW={{ base: "100%", sm: "min(1100px, 92vw)" }}
+            maxH={{ base: "100dvh", sm: "90vh" }}
+            overflow="hidden"
+          >
             <Dialog.Header display="flex" alignItems="center" gap={2} position="relative">
               <Dialog.Title textStyle="panelTitle" truncate>{attachment.filename}</Dialog.Title>
               <Flex align="center" gap={2} ml="auto">

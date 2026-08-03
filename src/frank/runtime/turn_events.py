@@ -132,6 +132,21 @@ class Usage(TurnEvent):
     reasoning_tokens: int = 0
     context_window: int = 0
     cumulative: dict[str, Any] = field(default_factory=dict)
+    #: Whether every byte this request shared with the last one was unchanged. Recorded because
+    #: it is what makes `cache_read_tokens` interpretable: intact with a read of zero means the
+    #: provider missed a prefix it had already been sent, which no different request would fix.
+    prefix_intact: bool = False
+    #: How much of the prefix was unchanged, and so could have come from cache — the ceiling on
+    #: `cache_read_tokens`. An estimate: counted with this harness's tokenizer, not the
+    #: provider's.
+    reachable_tokens: int = 0
+    #: How many segments the request had, and how many of them the previous request already
+    #: carried unchanged — the same measurement `reachable_tokens` counts, in pieces.
+    segments: int = 0
+    shared_segments: int = 0
+    #: The segment that moved, when one did: its position, what is there now, what was there
+    #: before, and whether it stayed put and was rewritten. Fields, not a sentence.
+    divergence: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -178,6 +193,8 @@ class DeniedInjection(TurnEvent):
 class Steering(TurnEvent):
     TYPE = EventType.STEERING
     text: str = ""
+    #: The id the sender gave it, so a client can match this against the message it already has.
+    message_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -196,7 +213,15 @@ class CompactionDone(TurnEvent):
     messages_before: int = 0
     messages_after: int = 0
     tokens_before: int = 0
+    # What the fold actually reclaimed. Reported by every strategy, including a supplied one —
+    # which used to pass this and crash on it, because the field had been written at the call
+    # site and never added here, and no test drove a supplied strategy to its end.
+    tokens_after: int = 0
     observations_added: int = 0
+    # How large the memory itself has become. Reported because the whole schedule of a long
+    # session turns on it — how often the Reflector runs, and how many times an early finding is
+    # rewritten before anyone reads it — and it was previously a number nobody could see.
+    log_tokens: int = 0
 
 
 # The closed union of every turn event, so a consumer can dispatch with ``match`` and prove

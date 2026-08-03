@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import type { NextConfig } from "next";
 
 // The desktop app (Tauri) bundles the UI as a static export — Tauri serves the
@@ -23,7 +25,26 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
-  assetPrefix: isProduction ? undefined : `http://${internalHost}:${devPort}`,
+  // Absolute in dev so a Tauri window loading from `tauri://` can find the assets — but *not*
+  // when something is proxying this, where the page is already on one origin and an absolute
+  // `localhost:3000` is a machine the phone holding it does not have. `frank reach --interface`
+  // sets this.
+  assetPrefix: isProduction || process.env.FRANK_PROXY_ENABLED ? undefined : `http://${internalHost}:${devPort}`,
+  // `shared/` sits beside `web/`, not inside it, because the phone imports it too. Next resolves
+  // modules from the project directory down, so both halves of this are needed: the root widens
+  // what the bundler will look at, and the alias is what `@shared/...` means. TypeScript is told
+  // separately, in `tsconfig.json` — the two have to agree, and neither reads the other.
+  turbopack: {
+    root: path.resolve(__dirname, ".."),
+    resolveAlias: {
+      "@shared": path.resolve(__dirname, "../shared"),
+    },
+  },
+  // Next's dev badge is a floating button it injects into the running app. On a desktop it sits
+  // in a corner nobody is using; on a phone, where the interface is the whole screen, it lands on
+  // top of the composer — and `frank reach --interface` puts a dev server in front of a device
+  // for exactly the work where that matters. It reports nothing this project reads.
+  devIndicators: false,
   experimental: {
     optimizePackageImports: ["@chakra-ui/react"],
   },

@@ -29,9 +29,10 @@ type Draft = {
   prompt: string;
   agent: string;
   // Starts at manual approvals — the same mode a new session starts under, and the most
-  // restrictive of the three that can still do work. The daemon refuses a schedule with no
-  // mode at all, so this field is never empty; the hint beside the control is what says why
-  // the choice matters for a run nobody is watching.
+  // restrictive of the ones that can still do work. Which matters more here than anywhere
+  // else: a schedule runs with nobody watching, so a mode that asks is a mode that stalls.
+  // The daemon refuses a schedule with no mode at all, so this field is never empty; the hint
+  // beside the control is what says why the choice matters for an unattended run.
   permissionMode: PermissionMode;
   timezone: string;
 };
@@ -222,7 +223,7 @@ export function ScheduleForm({
           agents={agents}
           value={draft.agent}
           onChange={(next) => setDraft({ ...draft, agent: next })}
-          placeholder={translation("agentPlaceholder")}
+          placeholder={translation("labelAgent")}
         />
       </ScheduleField>
 
@@ -232,7 +233,7 @@ export function ScheduleForm({
         <PermissionModeControl
           layout="field"
           value={draft.permissionMode}
-          onChange={(next) => setDraft({ ...draft, permissionMode: next })}
+          onChange={(next) => { if (next) setDraft({ ...draft, permissionMode: next }); }}
         />
       </ScheduleField>
 

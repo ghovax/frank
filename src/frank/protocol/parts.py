@@ -18,6 +18,7 @@ from a2a.types import DataPart, FilePart, Part, TextPart
 from frank.base.message_content import content_block_metadata
 from frank.base.models import find_model
 from frank.base.paths import uploads_directory
+from frank.base.serialization import compact
 from frank.protocol.events import (
     ToolCallEvent,
     ToolMetadata,
@@ -146,6 +147,40 @@ def _image_content_block(attachment: dict) -> Optional[dict]:
     return {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{encoded}"}}
 
 # Each agent profile is served as its own A2A agent under this prefix.
+
+
+def compose_turn_input(
+    user_text: str, structured_payloads: list[dict], model_identifier: str,
+) -> tuple[object, int]:
+    """What the model reads for a turn that carries attachments, and how many images were
+    left out.
+
+    Returns the turn input — a JSON string, or a list of content blocks when images are
+    inlined — and the number of images that could not be inlined because the model does not
+    advertise vision. The caller decides what to do about that count; the daemon raises a
+    warning event, and a library caller may not have anywhere to raise one.
+
+    Extracted from the worker because a library session composes exactly the same thing. Left
+    where it was, attaching a file was reachable only by posting to the daemon's socket, and
+    the harness's own front door could not do what its client could.
+    """
+    # The metadata always rides along as text, so the model can act on the attachments with
+    # its file tools whether or not it can see them.
+    text_payload = compact({"text": user_text, "data_parts": structured_payloads})
+    images = _image_attachments(structured_payloads)
+    if not images:
+        return text_payload, 0
+    if not _model_supports_vision(model_identifier):
+        return text_payload, len(images)
+    blocks = [block for image in images if (block := _image_content_block(image)) is not None]
+    if not blocks:
+        return text_payload, 0
+    return [{"type": "text", "text": text_payload}, *blocks], 0
+
+
+def attachment_payload(attachments: list[dict]) -> dict:
+    """The structured payload an ``attachments`` DataPart carries."""
+    return {PART_KIND: "attachments", "attachments": attachments}
 
 
 def _text_part(text: str, block_identifier: str) -> Part:

@@ -37,14 +37,21 @@ from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResu
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
+from pydantic import PrivateAttr
 
 from frank.base.credentials import (
     ChatGPTAuthError,
     load_tokens,
     valid_tokens,
 )
-from frank.base.message_content import content_blocks_to_message_content, message_text
+from frank.base.message_content import (
+    REASONING_MODEL_KEY,
+    carried_reasoning_for,
+    content_blocks_to_message_content,
+    message_text,
+)
 from frank.base.model_errors import CONTEXT_OVERFLOW_CODES, ContextWindowExceeded
+from frank.runtime.cache_trace import INSTRUCTIONS, ITEM, TOOLS, Piece, RequestTrace, diagnose, trace
 from frank.base.serialization import compact, upstream_detail
 from frank.base.subscription import (
     RESPONSES_URL,
@@ -86,9 +93,17 @@ class ChatCodexModel(BaseChatModel):
     reasoning_effort: Optional[str] = None
     temperature: float = 0.0
     context_length: int = 0
+    #: The conversation this model serves, sent as ``prompt_cache_key``. See
+    #: :meth:`_build_payload`.
+    session_id: str = ""
     # A generous bound so a dead connection cannot hang a turn forever, matching
     # ChatLiteLLMModel; the streaming loop only checks aborts between chunks.
     timeout: Optional[float] = 300.0
+
+    #: The last request's segment trace, kept so the next one can be told what moved. Declared
+    #: rather than merely assigned: a leading underscore on a Pydantic model is a private
+    #: attribute, and one that is not declared cannot be set at all.
+    _previous_trace: Optional[RequestTrace] = PrivateAttr(default=None)
 
     @property
     def _llm_type(self) -> str:
@@ -144,13 +159,28 @@ class ChatCodexModel(BaseChatModel):
         standard Responses home for system text) — no Codex preamble. Tool
         calls/results become top-level ``function_call`` / ``function_call_output``
         items (Responses does not nest them in a message)."""
-        system_texts: list[str] = []
+        instructions = ""
         items: list[dict[str, Any]] = []
         for message in messages:
             if isinstance(message, SystemMessage):
                 text = self._text_of(message)
-                if text:
-                    system_texts.append(text)
+                # Only the *first* one is `instructions`, and only because that is the static
+                # prompt this harness puts at the head of every request. Everything after it
+                # stays where it was written, as a developer-role item — which is what the Codex
+                # CLI does with every piece of contextual material it sends.
+                #
+                # Joining them all was a rewrite of the first bytes of the request. Anything
+                # later in the list — the observation log, most of all — was lifted out of its
+                # position and prepended to the prompt, so a fold aimed at saving context threw
+                # away the provider's cache for the entire conversation on its way past.
+                if not instructions:
+                    instructions = text
+                elif text:
+                    items.append({
+                        "type": "message",
+                        "role": "developer",
+                        "content": [{"type": "input_text", "text": text}],
+                    })
                 continue
             if isinstance(message, ToolMessage):
                 items.append({
@@ -160,6 +190,12 @@ class ChatCodexModel(BaseChatModel):
                 })
                 continue
             if isinstance(message, AIMessage):
+                # The model's own prior thinking, handed straight back. It has to come before the
+                # calls it produced: the endpoint reads this list as the turn in the order it
+                # happened, and reasoning that arrives after the call it explains describes
+                # nothing. The blobs are opaque and encrypted — they are not read here, only
+                # carried, which is the whole of what `store: false` asks of a client.
+                items.extend(carried_reasoning_for(message, self.model).get("reasoning_items") or [])
                 text = self._text_of(message)
                 if text:
                     items.append({
@@ -177,13 +213,17 @@ class ChatCodexModel(BaseChatModel):
                         "arguments": serialized,
                     })
                 continue
-            # HumanMessage and anything else are user input.
+            # A reminder is not the user talking, and the Responses API can say so directly: a
+            # `developer` item stays exactly where it was written, unlike a system message, which
+            # this translation would fold into `instructions` at the front of the request. So the
+            # role carries the distinction here and no wrapper is needed — which is also what the
+            # Codex CLI does with every piece of contextual material it sends.
+            role = "developer" if message.additional_kwargs.get("reminder") else "user"
             items.append({
                 "type": "message",
-                "role": "user",
+                "role": role,
                 "content": [{"type": "input_text", "text": self._text_of(message)}],
             })
-        instructions = "\n\n".join(text for text in system_texts if text)
         return instructions, items
 
     @staticmethod
@@ -211,21 +251,42 @@ class ChatCodexModel(BaseChatModel):
         }
         if instructions:
             payload["instructions"] = instructions
+        # Sent whether or not there are tools, matching the Codex CLI: it is a constant in every
+        # request it builds, and a field that appears and disappears is a field that can move the
+        # bytes in front of the conversation.
+        payload["tool_choice"] = kwargs.get("tool_choice") or "auto"
         tools = kwargs.get("tools")
         if tools:
             payload["tools"] = [self._to_responses_tool(tool) for tool in tools]
-            payload["tool_choice"] = kwargs.get("tool_choice") or "auto"
-        if self.reasoning_effort:
-            payload["reasoning"] = {"effort": self.reasoning_effort, "summary": "auto"}
+        if self.session_id:
+            # Which cache to look in. The endpoint routes a cache lookup by hashing the leading
+            # couple of hundred tokens of the prefix *together with* this key, and OpenAI's own
+            # guidance for GPT-5.6 and later is that it must be set for the reliable matching to
+            # apply at all. Sending nothing is why an append-only conversation still missed: 41
+            # of 66 calls in one session reported zero cached tokens against a prefix that had
+            # not changed. One session is one conversation is one prefix.
+            payload["prompt_cache_key"] = self.session_id
+        # Both unconditional, as in the Codex CLI. `reasoning` is always present — with a null
+        # effort when none is configured — and `include` is a constant there, never gated on
+        # anything. Asking for the encrypted reasoning back is what makes `store: false` workable
+        # at all: the endpoint keeps nothing between calls, so a model not handed its own prior
+        # thinking derives it again at every tool hop, paying for the same reasoning repeatedly
+        # and losing the thread that made the last call make sense. The content is opaque here
+        # and round-trips through `_to_responses_input` untouched.
+        payload["reasoning"] = {
+            "effort": self.reasoning_effort or None, "summary": "auto",
+        }
+        payload["include"] = ["reasoning.encrypted_content"]
         return payload
 
-    @staticmethod
-    async def _headers() -> dict[str, str]:
+    async def _headers(self) -> dict[str, str]:
         """The request headers, with a freshly-valid access token.
 
-        Static because it needs nothing from the instance: the token store is per-account and
-        per-machine, not per-model."""
-        return request_headers(await valid_tokens())
+        No longer static: the headers carry this conversation's id, which the endpoint routes a
+        cache lookup by. The token store is still per-account and per-machine, and that is what
+        being static used to be justified by — but a request that cannot say which conversation
+        it belongs to cannot be sent to where that conversation's prefix already is."""
+        return request_headers(await valid_tokens(), self.session_id)
 
     @staticmethod
     def _http_error(status: int, body: str) -> Exception:
@@ -266,6 +327,21 @@ class ChatCodexModel(BaseChatModel):
             return cls._chunk(content_block=cls._text_content_block(data))
         if event_type in ("response.reasoning_summary_text.delta", "response.reasoning_text.delta"):
             return cls._chunk(content_block=cls._reasoning_content_block(data))
+        if event_type == "response.output_item.done":
+            # A finished reasoning item, kept so the next call can hand it back (see
+            # `_to_responses_input`). Only the encrypted form is worth keeping: the summary is
+            # for the reader, and it is the `encrypted_content` the endpoint will accept as the
+            # model's own thinking. Riding in `additional_kwargs` means it merges across chunks,
+            # survives persistence, and reaches a runtime rebuilt from a checkpoint.
+            item = data.get("item") or {}
+            if item.get("type") == "reasoning" and item.get("encrypted_content"):
+                return cls._chunk(reasoning_item={
+                    "type": "reasoning",
+                    "id": item.get("id"),
+                    "summary": item.get("summary") or [],
+                    "encrypted_content": item["encrypted_content"],
+                }, model=str(state.get("model") or ""))
+            return None
         if event_type == "response.output_item.added":
             item = data.get("item") or {}
             if item.get("type") == "function_call":
@@ -354,13 +430,44 @@ class ChatCodexModel(BaseChatModel):
     def _chunk(
         content_block: ContentBlock | None = None,
         tool_call_chunk: Optional[ToolCallChunk] = None,
+        reasoning_item: Optional[dict[str, Any]] = None,
+        model: str = "",
     ) -> ChatGenerationChunk:
         content_blocks = [content_block] if content_block is not None else []
         message = AIMessageChunk(
             content=content_blocks_to_message_content(content_blocks),
             tool_call_chunks=[tool_call_chunk] if tool_call_chunk else [],
+            # Merging two chunks concatenates the lists under a key, so one item per chunk
+            # accumulates into the turn's reasoning in the order it arrived. Deliberately
+            # carrying no `index`: that is the key LangChain merges list entries *by*, and these
+            # are a sequence to append to, not slots to overwrite.
+            #
+            # The model rides along because the blob is encrypted *to a model*: a session that
+            # changes model between turns must not hand the new one thinking it cannot decrypt.
+            additional_kwargs=(
+                {"reasoning_items": [reasoning_item], REASONING_MODEL_KEY: model}
+                if reasoning_item else {}
+            ),
         )
         return ChatGenerationChunk(message=message)
+
+
+    def _trace_payload(self, payload: dict[str, Any]) -> RequestTrace:
+        """Cut the outgoing request into the pieces a prompt cache matches on, in wire order.
+
+        Instructions first, then the tool schemas, then one segment per input item — which is
+        exactly how the endpoint reads a prefix, so a segment index here is an offset there.
+        """
+        pieces = [
+            Piece(kind=INSTRUCTIONS, text=payload.get("instructions") or ""),
+            Piece(kind=TOOLS, text=compact(payload.get("tools") or [])),
+        ]
+        for position, item in enumerate(payload.get("input") or []):
+            # A Responses item is identified by its type; a message item carries a role as well,
+            # and the role is the more telling of the two, so it wins where there is one.
+            pieces.append(Piece(kind=ITEM, text=compact(item), position=position,
+                                role=str(item.get("role") or item.get("type") or "")))
+        return trace(pieces)
 
     @staticmethod
     def _usage(usage: Any) -> Optional[UsageMetadata]:
@@ -386,6 +493,13 @@ class ChatCodexModel(BaseChatModel):
 
     # Streaming generation (the path the harness actually uses).
 
+
+    def _cache_diagnosis(self, current: RequestTrace) -> dict[str, object]:
+        """What this request kept from the last one, and remember it for the next."""
+        diagnosis = diagnose(current, self._previous_trace)
+        self._previous_trace = current
+        return diagnosis
+
     async def _astream(
         self,
         messages: Sequence[BaseMessage],
@@ -395,6 +509,10 @@ class ChatCodexModel(BaseChatModel):
     ) -> AsyncIterator[ChatGenerationChunk]:
         payload = self._build_payload(messages, stream=True, **kwargs)
         headers = await self._headers()
+        # Taken before the request and held until the response says what the cache did, because
+        # the figure alone cannot say *why*. See `frank.runtime.cache_trace`.
+        current_trace = self._trace_payload(payload)
+        reported = False
         # Carried so a failure can name the model that refused the request and the window it was
         # measured against — the two things that make "too large" actionable rather than a verdict.
         state: dict[str, Any] = {"saw_tool_call": False, "model": self.model,
@@ -408,6 +526,11 @@ class ChatCodexModel(BaseChatModel):
                 async for line in response.aiter_lines():
                     chunk = self._line_to_chunk(line, state)
                     if chunk is not None:
+                        # Attached to the chunk that carries usage, so the diagnosis travels
+                        # with the figure it explains and is recorded with it.
+                        if chunk.message.usage_metadata and not reported:
+                            reported = True
+                            chunk.message.additional_kwargs["cache_trace"] = self._cache_diagnosis(current_trace)
                         yield chunk
 
     @staticmethod
@@ -456,7 +579,7 @@ class ChatCodexModel(BaseChatModel):
         if tokens is None or tokens.is_expired():
             raise ChatGPTAuthError("Not signed in to ChatGPT (or the session expired).")
         payload = self._build_payload(messages, stream=True, **kwargs)
-        headers = request_headers(tokens)
+        headers = request_headers(tokens, self.session_id)
         # Carried so a failure can name the model that refused the request and the window it was
         # measured against — the two things that make "too large" actionable rather than a verdict.
         state: dict[str, Any] = {"saw_tool_call": False, "model": self.model,

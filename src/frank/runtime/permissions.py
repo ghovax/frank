@@ -10,6 +10,8 @@ from frank.runtime.internals import (
     _ResolvedToolDecision,
     _ToolPlan,
 )
+from frank.base.confinement import parse_access_request
+from frank.protocol.events import PermissionReason
 from frank.runtime.locations import (
     _LOCATION_TOOLS,
     PermissionDecision,
@@ -18,6 +20,7 @@ from frank.runtime.locations import (
 )
 from langchain_core.messages import HumanMessage, SystemMessage
 from typing import Any, Optional, Sequence
+from datetime import datetime, timezone
 import ast
 import sys
 import logging
@@ -234,6 +237,7 @@ class _DecidesPermissions:
         static_classification: str = "",
         static_detail: str = "",
         outside_reads: Optional[list[str]] = None,
+        access_request=None,
     ) -> PermissionDecision:
         context = compact(
             {
@@ -248,6 +252,15 @@ class _DecidesPermissions:
                 "static_read_only_classification": static_classification,
                 "static_detail": static_detail,
                 "outside_working_directory_reads": outside_reads or [],
+                # What the call asks to reach beyond its confinement, so the classifier can judge
+                # the *width* of the request and not only the risk of the command. Without it the
+                # classifier was asked to approve a call while blind to the one part of it that
+                # widens what the session can touch.
+                **({"access_request": {
+                    "reads": list(access_request.reads),
+                    "writes": list(access_request.writes),
+                    "network": access_request.network,
+                }} if access_request is not None and access_request.wants_widening else {}),
                 "allowed_actions": ["auto_approve", "escalate"],
             },
         )
@@ -285,6 +298,135 @@ class _DecidesPermissions:
                 risk="medium",
             )
 
+    def _already_granted(self, request) -> bool:
+        """Whether every path and capability this call asks for was approved earlier this session.
+
+        A grant persists, so a build that writes eleven files under one granted directory raises
+        one gate and not eleven. That is not a convenience: how often a person is asked is a
+        security property, and it points the opposite way to intuition. An approval put in front
+        of somebody every few seconds stops being read, and a prompt nobody reads approves
+        everything."""
+        if not self._access_grants:
+            return False
+        held_reads: set[str] = set()
+        held_writes: set[str] = set()
+        held_network = False
+        for grant in self._access_grants:
+            held_reads.update(grant.reads)
+            held_writes.update(grant.writes)
+            held_network = held_network or grant.network
+        if request.network and not held_network:
+            return False
+        # Containment rather than equality, so a grant over a directory covers the files under
+        # it. A grant of `/tmp/build` that did not cover `/tmp/build/out.log` would ask again on
+        # the very next command, which is the failure this whole mechanism exists to avoid.
+        from frank.base.confinement import _contained_in
+
+        workspace = self._working_directory or ""
+        # A write already held also satisfies a read, matching `widened`, which grants the read
+        # that every write implies.
+        if len(_contained_in(request.reads, tuple(held_reads | held_writes), workspace=workspace)) != len(request.reads):
+            return False
+        return len(_contained_in(request.writes, tuple(held_writes), workspace=workspace)) == len(request.writes)
+
+    def _not_already_granted(self, paths: Sequence[str]) -> list[str]:
+        """``paths``, less the ones a grant already covers.
+
+        The tripwire that notices reads outside the working directory and the grant mechanism
+        both speak about paths, so a path settled by one must not be raised again by the other.
+        Containment rather than equality, so a grant over a directory covers what is under it."""
+        if not paths or not self._access_grants:
+            return list(paths)
+        from frank.base.confinement import _contained_in
+
+        held: set[str] = set()
+        for grant in self._access_grants:
+            held.update(grant.reads)
+            held.update(grant.writes)
+        if not held:
+            return list(paths)
+        covered = set(_contained_in(tuple(paths), tuple(held), workspace=self._working_directory or ""))
+        return [path for path in paths if path not in covered]
+
+    def _record_grant(self, request, purpose: str) -> None:
+        """Remember an approved widening for the rest of the session."""
+        from frank.base.confinement import Grant
+
+        self._access_grants.append(Grant(
+            reads=tuple(request.reads), writes=tuple(request.writes), network=request.network,
+            purpose=purpose, granted_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        ))
+        self._record_event("access_granted", {
+            "reads": list(request.reads), "writes": list(request.writes),
+            "network": request.network, "purpose": purpose,
+        })
+
+    def _access_request_gate(
+        self, request, *, policy, tool_call_identifier: str, tool_name: str, explanation: str,
+    ) -> tuple[Optional[_PreflightGate], Optional[dict]]:
+        """The verdict on one call's request for reach beyond its profile.
+
+        Answers ``(gate, denial)`` with at most one set, and ``(None, None)`` when the request
+        needs no decision — because it asks for nothing, because it was granted earlier, or
+        because the configuration already says these paths may be given without asking.
+        """
+        if request is None or not request.wants_widening:
+            return None, None
+        # A read-only session is not negotiating a write. Refused outright rather than gated,
+        # because a gate is a question and this one has a settled answer: the person set the
+        # session read-only, and a prompt offering to undo that is a prompt that should not exist.
+        if policy.read_only and (request.writes or request.network):
+            violation = "a write outside the sandbox" if request.writes else "network access"
+            return None, {
+                "code": "", "denied_injection": False, "raw_command": "",
+                "message": self._prompt_loader.load("read_only_denied", {"violation": violation}),
+            }
+        profile = self._sandbox
+        workspace = self._working_directory or ""
+        # The deny list is not negotiable and never becomes a question. It is what somebody
+        # declared off-limits before any of this started, and a runtime approval must not be
+        # able to reach past a standing refusal — otherwise the list means "until asked nicely".
+        blocked = profile.widened(
+            reads=request.reads, writes=request.writes, workspace=workspace,
+        )
+        asked_for = set(request.reads) | set(request.writes)
+        allowed = set(blocked.filesystem.readable) | set(blocked.filesystem.writable)
+        refused = sorted(asked_for - allowed)
+        if refused:
+            return None, {
+                "code": "", "denied_injection": False, "raw_command": "",
+                "message": self._prompt_loader.load("access_denied", {"paths": ", ".join(refused)}),
+            }
+        if self._already_granted(request):
+            return None, None
+        if profile.grants_without_asking(sorted(asked_for), workspace=workspace) and not request.network:
+            self._record_grant(request, explanation)
+            return None, None
+        return _PreflightGate(
+            request_id=self._new_permission_request_id(tool_call_identifier),
+            tool_call_id=tool_call_identifier,
+            kind="permission", command=tool_name,
+            explanation=self._access_request_summary(request, explanation),
+            risk="medium",
+            deny_message="The access this call asked for was not approved.",
+            access_request=request,
+        ), None
+
+    def _access_request_summary(self, request, explanation: str) -> str:
+        """What the person deciding is shown: the reach asked for, and the reason given for it."""
+        wanted = []
+        if request.writes:
+            wanted.append(f"write {', '.join(request.writes)}")
+        if request.reads:
+            wanted.append(f"read {', '.join(request.reads)}")
+        if request.network:
+            wanted.append("reach the network")
+        asked = "; ".join(wanted)
+        # The reason is the model's own, and it is the only thing that makes the path meaningful.
+        # A card reading "write /tmp/x" and nothing else asks somebody to approve a path with no
+        # purpose attached, which is a decision nobody can make well.
+        return f"Needs to {asked} — {explanation}" if explanation else f"Needs to {asked}"
+
     def _needs_a_second_opinion(self, rule: str, model_risk: str) -> bool:
         """The barrier. Does this call need the classifier, or is the answer already known?
 
@@ -301,6 +443,52 @@ class _DecidesPermissions:
         classifier behind it that sees only what the barrier could not settle.
         """
         return rule == "ask" or model_risk in ("medium", "high")
+
+    async def reconsider_gate(self, command: str, risk: str, is_bash: bool) -> str:
+        """Decide a gate the session is *already parked on*, under the mode it is under now.
+
+        A gate is a question that has been asked, and changing the policy does not unask it: the
+        turn that raised it has ended, its verdict sits in the task record, and nothing re-reads
+        that record. So somebody who switches to `auto` precisely *because* they are tired of
+        being asked watches the same card go on asking, and somebody who switches to `read_only`
+        to stop a write watches the write wait patiently for the approval that would run it.
+
+        Answers ``"allow"``, ``"deny"``, or ``""`` for "still a question". Deliberately the same
+        three functions the preflight uses — the rule, the barrier, the classifier — rather than
+        a second policy that could drift from the first. The one thing it will not do is widen a
+        decision the rules deny: a gate is never how a denial reaches somebody.
+        """
+        if not is_bash or not command:
+            # A question for the user, or a gate this cannot re-decide from what was recorded.
+            # Leaving it standing is the safe answer: nobody is worse off for being asked.
+            return ""
+        policy = self._call_policy(None)
+
+        # Tightening first, because a read-only session must not be holding a card that would
+        # run a mutation if somebody pressed Allow.
+        if policy.read_only:
+            classification, _ = self._agent_configuration.tools.bash.read_only_assessment(command)
+            return "deny" if classification == "mutating" else ""
+
+        rule = self._evaluate_bash_permission(command)
+        if rule == "deny":
+            return "deny"
+        if not self._needs_a_second_opinion(rule, risk or "medium"):
+            # The rules allow it and the model called it low-risk — under the mode now in force
+            # this call would never have been gated at all.
+            return "allow"
+        if not policy.self_classifies:
+            # Interactive: the ambiguous middle is exactly what a person is for.
+            return ""
+        decision = await self._classify_permission(
+            tool_kind="bash", command=command, raw_command=command,
+            default_decision=rule, read_only=False, risk=risk or "medium",
+            explanation="", static_classification="", static_detail="",
+        )
+        if decision.action == "auto_approve":
+            self._record_event("bash_auto_approved", {"command": command, "reason": decision.explanation, "risk": decision.risk})
+            return "allow"
+        return ""
 
     def _new_permission_request_id(self, tool_call_id: str = "") -> str:
         """The id a person's answer is filed under. Derived from the call, not minted fresh.
@@ -370,6 +558,13 @@ class _DecidesPermissions:
                     decision.approved = False
                     decision.denial = {"code": "", "message": gate.deny_message, "denied_injection": False, "raw_command": gate.command}
                     break
+                # Approved, and it was a request for reach: remember it for the rest of the
+                # session. Recorded here rather than where the gate was raised, because this is
+                # the only point that knows a person actually said yes — preflight runs again
+                # when a suspended turn resumes, and recording at the ask would have granted
+                # everything that was ever proposed.
+                if gate.access_request is not None:
+                    self._record_grant(gate.access_request, gate.arguments.get("explanation", ""))
             decisions[tool_call_id] = decision
         return decisions
 
@@ -400,25 +595,66 @@ class _DecidesPermissions:
                 return plan
         policy = self._call_policy(resolved_location)
 
+        # Any tool that spawns a child may ask for reach beyond its profile, and the request is
+        # decided the same way whichever tool carried it. Resolved before the tool's own branch
+        # so that one answer covers all of them — a per-tool copy of this would be five chances
+        # for the rules to drift apart.
+        access_request, _ = parse_access_request(tool_arguments.get("access_request"))
+        if access_request is not None and access_request.wants_widening:
+            gate, denial = self._access_request_gate(
+                access_request, policy=policy, tool_call_identifier=tool_call_identifier,
+                tool_name=tool_name, explanation=tool_arguments.get("explanation", ""),
+            )
+            if denial is not None:
+                plan.denial = denial
+                return plan
+            if gate is not None:
+                plan.gates.append(gate)
+
         if tool_name == "bash":
             raw_command = tool_arguments.get("command", "")
             explanation = tool_arguments.get("explanation", "")
             risk = tool_arguments.get("risk", "")
-            read_only = tool_arguments.get("read_only", False)
-            if isinstance(read_only, str):
-                read_only = read_only.lower() == "true"
+            read_only = access_request is not None and access_request.mutates is False
             static_classification, static_detail = self._agent_configuration.tools.bash.read_only_assessment(raw_command)
             outside_reads = (
                 []
                 if policy.is_remote
                 else self._outside_working_directory_reads(raw_command, policy.working_directory)
             )
+            # A path somebody already granted is not a path to ask about again.
+            #
+            # These two mechanisms overlap, and until now they asked twice about one place. The
+            # tripwire notices a literal path outside the working directory; the grant is a
+            # decision a person made about exactly such a path. So after approving a write to
+            # `/opt/out`, every later command naming `/opt/out/anything` still raised "sandbox
+            # approval required" — the same question, re-asked on every command, after it was
+            # answered. That is the failure this whole mechanism exists to avoid: an approval put
+            # in front of somebody often enough stops being read.
+            outside_reads = self._not_already_granted(outside_reads)
             # Sandbox read approval (reads outside the working directory).
             if outside_reads:
-                paths = ", ".join(outside_reads)
-                sandbox_message = (
-                    f"Sandbox approval required: this command reads outside the working directory ({paths})."
-                )
+                # What a person is shown: facts, not a sentence. The interface writes the
+                # prose, in whatever language it is drawing in.
+                sandbox_reason = PermissionReason(kind="reads_outside_workspace", paths=list(outside_reads))
+                # What the *model* is told, from the prompt corpus like every other piece of
+                # model-facing prose in this harness. It reaches one reader — the classifier
+                # deciding whether this call can be approved without asking — as
+                # `model_explanation` in that prompt's JSON.
+                #
+                # A template rather than a literal, because that is where model-facing text
+                # belongs: it is edited beside the prompt it argues with, it can say more than
+                # a line of Python comfortably holds, and the paths go in as a list instead of
+                # being comma-joined into a sentence.
+                #
+                # It also rides along on the gate as `explanation`, but only as the fallback
+                # arm of the interface's `reason || explanation`: every gate carrying this
+                # carries `sandbox_reason` too, so a client that understands the reason never
+                # renders it. An older build against a newer daemon shows it rather than
+                # showing nothing.
+                outside_workspace_note = self._prompt_loader.load("outside_workspace_read", {
+                    "paths": ", ".join(outside_reads),
+                })
                 # A sandbox read escalates to the user like any other gate — the turn parks
                 # in place and resumes on the answer — rather than hard-denying. A session
                 # created by another parks the same way: its request reaches a person through
@@ -429,16 +665,16 @@ class _DecidesPermissions:
                 # rules said and whatever risk the model had declared — the one path that
                 # skipped the barrier, and the one that fires most often.
                 if (
-                    policy.auto_permissions
+                    policy.self_classifies
                     and permission_decision != "deny"
                     and self._needs_a_second_opinion(permission_decision, risk or "medium")
                 ):
                     decision = await self._classify_permission(
                         tool_kind="bash", command=raw_command, raw_command=raw_command,
                         default_decision=permission_decision, read_only=read_only,
-                        risk=risk or "medium", explanation=explanation or sandbox_message,
+                        risk=risk or "medium", explanation=explanation or outside_workspace_note,
                         static_classification=static_classification, static_detail=static_detail,
-                        outside_reads=outside_reads,
+                        outside_reads=outside_reads, access_request=access_request,
                     )
                     if decision.action == "auto_approve":
                         self._record_event("bash_auto_approved", {"command": raw_command, "reason": decision.explanation, "risk": decision.risk})
@@ -446,8 +682,9 @@ class _DecidesPermissions:
                         plan.gates.append(_PreflightGate(
                             request_id=self._new_permission_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
                             kind="permission", command=raw_command,
-                            explanation=decision.explanation or sandbox_message, risk=decision.risk, is_bash=True,
-                            deny_message="Sandbox read was not approved by the user.",
+                            explanation=decision.explanation or outside_workspace_note, risk=decision.risk, is_bash=True,
+                            reason=None if decision.explanation else sandbox_reason,
+                            deny_message="You did not approve reading outside the working directory.",
                         ))
                 else:
                     if permission_decision == "deny":
@@ -455,8 +692,9 @@ class _DecidesPermissions:
                         return plan
                     plan.gates.append(_PreflightGate(
                         request_id=self._new_permission_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
-                        kind="permission", command=raw_command, explanation=sandbox_message, risk="medium", is_bash=True,
-                        deny_message="Sandbox read was not approved by the user.",
+                        kind="permission", command=raw_command, explanation=outside_workspace_note, risk="medium", is_bash=True,
+                        reason=sandbox_reason,
+                        deny_message="You did not approve reading outside the working directory.",
                     ))
             # Read-only enforcement is a hard block (no human in the loop).
             if policy.read_only:
@@ -475,13 +713,13 @@ class _DecidesPermissions:
                 plan.denial = {"code": "", "message": f"Command '{raw_command}' is not permitted.", "denied_injection": True, "raw_command": raw_command}
                 return plan
             elif self._needs_a_second_opinion(permission_decision, risk):
-                if policy.auto_permissions:
+                if policy.self_classifies:
                     decision = await self._classify_permission(
                         tool_kind="bash", command=raw_command, raw_command=raw_command,
                         default_decision=permission_decision, read_only=read_only,
                         risk=risk or "medium", explanation=explanation,
                         static_classification=static_classification, static_detail=static_detail,
-                        outside_reads=outside_reads,
+                        outside_reads=outside_reads, access_request=access_request,
                     )
                     if decision.action == "auto_approve":
                         self._record_event("bash_auto_approved", {"command": raw_command, "reason": decision.explanation, "risk": decision.risk})
@@ -501,7 +739,7 @@ class _DecidesPermissions:
             return plan
 
         if tool_name == "call_mcp_tool":
-            read_only = tool_arguments.get("read_only", False)
+            read_only = access_request is not None and access_request.mutates is False
             risk = tool_arguments.get("risk", "low")
             if policy.read_only and not read_only:
                 deny_message = self._prompt_loader.load("read_only_denied", {"violation": "a mutating MCP tool call"})
@@ -510,7 +748,7 @@ class _DecidesPermissions:
             if not read_only and risk in ("medium", "high"):
                 action = f"MCP {tool_arguments.get('server', '')}.{tool_arguments.get('tool_name', '')}"
                 explanation = tool_arguments.get("explanation", "")
-                if policy.auto_permissions:
+                if policy.self_classifies:
                     decision = await self._classify_permission(
                         tool_kind="mcp", command=action,
                         raw_command=compact(tool_arguments.get("arguments") or {}),
@@ -567,12 +805,13 @@ class _DecidesPermissions:
                 plan.denial = {"code": "", "message": deny_message, "denied_injection": False, "raw_command": ""}
                 return plan
             if (static_classification != "read_only" or risk in ("medium", "high")):
-                if policy.auto_permissions:
+                if policy.self_classifies:
                     decision = await self._classify_permission(
                         tool_kind="screen", command="control_screen", raw_command=script,
                         default_decision="ask", read_only=(static_classification == "read_only"),
                         risk=risk or "medium", explanation=explanation,
                         static_classification=static_classification, static_detail=static_detail,
+                        access_request=access_request,
                     )
                     if decision.action == "auto_approve":
                         self._record_event("screen_auto_approved", {"reason": decision.explanation, "risk": decision.risk})

@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import contextvars
 import logging
+import os
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -49,29 +50,51 @@ current_context_window: contextvars.ContextVar[int] = contextvars.ContextVar(
 )
 
 
-# Calibration, grounded in the real spread of model context windows (tokens):
-#   * 200K is the standard window of the current flagship chat models (the harness's usual case),
-#     so it is the reference at which every baseline below equals its calibrated production value —
-#     defaults reproduce today's behaviour and only *change* it for genuinely smaller/larger models.
-#   * A window is clamped into [16K, 2M] before scaling: 16K is a small local/older model, 2M is the
-#     largest generally-available window (Gemini-class). Outside that range the caps would be
-#     degenerate, so the clamp, not a per-cap floor/ceiling, keeps every derived value sane.
-REFERENCE_WINDOW = 200_000
-_TURN_ZERO_WINDOW = 200_000
-_MINIMUM_WINDOW = 16_000
-_MAXIMUM_WINDOW = 2_000_000
+class WindowModel(NamedTuple):
+    """The span of context windows the baselines are calibrated across, in tokens.
 
-# The knob values the baselines are calibrated against: at these fractions the family multiplier is
-# 1.0, so raising ``context_share.text`` above 0.25 enlarges every text budget proportionally, and so on.
-_DEFAULT_TEXT_SHARE = 0.25
-_DEFAULT_RESULTS_SHARE = 0.15
+    One object rather than four loose numbers, because they are four facets of a single decision
+    and only mean anything together: `reference` is where a baseline resolves to exactly its
+    shipped value, and the clamp is the range over which scaling from that point stays sensible.
+    """
+
+    #: The standard window of the current flagship chat models, and so the harness's usual case.
+    #: Every baseline equals its calibrated production value here, which is what makes the defaults
+    #: reproduce today's behaviour and change it only for a genuinely smaller or larger model.
+    reference: int
+    #: Assumed before the live window is known — the first call of a turn, when nothing has come
+    #: back to say how large the model's context is.
+    turn_zero: int
+    #: A small local or older model. Below this the derived caps stop being useful.
+    minimum: int
+    #: The largest generally-available window (Gemini-class). The clamp, rather than a floor and a
+    #: ceiling on every individual cap, is what keeps each derived value sane at the extremes.
+    maximum: int
 
 
-logger = logging.getLogger(__name__)
+WINDOW = WindowModel(reference=200_000, turn_zero=200_000, minimum=16_000, maximum=2_000_000)
 
 
-def _clamp(value: float, low: float, high: float) -> float:
-    return max(low, min(high, value))
+class Family(NamedTuple):
+    """How one scaling family turns a shipped default into a live value.
+
+    Everything a family needs is stated here, once. It used to be spread over three places that
+    had to agree — this enum, a pair of module constants naming the calibration, and a branch per
+    family in `Tuning._raw` restating which knob went with which — and a fourth in
+    `configuration.py`, where the same fractions were typed again as field defaults. Nothing tied
+    them together, so moving a calibration in one place quietly broke the property the other three
+    assume: that at the calibrated knob value the multiplier is exactly 1.0.
+    """
+
+    #: Where the knob lives on the policy, as an attribute path. Empty for a family with no knob.
+    knob: str
+    #: The knob value at which this family's multiplier is exactly 1.0. Raising the knob above it
+    #: enlarges every budget in the family proportionally.
+    calibrated: float
+    #: Whether the value also scales with the live context window.
+    follows_window: bool
+    #: The smallest resolved value that still means something — one item, one millisecond.
+    floor: float
 
 
 class Scaling(Enum):
@@ -80,10 +103,21 @@ class Scaling(Enum):
     Each family answers to exactly one knob, named the same thing here and in the configuration,
     so a reader can tell what a setting moves without consulting a table."""
 
-    TEXT = "text"        # a token or character budget: window * context_share.text
-    RESULTS = "results"  # how many entries come back: window * context_share.results
-    TIME = "time"        # a wait: timeout_multiplier only — time does not depend on the window
-    NONE = "none"        # physical pacing, fixed shapes, pixel sizes: not scaled at all
+    # a token or character budget: window * context_share.text
+    TEXT = Family(knob="context_share.text", calibrated=0.25, follows_window=True, floor=1.0)
+    # how many entries come back: window * context_share.results
+    RESULTS = Family(knob="context_share.results", calibrated=0.15, follows_window=True, floor=1.0)
+    # a wait: timeout_multiplier only — time does not depend on the window
+    TIME = Family(knob="timeout_multiplier", calibrated=1.0, follows_window=False, floor=0.001)
+    # physical pacing, fixed shapes, pixel sizes: not scaled at all
+    NONE = Family(knob="", calibrated=1.0, follows_window=False, floor=0.0)
+
+
+logger = logging.getLogger(__name__)
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
 
 
 #: Where a tunable's long note lives, one markdown file per member, named for the member.
@@ -261,8 +295,24 @@ class Tunable(Enum):
         a moment rather than the whole action.""",
     )
 
+    goal_blocked_turns = Default(
+        3, Scaling.NONE,
+        """How many consecutive turns the same condition must stop a goal before the agent may
+        report it blocked. One failure is not an impasse, and a goal abandoned on the first
+        refusal is one nobody asked to abandon. How many failures do constitute an impasse
+        depends on the work, which is why this is a setting and not a number in a prompt — the
+        value here is what the agent is told, so the instruction and the threshold cannot
+        drift apart.""",
+    )
+
     # The control plane and the processes it supervises.
     warm_workers = Default(2, Scaling.NONE)
+    session_title_attempts = Default(
+        3, Scaling.NONE,
+        """How many times a session asks the model to name itself before giving up. More than
+        one because the answer is a single tool call the model can fail to make, and a session
+        with no name is one nobody can find again in a sidebar.""",
+    )
     prototype_start_seconds = Default(120.0, Scaling.TIME)
     prototype_restart_seconds = Default(
         5.0, Scaling.TIME,
@@ -461,56 +511,51 @@ class Tunable(Enum):
 
 
 # Tokenizer-backed text budgeting. A real tokenizer maps a token budget to an accurate character
-# cut for any content; a fixed characters-per-token ratio (which the old code assumed) is wrong for
-# code, whitespace runs, and non-Latin scripts.
+# cut for any content; a fixed characters-per-token ratio is wrong for code, whitespace runs, and
+# non-Latin scripts, in both directions and by a lot.
 #
-# The fallback below looks like dead code and is not, which is worth stating because "tiktoken is a
-# hard dependency, so the tokenizer is always there" is the obvious reading and it is wrong.
-# `tiktoken` ships no vocabulary: `get_encoding` fetches `o200k_base` from
-# `openaipublic.blob.core.windows.net` on first use and caches it. Checked rather than assumed —
-# with an empty cache directory and the network refused, `get_encoding` raises. So the reachable
-# case is a first run with no network, exactly as the comment here has always claimed.
+# There is no ratio here any more, and no fallback to one. There used to be: `tiktoken` is a hard
+# dependency but ships no vocabulary — `get_encoding` downloads `o200k_base` on first use and
+# caches it under a sha1 of its URL — so a first run without network raised, and the fallback was
+# four characters per token with a warning. That made every size cap in such a session mean
+# something other than what it says, which is a worse failure than a loud one and is the kind that
+# takes a day to find because the numbers all still look like numbers.
 #
-# What the fallback must not be is quiet. Four characters per token is a guess that is roughly
-# right for English prose and wrong in both directions for the content this harness actually
-# budgets — dense for minified code, generous for CJK — so a session running on it is one where
-# every cap means something other than what it says. It says so once, loudly, and then gets on
-# with it. Ending the session instead would trade a degraded budget for no harness at all.
-#
-# The way to remove it is to make the vocabulary present rather than to delete the branch: ship the
-# encoding with the bundle, or warm the cache at install. Until one of those is true, deleting this
-# turns an offline first run into a crash on the first tool result.
+# So the vocabulary is made present instead. The frozen build fetches it at build time and carries
+# it (see `packaging/frank-daemon.spec`), and `_bundled_vocabulary` points `TIKTOKEN_CACHE_DIR` at
+# it before the first import; a checkout run downloads it once, as it always did, against a network
+# the harness needs anyway to reach a model at all. A tokenizer that cannot load is now an error
+# rather than a silent approximation.
 _ENCODING_NAME = "o200k_base"     # the current-generation general tokenizer; a good cross-model proxy
-_FALLBACK_CHARS_PER_TOKEN = 4     # only used when the tokenizer is unavailable
-# A single token decodes to at most this many characters, so budget * this characters is a safe
-# superset of the first ``budget`` tokens — tokenizing only that prefix bounds the work on a huge
-# output instead of encoding the whole thing.
-_MAXIMUM_CHARS_PER_TOKEN = 32
 
 _encoding = None
-_encoding_loaded = False
+
+
+def _bundled_vocabulary() -> None:
+    """Point tiktoken at the vocabulary carried in a frozen build, if this is one.
+
+    Set before tiktoken is imported, because the cache directory is read at fetch time. A
+    checkout has no bundled copy and falls through to tiktoken's own cache."""
+    import sys
+
+    if not getattr(sys, "frozen", False) or "TIKTOKEN_CACHE_DIR" in os.environ:
+        return
+    bundled = Path(getattr(sys, "_MEIPASS", "")) / "frank" / "tokenizer"
+    if bundled.is_dir():
+        os.environ["TIKTOKEN_CACHE_DIR"] = str(bundled)
 
 
 def _get_encoding():
-    global _encoding, _encoding_loaded
-    if not _encoding_loaded:
-        _encoding_loaded = True
-        try:
-            import tiktoken
+    """The encoding every budget in this harness is measured with.
 
-            _encoding = tiktoken.get_encoding(_ENCODING_NAME)
-        except Exception as error:
-            _encoding = None
-            # Once per process, and at warning level, because every token budget for the rest of
-            # this session is now an estimate. Silently degrading is what makes a caps bug take a
-            # day to find: the numbers all still look like numbers.
-            logger.warning(
-                "token budgeting fell back to %d characters per token: the %s encoding could not "
-                "be loaded (%s: %s). tiktoken downloads its vocabulary on first use, so this is "
-                "usually a first run with no network. Every size cap this session is an estimate "
-                "until the process restarts with the vocabulary cached.",
-                _FALLBACK_CHARS_PER_TOKEN, _ENCODING_NAME, type(error).__name__, error,
-            )
+    Raises if it cannot be loaded. Deliberately: a harness that cannot count tokens cannot honour
+    a single one of its limits, and continuing on a guess is how a caps bug survives a day."""
+    global _encoding
+    if _encoding is None:
+        _bundled_vocabulary()
+        import tiktoken
+
+        _encoding = tiktoken.get_encoding(_ENCODING_NAME)
     return _encoding
 
 
@@ -518,27 +563,23 @@ def count_tokens(text: str) -> int:
     """How many tokens ``text`` is, by the same encoding :func:`clip_to_tokens` cuts on.
 
     Its counterpart: clipping answers "what fits", this answers "how much is there", and a caller
-    fitting several pieces into one budget needs both. Falls back to the same coarse ratio, so the
-    two agree about a text's size whether or not the tokenizer loaded."""
-    encoding = _get_encoding()
-    if encoding is None:
-        return (len(text) + _FALLBACK_CHARS_PER_TOKEN - 1) // _FALLBACK_CHARS_PER_TOKEN
-    return len(encoding.encode(text, disallowed_special=()))
+    fitting several pieces into one budget needs both."""
+    return len(_get_encoding().encode(text, disallowed_special=()))
 
 
 def clip_to_tokens(text: str, budget: int) -> tuple[str, bool]:
     """Clip ``text`` to at most ``budget`` tokens, returning (clipped_text, was_truncated). The cut
-    is placed on a real token boundary, so the budget means what it says regardless of the content's
-    density — unlike a fixed characters-per-token slice. Only the head that can possibly hold the
-    first ``budget`` tokens is tokenized, so a multi-megabyte output is not encoded in full."""
+    is placed on a real token boundary, so the budget means what it says regardless of the
+    content's density — unlike a fixed characters-per-token slice.
+
+    The whole text is encoded, which is the same thing :func:`count_tokens` does to every message
+    in a conversation on the way to every request. This used to encode only a bounded head, on the
+    reasoning that no token exceeds some number of characters — a correct bound, and an
+    optimisation applied in exactly one place while the hot path did without it."""
     budget = max(1, budget)
     encoding = _get_encoding()
-    if encoding is None:
-        cap = budget * _FALLBACK_CHARS_PER_TOKEN
-        return (text, False) if len(text) <= cap else (text[:cap], True)
-    head = text[: budget * _MAXIMUM_CHARS_PER_TOKEN]
-    tokens = encoding.encode(head, disallowed_special=())
-    if len(head) == len(text) and len(tokens) <= budget:
+    tokens = encoding.encode(text, disallowed_special=())
+    if len(tokens) <= budget:
         return text, False
     return encoding.decode(tokens[:budget]), True
 
@@ -558,8 +599,8 @@ def unknown_tunable_names(names: Iterable[str]) -> list[str]:
 class _ContextShare(NamedTuple):
     """What proportion of the live context window one result may fill."""
 
-    text: float = _DEFAULT_TEXT_SHARE
-    results: float = _DEFAULT_RESULTS_SHARE
+    text: float = Scaling.TEXT.value.calibrated
+    results: float = Scaling.RESULTS.value.calibrated
 
 
 class TuningConfiguration:
@@ -569,8 +610,8 @@ class TuningConfiguration:
 
     def __init__(
         self,
-        text: float = _DEFAULT_TEXT_SHARE,
-        results: float = _DEFAULT_RESULTS_SHARE,
+        text: float = Scaling.TEXT.value.calibrated,
+        results: float = Scaling.RESULTS.value.calibrated,
         timeout_multiplier: float = 1.0,
         defaults: Optional[dict] = None,
         settle_poll_seconds: float = 0.05,
@@ -598,11 +639,11 @@ class Tuning:
     def _window(self, window: Optional[int]) -> int:
         effective = current_context_window.get() if window is None else window
         if not effective or effective <= 0:
-            effective = _TURN_ZERO_WINDOW
-        return int(_clamp(effective, _MINIMUM_WINDOW, _MAXIMUM_WINDOW))
+            effective = WINDOW.turn_zero
+        return int(_clamp(effective, WINDOW.minimum, WINDOW.maximum))
 
     def _window_scale(self, window: Optional[int]) -> float:
-        return self._window(window) / REFERENCE_WINDOW
+        return self._window(window) / WINDOW.reference
 
     def _default_for(self, tunable: Tunable) -> float:
         """What this tunable ships at, or what the configuration replaced it with.
@@ -617,19 +658,26 @@ class Tuning:
                 return float(value)
         return float(tunable.default)
 
+    def _knob(self, path: str) -> float:
+        """The live value of a family's knob, read by the path the family names."""
+        value: object = self.policy
+        for step in path.split("."):
+            value = getattr(value, step)
+        return float(value)  # type: ignore[arg-type]
+
     def _raw(self, tunable: Tunable, window: Optional[int]) -> float:
-        """The live value, before it is rounded to an int or returned as a float."""
-        shipped = self._default_for(tunable)
-        scaling = tunable.scaling
-        if scaling is Scaling.TEXT:
-            knob = self.policy.context_share.text / _DEFAULT_TEXT_SHARE
-            return max(1.0, shipped * self._window_scale(window) * knob)
-        if scaling is Scaling.RESULTS:
-            knob = self.policy.context_share.results / _DEFAULT_RESULTS_SHARE
-            return max(1.0, shipped * self._window_scale(window) * knob)
-        if scaling is Scaling.TIME:
-            return max(0.001, shipped * self.policy.timeout_multiplier)
-        return shipped
+        """The live value, before it is rounded to an int or returned as a float.
+
+        One expression for every family, because each family carries what makes it different. It
+        used to be a branch apiece, which is where a family's knob and its calibration could
+        disagree with the places that declared them."""
+        family = tunable.scaling.value
+        value = self._default_for(tunable)
+        if family.follows_window:
+            value *= self._window_scale(window)
+        if family.knob:
+            value *= self._knob(family.knob) / family.calibrated
+        return max(family.floor, value)
 
     def amount(self, tunable: Tunable, window: Optional[int] = None) -> int:
         """A limit as an integer — a token budget, an item count, a millisecond timeout, a length."""
@@ -697,8 +745,8 @@ def tuning_from_policy(policy: object, screen_policy: object = None) -> Tuning:
     share = getattr(policy, "context_share", None)
     settle = getattr(screen_policy, "settle", None)
     return Tuning(TuningConfiguration(
-        text=float(getattr(share, "text", _DEFAULT_TEXT_SHARE)),
-        results=float(getattr(share, "results", _DEFAULT_RESULTS_SHARE)),
+        text=float(getattr(share, "text", Scaling.TEXT.value.calibrated)),
+        results=float(getattr(share, "results", Scaling.RESULTS.value.calibrated)),
         timeout_multiplier=float(getattr(policy, "timeout_multiplier", 1.0)),
         defaults=overrides,
         settle_poll_seconds=float(getattr(settle, "poll_seconds", 0.05)),

@@ -25,9 +25,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 # Requests whose bodies are streamed rather than buffered, and headers that must not be copied
 # between the two hops. `Host` would name this server rather than the daemon; the hop-by-hop
@@ -36,9 +37,22 @@ _DROPPED_REQUEST_HEADERS = frozenset({
     "host", "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
     "te", "trailers", "transfer-encoding", "upgrade", "authorization",
 })
+# `content-encoding` is deliberately **not** here, and that is the whole of a bug worth naming.
+#
+# The body is forwarded with `aiter_raw()`, which is to say exactly as it arrived and still
+# compressed — and httpx asks every upstream for gzip whether or not the client did. Dropping the
+# one header that says "these bytes are compressed" therefore hands the browser gzip labelled as
+# text, which it renders as a screen of binary. It never showed while this only fronted the
+# daemon, because uvicorn does not compress; it appeared the moment a dev server, which does, was
+# put behind it.
+#
+# `content-encoding` is end-to-end rather than hop-by-hop: it describes the payload, not the
+# connection, so a proxy that does not decode the payload has no business removing it.
+# `content-length` stays, because the response is re-chunked on the way out and a length copied
+# from the other hop would then be a lie.
 _DROPPED_RESPONSE_HEADERS = frozenset({
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-    "te", "trailers", "transfer-encoding", "upgrade", "content-encoding", "content-length",
+    "te", "trailers", "transfer-encoding", "upgrade", "content-length",
 })
 
 # Served to the page so it knows it is behind this proxy and should address the daemon
@@ -47,14 +61,11 @@ _DROPPED_RESPONSE_HEADERS = frozenset({
 RUNTIME_PATH = "/__frank/runtime.json"
 
 
-def _note(message: str) -> None:
-    print(message, file=sys.stderr)
+logger = logging.getLogger("frank.serve")
 
-
-# How long a stop waits for connections that do not end on their own before closing them anyway.
-# Long enough that a stream in the middle of a message finishes it; short enough that Ctrl-C is
-# answered rather than ignored.
-GRACEFUL_SHUTDOWN_SECONDS = 3
+# Requests this proxy may send a second time. A body arrives as a one-shot stream, so anything
+# carrying one cannot be replayed without silently forwarding an empty one; these carry none.
+_REPLAYABLE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "DELETE"})
 
 
 def interface_directory() -> Optional[Path]:
@@ -75,15 +86,77 @@ def interface_directory() -> Optional[Path]:
     return None
 
 
-def build_application(daemon_url: str, token: str, directory: Path):
-    """The ASGI application: the interface at the root, the daemon behind everything else."""
+# What belongs to the interface rather than to the daemon.
+#
+# Only consulted when the interface is a **dev server**, because a built export is a directory
+# and "is there a file at this path" answers the question exactly. A dev server cannot be asked
+# that — Next answers an unknown route with its own 404 *page*, which is a 200 as far as a proxy
+# can tell — so the split has to be stated. It is short because the interface is a single-page
+# export: one route, its bundles, its fonts, and the dev server's own machinery.
+_INTERFACE_PREFIXES = ("/_next/", "/__next", "/fonts/", "/@vite", "/@react-refresh")
+_INTERFACE_PATHS = frozenset({
+    "/", "/favicon.ico", "/icon.png", "/apple-icon.png", "/manifest.json",
+    "/dictation-capture.worklet.js",
+})
+
+
+def _wants_interface(path: str) -> bool:
+    return path in _INTERFACE_PATHS or path.startswith(_INTERFACE_PREFIXES)
+
+
+def build_application(
+    daemon_url: str, token: str, directory: Optional[Path], interface_url: str = "",
+    rediscover: Optional[Callable[[], tuple[str, str]]] = None,
+):
+    """The ASGI application: the interface at the root, the daemon behind everything else.
+
+    `directory` may be ``None``, which means serve no interface and proxy everything.
+
+    `rediscover` is how this survives the daemon restarting under it. The daemon takes a fresh
+    ephemeral port and mints a fresh token on every boot, and a proxy that resolved both once at
+    startup goes on forwarding to a port nobody is listening on — answering 502 to everything,
+    with the daemon up and healthy beside it. Given a callable that re-reads the runtime files,
+    this asks it again the moment a connection is refused, so the next request finds the daemon
+    where it moved to. Left as ``None`` the behaviour is what it was: resolved once, and wrong
+    from the moment the daemon restarts.
+
+    `interface_url` replaces the directory with a **running dev server**, which is what makes
+    iterating on the interface from a phone bearable: a static export has to be rebuilt for every
+    change, and `next build` is forty seconds whether the change was a component or a colour. With
+    a dev server the phone gets hot reload over the same door it was already using, and the same
+    cookie, because it is still one origin."""
     import httpx
     from starlette.applications import Starlette
     from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
     from starlette.routing import Route, WebSocketRoute
 
+    # Where the daemon is *now*. Mutable because it moves: see `rediscover` above.
+    upstream_daemon = {"url": daemon_url, "token": token}
     client = httpx.AsyncClient(base_url=daemon_url, timeout=None, follow_redirects=False)
-    root = directory.resolve()
+
+    async def find_daemon_again() -> bool:
+        """Re-read where the daemon is. True when it moved, which is when a retry is worth it."""
+        nonlocal client
+        if rediscover is None:
+            return False
+        try:
+            found_url, found_token = rediscover()
+        except Exception as error:  # noqa: BLE001 — a proxy must not die because a file was mid-write
+            logger.debug("could not re-read the daemon's endpoint: %s", error)
+            return False
+        if not found_url or (found_url == upstream_daemon["url"] and found_token == upstream_daemon["token"]):
+            return False
+        logger.info(f"frank: the daemon moved to {found_url}; reconnecting.")
+        upstream_daemon["url"] = found_url
+        upstream_daemon["token"] = found_token
+        previous, client = client, httpx.AsyncClient(base_url=found_url, timeout=None, follow_redirects=False)
+        await previous.aclose()
+        return True
+    interface = (
+        httpx.AsyncClient(base_url=interface_url, timeout=None, follow_redirects=False)
+        if interface_url else None
+    )
+    root = directory.resolve() if directory is not None else None
     async def runtime(_request) -> JSONResponse:
         # An empty base is the whole message: address the daemon relative to this origin, which
         # is what makes the proxy invisible to the page.
@@ -95,6 +168,8 @@ def build_application(daemon_url: str, token: str, directory: Path):
         Resolved and then checked to be inside the export, so `..` in a URL cannot reach out of
         it. A directory means its `index.html`, which is how a static export serves routes; a
         bare route with no file is not an error here, it is the daemon's."""
+        if root is None:
+            return None
         candidate = (root / path.lstrip("/")).resolve()
         if not candidate.is_relative_to(root):
             return None
@@ -110,13 +185,19 @@ def build_application(daemon_url: str, token: str, directory: Path):
         catch-all proxy first does the same in reverse, which is what it did on the first
         attempt: the interface itself came back as a proxied 404. One handler that looks before
         it forwards is the only ordering that serves both."""
+        if interface is not None and _wants_interface(request.url.path):
+            return await proxy(request, interface, authorise=False)
         if request.method in {"GET", "HEAD"}:
             found = static_file(request.url.path)
             if found is not None:
                 return FileResponse(found)
         return await proxy(request)
 
-    async def proxy(request) -> Response:
+    async def proxy(request, upstream_client=None, authorise: bool = True) -> Response:
+        # Resolved per call rather than captured, so a reconnection below is picked up by
+        # everything that follows it rather than only by whatever built its client afterwards.
+        to_daemon = upstream_client is None
+        upstream_client = upstream_client or client
         upstream = request.url.path
         if request.url.query:
             upstream = f"{upstream}?{request.url.query}"
@@ -124,12 +205,50 @@ def build_application(daemon_url: str, token: str, directory: Path):
             name: value for name, value in request.headers.items()
             if name.lower() not in _DROPPED_REQUEST_HEADERS
         }
-        headers["Authorization"] = f"Bearer {token}"
-        outgoing = client.build_request(
+        # Ask the upstream for exactly what the caller asked us for.
+        #
+        # httpx supplies its own `Accept-Encoding: gzip, deflate, br` when a request carries
+        # none, so a client that never asked for compression was being handed it anyway — this
+        # proxy forwards the body untouched and cannot decide otherwise on the caller's behalf.
+        # Saying `identity` is how a proxy declines on their behalf instead.
+        headers.setdefault("accept-encoding", "identity")
+
+        # The daemon needs the capability token; a dev server needs nothing and must not be
+        # handed one — it is not the daemon, and a credential sent to the wrong process is a
+        # credential in the wrong log.
+        if authorise:
+            headers["Authorization"] = f"Bearer {upstream_daemon['token']}"
+        outgoing = upstream_client.build_request(
             request.method, upstream, headers=headers, content=request.stream(),
         )
         try:
-            response = await client.send(outgoing, stream=True)
+            response = await upstream_client.send(outgoing, stream=True)
+        except httpx.ConnectError as error:
+            # Nothing is listening there. Either the daemon is down, or it restarted onto another
+            # port — and those are told apart by looking, which is what this does.
+            moved = to_daemon and await find_daemon_again()
+            if not moved:
+                return JSONResponse(
+                    {"error": {"code": "daemon_unreachable", "message": str(error)}}, status_code=502,
+                )
+            # Retried only when this request's body can be produced a second time. A connection
+            # that was refused consumed nothing, but `request.stream()` is a one-shot generator
+            # and re-sending it would forward an empty body — silently, which is worse than the
+            # 502. A method that carries no body has nothing to re-send, and covers every request
+            # a page makes while it is finding out the daemon came back.
+            if request.method.upper() not in _REPLAYABLE_METHODS:
+                return JSONResponse(
+                    {"error": {"code": "daemon_moved", "message": "The daemon restarted; try that again."}},
+                    status_code=503,
+                )
+            headers["Authorization"] = f"Bearer {upstream_daemon['token']}"
+            retried = client.build_request(request.method, upstream, headers=headers)
+            try:
+                response = await client.send(retried, stream=True)
+            except httpx.HTTPError as retry_error:
+                return JSONResponse(
+                    {"error": {"code": "daemon_unreachable", "message": str(retry_error)}}, status_code=502,
+                )
         except httpx.HTTPError as error:
             return JSONResponse(
                 {"error": {"code": "daemon_unreachable", "message": str(error)}}, status_code=502,
@@ -152,6 +271,16 @@ def build_application(daemon_url: str, token: str, directory: Path):
 
         return BackgroundTask(response.aclose)
 
+    async def proxy_interface_websocket(websocket) -> None:
+        """The dev server's hot-reload socket.
+
+        Same relay as the terminal's, minus the token: this is the bundler telling the page a
+        file changed, and the bundler is not the daemon."""
+        if interface is None:
+            await websocket.close(code=1008)
+            return
+        await _relay(websocket, interface_url, append_token=False)
+
     async def proxy_websocket(websocket) -> None:
         """Relay a websocket both ways.
 
@@ -159,14 +288,21 @@ def build_application(daemon_url: str, token: str, directory: Path):
         which is why the daemon also accepts the token as a query parameter. That is the form
         used here, and it never leaves this process either."""
 
+        # Read at connect time, not captured at build time: a terminal opened after the daemon
+        # moved should reach the daemon, not the port it used to be on.
+        await _relay(websocket, upstream_daemon["url"], append_token=True)
+
+    async def _relay(websocket, base: str, append_token: bool) -> None:
         import websockets as websockets_client
 
         query = str(websocket.url.query or "")
-        separator = "&" if query else ""
+        if append_token:
+            separator = "&" if query else ""
+            query = f"{query}{separator}token={upstream_daemon['token']}"
         target = (
-            daemon_url.replace("http://", "ws://", 1).replace("https://", "wss://", 1)
+            base.replace("http://", "ws://", 1).replace("https://", "wss://", 1)
             + websocket.url.path
-            + f"?{query}{separator}token={token}"
+            + (f"?{query}" if query else "")
         )
         await websocket.accept()
         try:
@@ -213,6 +349,9 @@ def build_application(daemon_url: str, token: str, directory: Path):
         # Named explicitly rather than caught by the wildcard: an ASGI application dispatches
         # websockets by route, so an HTTP catch-all would never see it.
         WebSocketRoute("/terminal", proxy_websocket),
+        # The dev server's hot-reload channel, which lives under `/_next` and is the whole reason
+        # a change reaches the phone without a rebuild.
+        WebSocketRoute("/_next/{path:path}", proxy_interface_websocket),
         Route(
             "/{path:path}", serve_or_proxy,
             methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
@@ -244,7 +383,7 @@ def run(arguments) -> int:
 
     directory = interface_directory()
     if directory is None:
-        _note(
+        logger.info(
             "frank: the interface has not been built. Run `cd web && bun run build` in a "
             "checkout, or install the packaged build which carries it."
         )
@@ -255,7 +394,7 @@ def run(arguments) -> int:
     # serving. Whoever already holds the port is almost always an earlier `frank serve`, and the
     # useful thing to say is so — not a traceback from deep inside uvicorn.
     if _port_is_taken(arguments.host, arguments.port):
-        _note(
+        logger.info(
             f"frank: {arguments.host}:{arguments.port} is already in use — most likely another "
             f"`frank serve`. Stop it, or pass `--port` to use a different one."
         )
@@ -276,7 +415,7 @@ def run(arguments) -> int:
     started_the_daemon = not daemon_is_up()
     ensure_daemon()
 
-    def stop_the_daemon_we_started() -> None:
+    def stop_daemon_if_started() -> None:
         """Undo our own side effect. A daemon someone else was already running is left alone."""
         if not started_the_daemon:
             return
@@ -288,20 +427,20 @@ def run(arguments) -> int:
         # anything. The same reasoning, and the same signal, as `frank daemon stop`.
         with contextlib.suppress(OSError, ProcessLookupError):
             os.killpg(os.getpgid(pid), signal.SIGTERM)
-        _note("frank: stopped the daemon this command had started.")
+        logger.info("frank: stopped the daemon this command had started.")
 
     try:
         port = int(daemon_port_path().read_text().strip())
         token = daemon_token_path().read_text().strip()
     except (OSError, ValueError):
-        _note("frank: frankd is not running (start it with `frank serve`)")
-        stop_the_daemon_we_started()
+        logger.info("frank: frankd is not running (start it with `frank serve`)")
+        stop_daemon_if_started()
         return 1
 
     application = build_application(f"http://127.0.0.1:{port}", token, directory)
     address = f"http://{arguments.host}:{arguments.port}"
-    _note(f"frank: serving the interface at {address} (daemon on :{port})")
-    _note("frank: this address carries full control of the daemon — do not expose it beyond loopback.")
+    logger.info(f"frank: serving the interface at {address} (daemon on :{port})")
+    logger.info("frank: this address carries full control of the daemon — do not expose it beyond loopback.")
 
     # Asked for, never assumed. Serving and opening a window are two different acts, and this
     # command was doing the second on its own initiative: run it to restart a server, or from a
@@ -320,15 +459,24 @@ def run(arguments) -> int:
             # given one. So the first interrupt appeared to do nothing, and it took a second one,
             # which force-quits and prints a page of tracebacks on the way out. Waiting a few
             # seconds for a stream to notice is courteous; waiting forever is a hang.
-            timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_SECONDS,
         )
+        # SIGTERM needs a handler of its own, and this is the whole reason.
+        #
+        # Uvicorn catches both signals, restores whatever handlers were installed before it ran,
+        # and then re-raises the one it caught so the parent sees the right exit status. For
+        # Ctrl-C that lands on Python's default SIGINT handler, which raises `KeyboardInterrupt`
+        # — so the `finally` below runs and this command undoes its own side effect. For SIGTERM
+        # the default disposition is to end the process where it stands, no unwinding, and the
+        # daemon this command started outlived every `kill` of it while Ctrl-C cleaned up
+        # perfectly. The two ways of stopping a program should not differ in what they leave
+        # behind.
+        signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
         uvicorn.Server(configuration).run()
     finally:
-        # `finally`, not `except`. Uvicorn installs its own signal handlers and returns *normally*
-        # on Ctrl-C, so nothing was ever raised for an `except` to catch — and the daemon this
-        # command had started outlived the command every single time somebody stopped it the
-        # ordinary way. The guard inside means a daemon somebody else was running is left alone.
-        stop_the_daemon_we_started()
+        # `finally`, not `except`. Uvicorn returns *normally* when it is not re-raising, so
+        # nothing is guaranteed to be raised for an `except` to catch. The guard inside means a
+        # daemon somebody else was running is left alone.
+        stop_daemon_if_started()
     return 0
 
 

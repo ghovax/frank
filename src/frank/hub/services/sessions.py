@@ -31,7 +31,15 @@ def _reset_work_habits_acknowledgements() -> None:
 
 
 def _normalize_permission_mode(mode: str) -> str:
-    return mode if mode in {"default", "auto", "read_only"} else "default"
+    """A stored mode, as the enum reads it.
+
+    A hardcoded set of the valid strings lived here, which meant this had to be edited every
+    time the modes changed and quietly disagreed with them until somebody did — a session stored
+    under a spelling the enum had renamed came back as `default`, tightening it without saying
+    so. `coerce` knows the modes, knows the renames, and falls back the same way."""
+    from frank.base.permission_mode import PermissionMode
+
+    return str(PermissionMode.coerce(mode))
 
 
 def _session_worktree_from_record(record: SessionRecord) -> SessionWorktree:

@@ -7,11 +7,12 @@
     "build": "bun run check:events && next build",
     "start": "next start",
     "lint": "eslint",
-    "build:events": "uv run --project .. python ../scripts/generate_event_schema.py && json2ts -i src/lib/generated/events.schema.json -o src/lib/generated/events.ts --unreachableDefinitions",
-    "check:events": "uv run --project .. python ../scripts/generate_event_schema.py --check && json2ts -i src/lib/generated/events.schema.json -o \"${TMPDIR:-/tmp}/frank-events.check.ts\" --unreachableDefinitions && diff -u src/lib/generated/events.ts \"${TMPDIR:-/tmp}/frank-events.check.ts\"",
+    "build:events": "uv run --project .. python ../scripts/generate_event_schema.py && json2ts -i ../shared/generated/events.schema.json -o ../shared/generated/events.ts --unreachableDefinitions",
+    "check:events": "uv run --project .. python ../scripts/generate_event_schema.py --check && json2ts -i ../shared/generated/events.schema.json -o \"${TMPDIR:-/tmp}/frank-events.check.ts\" --unreachableDefinitions && diff -u ../shared/generated/events.ts \"${TMPDIR:-/tmp}/frank-events.check.ts\"",
     "tauri": "cargo tauri",
     "tauri:dev": "cargo tauri dev",
-    "tauri:build": "cargo tauri build"
+    "tauri:build": "cargo tauri build --bundles app",
+    "tauri:dmg": "cargo tauri build"
   },
   "dependencies": {
     "@chakra-ui/react": "^3.36.0",

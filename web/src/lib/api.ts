@@ -100,11 +100,25 @@ async function resolveDaemonEndpoint(): Promise<void> {
   }
 }
 
-// Resolved once and memoized: the endpoint is fixed for the life of the daemon the
-// shell started, and every request would otherwise pay an IPC round trip.
+// Resolved once and memoized, because every request would otherwise pay an IPC round trip.
+// Memoized for the life of *a daemon*, though, not of the page — see `forgetDaemonEndpoint`.
 function ensureDaemonEndpoint(): Promise<void> {
   if (!daemonEndpointPromise) daemonEndpointPromise = resolveDaemonEndpoint();
   return daemonEndpointPromise;
+}
+
+/**
+ * Drop the memoized endpoint so the next request resolves it again.
+ *
+ * A daemon mints a fresh token at boot and binds an ephemeral port, so both change when it
+ * restarts — and the memo held the old pair for as long as the page lived. Every subsequent
+ * request carried a token the new daemon had never issued. It went unnoticed on the REST paths,
+ * which reconnect through code that re-reads it, and was unmissable on the terminal, whose
+ * websocket handshake answers a wrong token with a bare 403 and whose retry loop then tried the
+ * same wrong token once a second.
+ */
+export function forgetDaemonEndpoint(): void {
+  daemonEndpointPromise = null;
 }
 
 export interface ApiRequestOptions {
@@ -189,7 +203,11 @@ async function rpc<T>(
 
 // The address the client is currently talking to.
 
-export function terminalWebSocketUrl(options: { sessionId?: string | null; workingDirectory?: string; terminalKey?: string; locationKind?: string; locationBaseDirectory?: string; locationHostAlias?: string; rows?: number; columns?: number } = {}): string {
+// Async, unlike its siblings, and for the reason `apiFetch` is: the token has to be resolved
+// before it can be attached. A synchronous builder returned a URL with no token whenever the
+// panel mounted before the endpoint had been read, and a websocket with no token is a 403.
+export async function terminalWebSocketUrl(options: { sessionId?: string | null; workingDirectory?: string; terminalKey?: string; locationKind?: string; locationBaseDirectory?: string; locationHostAlias?: string; rows?: number; columns?: number } = {}): Promise<string> {
+  await ensureDaemonEndpoint();
   const params = new URLSearchParams();
   if (options.sessionId) params.set("session_id", options.sessionId);
   if (options.workingDirectory) params.set("working_directory", options.workingDirectory);
@@ -368,6 +386,9 @@ export interface Workspace {
   updated_at: string;
   session_count: number;
   locations?: Location[];
+  // The conversation this workspace was last opened at, or "" for none. The daemon's memory,
+  // not the browser's — see `rememberLastSession`.
+  last_session_id?: string;
 }
 
 // The editable shape of a location (create/update). No `name` — the server derives it.
@@ -380,6 +401,72 @@ export interface LocationInput {
 
 export interface WorkspaceCreateInput {
   locations: LocationInput[];
+}
+
+/**
+ * Another Frank this one knows how to reach.
+ *
+ * Without its token, deliberately: `machineAddress` is the one call that hands one over, so a
+ * list that renders on screen and sits in a memory snapshot carries no credential.
+ */
+export interface Machine {
+  id: string;
+  name: string;
+  endpoint: string;
+  created_at: string;
+}
+
+export async function listMachines(): Promise<Machine[]> {
+  const response = await apiFetch(`/machines`);
+  if (!response.ok) return [];
+  const data = await response.json();
+  return Array.isArray(data.machines) ? (data.machines as Machine[]) : [];
+}
+
+/** Remember a machine from the `frank://pair#…` link `frank reach` prints. */
+export async function addMachine(link: string): Promise<Machine> {
+  const response = await apiFetch(`/machines`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ link }),
+  });
+  if (!response.ok) {
+    let detail = "";
+    try {
+      detail = String((await response.json())?.detail ?? "");
+    } catch {
+      // A body that is not JSON says nothing the status did not.
+    }
+    throw new Error(detail || `Could not add that machine (${response.status}).`);
+  }
+  return await response.json() as Machine;
+}
+
+/**
+ * The URL that opens a machine, token and all.
+ *
+ * Asked for at the moment somebody chooses to go, which is the whole reason it is its own call.
+ * Going there is a *navigation* rather than a change of API base: a page cannot script another
+ * origin — `frank reach` answers no `access-control-allow-origin`, because letting arbitrary
+ * pages talk to a listener holding full control of a machine is exactly what it is guarding
+ * against — so the interface hands the browser the address and the machine serves its own.
+ */
+export async function machineAddress(machineId: string): Promise<string> {
+  const response = await apiFetch(`/machines/${encodeURIComponent(machineId)}/address`);
+  if (!response.ok) throw new Error(`Could not open that machine (${response.status}).`);
+  return String((await response.json())?.url ?? "");
+}
+
+export async function renameMachine(machineId: string, name: string): Promise<void> {
+  await apiFetch(`/machines/${encodeURIComponent(machineId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function forgetMachine(machineId: string): Promise<void> {
+  await apiFetch(`/machines/${encodeURIComponent(machineId)}`, { method: "DELETE" });
 }
 
 export async function listSshHosts(): Promise<SshHost[]> {
@@ -410,6 +497,25 @@ export async function createWorkspace(input: WorkspaceCreateInput): Promise<Work
   });
   if (!response.ok) throw new Error(`Failed to create workspace (${response.status})`);
   return await response.json() as Workspace;
+}
+
+/**
+ * Remember which conversation this workspace is open at, so the next launch lands there.
+ *
+ * Deliberately the server's memory. The same workspace is reached from the desktop app, a
+ * browser and the phone, and "where I was" is a fact about the machine rather than about the
+ * window looking at it; kept per-client, each one reopens somewhere different, and the phone —
+ * whose storage goes whenever its webview is cleared — reopens nowhere.
+ *
+ * Fire-and-forget on purpose: nothing on screen depends on the write landing, and a failed one
+ * costs the person a reopened conversation, not their place in this one.
+ */
+export async function rememberLastSession(workspaceId: string, sessionId: string): Promise<void> {
+  await apiFetch(`/workspaces/${encodeURIComponent(workspaceId)}/last-session`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId }),
+  }).catch(() => undefined);
 }
 
 export async function deleteWorkspace(workspaceId: string): Promise<void> {
@@ -590,7 +696,7 @@ export async function refreshRemoteAgent(name: string): Promise<{ health: string
 export const FRANK_METADATA_KEY = "urn:frank:ext:turn:v1";
 export const CONTENT_BLOCK_METADATA_KEY = "urn:frank:ext:content-block:v1";
 
-export type PermissionMode = "default" | "auto" | "read_only";
+export type PermissionMode = "default" | "permissive" | "self_classify" | "read_only";
 export type WorktreeStrategy = "none" | "branch" | "worktree";
 
 export interface AgentSummary {
@@ -617,7 +723,15 @@ export interface AgentConfiguration {
   model: string;
   provider: string;
   reasoning_effort: string;
-  permission_mode: PermissionMode;
+  /**
+   * The loosest mode this agent allows, or `null` where it sets no ceiling — which is what a
+   * card that simply does not mention permissions means, and what most of them are.
+   *
+   * It was not nullable, so the editor below always wrote a value: opening an agent's settings
+   * and touching anything pinned a ceiling of `default`, and every mode looser than that became
+   * unreachable for that agent without anybody choosing it.
+   */
+  permission_mode: PermissionMode | null;
   tools_enabled: string[];
   tools_disabled: string[];
   bash: AgentBashConfiguration;
@@ -628,7 +742,8 @@ export interface SaveAgentConfigurationPayload {
   model?: string;
   provider?: string;
   reasoning_effort?: string;
-  permission_mode?: PermissionMode;
+  // `null` clears the ceiling; omitted leaves it as it was.
+  permission_mode?: PermissionMode | null;
   tools_enabled?: string[];
   tools_disabled?: string[];
   bash?: Partial<AgentBashConfiguration>;
@@ -706,11 +821,13 @@ export interface ProviderCredential {
 }
 
 export interface CompactionSettings {
-  // Automatic Observational-Memory compaction on/off (manual always works).
-  auto: boolean;
-  observer_context_fraction: number;
-  reflector_observation_fraction: number;
-  keep_recent_turns: number;
+  // Reclaiming context on its own as it fills (manual compaction always works).
+  automatic: boolean;
+  reclaim_at_fraction: number;
+  condense_log_at_fraction: number;
+  output_reserve_fraction: number;
+  recent_working_set_fraction: number;
+  verbatim_user_fraction: number;
 }
 
 export interface Settings {
@@ -746,20 +863,22 @@ export interface Settings {
 const DEFAULT_SANDBOX: SandboxSettings = {
   enforce: "required",
   network: true,
-  filesystem: { readable: [], writable: [], deny: [] },
+  filesystem: { readable: [], writable: [], deny: [], grantable: [] },
   limits: {},
   umask: null,
   nice: 0,
 };
 
 const DEFAULT_COMPACTION: CompactionSettings = {
-  auto: false,
-  observer_context_fraction: 0.6,
-  reflector_observation_fraction: 0.3,
-  keep_recent_turns: 6,
+  automatic: false,
+  reclaim_at_fraction: 0.85,
+  condense_log_at_fraction: 0.3,
+  output_reserve_fraction: 0.1,
+  recent_working_set_fraction: 0.25,
+  verbatim_user_fraction: 0.1,
 };
 
-// Persist the Observational-Memory compaction settings (auto on/off + thresholds).
+// Persist the context-reclaiming settings (automatic on/off, pruning, and the thresholds).
 export async function updateCompactionSettings(changes: Partial<CompactionSettings>): Promise<void> {
   await apiFetch(`/settings/compaction`, {
     method: "POST",
@@ -928,6 +1047,7 @@ export interface ProviderOption {
   id: string;
   name: string;
   openai_compatible: boolean;
+  credential_id: string;
 }
 
 export interface ModelsResponse {
@@ -1077,7 +1197,7 @@ export type SandboxEnforce = "required" | "preferred" | "off";
 export interface SandboxSettings {
   enforce: SandboxEnforce;
   network: boolean;
-  filesystem: { readable: string[]; writable: string[]; deny: string[] };
+  filesystem: { readable: string[]; writable: string[]; deny: string[]; grantable: string[] };
   limits: Record<string, number>;
   umask: string | null;
   nice: number;
@@ -1154,6 +1274,18 @@ export async function fetchMcpTools(workingDirectory?: string): Promise<McpServe
 const eventListeners = new Set<(event: { type: string }) => void>();
 let sharedEventStream: { close: () => void } | null = null;
 
+//: Told whenever the shared stream connects or drops, so the interface can show it.
+const connectionListeners = new Set<(connected: boolean) => void>();
+let lastReportedConnection: boolean | null = null;
+
+/** Watch whether the daemon is reachable. Answers with an unsubscribe. */
+export function subscribeConnection(listener: (connected: boolean) => void): () => void {
+  connectionListeners.add(listener);
+  if (lastReportedConnection !== null) listener(lastReportedConnection);
+  ensureEventStream();
+  return () => { connectionListeners.delete(listener); };
+}
+
 function ensureEventStream(): void {
   if (sharedEventStream) return;
   sharedEventStream = openEventStream("/events", (raw) => {
@@ -1164,6 +1296,13 @@ function ensureEventStream(): void {
     } catch {
       // ignore malformed
     }
+  }, (connected) => {
+    if (connected === lastReportedConnection) return;
+    lastReportedConnection = connected;
+    // Whatever comes back may be a different daemon, on a different port, with a different
+    // token. Forgetting the endpoint here is what makes the reconnection reach it.
+    if (!connected) forgetDaemonEndpoint();
+    connectionListeners.forEach((listener) => listener(connected));
   });
 }
 
@@ -1769,10 +1908,19 @@ async function pumpEventStream(
 // request on the capability token and EventSource cannot carry an Authorization header.
 // Reconnection therefore becomes ours to own — EventSource retried by itself, and the
 // shared bus relies on that to survive a daemon restart.
-function openEventStream(path: string, onData: (raw: string) => void): { close: () => void } {
+function openEventStream(
+  path: string,
+  onData: (raw: string) => void,
+  onHealth?: (connected: boolean) => void,
+): { close: () => void } {
   const controller = new AbortController();
   let closed = false;
 
+  // This loop has always reconnected on its own, once a second, forever — but it told nobody
+  // whether it was connected, so the interface could not say the daemon had gone and could not
+  // say when it came back. Reporting it is what turns a silent retry into a state a person can
+  // see. Reported on every transition rather than every attempt, so a daemon that is down for a
+  // while does not drive a render a second.
   const run = async () => {
     while (!closed) {
       try {
@@ -1780,12 +1928,16 @@ function openEventStream(path: string, onData: (raw: string) => void): { close: 
           signal: controller.signal,
           headers: { Accept: "text/event-stream" },
         });
-        if (response.ok && response.body) await pumpEventStream(response.body, onData);
+        if (response.ok && response.body) {
+          onHealth?.(true);
+          await pumpEventStream(response.body, onData);
+        }
       } catch {
         // A deliberate close and a dropped connection arrive the same way here; the
         // `closed` flag below is what tells them apart.
       }
       if (closed) return;
+      onHealth?.(false);
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   };

@@ -32,7 +32,7 @@ frank create [-a AGENT] [-C DIRECTORY] [-m MODE] [-p PROJECT] [-P PARENT] [-t TI
 |------|--------------|
 | `-a`, `--agent` | **Required.** The agent profile to run. There is no default: which agent does the work is the one thing nothing can guess for you. |
 | `-C`, `--directory` | The working directory. Project-local agents, skills and MCP servers are resolved from here. |
-| `-m`, `--mode` | `default`, `auto`, or `read_only`. Fixed for the session's life. |
+| `-m`, `--mode` | `default`, `permissive`, `self_classify`, or `read_only`. The mode a session *starts* under; the person running it can change it later, and the change reaches the turn in flight. |
 | `-p`, `--project` | The project this session belongs to. |
 | `-P`, `--parent` | The session creating this one. The child is clamped to no looser a mode than its parent, and is reaped when the parent ends. Defaults to `$FRANK_SESSION_ID`, which every session exports — so this command run from inside a session creates a child of it rather than an orphan. |
 | `-t`, `--title` | A label for the session list. Left unset, the session names itself after its first message. |
@@ -151,6 +151,33 @@ It **proxies** the daemon rather than pointing the browser at it, and that is th
 > Whatever can reach this address can drive the daemon, because this server holds the token. It binds `127.0.0.1` for that reason. `--host` exists for tunnelling deliberately; if you use it, put authentication in front.
 
 Needs the interface to have been built (`cd web && bun run build` in a checkout). The packaged build carries it.
+
+## Reaching it from a phone
+
+| Command | What it does |
+|---|---|
+| `frank reach` | Serve an authenticated endpoint on `0.0.0.0:8825`, and print a pairing code |
+| `frank reach pair` | Print the pairing code for an endpoint already running |
+| `frank reach rotate` | Mint a new token, unpairing every device |
+| `frank reach --advertise https://frank.example.com` | Hand the phone the address of whatever fronts this |
+| `frank reach --tls-certificate cert.pem --tls-key key.pem` | Serve TLS directly |
+
+The same proxy as `frank web`, with the three differences that let it leave the machine. **It
+authenticates** — a request without the reach token gets a 401 and never touches the daemon, and
+websocket handshakes are checked too, which is the case an HTTP-shaped check forgets. **Its token
+is durable**, kept in `~/.local/share/frank/reach-token` rather than minted per boot, so a paired
+device stays paired across a restart. And **it knows where it can be found**: the pairing code
+carries every address this machine answers on, best first, and the app races them and keeps
+whichever works — so the phone uses the LAN at home and the tailnet away, without being told.
+
+> [!WARNING]
+> This is a bearer token over whatever transport you gave it. On a tailnet that is fine — WireGuard
+> is the encryption, and nothing is listening on a public port. Anywhere else, put TLS in front of
+> it. Do not forward the port on your router.
+
+It serves no browser interface, deliberately: that bundle authenticates by being on the same
+machine as the daemon, so it carries no reach token and every call it made through this door would
+come back 401. `frank web` is the browser's door; this is the phone's. See [The phone](mobile.md).
 
 ## The desktop app
 

@@ -50,6 +50,7 @@ from pydantic import Field, create_model
 from frank.base.configuration import PromptLoader
 from frank.base.serialization import compact
 from frank.runtime.tools import context as tool_context
+from frank.runtime.tools.registry import EXPLANATION
 
 # A tool's description is the guidance a model reads to decide whether and how to call it —
 # model-facing prose, and so it lives in a prompt template like every other piece of it. The
@@ -103,6 +104,7 @@ async def _create_session(
     working_directory: str = "",
     permission_mode: str = "",
     title: str = "",
+    explanation: str = "",
 ) -> str:
     """Make a peer, and nothing else.
 
@@ -136,7 +138,7 @@ async def _create_session(
     })
 
 
-async def _message_session(session: str, message: str) -> str:
+async def _message_session(session: str, message: str, explanation: str = "") -> str:
     access = tool_context.current().session_access
     if access is None:
         return _unavailable("message_session_error")
@@ -150,7 +152,7 @@ async def _message_session(session: str, message: str) -> str:
     return compact({"code": "message_sent", "status": "ok", "session": session})
 
 
-async def _read_session(session: str) -> str:
+async def _read_session(session: str, explanation: str = "") -> str:
     access = tool_context.current().session_access
     if access is None:
         return _unavailable("read_session_error")
@@ -164,7 +166,7 @@ async def _read_session(session: str) -> str:
     return compact({"code": "session", "status": "ok", **record})
 
 
-async def _list_sessions() -> str:
+async def _list_sessions(explanation: str = "") -> str:
     access = tool_context.current().session_access
     if access is None:
         return _unavailable("list_sessions_error")
@@ -175,7 +177,7 @@ async def _list_sessions() -> str:
     return compact({"code": "sessions", "status": "ok", "sessions": records})
 
 
-async def _end_session(session: str) -> str:
+async def _end_session(session: str, explanation: str = "") -> str:
     access = tool_context.current().session_access
     if access is None:
         return _unavailable("end_session_error")
@@ -189,7 +191,7 @@ async def _end_session(session: str) -> str:
     return compact({"code": "session_ended", "status": "ok", "session": session, **result})
 
 
-async def _list_remote_agents() -> str:
+async def _list_remote_agents(explanation: str = "") -> str:
     access = tool_context.current().session_access
     if access is None:
         return _unavailable("list_remote_agents_error")
@@ -200,7 +202,7 @@ async def _list_remote_agents() -> str:
     return compact({"code": "remote_agents", "status": "ok", "agents": agents})
 
 
-async def _message_remote_agent(name: str, message: str) -> str:
+async def _message_remote_agent(name: str, message: str, explanation: str = "") -> str:
     access = tool_context.current().session_access
     if access is None:
         return _unavailable("message_remote_agent_error")
@@ -233,10 +235,11 @@ def build_create_session_tool(agent_names: list[str]) -> BaseTool:
             Field(default="", description="Where the peer works. Defaults to your working directory."),
         ),
         permission_mode=(
-            Literal["", "default", "auto", "read_only"],
+            Literal["", "default", "permissive", "self_classify", "read_only"],
             Field(default="", description="The peer's permission mode. Defaults to yours."),
         ),
         title=(str, Field(default="", description="A short label for the session list.")),
+        explanation=(str, Field(description=EXPLANATION)),
     )
     return StructuredTool.from_function(
         coroutine=_create_session,
@@ -254,6 +257,7 @@ message_session_tool = StructuredTool.from_function(
         "MessageSessionArguments",
         session=(str, Field(description="The recipient session id.")),
         message=(str, Field(description="The message to send.")),
+        explanation=(str, Field(description=EXPLANATION)),
     ),
 )
 
@@ -265,6 +269,7 @@ read_session_tool = StructuredTool.from_function(
     args_schema=create_model(
         "ReadSessionArguments",
         session=(str, Field(description="The session id.")),
+        explanation=(str, Field(description=EXPLANATION)),
     ),
 )
 
@@ -273,7 +278,9 @@ list_sessions_tool = StructuredTool.from_function(
     coroutine=_list_sessions,
     name="list_sessions",
     description=_description("list_sessions"),
-    args_schema=create_model("ListSessionsArguments"),
+    args_schema=create_model("ListSessionsArguments",
+        explanation=(str, Field(description=EXPLANATION)),
+    ),
 )
 
 
@@ -284,6 +291,7 @@ end_session_tool = StructuredTool.from_function(
     args_schema=create_model(
         "EndSessionArguments",
         session=(str, Field(description="The session id.")),
+        explanation=(str, Field(description=EXPLANATION)),
     ),
 )
 
@@ -292,7 +300,9 @@ list_remote_agents_tool = StructuredTool.from_function(
     coroutine=_list_remote_agents,
     name="list_remote_agents",
     description=_description("list_remote_agents"),
-    args_schema=create_model("ListRemoteAgentsArguments"),
+    args_schema=create_model("ListRemoteAgentsArguments",
+        explanation=(str, Field(description=EXPLANATION)),
+    ),
 )
 
 
@@ -304,6 +314,7 @@ message_remote_agent_tool = StructuredTool.from_function(
         "MessageRemoteAgentArguments",
         name=(str, Field(description="The registered remote agent's name.")),
         message=(str, Field(description="The message to send.")),
+        explanation=(str, Field(description=EXPLANATION)),
     ),
 )
 

@@ -29,6 +29,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import croniter
 
+from frank.base.permission_mode import PermissionMode
+
 __all__ = [
     "PERMISSION_MODES",
     "ScheduleError",
@@ -37,9 +39,11 @@ __all__ = [
     "validate",
 ]
 
-#: The modes a schedule may run under. Deliberately the same three a person may choose, minus
+#: The modes a schedule may run under. Deliberately every mode a person may choose, minus
 #: nothing: a scheduled job is not a lesser kind of session and may legitimately need to write.
-PERMISSION_MODES = ("default", "auto", "read_only")
+#: Read off the enum rather than restated, so a mode added there is offered here without an edit
+#: — this list was a hand-kept copy, which is the kind that falls behind silently.
+PERMISSION_MODES = tuple(str(mode) for mode in PermissionMode)
 
 
 class ScheduleError(ValueError):

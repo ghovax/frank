@@ -15,7 +15,36 @@ from frank.runtime.background import current_background_jobs, current_tool_call_
 from frank.base.tuning import Tunable, active_tuning, clip_to_tokens
 from frank.base.serialization import compact
 from frank.runtime.tools import context as tool_context
+
 from frank.base.configuration import PromptLoader
+#: Why a tool call is happening, in the words the person watching will read. Every tool takes
+#: one, because the transcript is the only place a call explains itself: a command and its
+#: arguments say what ran, never why, and a call that cannot say why is a call somebody has to
+#: reverse-engineer to trust. Written once here so the twenty-odd tools that ask for it cannot
+#: drift into asking for twenty slightly different things.
+EXPLANATION = "A concise, user-facing reason this action is needed for the current task. Always required."
+
+#: What a call reaches for beyond the confinement it already has, and whether it changes anything.
+#:
+#: One argument where there were two. `read_only` used to be a separate flag answering "does this
+#: mutate", weighed only where the static scan of the command could not decide — a narrow job,
+#: carried by a wire of its own. `access_request` answers the same question and a larger one with
+#: it: not merely whether the call writes, but *where* it reaches. That is the version worth
+#: asking, because reach is structural and checkable where a bare boolean was neither.
+#:
+#: It is a difference against the profile, never an inventory of the call. A command working
+#: inside what the session already holds omits it, which is nearly every command, so the ordinary
+#: case costs no tokens and the argument's presence is itself the signal that something is being
+#: asked for.
+ACCESS_REQUEST = (
+    "What this call needs beyond what the session already holds — a difference against the "
+    "confinement listed in your context, not a list of everything the call touches. Omit it "
+    "entirely when the call works inside paths already writable or readable, which is the usual "
+    "case. When present it must set `mutates`. Use `writes`/`reads` for paths outside the "
+    "confinement and `network` only where the confinement denies the network. A granted path "
+    "stays granted for the rest of the session; ask for the narrowest thing that does the work, "
+    "and never use a path granted for one purpose to do something else."
+)
 
 # bash is synchronous by default: the model chooses whether a command backgrounds
 # (background=true), so backgrounding is never a surprise it has to reason about.
@@ -32,6 +61,56 @@ from frank.base.configuration import PromptLoader
 # tuning timeout multiplier at each call site.
 
 
+#: What a kernel refusal looks like coming back through a shell. Matched on the message rather
+#: than on an errno, because the errno never reaches here: the shell prints its own sentence and
+#: exits, so the text is the only evidence there is.
+_SANDBOX_REFUSAL_PHRASES = (
+    "operation not permitted",
+    "permission denied",
+    "read-only file system",
+)
+
+
+def _sandbox_refusal_note(return_code: int, output: str, profile, workspace: str) -> dict:
+    """What to say when a command probably died on the confinement rather than on its own work.
+
+    A boundary that refuses in errno is a boundary nobody can act on. `Operation not permitted`
+    names no path, says nothing about what would have been permitted, and reads as a broken tool
+    — so the usual response is to run the same command again.
+
+    **This is a hint and not an attribution.** Seatbelt writes the denied path to the system log
+    and Landlock returns a bare `EACCES`; neither can be tied back to one child reliably, and a
+    note naming the wrong path would be worse than one naming none. So it states what is
+    certainly true — where this session may write — and leaves the model to match that against
+    what it was trying to do. Returned as structured data rather than pasted into the output,
+    because the output is the command's and this is the harness's.
+    """
+    if return_code == 0 or not output:
+        return {}
+    lowered = output.lower()
+    if not any(phrase in lowered for phrase in _SANDBOX_REFUSAL_PHRASES):
+        return {}
+    from frank.base import confinement as _confinement
+
+    writable = [
+        resolved for entry in profile.filesystem.writable
+        if (resolved := _confinement.expand(entry, workspace=workspace))
+    ]
+    return {
+        "note": (
+            "This may be the sandbox rather than the command. A path outside the confinement is "
+            "refused by the operating system, which reports it as a permission error without "
+            "naming the path."
+        ),
+        "writable": writable,
+        "network": profile.network,
+        "remedy": (
+            "Write somewhere already listed, or re-issue the call with an access_request naming "
+            "the path you need."
+        ),
+    }
+
+
 def _require_mcp_client_manager():
     manager = tool_context.current().mcp_manager
     if manager is None:
@@ -43,8 +122,8 @@ def _require_mcp_client_manager():
 async def bash(
     command: str,
     location: str = "",
-    read_only: bool = False,
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    access_request: dict[str, Any] | None = Field(None, description=ACCESS_REQUEST),
+    explanation: str = Field(..., description=EXPLANATION),
     risk: Literal["low", "medium", "high"] = "low",
     background: bool = False,
     timeout: float = Tunable.bash_sync_window_seconds.default,
@@ -168,7 +247,7 @@ async def bash(
         if not output:
             return compact({"code": result_code, "status": result_status, "output": "", "output_file": str(output_path), "truncated": False, "pid": process_id, "size": 0, "returncode": return_code})
         inline_output, truncated = clip_to_tokens(output, active_tuning().amount(Tunable.output_tokens))
-        return compact({
+        result = {
             "code": result_code,
             "status": result_status,
             "output": inline_output,
@@ -177,7 +256,11 @@ async def bash(
             "pid": process_id,
             "size": len(output),
             "returncode": return_code,
-        })
+        }
+        refusal = _sandbox_refusal_note(return_code, inline_output, profile, workspace)
+        if refusal:
+            result["sandbox"] = refusal
+        return compact(result)
 
     jobs = current_background_jobs()
     job_id = jobs.spawn(
@@ -185,7 +268,7 @@ async def bash(
         arguments={
             "command": command,
             "location": location,
-            "read_only": read_only,
+            "access_request": access_request,
             "explanation": explanation,
             "risk": risk,
             "background": background,
@@ -218,7 +301,7 @@ async def bash(
 @tool
 async def search_web(
     query: str,
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
     result_count: int = 5,
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/search_web.md."""
@@ -293,7 +376,7 @@ async def search_web(
 
 
 @tool
-async def list_mcp_tools(server: str = "", explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+async def list_mcp_tools(server: str = "", explanation: str = Field(..., description=EXPLANATION)) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/list_mcp_tools.md."""
     try:
         result = await _require_mcp_client_manager().list_tools(server)
@@ -307,8 +390,8 @@ async def call_mcp_tool(
     server: str,
     tool_name: str,
     arguments: dict[str, Any] | None = None,
-    read_only: bool = False,
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    access_request: dict[str, Any] | None = Field(None, description=ACCESS_REQUEST),
+    explanation: str = Field(..., description=EXPLANATION),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/call_mcp_tool.md."""
@@ -334,7 +417,7 @@ async def call_mcp_tool_with_events(
 
 
 @tool
-async def list_mcp_resources(server: str = "", explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+async def list_mcp_resources(server: str = "", explanation: str = Field(..., description=EXPLANATION)) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/list_mcp_resources.md."""
     try:
         result = await _require_mcp_client_manager().list_resources(server)
@@ -344,7 +427,7 @@ async def list_mcp_resources(server: str = "", explanation: str = Field(..., des
 
 
 @tool
-async def read_mcp_resource(server: str, uri: str, explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+async def read_mcp_resource(server: str, uri: str, explanation: str = Field(..., description=EXPLANATION)) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/read_mcp_resource.md."""
     try:
         result = await _require_mcp_client_manager().read_resource(server, uri)
@@ -356,26 +439,26 @@ async def read_mcp_resource(server: str, uri: str, explanation: str = Field(...,
 @tool
 async def wait_for(
     seconds: float,
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/wait_for.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
-def read_turn(turn_id: str = "", explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+def read_turn(turn_id: str = "", explanation: str = Field(..., description=EXPLANATION)) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/read_turn.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
-def set_tasks(tasks: list[dict]) -> str:
+def set_tasks(tasks: list[dict], explanation: str = Field(..., description=EXPLANATION)) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/set_tasks.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
-def update_tasks(updates: list[dict]) -> str:
+def update_tasks(updates: list[dict], explanation: str = Field(..., description=EXPLANATION)) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/update_tasks.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -384,7 +467,7 @@ def update_tasks(updates: list[dict]) -> str:
 def update_goal(
     goal: str = "",
     status: Literal["active", "satisfied", "cleared"] = "active",
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/update_goal.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -396,7 +479,7 @@ def read_file(
     location: str = "",
     offset: int = 1,
     limit: int | None = 2048,
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/read_file.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -407,7 +490,7 @@ def search_code(
     query: str,
     top_k: int = 10,
     reindex: bool = False,
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/search_code.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -420,7 +503,7 @@ def edit_file(
     replace_with: str,
     location: str = "",
     replace_all: bool = False,
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/edit_file.md."""
@@ -432,7 +515,7 @@ def write_file(
     file_path: str,
     content: str,
     location: str = "",
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/write_file.md."""
@@ -446,7 +529,7 @@ async def fetch_url(
     timeout: float = Tunable.slow_tool_sync_window_seconds.default,
     hard_deadline: float = 30,
     background: bool = False,
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/fetch_url.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -460,7 +543,7 @@ async def download_file(
     timeout: float = Tunable.slow_tool_sync_window_seconds.default,
     hard_deadline: float = 120,
     background: bool = False,
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/download_file.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -470,7 +553,7 @@ async def download_file(
 async def control_screen(
     script: str,
     target: str = "",
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/control_screen.md."""
@@ -480,14 +563,14 @@ async def control_screen(
 @tool
 def ask_user(
     questions: list[dict],
-    explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/ask_user.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
-def load_skill(name: str, explanation: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+def load_skill(name: str, explanation: str = Field(..., description=EXPLANATION)) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/load_skill.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 

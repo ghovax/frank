@@ -9,20 +9,22 @@
 
 import { Alert, Box, Button, Flex, IconButton, Input, Kbd, Menu, Span, Text, VStack } from "@chakra-ui/react";
 import { swallowed } from "@/lib/swallowed";
-import { useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import { useLocale } from "@/lib/i18n/locale-provider";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LuArrowDownUp, LuChevronDown, LuChevronRight, LuClock, LuEllipsis, LuFolderOpen, LuFolderPlus, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
+import { LuArrowDownUp, LuChevronDown, LuChevronRight, LuClock, LuEllipsis, LuFolderOpen, LuFolderPlus, LuMessagesSquare, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FrankMark } from "@/components/ui/frank-mark";
 import { DropdownMenu, MenuOption } from "@/components/ui/menu";
 import { PanelBody, PanelCard } from "@/components/ui/panel";
 import { Tooltip } from "@/components/ui/tooltip";
 import { deleteWorkspace, listWorkspaces, listSshHosts, revealInFinder, subscribeEvents, type AgentSummary, type PermissionMode, type Workspace, type SshHost } from "@/lib/api";
+import { PERMISSION_MODES } from "@shared/controls";
 import { locationTargetAddress, workspaceLabel } from "./location-status";
 import { NewScheduleDialog } from "./new-schedule-dialog";
 import { NewWorkspaceDialog } from "./new-workspace-dialog";
 import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
+import { InlineField } from "./ui/display";
 import { toaster } from "./ui/toaster";
 import { errorMessage } from "@/lib/errors";
 
@@ -52,6 +54,88 @@ export interface SessionEntry {
   // Why an ended session ended, when the daemon knows — shown on the status dot.
   exitReason: string;
   permissionMode: PermissionMode;
+}
+
+
+// The hover cards. Both follow the Git bar's shape — a titled heading with the glyph that
+// stands for the thing, then label/value rows — because that is already the vocabulary this
+// interface uses for "here is what I know about this", and a second one would only make the
+// two harder to read. A row's own tooltip used to be its title repeated back, which told a
+// reader nothing they were not already looking at.
+
+function SessionHoverCard({
+  entry, statusLabel, agents,
+}: { entry: SessionEntry; statusLabel: string; agents: AgentSummary[] }) {
+  const translation = useTranslations("SessionsSidebar");
+  const permissions = useTranslations("SessionControls");
+  const format = useFormatter();
+  const title = entry.title || translation("untitledConversation");
+  const created = new Date(entry.createdAt);
+  // Both of these are identifiers on the wire and names on screen. The agent's own name comes
+  // from the catalogue rather than from the session row, which only ever stored the id; the
+  // permission mode is read out of the one definition every client already builds its controls
+  // from, so the sidebar cannot come to call a mode something the picker does not.
+  // `title` is the agent's own name; `name` is its slug, and reads as a code beside a
+  // human-written conversation title. The same order the agent picker uses.
+  const agent = agents.find((candidate) => candidate.id === entry.agent);
+  const agentName = agent?.title || agent?.name || entry.agent;
+  const permissionKey = PERMISSION_MODES.choices.find((choice) => choice.value === entry.permissionMode)?.labelKey;
+  return (
+    <Box maxW="320px">
+      <Flex align="center" gap={1} mb={1} color="fg">
+        <LuMessagesSquare size={12} />
+        <Text fontWeight="semibold" truncate>{title}</Text>
+      </Flex>
+      <Flex direction="column" ps={2} gap={1}>
+        <InlineField label={translation("fieldAgent")}><Text>{agentName}</Text></InlineField>
+        <InlineField label={translation("fieldStatus")}>
+          <Text color={entry.failed ? "red.fg" : entry.awaitingInput ? "yellow.fg" : undefined}>{statusLabel}</Text>
+        </InlineField>
+        {Number.isNaN(created.getTime()) ? null : (
+          <InlineField label={translation("fieldCreated")}>
+            <Text>{format.dateTime(created, { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Text>
+          </InlineField>
+        )}
+        {permissionKey ? (
+          <InlineField label={translation("fieldPermissions")}>
+            <Text>{permissions(permissionKey as Parameters<typeof permissions>[0])}</Text>
+          </InlineField>
+        ) : null}
+        {entry.exitReason ? (
+          <InlineField label={translation("fieldExitReason")}><Text color="fg.muted">{entry.exitReason}</Text></InlineField>
+        ) : null}
+      </Flex>
+    </Box>
+  );
+}
+
+function WorkspaceHoverCard({
+  label, workspace, sessionCount,
+}: { label: string; workspace: Workspace; sessionCount: number }) {
+  const translation = useTranslations("SessionsSidebar");
+  const locations = workspace.locations ?? [];
+  return (
+    <Box maxW="320px">
+      <Flex align="center" gap={1} mb={1} color="fg">
+        <LuFolderOpen size={12} />
+        <Text fontWeight="semibold" truncate>{label}</Text>
+      </Flex>
+      <Flex direction="column" ps={2} gap={1}>
+        {/* Every location, not just the first. A workspace that reaches two machines is
+            precisely the one whose card is worth opening, and showing only the head of the
+            list made those indistinguishable from a plain local folder. */}
+        {locations.map((location, index) => (
+          <InlineField key={index} label={index === 0 ? translation("fieldLocation") : ""}>
+            <Text fontFamily="mono" wordBreak="break-all">{locationTargetAddress(location)}</Text>
+          </InlineField>
+        ))}
+        <InlineField label={translation("fieldConversations")}><Text>{sessionCount}</Text></InlineField>
+        <InlineField label={translation("fieldWorkspace")}>
+          <Text fontFamily="mono" wordBreak="break-all" color="fg.muted">{workspace.id}</Text>
+        </InlineField>
+      </Flex>
+    </Box>
+  );
 }
 
 export type SessionSort = "recent" | "active";
@@ -92,7 +176,7 @@ const INDICATOR_COLOR: Record<SessionIndicator, string> = {
 
 const ACTIVITY_LABEL_KEY: Record<SessionActivity, string> = {
   working: "statusWorking",
-  waiting: "statusWaiting",
+  waiting: "awaitingInput",
   idle: "statusIdle",
   asleep: "statusAsleep",
   ended: "statusEnded",
@@ -192,6 +276,7 @@ function MarqueeTitle({ text }: { text: string }) {
 // gestures never compete for the same click.
 function SessionTreeRow({
   node,
+  agents,
   activeSessionId,
   unseenCompletions,
   expandedSessions,
@@ -200,6 +285,7 @@ function SessionTreeRow({
   onRequestDelete,
 }: {
   node: SessionTreeNode;
+  agents: AgentSummary[];
   activeSessionId: string | null;
   unseenCompletions: Set<string>;
   expandedSessions: Set<string>;
@@ -250,13 +336,21 @@ function SessionTreeRow({
           // the status dot inward — so a row with nothing to report still looked like it was
           // holding space open on the right. Taking it out of layout entirely lets the dot sit
           // flush against the edge, and the ⋯ pushes it aside only while the row is hovered.
-          "& [data-row-actions]": { display: "none" },
-          "&:hover [data-row-actions]": { display: "flex" },
-          "&:focus-within [data-row-actions]": { display: "flex" },
-          // Same nesting problem as the title mask in globals.css: a workspace row contains its
-          // session rows, so its `:hover` revealed every nested row's actions at once.
-          "&:hover .sidebar-row:not(:hover):not(:focus-within) [data-row-actions]": {
-            display: "none",
+          //
+          // All of which describes a pointer, and is why the reveal is gated on there being one.
+          // Hiding a control behind hover on a touch device hides it for good — there is no
+          // gesture that produces hover, so the ⋯ menu was unreachable on a phone — and worse,
+          // WebKit gives the first tap on a row whose `:hover` changes what is rendered to the
+          // hover state, so opening a conversation took two taps and the first did nothing.
+          "@media (hover: hover)": {
+            "& [data-row-actions]": { display: "none" },
+            "&:hover [data-row-actions]": { display: "flex" },
+            "&:focus-within [data-row-actions]": { display: "flex" },
+            // Same nesting problem as the title mask in globals.css: a workspace row contains its
+            // session rows, so its `:hover` revealed every nested row's actions at once.
+            "&:hover .sidebar-row:not(:hover):not(:focus-within) [data-row-actions]": {
+              display: "none",
+            },
           },
         }}
       >
@@ -303,7 +397,18 @@ function SessionTreeRow({
                 </Tooltip>
               ) : undefined}
               title={
-                <Tooltip content={title} openDelay={350} positioning={{ placement: "right" }}>
+                <Tooltip
+                  content={
+                    <SessionHoverCard
+                      entry={entry}
+                      agents={agents}
+                      statusLabel={entry.awaitingInput ? translation("awaitingInput") : statusLabel}
+                    />
+                  }
+                  rich
+                  openDelay={350}
+                  positioning={{ placement: "right" }}
+                >
                   <Box minW={0} color={isActive ? "blue.fg" : undefined}>
                     <MarqueeTitle text={title} />
                   </Box>
@@ -359,6 +464,7 @@ function SessionTreeRow({
               <SessionTreeRow
                 key={child.entry.sessionId}
                 node={child}
+                agents={agents}
                 activeSessionId={activeSessionId}
                 unseenCompletions={unseenCompletions}
                 expandedSessions={expandedSessions}
@@ -641,18 +747,13 @@ export function SessionsSidebar({
         ) : (
           <VStack gap={1} align="stretch">
             {visibleWorkspaces.map(({ workspace, sessions: workspaceSessions }) => {
-              const primaryLocation = workspace.locations?.[0];
-              const address = primaryLocation ? locationTargetAddress(primaryLocation) : "";
               const label = workspaceName(workspace);
               const workspaceOpenKey = searchQuery ? `${workspace.id}:${searchQuery}` : workspace.id;
               const workspaceOpen = workspaceOpenOverrides[workspaceOpenKey]
                 ?? (searchQuery ? workspaceSessions.length > 0 : workspace.id === currentWorkspaceId);
-              const tooltipContent = address ? (
-                <Box>
-                  <Text fontWeight="semibold" color="fg" mb={1}>{label}</Text>
-                  <Text color="fg.muted" fontFamily="mono" wordBreak="break-all">{address}</Text>
-                </Box>
-              ) : label;
+              const tooltipContent = (
+                <WorkspaceHoverCard label={label} workspace={workspace} sessionCount={workspaceSessions.length} />
+              );
               const workspaceActions = (
                 <Box>
                   <DropdownMenu
@@ -707,7 +808,7 @@ export function SessionsSidebar({
                     onActivate={() => onSwitchWorkspace(workspace.id)}
                     icon={<Box color="fg.muted"><LuFolderOpen /></Box>}
                     title={
-                      <Tooltip content={tooltipContent} rich={Boolean(address)} openDelay={350} positioning={{ placement: "right" }}>
+                      <Tooltip content={tooltipContent} rich openDelay={350} positioning={{ placement: "right" }}>
                         <Box minW={0}><DisclosureLabel>{label}</DisclosureLabel></Box>
                       </Tooltip>
                     }
@@ -725,6 +826,7 @@ export function SessionsSidebar({
                           <SessionTreeRow
                             key={node.entry.sessionId}
                             node={node}
+                            agents={agents}
                             activeSessionId={activeSessionId}
                             unseenCompletions={unseenCompletions}
                             expandedSessions={expandedSessions}
@@ -778,7 +880,7 @@ export function SessionsSidebar({
         open={pendingWorkspaceDelete !== null}
         onOpenChange={(open) => { if (!open) setPendingWorkspaceDelete(null); }}
         title={translation("deleteWorkspaceTitle")}
-        confirmLabel={translation("deleteWorkspaceConfirm")}
+        confirmLabel={translation("deleteConfirm")}
         danger
         onConfirm={() => void confirmWorkspaceDelete()}
       >

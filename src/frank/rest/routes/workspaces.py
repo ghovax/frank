@@ -9,12 +9,13 @@ import asyncio
 from frank.protocol.dtos import (
     LocationInput,
     WorkspaceCreateRequest,
+    WorkspaceLastSessionRequest,
 )
 from frank.hub import state
 from frank.hub.services import workspaces as _workspaces
 from frank.hub.services.broadcast import _publish_broadcast
 from frank.hub.services.locations import _workspace_id_for_location
-from frank.hub.services.workspaces import _create_location, _create_workspace, _delete_location, _delete_workspace, _hosts_payload, _workspace_name, _workspace_payload, _workspaces_payload, _update_location
+from frank.hub.services.workspaces import _create_location, _create_workspace, _delete_location, _delete_workspace, _hosts_payload, _remember_last_session, _workspace_name, _workspace_payload, _workspaces_payload, _update_location
 
 router = APIRouter()
 
@@ -83,6 +84,25 @@ async def delete_project(workspace_id: str):
         raise HTTPException(status_code=404, detail="Project not found.")
     _publish_broadcast({"type": "workspaces_changed"})
     _publish_broadcast({"type": "sessions_changed"})
+    return {"ok": True}
+
+
+@router.put("/workspaces/{workspace_id}/last-session")
+async def remember_last_session(workspace_id: str, request: WorkspaceLastSessionRequest):
+    """Remember which conversation this workspace was last opened at, so the next client to open
+    it lands where the person left off.
+
+    This is deliberately the daemon's memory rather than the browser's. The desktop app, a
+    browser, and the phone are three windows onto one machine; "the conversation I was in" is a
+    fact about that machine, and storing it per-client means each one reopens somewhere
+    different — and the phone, whose storage is cleared whenever the webview is, reopens nowhere
+    at all.
+
+    No broadcast: this only decides where a *later* launch lands, and telling every open client
+    to re-read the workspace list because one of them changed conversations would be a lot of
+    traffic to no visible end."""
+    if not await asyncio.to_thread(_remember_last_session, workspace_id, request.session_id):
+        raise HTTPException(status_code=404, detail="Project not found.")
     return {"ok": True}
 
 

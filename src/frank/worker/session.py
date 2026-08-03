@@ -26,6 +26,7 @@ from langchain_core.messages import messages_from_dict
 
 from frank.base.background_tasks import spawn_background_task
 from frank.base.catalogue import machine_catalogue
+from frank.base.tuning import Tunable, active_tuning
 from frank.base.file_leases import FileLeaseManager
 from frank.base.configuration import Configuration
 from frank.base.background_store import get_background_job_store
@@ -334,7 +335,7 @@ class SessionExecutor(AgentExecutor):
                 state.runtime.set_locations(locations)
         return len(locations or [])
 
-    def set_permission_mode(self, mode: str) -> str:
+    async def set_permission_mode(self, mode: str) -> str:
         """Adopt a new permission mode for this session, now.
 
         Deliberately not a runtime reset. A reset takes effect on the *next* turn, and the
@@ -362,7 +363,45 @@ class SessionExecutor(AgentExecutor):
         for state in self._contexts.values():
             if state.runtime is not None:
                 state.runtime.set_permission_mode(resolved)
+        await self._reconsider_parked_gates()
         return self._permission_mode
+
+    async def _reconsider_parked_gates(self) -> None:
+        """Re-decide the approvals this session is already stopped on.
+
+        The mode reaching the live runtime settles every call the turn has *yet* to make, and
+        that was taken to be the whole job. It is not: a turn that hit a gate has already ended
+        — `input_required`, final — with its verdict written into the task record, and nothing
+        re-reads that record. So the two moments a person is most likely to reach for this
+        control were the two it did not serve. Switching to `auto` because the fourth approval
+        card was one too many left the fourth card on screen. Switching to `read_only` to stop a
+        write left the write waiting for the approval that would run it.
+
+        Each gate is put back through the same rule, barrier and classifier the preflight uses,
+        and only the ones the new mode *settles* are answered; anything still genuinely a
+        question stays a question. Answering through `resolve_pending_input` rather than
+        rewriting the record, because that is the one path that also resumes the turn once the
+        last gate is answered — a released gate that left the turn parked would be worse than
+        the card it replaced.
+        """
+        tasks = await self._turn_store.turns_for_session(self._session_id)
+        for task in tasks:
+            pending = TurnRecord.from_metadata(task.metadata).pending
+            if pending is None or not pending.gates:
+                continue
+            state = self._contexts.get(task.context_id)
+            runtime = state.runtime if state is not None else None
+            if runtime is None:
+                # No live runtime to ask. The record already carries the new mode, so the gate
+                # is re-decided when the turn resumes and rebuilds one.
+                continue
+            for gate in list(pending.gates):
+                if gate.request_id in pending.answers:
+                    continue
+                verdict = await runtime.reconsider_gate(gate.command, gate.risk, gate.is_bash)
+                if not verdict:
+                    continue
+                await self.resolve_pending_input({"request_id": gate.request_id, "decision": verdict})
 
     def reset_runtimes(self) -> None:
         """Drop cached runtimes so the next turn rebuilds them — used after a
@@ -856,7 +895,20 @@ class SessionExecutor(AgentExecutor):
         self._context(self._session_id)
 
     async def start_turn(self, parts: list, metadata: dict) -> str:
-        """Drive a turn from an inbound message, returning its task id."""
+        """Start a turn from an inbound message and answer with its task id.
+
+        Answers as soon as the turn *has* an id, not when the turn is over. This used to drain
+        the whole event stream before returning, so `message/send` stayed open for the entire
+        turn — and the relay that carries it gives up after two minutes. A turn that ran longer
+        therefore looked to the daemon exactly like a session with no worker at all, and the
+        cure for that is to fork one: two workers on one session id, each with its own runtime
+        and its own copy of the conversation, both answering the same message. The person
+        watching saw their question answered twice, out of order.
+
+        The stream is still drained, because closing it early would cancel the turn — but in a
+        task of its own, held in `_startup_resume_tasks` so it is not collected mid-flight. The
+        events were never wanted here: they reach the client over its attach stream.
+        """
         handler = self._agent_handler()
         if handler is None:
             raise RuntimeError("This session has no request handler.")
@@ -868,11 +920,26 @@ class SessionExecutor(AgentExecutor):
             context_id=self._session_id,
             metadata=turn_metadata_envelope(metadata) if metadata else None,
         )
-        turn_id = ""
-        async for event in handler.on_message_send_stream(MessageSendParams(message=message)):
-            if isinstance(event, Task) and not turn_id:
-                turn_id = event.id
-        return turn_id
+        identified: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+
+        async def drive() -> None:
+            try:
+                async for event in handler.on_message_send_stream(MessageSendParams(message=message)):
+                    if isinstance(event, Task) and not identified.done():
+                        identified.set_result(event.id)
+            except Exception as error:  # noqa: BLE001 — a failed turn must still answer the send
+                if not identified.done():
+                    identified.set_exception(error)
+                else:
+                    logger.exception("the turn raised after it had started")
+            finally:
+                if not identified.done():
+                    identified.set_result("")
+
+        turn = asyncio.create_task(drive())
+        self._startup_resume_tasks.add(turn)
+        turn.add_done_callback(self._startup_resume_tasks.discard)
+        return await identified
 
     def _title_from_first_message(self, parts: list) -> None:
         """Name the session after what it was first asked to do.
@@ -893,14 +960,22 @@ class SessionExecutor(AgentExecutor):
     async def _generate_title(self, first_message: str) -> None:
         """Ask the configured model for a short title, and hand it to the daemon.
 
-        The schema is bound as a tool with automatic choice rather than through structured
-        output: reasoning models reject both a json_schema response format and the forced tool
-        choice structured output relies on, but take an ordinary tool call — the same shape the
-        agent's own turns use. Reasoning is dialled down because a title is trivial and must
-        stay cheap; the agent's configured effort is for the work, not for naming it.
+        The schema is bound as a tool, the same shape the agent's own turns use, and the choice
+        is **required**. Producing that object is the entire purpose of the call, so a call that
+        may decline it is a call that can fail without failing — which is exactly what happened:
+        the choice was `auto`, a model that answered in prose instead left `tool_calls` empty,
+        the method returned on the spot, and the only trace was a sidebar full of "Untitled
+        conversation" with nothing anywhere saying why. A schema the model cannot refuse removes
+        that outcome by construction rather than detecting it.
 
-        Silent on every failure: an unnamed session is a cosmetic loss, and a session must
-        never fail because it could not think of a title for itself."""
+        (`auto` had been chosen on the belief that reasoning models reject a forced tool choice.
+        They do reject a `json_schema` response format, which is why this is a tool at all, but
+        the forcing is fine — the compaction pass has required its own tool all along.)
+
+        Attempts are bounded and each one is reported, because "could not name one session" is
+        cosmetic while "cannot name any session" is a fault, and at the old silence the two were
+        indistinguishable. Reasoning is dialled down because a title is trivial and must stay
+        cheap; the agent's configured effort is for the work, not for naming it."""
         from langchain_core.messages import HumanMessage, SystemMessage
 
         from frank.base.configuration import PromptLoader
@@ -923,15 +998,48 @@ class SessionExecutor(AgentExecutor):
                 self._runtime_working_directory,
             ).bind_tools([SessionTitle], tool_choice="auto")
             prompt = PromptLoader(Path(__file__).resolve().parent.parent / "runtime" / "prompts")
-            response = await model.ainvoke([
+            request = [
                 SystemMessage(content=prompt.load("session_title", {})),
                 HumanMessage(content=first_message),
-            ])
-            if not response.tool_calls:
-                return
-            title = (SessionTitle.model_validate(response.tool_calls[0]["args"]).title or "").strip()
-            if title:
-                await self._turn_store.publish_title(title)
+            ]
+            # The tool is offered, and the prompt is what insists on it.
+            #
+            # Forcing it is the obvious way to guarantee the object, and it cannot be used: a
+            # thinking model behind a gateway refuses the request outright — *400, Thinking mode
+            # does not support this tool_choice* — and refuses it whatever is sent for
+            # `reasoning_effort`, including nothing at all, because the model thinks by default
+            # and the incompatibility is with the forcing itself. Measured against the live
+            # provider on all three settings before giving up on it.
+            #
+            # `auto` is accepted everywhere, so the guarantee moves into the instruction and the
+            # attempts below cover a model that ignores it. A tool call is what this wants: the
+            # answer arrives as a typed field rather than as text somebody has to guess the
+            # shape of.
+            attempts = active_tuning().amount(Tunable.session_title_attempts)
+            for attempt in range(1, attempts + 1):
+                try:
+                    response = await model.ainvoke(request)
+                except Exception:  # noqa: BLE001 — one bad call is not worth the session's name
+                    logger.warning(
+                        "naming session %s failed (attempt %d of %d)",
+                        self._session_id, attempt, attempts, exc_info=True,
+                    )
+                    continue
+                if not response.tool_calls:
+                    logger.warning(
+                        "the model answered without calling the title tool for session %s "
+                        "(attempt %d of %d)", self._session_id, attempt, attempts,
+                    )
+                    continue
+                title = (SessionTitle.model_validate(response.tool_calls[0]["args"]).title or "").strip()
+                if title:
+                    await self._turn_store.publish_title(title)
+                    return
+                logger.warning(
+                    "the model returned an empty title for session %s (attempt %d of %d)",
+                    self._session_id, attempt, attempts,
+                )
+            logger.warning("gave up naming session %s after %d attempts", self._session_id, attempts)
         except Exception:  # noqa: BLE001 — a session is not worth failing over its own name
             # Not `debug`. Failing to name a session is cosmetic; failing to name *every*
             # session is a fault, and at debug level the difference was invisible — a sidebar
@@ -940,7 +1048,7 @@ class SessionExecutor(AgentExecutor):
                 "could not generate a title for session %s", self._session_id, exc_info=True
             )
 
-    def inject(self, text: str) -> bool:
+    def inject(self, text: str, message_id: str = "") -> bool:
         """Deliver a message into the turn that is already running, at its next safe point.
 
         This is what makes a peer's question reach a session that is mid-tool rather than
@@ -949,7 +1057,7 @@ class SessionExecutor(AgentExecutor):
         state = self._contexts.get(self._session_id)
         if state is None or not state.running or state.runtime is None:
             return False
-        return state.runtime.enqueue_steering(text)
+        return state.runtime.enqueue_steering(text, message_id)
 
     async def resolve_pending_input(self, payload: dict) -> bool:
         """Record a human's answer to a parked gate and resume the turn once every gate in the

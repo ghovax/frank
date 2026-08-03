@@ -14,8 +14,8 @@ import {
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslations } from "next-intl";
 import { LuArrowUp, LuCoins, LuFoldVertical, LuMic, LuMicOff, LuPaperclip, LuSquare } from "react-icons/lu";
-import { fetchChatGPTAuthStatus, fetchDictationStatus, type DictationState, fetchMessageHistory, referenceAttachment, saveMessageHistory, subscribeEvents, transcribeDictation, uploadFile, type Attachment, type ChatGPTUsage, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
-import { startDictationRecording, type DictationRecording } from "@/lib/dictation";
+import { fetchChatGPTAuthStatus, fetchDictationStatus, type DictationState, fetchMessageHistory, referenceAttachment, saveMessageHistory, subscribeEvents, uploadFile, type Attachment, type ChatGPTUsage, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
+import { DictationRecordingError, startDictation, type Dictation } from "@/lib/dictation";
 import { toaster } from "./ui/toaster";
 import { ChatGPTUsageMeters } from "./chatgpt-usage-meters";
 import { AgentSelectControl, PermissionModeControl, SandboxToggleControl } from "./session-controls";
@@ -38,7 +38,11 @@ interface ChatInputProps {
   onSend: (text: string, dataParts?: Record<string, unknown>[]) => void | Promise<void | string>;
   onAbort: () => void | Promise<void>;
   isStreaming: boolean;
+  // The connection is gone. Nothing can be sent, and saying why is the point.
   disabled?: boolean;
+  // A decision prompt is open. The composer is closed for a different reason and says a
+  // different thing: the turn is waiting on the person, not on the network.
+  awaitingDecision?: boolean;
   sessionId?: string | null;
   initialDraft?: string;
   onDraftChange?: (draft: string) => void;
@@ -79,13 +83,15 @@ interface ChatInputProps {
   // True while a compaction pass is running, so the Compact control reflects the
   // in-progress state (spinner + disabled) rather than inviting another click.
   isCompacting?: boolean;
-  // How many of the most recent user turns are kept verbatim during compaction
-  // (the server's compaction.keep_recent_turns). The manual compact button is
-  // available once there are more user messages than this threshold.
-  compactionKeepRecentTurns: number;
-  // How many user messages exist in the current session. Used together with
-  // compactionKeepRecentTurns to decide whether compaction would be meaningful.
-  compactionUserCount: number;
+  // The share of the context window at which the server starts reclaiming on its own
+  // (compaction.reclaim_at_fraction). The manual button appears at half of it, so there is
+  // always a stretch where compacting is a choice rather than something already done for you.
+  //
+  // It used to appear once the session had more *user messages* than the server's keep-recent
+  // count — which measured the wrong thing entirely. An unattended run is one instruction and
+  // hundreds of tool results, so the count stayed at one while the context filled, and the
+  // button stayed hidden through exactly the session that needed it.
+  compactionReclaimAtFraction: number;
 }
 
 // A filling circle for how full the model's context window is. The arc grows with
@@ -175,9 +181,24 @@ function ContextUsageChip({
         <InlineField label={translation("input")}><Text>{tokenUsage.inputTokens.toLocaleString()}</Text></InlineField>
         <InlineField label={translation("output")}><Text>{tokenUsage.outputTokens.toLocaleString()}</Text></InlineField>
         <InlineField label={translation("total")}><Text>{tokenUsage.totalTokens.toLocaleString()}</Text></InlineField>
-        {tokenUsage.cacheReadTokens > 0 && (
-          <InlineField label={translation("cacheReads")}><Text>{tokenUsage.cacheReadTokens.toLocaleString()}</Text></InlineField>
-        )}
+        {/* Always shown, unlike the rest, because zero cache reads is the reading worth having:
+            hiding the row at zero made a session that cached nothing look identical to one where
+            the figure was never reported.
+
+            The share is of what a cache *could* have returned, not of total input. Against total
+            input even a flawless session reads about 70%, because every token is paid for once
+            before it can ever be served from cache — so that number looked like a failure and was
+            not one. This one is 100% when nothing cacheable was missed, which is what somebody
+            reading it wants to know. */}
+        <InlineField label={translation("cacheReads")}>
+          <Text>
+            {tokenUsage.cacheReadTokens.toLocaleString()}
+            {tokenUsage.cacheReachableTokens > 0
+              && ` / ${tokenUsage.cacheReachableTokens.toLocaleString()} (${
+                Math.round((tokenUsage.cacheReadTokens / tokenUsage.cacheReachableTokens) * 100)
+              }%)`}
+          </Text>
+        </InlineField>
         {tokenUsage.reasoningTokens > 0 && (
           <InlineField label={translation("reasoning")}><Text>{tokenUsage.reasoningTokens.toLocaleString()}</Text></InlineField>
         )}
@@ -215,7 +236,10 @@ function ContextUsageChip({
       <Flex
         align="center"
         gap={1.5}
-        h={8}
+        // The house control height, not a number. This chip sits in a row of buttons and was
+        // pinned to 32px while they grow to 40 on a coarse pointer, so on a phone it was the one
+        // thing in that row an eye could pick out as the wrong size.
+        h="var(--control-height)"
         px={2}
         borderRadius="md"
         border="1px solid"
@@ -254,6 +278,7 @@ export function ChatInput({
   initialDraft = "",
   onDraftChange,
   workingDirectory,
+  awaitingDecision,
   directoryValid = false,
   agents,
   selectedAgent,
@@ -271,14 +296,15 @@ export function ChatInput({
   tokenUsage,
   onCompact,
   isCompacting = false,
-  compactionKeepRecentTurns,
-  compactionUserCount,
+  compactionReclaimAtFraction,
 }: ChatInputProps) {
   const translation = useTranslations("ChatInput");
   const chatgptUsage = useChatGPTUsage(agentModel, isStreaming);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
+  // Every control closes for either reason; only the placeholder distinguishes them.
+  const composerClosed = disabled || !!awaitingDecision;
   const [inputValue, setInputValue] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploadingCount, setUploadingCount] = useState(0);
@@ -296,7 +322,7 @@ export function ChatInput({
   // the button is a toggle, and what a toggle owns is the thing it can stop.
   const [dictationEnabled, setDictationEnabled] = useState(false);
   const [dictationState, setDictationState] = useState<DictationState>("idle");
-  const [recording, setRecording] = useState<DictationRecording | null>(null);
+  const [recording, setRecording] = useState<Dictation | null>(null);
   const [transcribing, setTranscribing] = useState(false);
   // The composer's file-attach affordance is gated on the agent model's
   // capabilities (models.dev): a text-only model cannot process attachments, so
@@ -447,7 +473,7 @@ export function ChatInput({
   // Stop the microphone if the composer goes away mid-recording. Without it the tracks stay
   // open and the browser keeps showing the machine as listening, which is the one bug in this
   // area a person would rightly find alarming.
-  const recordingRef = useRef<DictationRecording | null>(null);
+  const recordingRef = useRef<Dictation | null>(null);
   useEffect(() => {
     recordingRef.current = recording;
   }, [recording]);
@@ -464,9 +490,7 @@ export function ChatInput({
       setRecording(null);
       setTranscribing(true);
       try {
-        const samples = await active.stop();
-        if (samples.length === 0) return;
-        const spoken = (await transcribeDictation(samples)).trim();
+        const spoken = (await active.stop()).trim();
         if (!spoken) return;
         setInputValue((current) => {
           const next = current.trim() ? `${current.trimEnd()} ${spoken}` : spoken;
@@ -478,7 +502,7 @@ export function ChatInput({
         toaster.create({
           type: "error",
           title: translation("dictationFailed"),
-          description: errorMessage(caught),
+          description: dictationReason(caught),
           closable: true,
         });
       } finally {
@@ -487,12 +511,12 @@ export function ChatInput({
       return;
     }
     try {
-      setRecording(await startDictationRecording());
+      setRecording(await startDictation());
     } catch (caught) {
       toaster.create({
         type: "error",
         title: translation("dictationFailed"),
-        description: errorMessage(caught),
+        description: dictationReason(caught),
         closable: true,
       });
     }
@@ -501,6 +525,20 @@ export function ChatInput({
   // The attach button: on the desktop app talking to a local server, open the native
   // picker and reference the chosen files by path; otherwise fall back to the web
   // <input>, which yields bytes to upload.
+  /**
+   * What to tell somebody about a dictation that did not happen.
+   *
+   * `DictationRecordingError` carries a catalogue key because the module that raises it has no
+   * hook to translate with. Anything else — a transcription the daemon refused, a network that
+   * went — already arrives as a sentence in the person's language, and is passed through.
+   */
+  function dictationReason(caught: unknown): string {
+    if (caught instanceof DictationRecordingError) {
+      return translation(caught.message as Parameters<typeof translation>[0], caught.values);
+    }
+    return errorMessage(caught);
+  }
+
   async function handleAttachClick() {
     if (isTauri()) {
       const paths = await pickDesktopFilePaths();
@@ -681,28 +719,28 @@ export function ChatInput({
         // they go last rather than being capped into ellipses early.
         "@container (max-width: 560px)": {
           "& [data-composer-agent-label], & [data-composer-model-label], & [data-composer-context-percent]": { display: "none" },
+          // Said here as well as on the elements themselves. The `flexWrap` props are one edit
+          // away from being changed by somebody adding a control, and an easy one to miss; this
+          // is where the rest of the narrow-screen behaviour is stated, so the rule that matters
+          // most at a narrow width belongs here too.
+          "& [data-composer-row], & [data-composer-selectors]": { flexWrap: "nowrap" },
         },
-        // Below this the row cannot hold every control and the usage chip at any width they can be
-        // reduced to, so it stops pretending and wraps. Both halves wrap together, and that is the
-        // point rather than a detail: letting only the selectors wrap put one chip alone on a
-        // second line while the usage chip stayed on the first, and because the row centres its
-        // two halves that chip then floated across both lines — which is the collision, and it
-        // looks like a bug rather than like a narrow window.
+        // Never two rows.
         //
-        // `flex-start` goes with it for the same reason. Centring is right for two halves of equal
-        // height and wrong the moment one of them is taller, because the shorter half then sits
-        // against nothing.
-        "@container (max-width: 460px)": {
-          "& [data-composer-row]": {
-            flexWrap: "wrap",
-            alignItems: "flex-start",
-            rowGap: "var(--chakra-spacing-1)",
-          },
-          "& [data-composer-selectors]": { flexWrap: "wrap", rowGap: "var(--chakra-spacing-1)" },
-          // The usage chip and Compact take their own line, left-aligned under the selectors,
-          // rather than being pushed to the far edge of a line they now share with nothing.
-          "& [data-composer-row] > :last-child": { justifyContent: "flex-start", flexBasis: "100%" },
-        },
+        // This used to wrap here, and the reasoning is still in the history: with labels showing,
+        // the row genuinely could not hold every control and the usage chip. But by this width the
+        // rules above have already reduced every one of them to its glyph, and four glyphs plus a
+        // ring come to about half of a 390pt panel — so the wrap was firing on a width it had
+        // stopped applying to, and spending a whole line of the transcript to put one small chip
+        // on its own beneath four others.
+        //
+        // The spacing stays the desktop's. Tightening it here was the obvious next lever and the
+        // wrong one: the controls already fit, so the gap was being spent to buy room nothing
+        // needed, and a row of glyphs four points apart reads as one crowded control rather than
+        // as four. If something is ever added that genuinely does not fit, reduce it the way the
+        // rules above reduce everything else — a second line under a text box reads as a layout
+        // that has come apart, not as one adapting.
+
       }}
     >
       <ConfirmDialog
@@ -713,10 +751,7 @@ export function ChatInput({
         confirmIcon={<LuFoldVertical size={14} />}
         onConfirm={() => onCompact?.()}
       >
-        {translation.rich("compactBody", {
-          count: compactionKeepRecentTurns,
-          b: (chunks) => <Strong>{chunks}</Strong>,
-        })}
+        {translation.rich("compactBody", { b: (chunks) => <Strong>{chunks}</Strong> })}
       </ConfirmDialog>
 
       {/* Message input */}
@@ -745,7 +780,21 @@ export function ChatInput({
             ) : null}
           </Flex>
         ) : null}
-        <Flex align="stretch" gap={2}>
+        {/*
+          `flex-end`, not `stretch`, and the difference is where the composer's text sits.
+
+          Stretched, the text box takes the height of whatever is tallest in this row — the send
+          and attach buttons beside it. A `textarea` lays its text along the top of its content
+          box and has no way to centre it, so every pixel by which those buttons out-measure one
+          line of text became empty space *under* the text, and the text read as sitting high.
+          Which engine you looked in decided whether you saw it: buttons do not come out to the
+          same intrinsic height in WebKit as in Blink, and neither does a line box.
+
+          Aligned to the bottom instead, the text box is exactly as tall as what it holds, so a
+          single line fills it and is centred by construction. The buttons sit on its bottom edge,
+          which is also where they belong as it grows.
+        */}
+        <Flex align="flex-end" gap={2}>
           <Box
             ref={dropZoneRef}
             display="flex"
@@ -771,23 +820,36 @@ export function ChatInput({
           >
             <Textarea
               ref={inputRef}
+              // Sized in `globals.css`, where the control height it has to match is defined.
+              data-composer-input=""
               size="sm"
               variant="outline"
               placeholder={
+                // Ordered by what the person can do about it. A lost connection and an open
+                // decision both close the composer, and they used to share one message — so a
+                // question waiting to be answered announced itself as a network problem.
                 disabled
                   ? translation("placeholderConnecting")
-                  : !directoryValid
-                    ? translation("placeholderInvalidPath")
-                    : attachments.length > 0
-                      ? translation("placeholderAttachments")
-                      : isStreaming
-                        ? translation("placeholderStreaming")
-                        : translation("placeholderDefault")
+                  : awaitingDecision
+                    ? translation("placeholderAwaitingDecision")
+                    : !directoryValid
+                      ? translation("placeholderInvalidPath")
+                      : attachments.length > 0
+                        ? translation("placeholderAttachments")
+                        : isCompacting
+                          // Compaction is a turn, so the streaming placeholder claimed a message
+                          // would be queued "for the next turn" while the only turn running was
+                          // the fold. It is queued, and it drains when the fold is done — which
+                          // is what this says instead.
+                          ? translation("placeholderCompacting")
+                          : isStreaming
+                            ? translation("placeholderStreaming")
+                            : translation("placeholderDefault")
               }
               value={inputValue}
               onChange={(event) => setInputValue(event.target.value)}
               onKeyDown={handleKeyDown}
-              disabled={disabled}
+              disabled={composerClosed}
               rows={1}
               fieldSizing="content"
               maxH="44"
@@ -797,7 +859,10 @@ export function ChatInput({
               resize="none"
             />
           </Box>
-          <Flex align="flex-end" gap={1.5} flexShrink={0}>
+          {/* The same gap as the row of controls below this one. Dictate, attach and send sat at
+              1.5 while everything beneath them sat at 2, so the composer had two rhythms stacked
+              on top of each other and the closer one read as a mistake rather than as a group. */}
+          <Flex align="flex-end" gap={2} flexShrink={0}>
             <Input
               ref={fileInputRef}
               type="file"
@@ -838,7 +903,7 @@ export function ChatInput({
                   // hidden — a button that vanishes and reappears is harder to trust than one
                   // that says it is not ready yet.
                   loading={transcribing || dictationState === "loading"}
-                  disabled={disabled || !directoryValid || dictationState === "loading"}
+                  disabled={composerClosed || !directoryValid || dictationState === "loading"}
                 >
                   {recording ? <LuMicOff /> : <LuMic />}
                 </IconButton>
@@ -858,7 +923,7 @@ export function ChatInput({
                 variant="outline"
                 bg="bg"
                 borderColor="border"
-                disabled={disabled || !directoryValid}
+                disabled={composerClosed || !directoryValid}
               >
                 <LuPaperclip />
               </IconButton>
@@ -871,7 +936,13 @@ export function ChatInput({
                 variant="solid"
                 loading={stopPending}
                 loadingText={translation("stopping")}
-                disabled={stopPending}
+                // Not while the conversation is being folded. Compaction runs as a turn, so
+                // `isStreaming` is true throughout it and Stop was offered for something it does
+                // not describe: the model is not working on the request, the harness is making
+                // room to keep working on it. Pressing it interrupted housekeeping the session
+                // would then have to do again.
+                disabled={stopPending || isCompacting}
+                title={isCompacting ? translation("stopUnavailableWhileCompacting") : undefined}
               >
                 <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
                   <LuSquare />
@@ -886,7 +957,7 @@ export function ChatInput({
                 variant="solid"
                 loading={sendPending}
                 loadingText={translation("sending")}
-                disabled={sendPending || disabled || !directoryValid || uploadingCount > 0 || !inputValue.trim()}
+                disabled={sendPending || composerClosed || !directoryValid || uploadingCount > 0 || !inputValue.trim()}
               >
                 <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
                   <LuArrowUp />
@@ -924,7 +995,7 @@ export function ChatInput({
               to be restarted to run under a looser one. */}
           <PermissionModeControl
             value={permissionMode}
-            onChange={(mode) => onPermissionModeChange?.(mode)}
+            onChange={(mode) => { if (mode) onPermissionModeChange?.(mode); }}
             responsiveCompact
           />
           {/* The same control Settings shows, not a second rendering of the same fact: one
@@ -937,10 +1008,15 @@ export function ChatInput({
           />
         </Flex>
         <Flex align="center" gap={2} flexShrink={0} justify="flex-end">
-          {onCompact && !!sessionId && !!tokenUsage && tokenUsage.contextTokens > 0 && (isCompacting || compactionUserCount > compactionKeepRecentTurns) && (
+          {/* Offered from half the threshold the server reclaims at, so there is a window in
+              which compacting is your call before it becomes the harness's. Measured against how
+              full the context actually is — the one fact that says whether folding would help. */}
+          {onCompact && !!sessionId && !!tokenUsage && tokenUsage.contextWindow > 0
+            && (isCompacting
+              || tokenUsage.contextTokens / tokenUsage.contextWindow >= compactionReclaimAtFraction / 2) && (
             <Button
               variant="outline"
-              h={8}
+              h="var(--control-height)"
               px={2}
               bg="bg"
               borderColor="border"

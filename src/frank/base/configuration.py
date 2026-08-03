@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 import json
+import logging
 import os
 from frank.base import environment_variables
+from frank.base.tuning import Scaling
 import re
 import shlex
 import shutil
@@ -12,10 +14,13 @@ from pathlib import Path
 from typing import Any, ClassVar, Literal, Optional
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from frank.base.paths import configuration_file_path, database_file_path  # noqa: F401 — re-exported
 from frank.base.permission_mode import PermissionMode
+
+
+logger = logging.getLogger(__name__)
 
 
 # Where state lives is the placement layer's business, not this module's: it follows the
@@ -260,10 +265,23 @@ class FilesystemConfiguration(Section):
         description="Paths under your home a tool child may read. The system is readable and is not listed.",
     )
     writable: list[str] = Field(
-        default=["$WORKSPACE", "$TMPDIR", "$XDG_CACHE_HOME", "~/.cache"],
+        default=["$WORKSPACE", "$TMPDIR", "/tmp", "$XDG_CACHE_HOME", "~/.cache"],
         description=(
             "Paths a tool child may write. Deliberately narrower than readable, because a wrong "
             "write is the failure people actually meet. $WORKSPACE is the session's own directory."
+        ),
+    )
+    # `/tmp` is listed beside `$TMPDIR` because on macOS they are not the same place. `$TMPDIR`
+    # expands to a per-user directory under `/var/folders`, so a session whose writable set named
+    # only `$TMPDIR` was refused at `/tmp` — the one scratch path every convention points at, and
+    # the first one anything reaches for. What came back was `Operation not permitted`, naming no
+    # path, which reads as a broken tool rather than a boundary. Nothing of the user's lives in
+    # `/tmp`; it is world-writable already, and cleared by the system.
+    grantable: list[str] = Field(
+        default=[],
+        description=(
+            "Paths an agent may be granted at runtime without asking a person. Empty means every "
+            "request is asked about. Paths under deny are never grantable, whatever is listed here."
         ),
     )
     deny: list[str] = Field(
@@ -322,6 +340,7 @@ class SandboxConfiguration(Section):
                 readable=tuple(self.filesystem.readable),
                 writable=tuple(self.filesystem.writable),
                 deny=tuple(self.filesystem.deny),
+                grantable=tuple(self.filesystem.grantable),
             ),
             network=self.network,
             limits={name: int(value) for name, value in self.limits.items()},
@@ -344,35 +363,114 @@ class WorkspaceConfiguration(Section):
     )
 
 
+#: Compaction settings that were renamed, and the name that now carries their value. A section
+#: refuses keys it does not define, on purpose — so without this a rename does not merely ignore
+#: an old setting, it stops the whole configuration file from loading, and the daemon with it.
+_COMPACTION_RENAMED = {
+    "auto": "automatic",
+    "observer_context_fraction": "reclaim_at_fraction",
+    "reflector_observation_fraction": "condense_log_at_fraction",
+}
+
+#: Compaction settings that are gone with nothing standing in for them. `keep_recent_turns`
+#: counted user turns, which is the measure this section stopped using — an unattended run is one
+#: turn and hundreds of tool results — and the pruning pass beside it was removed once it was
+#: shown to be unreachable. Dropped rather than translated, and said out loud rather than
+#: silently, because a setting that can no longer take effect should be reported, not obeyed.
+_COMPACTION_REMOVED = (
+    "keep_recent_turns", "preserve_recent_tokens", "prune", "prune_tool_results",
+    "pruned_result_tokens",
+)
+
+
 class CompactionConfiguration(Section):
     """Conversation memory management, modelled on Mastra's Observational Memory: as raw
     history grows, an Observer folds older turns into a dense, timestamped observation
     log kept at the front of the context; a Reflector condenses that log when it grows
     large. Fractions are of the model's context window.
 
-    ``auto`` is on by default: a self-managing turn runs unbounded, so its context must be
-    kept within the window automatically rather than relying on a tool-call ceiling to stop
-    it first. Manual (button-triggered) compaction always works regardless of ``auto``."""
+    ``automatic`` is on by default: a self-managing turn runs unbounded, so its context must be
+    kept within the window on its own rather than relying on a tool-call ceiling to stop it
+    first. Manual (button-triggered) compaction always works regardless of it.
 
-    auto: bool = Field(
-        True, description="Fold history automatically as it grows. Manual compaction works either way."
+    Every fraction here is of the window a conversation may actually occupy — the model's window
+    less the room reserved for the answer — rather than of the raw number, so "85% full" is 85%
+    of what is really available to fill."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _carry_old_names(cls, values):
+        if not isinstance(values, dict):
+            return values
+        carried = dict(values)
+        for old, new in _COMPACTION_RENAMED.items():
+            if old in carried:
+                # An explicit new name wins: somebody who wrote both meant the current one.
+                carried.setdefault(new, carried[old])
+                carried.pop(old)
+        for gone in _COMPACTION_REMOVED:
+            if carried.pop(gone, None) is not None:
+                logger.warning(
+                    "ignoring compaction.%s: the setting no longer exists. Remove it from your "
+                    "configuration file.", gone,
+                )
+        return carried
+
+    automatic: bool = Field(
+        True, description="Reclaim context on its own as it fills. Manual compaction works either way."
     )
-    observer_context_fraction: float = Field(
-        0.6, description="Run the Observer once live context passes this share of the window."
+    reclaim_at_fraction: float = Field(
+        0.85,
+        description=(
+            "Fold once the conversation passes this share of the usable window. Late on purpose: "
+            "a fold is the one thing that rewrites the prefix a provider had cached, so the "
+            "fewer of them the better."
+        ),
     )
-    reflector_observation_fraction: float = Field(
-        0.3, description="Run the Reflector once the observation log itself passes this share."
+    condense_log_at_fraction: float = Field(
+        0.3, description="Condense the observation log once the log itself passes this share."
     )
-    keep_recent_turns: int = Field(
-        6, description="Recent turns always kept verbatim, never folded into observations."
+    output_reserve_fraction: float = Field(
+        0.1,
+        description=(
+            "Share of the window held back for the answer, so folding still has room to run. "
+            "The rest is the usable window every other fraction here is measured against."
+        ),
+    )
+    recent_working_set_fraction: float = Field(
+        0.25,
+        description=(
+            "Share of the usable window kept verbatim rather than folded into the log. Sized "
+            "in tokens rather than turns because an unattended run is one turn and hundreds "
+            "of tool results."
+        ),
+    )
+    verbatim_user_fraction: float = Field(
+        0.1,
+        description=(
+            "Share of the usable window that carries the user's own messages through a fold, "
+            "word for word. Their instructions are the specification, and a paraphrase of a "
+            "specification is a different specification."
+        ),
     )
 
 
 class ContextShareConfiguration(Section):
-    """What proportion of the live context window one result may fill."""
+    """What proportion of the live context window one result may fill.
 
-    text: float = Field(0.25, description="Share one result's text may fill — output, fetched pages.")
-    results: float = Field(0.15, description="Share a set of results may fill — matches, lines, records.")
+    The defaults are read from the scaling families rather than written again here. They are the
+    values every baseline in `tuning` is calibrated against — at exactly these fractions each
+    family's multiplier is 1.0 — so a copy typed out in this file is a copy that can disagree with
+    the arithmetic that assumes it, silently and in a direction nobody would think to check."""
+
+    text: float = Field(
+        Scaling.TEXT.value.calibrated,
+        description="Share one result's text may fill — output, fetched pages.",
+    )
+    results: float = Field(
+        Scaling.RESULTS.value.calibrated,
+        description="Share a set of results may fill — matches, lines, records.",
+    )
 
 
 class TuningConfiguration(Section):
@@ -763,15 +861,30 @@ class ProviderCredential(Section):
 class AgentDefaults(Section):
     """What a session gets when its creator did not say."""
 
-    permission_mode: Literal["default", "auto", "read_only"] = Field(
+    permission_mode: Literal["default", "permissive", "self_classify", "read_only"] = Field(
         "default",
         description=(
-            "default asks before risky actions and allows safe ones; auto approves low-risk "
-            "actions and asks for the rest; read_only allows reads and denies every write and "
+            "default asks before anything its rules do not name; permissive runs what the "
+            "model called low-risk and asks about the rest; self_classify adds a classifier "
+            "that can vouch for the rest; read_only allows reads and denies every write and "
             "side effect. A default, not a ceiling: `frank create --mode` overrides it, and a "
             "child is clamped against its parent either way."
         ),
     )
+
+    # Written before the mode was renamed, and read after. A `Literal` refuses an unknown string
+    # outright, so without this a configuration saying `auto` — which every install that had
+    # chosen it says — stops the daemon at load with a validation error rather than starting
+    # under the mode it names. `PermissionMode.parse` knows the old spelling; this is the hook
+    # that lets it be consulted, and the value is rewritten the next time the file is saved.
+    @field_validator("permission_mode", mode="before")
+    @classmethod
+    def _accept_renamed_mode(cls, value):
+        from frank.base.permission_mode import PermissionMode
+
+        parsed = PermissionMode.parse(value) if isinstance(value, str) else None
+        return str(parsed) if parsed is not None else value
+
 
 
 class Configuration(Section):
@@ -881,7 +994,7 @@ class Configuration(Section):
         }
 
     def configured_provider_bases(self) -> dict[str, str]:
-        """Configured (non-empty) base URLs per provider (opencode/custom only)."""
+        """Configured non-empty base URLs per provider."""
         return {
             identifier: credential.base_url
             for identifier, credential in self.providers.items()
@@ -1260,10 +1373,35 @@ class AgentConfiguration(BaseModel):
     model: Optional[str] = None
     provider: Optional[str] = None
     reasoning_effort: str = "high"
-    # default: per-command permission rules. auto: use the default rules plus an
-    # LLM classifier to auto-approve safe bash calls and escalate the rest.
-    # read_only: hard-block all writes (investigation sessions). There is no bypass mode.
-    permission_mode: Literal["default", "auto", "read_only"] = "default"
+    # default: per-command permission rules, and anything unmatched is asked about.
+    # permissive: the same rules, but an unmatched command runs and only the risk the model
+    # declared escalates — medium or high asks, low does not. No classifier, no model call.
+    # self_classify: the default rules plus an LLM classifier to approve safe bash calls and
+    # escalate the rest. read_only: hard-block all writes. There is no bypass mode.
+    # `None` means the card has no opinion, and that is the default — the same convention as
+    # `sandbox` below, and for the same reason.
+    #
+    # This used to default to `"default"`, which is a *value*, and the control plane reads it as
+    # the loosest mode the profile allows. So every card that simply did not mention permissions
+    # — which is all of them — imposed a ceiling of `default`, and `permissive` and
+    # `self_classify` were unreachable: a person picked one, the daemon clamped it straight back,
+    # and the chip returned to "Ask for approval" with no explanation. A card that wants to bound
+    # its agent still says so and is still obeyed; silence is no longer a bound.
+    permission_mode: Optional[Literal["default", "permissive", "self_classify", "read_only"]] = None
+
+    # Written before the mode was renamed, and read after. A `Literal` refuses an unknown string
+    # outright, so without this a configuration saying `auto` — which every install that had
+    # chosen it says — stops the daemon at load with a validation error rather than starting
+    # under the mode it names. `PermissionMode.parse` knows the old spelling; this is the hook
+    # that lets it be consulted, and the value is rewritten the next time the file is saved.
+    @field_validator("permission_mode", mode="before")
+    @classmethod
+    def _accept_renamed_mode(cls, value):
+        from frank.base.permission_mode import PermissionMode
+
+        parsed = PermissionMode.parse(value) if isinstance(value, str) else None
+        return str(parsed) if parsed is not None else value
+
     # An agent's own confinement, narrowing the global one. An investigator and a build agent
     # genuinely want different filesystems, and the harness already accepts that agents differ in
     # what they may do. Unset means "whatever the machine's configuration says"; set, it is still
@@ -1289,11 +1427,14 @@ class AgentConfiguration(BaseModel):
         return f"{self.provider}/{self.model}"
 
     @property
-    def permission_policy(self) -> PermissionMode:
-        """The card's configured permission mode as the typed value the runtime reasons about.
-        The stored ``permission_mode`` field is the validated wire/persistence string; this is the
-        one place logic reads it as a :class:`PermissionMode`."""
-        return PermissionMode.coerce(self.permission_mode)
+    def permission_policy(self) -> Optional[PermissionMode]:
+        """The card's configured permission mode, or ``None`` where it declares none.
+
+        ``None`` is not a mode and must not be coerced into one: this is a *ceiling*, and every
+        caller passes it to `more_restrictive`, which ignores absent inputs. Coercing it to
+        `DEFAULT` — which is what this did — turned every silent card into a ceiling nobody
+        wrote."""
+        return PermissionMode.parse(self.permission_mode) if self.permission_mode else None
 
     @classmethod
     def from_markdown(cls, path: str | Path) -> AgentConfiguration:
@@ -1420,9 +1561,37 @@ class PromptLoader:
         template that is not a well-formed placeholder, raises rather than silently shipping raw
         braces into a prompt the model would see. The strictness applies to the *template* only —
         braces that appear inside a substituted value (a tool result echoing Handlebars, a file
-        of Jinja, AppleScript record syntax) are data, never placeholders, and pass through."""
+        of Jinja, AppleScript record syntax) are data, never placeholders, and pass through.
+
+        A placeholder that sits alone on its line and has nothing to put there takes the line
+        with it, along with the blank line that separated it from what follows. Most sections of
+        a prompt are optional — no agent context in a library run, no screen guidance unless the
+        tool is on, no instructions on a bare machine — and a template cannot say "and the gap
+        too", so every absent one used to leave the blank lines that were meant to surround it.
+        Five of them stacked up in the system prompt, one run reaching five blank lines. Doing it
+        here keeps the templates written the way they read, and touches only the template's own
+        whitespace: a value is substituted after this and is never rewritten."""
         where = f" in prompt '{template_name}'" if template_name else ""
         placeholder = re.compile(r"\{\{\s*(\w+)\s*\}\}")
+
+        def drop_if_empty(match: re.Match[str]) -> str:
+            name = match.group(1)
+            supplied = variables.get(name)
+            return "" if supplied is not None and not str(supplied).strip() else match.group(0)
+
+        # The placeholder's own line, plus one blank line after it if there is one.
+        own_line = r"^[ \t]*\{\{\s*(\w+)\s*\}\}[ \t]*"
+        template = re.sub(own_line + r"\n(?:[ \t]*\n)?", drop_if_empty, template, flags=re.M)
+
+        # What is left on a line of its own contributes its content and nothing else: the
+        # template's own newline already ends the line, so a value that ends in one — which every
+        # value read from a file does — would spend it on a blank line nobody asked for. The
+        # template decides the spacing; the value decides the words.
+        sections = set(re.findall(own_line + r"$", template, flags=re.M))
+        variables = {
+            name: str(value).strip() if name in sections else value
+            for name, value in variables.items()
+        }
 
         # A {{ … }} in the template that is not a well-formed {{ name }} (a dotted path, a space
         # in the name, an unclosed brace) is a template bug — catch it before substitution so it

@@ -2,45 +2,15 @@
 
 import { Box, Flex, Text } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
+import { locationTargetLabel, workspaceLabel } from "@shared/workspace";
+
 import { Tooltip } from "./ui/tooltip";
 import type { Location } from "@/lib/api";
 
-export function locationTargetLabel(location: Pick<Location, "base_directory" | "name">): string {
-  const normalizedDirectory = location.base_directory.replace(/\/+$/, "");
-  return normalizedDirectory.split("/").pop() || location.name || location.base_directory;
-}
-
-
-// A workspace's name, which is the names of everything in it.
-//
-// It used to be `locations[0]`, so a workspace spanning a checkout here and a container over
-// SSH was called after whichever happened to be created first — and two workspaces that shared
-// that first environment were indistinguishable in the sidebar, which is the one place you pick
-// between them. A workspace *is* its environments; naming it after one of them hides the rest.
-//
-// Joined with `Intl.ListFormat` rather than `", "`, because the separator is language: English
-// separates with a comma and Japanese with `、`, which carries no space around it.
-//
-// `conjunction` + `narrow` after checking all six combinations, and the pairing is not the
-// obvious one. `unit` reads like the right type — these are items, not alternatives — but its
-// Japanese output separates with a space and nothing else, so three environments render as one
-// run of words. `conjunction` at `narrow` width drops the "and"/「と」 that would claim a
-// relationship a workspace does not imply, and keeps the separator each language actually uses:
-// `frank, colima, scratch` and `frank、colima、scratch`.
-export function workspaceLabel(
-  locations: Pick<Location, "base_directory" | "name">[] | undefined,
-  locale: string,
-  fallback: string,
-): string {
-  const names = (locations ?? []).map(locationTargetLabel).filter(Boolean);
-  if (names.length === 0) return fallback;
-  try {
-    return new Intl.ListFormat(locale, { style: "narrow", type: "conjunction" }).format(names);
-  } catch {
-    // A locale the platform does not know: the names still matter more than the separator.
-    return names.join(", ");
-  }
-}
+// The naming moved to `@shared/workspace`, because the phone names the same workspaces and its
+// own version rendered `giovannigravili +1` — a name plus a count of the names it left out.
+// Re-exported so every existing caller keeps its import path.
+export { locationTargetLabel, workspaceLabel };
 
 export function locationTargetAddress(location: Pick<Location, "base_directory" | "uri">): string {
   return location.uri || location.base_directory;

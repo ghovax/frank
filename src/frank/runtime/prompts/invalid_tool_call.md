@@ -1,5 +1,7 @@
-The tool call `{{ name }}` was malformed and was not executed — its arguments could not be parsed, so it had no effect. Do not repeat the same malformed payload. Re-issue the call with valid JSON arguments that parse cleanly.
+The tool call `{{ name }}` was malformed, so the harness did not run it. Nothing could parse its arguments, and the call had no effect.
 
-The error returned is:
+Do not send the same malformed payload again. Issue the call again with valid JSON arguments that parse cleanly.
+
+The error says:
 
 {{ error }}

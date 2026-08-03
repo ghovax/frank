@@ -156,7 +156,16 @@ def _list_arguments(values: list[str]) -> Optional[dict[str, Any]]:
     no separate tool for it. The command is fixed and read-only; the only thing taken from the
     agent is which directory."""
     path = values[0] if values else ""
-    return {"command": f"ls -la {shlex.quote(path)}", "read_only": True} if path else None
+    if not path:
+        return None
+    # The harness speaks `access_request` now, and this is a synthesised call rather than one a
+    # model wrote — so it states the claim the same way any other caller would. `ls` mutates
+    # nothing and reaches nowhere new, which is exactly what an empty request with `mutates:
+    # false` says.
+    return {
+        "command": f"ls -la {shlex.quote(path)}",
+        "access_request": {"mutates": False},
+    }
 
 
 def _background_shell_arguments(values: list[str]) -> Optional[dict[str, Any]]:

@@ -38,7 +38,8 @@ def build_agent_card(
     display_name = configuration.display_name
     capability = (
         "Investigates and reports read-only — cannot modify the system."
-        if configuration.permission_policy.is_read_only
+        # A card with no ceiling is not read-only; it simply has not said.
+        if configuration.permission_policy is not None and configuration.permission_policy.is_read_only
         else "Can read and modify the system."
     )
     skills = [
@@ -56,7 +57,7 @@ def build_agent_card(
                 id=configuration.identifier,
                 name=configuration.identifier,
                 description=(configuration.description or display_name) + f" {capability}",
-                tags=["harness", configuration.permission_mode, configuration.model or "unconfigured-model"],
+                tags=["harness", configuration.permission_mode or "unbounded", configuration.model or "unconfigured-model"],
                 examples=[f"Ask {display_name} to help with a task in its domain."],
             )
         )

@@ -25,6 +25,7 @@ and pay for the indentation by the token. `jq .` puts it back for a person.
 from __future__ import annotations
 
 import argparse
+import logging
 import contextlib
 import sys
 from typing import Any
@@ -39,6 +40,9 @@ from frank.base.tuning import Tunable, active_tuning
 class _StillRunning(Exception):
     """A process being waited on has not exited yet. Raised so a retry keeps waiting, rather
     than being a return value a caller could forget to check."""
+
+
+logger = logging.getLogger("frank")
 
 
 def _emit(payload: Any) -> None:
@@ -56,8 +60,13 @@ def _emit_line(payload: Any) -> None:
 
 def _note(message: str) -> None:
     """A diagnostic. Never stdout — that carries data, and a reader must not have to filter
-    prose out of it."""
-    print(message, file=sys.stderr)
+    prose out of it.
+
+    Through the logger rather than around it, so that everything this program says goes out one
+    way. `main` configures the handler to write the bare message to stderr: at a terminal a
+    timestamp and a level in front of every sentence is noise, and the sentences here are
+    addressed to a person, not to a log."""
+    logger.info(message)
 
 
 def _command_create(arguments: argparse.Namespace) -> int:
@@ -356,6 +365,20 @@ def _command_serve(arguments: argparse.Namespace) -> int:
     return serve.run(arguments)
 
 
+def _command_reach(arguments: argparse.Namespace) -> int:
+    """Make Frank reachable from somewhere that is not this machine.
+
+    `serve` is the same proxy for a browser on the same host, and stops at loopback because that
+    is all a browser on the same host needs. This one is the case that surface cannot cover: a
+    phone, on a network, tomorrow. What it adds is the two things that turn an address into an
+    endpoint — authentication, so binding past loopback is not a hole, and a token that survives
+    the reboot that gives the daemon a new one.
+    """
+    from frank.cli.commands import reach
+
+    return reach.run(arguments)
+
+
 def _command_run(arguments: argparse.Namespace) -> int:
     """One turn, in this process, with no daemon at all.
 
@@ -629,8 +652,8 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("-a", "--agent", required=True,
                         help="agent profile to run; required, because nothing can guess it for you")
     create.add_argument("-C", "--directory", help="working directory")
-    create.add_argument("-m", "--mode", choices=["default", "auto", "read_only"],
-                        help="permission mode, fixed for the session's life")
+    create.add_argument("-m", "--mode", choices=["default", "permissive", "self_classify", "read_only"],
+                        help="the permission mode this session starts under; it can be changed later, and the change reaches the turn in flight")
     create.add_argument("-w", "--workspace", help="workspace the session belongs to — the set of locations it may act in")
     create.add_argument("-P", "--parent", help="parent session; the child is clamped to no looser a mode")
     create.add_argument("-t", "--title", help="a human label for the session list")
@@ -648,7 +671,7 @@ def build_parser() -> argparse.ArgumentParser:
     schedule_create.add_argument("-w", "--workspace", required=True,
                                  help="workspace id, or a path inside one")
     schedule_create.add_argument("-m", "--mode", required=True,
-                                 choices=["default", "auto", "read_only"],
+                                 choices=["default", "permissive", "self_classify", "read_only"],
                                  help="permission mode; required, because nobody is watching when "
                                       "this runs and an unstated mode is one nobody chose")
     schedule_create.add_argument("--timezone", default=_local_timezone(),
@@ -750,6 +773,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     serve.set_defaults(handler=_command_serve)
 
+    reach = add("reach", help="make Frank reachable from a phone, over your tailnet")
+    reach.add_argument(
+        "action", choices=["serve", "pair", "rotate"], nargs="?", default="serve",
+        help="serve the endpoint (default), print a pairing code for it, or mint a new token",
+    )
+    reach.add_argument(
+        "-p", "--port", type=int, default=8825,
+        help="the loopback port Tailscale proxies to (default 8825). Nothing listens on a "
+             "network interface; only change this if something else already has the port",
+    )
+    reach.add_argument(
+        "--interface", nargs="?", const="http://127.0.0.1:3000", default="",
+        help="serve the interface from a running dev server instead of the built export, so a "
+             "change reaches the phone without `bun run build`. Defaults to Next's own port",
+    )
+    reach.set_defaults(handler=_command_reach)
+
     open_app = add("app", help="start the daemon and launch the desktop app")
     open_app.set_defaults(handler=_command_open)
 
@@ -784,6 +824,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Prose, on stderr, with nothing in front of it. The daemon's format — timestamp, level,
+    # logger name — is right for a file somebody greps a week later and wrong for a command
+    # answering somebody who is watching. `force` because a library on the way in may already
+    # have installed a handler of its own, and then this one would be ignored.
+    #
+    # The root stays at `WARNING` and only Frank's own logger is lowered. Lowering the root as
+    # well let every library share the channel, and httpx narrating `POST http://daemon/rpc
+    # "HTTP/1.1 200 OK"` before each answer is not what somebody running `frank ps` asked to
+    # read.
+    logging.basicConfig(
+        level=logging.WARNING, format="%(message)s",
+        handlers=[logging.StreamHandler(sys.stderr)], force=True,
+    )
+    logging.getLogger("frank").setLevel(logging.INFO)
     parser = build_parser()
     arguments = parser.parse_args(argv)
     try:

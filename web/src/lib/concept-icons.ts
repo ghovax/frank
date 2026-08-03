@@ -1,5 +1,8 @@
 import type { IconType } from "react-icons";
-import { LuListChecks, LuPlug, LuServer, LuSparkles, LuWrench } from "react-icons/lu";
+
+import { CONCEPT_GLYPHS, CONCEPT_TINTS } from "@shared/tools";
+
+import { glyph } from "./glyphs";
 
 // One icon per concept, for the whole interface.
 //
@@ -21,25 +24,16 @@ import { LuListChecks, LuPlug, LuServer, LuSparkles, LuWrench } from "react-icon
 // icon, and no icon meaning two things: `LuListChecks` is now only ever a task list, and
 // `LuWrench` is now only ever "this tool is not one I know", which is what makes the fallback
 // legible as a fallback.
+//
+// The choices themselves now live in `@shared/tools`, because the phone makes the same ones and
+// a second table is how the two stop agreeing. What stays here is turning each name into a
+// `react-icons` component.
 export const CONCEPT_ICONS = {
-  /** A skill: something the agent knows how to do. Also `load_skill`, which loads one. */
-  skill: LuSparkles,
-  /** MCP — a configured server, its tools, and every call into one. */
-  mcp: LuPlug,
-  /** The agent's own task list (`set_tasks` / `update_tasks`), and nothing else. */
-  tasks: LuListChecks,
-  /** A place this workspace can work in — a folder here, or one on an SSH host. */
-  environment: LuServer,
-  /** A tool the interface does not recognise. Only ever the fallback. */
-  unknownTool: LuWrench,
+  skill: glyph(CONCEPT_GLYPHS.skill),
+  mcp: glyph(CONCEPT_GLYPHS.mcp),
+  tasks: glyph(CONCEPT_GLYPHS.tasks),
+  environment: glyph(CONCEPT_GLYPHS.environment),
+  unknownTool: glyph(CONCEPT_GLYPHS.unknownTool),
 } satisfies Record<string, IconType>;
 
-// The colour each concept carries where colour is used (the transcript's activity lines). Kept
-// beside the glyphs so a concept cannot pick up a new icon and keep an old colour.
-export const CONCEPT_ICON_COLORS = {
-  skill: "pink.fg",
-  mcp: "purple.fg",
-  tasks: "blue.fg",
-  environment: "fg.muted",
-  unknownTool: "fg.muted",
-} satisfies Record<keyof typeof CONCEPT_ICONS, string>;
+export const CONCEPT_ICON_COLORS = CONCEPT_TINTS;

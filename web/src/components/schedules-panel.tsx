@@ -14,10 +14,23 @@ import {
   type Schedule,
 } from "@/lib/api";
 import { swallowed } from "@/lib/swallowed";
+import { PERMISSION_MODES } from "@shared/controls";
 import { ScheduleForm } from "./schedule-form";
 import { Pill } from "./ui/pill";
 import { toaster } from "./ui/toaster";
 import { errorMessage } from "@/lib/errors";
+
+/** A schedule's approval mode, named and coloured as the picker names and colours it. */
+function PermissionModePill({ mode }: { mode: string }) {
+  const translation = useTranslations("SessionControls");
+  const choice = PERMISSION_MODES.choices.find((entry) => entry.value === mode);
+  if (choice === undefined) return <Pill colorPalette="gray">{mode}</Pill>;
+  return (
+    <Pill colorPalette={choice.palette ?? "gray"}>
+      {translation(choice.labelKey as Parameters<typeof translation>[0])}
+    </Pill>
+  );
+}
 
 export function SchedulesPanel({ workspaceId, agents }: { workspaceId: string; agents: AgentSummary[] }) {
   const translation = useTranslations("SchedulesPanel");
@@ -120,7 +133,7 @@ export function SchedulesPanel({ workspaceId, agents }: { workspaceId: string; a
   return (
     <Flex direction="column" gap={3} w="100%">
       {schedules.length === 0 && !adding ? (
-        <Text fontSize="sm" color="fg.muted">{translation("empty")}</Text>
+        <Text fontSize="xs" color="fg.muted">{translation("empty")}</Text>
       ) : null}
 
       {schedules.map((schedule) => (
@@ -130,9 +143,11 @@ export function SchedulesPanel({ workspaceId, agents }: { workspaceId: string; a
             <Flex align="center" gap={2}>
               <Pill colorPalette={schedule.enabled ? "teal" : "gray"}>{schedule.cron}</Pill>
               <Text fontWeight="medium">{schedule.name}</Text>
-              <Pill colorPalette={schedule.permission_mode === "auto" ? "orange" : "gray"}>
-                {schedule.permission_mode}
-              </Pill>
+              {/* Read off the same choice set the picker is built from, rather than colouring a
+                  raw string. It said `auto` in orange and printed whatever the server stored,
+                  so a mode added or renamed anywhere else arrived here as an untranslated
+                  identifier in grey. */}
+              <PermissionModePill mode={schedule.permission_mode} />
             </Flex>
             <Text fontSize="xs" color="fg.muted" truncate>{schedule.prompt}</Text>
             <Flex gap={3} fontSize="xs" color="fg.muted" minW={0} wrap="wrap">

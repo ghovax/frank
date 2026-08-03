@@ -127,6 +127,7 @@ def build_chat_model(
     global_configuration: Configuration,
     agent_configuration: AgentConfiguration,
     working_directory: str,
+    session_id: str = "",
 ) -> BaseChatModel:
     """Build the chat model for a provider-qualified (``provider/model``) id.
 
@@ -140,7 +141,12 @@ def build_chat_model(
     ``working_directory`` is only consulted by the cursor provider, whose request context
     wants to know where the client believes it is running. It is required even so: a default
     would exist only to spare a caller from passing what it already has, and the caller that
-    took the default would be the one silently telling Cursor it is running nowhere."""
+    took the default would be the one silently telling Cursor it is running nowhere.
+
+    ``session_id`` becomes the provider's prompt cache key, so that a conversation's growing
+    prefix is looked for in one place rather than wherever a request happens to be routed. It
+    does default, because a library caller building a bare model has no session and the only
+    cost of omitting it is the cache miss it already had."""
     provider_identifier, model_suffix = model_identifier.split("/", 1)
     if provider_identifier == "chatgpt":
         catalog_entry = find_model(model_identifier)
@@ -148,6 +154,7 @@ def build_chat_model(
             model=model_suffix,
             reasoning_effort=agent_configuration.reasoning_effort,
             context_length=catalog_entry.context_length if catalog_entry else 0,
+            session_id=session_id,
         )
     if provider_identifier == "cursor":
         catalog_entry = find_model(model_identifier)
@@ -163,10 +170,17 @@ def build_chat_model(
         global_configuration.configured_provider_keys(),
         global_configuration.configured_provider_bases(),
     )
+    # The catalogue's window travels with the model, the same way it already does on the Codex
+    # path. LiteLLM knows nothing about a gateway's models, so without this the window was zero
+    # for every one of them — and a zero window is not a small window, it is no fill ring, no
+    # scaled budget, and no over-context guard.
+    catalogued = find_model(model_identifier)
     return ChatLiteLLMModel.model_validate({
         "model": resolved["model"],
         "api_key": SecretStr(resolved["api_key"]) if resolved["api_key"] else None,
         "api_base": resolved["api_base"] or None,
+        "session_id": session_id,
+        "context_length": catalogued.context_length if catalogued else 0,
         "temperature": 0,
         "reasoning_effort": agent_configuration.reasoning_effort,
     })
@@ -294,6 +308,41 @@ def _all_available_tools(
     known = {tool.name for tool in available}
     available.extend(tool for tool in extra_tools if tool.name not in known)
     return available
+
+
+def _as_profile(sandbox: Any):
+    """Whatever a caller called a sandbox, as the :class:`Profile` the runtime works with.
+
+    Four shapes reach this. A `Profile` passes through. A dict is what the daemon puts in an
+    assignment, so it is read the way the worker reads it. A `SandboxConfiguration` is what
+    somebody who read the configuration documentation naturally reaches for, and it knows how to
+    become a profile. `None` means the caller expressed no preference, which is not the same as
+    asking for nothing — see below.
+    """
+    from frank.base.confinement import Profile
+
+    if sandbox is None:
+        # Deliberately the configured default, not `Profile()`.
+        #
+        # `Profile()` has empty path tuples, and an empty writable set is not "unconfined" — it
+        # is "may write nowhere". So a library session built without a `sandbox=` produced an
+        # agent whose `bash` could not write to the directory the caller had just named as its
+        # workspace: every write came back `Operation not permitted`. The daemon never met this,
+        # because it always resolves a profile from configuration first.
+        from frank.base.configuration import SandboxConfiguration
+
+        return SandboxConfiguration().to_profile()
+    if isinstance(sandbox, Profile):
+        return sandbox
+    if isinstance(sandbox, dict):
+        return Profile.from_dict(sandbox)
+    to_profile = getattr(sandbox, "to_profile", None)
+    if callable(to_profile):
+        return to_profile()
+    raise TypeError(
+        f"sandbox must be a confinement Profile, a SandboxConfiguration, or the dict form of "
+        f"either — got {type(sandbox).__name__}."
+    )
 
 
 def _build_tool_context(
@@ -523,9 +572,15 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         # What every child this runtime spawns is confined to. Resolved by the daemon at session
         # creation and clamped there; held rather than re-derived, so a configuration edit cannot
         # widen a session that is already running.
-        from frank.base.confinement import Profile
+        from frank.base.confinement import Grant
 
-        self._sandbox = sandbox if sandbox is not None else Profile()
+        # Normalised, because callers already hand this three different shapes and only one of
+        # them worked. The worker converts a dict first, the library passed whatever it was
+        # given straight through, and a person reaching for the documented `SandboxConfiguration`
+        # got a pydantic model installed as the confinement — where every later `.describe()`,
+        # `.widened()` and `spawn_recipe()` raises `AttributeError` deep inside a turn rather
+        # than at the call that made the mistake. One conversion here settles it for every path.
+        self._sandbox = _as_profile(sandbox)
         self._agent_configuration = agent_configuration
         self._global_configuration = global_configuration
         self._working_directory = working_directory or str(Path.home())
@@ -541,7 +596,12 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         )
 
         effective_model = agent_configuration.model_identifier
-        if not effective_model:
+        # Only a runtime that must *build* a client needs to be told which one. A caller who
+        # brought their own has already answered the question, and this refused them anyway —
+        # while naming `model=` as one of the three ways out, which made the message a promise
+        # the code did not keep. The identifier is still worth having when it is there, because
+        # the context window is looked up from it, but its absence degrades rather than refuses.
+        if not effective_model and model is None:
             raise ValueError(
                 f"Agent '{agent_configuration.identifier}' names no model. Set `provider` and "
                 "`model` in its profile, pass `model_identifier=\"provider/model\"` to "
@@ -559,7 +619,8 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         # tracer and rate limiter in that ecosystem — so accepting one is the whole of the model
         # seam, with no interface of ours in the middle.
         self._llm = model if model is not None else build_chat_model(
-            effective_model, global_configuration, agent_configuration, self._working_directory
+            effective_model, global_configuration, agent_configuration, self._working_directory,
+            session_id,
         )
 
         self._file_lease_manager = file_lease_manager
@@ -632,6 +693,11 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             "output_tokens": 0,
             "total_tokens": 0,
             "cache_read_tokens": 0,
+            # What a cache could have returned across the session — the tokens each call had
+            # already sent last time. Kept beside the read because the read alone has no honest
+            # denominator: measured against total input it looks like a miss even when every
+            # cacheable token came back, since a token must be sent once before it can be cached.
+            "reachable_tokens": 0,
             "reasoning_tokens": 0,
             "model_calls": 0,
         }
@@ -657,9 +723,12 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         # mode is chosen at `create` (clamped against the parent's, and against the agent
         # card's own ceiling) and nothing can loosen it afterwards. The read_only/auto
         # booleans the call sites read are derived views of it, never separate state.
+        # `more_restrictive` ignores absent inputs and falls back to the interactive default
+        # with none, which is what a session with neither a requested mode nor a card ceiling
+        # should get.
         self._permission_mode: PermissionMode = PermissionMode.more_restrictive(
             permission_mode, agent_configuration.permission_policy
-        ) if permission_mode else agent_configuration.permission_policy
+        )
         self._a2a_turn_id: str = ""
         # Reads another A2A task (sibling/agent) by id from the shared store,
         # so context-aware agents can coordinate. Injected by the executor.
@@ -684,6 +753,33 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             session_access=session_access,
             mcp_manager=mcp_manager,
         )
+        # What a person has approved this session reaching beyond its configured profile. Held
+        # for the session rather than for the call that asked, because a grant re-asked on every
+        # command of a build produces a column of gates that nobody reads by the fourth — and how
+        # often somebody is asked is itself a security property, pointing the opposite way to
+        # intuition. An approval asked too often teaches the person to approve without looking.
+        #
+        # Deliberately not carried in `self._sandbox`. That profile is what a peer clamps against
+        # when this session creates one, so a grant recorded there would flow to every child: a
+        # person who allowed one write for a build would have silently allowed it for four peers
+        # doing something else, and asking narrowly then delegating widely would launder it.
+        self._access_grants: list[Grant] = []
+        # The exact files the person attached to this conversation. Kept beside the grants and
+        # applied the same way, but arrived at differently: a grant answers something the model
+        # asked for, and this answers something the person handed over. That difference is what
+        # lets it outrank the deny list where a grant may not.
+        self._attached_files: list[str] = []
+
+    def note_attachments(self, paths: Sequence[str]) -> None:
+        """Record the files the user attached, so a tool may read them where they live.
+
+        Called by the turn as it ingests a message. Additive across the conversation, because
+        a file attached three turns ago is still the file being discussed, and re-reading it
+        must not fail because the turn that introduced it has passed.
+        """
+        for path in paths:
+            if path and path not in self._attached_files:
+                self._attached_files.append(path)
 
     def set_locations(self, locations: list[dict] | None) -> None:
         """Adopt the workspace's environments as they are now.
@@ -707,9 +803,12 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             permission_mode_default=self._agent_configuration.permission_policy,
             executors=carried,
         )
-        # The environments and their policies are stated to the model in the system prompt, so
-        # the prompt has to be rebuilt or the next turn would name a set that no longer exists.
-        self._cached_system_prompt = None
+        # The system prompt is deliberately left alone. The environments and their policies are
+        # stated to the model in the *turn context*, which is rebuilt every turn anyway, so the
+        # next turn already names the current set. Dropping the cached prompt here used to be
+        # required and is now merely expensive: it is the front of every request, so rebuilding
+        # it discards the provider's prompt cache for the whole conversation — a full-price
+        # re-read of everything, to restate something that was not in it.
 
     def _build_locations(
         self,
@@ -853,7 +952,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             background_job_id=identifier,
         )
         status, code = _model_result_status(capped_result, ok=True, backgrounded=False)
-        self._conversation.append(self._harness_note_message(
+        self._conversation.append(self._reminder_message(
             _model_visible_tool_result(
                 capped_result, metadata, status, code, kind="background_result",
             ),
@@ -877,10 +976,25 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         reasoning = int((usage.get("output_token_details") or {}).get("reasoning", 0) or 0)
         if not (input_tokens or output_tokens or total_tokens):
             return None
+        # What the adapter worked out about this request's prefix, read before the totals below
+        # because one of them is now part of it.
+        cache_trace = response.additional_kwargs.get("cache_trace") or {}
+        # What could have been served, which is never less than what *was*.
+        #
+        # The estimate comes from comparing this request against the last one this process sent,
+        # so it is zero whenever there is no last one — the first call of a session, and every
+        # call after the session slept, because waking forks a fresh worker that has never sent
+        # anything. The provider's cache does not forget across that boundary, so it happily
+        # returned tokens against an estimate of zero, and the running totals came out at 106%.
+        # The provider's own figure is the authority on what it had: an estimate below it is an
+        # estimate that is wrong, and the two counts differ by a few percent anyway for having
+        # been made with different tokenizers.
+        reachable = max(int(cache_trace.get("reachable_tokens", 0) or 0), cache_read)
         self._token_usage["input_tokens"] += input_tokens
         self._token_usage["output_tokens"] += output_tokens
         self._token_usage["total_tokens"] += total_tokens
         self._token_usage["cache_read_tokens"] += cache_read
+        self._token_usage["reachable_tokens"] += reachable
         self._token_usage["reasoning_tokens"] += reasoning
         self._token_usage["model_calls"] += 1
         # input_tokens for this (latest) call is the whole prompt — system, history,
@@ -898,6 +1012,11 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             reasoning_tokens=reasoning,
             context_window=context_window,
             cumulative=dict(self._token_usage),
+            prefix_intact=bool(cache_trace.get("prefix_intact", False)),
+            reachable_tokens=reachable,
+            segments=int(cache_trace.get("segments", 0) or 0),
+            shared_segments=int(cache_trace.get("shared_segments", 0) or 0),
+            divergence=cache_trace.get("divergence"),
         )
 
     @property
@@ -928,8 +1047,8 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
 
 
     @property
-    def _auto_permissions(self) -> bool:
-        return self._permission_mode.is_auto
+    def _self_classifies(self) -> bool:
+        return self._permission_mode.is_self_classifying
 
     def abort(self) -> None:
         # Stop tears down only the live turn: signal the loop to end and kill every
@@ -959,11 +1078,11 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         "started" placeholder, exactly as if the model had backgrounded it."""
         return self._background.request_background(tool_call_identifier)
 
-    def enqueue_steering(self, message: str) -> bool:
+    def enqueue_steering(self, message: str, message_id: str = "") -> bool:
         text = message.strip()
         if not text:
             return False
-        self._steering_messages.put_nowait(text)
+        self._steering_messages.put_nowait((text, message_id))
         self._steering_available.set()
         return True
 
@@ -982,9 +1101,9 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
 
 
     @property
-    def configured_permission_mode(self) -> PermissionMode:
-        """The permission mode the agent's own card declares (its ceiling before a
-        caller's grant tightens it)."""
+    def configured_permission_mode(self) -> Optional[PermissionMode]:
+        """The permission mode the agent's own card declares as its ceiling, or ``None`` where
+        it declares none — which is most cards, and means they bound nothing."""
         return self._agent_configuration.permission_policy
 
     def set_permission_mode(self, mode: PermissionMode) -> PermissionMode:
@@ -997,14 +1116,19 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         point — a person changing this is reacting to what the session is doing right now.
 
         Clamped against the agent card's ceiling exactly as the constructor clamps it, so this
-        can only ever be as loose as the profile itself allows. The cached system prompt is
-        dropped because it states the policy (and the locations' effective modes) to the model,
-        and a prompt describing the old one would be the harness lying about its own rules."""
+        can only ever be as loose as the profile itself allows.
+
+        The model is told about the change through the turn context, which is rebuilt on every
+        turn, so the next one already describes the policy now in force. It used to be told
+        through the system prompt, which meant this had to discard the cached prompt — and the
+        prompt is the front of every request, so a person toggling the mode threw away the
+        provider's cache for the entire conversation and paid to re-read all of it. Enforcement
+        was never the thing that lagged: `_call_policy` reads this field at call time, so the
+        very next tool call is judged by the new mode either way."""
         resolved = PermissionMode.more_restrictive(mode, self._agent_configuration.permission_policy)
         if resolved is self._permission_mode:
             return resolved
         self._permission_mode = resolved
-        self._cached_system_prompt = None
         return resolved
 
     def set_a2a_turn_id(self, turn_id: str) -> None:
@@ -1103,9 +1227,9 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
                 background_job_id=completion.identifier,
             )
             # Append-only: the scheduled placeholder ToolMessage stays put and the
-            # result lands as a *new* message (a user-role harness note — a system
+            # result lands as a *new* message (a user-role reminder — a system
             # role here would be hoisted into Anthropic's top-level system param and
-            # bust the whole prefix; see _harness_note_message). Rewriting the
+            # bust the whole prefix; see _reminder_message). Rewriting the
             # placeholder in place would change the conversation mid-stream and
             # invalidate the provider's prompt cache from that point on — re-billing
             # the whole suffix. The placeholder already satisfies its tool_call, so
@@ -1115,7 +1239,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             background_status, background_code = _model_result_status(
                 capped_result, ok=True, backgrounded=False,
             )
-            self._conversation.append(self._harness_note_message(
+            self._conversation.append(self._reminder_message(
                 _model_visible_tool_result(
                     capped_result, background_metadata, background_status, background_code,
                     kind="background_result",

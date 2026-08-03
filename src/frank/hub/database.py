@@ -84,6 +84,37 @@ class SessionRecord(Base):
     )
 
 
+class MachineRecord(Base):
+    """Another Frank this one knows how to reach, and the credential for it.
+
+    The desktop's half of what a phone keeps in its keychain: a set of machines you can jump to,
+    rather than the single one whichever window happens to be open. Added from the same
+    `frank://pair#…` link `frank reach` prints, so there is one way to describe a machine and both
+    clients read it.
+
+    The token is stored, and it is worth being plain about what that means: it is a bearer
+    credential with full control of *that* machine, sitting at rest in this machine's database.
+    The alternative is asking for the link on every jump, which makes the list a bookmark rather
+    than a connection. The file is in the user's own data directory, which is where the OAuth
+    credentials already are; anything that can read it can already read those.
+
+    Nothing here reaches out. A row is an address and a key, and following it is a navigation the
+    interface performs — see the note on CORS in `frank reach`.
+    """
+
+    __tablename__ = "machines"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # generated uuid
+    # What this machine is called *here*. Seeded from the pairing payload, which carries the
+    # host's own name, and editable because that name is whatever DHCP left it.
+    name: Mapped[str] = mapped_column(String, nullable=False, default="")
+    # The identity of the row: one `frank reach` is one address, so pairing the same machine
+    # again replaces its token rather than growing a second entry holding a stale one.
+    endpoint: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    token: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class WorkspaceRecord(Base):
     """A set of locations, and the sessions that run against them.
 
@@ -95,6 +126,16 @@ class WorkspaceRecord(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)  # generated uuid
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
+    # The conversation a client should open when it arrives with nothing else to go on.
+    #
+    # Here rather than in a browser, because it is not a fact about a browser. Open the same
+    # workspace from a phone, a second window and the desktop app and all three mean the same
+    # conversation by "the last one" — which `localStorage` cannot express, since it would give
+    # each of them a private and diverging answer to a question about shared state.
+    #
+    # Empty when the workspace has never been opened, which is the one time landing on a blank
+    # composer is right.
+    last_session_id: Mapped[str] = mapped_column(String, nullable=False, default="")
 
 
 class ScheduleRecord(Base):

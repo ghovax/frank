@@ -71,10 +71,48 @@ const config = defineConfig({
       dialog: {
         slots: ["backdrop", "positioner", "content", "title", "description", "header", "body", "footer", "closeTrigger"],
         base: {
-          content: { borderRadius: "md" },
-          header: { px: "4", pt: "4", pb: "3", gap: "2" },
-          body: { px: "4", pt: "1", pb: "4" },
-          footer: { px: "4", pt: "1", pb: "4", gap: "2" },
+          // A dialog is a card on a wide screen and a *screen* on a narrow one.
+          //
+          // Both because a phone runs this interface now, and because the two are the same
+          // problem: a centred 640px card inside a 390px viewport is a card with its sides cut
+          // off, which is exactly as broken in a narrow browser window as it is on a phone. So
+          // this is stated once, at the base, and every dialog in the app inherits it rather
+          // than each one learning it separately.
+          //
+          // Full-bleed below `sm`: square corners, because a rounded corner against the edge of
+          // the glass reads as a rendering fault; full height, so the content scrolls inside the
+          // dialog rather than the dialog overflowing the screen.
+          positioner: {
+            padding: { base: "0", sm: "4" },
+            alignItems: { base: "stretch", sm: "center" },
+          },
+          content: {
+            borderRadius: { base: "0", sm: "md" },
+            maxWidth: { base: "100%", sm: undefined },
+            width: { base: "100%", sm: undefined },
+            height: { base: "100dvh", sm: "auto" },
+            maxHeight: { base: "100dvh", sm: "85dvh" },
+            display: "flex",
+            flexDirection: "column",
+          },
+          // The header and footer stay put while the body scrolls between them — on a phone a
+          // dialog is often taller than the screen, and a title that scrolls away takes with it
+          // the only thing saying what you are looking at.
+          header: {
+            px: "4",
+            pt: { base: "calc(env(safe-area-inset-top) + 1rem)", sm: "4" },
+            pb: "3",
+            gap: "2",
+            flexShrink: 0,
+          },
+          body: { px: "4", pt: "1", pb: "4", flex: "1", minHeight: 0, overflowY: "auto" },
+          footer: {
+            px: "4",
+            pt: "1",
+            pb: { base: "calc(env(safe-area-inset-bottom) + 1rem)", sm: "4" },
+            gap: "2",
+            flexShrink: 0,
+          },
         },
       },
       // One dropdown row for the whole app. Menus (size sm — the DropdownMenu wrapper) and

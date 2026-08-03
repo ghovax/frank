@@ -24,8 +24,9 @@ for the UI; the model reads the same result from the LLM conversation, wrapped i
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -70,6 +71,19 @@ class ToolMetadata(BaseModel):
 
 class _EventBase(BaseModel):
     """Base of the wire-event union. Every event contributes its own `kind` literal."""
+
+    #: When this event was made, ISO-8601 in UTC.
+    #
+    #: On every event rather than on the few that seemed to want one, because which events want
+    #: one is not knowable in advance: the transcript's own order answers "what happened next"
+    #: but never "how long after", and that second question is the one asked of stored data
+    #: afterwards. Two calls seconds apart and two calls minutes apart are indistinguishable in
+    #: an append-only log, and the difference between them decides whether a prompt cache was
+    #: still warm — which could not be checked at all until this existed.
+    #
+    #: Stamped when the event is constructed, which is where the thing being described happened;
+    #: a time added on the way to disk would measure the writer, not the event.
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 class TextEvent(_EventBase):
@@ -125,6 +139,31 @@ class StatusEvent(_EventBase):
     code: str = ""
 
 
+class TracedSegment(BaseModel):
+    """Which piece of a request a cache measurement is talking about.
+
+    Fields rather than a formatted label, so a consumer can count how often the tool schemas
+    move or which role tends to be rewritten. ``position`` is the index within the conversation,
+    or ``-1`` for the parts a request has only one of.
+    """
+
+    kind: str = ""
+    position: int = -1
+    role: str = ""
+
+
+class PrefixDivergence(BaseModel):
+    """Where a request stopped matching the one before it."""
+
+    index: int = 0
+    #: What occupies that position now. Absent when the request simply got shorter there.
+    current: Optional[TracedSegment] = None
+    #: What occupied it on the previous call.
+    previous: TracedSegment = Field(default_factory=TracedSegment)
+    #: The piece did not move; its contents changed. The only kind usually worth chasing.
+    rewritten: bool = False
+
+
 class CumulativeUsage(BaseModel):
     """Session-lifetime running totals (monotonic), distinct from the per-call figures
     on :class:`TokenUsageEvent` which describe only the latest model call."""
@@ -133,6 +172,10 @@ class CumulativeUsage(BaseModel):
     output_tokens: int = 0
     total_tokens: int = 0
     cache_read_tokens: int = 0
+    #: What a cache could have returned across the session, so `cache_read_tokens` has a
+    #: denominator that means something. Against total input a perfect cache still reads about
+    #: 70%, because every token is paid for once before it can ever be served from cache.
+    reachable_tokens: int = 0
     reasoning_tokens: int = 0
     model_calls: int = 0
 
@@ -151,11 +194,18 @@ class CompactionEvent(_EventBase):
     messages_before: int = 0
     messages_after: int = 0
     tokens_before: int = 0
+    tokens_after: int = 0
+    log_tokens: int = 0
 
 
 class SteeringEvent(_EventBase):
     kind: Literal["steering"] = "steering"
     text: str = ""
+    #: The id the sender gave this message, carried back so a client can recognise the message
+    #: it already knows about. Without it the only handle was the text, and a client that had
+    #: shown the message optimistically could not tell its own copy from the one the session
+    #: persisted — so both were on screen until a replay rebuilt the list and dropped one.
+    message_id: str = ""
 
 
 class TokenUsageEvent(_EventBase):
@@ -164,8 +214,45 @@ class TokenUsageEvent(_EventBase):
     input_tokens: int = 0
     output_tokens: int = 0
     context_window: int = 0
+    # Per-call cache and reasoning, which used to be folded into the cumulative totals and
+    # nowhere else. A running total cannot say which call missed, and "which call missed" is
+    # the whole question — a session reading 2% overall turned out to be one partial hit and
+    # five outright misses, which the cumulative figure hid completely.
+    cache_read_tokens: int = 0
+    reasoning_tokens: int = 0
     # Session-lifetime running totals for this agent's own calls.
     cumulative: CumulativeUsage = Field(default_factory=CumulativeUsage)
+    # What the cache figure means, which the figure alone cannot say. A provider serves the
+    # longest prefix it recognises, so a low read is either a prefix that moved — and
+    # ``divergence`` says which piece — or an unchanged prefix the provider missed anyway,
+    # which is ``prefix_intact`` with a read of zero and is not something a differently shaped
+    # request would cure. ``reachable_tokens`` is the ceiling the read is measured against,
+    # estimated with this harness's tokenizer rather than the provider's.
+    #
+    # Recorded on the event rather than logged: this is asked about days later, of a specific
+    # call in a specific session, and only stored data can answer that.
+    prefix_intact: bool = False
+    reachable_tokens: int = 0
+    segments: int = 0
+    shared_segments: int = 0
+    divergence: Optional[PrefixDivergence] = None
+
+
+class PermissionReason(BaseModel):
+    """Why approval is needed, as data rather than as a sentence.
+
+    The harness used to build the sentence itself — "Sandbox approval required: this command
+    reads outside the working directory (/a, /b)." — and hand a client the finished English.
+    That put user-facing prose in the one place that cannot translate it: the daemon has no
+    locale, the string never reached the message catalogue, and a Japanese interface rendered
+    an English clause with a colon and a parenthetical in the middle of its own layout.
+
+    So the harness states the *facts* and the client writes the sentence. `kind` selects the
+    message; the paths ride as data the message interpolates. A reason the client does not
+    recognise falls back to the model's own explanation, which is prose either way."""
+
+    kind: str
+    paths: list[str] = Field(default_factory=list)
 
 
 class PermissionRequestEvent(_EventBase):
@@ -178,8 +265,12 @@ class PermissionRequestEvent(_EventBase):
     tool_name: str = ""
     arguments: dict[str, Any] = Field(default_factory=dict)
     command: str = ""
-    # Why approval is needed. The model's own reason for wanting the call lives in
-    # ``arguments["explanation"]``; both are shown.
+    # Why approval is needed, in the client's own words. Absent where the reason is prose the
+    # harness did not author — a classifier's verdict, or the model's own account of itself.
+    reason: Optional[PermissionReason] = None
+    # Why approval is needed, where the text is somebody's prose rather than a fact about the
+    # call. The model's own reason for wanting the call lives in ``arguments["explanation"]``;
+    # both are shown.
     explanation: str = ""
     risk: str = ""
 
@@ -265,6 +356,25 @@ class TurnContext(BaseModel):
     active_goal: str = ""
     tasks: list[dict[str, Any]] = Field(default_factory=list)
     background: dict[str, Any] = Field(default_factory=dict)
+    # Where tools may run, and under which permission mode. Here because the mode is changeable
+    # while a session runs: stating it in the cached prompt meant every change rewrote the front
+    # of the request and threw away the cache for the whole conversation.
+    #
+    # The machine snapshot is deliberately NOT here. It is minted once, at the session's first
+    # message, and appended to the conversation — see `_environment_note`. A snapshot of a
+    # machine does not need restating every turn, and restating it would cost its own size on
+    # each one; appended once, it is cached with everything else from the second call onward.
+    locations: list[dict[str, Any]] = Field(default_factory=list)
+    # What the operating system will actually permit a tool child, and what has been granted on
+    # top of it. Here, and not in the system prompt, for the reason `locations` is here: a grant
+    # approved mid-session changes it, and anything changeable in the cached prefix rewrites the
+    # front of every request.
+    #
+    # It is here *at all* because it was nowhere. A session was told its permission mode and
+    # never its confinement, so the first it learned of the boundary was an `Operation not
+    # permitted` that named no path — a boundary you can only discover by hitting it is one you
+    # hit repeatedly.
+    confinement: dict[str, Any] = Field(default_factory=dict)
     # Where a screen script can be pointed, and what may be called there. Present only when the
     # screen tool is enabled. It is here rather than in the system prompt because the system
     # prompt is cached for the session and windows open and close within one: a cached list of

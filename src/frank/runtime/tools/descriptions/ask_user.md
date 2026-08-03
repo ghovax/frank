@@ -1,7 +1,13 @@
-Ask the user one or more questions and receive their answers.
+Ask the user one or more questions, and wait for the answers.
 
-Ask only when the answer genuinely changes the work. If there is a clear safe default, choose it, state the choice, and continue. When recommending an option, place it first and append ``(Recommended)`` to its label. Custom answers are enabled by default, so never add a redundant Other or catch-all option. An answer comes back as the selected label, a bare string — including free text the user typed instead of choosing. Only a question marked `multiple` answers with an array.
+Ask only where the answer changes the work. Where a safe default is clear, choose it, say what you chose, and continue.
+
+Where one option is better, say so and put it first. The user should be able to see which one you would pick, and why, without reading every description.
+
+Custom answers are on by default, so never add a redundant "Other" or catch-all option.
+
+An answer comes back as the selected label, a bare string. That includes free text the user typed instead of choosing. Only a question marked `multiple` answers with an array.
 
 Arguments:
-  - questions: List of question objects, each with "question" (full text), "header" (short label, max ~30 chars), "options" (list of {"label", "description"}), and optional "multiple" (bool) and "custom" (bool, default true).
-  - explanation: A concise, user-facing reason for asking.
+  - questions: A list of question objects. Each holds "question" (the full text), "header" (a short label, about 30 characters), "options" (a list of {"label", "description"}), and two optional flags: "multiple" and "custom", which defaults to true.
+  - explanation: A short reason for asking, in the words the user reads.

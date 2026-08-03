@@ -43,9 +43,10 @@ from frank.base.errors import summary
 
 logger = logging.getLogger(__name__)
 
-# Parakeet expects 16 kHz mono. The browser resamples to this before sending, so the samples
-# arriving here need no conversion — which is the whole reason the wire carries raw float32
-# rather than an encoded file the daemon would need a codec to open.
+# Parakeet expects 16 kHz mono, and whatever recorded has already resampled to it — a browser
+# through its `AudioContext`, the phone app through the platform's audio framework. So the
+# samples arriving here need no conversion, which is the whole reason the wire carries raw
+# float32 rather than an encoded file the daemon would need a codec to open.
 #
 # Deliberately a constant while every wait below is a setting: this is what the model takes, so
 # it is a fact rather than a preference, and a configuration key for it would only be a way to

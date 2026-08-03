@@ -111,13 +111,21 @@ async def terminal_websocket(
                 elif message_type == "resize":
                     session.resize(int(message.get("rows", 24) or 24), int(message.get("columns", 80) or 80))
 
-        tasks = [asyncio.create_task(output_loop()), asyncio.create_task(input_loop())]
+        # Three racers, not two. The input loop ends when the client goes away and the output
+        # loop when the session does, but neither ends because the *daemon* was asked to stop —
+        # and a websocket the daemon cannot end holds its shutdown open exactly as a stream
+        # does. The same signal the streams race, for the same reason.
+        tasks = [
+            asyncio.create_task(output_loop()),
+            asyncio.create_task(input_loop()),
+            asyncio.create_task(state.shutting_down.wait()),
+        ]
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for pending_task in pending:
             pending_task.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
         for done_task in done:
-            done_task.result()
+            done_task.result()  # re-raise whatever ended the connection, including a clean stop
     except WebSocketDisconnect:
         pass
     except ValueError as exception:

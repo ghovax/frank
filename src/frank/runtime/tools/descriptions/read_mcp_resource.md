@@ -1,8 +1,8 @@
-Read a resource exposed by a configured MCP server.
+Read a resource that a configured MCP server offers.
 
-Discover the exact URI with ``list_mcp_resources`` first.
+Find the exact URI with `list_mcp_resources` first.
 
 Arguments:
-  - server: Configured MCP server name.
-  - uri: Resource URI as advertised by list_mcp_resources.
-  - explanation: A concise, user-facing reason for reading the resource.
+  - server: The name of a configured MCP server.
+  - uri: The resource URI, as `list_mcp_resources` reports it.
+  - explanation: A short reason for the read, in the words the user reads.

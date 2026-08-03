@@ -7,10 +7,10 @@ from frank.base.paths import uploads_directory
 from pathlib import Path
 import asyncio
 import hashlib
-import mimetypes
 from frank.protocol.dtos import (
     AttachmentReference,
 )
+from frank.protocol.files import attachment_from_path
 from fastapi.responses import FileResponse
 from frank.hub import state
 
@@ -79,33 +79,28 @@ async def upload_file(file: UploadFile = File(...)):
 
 @router.post("/attachments/reference")
 async def reference_attachment(reference: AttachmentReference):
-    """Register a user attachment **in place** — the file is referenced by its real
-    local path, never copied into Frank's home. Attachments are look-only (vision +
-    local tool reads), so the original path is all any consumer needs; returns the
-    same generic metadata shape as /uploads so the two paths are interchangeable to
-    the client. Localhost-only, like the rest of the API."""
-    path = Path(reference.path).expanduser()
+    """Register a user attachment **in place** — the file is referenced by its real local
+    path, never copied into Frank's home.
+
+    A copy would be the wrong shape for what the user did. Dragging a file into the composer
+    names *that* file, where it lives; it does not ask for a duplicate under a digest the
+    person has never seen, and it does not ask for a snapshot that stops tracking a file they
+    may still be editing.
+
+    The file being somewhere the sandbox denies — `~/Downloads`, most of the time — is
+    handled where it belongs, on the confinement: the session gains a read allowance for that
+    one exact file. See :meth:`frank.base.confinement.Profile.with_attachments`.
+
+    Returns the same metadata shape as /uploads so the two paths are interchangeable to the
+    client. Localhost-only, like the rest of the API."""
+    # One builder, shared with `frank.Session`. Two spellings of one record is how the HTTP
+    # front door and the library front door drift, and the model reads whichever it is handed.
     try:
-        resolved = await asyncio.to_thread(path.resolve, strict=True)
+        return await asyncio.to_thread(attachment_from_path, reference.path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found, or not a regular file.")
     except (OSError, RuntimeError):
-        raise HTTPException(status_code=404, detail="File not found.")
-    if not await asyncio.to_thread(resolved.is_file):
-        raise HTTPException(status_code=400, detail="Attachment must be a regular file.")
-    name = resolved.name
-    stat = await asyncio.to_thread(resolved.stat)
-    mime_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
-    upload_id = f"ref-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
-    return {
-        "upload_id": upload_id,
-        "title": name,
-        "filename": name,
-        "path": str(resolved),
-        "mime_type": mime_type,
-        "size": stat.st_size,
-        # In-place references carry no content digest — nothing is stored or deduped by
-        # hash. The field stays present (empty) so the client's Attachment shape is uniform.
-        "sha256": "",
-    }
+        raise HTTPException(status_code=400, detail="Attachment could not be read.")
 
 
 @router.get("/files/{file_path:path}")

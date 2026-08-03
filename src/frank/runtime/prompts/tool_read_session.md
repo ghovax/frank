@@ -1,3 +1,3 @@
-Read one session's current state: the agent profile it runs, whether its process is alive, whether a turn is in flight, and whether it is parked waiting on a human.
+Read one session's current state: which agent profile it runs, whether its process is alive, whether a turn is in flight, and whether it waits on a person.
 
-This is for orientation, not for waiting. Never call it in a loop to find out whether a peer has finished — a peer's result is delivered to you on its own.
+Use this to orient yourself, never to wait. Do not call it in a loop to learn whether a peer finished. A peer's result reaches you on its own.

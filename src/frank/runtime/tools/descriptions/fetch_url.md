@@ -1,13 +1,13 @@
-Fetch content from a URL and convert it to the requested format.
+Fetch the content at a URL, and convert it to the format you ask for.
 
-Use this for a specific URL already known; use ``search_web`` to discover one. It returns page text and handles JavaScript-rendered pages and common anti-bot walls through rendering fallbacks. Very large responses are truncated inline and include an ``output_file`` containing the full conversion. Use ``download_file`` for raw binary files. This tool is read-only.
+Use this for a URL you already know. Use `search_web` to find one. It returns the page text, and it handles both JavaScript-rendered pages and common anti-bot walls, through rendering fallbacks. A very large response is truncated inline and carries an `output_file` with the full conversion. Use `download_file` for a raw binary file. This tool only reads.
 
-Sync-if-fast: it waits up to ``timeout`` seconds for the fetch inline and returns the content directly; a fetch still running past ``timeout`` moves to the background and its result is injected when it lands, so a slow page never blocks your turn. ``timeout`` is that inline-wait window (the same meaning as bash's ``timeout``) — raise it to wait longer, or set ``background=true`` to background immediately. ``hard_deadline`` is the separate network cutoff that actually aborts the request.
+It waits up to `timeout` seconds and returns the content directly. A fetch still running after `timeout` moves to the background, and its result reaches you when it lands, so a slow page never blocks your turn. Raise `timeout` to wait longer, or set `background=true` to background it at once. `hard_deadline` is a separate network cutoff, and it aborts the request itself.
 
 Arguments:
-  - url: A fully-formed http or https URL. It is fetched exactly as given — nothing rewrites the scheme, so pass https yourself when you mean https.
-  - format: "markdown" (default), "text", or "html".
-  - timeout: Inline-wait window in seconds before the fetch backgrounds (does not abort it).
-  - hard_deadline: Network deadline in seconds that aborts the request itself.
-  - background: Skip the inline wait and background the fetch immediately.
-  - explanation: A concise, user-facing reason for this fetch.
+  - url: A complete http or https URL. It is fetched exactly as you give it. Nothing rewrites the scheme, so write https yourself where you mean https.
+  - format: "markdown" (the default), "text", or "html".
+  - timeout: How many seconds to wait inline before the fetch moves to the background. It does not abort the fetch.
+  - hard_deadline: How many seconds before the network request itself aborts.
+  - background: Skip the inline wait, and background the fetch at once.
+  - explanation: A short reason for the fetch, in the words the user reads.

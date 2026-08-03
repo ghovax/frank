@@ -3,20 +3,21 @@
 import { Alert, Box, Button, Dialog, EmptyState, Flex, IconButton, Input, Portal, Spinner, Text, VStack } from "@chakra-ui/react";
 import { swallowed } from "@/lib/swallowed";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { LuClock, LuEye, LuEyeOff, LuKeyRound, LuPlug, LuPlus, LuSearch, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
+import { LuClock, LuEye, LuEyeOff, LuKeyRound, LuMonitor, LuPlug, LuPlus, LuSearch, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
 import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, restartDaemon, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateDictationSetting, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel, type SandboxEnforce } from "@/lib/api";
 import { ModelSelect } from "./model-select";
 import { ChatGPTAuthControl } from "./chatgpt-auth";
 import { CursorAuthControl } from "./cursor-auth";
 import { WorkspaceLocationsPanel } from "./workspace-locations";
 import { RemoteAgentsPanel } from "./remote-agents-panel";
+import { MachinesPanel } from "./machines-panel";
 import { SchedulesPanel } from "./schedules-panel";
 import { SimpleSelect } from "./ui/simple-select";
 import { useColorMode } from "./ui/color-mode";
 import { ConfirmDialog } from "./ui/confirm-dialog";
 import { useTranslations } from "next-intl";
 import { useLocale } from "@/lib/i18n/locale-provider";
-import { LOCALES, type Locale } from "@/lib/i18n/messages";
+import { LOCALES, type Locale } from "@shared/locales";
 import { AgentSelectControl, CompactionToggleControl, ComputerControlToggleControl, DictationToggleControl, PermissionModeControl, SandboxToggleControl, UserContextToggleControl, WorktreeStrategyControl, type WorktreeStrategyValue } from "./session-controls";
 import { useScrollEdgeFade } from "@/lib/scroll-fade";
 import { Section } from "./ui/semantic";
@@ -183,8 +184,8 @@ export function SettingsDialog({
         setSavedSandboxEnforce(settings.sandbox.enforce);
         setWorktreeStrategy(settings.worktree_strategy);
         setSavedWorktreeStrategy(settings.worktree_strategy);
-        setAutoCompaction(settings.compaction?.auto ?? false);
-        setSavedAutoCompaction(settings.compaction?.auto ?? false);
+        setAutoCompaction(settings.compaction?.automatic ?? false);
+        setSavedAutoCompaction(settings.compaction?.automatic ?? false);
         setUserContextEnabled(settings.user_context_enabled);
         setSavedUserContextEnabled(settings.user_context_enabled);
         setComputerControlEnabled(settings.computer_control_enabled);
@@ -296,7 +297,7 @@ export function SettingsDialog({
           reconcile(settings.permission_mode, fields.permissionMode, fields.savedPermissionMode, setPermissionMode, setSavedPermissionMode);
           reconcile(settings.sandbox.enforce, fields.sandboxEnforce, fields.savedSandboxEnforce, setSandboxEnforce, setSavedSandboxEnforce);
           reconcile(settings.worktree_strategy, fields.worktreeStrategy, fields.savedWorktreeStrategy, setWorktreeStrategy, setSavedWorktreeStrategy);
-          reconcile(settings.compaction?.auto ?? false, fields.autoCompaction, fields.savedAutoCompaction, setAutoCompaction, setSavedAutoCompaction);
+          reconcile(settings.compaction?.automatic ?? false, fields.autoCompaction, fields.savedAutoCompaction, setAutoCompaction, setSavedAutoCompaction);
           reconcile(settings.user_context_enabled, fields.userContextEnabled, fields.savedUserContextEnabled, setUserContextEnabled, setSavedUserContextEnabled);
           reconcile(settings.computer_control_enabled, fields.computerControlEnabled, fields.savedComputerControlEnabled, setComputerControlEnabled, setSavedComputerControlEnabled);
           reconcile(settings.dictation_enabled, fields.dictationEnabled, fields.savedDictationEnabled, setDictationEnabled, setSavedDictationEnabled);
@@ -412,7 +413,7 @@ export function SettingsDialog({
         void onWorktreeStrategyChange?.(worktreeStrategy);
       }
       if (autoCompaction !== savedAutoCompaction) {
-        await updateCompactionSettings({ auto: autoCompaction });
+        await updateCompactionSettings({ automatic: autoCompaction });
         setSavedAutoCompaction(autoCompaction);
       }
       if (userContextEnabled !== savedUserContextEnabled) {
@@ -538,7 +539,7 @@ export function SettingsDialog({
         {
           title: translation("runtime"),
           rows: [
-            { key: "approvalMode", title: translation("approvalMode"), control: <PermissionModeControl value={permissionMode} onChange={setPermissionMode} /> },
+            { key: "approvalMode", title: translation("approvalMode"), control: <PermissionModeControl value={permissionMode} onChange={(next) => { if (next) setPermissionMode(next); }} /> },
             { key: "filesystemProtection", title: translation("filesystemProtection"), description: sandboxBackend.backend ? undefined : translation("filesystemProtectionUnavailable"), control: <SandboxToggleControl enforce={sandboxEnforce} backend={sandboxBackend.backend} onChange={setSandboxEnforce} /> },
             { key: "gitWorktree", title: translation("gitWorktree"), control: <WorktreeStrategyControl value={worktreeStrategy} onChange={setWorktreeStrategy} /> },
             { key: "compaction", title: translation("compaction"), control: <CompactionToggleControl enabled={autoCompaction} onChange={setAutoCompaction} /> },
@@ -572,9 +573,13 @@ export function SettingsDialog({
         { title: translation("modelProviders"), rows: [], block: <Flex direction="column" gap={5} w="100%"><ChatGPTAuthControl /><CursorAuthControl /></Flex> },
       ],
     },
+    {
+      id: "connection" as SettingsSection, label: translation("tabConnection"), icon: <LuMonitor size={14} />,
+      sections: [{ title: translation("tabConnection"), rows: [], block: <MachinesPanel /> }],
+    },
     ...(workspaceId ? [{
       id: "locations" as SettingsSection, label: translation("tabLocations"), icon: <LuServer size={14} />,
-      sections: [{ title: translation("locations"), rows: [], block: <WorkspaceLocationsPanel workspaceId={workspaceId} /> }],
+      sections: [{ title: translation("tabLocations"), rows: [], block: <WorkspaceLocationsPanel workspaceId={workspaceId} /> }],
     }] : []),
     // Only with a workspace, like the environments tab and for the same reason: a schedule belongs
     // to one, and there is nothing to show or create without it.
@@ -623,9 +628,12 @@ export function SettingsDialog({
         <Dialog.Positioner>
           <Dialog.Content
             data-layout="settings-dialog"
-            w={{ base: "calc(100vw - 16px)", md: "min(900px, calc(100vw - 48px))" }}
-            maxW="900px"
-            h={{ base: "calc(100dvh - 16px)", md: "min(760px, calc(100vh - 48px))" }}
+            // Full-bleed on a narrow screen rather than inset by 8px: a dialog that is nearly
+            // the whole viewport reads as a dialog that failed to fit, and the 8px of backdrop
+            // around it is 8px the content could have used. Wide, it stays a card.
+            w={{ base: "100%", md: "min(900px, calc(100vw - 48px))" }}
+            maxW={{ base: "100%", md: "900px" }}
+            h={{ base: "100dvh", md: "min(760px, calc(100vh - 48px))" }}
             display="flex"
             flexDirection={{ base: "column", md: "row" }}
             overflow="hidden"
@@ -645,7 +653,7 @@ export function SettingsDialog({
                   minH={0}
                   bg="bg.subtle"
                 >
-                  <Box p={3} flexShrink={0}>
+                  <Box px={{ base: 4, md: 3 }} py={3} flexShrink={0}>
                     <Flex align="center" gap={2} h={8} px={2} borderRadius="md" bg="bg" borderWidth="1px" borderColor="border.muted" _focusWithin={{ borderColor: "border.emphasized" }}>
                       <Box color="fg.muted" flexShrink={0} display="flex" alignItems="center"><LuSearch size={14} /></Box>
                       <Input
@@ -661,7 +669,7 @@ export function SettingsDialog({
                       />
                     </Flex>
                   </Box>
-                  <Box flex={1} minH={0} overflowY="auto" px={3} pb={3}>
+                  <Box flex={1} minH={0} overflowY="auto" px={{ base: 4, md: 3 }} pb={3}>
                     <Text pb={2} textStyle="sectionLabel">{translation("title")}</Text>
                     <Flex direction="column" gap={1}>
                       {pages.map((page) => {
@@ -695,7 +703,11 @@ export function SettingsDialog({
             <Flex data-layout="settings-content" direction="column" flex={1} minW={0} minH={0}>
               <Dialog.Body px={0} py={2} flex={1} minH={0}>
                 {/* Right content: search results across all sections, or the active page's sections. */}
-                <Box ref={contentScrollRef} onScroll={onContentScroll} css={contentFade} h="100%" overflowY="auto" px={6} py={4}>
+                {/* One horizontal inset for the whole column. Stacked at `base` — the nav sits
+                    above this and the footer below it — three different paddings read as the
+                    panel's edge moving as you scroll down it. 24px is also a sixth of a 390pt
+                    screen, spent on margin. */}
+                <Box ref={contentScrollRef} onScroll={onContentScroll} css={contentFade} h="100%" overflowY="auto" px={{ base: 4, md: 6 }} py={4}>
                   {searching ? (
                     searchSections.length === 0 ? (
                       <Flex h="full" align="center" justify="center" py={10}>
@@ -748,7 +760,7 @@ export function SettingsDialog({
                 </Box>
               </Dialog.Body>
             {/* Footer sits inside the right column so the nav stays full height. */}
-            <Dialog.Footer pt={3}>
+            <Dialog.Footer pt={3} px={{ base: 4, md: 6 }}>
               <Button variant="outline" onClick={requestClose} disabled={saving}>
                 {tc("close")}
               </Button>
@@ -921,8 +933,12 @@ function AgentPermissionsEditor({
             </Box>
           </SettingField>
           <SettingField label={translation("permissionMode")}>
+            {/* The one picker that may answer "none". A card names a mode to declare a
+                *ceiling*, and most cards mean to declare nothing — which the control could not
+                say, so opening this panel pinned one. */}
             <PermissionModeControl
               value={configuration.permission_mode}
+              unsetLabel={translation("permissionNoCeiling")}
               onChange={(permissionModeValue) => updateConfiguration({ permission_mode: permissionModeValue })}
             />
           </SettingField>

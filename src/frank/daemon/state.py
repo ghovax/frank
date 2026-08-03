@@ -258,11 +258,23 @@ async def relay_to_session(record, method: str, params: dict) -> dict:
                 json=payload,
                 headers={"Authorization": f"Bearer {record.token}"},
             )
-    except (httpx.HTTPError, OSError) as error:
-        # A session whose socket has gone has no worker right now — either it died without
-        # being reaped, or it simply exited at the end of its turn. Its own type, so the caller
-        # can tell "no worker" apart from "the worker refused this", and act on it.
+    except (httpx.ConnectError, httpx.ConnectTimeout, OSError) as error:
+        # Nothing accepted the connection, so there is no worker right now — either it died
+        # without being reaped, or it simply exited at the end of its turn. Its own type, so the
+        # caller can tell "no worker" apart from "the worker refused this", and act on it.
         raise SessionUnreachable(f"Session {record.id} is not reachable ({error}).") from error
+    except httpx.HTTPError as error:
+        # Something answered and then took too long, or the read failed partway. That is a
+        # *busy* worker, not an absent one, and the difference matters more than it looks: the
+        # recovery for an absent worker is to fork another, and forking one for a worker that is
+        # merely slow puts two processes on one session id. Both then believe they own the
+        # conversation, both write turns into it, and the person watching sees their message
+        # answered twice out of order — which is exactly what a turn running past this timeout
+        # produced, at the 120-second mark, every time.
+        raise RuntimeError(
+            f"Session {record.id} did not answer {method} in time ({error}). Its worker is "
+            f"running but did not respond; the turn may still be in progress."
+        ) from error
     if response.status_code >= 400:
         raise RuntimeError(f"Session {record.id} rejected {method}: {upstream_detail(response.text)}")
     body = response.json()

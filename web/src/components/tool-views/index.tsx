@@ -18,8 +18,10 @@ import {
   InlineField,
   Mono,
   MonoBlock,
+  MonoList,
 } from "../ui/display";
 import { asArray, asRecord, asString } from "@/lib/coerce";
+import { declaredNonMutating, requestedAccess } from "@/lib/tool-display";
 import { Pill } from "../ui/pill";
 import { STATUS_PALETTE, taskLifecycleKind } from "@/lib/status";
 import { hasBackgroundJobId, type ToolEventStatus } from "@/lib/tool-event";
@@ -38,19 +40,13 @@ function tryParse(content: string): unknown {
   }
 }
 
-function createClientIdentifier(prefix: string): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
 // Tool call (input) views
 
 function BashCallView({ args }: { args: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   const command = stripCdPrefix(asString(args.command));
-  const readOnly = args.read_only !== false;
+  const readOnly = declaredNonMutating(args);
+  const access = requestedAccess(args);
   const risk = asString(args.risk) || "low";
   // Display label for each bash risk level. Falls back to the raw value when
   // unmapped so an unexpected level still renders something readable.
@@ -66,6 +62,19 @@ function BashCallView({ args }: { args: Record<string, unknown> }) {
         <MonoBlock>{command}</MonoBlock>
       </Field>
       <InlineField label={translation("readOnly")}>{readOnly ? translation("yes") : translation("no")}</InlineField>
+      {access.writes.length > 0 && (
+        <Field label={translation("accessWrite")}>
+          <MonoList items={access.writes} />
+        </Field>
+      )}
+      {access.reads.length > 0 && (
+        <Field label={translation("accessRead")}>
+          <MonoList items={access.reads} />
+        </Field>
+      )}
+      {access.network && (
+        <InlineField label={translation("accessNetwork")}>{translation("yes")}</InlineField>
+      )}
       <InlineField label={translation("risk")}>{riskText}</InlineField>
     </FieldList>
   );
@@ -206,6 +215,10 @@ function UpdateTasksCallView({ args }: { args: Record<string, unknown> }) {
 const PROSE_FIELD_KEYS = new Set([
   "explanation",
   "goal",
+  // A goal is a sentence somebody wrote, whether it is the current one or the one just
+  // finished — monospace made the second read as an identifier.
+  "previous_goal",
+  "message",
   "prompt",
   "reason",
   "summary",
@@ -217,13 +230,41 @@ const PROSE_FIELD_KEYS = new Set([
   "response",
 ]);
 
+/**
+ * The goal tool's outcome codes, as words.
+ *
+ * `goal_satisfied` is a symbol from `dispatch.py`; "Satisfied" is what happened. Read by the
+ * result view below, which is the only place a goal outcome is shown — the call view
+ * deliberately does not repeat it.
+ */
+const GOAL_OUTCOME_KEYS: Record<string, string> = {
+  goal_active: "goalActive",
+  goal_satisfied: "goalSatisfied",
+  goal_cleared: "goalCleared",
+};
+
 // Translation keys for raw argument/result key labels. Falls back to the raw key
 // if unmapped. The actual label text is resolved through the ToolViews namespace.
 const FIELD_LABEL_KEYS: Record<string, string> = {
+  // The goal tool, whose fields fell through to this list unmapped and so were labelled with
+  // their own raw keys — `status`, `previous_goal` — beside ones that had been translated.
+  status: "fieldStatus",
+  goal: "goal",
+  previous_goal: "previousGoal",
+  message: "message",
+  error: "error",
+  result: "result",
+  matched: "matched",
+  targets: "targets",
+  tasks: "tasks",
+  violation: "violation",
+  current: "current",
+  ok: "ok",
+  turn_id: "turnId",
   server: "fieldServer",
   tool_name: "fieldToolName",
   arguments: "fieldArguments",
-  read_only: "readOnly",
+  access_request: "accessRequested",
   explanation: "explanation",
   risk: "risk",
   uri: "fieldUri",
@@ -231,7 +272,12 @@ const FIELD_LABEL_KEYS: Record<string, string> = {
   result_count: "results",
   job_id: "turnId",
   question: "question",
-  code: "fieldStatus",
+  // Not `fieldStatus`, which is what it used to be and is what made two rows of a goal call
+  // both read "Status". They are different facts: `status` is the call's lifecycle — ok, error,
+  // running — and `code` is what the tool decided. `tool_status_from_result` in
+  // `protocol/events.py` depends on `status` meaning the first of those, so neither is
+  // redundant; they were only named as though they were.
+  code: "fieldOutcome",
   // file / search tools (arguments)
   file_path: "filePath",
   offset: "offset",
@@ -687,7 +733,7 @@ function MessageSessionCallView({ args }: { args: Record<string, unknown> }) {
         <Mono>{asString(args.session)}</Mono>
       </InlineField>
       {message && (
-        <Field label={translation("peerMessage")}>
+        <Field label={translation("message")}>
           <MarkdownContent content={message} />
         </Field>
       )}
@@ -756,12 +802,63 @@ function SessionResultView({ data }: { data: Record<string, unknown> }) {
         <InlineField label={translation("peerMode")}>{asString(data.permission_mode)}</InlineField>
       )}
       {asString(data.status) && (
-        <InlineField label={translation("peerStatus")}>
+        <InlineField label={translation("fieldStatus")}>
           <Pill colorPalette={STATUS_PALETTE[taskLifecycleKind(asString(data.status))]}>
             {asString(data.status)}
           </Pill>
         </InlineField>
       )}
+    </FieldList>
+  );
+}
+
+/**
+ * `update_goal`, whose call and result each said the whole thing.
+ *
+ * The result's `code` is `f"goal_{status}"` in `dispatch.py` — derived from the argument, so a
+ * generic dump of both rendered the same fact twice under two labels: "Status / Now working
+ * toward this" from the call, "Outcome / Now working toward this" from the result. Relabelling
+ * could not fix that; only one of them is worth showing.
+ *
+ * The result is the one that is true — a call is a request, and this one can be refused — so the
+ * call shows only what the result cannot: the goal being proposed. Setting a goal states it here
+ * and confirms it there; finishing one carries no argument worth rendering at all, since
+ * `explanation` is already the heading.
+ */
+function UpdateGoalCallView({ args }: { args: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  const goal = asString(args.goal).trim();
+  if (!goal) return null;
+  return (
+    <FieldList>
+      <Field label={translation("goal")}>
+        <MarkdownContent content={goal} fontSize="xs" />
+      </Field>
+    </FieldList>
+  );
+}
+
+/** What the goal is now, and what it was. One outcome, stated once. */
+function UpdateGoalResultView({ data }: { data: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  const code = asString(data.code);
+  const outcome = GOAL_OUTCOME_KEYS[code];
+  const goal = asString(data.goal).trim();
+  const previous = asString(data.previous_goal).trim();
+  if (!outcome) return <ErrorView message={asString(data.message) || code} />;
+  return (
+    <FieldList>
+      <InlineField label={translation("fieldOutcome")}>
+        <Pill colorPalette={code === "goal_active" ? "blue" : "green"}>
+          {translation(outcome as Parameters<typeof translation>[0])}
+        </Pill>
+      </InlineField>
+      {goal ? (
+        <Field label={translation("goal")}><MarkdownContent content={goal} fontSize="xs" /></Field>
+      ) : null}
+      {previous ? (
+        <Field label={translation("previousGoal")}><MarkdownContent content={previous} fontSize="xs" /></Field>
+      ) : null}
     </FieldList>
   );
 }
@@ -801,6 +898,8 @@ export function ToolCallView({ name, args }: { name: string; args?: Record<strin
       case "read_session":
       case "end_session":
         return <SessionReferenceCallView args={args} />;
+      case "update_goal":
+        return <UpdateGoalCallView args={args} />;
       default: {
         // The explanation is already the collapsed heading (the tool-call title);
         // strip it so the expanded body never repeats it. MCP calls fall here too.
@@ -1120,6 +1219,7 @@ export function ToolResultView({
     // `message_session` reports only that it was accepted. There is nothing to show: the reply,
     // when there is one, arrives as its own message in the transcript.
     if (name === "message_session") return null;
+    if (name === "update_goal") return <UpdateGoalResultView data={data} />;
     return <GenericView data={data} />;
   }
 

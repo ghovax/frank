@@ -9,7 +9,7 @@
 import * as React from "react";
 import { NextIntlClientProvider } from "next-intl";
 import { getAppState, isTauri, setAppState } from "@/lib/app-state";
-import { DEFAULT_LOCALE, MESSAGES, isLocale, type Locale } from "./messages";
+import { DEFAULT_LOCALE, MESSAGES, isLocale, type Locale } from "@shared/locales";
 import { swallowed } from "@/lib/swallowed";
 
 const LOCALE_KEY = "locale";

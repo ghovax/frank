@@ -1,3 +1,0 @@
-<systemReminder>
-{{ content }}
-</systemReminder>

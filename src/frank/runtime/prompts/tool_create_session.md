@@ -1,9 +1,13 @@
 Create a peer session.
 
-It is created idle. **Nothing is running until you `message_session` it a brief** — creating a peer and never briefing it leaves a process doing nothing, so do both, in that order, unless you have a reason to wait.
+The peer starts idle. **Nothing runs until you send it a brief with `message_session`.** A peer that you create and never brief is a process that does nothing. So do both, in that order, unless you have a reason to wait.
 
-A peer is a separate process running its own agent profile, with its own context window. Use one when the work is genuinely separable — parallel investigations, a broad search across a subsystem you are not in, review or test discovery while you implement. Do not use one for a small edit, for work that needs the context you are already holding, or for a judgment call: a peer gathers evidence, you decide.
+A peer is a separate process. It runs its own agent profile and holds its own context window. Use one where the work truly separates: parallel investigations, a broad search across a subsystem you are not in, or review while you implement. Do not use one for a small edit, for work that needs the context you already hold, or for a judgement call. A peer gathers evidence. You decide.
 
-This returns as soon as the peer exists, with its id. Once you brief it, **the peer sends you its answer as a message when it is done**, which arrives on its own and wakes you if your turn has ended — so start the work, carry on with whatever does not depend on it, and end your turn when everything left does. Never poll a peer to find out whether it has finished.
+This call returns as soon as the peer exists, and it gives you the peer's id. After you brief it, **the peer sends you its answer as a message when it finishes**. That message arrives on its own, and it wakes you if your turn ended. So start the work, continue with whatever does not depend on it, and end your turn when everything left does depend on it. Never poll a peer to find out whether it finished.
 
-The peer is a child of yours: it is reaped when you end, and it cannot hold authority you do not have — a permission mode looser than yours is clamped down to yours. Pass `read_only` for a peer that only needs to investigate. Being reaped when you end is a backstop, not a plan: nothing ends a peer when its work finishes, so `end_session` it yourself once you have the answer and do not expect to follow up.
+The peer is your child. The harness ends it when you end, and it cannot hold authority you do not have — the harness clamps a permission mode looser than yours down to yours. Pass `read_only` for a peer that only investigates.
+
+A peer also works in the same tree you do. Your edits and its edits reach the same files, so tell it which part of the tree is its, and tell it that other agents work beside it.
+
+To be reaped when you end is a backstop, not a plan. Nothing ends a peer when its work finishes. So call `end_session` yourself, once you hold the answer and expect no follow-up.

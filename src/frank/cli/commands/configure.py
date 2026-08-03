@@ -24,7 +24,7 @@ their own configuration is not this command's business.
 from __future__ import annotations
 
 import json
-import sys
+import logging
 from typing import Any
 
 import yaml
@@ -33,10 +33,7 @@ from frank.base.paths import configuration_file_path
 from frank.base.serialization import compact
 
 
-def _note(message: str) -> None:
-    """A diagnostic. Never stdout — that carries the setting's value, and a reader must not
-    have to tell one from the other."""
-    print(message, file=sys.stderr)
+logger = logging.getLogger("frank.configure")
 
 
 def _load() -> dict:
@@ -182,7 +179,7 @@ def run(arguments) -> int:
         # is inert; it is still listed, because it is in the file and hiding it would make an
         # unremovable setting invisible. `--unset` is how it goes away.
         print(compact(dict(sorted(_flatten(data)))))
-        _note("(what is set; `frank configure --all` lists every setting with its default)")
+        logger.info("(what is set; `frank configure --all` lists every setting with its default)")
         return 0
 
     if arguments.value is None:
@@ -195,7 +192,7 @@ def run(arguments) -> int:
                 # A name the schema does not have will never do anything at all. Nothing on
                 # stdout: there is no value to print, and a reader must not mistake an
                 # explanation for one.
-                _note(f"frank: no setting named {arguments.setting!r}")
+                logger.info(f"frank: no setting named {arguments.setting!r}")
                 return 1
             # A real setting simply not in the file runs on what the code ships. Printing that
             # value rather than nothing is what makes reading a setting mean the same thing
@@ -204,18 +201,18 @@ def run(arguments) -> int:
             source = "default"
         print(compact(value) if isinstance(value, (dict, list)) else value)
         if known is not None and known.about:
-            _note(f"{known.about} ({source})")
+            logger.info(f"{known.about} ({source})")
         else:
-            _note(f"({source})")
+            logger.info(f"({source})")
         return 0
 
     if _known(arguments.setting) is None:
-        _note(f"frank: no setting named {arguments.setting!r} — it would be written and ignored")
+        logger.info(f"frank: no setting named {arguments.setting!r} — it would be written and ignored")
         return 1
     _write(data, arguments.setting, _parse(arguments.value))
     invalid = _validates(data)
     if invalid:
-        _note(f"frank: {arguments.setting} would not be valid: {invalid}")
+        logger.info(f"frank: {arguments.setting} would not be valid: {invalid}")
         return 1
     _save(data)
     # Echoing the stored value rather than the argument shows how it was interpreted, so a
@@ -231,17 +228,17 @@ def run_unset(arguments) -> int:
     node = data
     for part in parts[:-1]:
         if not isinstance(node, dict) or part not in node:
-            _note(f"frank: no setting named {arguments.setting!r}")
+            logger.info(f"frank: no setting named {arguments.setting!r}")
             return 1
         node = node[part]
     if not isinstance(node, dict) or parts[-1] not in node:
-        _note(f"frank: no setting named {arguments.setting!r}")
+        logger.info(f"frank: no setting named {arguments.setting!r}")
         return 1
     removed = node.pop(parts[-1])
     invalid = _validates(data)
     if invalid:
         node[parts[-1]] = removed
-        _note(f"frank: {arguments.setting} cannot be removed: {invalid}")
+        logger.info(f"frank: {arguments.setting} cannot be removed: {invalid}")
         return 1
     _save(data)
     # Nothing on stdout: removing a setting has no value to report, and the exit code already

@@ -33,14 +33,13 @@ from frank.protocol.metadata import (
     turn_metadata,
 )
 from frank.protocol.parts import (
+    _all_attachments,
     _attachment_warning_event,
     _event_part,
-    _image_attachments,
-    _image_content_block,
     _ingest_incoming_file_parts,
     _input_response_payload,
-    _model_supports_vision,
     _structured_data_payloads,
+    compose_turn_input,
     _text_part,
     _work_habits_acknowledgement_parts,
 )
@@ -48,7 +47,6 @@ from frank.protocol.turn_record import TurnKind, TurnRecord
 from frank.runtime.runtime import AgentRuntime
 from frank.runtime.turn_events import SuspensionGate
 from frank.worker.sink import _TurnEventSink
-from frank.base.serialization import compact
 
 if TYPE_CHECKING:
     # Imported for the annotation only: `session` imports this module, so a real import here
@@ -172,7 +170,7 @@ class _TurnRunner:
         context: RequestContext,
         event_queue: EventQueue,
     ) -> None:
-        self._ex = executor
+        self._executor = executor
         self._request = context
         self._event_queue = event_queue
         # Teardown-visible state, initialized to safe defaults so the ``finally`` can run
@@ -227,8 +225,8 @@ class _TurnRunner:
 
     async def _emit(self, part: Part, *, publish_stream_event: bool = True) -> None:
         await self._updater.update_status(TaskState.working, self._updater.new_agent_message([part]))
-        if self._ex._on_stream_event is not None and publish_stream_event:
-            self._ex._on_stream_event(self._task.context_id, part)
+        if self._executor._on_stream_event is not None and publish_stream_event:
+            self._executor._on_stream_event(self._task.context_id, part)
 
     async def _save_runtime_conversation(self) -> None:
         # A safe-point (or end-of-turn) snapshot of the model-facing conversation to the
@@ -241,7 +239,7 @@ class _TurnRunner:
             # so they are as durable as the transcript without a write on every checkpoint. The
             # dirty flag is cleared only after the write commits — a failed write loses nothing.
             session_state = self._runtime.dirty_session_snapshot()
-            await self._ex._turn_store.save_turn_state(
+            await self._executor._turn_store.save_turn_state(
                 self._task.context_id, self._task.id,
                 messages_to_dict(self._runtime.conversation), session_state,
             )
@@ -252,7 +250,7 @@ class _TurnRunner:
         # Every pause is durable: persist the pending interactions and the checkpoint, then
         # close this segment as input-required so a later answer rebuilds from the checkpoint
         # and resumes. A session that is waiting on a human survives a daemon restart.
-        return await self._ex._suspend_durable_segment(
+        return await self._executor._suspend_durable_segment(
             self._task, self._updater, interactions, plans, self._save_runtime_conversation
         )
 
@@ -269,7 +267,7 @@ class _TurnRunner:
         if not snapshot:
             return
         try:
-            await self._ex._turn_store.publish_usage(snapshot)
+            await self._executor._turn_store.publish_usage(snapshot)
         except Exception:  # noqa: BLE001 — telemetry must not fail a turn
             logger.warning("could not publish the subscription usage snapshot", exc_info=True)
 
@@ -334,11 +332,11 @@ class _TurnRunner:
             if TurnRecord.from_metadata(task.metadata).pending is None:
                 await self._updater.complete()
                 return self._DONE
-            ready = self._ex._record_pending_answer(task, input_response)
-            await self._ex._turn_store.save(task)
-            if self._ex._on_permission_state is not None:
+            ready = self._executor._record_pending_answer(task, input_response)
+            await self._executor._turn_store.save(task)
+            if self._executor._on_permission_state is not None:
                 # Still awaiting while gates remain; cleared once this answer resumes.
-                self._ex._on_permission_state(task.context_id, ready is None)
+                self._executor._on_permission_state(task.context_id, ready is None)
             if ready is None:
                 await self._updater.update_status(
                     TaskState.input_required,
@@ -350,12 +348,12 @@ class _TurnRunner:
             cleared = TurnRecord.from_metadata(task.metadata)
             cleared.pending = None
             task.metadata = cleared.apply_to(task.metadata)
-            await self._ex._turn_store.save(task)
+            await self._executor._turn_store.save(task)
             self._is_resume = True
-        elif not ingested.autonomous and not ingested.compaction and self._ex._on_permission_state is not None:
+        elif not ingested.autonomous and not ingested.compaction and self._executor._on_permission_state is not None:
             # A fresh user turn supersedes any prior input-required pause for this context
             # (the runtime closes the dangling checkpoint), so drop the awaiting-input marker.
-            self._ex._on_permission_state(task.context_id, False)
+            self._executor._on_permission_state(task.context_id, False)
         return _Resolved(
             ingested=ingested,
             task=self._task,
@@ -369,8 +367,8 @@ class _TurnRunner:
         """Emit the once-per-context work-habits acknowledgement. Returns ``_DONE`` if
         the acknowledgement itself failed (the turn is reported failed)."""
         task, ingested = resolved.task, resolved.ingested
-        self._context_state = self._ex._context(task.context_id)
-        should_acknowledge = await self._ex._claim_work_habits_acknowledgement(
+        self._context_state = self._executor._context(task.context_id)
+        should_acknowledge = await self._executor._claim_work_habits_acknowledgement(
             task.context_id,
             autonomous=ingested.autonomous,
             compaction=ingested.compaction,
@@ -419,7 +417,7 @@ class _TurnRunner:
         self._turn_span_context = _telemetry.span("agent.turn", {
             "session.id": task.context_id,
             "frank.task.id": task.id,
-            "frank.agent.name": self._ex._agent_name,
+            "frank.agent.name": self._executor._agent_name,
             "frank.turn.kind": self._turn_kind,
         }, parent_context)
         self._turn_span = self._turn_span_context.__enter__()
@@ -434,10 +432,10 @@ class _TurnRunner:
         # without a model call rather than emit an empty turn. The finally still runs on
         # this early return, releasing the lock.
         if self._autonomous:
-            existing_state = self._ex._contexts.get(task.context_id)
+            existing_state = self._executor._contexts.get(task.context_id)
             existing_runtime = existing_state.runtime if existing_state is not None else None
             has_live_result = existing_runtime is not None and existing_runtime.has_completed_undelivered_jobs()
-            has_stored_result = self._ex._job_store.has_undelivered_jobs(task.context_id, self._ex._agent_name)
+            has_stored_result = self._executor._job_store.has_undelivered_jobs(task.context_id, self._executor._agent_name)
             if not has_live_result and not has_stored_result:
                 await self._updater.complete()
                 return self._DONE
@@ -448,22 +446,22 @@ class _TurnRunner:
         # the agent working again, so lift any prior Stop suppression — future background
         # completions may once more arm a resume pump.
         if not self._autonomous and not self._compaction:
-            self._ex._context(task.context_id).aborted = False
+            self._executor._context(task.context_id).aborted = False
         if self._track_context_activity and self._on_turn_state is not None:
             self._on_turn_state(task.context_id, True)
         if self._track_steerable_turn:
-            self._ex._context(task.context_id).running = True
+            self._executor._context(task.context_id).running = True
 
         await self._updater.start_work()
 
-        workspace = self._ex._workspace(self._requested_working_directory)
+        workspace = self._executor._workspace(self._requested_working_directory)
 
 
-        existing_state = self._ex._contexts.get(task.context_id)
-        runtime = await self._ex._runtime_for(task.context_id, workspace)
+        existing_state = self._executor._contexts.get(task.context_id)
+        runtime = await self._executor._runtime_for(task.context_id, workspace)
 
         self._runtime = runtime
-        self._ex._aborts[task.id] = runtime
+        self._executor._aborts[task.id] = runtime
         runtime.set_a2a_turn_id(task.id)
 
         # The consuming half of the one turn-event catalog: it owns the assistant-text
@@ -498,41 +496,44 @@ class _TurnRunner:
         runtime = prepared.runtime
         self._as_system_note = self._autonomous or self._report_reminder
         if self._report_reminder:
-            # Same delivery as a wake — a <systemReminder> harness note, never user prose —
+            # Same delivery as a wake — a reminder, never user prose —
             # because this is the harness speaking, not the person the session works for.
-            self._turn_input = _PROMPTS.load("report_reminder_note", {})
+            self._turn_input = _PROMPTS.load("report_reminder_note", {"parent": self._executor._parent})
         elif self._autonomous:
             # The wake message carries no prose (only an `autonomous_resume` part); the
             # framing note is supplied here and injected into the model as a
-            # <systemReminder> harness note — cache-safe user-role delivery (see
-            # AgentRuntime._harness_note_message) that never appears as user input in the
+            # A reminder — cache-safe delivery that stays in place (see
+            # AgentRuntime._reminder_message) that never appears as user input in the
             # transcript.
             self._turn_input = _PROMPTS.load("background_resume_note", {})
         elif self._structured_payloads:
-            # The structured metadata — attachment file paths — always rides along as a
-            # text block so the model can act on the attachments with its tools. Images are
-            # inlined only when the agent model advertises vision support; otherwise the
-            # model gets path access and the interface receives a non-fatal warning.
-            text_payload = compact({
-                "text": self._user_text,
-                "data_parts": self._structured_payloads,
-            })
-            image_attachments = _image_attachments(self._structured_payloads)
+            # Give the tools read access to exactly the files the person attached, where they
+            # live. Without this the model is handed a path it cannot open: attachments come
+            # from `~/Downloads`, `~/Desktop` and `~/Documents` more often than from anywhere
+            # else, and the confinement denies all three. The file is not copied — a copy is a
+            # snapshot under a name the user never chose, of a file they may still be editing.
+            if runtime is not None:
+                runtime.note_attachments([
+                    str(attachment.get("path") or "")
+                    for attachment in _all_attachments(self._structured_payloads)
+                ])
+            # The structured metadata — attachment file paths — always rides along as a text
+            # block so the model can act on the attachments with its tools. Images are inlined
+            # only when the agent model advertises vision support; otherwise the model gets
+            # path access and the interface receives a non-fatal warning.
+            #
+            # The composition itself is shared with the library front door, so attaching a
+            # file reaches the model the same way whether a person dragged it into the app or
+            # a program passed a path to `Session.ask`.
             model_identifier = runtime.effective_model_identifier if runtime is not None else ""
-            image_blocks = []
-            if image_attachments and _model_supports_vision(model_identifier):
-                image_blocks = [
-                    block
-                    for attachment in image_attachments
-                    if (block := _image_content_block(attachment)) is not None
-                ]
-            elif image_attachments:
-                await self._emit(_event_part(_attachment_warning_event(len(image_attachments), model_identifier)))
-            if image_blocks:
-                self._turn_input = [{"type": "text", "text": text_payload}, *image_blocks]
-                self._turn_has_images = True
-            else:
-                self._turn_input = text_payload
+            self._turn_input, images_not_inlined = compose_turn_input(
+                self._user_text, self._structured_payloads, model_identifier,
+            )
+            self._turn_has_images = isinstance(self._turn_input, list)
+            if images_not_inlined:
+                await self._emit(_event_part(
+                    _attachment_warning_event(images_not_inlined, model_identifier)
+                ))
         else:
             self._turn_input = self._user_text
         # No `runtime.set_pending_attachments(...)` here any more. `AgentRuntime` lost that
@@ -594,26 +595,26 @@ class _TurnRunner:
         task = self._task
         with suppress(Exception):
             self._turn_span_context.__exit__(None, None, None)
-        self._ex._aborts.pop(task.id, None)
+        self._executor._aborts.pop(task.id, None)
         # The context's live state, or None if the session was deleted mid-turn
         # (teardown_context popped it). A torn-down context must not be re-persisted or
         # re-armed below — otherwise the aborted turn's teardown would resurrect the very
         # rows the delete flow just removed.
-        state = self._ex._contexts.get(task.context_id)
+        state = self._executor._contexts.get(task.context_id)
         # Persist the conversation after the turn so a later restart can restore it. Only
         # save when there is something to save (a built runtime, or an already-cached
         # conversation) — an autonomous no-op wake has neither, and blindly saving an empty
         # list would clobber the persisted history. Skip entirely once the session is
         # deleted, so a stopped-and-deleted turn never re-orphans its row.
         if state is not None and (
-            self._runtime is not None or task.context_id in self._ex._conversations
+            self._runtime is not None or task.context_id in self._executor._conversations
         ):
-            messages = self._runtime.conversation if self._runtime is not None else self._ex._conversations.get(task.context_id, [])
+            messages = self._runtime.conversation if self._runtime is not None else self._executor._conversations.get(task.context_id, [])
             # Persist the agent's goal and task list atomically beside the end-of-turn
             # checkpoint when they changed this turn, so a restart restores the objective too
             # and the two can never drift apart. Clear the dirty flag only after the commit.
             session_state = self._runtime.dirty_session_snapshot() if self._runtime is not None else None
-            await self._ex._turn_store.save_turn_state(
+            await self._executor._turn_store.save_turn_state(
                 task.context_id, task.id, messages_to_dict(messages), session_state,
             )
             if session_state is not None and self._runtime is not None:
@@ -641,7 +642,7 @@ class _TurnRunner:
         # watching so the next completion wakes the session on its own. Pass the runtime this
         # turn used (not a cache lookup) so a reset that cleared the cache mid-turn cannot
         # strand the pending work.
-        self._ex._arm_resume_pump(task.context_id, self._runtime)
+        self._executor._arm_resume_pump(task.context_id, self._runtime)
         self._maybe_nudge_to_report()
 
     def _maybe_nudge_to_report(self) -> None:
@@ -658,11 +659,11 @@ class _TurnRunner:
         Spawned rather than awaited, because this runs inside the ending turn's teardown and the
         reminder is itself a turn — driving it inline would re-enter the machinery that is
         currently unwinding."""
-        peers = getattr(self._ex, "_peers", None)
+        peers = getattr(self._executor, "_peers", None)
         if peers is None or not self._completed or self._report_reminder:
             return
         if not getattr(peers, "_parent_session", "") or peers.reported_to_parent:
             return
-        if self._ex._nudged_to_report:
+        if self._executor._nudged_to_report:
             return
-        spawn_background_task(self._ex.nudge_to_report(self._task.context_id))
+        spawn_background_task(self._executor.nudge_to_report(self._task.context_id))

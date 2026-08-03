@@ -141,7 +141,11 @@ Then the desktop app, which is a Tauri shell with no Python in it at all:
 cd web && bun run tauri:build
 ```
 
-The first freezes the harness with PyInstaller into `packaging/dist/Frank Computer Use.app`, smoke-tests it, and is a no-op when nothing that goes into it has changed. The second produces `web/src-tauri/target/release/bundle/macos/Frank.app` plus a `.dmg` under `bundle/dmg/`.
+The first freezes the harness with PyInstaller into `packaging/dist/Frank Computer Use.app`, smoke-tests it, and is a no-op when nothing that goes into it has changed. The second produces `web/src-tauri/target/release/bundle/macos/Frank.app`.
+
+It does **not** build a disk image. Installing locally is a `ditto` of the `.app`, and creating, mounting and converting a `.dmg` took about a quarter of every build to produce a file nothing here reads. Use `bun run tauri:dmg` when you actually want one to hand out.
+
+The rest of the time is Rust, and it is not incremental: cargo disables incremental compilation for the `release` profile, and the shell is invalidated on every run anyway because `next build` rewrites `web/out`, which Tauri's build script watches. So a rebuild costs roughly a minute whether or not the frontend changed — which is the reason to rebuild only when it did. A Python-only change needs `packaging/build-daemon.sh` and a daemon restart, nothing more.
 
 The smoke test runs the frozen daemon under a **throwaway set of XDG directories**, which is load-bearing rather than tidy. With your own directories it would find the lock held by the daemon you already run. It would stand down and exit `0`. The probe would then find *that* daemon's socket answering. That is a green result for a binary the probe never exercised, in the most common case of all.
 

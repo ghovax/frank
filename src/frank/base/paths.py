@@ -245,5 +245,16 @@ def daemon_port_path() -> Path:
     return runtime_directory() / DAEMON_PORT_FILENAME
 
 
+def reach_token_path() -> Path:
+    """The token a phone presents to `frank reach`. Written 0600, like the daemon's.
+
+    In the data directory rather than the runtime one, which is the whole difference between
+    this token and the daemon's: the daemon mints a fresh capability token every boot, and a
+    device paired against that would be unpaired by a restart. This one is minted once and
+    kept, so an endpoint stays an endpoint. Rotating it is therefore an act, not a side effect
+    of rebooting — `frank reach rotate`."""
+    return data_directory() / "reach-token"
+
+
 def log_file_path(name: str) -> Path:
     return state_directory() / f"{name}.log"

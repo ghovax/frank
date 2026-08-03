@@ -14,7 +14,7 @@ prose is a default nobody gets.
 
 `FileCatalogue` takes the directories it searches rather than deriving them, and that is the
 whole point of the file. The old resolution baked the home directory in at four levels, and
-one of them read *other products'* configuration:
+one of them read *other products'* configuration::
 
     Path.home() / ".config" / "opencode" / "AGENTS.md"
     Path.home() / ".claude" / "CLAUDE.md"
@@ -138,11 +138,19 @@ class FileCatalogue:
                 if not resolved.is_file() or resolved in seen:
                     continue
                 seen.add(resolved)
-                entries.append(Instruction(source=str(resolved), content=resolved.read_text(errors="ignore").strip()))
+                # A home-wide document governs everything, because that is where it sits — and
+                # that is also why it loses every disagreement with a project's own.
+                entries.append(Instruction(
+                    source=str(resolved), scope=str(resolved.parent),
+                    content=resolved.read_text(errors="ignore").strip(),
+                ))
 
         project = self._project_instruction()
         if project is not None and project not in seen:
-            entries.append(Instruction(source=str(project), content=project.read_text(errors="ignore").strip()))
+            entries.append(Instruction(
+                source=str(project), scope=str(project.parent),
+                content=project.read_text(errors="ignore").strip(),
+            ))
 
         return entries
 

@@ -1,4 +1,4 @@
-// Recording a person's voice into the samples the daemon transcribes.
+// Turning a person's voice into text: recording it, and getting it transcribed.
 //
 // Deliberately not `MediaRecorder`. That would hand back an encoded file — `webm/opus` in
 // Chromium, `mp4/aac` in WebKit — and the daemon would then need a decoder to undo an encode
@@ -14,6 +14,7 @@
 
 // What the model expects. The `AudioContext` is opened at this rate and resamples the
 // microphone into it, so no resampling code exists on either side of the wire.
+import { transcribeDictation } from "@/lib/api";
 import { expected } from "@/lib/swallowed";
 import { errorMessage } from "@/lib/errors";
 
@@ -25,7 +26,47 @@ export const DICTATION_SAMPLE_RATE = 16000;
 // same-origin.
 const CAPTURE_PROCESSOR_URL = "/dictation-capture.worklet.js";
 
-export class DictationRecordingError extends Error {}
+/**
+ * A recording that could not be made, named by the `ChatInput` entry that says why.
+ *
+ * `message` is a key, and `values` are its ICU placeholders. This module has no hook to reach
+ * the catalogue through, and an English sentence written here would be one the composer could
+ * not translate — the language of a message belongs to whatever is about to show it.
+ */
+export class DictationRecordingError extends Error {
+  constructor(message: string, readonly values: Record<string, string> = {}) {
+    super(message);
+    this.name = "DictationRecordingError";
+  }
+}
+
+/**
+ * One dictation, from the moment the microphone opens to the sentence it produced.
+ *
+ * Deliberately a small object with a `stop` rather than a callback API: the caller is a toggle
+ * button, and "the thing I started, which I can stop" is what a toggle actually holds. It hands
+ * back text rather than samples because that is the only part of this both paths agree on — the
+ * shell's audio never enters the page at all.
+ */
+export interface Dictation {
+  // Everything said so far, transcribed, and the microphone released. Safe to call once;
+  // calling it again answers with nothing.
+  stop: () => Promise<string>;
+  // Give up and release the microphone without transcribing.
+  cancel: () => void;
+}
+
+export async function startDictation(): Promise<Dictation> {
+  const recording = await startDictationRecording();
+  return {
+    async stop() {
+      const samples = await recording.stop();
+      if (samples.length === 0) return "";
+      return await transcribeDictation(samples);
+    },
+    cancel: () => recording.cancel(),
+  };
+}
 
 // One recording, from the moment the microphone opens to the moment the samples are handed
 // back. Deliberately a small object with a `stop` rather than a callback API: the caller is a
@@ -38,9 +79,14 @@ export interface DictationRecording {
   cancel: () => void;
 }
 
-export async function startDictationRecording(): Promise<DictationRecording> {
+async function startDictationRecording(): Promise<DictationRecording> {
   if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-    throw new DictationRecordingError("This browser cannot reach a microphone.");
+    // Naming the cause, because the two are fixed in completely different places. An insecure
+    // origin is not a browser that lacks a microphone — it is this page having been reached by an
+    // address the browser will not hand a microphone to, and saying so is the difference between
+    // "my phone is broken" and "reach this machine by its other name".
+    const insecure = typeof window !== "undefined" && !window.isSecureContext;
+    throw new DictationRecordingError(insecure ? "dictationInsecureOrigin" : "dictationNoMicrophone");
   }
   let stream: MediaStream;
   try {
@@ -51,11 +97,7 @@ export async function startDictationRecording(): Promise<DictationRecording> {
     // The one failure worth naming precisely: permission, which the person can fix, versus
     // anything else, which they cannot.
     const denied = caught instanceof DOMException && (caught.name === "NotAllowedError" || caught.name === "SecurityError");
-    throw new DictationRecordingError(
-      denied
-        ? "Frank was not allowed to use the microphone. Grant it in your system settings and try again."
-        : "No microphone is available."
-    );
+    throw new DictationRecordingError(denied ? "dictationRefused" : "dictationNoDevice");
   }
 
   const audioContext = new AudioContext({ sampleRate: DICTATION_SAMPLE_RATE });
@@ -82,7 +124,7 @@ export async function startDictationRecording(): Promise<DictationRecording> {
     capture.connect(audioContext.destination);
   } catch (caught) {
     release();
-    throw new DictationRecordingError(`The microphone could not be opened: ${errorMessage(caught)}`);
+    throw new DictationRecordingError("dictationCouldNotOpen", { reason: errorMessage(caught) });
   }
 
   return {

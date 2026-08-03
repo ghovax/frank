@@ -5,23 +5,35 @@ clients — has always been free of the control plane. `runtime` imports nothing
 or `worker`; it takes what it needs by injection. What it never had was a front door, so the
 only way to run a turn was to start a daemon and drive a session over a socket.
 
-This is that front door.
+This is that front door::
 
     import asyncio
-    from frank import Session
+    from frank import AgentConfiguration, Session
+
+    assistant = AgentConfiguration(
+        name="assistant",
+        system_prompt="You answer questions about the code in front of you.",
+        provider="anthropic",
+        model="claude-opus-4-5",
+    )
 
     async def main() -> None:
-        async with Session(agent="general-assistant", directory=".") as session:
+        async with Session(assistant, directory="/srv/checkout") as session:
             print(await session.ask("what does this project do?"))
 
     asyncio.run(main())
+
+The agent is the object, not a name for one — a name would mean this library went looking
+through your home directory for a profile, which is the thing it exists not to do. The
+directory is absolute for the same reason: where tools run is a property of the run, not of
+wherever the program happened to be started from.
 
 **Everything durable is a seam.** A library that writes where it likes is a library you cannot
 embed, so each thing this one writes down — the conversation checkpoint, the background-job
 record, the audit trail — is a constructor argument with an interface behind it, and the
 default for each is *nothing on your disk*. Bring your own model, store, approver or observer
 by passing an object with the right methods; there is no base class to inherit and no registry
-to join. See :mod:`frank.base.ports`.
+to join. See :mod:`frank.base.ports`::
 
     from frank import Approval, Session
 
@@ -31,8 +43,18 @@ to join. See :mod:`frank.base.ports`.
                 return Approval(allow=True, reason="read-only work is pre-approved")
             return None  # anything else still asks a human
 
-    async with Session("general-assistant", approvals=AllowReads()) as session:
-        ...
+    async def review() -> None:
+        async with Session(assistant, directory="/srv/checkout", approvals=AllowReads()) as session:
+            print(await session.ask("what changed here recently?"))
+
+**Attachments.** A file is handed over by path, the same act as dragging one into the desktop
+app, and it is referenced where it lives rather than copied::
+
+    await session.ask("what is this?", attachments=["~/Downloads/report.pdf"])
+
+The session gains read access to those exact files — and only those — so a path inside a
+directory the sandbox otherwise denies still opens. An image is inlined when the model
+advertises vision; anything else arrives as a path the agent opens with its file tools.
 
 **What a library session is not.** It is an object in your process, not a process of its own,
 so it has none of the three properties the daemon exists to provide: it is not addressable
@@ -49,6 +71,7 @@ you are asking for the daemon.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, AsyncIterator, Mapping, Optional, Sequence
 
@@ -86,6 +109,32 @@ from frank.base.ports import (
     describe_unmet,
 )
 from frank.base.schedules import ScheduleError, is_due, next_firing, validate as validate_schedule
+# The vocabulary `stream()` speaks. Exported because a caller driving a turn has to dispatch on
+# these, and reaching into `frank.runtime.turn_events` to name the thing a public method yields
+# is the library telling you where its front door is and then handing you the side entrance.
+# `TurnEventUnion` is closed, so a `match` over it can prove exhaustiveness with `assert_never`
+# and a variant added later becomes a type error rather than a silently dropped branch.
+from frank.runtime.turn_events import (
+    Checkpoint,
+    CompactionDone,
+    CompactionStarted,
+    Done,
+    EventType,
+    Mcp,
+    Status,
+    Steering,
+    Suspended,
+    TextChunk,
+    Thinking,
+    ThinkingDone,
+    ToolCall,
+    ToolResult,
+    TurnEvent,
+    TurnEventUnion,
+    Usage,
+)
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "AgentConfiguration",
@@ -94,13 +143,19 @@ __all__ = [
     "Approvals",
     "Catalogue",
     "CatalogueLike",
+    "Checkpoint",
     "Checkpoints",
     "Compaction",
+    "CompactionDone",
+    "CompactionStarted",
     "CompactionState",
     "Credentials",
     "Configuration",
+    "Done",
+    "EventType",
     "Instruction",
     "JobStore",
+    "Mcp",
     "KeepRecentTurns",
     "MaximumToolCalls",
     "MemoryCheckpoints",
@@ -111,9 +166,20 @@ __all__ = [
     "PermissionMode",
     "Session",
     "ScheduleError",
+    "Status",
+    "Steering",
+    "Suspended",
+    "TextChunk",
+    "Thinking",
+    "ThinkingDone",
+    "ToolCall",
     "ToolMiddleware",
+    "ToolResult",
+    "TurnEvent",
+    "TurnEventUnion",
     "TurnHook",
     "Skill",
+    "Usage",
     "is_due",
     "next_firing",
     "validate_schedule",
@@ -304,7 +370,6 @@ class Session:
         Exposed because a library that hides its own core forces every non-obvious use into a
         fork. Everything below is a convenience over it."""
         if self._runtime is None:
-            from frank.base.confinement import Profile
             from frank.base.tuning import set_tuning, tuning_from_policy
             from frank.runtime.runtime import AgentRuntime
 
@@ -357,7 +422,12 @@ class Session:
                 working_directory=self._runtime_directory,
                 project_directory=self._directory,
                 permission_mode=self._permission_mode,
-                sandbox=self._sandbox if self._sandbox is not None else Profile(),
+                # Handed over as the caller gave it, including `None`. The runtime normalises
+                # every shape in one place, and `None` there means the configured default rather
+                # than an empty `Profile()` — which is what this line used to substitute, and
+                # which denies every write, in the directory the caller just named as the
+                # session's workspace.
+                sandbox=self._sandbox,
                 session_access=self._peers,
                 mcp_manager=self._mcp_manager,
                 catalogue=catalogue,
@@ -441,11 +511,71 @@ class Session:
             {"conversation": [dump_message(message) for message in self.conversation]},
         )
 
-    async def stream(self, message: str) -> AsyncIterator[Any]:
-        """Drive one turn, yielding each :class:`~frank.runtime.turn_events.TurnEvent`.
+    def _compose(self, message: str, attachments: Sequence[str | Path]) -> object:
+        """The model-facing input for a turn, including the files the caller attached.
+
+        The same composition the daemon performs for a message from the desktop app, reached
+        through the same function — so a program embedding this harness attaches a file the
+        way its own client does, rather than through a shape it had to reverse-engineer.
+
+        The attached paths are also recorded on the runtime, which is what makes them readable
+        at all: `~/Downloads`, `~/Desktop` and `~/Documents` are denied to a confined tool
+        child, and a path the model cannot open is not an attachment.
+        """
+        if not attachments:
+            return message
+        from frank.protocol.files import attachment_from_path
+        from frank.protocol.parts import attachment_payload, compose_turn_input
+
+        records = [attachment_from_path(path) for path in attachments]
+        runtime = self.runtime
+        runtime.note_attachments([record["path"] for record in records])
+        turn_input, images_not_inlined = compose_turn_input(
+            message, [attachment_payload(records)], runtime.effective_model_identifier,
+        )
+        if images_not_inlined:
+            # The daemon raises a warning event to its client; a library caller may have no
+            # client to raise one to, so this goes to the log it does have. Silence would be
+            # worse: the model gets the path and not the pixels, and nothing would say why.
+            logger.warning(
+                "%d attached image(s) were not inlined: %s does not advertise vision support. "
+                "The model has the file paths and can open them with its tools.",
+                images_not_inlined, runtime.effective_model_identifier or "the session model",
+            )
+        return turn_input
+
+    async def stream(
+        self, message: str, *, attachments: Sequence[str | Path] = (),
+    ) -> AsyncIterator[TurnEventUnion]:
+        """Drive one turn, yielding each :class:`TurnEvent`.
+
+        ``attachments`` are local file paths the caller is handing to the agent, exactly as a
+        person dragging a file into the desktop app would::
+
+            async for event in session.stream("what is this?", attachments=["~/Downloads/report.pdf"]):
+                ...
+
+        Each file is referenced where it lives — nothing is copied — and the session gains
+        read access to those exact files for the rest of its life. An image is inlined when
+        the model advertises vision; anything else reaches the model as a path it opens with
+        its file tools. A path that is not a regular file raises ``FileNotFoundError``.
 
         The events are the harness's own vocabulary — text chunks, tool calls, tool results,
-        usage, suspensions — the same ones a session streams to a client over its socket.
+        usage, compaction, suspensions — the same ones a session streams to a client over its
+        socket, and every one of them is exported from ``frank``. The union is closed, so a
+        ``match`` over it can prove exhaustiveness with ``assert_never``.
+
+        Folding announces itself here like anything else, which is how a program watches its
+        own memory being rewritten::
+
+            async for event in session.stream("keep going"):
+                match event:
+                    case CompactionStarted(tokens_before=before):
+                        log.info("folding at %d tokens", before)
+                    case CompactionDone(ok=True, messages_before=b, messages_after=a):
+                        log.info("folded %d messages into %d", b, a)
+                    case Usage(cumulative=totals):
+                        meter.record(totals)
 
         The conversation is checkpointed when the turn ends, including when it ends badly: a
         turn that raises has still changed the conversation, and losing that is worse than
@@ -453,13 +583,15 @@ class Session:
         if not self._restored:
             await self.restore()
         try:
-            async for event in self.runtime.stream(message):
+            async for event in self.runtime.stream(self._compose(message, attachments)):
                 yield event
         finally:
             await self.save()
 
-    async def ask(self, message: str) -> str:
+    async def ask(self, message: str, *, attachments: Sequence[str | Path] = ()) -> str:
         """Drive one turn and answer with the agent's prose.
+
+        ``attachments`` are local file paths handed to the agent, as in :meth:`stream`.
 
         A suspension has nowhere to go by default — there is no client to raise a permission
         prompt to — so a turn that needs a human decision raises rather than hanging on a gate
@@ -468,7 +600,7 @@ class Session:
         from frank.runtime.turn_events import Done, Suspended
 
         answer = ""
-        async for event in self.stream(message):
+        async for event in self.stream(message, attachments=attachments):
             if isinstance(event, Suspended):
                 raise PermissionError(
                     "This turn needs a human decision, and nothing is answering gates. Pass "
@@ -479,6 +611,33 @@ class Session:
             if isinstance(event, Done):
                 answer = event.text or answer
         return answer
+
+    async def compact(self) -> AsyncIterator[TurnEventUnion]:
+        """Fold the conversation now, yielding the same events an automatic fold does.
+
+        The manual counterpart to the automatic trigger, and the same call the desktop's Compact
+        button makes through the daemon. It runs a pass regardless of how full the context is —
+        that is what makes it manual — so a program that meters its own spend can fold on its own
+        terms rather than waiting for the threshold, and one that has just finished a noisy phase
+        can put it behind itself before starting the next.
+
+        A pass with nothing to fold yields nothing and changes nothing, so calling this
+        speculatively is safe. The conversation is checkpointed afterwards, because a fold is a
+        change to it and losing that would leave the store describing a conversation that no
+        longer exists::
+
+            async for event in session.compact():
+                match event:
+                    case CompactionDone(ok=False):
+                        log.warning("nothing was folded; history is untouched")
+        """
+        if not self._restored:
+            await self.restore()
+        try:
+            async for event in self.runtime.compact(reason="manual"):
+                yield event
+        finally:
+            await self.save()
 
     @property
     def conversation(self) -> list:

@@ -1,1 +1,1 @@
-Every tool call shown below has already run and its result is included. Do not run those again unless something has changed — continue from what they returned.
+Every tool call below already ran, and its result is here. Do not run those calls again unless something changed. Continue from what they returned.

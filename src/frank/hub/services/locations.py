@@ -49,6 +49,7 @@ def _serialize_workspace(record: WorkspaceRecord, database_session, *, with_loca
         "id": record.id,
         "created_at": record.created_at,
         "updated_at": record.updated_at,
+        "last_session_id": record.last_session_id or "",
     }
     if with_locations:
         locations = (

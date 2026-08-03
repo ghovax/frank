@@ -60,8 +60,8 @@ class CallExecutionPolicy:
 
 
     @property
-    def auto_permissions(self) -> bool:
-        return self.mode.is_auto
+    def self_classifies(self) -> bool:
+        return self.mode.is_self_classifying
 
     @property
     def is_remote(self) -> bool:

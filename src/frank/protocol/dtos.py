@@ -48,7 +48,9 @@ class AgentConfigurationResponse(BaseModel):
     model: str = ""
     provider: str = ""
     reasoning_effort: str = "high"
-    permission_mode: Literal["default", "auto", "read_only"]
+    # `None` where the card sets no ceiling, which is what most cards do. The settings editor
+    # shows it as "no ceiling" rather than inventing one, because a value here is read as a bound.
+    permission_mode: Literal["default", "permissive", "self_classify", "read_only"] | None = None
     tools_enabled: list[str]
     tools_disabled: list[str]
     bash: AgentBashConfigurationResponse
@@ -65,7 +67,7 @@ class AgentConfigurationUpdateRequest(BaseModel):
     model: str | None = None
     provider: str | None = None
     reasoning_effort: str | None = None
-    permission_mode: Literal["default", "auto", "read_only"] | None = None
+    permission_mode: Literal["default", "permissive", "self_classify", "read_only"] | None = None
     tools_enabled: list[str] | None = None
     tools_disabled: list[str] | None = None
     bash: AgentBashConfigurationRequest | None = None
@@ -96,11 +98,11 @@ class SettingsUpdateRequest(BaseModel):
     jina_api_key: str | None = None
     firecrawl_api_key: str | None = None
     web_fetch_proxy_url: str | None = None
-    permission_mode: Literal["default", "auto", "read_only"] | None = None
+    permission_mode: Literal["default", "permissive", "self_classify", "read_only"] | None = None
     sandbox: dict | None = None
-    # Per-provider API keys (the opencode gateway's key lives under "opencode").
+    # Per-provider API keys. Both OpenCode gateways use the key under "opencode".
     provider_keys: dict[str, str] | None = None
-    # Base URLs for the OpenAI-compatible providers (opencode, custom).
+    # Base URLs for providers with user-configurable OpenAI-compatible endpoints.
     provider_base_urls: dict[str, str] | None = None
     worktree_strategy: Literal["none", "branch", "worktree"] | None = None
 
@@ -130,10 +132,12 @@ class DictationUpdateRequest(BaseModel):
 
 class CompactionUpdateRequest(BaseModel):
     """Observational-memory compaction settings. Only provided fields are changed."""
-    auto: bool | None = None
-    observer_context_fraction: float | None = None
-    reflector_observation_fraction: float | None = None
-    keep_recent_turns: int | None = None
+    automatic: bool | None = None
+    reclaim_at_fraction: float | None = None
+    condense_log_at_fraction: float | None = None
+    output_reserve_fraction: float | None = None
+    recent_working_set_fraction: float | None = None
+    verbatim_user_fraction: float | None = None
 
 
 class MCPToolCallRequest(BaseModel):
@@ -157,6 +161,25 @@ class LocationInput(BaseModel):
 
 class WorkspaceCreateRequest(BaseModel):
     locations: list[LocationInput] = Field(min_length=1)
+
+
+class MachineRequest(BaseModel):
+    """A machine to remember, as the `frank://pair#…` link `frank reach` prints."""
+
+    link: str
+
+
+class MachineNameRequest(BaseModel):
+    """What to call a machine here."""
+
+    name: str
+
+
+class WorkspaceLastSessionRequest(BaseModel):
+    """Which conversation a workspace was last opened at. The empty string means none — what a
+    client sends when it lands on a workspace with nothing to reopen."""
+
+    session_id: str = ""
 
 
 class AttachmentReference(BaseModel):

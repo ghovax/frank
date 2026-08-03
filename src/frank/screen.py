@@ -6,7 +6,7 @@ into a bare namespace by the runner, so the text that drove a window was valid o
 editor could check it, no test could exercise it, nothing could import it, and every workflow was
 therefore re-derived from scratch every time somebody wanted it again — differently each time.
 
-The missing piece was an import. With one, a workflow is an ordinary Python module:
+The missing piece was an import. With one, a workflow is an ordinary Python module::
 
     from frank.screen import Screen
 

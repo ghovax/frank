@@ -32,7 +32,7 @@ export function NewScheduleDialog({
           <Dialog.Content w="min(560px, calc(100vw - 16px))">
             <Dialog.Header display="flex" flexDirection="column" alignItems="flex-start" gap={1}>
               <Dialog.Title textStyle="panelTitle">{translation("add")}</Dialog.Title>
-              <Text fontSize="sm" color="fg.muted">{translation("empty")}</Text>
+              <Text fontSize="xs" color="fg.muted">{translation("empty")}</Text>
             </Dialog.Header>
             <Dialog.Body>
               {/* Mounted only while open, so each visit starts from an empty draft rather than

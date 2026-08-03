@@ -17,8 +17,8 @@ model's.
 There is deliberately **no bypass mode**. An agent that runs with no gate at all is the one
 configuration whose blast radius is unbounded, and sessions now spawn sessions without a
 human in the loop, so the mode that disables the loop entirely is not offered. The loosest
-policy available is :attr:`AUTO`, which still classifies every call and escalates anything
-it cannot prove safe.
+policy available is :attr:`SELF_CLASSIFY`, which still classifies every call and escalates
+anything it cannot prove safe.
 """
 
 from __future__ import annotations
@@ -32,12 +32,25 @@ class PermissionMode(StrEnum):
     to (and serializes as) its wire/config/database string and no boundary special-cases it.
 
     - ``DEFAULT`` — interactive: per-command rules; an unmatched command asks the user.
-    - ``AUTO`` — a classifier auto-approves provably-safe calls and escalates the rest.
+    - ``PERMISSIVE`` — an unmatched command runs; anything the model called medium or high
+      risk asks. No classifier, so no model call and no judgement beyond the two facts the
+      barrier already has.
+    - ``SELF_CLASSIFY`` — a classifier judges what the barrier could not settle: it approves
+      provably-safe calls and escalates the rest.
     - ``READ_ONLY`` — every write is hard-blocked (investigation sessions).
+
+    ``PERMISSIVE`` exists because the gap between the first two was too wide to live in.
+    ``DEFAULT`` asks about every command its rules do not name, which on a real machine is most
+    of them; ``SELF_CLASSIFY`` stops asking about the ones a classifier can vouch for, at the cost of a
+    model call per ambiguous call and of trusting that judgement. What was missing was the
+    obvious middle: believe the risk the model already declared, run what it called low, and
+    ask about the rest. Between the two in restrictiveness, and cheaper than either to reason
+    about — no rule you wrote is ignored, and nothing is approved by a second model.
     """
 
     DEFAULT = "default"
-    AUTO = "auto"
+    PERMISSIVE = "permissive"
+    SELF_CLASSIFY = "self_classify"
     READ_ONLY = "read_only"
 
     @classmethod
@@ -45,9 +58,18 @@ class PermissionMode(StrEnum):
         """The mode a string names, or ``None`` when it names no known mode — so a caller can
         tell 'absent or invalid' apart from a real choice. A stored ``bypass`` from before
         that mode was removed parses as ``None`` and therefore falls back to the interactive
-        default rather than silently granting the loosest policy."""
+        default rather than silently granting the loosest policy.
+
+        A stored ``auto`` is different in kind and is translated rather than dropped: that mode
+        was not removed, it was renamed. ``auto`` said how the decision arrived and not who made
+        it, which is the part worth knowing — a second model classifies the call. The policy is
+        unchanged, so reading the old spelling as the new one is finishing the rename in data
+        somebody wrote before it, not reviving a mode. Dropping it instead would silently move a
+        session that had chosen the loosest policy to the strictest one that still works."""
         if isinstance(value, cls):
             return value
+        if isinstance(value, str) and value in _RENAMED:
+            return _RENAMED[value]
         try:
             return cls(value)
         except ValueError:
@@ -63,7 +85,7 @@ class PermissionMode(StrEnum):
     @property
     def restrictiveness(self) -> int:
         """Position in the linear restrictiveness order, least to most:
-        ``auto < default < read_only``."""
+        ``self_classify < permissive < default < read_only``."""
         return _RESTRICTIVENESS[self]
 
     @classmethod
@@ -83,17 +105,34 @@ class PermissionMode(StrEnum):
         return self is PermissionMode.READ_ONLY
 
     @property
-    def is_auto(self) -> bool:
-        return self is PermissionMode.AUTO
+    def is_self_classifying(self) -> bool:
+        """Whether the harness asks a model to judge a call the barrier could not settle."""
+        return self is PermissionMode.SELF_CLASSIFY
 
     @property
     def is_interactive(self) -> bool:
-        """The manual ('ask') policy: not auto-classifying and not read-only."""
+        """The manual ('ask') policy: a command no rule names is asked about rather than run.
+
+        This is the one thing ``PERMISSIVE`` changes, and the whole of what it changes. Every
+        other difference between the modes falls out of these three flags being false together:
+        not interactive, so an unmatched command is allowed; not auto, so no classifier is
+        consulted and the declared risk stands; not read-only, so writes are not blocked. The
+        result is exactly "run what the model called low-risk, ask about the rest"."""
         return self is PermissionMode.DEFAULT
 
 
+# Spellings that named a mode that still exists. Read on the way in and never written, so the
+# old name disappears from anything this touches the first time it is saved.
+_RENAMED: dict[str, PermissionMode] = {"auto": PermissionMode.SELF_CLASSIFY}
+
+
 _RESTRICTIVENESS: dict[PermissionMode, int] = {
-    PermissionMode.AUTO: 0,
-    PermissionMode.DEFAULT: 1,
-    PermissionMode.READ_ONLY: 2,
+    PermissionMode.SELF_CLASSIFY: 0,
+    # Above `auto` because it escalates everything the model called medium or high, where `auto`
+    # gives the classifier a chance to vouch for it; below `default` because it runs what
+    # `default` would have asked about. The clamp reads this, so a child of a `permissive`
+    # parent may be `permissive`, `default` or `read_only`, and never `auto`.
+    PermissionMode.PERMISSIVE: 1,
+    PermissionMode.DEFAULT: 2,
+    PermissionMode.READ_ONLY: 3,
 }
