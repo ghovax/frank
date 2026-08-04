@@ -30,6 +30,7 @@ import { asArray, asRecord } from "@/lib/coerce";
 import type { PrefixDivergence, WireEvent } from "@shared/generated/events";
 import { errorMessage } from "@/lib/errors";
 import { clientIdentifier } from "@/lib/identifier";
+import { Outbox, type Delivery, type OutboxHold, type OutboxMessage } from "@/lib/outbox";
 
 // Re-export the A2A task shape so components can consume it from one place.
 export type A2ATurn = A2ATurnWire;
@@ -139,12 +140,13 @@ export interface TokenUsage {
 // so the agent receives them as JSON rather than as prose.
 export type ChatInput = { kind: "text"; text: string; dataParts?: Record<string, unknown>[] };
 
-export interface QueuedMessage {
-  id: string;
-  text: string;
-  steering: boolean;
-  dataParts?: Record<string, unknown>[];
-}
+// What the composer is still holding. Every one of these is a message the session has not taken:
+// that is the only thing being in this list means, and the only reason one leaves it is the
+// session saying it took it. There used to be a `steering` flag here, distinguishing "queued" from
+// "already injected, waiting for the echo", and a sweep at the end of every turn deleted anything
+// still wearing it. A flag set by a guess, read by a sweep that deletes — the message a person
+// typed under a permission prompt died of exactly that.
+export type QueuedMessage = OutboxMessage;
 
 // The explicit ToolStatus from the wire mapped to the UI lifecycle. `input_required`
 // is a separate, UI-only state driven by permission/question events, never a result.
@@ -647,17 +649,6 @@ function reduceAgentMessage(state: ReduceState, message: A2AMessage): void {
   for (const part of message.parts ?? []) reduceAgentPart(state, part, message.messageId);
 }
 
-function steeringFromPart(part: A2APart | undefined): { text: string; messageId: string } {
-  const none = { text: "", messageId: "" };
-  if (!part || part.kind !== "data") return none;
-  const payload = partPayload(part.data);
-  // Only the person's own steering, which is what the composer's queue holds. A peer's message
-  // arriving mid-turn reads as steering on the wire and would otherwise retire a chip for a
-  // message the person has not sent yet.
-  if (payload.kind !== "steering" || String(payload.peer_sender ?? "")) return none;
-  // The id travels with the event for exactly this purpose — see `SteeringEvent.message_id`.
-  return { text: String(payload.text ?? "").trim(), messageId: String(payload.message_id ?? "").trim() };
-}
 
 function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourceId?: string): void {
   // Every event on this stream belongs to this session. A peer is a session of its own
@@ -1104,6 +1095,8 @@ export function useChat(
   // Bumped to force the history-load effect to re-run (a manual retry).
   const [historyReloadNonce, setHistoryReloadNonce] = useState(0);
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
+  const [outboxHold, setOutboxHold] = useState<OutboxHold>(null);
+  const [deliveringMessage, setDeliveringMessage] = useState<string | null>(null);
 
   // This hook's own attach subscription while it is driving a turn. A turn is sent
   // and then observed here; closing it only drops the client end.
@@ -1115,7 +1108,6 @@ export function useChat(
   const historyPageCursorRef = useRef<number | null>(null);
   const hasOlderHistoryRef = useRef(false);
   const isOlderHistoryLoadingRef = useRef(false);
-  const queuedMessagesRef = useRef<QueuedMessage[]>([]);
   const isStreamingRef = useRef(false);
   // Set by a user Stop so the imminent stream-close does not auto-drain the queue
   // into a fresh turn — which read as "Stop didn't stop it". Queued messages are
@@ -1130,29 +1122,8 @@ export function useChat(
   // SSE is authoritative, so we never subscribe to the read-only stream (it would
   // replace the live state with a replay and churn message ids).
   const streamedLocallyRef = useRef(false);
-  const runStreamRef = useRef<(input: ChatInput) => void>(() => {});
+  const startTurnRef = useRef<(message: OutboxMessage) => Promise<Delivery>>(async () => "failed");
   const flushFrameRef = useRef<number | null>(null);
-
-  const setQueue = useCallback((next: QueuedMessage[]) => {
-    queuedMessagesRef.current = next;
-    setQueuedMessages(next);
-  }, []);
-
-  // Retire the chip for a steered message the session has now echoed back.
-  //
-  // By the id this client gave it when it sent it, falling back to the text for an echo that
-  // carries none. The transcript reducer has keyed on that id for a while — it is what makes
-  // the optimistic copy and the persisted one a single message — and matching by text here
-  // meant the same event was identified two different ways: send "yes" twice and the first
-  // echo retires whichever chip happens to read alike, not the one that was delivered.
-  const acknowledgeSteering = useCallback((steered: { text: string; messageId: string }) => {
-    if (!steered.text) return;
-    const index = queuedMessagesRef.current.findIndex((message) => message.steering && (
-      steered.messageId ? message.id === steered.messageId : message.text === steered.text
-    ));
-    if (index === -1) return;
-    setQueue(queuedMessagesRef.current.filter((_, messageIndex) => messageIndex !== index));
-  }, [setQueue]);
 
   // Whether the transcript is holding a decision nobody has made yet.
   //
@@ -1166,30 +1137,6 @@ export function useChat(
   const hasPendingDecision = useCallback(() => stateRef.current.messages.some(
     (message) => message.role === "tool_call" && message.meta?.status === "input_required"
   ), []);
-
-  // Hand the session the next message it is owed, if it can take one.
-  //
-  // One rule for the whole queue: it drains whenever the session is not parked. Three moments
-  // satisfy that and they are all the same moment as far as this is concerned — a turn we drove
-  // ended, a turn we were only watching ended, or a decision was made and the session went back
-  // to work. The last is the one that matters for a message typed under a permission prompt:
-  // the session is running again, so the message is injected into that turn rather than waiting
-  // for it to finish, which is what a person means by typing while they watch it work.
-  //
-  // How it gets there is not decided here. `send` asks, and the session answers whether it
-  // injected the message or started a turn with it — the client used to assume, and assuming
-  // is what left a message flagged as delivered that had never been delivered at all.
-  const drainQueueRef = useRef<() => void>(() => {});
-  const drainQueue = useCallback(() => {
-    if (isStreamingRef.current || hasPendingDecision()) return;
-    const next = queuedMessagesRef.current.find((message) => !message.steering);
-    if (!next) return;
-    setQueue(queuedMessagesRef.current.filter((message) => message.id !== next.id));
-    runStreamRef.current({ kind: "text", text: next.text, dataParts: next.dataParts });
-  }, [hasPendingDecision, setQueue]);
-  useEffect(() => {
-    drainQueueRef.current = drainQueue;
-  }, [drainQueue]);
 
   // A message the session would not take, and what it is waiting for instead. Deliberately not
   // an error: nothing is broken and nothing is lost — the message is in the queue, visible, and
@@ -1467,12 +1414,6 @@ export function useChat(
                 // answers is indistinguishable from one that answers slowly.
                 swallowed({ component: "transcript", operation: "read the finished turn" }, caught);
               }
-              // The other end of the wait. A message typed while the session was parked is
-              // held rather than sent, and this is the moment it can go: the decision was
-              // made, the turn it unblocked has ended, and the session will take a message
-              // again. Without this the queue had no owner — the local drain belongs to a
-              // turn *we* drove, and this session finished its own without us.
-              if (!cancelled) drainQueueRef.current();
             })();
           }
         },
@@ -1495,7 +1436,6 @@ export function useChat(
           swallowed({ component: "transcript", operation: "read the session's final state" }, caught);
         }
       })();
-      drainQueueRef.current();
     }
 
     return () => {
@@ -1505,16 +1445,11 @@ export function useChat(
     };
   }, [sessionRunning, initialSessionId, isStreaming, flushNow, flush]);
 
-  // The session went back to work — which, for a session that was parked, means the decision
-  // has been made. Anything held for it goes now, into the turn that just resumed rather than
-  // after it: a message typed while watching a turn belongs to that turn. `drainQueue` declines
-  // if this client is the one driving, or if another decision is already outstanding.
-  const sessionWasRunningRef = useRef(sessionRunning);
-  useEffect(() => {
-    const resumed = sessionRunning && !sessionWasRunningRef.current;
-    sessionWasRunningRef.current = sessionRunning;
-    if (resumed) drainQueueRef.current();
-  }, [sessionRunning]);
+  // There is deliberately no drain here, and none at the end of a turn either. Both used to
+  // exist, and both read state that delivery itself changed — sending set `isStreaming`, and
+  // `isStreaming` was a dependency of the effect above that did the draining. A refused message
+  // was put back and pulled again on the next poll, forever. The queue's only triggers now are a
+  // person typing and a person answering a decision, neither of which a delivery can cause.
 
   // Manual retry after the transcript failed to load — re-run the history-load
   // effect from scratch (clearing the per-session guard so it actually re-fetches).
@@ -1529,30 +1464,35 @@ export function useChat(
     setHistoryReloadNonce((nonce) => nonce + 1);
   }, []);
 
-  const runStream = useCallback(
-    (input: ChatInput) => {
-      // Optimistic input message.
-      const userMessageId = clientIdentifier();
+  // Start a turn with one message, and answer what became of it.
+  //
+  // The answer is the point. This used to be fire-and-forget: it drew the message, opened a
+  // stream, sent, and told nobody what came back — so a refusal left a message on screen that
+  // the server had never heard of, and a turn that was never going to run.
+  const startTurn = useCallback(
+    (input: OutboxMessage): Promise<Delivery> => new Promise<Delivery>((settleDelivery) => {
       const dataParts = input.dataParts ?? [];
       const attachments = dataParts.flatMap((dataPart) => attachmentsFromData(dataPart));
       const meta = attachments.length > 0 ? { attachments } : {};
-      // Keyed by the id this send will carry, so the echo lands on this row rather than
-      // beside it. The optimistic copy is a *preview* of a message the server owns, not a
-      // second message, and giving it the server's identity is what makes it one.
-      const optimisticMessageId = stableMessageId(stateRef.current, "user", userMessageId);
-      upsertMessage(stateRef.current, {
-        id: optimisticMessageId,
-        role: "user",
-        content: input.text,
-        timestamp: new Date().toISOString(),
-        ...(Object.keys(meta).length > 0 ? { meta } : {}),
-      });
-      // No thinking row is opened here. The session says when it is thinking, and until it
-      // does, the honest answer is that it has not started. A row invented from the keystroke
-      // made the interface claim reasoning that no model had begun — and on a turn that
-      // opened with a tool call rather than reasoning, it claimed something that never
-      // happened at all. Stop and the composer already say a turn is under way.
-      flush();
+      // The id the composer gave this message when it was typed, carried onto the wire and used
+      // as the transcript key, so the optimistic copy and the session's echo are one row rather
+      // than two that read alike. One identity from keystroke to record.
+      const userMessageId = input.id;
+      const showOptimistically = () => {
+        upsertMessage(stateRef.current, {
+          id: stableMessageId(stateRef.current, "user", userMessageId),
+          role: "user",
+          content: input.text,
+          timestamp: new Date().toISOString(),
+          ...(Object.keys(meta).length > 0 ? { meta } : {}),
+        });
+        // No thinking row is opened here. The session says when it is thinking, and until it
+        // does, the honest answer is that it has not started. A row invented from the keystroke
+        // made the interface claim reasoning that no model had begun — and on a turn that
+        // opened with a tool call rather than reasoning, it claimed something that never
+        // happened at all. Stop and the composer already say a turn is under way.
+        flushNow();
+      };
 
       isStreamingRef.current = true;
       streamedLocallyRef.current = true;
@@ -1584,38 +1524,19 @@ export function useChat(
         // its turn.
         finishRunningThinking(stateRef.current);
         finishActiveTools(stateRef.current);
-        // A message still flagged `steering` was delivered, and the flag now means that
-        // rather than assuming it: `send` clears it on anything the session did not take, so
-        // what is left here is what the session said it injected. Retire those chips — the
-        // message is in the turn, and sending it again would be sending it twice.
-        const pendingText = queuedMessagesRef.current.filter((message) => !message.steering);
-        if (pendingText.length !== queuedMessagesRef.current.length) setQueue(pendingText);
         flush();
-        // A user Stop ends the turn; do not immediately relaunch a queued
-        // message as a new turn — that is exactly the "Stop didn't stop" symptom.
-        // Consume the one-shot flag and fall through to idle, leaving the queue for
-        // the user to send deliberately.
-        const abortedByUser = abortedByUserRef.current;
+        // The queue is not touched here, and that is the change. A turn ending used to sweep it
+        // — deleting anything marked delivered and launching whatever was left — which made the
+        // end of a turn both a trigger and a deletion, on state the launch itself changed. The
+        // queue has one owner now, and it is not this function. See `lib/outbox.ts`.
         abortedByUserRef.current = false;
-        // Nor while a decision is outstanding, which is the other way a turn stops. Parking on
-        // a permission prompt ends the turn exactly like finishing one does — same frame, same
-        // handler — so this drain fired *into* the park: the queued message was handed to a
-        // session that answers `accepted: false` to everything until a person decides. It ran
-        // as a turn that never started, and the message was gone. The queue waits; the drain
-        // below picks it up when the decision has been made and the resumed turn ends.
-        if (!abortedByUser && !hasPendingDecision() && pendingText.length > 0) {
-          const next = pendingText[0];
-          setQueue(queuedMessagesRef.current.filter((message) => message.id !== next.id));
-          runStreamRef.current({ kind: "text", text: next.text, dataParts: next.dataParts });
-        } else {
-          isStreamingRef.current = false;
-          setIsStreaming(false);
-          // Our locally-driven turn is over. Return to viewer mode so that if the
-          // harness later wakes this session on its own (an autonomous background
-          // resume), the read-only attach picks the new turn up live instead of the
-          // wake only appearing on a manual reload.
-          streamedLocallyRef.current = false;
-        }
+        isStreamingRef.current = false;
+        setIsStreaming(false);
+        // Our locally-driven turn is over. Return to viewer mode so that if the
+        // harness later wakes this session on its own (an autonomous background
+        // resume), the read-only attach picks the new turn up live instead of the
+        // wake only appearing on a manual reload.
+        streamedLocallyRef.current = false;
       };
 
       const observe = (sessionIdentifier: string) => {
@@ -1636,17 +1557,9 @@ export function useChat(
             // We are driving, so our own state already includes the message we just
             // sent and replacing it would drop it from view until it persists.
             if (frame.kind !== "live") return;
-            const steered = steeringFromPart(frame.part);
-            acknowledgeSteering(steered);
             notifyTurnError(frame.part);
             reduceAgentPart(stateRef.current, frame.part);
-            // A steered message moves from the composer's queue into the transcript, and those
-            // are two pieces of state. The ordinary flush defers to the next animation frame,
-            // so the chip vanished in one commit and the message appeared in the next — one
-            // frame in which the message was in both places, or in neither. Flushing this one
-            // synchronously puts both updates in the same commit, which is what makes the
-            // handoff a move rather than a flicker.
-            if (steered.text) flushNow(); else flush();
+            flush();
           },
           finishTurn,
         );
@@ -1674,22 +1587,19 @@ export function useChat(
           // message, and a subscription opened afterwards would miss the opening frames.
           observe(sessionIdentifier);
           const outcome = await sessionSend(sessionIdentifier, messageParts(text, dataParts), { messageId: userMessageId });
-          // The session refused it. Not a failure — it is parked on a decision and taking a
-          // message would mean discarding the parked turn — but nothing was delivered and no
-          // turn is coming, so the preview on screen is a message the server has never heard
-          // of. Take it back off the transcript and put it in the queue, which is the one place
-          // that says "not sent yet" honestly and can still send it.
+          // The session refused it: it is parked on a decision, and taking a message would mean
+          // discarding the parked turn. Nothing was delivered and no turn is coming, so nothing
+          // is drawn. The message stays where it already is — in the composer's queue, which is
+          // the one place that says "not sent yet" honestly and can still send it.
           if (!outcome.accepted) {
-            stateRef.current.messages = stateRef.current.messages.filter(
-              (message) => message.id !== optimisticMessageId
-            );
-            setQueue([...queuedMessagesRef.current, {
-              id: clientIdentifier(), text, steering: false, dataParts,
-            }]);
             notifyHeldForDecision(outcome.waitingOn);
-            flush();
             finishTurn();
+            settleDelivery("refused");
+            return;
           }
+          // Taken. Only now does it appear, because only now is it a message the session has.
+          showOptimistically();
+          settleDelivery("accepted");
         } catch (caught) {
           // The reason, not just the fact. This was a bare `catch {}`, so whatever actually
           // went wrong — which call, which status, which network failure — was discarded and
@@ -1702,78 +1612,108 @@ export function useChat(
             title: "Server request failed",
             message: `Frank could not start the turn: ${detail}`,
           });
-          // One wind-down for every ending, so the queue is drained exactly once however
-          // the turn failed. `finishTurn` closes the stream itself if one was opened.
+          // One wind-down for every ending. `finishTurn` closes the stream if one was opened.
           finishTurn();
+          // It never reached the session, so the message keeps its place in the queue and the
+          // composer says why. Nothing here retries it.
+          settleDelivery("failed");
         }
       })();
-    },
-    [agent, workingDirectory, worktreeStrategy, permissionMode, workspaceId, flush, flushNow, setQueue, acknowledgeSteering, notifyTurnError, hasPendingDecision, notifyHeldForDecision]
+    }),
+    [agent, workingDirectory, worktreeStrategy, permissionMode, workspaceId, flush, flushNow, notifyTurnError, notifyHeldForDecision]
   );
 
   useEffect(() => {
-    runStreamRef.current = runStream;
-  }, [runStream]);
+    startTurnRef.current = startTurn;
+  }, [startTurn]);
 
-  const send = useCallback(
-    (text: string, dataParts: Record<string, unknown>[] = []) => {
-      const trimmed = text.trim();
-      if (!trimmed) return Promise.resolve();
-      // Three states, and the session is in exactly one of them.
-      //
-      // Parked on a decision: it takes nothing, so the message is held. This is the case that
-      // was missing. The composer used to pass a `queueOnly` flag for it, but the check that
-      // read the flag lived inside `if (isStreaming)` — and a parked session is not streaming,
-      // because parking *ends* the turn. So the flag was computed, passed, and never reached:
-      // the message went out to a session that answered `accepted: false`, was drawn on screen
-      // as though it had been sent, and vanished at the next rebuild. The state is read here
-      // now rather than passed in, so no caller can fail to pass it.
-      if (hasPendingDecision()) {
-        setQueue([...queuedMessagesRef.current, { id: clientIdentifier(), text: trimmed, steering: false, dataParts }]);
-        return Promise.resolve();
+  // Hand one message to the session, whichever state it is in, and answer what became of it.
+  //
+  // A running session injects it at its next safe point. An idle one starts a turn with it.
+  // Which of those happened is the session's answer and not a guess made here, and either way
+  // the message only appears on screen once the session has said it took it.
+  const deliver = useCallback(async (message: OutboxMessage): Promise<Delivery> => {
+    const context = sessionIdRef.current;
+    if (!isStreamingRef.current || !context) return startTurnRef.current(message);
+    try {
+      const outcome = await sessionSend(
+        context,
+        messageParts(message.text, message.dataParts),
+        { messageId: message.id },
+      );
+      if (!outcome.accepted) {
+        notifyHeldForDecision(outcome.waitingOn);
+        return "refused";
       }
-      // Running: sent now, and the session injects it at the next safe point. The chip says
-      // "steering" until the session echoes it back.
-      if (isStreamingRef.current) {
-        const pending = { id: clientIdentifier(), text: trimmed, steering: false, dataParts };
-        const context = sessionIdRef.current;
-        if (context && dataParts.length === 0) {
-          setQueue([...queuedMessagesRef.current, { ...pending, steering: true }]);
-          // Whether it was injected is the session's answer, not this client's assumption. The
-          // chip is a claim about what happened to the message, and the turn-end sweep retires
-          // every chip still marked steering on the grounds that it was delivered — so a wrong
-          // assumption here is a message deleted rather than a chip mislabelled.
-          const keepQueued = () => setQueue(queuedMessagesRef.current.map((message) =>
-            message.id === pending.id ? { ...message, steering: false } : message
-          ));
-          return sessionSend(context, messageParts(trimmed), { messageId: pending.id })
-            .then((outcome) => {
-              // Refused — the turn parked between the keystroke and the send. Nothing was
-              // delivered, so it stays in the queue and goes out when the decision is made.
-              if (!outcome.accepted) {
-                keepQueued();
-                notifyHeldForDecision(outcome.waitingOn);
-                return;
-              }
-              // Taken, but as a fresh turn rather than an injection: the turn ended underneath
-              // us. It is delivered and arrives over attach, so the chip has nothing left to
-              // say and no echo is coming to retire it.
-              if (!outcome.injected) {
-                setQueue(queuedMessagesRef.current.filter((message) => message.id !== pending.id));
-              }
-            })
-            // The send never reached the daemon, so nothing was injected.
-            .catch(keepQueued);
-        }
-        setQueue([...queuedMessagesRef.current, pending]);
-        return Promise.resolve();
-      }
-      // Idle: this message starts the turn.
-      runStream({ kind: "text", text: trimmed, dataParts });
-      return Promise.resolve();
-    },
-    [runStream, setQueue, hasPendingDecision, notifyHeldForDecision]
+      upsertMessage(stateRef.current, {
+        id: stableMessageId(stateRef.current, "user", message.id),
+        role: "user",
+        content: message.text,
+        timestamp: new Date().toISOString(),
+      });
+      // Synchronously, because the chip and the transcript row are two pieces of state showing
+      // one message: deferring one of them puts the message in both places for a frame, or in
+      // neither. Flushing here makes the handoff a move rather than a flicker.
+      flushNow();
+      return "accepted";
+    } catch {
+      return "failed";
+    }
+  }, [notifyHeldForDecision, flushNow]);
+
+  // The queue, and the only thing that empties it. Held in a ref because it is an object with a
+  // life of its own rather than rendered state: React sees it through `changed`.
+  // Built once, on mount, and it outlives every render. It is not React state: it is a small
+  // machine with a queue in it, and rebuilding it when a callback identity changed would hand a
+  // message in flight to a second copy. Its two ports read through refs so the machine never has
+  // to be rebuilt to see a fresher closure.
+  const deliverRef = useRef(deliver);
+  useEffect(() => { deliverRef.current = deliver; }, [deliver]);
+  const parkedRef = useRef(hasPendingDecision);
+  useEffect(() => { parkedRef.current = hasPendingDecision; }, [hasPendingDecision]);
+  const outboxRef = useRef<Outbox | null>(null);
+  useEffect(() => {
+    if (outboxRef.current) return;
+    outboxRef.current = new Outbox({
+      deliver: (message) => deliverRef.current(message),
+      parked: () => parkedRef.current(),
+      changed: (state) => {
+        setQueuedMessages(state.messages);
+        setOutboxHold(state.hold);
+        setDeliveringMessage(state.delivering);
+      },
+    });
+  }, []);
+
+  // Which conversation the queue belongs to. Not a cleanup that fires on every id change — that
+  // is what deleted a second message the moment the first one created the session it was queued
+  // for. `retarget` knows the difference between an id becoming known and a person moving to
+  // another conversation, because only one of those is a reason to throw messages away.
+  useEffect(() => { outboxRef.current?.retarget(initialSessionId ?? ""); }, [initialSessionId]);
+
+  const send = useCallback((text: string, dataParts: Record<string, unknown>[] = []) => {
+    const trimmed = text.trim();
+    if (!trimmed) return Promise.resolve();
+    // Every message goes the same way in, whatever the session is doing. There is no branch here
+    // any more, and that is the point: the three states used to be decided at the keystroke, by
+    // a caller that could read them a commit late, and the one it got wrong was the one that
+    // mattered. Whether this can go now is the outbox's question, and it asks the session.
+    outboxRef.current?.add({ id: clientIdentifier(), text: trimmed, dataParts });
+    return Promise.resolve();
+  }, []);
+
+  // The decision that was holding the queue has been answered — by anyone, in any client. The
+  // only retry trigger there is, and deliberately one that a delivery cannot cause: sending a
+  // message can *open* a gate, and never closes one.
+  const decisionOpen = messages.some(
+    (message) => message.role === "tool_call" && message.meta?.status === "input_required"
   );
+  const decisionWasOpenRef = useRef(decisionOpen);
+  useEffect(() => {
+    const answered = decisionWasOpenRef.current && !decisionOpen;
+    decisionWasOpenRef.current = decisionOpen;
+    if (answered) outboxRef.current?.released();
+  }, [decisionOpen]);
 
   // Settle a stuck prompt card and tell the user when their decision/answer could
   // not be delivered — a dropped connection, or a request that already expired
@@ -1907,8 +1847,6 @@ export function useChat(
     // screen *twice*, once as a chip and once as itself, for as long as the teardown took, and
     // then one of them vanished with no explanation. Nothing more can be injected after a Stop,
     // which is precisely what makes the chip's claim false the instant it is pressed.
-    const notSteering = queuedMessagesRef.current.filter((message) => !message.steering);
-    if (notSteering.length !== queuedMessagesRef.current.length) setQueue(notSteering);
     if (!context) {
       // The session was never created (Stop landed while `create` was still in flight);
       // there is nothing to cancel, so just close whatever stream is open.
@@ -1956,7 +1894,7 @@ export function useChat(
         });
       }
     });
-  }, [flush, setQueue]);
+  }, [flush]);
 
   // Kick off a manual context compaction. The compacting indicator and separator
   // arrive over the stream (live for the driver, via the subscribe stream for a
@@ -1998,8 +1936,12 @@ export function useChat(
   }, [flush]);
 
   const dequeueMessage = useCallback((index: number) => {
-    setQueue(queuedMessagesRef.current.filter((_, messageIndex) => messageIndex !== index));
-  }, [setQueue]);
+    const target = queuedMessages[index];
+    if (target) outboxRef.current?.remove(target.id);
+  }, [queuedMessages]);
+
+  /** Ask again after a failure to reach the session. The person's own retry. */
+  const retryOutbox = useCallback(() => outboxRef.current?.retry(), []);
 
   const reset = useCallback(() => {
     abort();
@@ -2033,6 +1975,9 @@ export function useChat(
     compact,
     reset,
     dequeueMessage,
+    outboxHold,
+    deliveringMessage,
+    retryOutbox,
     handlePermission,
     handleQuestion,
     declineQuestion,

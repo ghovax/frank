@@ -182,7 +182,9 @@
     "reconnect": "再接続",
     "reasonReadsOutsideWorkspace": "このコマンドは作業ディレクトリの外にあるファイルを読み取ります。",
     "reasonAccessRequest": "この呼び出しは、セッションが触れられる範囲の外にあるパスへのアクセスを求めています。",
-    "delegatedWork": "他のセッションに任せた作業"
+    "delegatedWork": "他のセッションに任せた作業",
+    "queuedUnreachable": "セッションに接続できませんでした",
+    "queuedRetry": "再試行"
   },
   "Common": {
     "cancel": "キャンセル",

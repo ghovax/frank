@@ -281,7 +281,7 @@ export function ChatPanel({
   const tToolDisplay = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
   const format = useFormatter();
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(initialPermissionMode);
-  const { messages, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, abort, dequeueMessage, handlePermission, handleQuestion, declineQuestion, compact } =
+  const { messages, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, abort, dequeueMessage, outboxHold, deliveringMessage, retryOutbox, handlePermission, handleQuestion, declineQuestion, compact } =
     useChat(agent, initialSessionId, workingDirectory, worktreeStrategy, permissionMode, sessionRunning, workspaceId);
 
   // Single source of truth for the working directory's validity and Git status —
@@ -1108,22 +1108,35 @@ export function ChatPanel({
                           flex={1}
                           minW={0}
                         >
-                          {/* Only a queued message needs saying so — it is waiting, and the
-                              label is the reason it has not been answered. A steering message
-                              is one the user has just typed at a running turn, which they know,
-                              so naming it told them something they had done a second earlier.
-                              While a decision is open the label says which wait this is: not
-                              "behind the work" but "behind you", and answering the prompt above
-                              is what sends it. */}
-                          {message.steering ? null : (
-                            <Flex align="center" gap={1.5}>
-                              <Span display="inline-flex" alignItems="center">
-                                <LuClock size={11} />
-                              </Span>
-                              <Text textStyle="fieldLabel" color="fg.subtle">
-                                {translation(hasInputRequired ? "queuedForDecision" : "queued")}
-                              </Text>
-                            </Flex>
+                          {/* A message that is being handed over right now is not waiting for
+                              anything, so it is drawn plainly, with no label. Saying "Queued"
+                              about the ordinary case — type, send, gone in a few milliseconds —
+                              reported a wait that was not happening, and read as a fault every
+                              time a message went through normally.
+
+                              The rest do say which wait they are in. "Queued" is waiting behind
+                              the work. "Waiting for your decision" is waiting behind *you*, and
+                              answering the prompt above is what sends it. "Couldn't reach the
+                              session" is a fault, and it offers the retry rather than sitting
+                              there looking patient. */}
+                          {message.id !== deliveringMessage && (
+                          <Flex align="center" gap={1.5}>
+                            <Span display="inline-flex" alignItems="center" color={outboxHold === "unreachable" ? "red.fg" : undefined}>
+                              {outboxHold === "unreachable" ? <LuTriangleAlert size={11} /> : <LuClock size={11} />}
+                            </Span>
+                            <Text textStyle="fieldLabel" color={outboxHold === "unreachable" ? "red.fg" : "fg.subtle"}>
+                              {translation(
+                                outboxHold === "unreachable" ? "queuedUnreachable"
+                                  : outboxHold === "decision" ? "queuedForDecision"
+                                    : "queued"
+                              )}
+                            </Text>
+                            {outboxHold === "unreachable" && index === 0 && (
+                              <Button size="2xs" variant="outline" onClick={retryOutbox}>
+                                {translation("queuedRetry")}
+                              </Button>
+                            )}
+                          </Flex>
                           )}
                           <Text fontSize="sm" color="fg.muted">{message.text}</Text>
                         </Box>
