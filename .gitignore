@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[oc]
+*.egg-info
+build/
+dist/
+wheels/
+
+# Virtual environments
+.venv
+.env
+.direnv/
+
+# Editor
+.DS_Store
+*.pem
+*.swo
+*.swp
+
+# Node — the web/ app has its own tracked package.json/node_modules; these
+# root-anchored entries only catch Node debris if npm is ever run from the repo
+# root (which is a Python project). web/ uses its own .gitignore.
+/node_modules/
+/package.json
+/package-lock.json
+
+# Harness state lives in ~/.config/frank and is never tracked. The shippable default
+# configuration is the empty template at src/frank/base/configuration.yaml;
+# the runtime .frank/configuration.yaml holds real credentials, so it is ignored.
+/.frank/

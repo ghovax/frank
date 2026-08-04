@@ -1,0 +1,3 @@
+`{{ query }}` is asking again for something you have already searched for, and it came back with the same element. Saying it a third way will return the same thing a third time: the ranking is built from the words the *application* chose, so no wording of yours reaches an element whose label you have not guessed.
+
+Stop rewording and use what you already have. Every hit carries `role`, `parent` and `bounds` beside its text — read a dozen with `find_many` and pick in Python. If several read alike, name a unique neighbour with `near=`. If the element is genuinely not on this surface, say so and stop, rather than searching for it again.

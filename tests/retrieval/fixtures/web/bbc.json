@@ -1,0 +1,3547 @@
+{
+ "site_name": "bbc",
+ "surface_name": "web",
+ "page_url": "https://www.bbc.com/news",
+ "elements": [
+  {
+   "role": "link",
+   "name": "Skip to content",
+   "value": "",
+   "context": "",
+   "url": "#bbc-main",
+   "title": "",
+   "source": "<a href=\"#bbc-main\" aria-label=\"Skip to content\" role=\"link\" class=\"SkipLink-styles__SkipLinkAnchorStyled-sc-3b03ee65-1 leXfoz\">Skip to content</a>",
+   "path": "html > body > div > div > div > a"
+  },
+  {
+   "role": "button",
+   "name": "Open menu",
+   "value": "",
+   "context": "Skip to content",
+   "url": "",
+   "title": "",
+   "source": "<button role=\"button\" aria-expanded=\"false\" aria-label=\"Open menu\" class=\"Header-styles__HeaderMenuButtonStyled-sc-36071384-3 hUnMtK\"><svg width=\"50\" height=\"30\" viewBox=\"0 0 80 48\" fill=\"none\"><path fill-rule=\"evenodd\" clip-rule=\"evenodd\" d=\"M66.8517 32.0842C68.5359 29.8276 69.5329 27.0282 69.5329 23.996C69.5329 16.5202 63.4727 10.46 55.9969 10.46C48.5212 10.46 42.4609 16.5202 42.4609 23.996C42.4609 31.4717 48.5212 37.532 55.9969 37.532C58.9975 37.532 61.77 36.5557 64.0141 34.9034L69.0904 39.9796L71.9188 37.1512L66.8517 32.0842ZM63.1568 30.3569C64.6606 28.6654 65.5741 26.4374 65.5741 23.996C6",
+   "path": "div > div > header > div > div > button"
+  },
+  {
+   "role": "link",
+   "name": "British Broadcasting Corporation",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "British Broadcasting Corporation",
+   "value": "",
+   "context": "British Broadcasting Corporation",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Register",
+   "value": "",
+   "context": "British Broadcasting Corporation",
+   "url": "https://session.bbc.com/session?action=register&userOrigin=BBCS_BBC&ptrt=https%3A%2F%2Fwww.bbc.com%2Fnews",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "Register",
+   "value": "",
+   "context": "Register",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Register",
+   "context": "Register",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Sign In",
+   "value": "",
+   "context": "Register",
+   "url": "https://session.bbc.com/session?userOrigin=BBCS_BBC&ptrt=https%3A%2F%2Fwww.bbc.com%2Fnews",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "Sign In",
+   "value": "",
+   "context": "Sign In",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Sign In",
+   "context": "Sign In",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Home",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "News",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Sport",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/sport",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Business",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/business",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Technology",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/technology",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Health",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/health",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Culture",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/culture",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Arts",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/arts",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Travel",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/travel",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Earth",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/future-planet",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Audio",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/audio",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Video",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/video",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Live",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/live",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "US & Canada",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/us-canada",
+   "title": "",
+   "source": "<a href=\"/news/us-canada\" data-testid=\"subNavigationLink\" class=\"Navigation-styles__MainNavigationLink-sc-f1c1fa10-4 Navigation-styles__SubNavigationLink-sc-f1c1fa10-6 gkFqwf hqzioR\">US &amp; Canada</a>",
+   "path": "nav > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "UK",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/uk",
+   "title": "",
+   "source": "<a href=\"/news/uk\" data-testid=\"subNavigationLink\" class=\"Navigation-styles__MainNavigationLink-sc-f1c1fa10-4 Navigation-styles__SubNavigationLink-sc-f1c1fa10-6 gkFqwf hqzioR\">UK</a>",
+   "path": "nav > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "Africa",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/world/africa",
+   "title": "",
+   "source": "<a href=\"/news/world/africa\" data-testid=\"subNavigationLink\" class=\"Navigation-styles__MainNavigationLink-sc-f1c1fa10-4 Navigation-styles__SubNavigationLink-sc-f1c1fa10-6 gkFqwf hqzioR\">Africa</a>",
+   "path": "nav > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "Asia",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/world/asia",
+   "title": "",
+   "source": "<a href=\"/news/world/asia\" data-testid=\"subNavigationLink\" class=\"Navigation-styles__MainNavigationLink-sc-f1c1fa10-4 Navigation-styles__SubNavigationLink-sc-f1c1fa10-6 gkFqwf hqzioR\">Asia</a>",
+   "path": "nav > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "Australia",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/world/australia",
+   "title": "",
+   "source": "<a href=\"/news/world/australia\" data-testid=\"subNavigationLink\" class=\"Navigation-styles__MainNavigationLink-sc-f1c1fa10-4 Navigation-styles__SubNavigationLink-sc-f1c1fa10-6 gkFqwf hqzioR\">Australia</a>",
+   "path": "nav > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "Europe",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/world/europe",
+   "title": "",
+   "source": "<a href=\"/news/world/europe\" data-testid=\"subNavigationLink\" class=\"Navigation-styles__MainNavigationLink-sc-f1c1fa10-4 Navigation-styles__SubNavigationLink-sc-f1c1fa10-6 gkFqwf hqzioR\">Europe</a>",
+   "path": "nav > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "Latin America",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/world/latin_america",
+   "title": "",
+   "source": "<a href=\"/news/world/latin_america\" data-testid=\"subNavigationLink\" class=\"Navigation-styles__MainNavigationLink-sc-f1c1fa10-4 Navigation-styles__SubNavigationLink-sc-f1c1fa10-6 gkFqwf hqzioR\">Latin America</a>",
+   "path": "nav > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "Middle East",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/world/middle_east",
+   "title": "",
+   "source": "<a href=\"/news/world/middle_east\" data-testid=\"subNavigationLink\" class=\"Navigation-styles__MainNavigationLink-sc-f1c1fa10-4 Navigation-styles__SubNavigationLink-sc-f1c1fa10-6 gkFqwf hqzioR\">Middle East</a>",
+   "path": "nav > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "In Pictures",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/in_pictures",
+   "title": "",
+   "source": "<a href=\"/news/in_pictures\" data-testid=\"subNavigationLink\" class=\"Navigation-styles__MainNavigationLink-sc-f1c1fa10-4 Navigation-styles__SubNavigationLink-sc-f1c1fa10-6 gkFqwf hqzioR\">In Pictures</a>",
+   "path": "nav > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "BBC InDepth",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/bbcindepth",
+   "title": "",
+   "source": "<a href=\"/news/bbcindepth\" data-testid=\"subNavigationLink\" class=\"Navigation-styles__MainNavigationLink-sc-f1c1fa10-4 Navigation-styles__SubNavigationLink-sc-f1c1fa10-6 gkFqwf hqzioR\">BBC InDepth</a>",
+   "path": "nav > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "BBC Verify",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/news/bbcverify",
+   "title": "",
+   "source": "<a href=\"/news/bbcverify\" data-testid=\"subNavigationLink\" class=\"Navigation-styles__MainNavigationLink-sc-f1c1fa10-4 Navigation-styles__SubNavigationLink-sc-f1c1fa10-6 gkFqwf hqzioR\">BBC Verify</a>",
+   "path": "nav > nav > ul > li > div > a"
+  },
+  {
+   "role": "heading",
+   "name": "News",
+   "value": "",
+   "context": "Skip to content",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "News",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Destroyed front of Aeon Mall",
+   "value": "",
+   "context": "News",
+   "url": "https://www.bbc.com/news/live/c9q2481v855t",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "Destroyed front of Aeon Mall",
+   "value": "",
+   "context": "Destroyed front of Aeon Mall",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "LIVE Three mall workers dead after Japanese earthquake, with at least 13 killed across country Aeon Mall's president tells a news conference a further three people are missing at the site while rescue workers sift through the rubble.",
+   "value": "",
+   "context": "Destroyed front of Aeon Mall",
+   "url": "https://www.bbc.com/news/live/c9q2481v855t",
+   "title": "",
+   "source": "<a href=\"https://www.bbc.com/news/live/c9q2481v855t\" data-testid=\"external-anchor\" target=\"_self\" class=\"London-styles__LondonTextAreaAnchorStyled-sc-269f9f6d-2 qdrfG\"><div class=\"London-styles__LondonTextAreaStyled-sc-269f9f6d-1 jhVwJw\"><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 dWFLGi\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><div class=\"IndexCardContentTypeLabel-styles__IconWrapper-sc-a498a926-1 IndexCardHeading-styles__InlineIconWrapper-sc-c7d910a6-2 exlEHU dylRna\"><svg width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" xmlns=\"http:/",
+   "path": "div > div > div > div > div > a"
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "LIVE",
+   "context": "LIVE Three mall workers dead after Japanese earthquake, with at least 13 killed across country Aeon Mall's president tells a news conference a further three people are missing at the site while rescue workers sift through the rubble.",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Three mall workers dead after Japanese earthquake, with at least 13 killed across country",
+   "value": "",
+   "context": "LIVE Three mall workers dead after Japanese earthquake, with at least 13 killed across country Aeon Mall's president tells a news conference a further three people are missing at the site while rescue workers sift through the rubble.",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Aeon Mall's president tells a news conference a further three people are missing at the site while rescue workers sift through the rubble.",
+   "context": "LIVE Three mall workers dead after Japanese earthquake, with at least 13 killed across country Aeon Mall's president tells a news conference a further three people are missing at the site while rescue workers sift through the rubble.",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "'link",
+   "name": "A woman with an umbrella squats in front of a collapsed shrine on Wednesday in Yatsushiro ''I thought I would die'': Survivors describe the shock and horror of powerful quake Rescue operations are ongoing following the 6.8-magnitude quake, as survivors wrestle with the shock. Just now Asia",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/cvgw52l5kyyo",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "A woman with an umbrella squats in front of a collapsed shrine on Wednesday in Yatsushiro",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "'heading",
+   "name": "''I thought I would die'': Survivors describe the shock and horror of powerful quake",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Rescue operations are ongoing following the 6.8-magnitude quake, as survivors wrestle with the shock.",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Just now",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Asia",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "BTS withdraw from Grammys, a month after Asian pop prize introduced All seven members of the band post a statement online, saying they will boycott the 2027 ceremony. 3 hrs ago Culture",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/clyjgyd0225o",
+   "title": "",
+   "source": "<a href=\"/news/articles/clyjgyd0225o\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"manchester-article\" class=\"Manchester-styles__CardStyled-sc-5c1d085b-1 cGPaOi\"><div data-testid=\"card-text-wrapper\" class=\"Manchester-styles__TextWrapperStyled-sc-5c1d085b-2 eshOej\"><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 dWFLGi\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 dyeGOh\">BTS withdraw fr",
+   "path": "div > div > div > div > div > a"
+  },
+  {
+   "role": "heading",
+   "name": "BTS withdraw from Grammys, a month after Asian pop prize introduced",
+   "value": "",
+   "context": "BTS withdraw from Grammys, a month after Asian pop prize introduced All seven members of the band post a statement online, saying they will boycott the 2027 ceremony. 3 hrs ago Culture",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "All seven members of the band post a statement online, saying they will boycott the 2027 ceremony.",
+   "context": "BTS withdraw from Grammys, a month after Asian pop prize introduced",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "3 hrs ago",
+   "context": "BTS withdraw from Grammys, a month after Asian pop prize introduced",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Culture",
+   "context": "BTS withdraw from Grammys, a month after Asian pop prize introduced",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Russia charges Telegram founder Durov with facilitating terrorism The FSB claims the messenger app, created by Pavel Durov, has failed to remove accounts and channels used for recruitment by Ukraine's secret service. 42 mins ago Europe",
+   "value": "",
+   "context": "BTS withdraw from Grammys, a month after Asian pop prize introduced All seven members of the band post a statement online, saying they will boycott the 2027 ceremony. 3 hrs ago Culture",
+   "url": "/news/articles/cj4kexqkpzno",
+   "title": "",
+   "source": "<a href=\"/news/articles/cj4kexqkpzno\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"manchester-article\" class=\"Manchester-styles__CardStyled-sc-5c1d085b-1 cGPaOi\"><div data-testid=\"card-text-wrapper\" class=\"Manchester-styles__TextWrapperStyled-sc-5c1d085b-2 eshOej\"><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 dWFLGi\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 dyeGOh\">Russia charges ",
+   "path": "div > div > div > div > div > a"
+  },
+  {
+   "role": "heading",
+   "name": "Russia charges Telegram founder Durov with facilitating terrorism",
+   "value": "",
+   "context": "Russia charges Telegram founder Durov with facilitating terrorism The FSB claims the messenger app, created by Pavel Durov, has failed to remove accounts and channels used for recruitment by Ukraine's secret service. 42 mins ago Europe",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The FSB claims the messenger app, created by Pavel Durov, has failed to remove accounts and channels used for recruitment by Ukraine's secret service.",
+   "context": "Russia charges Telegram founder Durov with facilitating terrorism",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "42 mins ago",
+   "context": "Russia charges Telegram founder Durov with facilitating terrorism",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Europe",
+   "context": "Russia charges Telegram founder Durov with facilitating terrorism",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "'link",
+   "name": "Jared Leto looks toward camera while standing against a dark background at the premiere of Tron: Ares in 2025. Four women accuse Jared Leto of criminal sexual conduct when they were teenagers The actor and musician faces allegations from 10 women in total who say he mistreated them as teenagers. 6 hrs ago US & Canada",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/cd7lg2nz2x2o",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "'img",
+   "name": "Jared Leto looks toward camera while standing against a dark background at the premiere of Tron: Ares in 2025.",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Four women accuse Jared Leto of criminal sexual conduct when they were teenagers",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The actor and musician faces allegations from 10 women in total who say he mistreated them as teenagers.",
+   "context": "Four women accuse Jared Leto of criminal sexual conduct when they were teenagers",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "6 hrs ago",
+   "context": "Four women accuse Jared Leto of criminal sexual conduct when they were teenagers",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "US & Canada",
+   "context": "Four women accuse Jared Leto of criminal sexual conduct when they were teenagers",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Iraqi security forces and emergency personnel work at the site of a US-Saudi air strike north of Muqdadiyah district, in Iraq's Dayala province (29 July 2026) Saudi Arabia joins US in strikes on Iran-backed militias in Iraq US Central Command says proxy groups launched attacks against US bases and Saudi energy infrastructure. 1 hr ago World",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/c70g6y24d76o",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "Iraqi security forces and emergency personnel work at the site of a US-Saudi air strike north of Muqdadiyah district, in Iraq's Dayala province (29 July 2026)",
+   "value": "",
+   "context": "Iraqi security forces and emergency personnel work at the site of a US-Saudi air strike north of Muqdadiyah district, in Iraq's Dayala province (29 July 2026) Saudi Arabia joins US in strikes on Iran-backed militias in Iraq US Central Command says proxy groups launched attacks against US bases and Saudi energy infrastructure. 1 hr ago World",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Saudi Arabia joins US in strikes on Iran-backed militias in Iraq",
+   "value": "",
+   "context": "Iraqi security forces and emergency personnel work at the site of a US-Saudi air strike north of Muqdadiyah district, in Iraq's Dayala province (29 July 2026) Saudi Arabia joins US in strikes on Iran-backed militias in Iraq US Central Command says proxy groups launched attacks against US bases and Saudi energy infrastructure. 1 hr ago World",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "US Central Command says proxy groups launched attacks against US bases and Saudi energy infrastructure.",
+   "context": "Saudi Arabia joins US in strikes on Iran-backed militias in Iraq",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "1 hr ago",
+   "context": "Saudi Arabia joins US in strikes on Iran-backed militias in Iraq",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "World",
+   "context": "Saudi Arabia joins US in strikes on Iran-backed militias in Iraq",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "The black and white ChatGPT logo on a phone screen OpenAI says its rogue AI tried to hack other companies The out-of-control AI found four logins which allowed it to access multiple unnamed online services. 2 hrs ago",
+   "value": "",
+   "context": "Iraqi security forces and emergency personnel work at the site of a US-Saudi air strike north of Muqdadiyah district, in Iraq's Dayala province (29 July 2026) Saudi Arabia joins US in strikes on Iran-backed militias in Iraq US Central Command says proxy groups launched attacks against US bases and Saudi energy infrastructure. 1 hr ago World",
+   "url": "/news/articles/c2el319vzr3o",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "The black and white ChatGPT logo on a phone screen",
+   "value": "",
+   "context": "The black and white ChatGPT logo on a phone screen OpenAI says its rogue AI tried to hack other companies The out-of-control AI found four logins which allowed it to access multiple unnamed online services. 2 hrs ago",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "OpenAI says its rogue AI tried to hack other companies",
+   "value": "",
+   "context": "The black and white ChatGPT logo on a phone screen OpenAI says its rogue AI tried to hack other companies The out-of-control AI found four logins which allowed it to access multiple unnamed online services. 2 hrs ago",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The out-of-control AI found four logins which allowed it to access multiple unnamed online services.",
+   "context": "OpenAI says its rogue AI tried to hack other companies",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "2 hrs ago",
+   "context": "OpenAI says its rogue AI tried to hack other companies",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Vincent Belorgey seen performing as his red-eyed zombie DJ alter-ego, Kavinsky, during the closing ceremony of the Paris 2024 Olympics French DJ and electropop ‌musician Kavinsky dies aged 50 He had a hit with Nightfall, which featured on the Drive soundtrack and at the Paris 2024 Olympics. 30 mins ago Culture",
+   "value": "",
+   "context": "The black and white ChatGPT logo on a phone screen OpenAI says its rogue AI tried to hack other companies The out-of-control AI found four logins which allowed it to access multiple unnamed online services. 2 hrs ago",
+   "url": "/news/articles/c204n74xyv3o",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "Vincent Belorgey seen performing as his red-eyed zombie DJ alter-ego, Kavinsky, during the closing ceremony of the Paris 2024 Olympics",
+   "value": "",
+   "context": "Vincent Belorgey seen performing as his red-eyed zombie DJ alter-ego, Kavinsky, during the closing ceremony of the Paris 2024 Olympics French DJ and electropop ‌musician Kavinsky dies aged 50 He had a hit with Nightfall, which featured on the Drive soundtrack and at the Paris 2024 Olympics. 30 mins ago Culture",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "French DJ and electropop ‌musician Kavinsky dies aged 50",
+   "value": "",
+   "context": "Vincent Belorgey seen performing as his red-eyed zombie DJ alter-ego, Kavinsky, during the closing ceremony of the Paris 2024 Olympics French DJ and electropop ‌musician Kavinsky dies aged 50 He had a hit with Nightfall, which featured on the Drive soundtrack and at the Paris 2024 Olympics. 30 mins ago Culture",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "He had a hit with Nightfall, which featured on the Drive soundtrack and at the Paris 2024 Olympics.",
+   "context": "French DJ and electropop ‌musician Kavinsky dies aged 50",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "30 mins ago",
+   "context": "French DJ and electropop ‌musician Kavinsky dies aged 50",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Culture",
+   "context": "French DJ and electropop ‌musician Kavinsky dies aged 50",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "'link",
+   "name": "''Delulu'', ''Clock it'': ''Cockroach'' protest brings Gen Z slang to India''s parliament",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/c9q90qvwe14o",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "'heading",
+   "name": "''Delulu'', ''Clock it'': ''Cockroach'' protest brings Gen Z slang to India''s parliament",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Wildfires in south-west France flare up as region braces for new 40C heatwave",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/c5yd8gly1ydo",
+   "title": "",
+   "source": "<a href=\"/news/articles/c5yd8gly1ydo\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"chester-article\" class=\"Chester-styles__CardStyled-sc-340eb5f4-0 gdjbPO\"><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 dWFLGi\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 dyeGOh\">Wildfires in south-west France flare up as region braces for new 40C heatwave</h2></div></div></div></a>",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "heading",
+   "name": "Wildfires in south-west France flare up as region braces for new 40C heatwave",
+   "value": "",
+   "context": "Wildfires in south-west France flare up as region braces for new 40C heatwave",
+   "url": "",
+   "title": "",
+   "source": "<a href=\"/news/articles/c5yd8gly1ydo\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"chester-article\" class=\"Chester-styles__CardStyled-sc-340eb5f4-0 gdjbPO\"><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 dWFLGi\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 dyeGOh\">Wildfires in south-west France flare up as region braces for new 40C heatwave</h2></div></div></div></a>",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "link",
+   "name": "Trump administration bans new Chinese humanoid robots",
+   "value": "",
+   "context": "Wildfires in south-west France flare up as region braces for new 40C heatwave",
+   "url": "/news/articles/cp9e2ex3ekyo",
+   "title": "",
+   "source": "<a href=\"/news/articles/cp9e2ex3ekyo\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"chester-article\" class=\"Chester-styles__CardStyled-sc-340eb5f4-0 gdjbPO\"><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 dWFLGi\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 dyeGOh\">Trump administration bans new Chinese humanoid robots</h2></div></div></div></a>",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "heading",
+   "name": "Trump administration bans new Chinese humanoid robots",
+   "value": "",
+   "context": "Trump administration bans new Chinese humanoid robots",
+   "url": "",
+   "title": "",
+   "source": "<a href=\"/news/articles/cp9e2ex3ekyo\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"chester-article\" class=\"Chester-styles__CardStyled-sc-340eb5f4-0 gdjbPO\"><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 dWFLGi\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 dyeGOh\">Trump administration bans new Chinese humanoid robots</h2></div></div></div></a>",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "link",
+   "name": "Ghana mourns its tallest man - a 'generous and popular giant'",
+   "value": "",
+   "context": "Trump administration bans new Chinese humanoid robots",
+   "url": "/news/articles/crk52jk0131o",
+   "title": "",
+   "source": "<a href=\"/news/articles/crk52jk0131o\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"chester-article\" class=\"Chester-styles__CardStyled-sc-340eb5f4-0 gdjbPO\"><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 dWFLGi\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 dyeGOh\">Ghana mourns its tallest man - a 'generous and popular giant'</h2></div></div></div></a>",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "heading",
+   "name": "Ghana mourns its tallest man - a 'generous and popular giant'",
+   "value": "",
+   "context": "Ghana mourns its tallest man - a 'generous and popular giant'",
+   "url": "",
+   "title": "",
+   "source": "<a href=\"/news/articles/crk52jk0131o\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"chester-article\" class=\"Chester-styles__CardStyled-sc-340eb5f4-0 gdjbPO\"><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 dWFLGi\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 dyeGOh\">Ghana mourns its tallest man - a 'generous and popular giant'</h2></div></div></div></a>",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "link",
+   "name": "Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "value": "",
+   "context": "Ghana mourns its tallest man - a 'generous and popular giant'",
+   "url": "/news/videos/c4g3600xw5ko",
+   "title": "",
+   "source": "<a href=\"/news/videos/c4g3600xw5ko\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"chester-video\" class=\"Chester-styles__CardStyled-sc-340eb5f4-0 gdjbPO\"><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 dWFLGi\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><div class=\"IndexCardContentTypeLabel-styles__IconWrapper-sc-a498a926-1 IndexCardHeading-styles__InlineIconWrapper-sc-c7d910a6-2 dnSnSp NFUEj\"><svg viewBox=\"0 0 32 32\" width=\"3em\" height=\"3em\" category=\"playback-avkx\" icon=\"play\" dat",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "heading",
+   "name": "Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "value": "",
+   "context": "Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "url": "",
+   "title": "",
+   "source": "<a href=\"/news/videos/c4g3600xw5ko\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"chester-video\" class=\"Chester-styles__CardStyled-sc-340eb5f4-0 gdjbPO\"><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 dWFLGi\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><div class=\"IndexCardContentTypeLabel-styles__IconWrapper-sc-a498a926-1 IndexCardHeading-styles__InlineIconWrapper-sc-c7d910a6-2 dnSnSp NFUEj\"><svg viewBox=\"0 0 32 32\" width=\"3em\" height=\"3em\" category=\"playback-avkx\" icon=\"play\" dat",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "heading",
+   "name": "Japan earthquake",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "'link",
+   "name": "An aerial view shows a residential building on fire after an earthquake with a preliminary magnitude of 7.1 struck Japan''s southern Kumamoto prefecture, in Yatsushiro, Kumamoto prefecture, Japan, July 28, 2026 In pictures: Buildings damaged in south-west Japan A popular shopping mall in Kashima has partly collapsed, while businesses and homes across Kumamoto prefecture are damaged.",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/clyer9mdjz7o",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "An aerial view shows a residential building on fire after an earthquake with a preliminary magnitude of 7.1 struck Japan's southern Kumamoto prefecture, in Yatsushiro, Kumamoto prefecture, Japan, July 28, 2026",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "'heading",
+   "name": "In pictures: Buildings damaged in south-west Japan",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "A popular shopping mall in Kashima has partly collapsed, while businesses and homes across Kumamoto prefecture are damaged.",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "A man in a blue shirt is seen on the left. On the right, workers in hard hats dig through rubble. Many missing inside shopping centre and thousands still in shelters after quake The quake was so powerful, it was felt even in South Korea.",
+   "value": "",
+   "context": "News",
+   "url": "/news/videos/c3r0pg0dgrgo",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "A man in a blue shirt is seen on the left. On the right, workers in hard hats dig through rubble.",
+   "value": "",
+   "context": "A man in a blue shirt is seen on the left. On the right, workers in hard hats dig through rubble. Many missing inside shopping centre and thousands still in shelters after quake The quake was so powerful, it was felt even in South Korea.",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Many missing inside shopping centre and thousands still in shelters after quake",
+   "value": "",
+   "context": "A man in a blue shirt is seen on the left. On the right, workers in hard hats dig through rubble. Many missing inside shopping centre and thousands still in shelters after quake The quake was so powerful, it was felt even in South Korea.",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The quake was so powerful, it was felt even in South Korea.",
+   "context": "Many missing inside shopping centre and thousands still in shelters after quake",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "A house is seen collapsed onto a car in Yatsushiro, Kumamoto prefecture on July 29, 2026 What we know so far Japan is reeling from a major earthquake that hit Kyushu island. Here is what we know so far.",
+   "value": "",
+   "context": "A man in a blue shirt is seen on the left. On the right, workers in hard hats dig through rubble. Many missing inside shopping centre and thousands still in shelters after quake The quake was so powerful, it was felt even in South Korea.",
+   "url": "/news/articles/cgewgxlpj3po",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "A house is seen collapsed onto a car in Yatsushiro, Kumamoto prefecture on July 29, 2026",
+   "value": "",
+   "context": "A house is seen collapsed onto a car in Yatsushiro, Kumamoto prefecture on July 29, 2026 What we know so far Japan is reeling from a major earthquake that hit Kyushu island. Here is what we know so far.",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "What we know so far",
+   "value": "",
+   "context": "A house is seen collapsed onto a car in Yatsushiro, Kumamoto prefecture on July 29, 2026 What we know so far Japan is reeling from a major earthquake that hit Kyushu island. Here is what we know so far.",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Japan is reeling from a major earthquake that hit Kyushu island. Here is what we know so far.",
+   "context": "What we know so far",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "More to explore",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Anti drug officers inspect a site allegedly used as a clandestine methamphetamine laboratory - Ogun state, Nigeria - 22 July 2026.",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/crmrnxp4nllo",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "Anti drug officers inspect a site allegedly used as a clandestine methamphetamine laboratory - Ogun state, Nigeria - 22 July 2026.",
+   "value": "",
+   "context": "Anti drug officers inspect a site allegedly used as a clandestine methamphetamine laboratory - Ogun state, Nigeria - 22 July 2026.",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "How Mexican drug cartels have outsourced meth labs to Nigeria West Africa is becoming increasingly attractive to those who want to make and export illicit drugs. 12 hrs ago World",
+   "value": "",
+   "context": "Anti drug officers inspect a site allegedly used as a clandestine methamphetamine laboratory - Ogun state, Nigeria - 22 July 2026.",
+   "url": "/news/articles/crmrnxp4nllo",
+   "title": "",
+   "source": "<a href=\"/news/articles/crmrnxp4nllo\" data-testid=\"internal-link\" class=\"London-styles__LondonTextAreaAnchorStyled-sc-269f9f6d-2 qdrfG\"><div class=\"London-styles__LondonTextAreaStyled-sc-269f9f6d-1 jhVwJw\"><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 dWFLGi\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 GrFgy\">How Mexican drug cartels have outsourced meth labs to Nigeria</h2></div></div><p class=\"London-styles__LondonDescriptionStyled-sc-269",
+   "path": "div > div > div > div > div > a"
+  },
+  {
+   "role": "heading",
+   "name": "How Mexican drug cartels have outsourced meth labs to Nigeria",
+   "value": "",
+   "context": "How Mexican drug cartels have outsourced meth labs to Nigeria West Africa is becoming increasingly attractive to those who want to make and export illicit drugs. 12 hrs ago World",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "West Africa is becoming increasingly attractive to those who want to make and export illicit drugs.",
+   "context": "How Mexican drug cartels have outsourced meth labs to Nigeria",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "12 hrs ago",
+   "context": "How Mexican drug cartels have outsourced meth labs to Nigeria",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "World",
+   "context": "How Mexican drug cartels have outsourced meth labs to Nigeria",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "A young couple outdoors wearing wedding clothes. They are looking into eachothers' eyes and smiling. The bride is wearing a veil and holding a paper cone of flowers. 'Don't wait until you want revenge' - why prenups are on the rise More young couples are now signing prenups to set out who gets what in the event of divorce. 12 hrs ago",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/cgmkgvy3lv4o",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "A young couple outdoors wearing wedding clothes. They are looking into eachothers' eyes and smiling. The bride is wearing a veil and holding a paper cone of flowers.",
+   "value": "",
+   "context": "A young couple outdoors wearing wedding clothes. They are looking into eachothers' eyes and smiling. The bride is wearing a veil and holding a paper cone of flowers. 'Don't wait until you want revenge' - why prenups are on the rise More young couples are now signing prenups to set out who gets what in the event of divorce. 12 hrs ago",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "'Don't wait until you want revenge' - why prenups are on the rise",
+   "value": "",
+   "context": "A young couple outdoors wearing wedding clothes. They are looking into eachothers' eyes and smiling. The bride is wearing a veil and holding a paper cone of flowers. 'Don't wait until you want revenge' - why prenups are on the rise More young couples are now signing prenups to set out who gets what in the event of divorce. 12 hrs ago",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "More young couples are now signing prenups to set out who gets what in the event of divorce.",
+   "context": "'Don't wait until you want revenge' - why prenups are on the rise",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "12 hrs ago",
+   "context": "'Don't wait until you want revenge' - why prenups are on the rise",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Mysterious deaths of elephants in Kenya prompts urgent inquiry It is the highest number of elephant deaths to be recorded in this area of southern Kenya in decades. 2 hrs ago Africa",
+   "value": "",
+   "context": "A young couple outdoors wearing wedding clothes. They are looking into eachothers' eyes and smiling. The bride is wearing a veil and holding a paper cone of flowers. 'Don't wait until you want revenge' - why prenups are on the rise More young couples are now signing prenups to set out who gets what in the event of divorce. 12 hrs ago",
+   "url": "/news/articles/c3w0d7yeqlxo",
+   "title": "",
+   "source": "<a href=\"/news/articles/c3w0d7yeqlxo\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"manchester-article\" class=\"Manchester-styles__CardStyled-sc-5c1d085b-1 cGPaOi\"><div data-testid=\"card-text-wrapper\" class=\"Manchester-styles__TextWrapperStyled-sc-5c1d085b-2 eshOej\"><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 dWFLGi\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 dyeGOh\">Mysterious deat",
+   "path": "div > div > div > div > div > a"
+  },
+  {
+   "role": "heading",
+   "name": "Mysterious deaths of elephants in Kenya prompts urgent inquiry",
+   "value": "",
+   "context": "Mysterious deaths of elephants in Kenya prompts urgent inquiry It is the highest number of elephant deaths to be recorded in this area of southern Kenya in decades. 2 hrs ago Africa",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "It is the highest number of elephant deaths to be recorded in this area of southern Kenya in decades.",
+   "context": "Mysterious deaths of elephants in Kenya prompts urgent inquiry",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "2 hrs ago",
+   "context": "Mysterious deaths of elephants in Kenya prompts urgent inquiry",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Africa",
+   "context": "Mysterious deaths of elephants in Kenya prompts urgent inquiry",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Brits urged to avoid dangerous plug adaptors this summer - what to watch out for Campaign group Electrical Safety First has urged those \"heading abroad this summer to think before they buy\". 12 hrs ago Technology",
+   "value": "",
+   "context": "Mysterious deaths of elephants in Kenya prompts urgent inquiry It is the highest number of elephant deaths to be recorded in this area of southern Kenya in decades. 2 hrs ago Africa",
+   "url": "/news/articles/c5yeg1wegpno",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Brits urged to avoid dangerous plug adaptors this summer - what to watch out for",
+   "value": "",
+   "context": "Brits urged to avoid dangerous plug adaptors this summer - what to watch out for Campaign group Electrical Safety First has urged those \"heading abroad this summer to think before they buy\". 12 hrs ago Technology",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "heading abroad this summer to think before they buy",
+   "value": "",
+   "context": "Brits urged to avoid dangerous plug adaptors this summer - what to watch out for",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "12 hrs ago",
+   "context": "Brits urged to avoid dangerous plug adaptors this summer - what to watch out for",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Technology",
+   "context": "Brits urged to avoid dangerous plug adaptors this summer - what to watch out for",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "'link",
+   "name": "Screengrabs from a video showing a teenage Israeli settler using a stick to hit a metal gate and fence during an attack on a Palestinian home in the village of al-Mughayyir, near Ramallah, in the Israeli-occupied West Bank (11 July 2026) ''Israeli settlers laid siege to our home'': Inside a Palestinian village under weekly attack A home on the edge of al-Mughayyir has become a weekly frontline in the battle for the occupied West Bank. 6 hrs ago Middle East",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/clyxgn37lg5o",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "Screengrabs from a video showing a teenage Israeli settler using a stick to hit a metal gate and fence during an attack on a Palestinian home in the village of al-Mughayyir, near Ramallah, in the Israeli-occupied West Bank (11 July 2026)",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "'heading",
+   "name": "''Israeli settlers laid siege to our home'': Inside a Palestinian village under weekly attack",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "A home on the edge of al-Mughayyir has become a weekly frontline in the battle for the occupied West Bank.",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "6 hrs ago",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Middle East",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "The swimmer Katie Shanahan holding her silver Commonwealth Games medal in front of the pool. She has blond hair, is grinning with delight and is wearing a white and blue athletic/tracksuit top. I turned down Love Island and won silver at the Commonwealth Games Katie Shanahan was offered the chance to appear on the dating show last year - but decided she wanted to inspire a new generation of young swimmers. 13 hrs ago Glasgow & West Scotland",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/cg4dve90w90o",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "The swimmer Katie Shanahan holding her silver Commonwealth Games medal in front of the pool. She has blond hair, is grinning with delight and is wearing a white and blue athletic/tracksuit top.",
+   "value": "",
+   "context": "The swimmer Katie Shanahan holding her silver Commonwealth Games medal in front of the pool. She has blond hair, is grinning with delight and is wearing a white and blue athletic/tracksuit top. I turned down Love Island and won silver at the Commonwealth Games Katie Shanahan was offered the chance to appear on the dating show last year - but decided she wanted to inspire a new generation of young swimmers. 13 hrs ago Glasgow & West Scotland",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "I turned down Love Island and won silver at the Commonwealth Games",
+   "value": "",
+   "context": "The swimmer Katie Shanahan holding her silver Commonwealth Games medal in front of the pool. She has blond hair, is grinning with delight and is wearing a white and blue athletic/tracksuit top. I turned down Love Island and won silver at the Commonwealth Games Katie Shanahan was offered the chance to appear on the dating show last year - but decided she wanted to inspire a new generation of young swimmers. 13 hrs ago Glasgow & West Scotland",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Katie Shanahan was offered the chance to appear on the dating show last year - but decided she wanted to inspire a new generation of young swimmers.",
+   "context": "I turned down Love Island and won silver at the Commonwealth Games",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "13 hrs ago",
+   "context": "I turned down Love Island and won silver at the Commonwealth Games",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Glasgow & West Scotland",
+   "context": "I turned down Love Island and won silver at the Commonwealth Games",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "RSF fighters ride on an armoured truck in the city of Nyala. One of the fighters is carrying an assault rifle. All are dressed in military fatigues. Thousands sheltering in key Sudan city under threat again as fighting escalates International leaders have issued warnings the RSF may be preparing to attack the city, raising fears of further atrocities being committed. 6 hrs ago Africa",
+   "value": "",
+   "context": "The swimmer Katie Shanahan holding her silver Commonwealth Games medal in front of the pool. She has blond hair, is grinning with delight and is wearing a white and blue athletic/tracksuit top. I turned down Love Island and won silver at the Commonwealth Games Katie Shanahan was offered the chance to appear on the dating show last year - but decided she wanted to inspire a new generation of young swimmers. 13 hrs ago Glasgow & West Scotland",
+   "url": "/news/articles/c4gx399l0wyo",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "RSF fighters ride on an armoured truck in the city of Nyala. One of the fighters is carrying an assault rifle. All are dressed in military fatigues.",
+   "value": "",
+   "context": "RSF fighters ride on an armoured truck in the city of Nyala. One of the fighters is carrying an assault rifle. All are dressed in military fatigues. Thousands sheltering in key Sudan city under threat again as fighting escalates International leaders have issued warnings the RSF may be preparing to attack the city, raising fears of further atrocities being committed. 6 hrs ago Africa",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Thousands sheltering in key Sudan city under threat again as fighting escalates",
+   "value": "",
+   "context": "RSF fighters ride on an armoured truck in the city of Nyala. One of the fighters is carrying an assault rifle. All are dressed in military fatigues. Thousands sheltering in key Sudan city under threat again as fighting escalates International leaders have issued warnings the RSF may be preparing to attack the city, raising fears of further atrocities being committed. 6 hrs ago Africa",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "International leaders have issued warnings the RSF may be preparing to attack the city, raising fears of further atrocities being committed.",
+   "context": "Thousands sheltering in key Sudan city under threat again as fighting escalates",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "6 hrs ago",
+   "context": "Thousands sheltering in key Sudan city under threat again as fighting escalates",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Africa",
+   "context": "Thousands sheltering in key Sudan city under threat again as fighting escalates",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Also in news",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Jay Clayton sitting at a bench inside the Dirksen Senate Office Building in Washington, leaning into a microphone and stretching his arm out",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/c0rd1kl1825o",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "Jay Clayton sitting at a bench inside the Dirksen Senate Office Building in Washington, leaning into a microphone and stretching his arm out",
+   "value": "",
+   "context": "Jay Clayton sitting at a bench inside the Dirksen Senate Office Building in Washington, leaning into a microphone and stretching his arm out",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Trump's new spy chief Jay Clayton confirmed by US Senate Jay Clayton's confirmation comes after the US president's original choice was rejected by lawmakers due to lack of relevant experience 2 hrs ago US & Canada",
+   "value": "",
+   "context": "Jay Clayton sitting at a bench inside the Dirksen Senate Office Building in Washington, leaning into a microphone and stretching his arm out",
+   "url": "/news/articles/c0rd1kl1825o",
+   "title": "",
+   "source": "<a href=\"/news/articles/c0rd1kl1825o\" data-testid=\"internal-link\" class=\"London-styles__LondonTextAreaAnchorStyled-sc-269f9f6d-2 qdrfG\"><div class=\"London-styles__LondonTextAreaStyled-sc-269f9f6d-1 jhVwJw\"><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 dWFLGi\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 GrFgy\">Trump's new spy chief Jay Clayton confirmed by US Senate</h2></div></div><p class=\"London-styles__LondonDescriptionStyled-sc-269f9f6d",
+   "path": "div > div > div > div > div > a"
+  },
+  {
+   "role": "heading",
+   "name": "Trump's new spy chief Jay Clayton confirmed by US Senate",
+   "value": "",
+   "context": "Trump's new spy chief Jay Clayton confirmed by US Senate Jay Clayton's confirmation comes after the US president's original choice was rejected by lawmakers due to lack of relevant experience 2 hrs ago US & Canada",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Jay Clayton's confirmation comes after the US president's original choice was rejected by lawmakers due to lack of relevant experience",
+   "context": "Trump's new spy chief Jay Clayton confirmed by US Senate",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "2 hrs ago",
+   "context": "Trump's new spy chief Jay Clayton confirmed by US Senate",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "US & Canada",
+   "context": "Trump's new spy chief Jay Clayton confirmed by US Senate",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Zelensky and Trump in the Oval Office Zelensky and Netanyahu meet Trump as wars in Ukraine and Iran drag on The two leaders sound encouraged after holding back-to-back bilaterals at the White House. 9 hrs ago World",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/cj4k2z8z45ro",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "Zelensky and Trump in the Oval Office",
+   "value": "",
+   "context": "Zelensky and Trump in the Oval Office Zelensky and Netanyahu meet Trump as wars in Ukraine and Iran drag on The two leaders sound encouraged after holding back-to-back bilaterals at the White House. 9 hrs ago World",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Zelensky and Netanyahu meet Trump as wars in Ukraine and Iran drag on",
+   "value": "",
+   "context": "Zelensky and Trump in the Oval Office Zelensky and Netanyahu meet Trump as wars in Ukraine and Iran drag on The two leaders sound encouraged after holding back-to-back bilaterals at the White House. 9 hrs ago World",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The two leaders sound encouraged after holding back-to-back bilaterals at the White House.",
+   "context": "Zelensky and Netanyahu meet Trump as wars in Ukraine and Iran drag on",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "9 hrs ago",
+   "context": "Zelensky and Netanyahu meet Trump as wars in Ukraine and Iran drag on",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "World",
+   "context": "Zelensky and Netanyahu meet Trump as wars in Ukraine and Iran drag on",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Lindsey Graham remembered by Trump as 'giant of the US Senate' at funeral The US president was among several dignitaries who attended the service for the late lawmaker, who died earlier this month. 13 hrs ago US & Canada",
+   "value": "",
+   "context": "Zelensky and Trump in the Oval Office Zelensky and Netanyahu meet Trump as wars in Ukraine and Iran drag on The two leaders sound encouraged after holding back-to-back bilaterals at the White House. 9 hrs ago World",
+   "url": "/news/articles/cwyj6xqn40lo",
+   "title": "",
+   "source": "<a href=\"/news/articles/cwyj6xqn40lo\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"manchester-article\" class=\"Manchester-styles__CardStyled-sc-5c1d085b-1 cGPaOi\"><div data-testid=\"card-text-wrapper\" class=\"Manchester-styles__TextWrapperStyled-sc-5c1d085b-2 eshOej\"><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 dWFLGi\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 dyeGOh\">Lindsey Graham ",
+   "path": "div > div > div > div > div > a"
+  },
+  {
+   "role": "heading",
+   "name": "Lindsey Graham remembered by Trump as 'giant of the US Senate' at funeral",
+   "value": "",
+   "context": "Lindsey Graham remembered by Trump as 'giant of the US Senate' at funeral The US president was among several dignitaries who attended the service for the late lawmaker, who died earlier this month. 13 hrs ago US & Canada",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The US president was among several dignitaries who attended the service for the late lawmaker, who died earlier this month.",
+   "context": "Lindsey Graham remembered by Trump as 'giant of the US Senate' at funeral",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "13 hrs ago",
+   "context": "Lindsey Graham remembered by Trump as 'giant of the US Senate' at funeral",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "US & Canada",
+   "context": "Lindsey Graham remembered by Trump as 'giant of the US Senate' at funeral",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Ticket prices set to rise by 15p as Heathrow able to recover runway project money UK airport gets green light to charge airlines more to use the hub, which is expected to mean higher fares for flyers. 3 hrs ago Business",
+   "value": "",
+   "context": "Lindsey Graham remembered by Trump as 'giant of the US Senate' at funeral The US president was among several dignitaries who attended the service for the late lawmaker, who died earlier this month. 13 hrs ago US & Canada",
+   "url": "/news/articles/cdx8ke9gpnko",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Ticket prices set to rise by 15p as Heathrow able to recover runway project money",
+   "value": "",
+   "context": "Ticket prices set to rise by 15p as Heathrow able to recover runway project money UK airport gets green light to charge airlines more to use the hub, which is expected to mean higher fares for flyers. 3 hrs ago Business",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "UK airport gets green light to charge airlines more to use the hub, which is expected to mean higher fares for flyers.",
+   "context": "Ticket prices set to rise by 15p as Heathrow able to recover runway project money",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "3 hrs ago",
+   "context": "Ticket prices set to rise by 15p as Heathrow able to recover runway project money",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Business",
+   "context": "Ticket prices set to rise by 15p as Heathrow able to recover runway project money",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "FA chairwoman Debbie Hewitt (right) and chief executive Mark Bullingham (second right) with FIFA president Gianni Infantino (centre) at the World Cup semi-final between England and Argentina FA 'deeply concerned' by Fifa plan as Uefa to meet The Football Association says it is concerned by Fifa's proposals to sell stakes in its major competitions as Uefa's 55 member associations hold an emergency meeting to discuss the issue. 1 hr ago World Cup",
+   "value": "",
+   "context": "News",
+   "url": "/sport/football/articles/cvg7vglq9wpo",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "FA chairwoman Debbie Hewitt (right) and chief executive Mark Bullingham (second right) with FIFA president Gianni Infantino (centre) at the World Cup semi-final between England and Argentina",
+   "value": "",
+   "context": "FA chairwoman Debbie Hewitt (right) and chief executive Mark Bullingham (second right) with FIFA president Gianni Infantino (centre) at the World Cup semi-final between England and Argentina FA 'deeply concerned' by Fifa plan as Uefa to meet The Football Association says it is concerned by Fifa's proposals to sell stakes in its major competitions as Uefa's 55 member associations hold an emergency meeting to discuss the issue. 1 hr ago World Cup",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "FA 'deeply concerned' by Fifa plan as Uefa to meet",
+   "value": "",
+   "context": "FA chairwoman Debbie Hewitt (right) and chief executive Mark Bullingham (second right) with FIFA president Gianni Infantino (centre) at the World Cup semi-final between England and Argentina FA 'deeply concerned' by Fifa plan as Uefa to meet The Football Association says it is concerned by Fifa's proposals to sell stakes in its major competitions as Uefa's 55 member associations hold an emergency meeting to discuss the issue. 1 hr ago World Cup",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The Football Association says it is concerned by Fifa's proposals to sell stakes in its major competitions as Uefa's 55 member associations hold an emergency meeting to discuss the issue.",
+   "context": "FA 'deeply concerned' by Fifa plan as Uefa to meet",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "1 hr ago",
+   "context": "FA 'deeply concerned' by Fifa plan as Uefa to meet",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "World Cup",
+   "context": "FA 'deeply concerned' by Fifa plan as Uefa to meet",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Three men wearing Jewish skullcaps - kippahs - seen from behind as they embrace, with their arms around each other Report on Jewish diaspora finds biggest rise in antisemitism in UK The report also says 2025 was the deadliest year for Jews living outside Israel in more than 30 years. 3 hrs ago UK",
+   "value": "",
+   "context": "FA chairwoman Debbie Hewitt (right) and chief executive Mark Bullingham (second right) with FIFA president Gianni Infantino (centre) at the World Cup semi-final between England and Argentina FA 'deeply concerned' by Fifa plan as Uefa to meet The Football Association says it is concerned by Fifa's proposals to sell stakes in its major competitions as Uefa's 55 member associations hold an emergency meeting to discuss the issue. 1 hr ago World Cup",
+   "url": "/news/articles/c4gd240eelmo",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "Three men wearing Jewish skullcaps - kippahs - seen from behind as they embrace, with their arms around each other",
+   "value": "",
+   "context": "Three men wearing Jewish skullcaps - kippahs - seen from behind as they embrace, with their arms around each other Report on Jewish diaspora finds biggest rise in antisemitism in UK The report also says 2025 was the deadliest year for Jews living outside Israel in more than 30 years. 3 hrs ago UK",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Report on Jewish diaspora finds biggest rise in antisemitism in UK",
+   "value": "",
+   "context": "Three men wearing Jewish skullcaps - kippahs - seen from behind as they embrace, with their arms around each other Report on Jewish diaspora finds biggest rise in antisemitism in UK The report also says 2025 was the deadliest year for Jews living outside Israel in more than 30 years. 3 hrs ago UK",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The report also says 2025 was the deadliest year for Jews living outside Israel in more than 30 years.",
+   "context": "Report on Jewish diaspora finds biggest rise in antisemitism in UK",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "3 hrs ago",
+   "context": "Report on Jewish diaspora finds biggest rise in antisemitism in UK",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "UK",
+   "context": "Report on Jewish diaspora finds biggest rise in antisemitism in UK",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "'link",
+   "name": "Quarterback Justin Herbert #10 of the Los Angeles Chargers and Madison Beer attend a basketball game between Los Angeles Lakers and Minnesota Timberwolves at Crypto.com Arena on October 24, 2025 in Los Angeles, California. Pop star Madison Beer and NFL player Justin Herbert announce engagement The couple made the announcement on social media on Tuesday, including photos of the proposal. 14 hrs ago US & Canada",
+   "value": "",
+   "context": "Three men wearing Jewish skullcaps - kippahs - seen from behind as they embrace, with their arms around each other Report on Jewish diaspora finds biggest rise in antisemitism in UK The report also says 2025 was the deadliest year for Jews living outside Israel in more than 30 years. 3 hrs ago UK",
+   "url": "/news/articles/czxq028q99go",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "'img",
+   "name": "Quarterback Justin Herbert #10 of the Los Angeles Chargers and Madison Beer attend a basketball game between Los Angeles Lakers and Minnesota Timberwolves at Crypto.com Arena on October 24, 2025 in Los Angeles, California.",
+   "value": "",
+   "context": "Three men wearing Jewish skullcaps - kippahs - seen from behind as they embrace, with their arms around each other Report on Jewish diaspora finds biggest rise in antisemitism in UK The report also says 2025 was the deadliest year for Jews living outside Israel in more than 30 years. 3 hrs ago UK",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Pop star Madison Beer and NFL player Justin Herbert announce engagement",
+   "value": "",
+   "context": "Three men wearing Jewish skullcaps - kippahs - seen from behind as they embrace, with their arms around each other Report on Jewish diaspora finds biggest rise in antisemitism in UK The report also says 2025 was the deadliest year for Jews living outside Israel in more than 30 years. 3 hrs ago UK",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The couple made the announcement on social media on Tuesday, including photos of the proposal.",
+   "context": "Pop star Madison Beer and NFL player Justin Herbert announce engagement",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "14 hrs ago",
+   "context": "Pop star Madison Beer and NFL player Justin Herbert announce engagement",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "US & Canada",
+   "context": "Pop star Madison Beer and NFL player Justin Herbert announce engagement",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Most watched",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "1 Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "value": "",
+   "context": "News",
+   "url": "/news/videos/c4g3600xw5ko",
+   "title": "",
+   "source": "<a href=\"/news/videos/c4g3600xw5ko\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"cambridge-video\" class=\"Cambridge-styles__CardStyled-sc-1c596b85-0 dHBMQi\"><span data-testid=\"card-order\" class=\"Cambridge-styles__OrderLabelStyled-sc-1c596b85-1 brqMig\">1</span><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 bZwtNv\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><div class=\"IndexCardContentTypeLabel-styles__IconWrapper-sc-a498a926-1 IndexCardHeading-styles__InlineIconWrapper-sc-c7d910a6",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "generic",
+   "name": "1",
+   "value": "",
+   "context": "1 Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "value": "",
+   "context": "1 Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "url": "",
+   "title": "",
+   "source": "<a href=\"/news/videos/c4g3600xw5ko\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"chester-video\" class=\"Chester-styles__CardStyled-sc-340eb5f4-0 gdjbPO\"><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 dWFLGi\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><div class=\"IndexCardContentTypeLabel-styles__IconWrapper-sc-a498a926-1 IndexCardHeading-styles__InlineIconWrapper-sc-c7d910a6-2 dnSnSp NFUEj\"><svg viewBox=\"0 0 32 32\" width=\"3em\" height=\"3em\" category=\"playback-avkx\" icon=\"play\" dat",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "'link",
+   "name": "2 Watch: Trump delivers eulogy honouring Lindsey Graham",
+   "value": "",
+   "context": "1 Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "url": "/news/videos/cy45kev0709o",
+   "title": "",
+   "source": "<a href=\"/news/videos/cy45kev0709o\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"cambridge-video\" class=\"Cambridge-styles__CardStyled-sc-1c596b85-0 dHBMQi\"><span data-testid=\"card-order\" class=\"Cambridge-styles__OrderLabelStyled-sc-1c596b85-1 brqMig\">2</span><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 bZwtNv\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><div class=\"IndexCardContentTypeLabel-styles__IconWrapper-sc-a498a926-1 IndexCardHeading-styles__InlineIconWrapper-sc-c7d910a6",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "generic",
+   "name": "2",
+   "value": "",
+   "context": "1 Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "'heading",
+   "name": "Watch: Trump delivers eulogy honouring Lindsey Graham",
+   "value": "",
+   "context": "1 Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "3 Japan in a ‘race against time’ to rescue people trapped beneath rubble after quake",
+   "value": "",
+   "context": "1 Bystander video shows teen lifeguard's dramatic ocean rescue",
+   "url": "/news/videos/c3r0pg0dgrgo",
+   "title": "",
+   "source": "<a href=\"/news/videos/c3r0pg0dgrgo\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"cambridge-video\" class=\"Cambridge-styles__CardStyled-sc-1c596b85-0 dHBMQi\"><span data-testid=\"card-order\" class=\"Cambridge-styles__OrderLabelStyled-sc-1c596b85-1 brqMig\">3</span><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 bZwtNv\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><div class=\"IndexCardContentTypeLabel-styles__IconWrapper-sc-a498a926-1 IndexCardHeading-styles__InlineIconWrapper-sc-c7d910a6",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "generic",
+   "name": "3",
+   "value": "",
+   "context": "3 Japan in a ‘race against time’ to rescue people trapped beneath rubble after quake",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Japan in a ‘race against time’ to rescue people trapped beneath rubble after quake",
+   "value": "",
+   "context": "3 Japan in a ‘race against time’ to rescue people trapped beneath rubble after quake",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "4 The moment Tuesday's powerful earthquake hit Japan",
+   "value": "",
+   "context": "3 Japan in a ‘race against time’ to rescue people trapped beneath rubble after quake",
+   "url": "/news/videos/cvg7v55gxnqo",
+   "title": "",
+   "source": "<a href=\"/news/videos/cvg7v55gxnqo\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"cambridge-video\" class=\"Cambridge-styles__CardStyled-sc-1c596b85-0 dHBMQi\"><span data-testid=\"card-order\" class=\"Cambridge-styles__OrderLabelStyled-sc-1c596b85-1 brqMig\">4</span><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 bZwtNv\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><div class=\"IndexCardContentTypeLabel-styles__IconWrapper-sc-a498a926-1 IndexCardHeading-styles__InlineIconWrapper-sc-c7d910a6",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "generic",
+   "name": "4",
+   "value": "",
+   "context": "4 The moment Tuesday's powerful earthquake hit Japan",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "The moment Tuesday's powerful earthquake hit Japan",
+   "value": "",
+   "context": "4 The moment Tuesday's powerful earthquake hit Japan",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "5 Graham's casket arrives at Washington National Cathedral",
+   "value": "",
+   "context": "4 The moment Tuesday's powerful earthquake hit Japan",
+   "url": "/news/videos/cvgv70p5x4lo",
+   "title": "",
+   "source": "<a href=\"/news/videos/cvgv70p5x4lo\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"cambridge-video\" class=\"Cambridge-styles__CardStyled-sc-1c596b85-0 dHBMQi\"><span data-testid=\"card-order\" class=\"Cambridge-styles__OrderLabelStyled-sc-1c596b85-1 brqMig\">5</span><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 bZwtNv\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><div class=\"IndexCardContentTypeLabel-styles__IconWrapper-sc-a498a926-1 IndexCardHeading-styles__InlineIconWrapper-sc-c7d910a6",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "generic",
+   "name": "5",
+   "value": "",
+   "context": "5 Graham's casket arrives at Washington National Cathedral",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Graham's casket arrives at Washington National Cathedral",
+   "value": "",
+   "context": "5 Graham's casket arrives at Washington National Cathedral",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Most read",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "1 Four women accuse Jared Leto of criminal sexual conduct",
+   "value": "",
+   "context": "News",
+   "url": "/news/articles/cd7lg2nz2x2o",
+   "title": "",
+   "source": "<a href=\"/news/articles/cd7lg2nz2x2o\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"cambridge-article\" class=\"Cambridge-styles__CardStyled-sc-1c596b85-0 dHBMQi\"><span data-testid=\"card-order\" class=\"Cambridge-styles__OrderLabelStyled-sc-1c596b85-1 brqMig\">1</span><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 bZwtNv\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 gMjEVb\">Four women accuse",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "generic",
+   "name": "1",
+   "value": "",
+   "context": "1 Four women accuse Jared Leto of criminal sexual conduct",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Four women accuse Jared Leto of criminal sexual conduct",
+   "value": "",
+   "context": "1 Four women accuse Jared Leto of criminal sexual conduct",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "2 Saudi Arabia joins US in strikes on Iran-backed militias in Iraq",
+   "value": "",
+   "context": "1 Four women accuse Jared Leto of criminal sexual conduct",
+   "url": "/news/articles/c70g6y24d76o",
+   "title": "",
+   "source": "<a href=\"/news/articles/c70g6y24d76o\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"cambridge-article\" class=\"Cambridge-styles__CardStyled-sc-1c596b85-0 dHBMQi\"><span data-testid=\"card-order\" class=\"Cambridge-styles__OrderLabelStyled-sc-1c596b85-1 brqMig\">2</span><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 bZwtNv\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 gMjEVb\">Saudi Arabia join",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "generic",
+   "name": "2",
+   "value": "",
+   "context": "2 Saudi Arabia joins US in strikes on Iran-backed militias in Iraq",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Saudi Arabia joins US in strikes on Iran-backed militias in Iraq",
+   "value": "",
+   "context": "2 Saudi Arabia joins US in strikes on Iran-backed militias in Iraq",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "3 BTS withdraw from Grammys, a month after Asian pop prize introduced",
+   "value": "",
+   "context": "2 Saudi Arabia joins US in strikes on Iran-backed militias in Iraq",
+   "url": "/news/articles/clyjgyd0225o",
+   "title": "",
+   "source": "<a href=\"/news/articles/clyjgyd0225o\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"cambridge-article\" class=\"Cambridge-styles__CardStyled-sc-1c596b85-0 dHBMQi\"><span data-testid=\"card-order\" class=\"Cambridge-styles__OrderLabelStyled-sc-1c596b85-1 brqMig\">3</span><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 bZwtNv\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 gMjEVb\">BTS withdraw from",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "generic",
+   "name": "3",
+   "value": "",
+   "context": "3 BTS withdraw from Grammys, a month after Asian pop prize introduced",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "BTS withdraw from Grammys, a month after Asian pop prize introduced",
+   "value": "",
+   "context": "3 BTS withdraw from Grammys, a month after Asian pop prize introduced",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "4 OpenAI says its rogue AI tried to hack other companies",
+   "value": "",
+   "context": "3 BTS withdraw from Grammys, a month after Asian pop prize introduced",
+   "url": "/news/articles/c2el319vzr3o",
+   "title": "",
+   "source": "<a href=\"/news/articles/c2el319vzr3o\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"cambridge-article\" class=\"Cambridge-styles__CardStyled-sc-1c596b85-0 dHBMQi\"><span data-testid=\"card-order\" class=\"Cambridge-styles__OrderLabelStyled-sc-1c596b85-1 brqMig\">4</span><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 bZwtNv\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 gMjEVb\">OpenAI says its r",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "generic",
+   "name": "4",
+   "value": "",
+   "context": "4 OpenAI says its rogue AI tried to hack other companies",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "OpenAI says its rogue AI tried to hack other companies",
+   "value": "",
+   "context": "4 OpenAI says its rogue AI tried to hack other companies",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "5 Ghana mourns its tallest man - a 'generous and popular giant'",
+   "value": "",
+   "context": "4 OpenAI says its rogue AI tried to hack other companies",
+   "url": "/news/articles/crk52jk0131o",
+   "title": "",
+   "source": "<a href=\"/news/articles/crk52jk0131o\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"cambridge-article\" class=\"Cambridge-styles__CardStyled-sc-1c596b85-0 dHBMQi\"><span data-testid=\"card-order\" class=\"Cambridge-styles__OrderLabelStyled-sc-1c596b85-1 brqMig\">5</span><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 bZwtNv\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 gMjEVb\">Ghana mourns its ",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "generic",
+   "name": "5",
+   "value": "",
+   "context": "5 Ghana mourns its tallest man - a 'generous and popular giant'",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Ghana mourns its tallest man - a 'generous and popular giant'",
+   "value": "",
+   "context": "5 Ghana mourns its tallest man - a 'generous and popular giant'",
+   "url": "",
+   "title": "",
+   "source": "<a href=\"/news/articles/crk52jk0131o\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"chester-article\" class=\"Chester-styles__CardStyled-sc-340eb5f4-0 gdjbPO\"><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 dWFLGi\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 dyeGOh\">Ghana mourns its tallest man - a 'generous and popular giant'</h2></div></div></div></a>",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "link",
+   "name": "6 Unauthorised airport car park grows despite stop notice",
+   "value": "",
+   "context": "5 Ghana mourns its tallest man - a 'generous and popular giant'",
+   "url": "/news/articles/cn8ngxw5195o",
+   "title": "",
+   "source": "<a href=\"/news/articles/cn8ngxw5195o\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"cambridge-article\" class=\"Cambridge-styles__CardStyled-sc-1c596b85-0 dHBMQi\"><span data-testid=\"card-order\" class=\"Cambridge-styles__OrderLabelStyled-sc-1c596b85-1 brqMig\">6</span><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 bZwtNv\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 gMjEVb\">Unauthorised airp",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "generic",
+   "name": "6",
+   "value": "",
+   "context": "6 Unauthorised airport car park grows despite stop notice",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Unauthorised airport car park grows despite stop notice",
+   "value": "",
+   "context": "6 Unauthorised airport car park grows despite stop notice",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "7 Russia charges Telegram founder Durov with facilitating terrorism",
+   "value": "",
+   "context": "6 Unauthorised airport car park grows despite stop notice",
+   "url": "/news/articles/cj4kexqkpzno",
+   "title": "",
+   "source": "<a href=\"/news/articles/cj4kexqkpzno\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"cambridge-article\" class=\"Cambridge-styles__CardStyled-sc-1c596b85-0 dHBMQi\"><span data-testid=\"card-order\" class=\"Cambridge-styles__OrderLabelStyled-sc-1c596b85-1 brqMig\">7</span><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 bZwtNv\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 gMjEVb\">Russia charges Te",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "generic",
+   "name": "7",
+   "value": "",
+   "context": "7 Russia charges Telegram founder Durov with facilitating terrorism",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Russia charges Telegram founder Durov with facilitating terrorism",
+   "value": "",
+   "context": "7 Russia charges Telegram founder Durov with facilitating terrorism",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "8 My 10-day headache was terminal brain cancer",
+   "value": "",
+   "context": "7 Russia charges Telegram founder Durov with facilitating terrorism",
+   "url": "/news/articles/cgq502nj914o",
+   "title": "",
+   "source": "<a href=\"/news/articles/cgq502nj914o\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"cambridge-article\" class=\"Cambridge-styles__CardStyled-sc-1c596b85-0 dHBMQi\"><span data-testid=\"card-order\" class=\"Cambridge-styles__OrderLabelStyled-sc-1c596b85-1 brqMig\">8</span><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 bZwtNv\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 gMjEVb\">My 10-day headach",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "generic",
+   "name": "8",
+   "value": "",
+   "context": "8 My 10-day headache was terminal brain cancer",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "My 10-day headache was terminal brain cancer",
+   "value": "",
+   "context": "8 My 10-day headache was terminal brain cancer",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "9 Brits urged to avoid dangerous plug adaptors this summer - what to watch out for",
+   "value": "",
+   "context": "8 My 10-day headache was terminal brain cancer",
+   "url": "/news/articles/c5yeg1wegpno",
+   "title": "",
+   "source": "<a href=\"/news/articles/c5yeg1wegpno\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"cambridge-article\" class=\"Cambridge-styles__CardStyled-sc-1c596b85-0 dHBMQi\"><span data-testid=\"card-order\" class=\"Cambridge-styles__OrderLabelStyled-sc-1c596b85-1 brqMig\">9</span><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 bZwtNv\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 gMjEVb\">Brits urged to av",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "generic",
+   "name": "9",
+   "value": "",
+   "context": "9 Brits urged to avoid dangerous plug adaptors this summer - what to watch out for",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Brits urged to avoid dangerous plug adaptors this summer - what to watch out for",
+   "value": "",
+   "context": "9 Brits urged to avoid dangerous plug adaptors this summer - what to watch out for",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "10 Wildfires in south-west France flare up as region braces for new 40C heatwave",
+   "value": "",
+   "context": "9 Brits urged to avoid dangerous plug adaptors this summer - what to watch out for",
+   "url": "/news/articles/c5yd8gly1ydo",
+   "title": "",
+   "source": "<a href=\"/news/articles/c5yd8gly1ydo\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"cambridge-article\" class=\"Cambridge-styles__CardStyled-sc-1c596b85-0 dHBMQi\"><span data-testid=\"card-order\" class=\"Cambridge-styles__OrderLabelStyled-sc-1c596b85-1 brqMig\">10</span><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 bZwtNv\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 gMjEVb\">Wildfires in sou",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "generic",
+   "name": "10",
+   "value": "",
+   "context": "10 Wildfires in south-west France flare up as region braces for new 40C heatwave",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Wildfires in south-west France flare up as region braces for new 40C heatwave",
+   "value": "",
+   "context": "10 Wildfires in south-west France flare up as region braces for new 40C heatwave",
+   "url": "",
+   "title": "",
+   "source": "<a href=\"/news/articles/c5yd8gly1ydo\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"chester-article\" class=\"Chester-styles__CardStyled-sc-340eb5f4-0 gdjbPO\"><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 dWFLGi\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 dyeGOh\">Wildfires in south-west France flare up as region braces for new 40C heatwave</h2></div></div></div></a>",
+   "path": "section > div > div > div > div > a"
+  },
+  {
+   "role": "heading",
+   "name": "Sport",
+   "value": "",
+   "context": "News",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "image unavailable FA chairwoman Debbie Hewitt (right) and chief executive Mark Bullingham (second right) with FIFA president Gianni Infantino (centre) at the World Cup semi-final between England and Argentina",
+   "value": "",
+   "context": "News",
+   "url": "/sport/football/articles/cvg7vglq9wpo",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "image unavailable",
+   "value": "",
+   "context": "image unavailable FA chairwoman Debbie Hewitt (right) and chief executive Mark Bullingham (second right) with FIFA president Gianni Infantino (centre) at the World Cup semi-final between England and Argentina",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "FA chairwoman Debbie Hewitt (right) and chief executive Mark Bullingham (second right) with FIFA president Gianni Infantino (centre) at the World Cup semi-final between England and Argentina",
+   "value": "",
+   "context": "image unavailable FA chairwoman Debbie Hewitt (right) and chief executive Mark Bullingham (second right) with FIFA president Gianni Infantino (centre) at the World Cup semi-final between England and Argentina",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "FA concerns over Fifa plan that could lead to Uefa World Cup boycott The Football Association says it is concerned by Fifa's proposals to sell stakes in its major competitions as Uefa's 55 member associations hold an emergency meeting to discuss the issue. 1 hr ago World Cup",
+   "value": "",
+   "context": "image unavailable FA chairwoman Debbie Hewitt (right) and chief executive Mark Bullingham (second right) with FIFA president Gianni Infantino (centre) at the World Cup semi-final between England and Argentina",
+   "url": "/sport/football/articles/cvg7vglq9wpo",
+   "title": "",
+   "source": "<a href=\"/sport/football/articles/cvg7vglq9wpo\" data-testid=\"internal-link\" class=\"London-styles__LondonTextAreaAnchorStyled-sc-269f9f6d-2 qdrfG\"><div class=\"London-styles__LondonTextAreaStyled-sc-269f9f6d-1 jhVwJw\"><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 dWFLGi\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 GrFgy\">FA concerns over Fifa plan that could lead to Uefa World Cup boycott</h2></div></div><p class=\"London-styles__LondonDescrip",
+   "path": "div > div > div > div > div > a"
+  },
+  {
+   "role": "heading",
+   "name": "FA concerns over Fifa plan that could lead to Uefa World Cup boycott",
+   "value": "",
+   "context": "FA concerns over Fifa plan that could lead to Uefa World Cup boycott The Football Association says it is concerned by Fifa's proposals to sell stakes in its major competitions as Uefa's 55 member associations hold an emergency meeting to discuss the issue. 1 hr ago World Cup",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The Football Association says it is concerned by Fifa's proposals to sell stakes in its major competitions as Uefa's 55 member associations hold an emergency meeting to discuss the issue.",
+   "context": "FA concerns over Fifa plan that could lead to Uefa World Cup boycott",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "1 hr ago",
+   "context": "FA concerns over Fifa plan that could lead to Uefa World Cup boycott",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "World Cup",
+   "context": "FA concerns over Fifa plan that could lead to Uefa World Cup boycott",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "image unavailable Sydney LIVE Sydney level with Tottenham in pre-season match Follow live as Tottenham face Sydney FC in the second match of their pre-season tour.",
+   "value": "",
+   "context": "News",
+   "url": "https://www.bbc.com/sport/football/live/c86np7j9x5jt",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "image unavailable",
+   "value": "",
+   "context": "image unavailable Sydney LIVE Sydney level with Tottenham in pre-season match Follow live as Tottenham face Sydney FC in the second match of their pre-season tour.",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "Sydney",
+   "value": "",
+   "context": "image unavailable Sydney LIVE Sydney level with Tottenham in pre-season match Follow live as Tottenham face Sydney FC in the second match of their pre-season tour.",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "LIVE",
+   "context": "image unavailable Sydney LIVE Sydney level with Tottenham in pre-season match Follow live as Tottenham face Sydney FC in the second match of their pre-season tour.",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Sydney level with Tottenham in pre-season match",
+   "value": "",
+   "context": "image unavailable Sydney LIVE Sydney level with Tottenham in pre-season match Follow live as Tottenham face Sydney FC in the second match of their pre-season tour.",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Follow live as Tottenham face Sydney FC in the second match of their pre-season tour.",
+   "context": "image unavailable Sydney LIVE Sydney level with Tottenham in pre-season match Follow live as Tottenham face Sydney FC in the second match of their pre-season tour.",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "The athlete who has never held her Olympic medal The story of Cameroon Olympic medallist Madias Ngake's remarkable journey from sleeping rough and seeking asylum to competing for England at Glasgow 2026. 6 hrs ago Commonwealth Games",
+   "value": "",
+   "context": "image unavailable Sydney LIVE Sydney level with Tottenham in pre-season match Follow live as Tottenham face Sydney FC in the second match of their pre-season tour.",
+   "url": "/sport/weightlifting/articles/cn8nxg5rvvko",
+   "title": "",
+   "source": "<a href=\"/sport/weightlifting/articles/cn8nxg5rvvko\" data-testid=\"internal-link\" class=\"Anchor-styles__AnchorStyled-sc-651d33db-0 hygVWX\"><div data-testid=\"manchester-article\" class=\"Manchester-styles__CardStyled-sc-5c1d085b-1 cGPaOi\"><div data-testid=\"card-text-wrapper\" class=\"Manchester-styles__TextWrapperStyled-sc-5c1d085b-2 eshOej\"><div class=\"IndexCardHeading-styles__TitleGravityWrapper-sc-c7d910a6-1 dWFLGi\"><div class=\"IndexCardHeading-styles__TitleWrapperStyled-sc-c7d910a6-0 hEhfIe\"><h2 data-testid=\"card-headline\" class=\"IndexCardHeading-styles__CardHeadlineStyled-sc-c7d910a6-3 dyeGOh\">",
+   "path": "div > div > div > div > div > a"
+  },
+  {
+   "role": "heading",
+   "name": "The athlete who has never held her Olympic medal",
+   "value": "",
+   "context": "The athlete who has never held her Olympic medal The story of Cameroon Olympic medallist Madias Ngake's remarkable journey from sleeping rough and seeking asylum to competing for England at Glasgow 2026. 6 hrs ago Commonwealth Games",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "The story of Cameroon Olympic medallist Madias Ngake's remarkable journey from sleeping rough and seeking asylum to competing for England at Glasgow 2026.",
+   "context": "The athlete who has never held her Olympic medal",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "6 hrs ago",
+   "context": "The athlete who has never held her Olympic medal",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Commonwealth Games",
+   "context": "The athlete who has never held her Olympic medal",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Grealish misses Man City tour despite training return Jack Grealish will not make his return in a Manchester City shirt after being left out of the club's pre-season tour of Asia as he continues to recover from a foot injury. 4 hrs ago Man City",
+   "value": "",
+   "context": "The athlete who has never held her Olympic medal The story of Cameroon Olympic medallist Madias Ngake's remarkable journey from sleeping rough and seeking asylum to competing for England at Glasgow 2026. 6 hrs ago Commonwealth Games",
+   "url": "/sport/football/articles/cdx8kx5941no",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Grealish misses Man City tour despite training return",
+   "value": "",
+   "context": "Grealish misses Man City tour despite training return Jack Grealish will not make his return in a Manchester City shirt after being left out of the club's pre-season tour of Asia as he continues to recover from a foot injury. 4 hrs ago Man City",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Jack Grealish will not make his return in a Manchester City shirt after being left out of the club's pre-season tour of Asia as he continues to recover from a foot injury.",
+   "context": "Grealish misses Man City tour despite training return",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "4 hrs ago",
+   "context": "Grealish misses Man City tour despite training return",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Man City",
+   "context": "Grealish misses Man City tour despite training return",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "image unavailable Yan Diomande Diomande's rapid and remarkable rise to Real Madrid Yan Diomande has quickly gone from being a relatively unknown winger to the brink of becoming Real Madrid's record signing. 5 hrs ago Football",
+   "value": "",
+   "context": "News",
+   "url": "/sport/football/articles/cm2g3dd2jxko",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "image unavailable",
+   "value": "",
+   "context": "image unavailable Yan Diomande Diomande's rapid and remarkable rise to Real Madrid Yan Diomande has quickly gone from being a relatively unknown winger to the brink of becoming Real Madrid's record signing. 5 hrs ago Football",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "Yan Diomande",
+   "value": "",
+   "context": "image unavailable Yan Diomande Diomande's rapid and remarkable rise to Real Madrid Yan Diomande has quickly gone from being a relatively unknown winger to the brink of becoming Real Madrid's record signing. 5 hrs ago Football",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Diomande's rapid and remarkable rise to Real Madrid",
+   "value": "",
+   "context": "image unavailable Yan Diomande Diomande's rapid and remarkable rise to Real Madrid Yan Diomande has quickly gone from being a relatively unknown winger to the brink of becoming Real Madrid's record signing. 5 hrs ago Football",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Yan Diomande has quickly gone from being a relatively unknown winger to the brink of becoming Real Madrid's record signing.",
+   "context": "Diomande's rapid and remarkable rise to Real Madrid",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "5 hrs ago",
+   "context": "Diomande's rapid and remarkable rise to Real Madrid",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Football",
+   "context": "Diomande's rapid and remarkable rise to Real Madrid",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "image unavailable Kimi Antonelli celebrates Five things we've learned from first half of F1 season BBC F1 correspondent Andrew Benson analyses the five key things we've learned from the 2026 season so far. 4 hrs ago Formula 1",
+   "value": "",
+   "context": "image unavailable Yan Diomande Diomande's rapid and remarkable rise to Real Madrid Yan Diomande has quickly gone from being a relatively unknown winger to the brink of becoming Real Madrid's record signing. 5 hrs ago Football",
+   "url": "/sport/formula1/articles/clyj898j2p0o",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "image unavailable",
+   "value": "",
+   "context": "image unavailable Kimi Antonelli celebrates Five things we've learned from first half of F1 season BBC F1 correspondent Andrew Benson analyses the five key things we've learned from the 2026 season so far. 4 hrs ago Formula 1",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "Kimi Antonelli celebrates",
+   "value": "",
+   "context": "image unavailable Kimi Antonelli celebrates Five things we've learned from first half of F1 season BBC F1 correspondent Andrew Benson analyses the five key things we've learned from the 2026 season so far. 4 hrs ago Formula 1",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Five things we've learned from first half of F1 season",
+   "value": "",
+   "context": "image unavailable Kimi Antonelli celebrates Five things we've learned from first half of F1 season BBC F1 correspondent Andrew Benson analyses the five key things we've learned from the 2026 season so far. 4 hrs ago Formula 1",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "BBC F1 correspondent Andrew Benson analyses the five key things we've learned from the 2026 season so far.",
+   "context": "Five things we've learned from first half of F1 season",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "4 hrs ago",
+   "context": "Five things we've learned from first half of F1 season",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Formula 1",
+   "context": "Five things we've learned from first half of F1 season",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "image unavailable Jordan Henderson clapping and Danny Welbeck Henderson nears Chelsea move as Welbeck has medical Brighton striker Danny Welbeck is given permission to have a medical at Stamford Bridge as his switch to Chelsea moves closer. 59 mins ago Premier League",
+   "value": "",
+   "context": "image unavailable Kimi Antonelli celebrates Five things we've learned from first half of F1 season BBC F1 correspondent Andrew Benson analyses the five key things we've learned from the 2026 season so far. 4 hrs ago Formula 1",
+   "url": "/sport/football/articles/c935lvyeykwo",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "image unavailable",
+   "value": "",
+   "context": "image unavailable Jordan Henderson clapping and Danny Welbeck Henderson nears Chelsea move as Welbeck has medical Brighton striker Danny Welbeck is given permission to have a medical at Stamford Bridge as his switch to Chelsea moves closer. 59 mins ago Premier League",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "Jordan Henderson clapping and Danny Welbeck",
+   "value": "",
+   "context": "image unavailable Jordan Henderson clapping and Danny Welbeck Henderson nears Chelsea move as Welbeck has medical Brighton striker Danny Welbeck is given permission to have a medical at Stamford Bridge as his switch to Chelsea moves closer. 59 mins ago Premier League",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Henderson nears Chelsea move as Welbeck has medical",
+   "value": "",
+   "context": "image unavailable Jordan Henderson clapping and Danny Welbeck Henderson nears Chelsea move as Welbeck has medical Brighton striker Danny Welbeck is given permission to have a medical at Stamford Bridge as his switch to Chelsea moves closer. 59 mins ago Premier League",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Brighton striker Danny Welbeck is given permission to have a medical at Stamford Bridge as his switch to Chelsea moves closer.",
+   "context": "Henderson nears Chelsea move as Welbeck has medical",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "59 mins ago",
+   "context": "Henderson nears Chelsea move as Welbeck has medical",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Premier League",
+   "context": "Henderson nears Chelsea move as Welbeck has medical",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "image unavailable A collage of images and illustrations",
+   "value": "",
+   "context": "News",
+   "url": "https://cloud.email.bbc.com/bbcnewsignup2?&at_bbc_team=studios&at_medium=display&at_objective=acquisition&at_ptr_type=&at_ptr_name=bbc.comhp&at_format=Module&at_link_origin=intlfront&at_campaign=newsbriefing&at_campaign_type=owned",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "image unavailable",
+   "value": "",
+   "context": "image unavailable A collage of images and illustrations",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "A collage of images and illustrations",
+   "value": "",
+   "context": "image unavailable A collage of images and illustrations",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Sign up to News Briefing News and expert analysis for every schedule. Get morning and evening editions of our flagship newsletter in your inbox. Learn more",
+   "value": "",
+   "context": "image unavailable A collage of images and illustrations",
+   "url": "https://cloud.email.bbc.com/bbcnewsignup2?&at_bbc_team=studios&at_medium=display&at_objective=acquisition&at_ptr_type=&at_ptr_name=bbc.comhp&at_format=Module&at_link_origin=intlfront&at_campaign=newsbriefing&at_campaign_type=owned",
+   "title": "",
+   "source": "<a href=\"https://cloud.email.bbc.com/bbcnewsignup2?&amp;at_bbc_team=studios&amp;at_medium=display&amp;at_objective=acquisition&amp;at_ptr_type=&amp;at_ptr_name=bbc.comhp&amp;at_format=Module&amp;at_link_origin=intlfront&amp;at_campaign=newsbriefing&amp;at_campaign_type=owned\" data-testid=\"external-anchor\" target=\"_self\" class=\"Windsor-styles__WindsorTextAreaAnchorStyled-sc-bfc65b29-5 eVtzmJ\"><div data-testid=\"card-text-wrapper\" class=\"Windsor-styles__TextWrapperStyled-sc-bfc65b29-3 isDmnA\"><div class=\"Windsor-styles__TitleWrapperStyled-sc-bfc65b29-4\"><div class=\"IndexCardHeading-styles__TitleG",
+   "path": "div > div > div > div > div > a"
+  },
+  {
+   "role": "heading",
+   "name": "Sign up to News Briefing",
+   "value": "",
+   "context": "Sign up to News Briefing News and expert analysis for every schedule. Get morning and evening editions of our flagship newsletter in your inbox. Learn more",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "News and expert analysis for every schedule. Get morning and evening editions of our flagship newsletter in your inbox.",
+   "context": "Sign up to News Briefing",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "Learn more",
+   "value": "See more",
+   "context": "Sign up to News Briefing",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "British Broadcasting Corporation",
+   "value": "",
+   "context": "Skip to content",
+   "url": "/",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "British Broadcasting Corporation",
+   "value": "",
+   "context": "British Broadcasting Corporation",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "navigation",
+   "name": "Footer navigation",
+   "value": "",
+   "context": "British Broadcasting Corporation",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Home",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.com/",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "News",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/news",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Sport",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/sport",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Business",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/business",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Technology",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/technology",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Health",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/health",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Culture",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/culture",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Arts",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/arts",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Travel",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/travel",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Earth",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/future-planet",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Audio",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/audio",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Video",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/video",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Live",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "/live",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Weather",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.com/weather",
+   "title": "",
+   "source": "<a href=\"https://www.bbc.com/weather\" data-testid=\"external-anchor\" target=\"_self\" class=\"ContentLinks-styles__ContentLinkStyled-sc-9a221ef-2 kqaecZ\">Weather</a>",
+   "path": "section > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "BBC Shop",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://shop.bbc.com/",
+   "title": "",
+   "source": "<a href=\"https://shop.bbc.com/\" data-testid=\"external-anchor\" target=\"_self\" class=\"ContentLinks-styles__ContentLinkStyled-sc-9a221ef-2 kqaecZ\">BBC Shop</a>",
+   "path": "section > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "BritBox",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.britbox.com/?utm_source=bbc.com&utm_medium=referral&utm_campaign=footer",
+   "title": "",
+   "source": "<a href=\"https://www.britbox.com/?utm_source=bbc.com&amp;utm_medium=referral&amp;utm_campaign=footer\" data-testid=\"external-anchor\" target=\"_self\" class=\"ContentLinks-styles__ContentLinkStyled-sc-9a221ef-2 kqaecZ\">BritBox</a>",
+   "path": "section > nav > ul > li > div > a"
+  },
+  {
+   "role": "button",
+   "name": "BBC in other languages",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "",
+   "title": "",
+   "source": "<button type=\"button\" class=\"LanguageDropdown-styles__DropdownButtonStyled-sc-bc6bb5-2 fuasZG\">BBC in other languages<div class=\"LanguageDropdown-styles__DropdownButtonIconWrapperStyled-sc-bc6bb5-3 gcEOSI\"><svg viewBox=\"0 0 32 32\" width=\"1em\" height=\"1em\" category=\"arrows\" icon=\"arrow-down\" class=\"Icon-styles__IconStyled-sc-4d91d42a-0 iosMJz\"><path d=\"M26.7 12.6 16 23.2 5.3 12.6V8.8h21.4v3.8z\"></path></svg></div></button>",
+   "path": "div > div > footer > section > div > button"
+  },
+  {
+   "role": "text",
+   "name": "BBC in other languages",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "",
+   "title": "",
+   "source": "<button type=\"button\" class=\"LanguageDropdown-styles__DropdownButtonStyled-sc-bc6bb5-2 fuasZG\">BBC in other languages<div class=\"LanguageDropdown-styles__DropdownButtonIconWrapperStyled-sc-bc6bb5-3 gcEOSI\"><svg viewBox=\"0 0 32 32\" width=\"1em\" height=\"1em\" category=\"arrows\" icon=\"arrow-down\" class=\"Icon-styles__IconStyled-sc-4d91d42a-0 iosMJz\"><path d=\"M26.7 12.6 16 23.2 5.3 12.6V8.8h21.4v3.8z\"></path></svg></div></button>",
+   "path": "div > div > footer > section > div > button"
+  },
+  {
+   "role": "generic",
+   "name": "Follow BBC on:",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "Follow BBC on x",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "",
+   "title": "",
+   "source": "<button aria-label=\"Follow BBC on x\" class=\"SocialFollowUs-styles__TriangleContainerStyled-sc-2bdeae3a-5 idhcQn\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" category=\"social\" icon=\"x\" data-testid=\"social-button-x\" class=\"Icon-styles__IconStyled-sc-4d91d42a-0 iosMJz\"><path d=\"M8.3319 5.92804L13.5437 0H12.3087L7.78327 5.14724L4.16883 0H0L5.46574 7.78354L0 14H1.2351L6.01406 8.56434L9.83117 14H14L8.3316 5.92804H8.3319ZM6.64026 7.85211L6.08647 7.07705L1.68013 0.909776H3.57717L7.13314 5.88696L7.68693 6.66202L12.3093 13.1316H10.4122L6.64026 7.85241V7",
+   "path": "div > div > footer > div > div > button"
+  },
+  {
+   "role": "button",
+   "name": "Follow BBC on facebook",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "",
+   "title": "",
+   "source": "<button aria-label=\"Follow BBC on facebook\" class=\"SocialFollowUs-styles__TriangleContainerStyled-sc-2bdeae3a-5 idhcQn\"><svg width=\"9\" height=\"16\" viewBox=\"0 0 9 16\" xmlns=\"http://www.w3.org/2000/svg\" category=\"social\" icon=\"facebook\" data-testid=\"social-button-facebook\" class=\"Icon-styles__IconStyled-sc-4d91d42a-0 iosMJz\"><path d=\"M6.80799 2.65602H8.31199V0.112024C7.58379 0.0363015 6.85211 -0.00108342 6.11999 2.38913e-05C3.94399 2.38913e-05 2.456 1.32802 2.456 3.76002V5.85601H0V8.70401H2.456V16H5.39999V8.70401H7.84799L8.21599 5.85601H5.39999V4.04002C5.39999 3.20002 5.62399 2.65602 6.80799 2.6",
+   "path": "div > div > footer > div > div > button"
+  },
+  {
+   "role": "button",
+   "name": "Follow BBC on instagram",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "",
+   "title": "",
+   "source": "<button aria-label=\"Follow BBC on instagram\" class=\"SocialFollowUs-styles__TriangleContainerStyled-sc-2bdeae3a-5 idhcQn\"><svg width=\"18\" height=\"17\" viewBox=\"0 0 18 17\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" category=\"social\" icon=\"instagram\" data-testid=\"social-button-instagram\" class=\"Icon-styles__IconStyled-sc-4d91d42a-0 iosMJz\"><path d=\"M12.7227 0.189697H5.28726C4.13732 0.190927 3.03482 0.648288 2.22168 1.46143C1.40854 2.27456 0.951181 3.37706 0.949951 4.52701V11.9624C0.951181 13.1124 1.40854 14.2149 2.22168 15.028C3.03482 15.8411 4.13732 16.2985 5.28726 16.2997H12.7227C13.8726 16.",
+   "path": "div > div > footer > div > div > button"
+  },
+  {
+   "role": "button",
+   "name": "Follow BBC on tiktok",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "",
+   "title": "",
+   "source": "<button aria-label=\"Follow BBC on tiktok\" class=\"SocialFollowUs-styles__TriangleContainerStyled-sc-2bdeae3a-5 idhcQn\"><svg width=\"16\" height=\"19\" viewBox=\"0 0 16 19\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" category=\"social\" icon=\"tiktok\" data-testid=\"social-button-tiktok\" class=\"Icon-styles__IconStyled-sc-4d91d42a-0 iosMJz\"><path d=\"M12.6992 2.92929C12.0014 2.13265 11.6168 1.10958 11.6171 0.0505371H8.46271V12.7089C8.43838 13.3939 8.14918 14.0427 7.65601 14.5187C7.16284 14.9948 6.50419 15.2609 5.81875 15.261C4.36917 15.261 3.16458 14.0768 3.16458 12.6068C3.16458 10.851 4.85917 9.53408 6.",
+   "path": "div > div > footer > div > div > button"
+  },
+  {
+   "role": "button",
+   "name": "Follow BBC on linkedin",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "",
+   "title": "",
+   "source": "<button aria-label=\"Follow BBC on linkedin\" class=\"SocialFollowUs-styles__TriangleContainerStyled-sc-2bdeae3a-5 idhcQn\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 15 15\" xmlns=\"http://www.w3.org/2000/svg\" category=\"social\" icon=\"linkedin\" data-testid=\"social-button-linkedin\" class=\"Icon-styles__IconStyled-sc-4d91d42a-0 iosMJz\"><path d=\"M3.14795 1.57476C3.14775 1.99221 2.98172 2.39247 2.68639 2.6875C2.39107 2.98253 1.99063 3.14816 1.57319 3.14795C1.15575 3.14775 0.755481 2.98172 0.460451 2.68639C0.16542 2.39107 -0.000208525 1.99064 1.97032e-07 1.57319C0.000208919 1.15575 0.166238 0.755481 0.46156",
+   "path": "div > div > footer > div > div > button"
+  },
+  {
+   "role": "button",
+   "name": "Follow BBC on youtube",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "",
+   "title": "",
+   "source": "<button aria-label=\"Follow BBC on youtube\" class=\"SocialFollowUs-styles__TriangleContainerStyled-sc-2bdeae3a-5 idhcQn\"><svg width=\"19\" height=\"15\" viewBox=\"0 0 19 15\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" category=\"social\" icon=\"youtube\" data-testid=\"social-button-youtube\" class=\"Icon-styles__IconStyled-sc-4d91d42a-0 iosMJz\"><path d=\"M9.48685 0.29126C9.98138 0.293864 11.2186 0.305151 12.5337 0.35464L13.0004 0.37374C14.3238 0.431911 15.6463 0.532624 16.3029 0.703663C17.178 0.934609 17.8652 1.60661 18.0976 2.4592C18.468 3.81362 18.5144 6.45474 18.5199 7.09462L18.5208 7.22659V7.37766C18.",
+   "path": "div > div > footer > div > div > button"
+  },
+  {
+   "role": "link",
+   "name": "Terms of Use",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.com/pages/terms-of-use",
+   "title": "",
+   "source": "<a href=\"https://www.bbc.com/pages/terms-of-use\" data-testid=\"external-anchor\" target=\"_self\" class=\"LegalLinks-styles__LegalLinkItemStyled-sc-f9fd086a-3 iUVxwk\">Terms of Use</a>",
+   "path": "section > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "Subscription Terms",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.com/pages/subscription-terms",
+   "title": "",
+   "source": "<a href=\"https://www.bbc.com/pages/subscription-terms\" data-testid=\"external-anchor\" target=\"_self\" class=\"LegalLinks-styles__LegalLinkItemStyled-sc-f9fd086a-3 iUVxwk\">Subscription Terms</a>",
+   "path": "section > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "About the BBC",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.co.uk/aboutthebbc",
+   "title": "",
+   "source": "<a href=\"https://www.bbc.co.uk/aboutthebbc\" data-testid=\"external-anchor\" target=\"_self\" class=\"LegalLinks-styles__LegalLinkItemStyled-sc-f9fd086a-3 iUVxwk\">About the BBC</a>",
+   "path": "section > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "Privacy Policy",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.com/pages/privacy-policy",
+   "title": "",
+   "source": "<a href=\"https://www.bbc.com/pages/privacy-policy\" data-testid=\"external-anchor\" target=\"_self\" class=\"LegalLinks-styles__LegalLinkItemStyled-sc-f9fd086a-3 iUVxwk\">Privacy Policy</a>",
+   "path": "section > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "Cookies",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.com/usingthebbc/cookies/",
+   "title": "",
+   "source": "<a href=\"https://www.bbc.com/usingthebbc/cookies/\" data-testid=\"external-anchor\" target=\"_self\" class=\"LegalLinks-styles__LegalLinkItemStyled-sc-f9fd086a-3 iUVxwk\">Cookies</a>",
+   "path": "section > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "Accessibility Help",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.co.uk/accessibility/",
+   "title": "",
+   "source": "<a href=\"https://www.bbc.co.uk/accessibility/\" data-testid=\"external-anchor\" target=\"_self\" class=\"LegalLinks-styles__LegalLinkItemStyled-sc-f9fd086a-3 iUVxwk\">Accessibility Help</a>",
+   "path": "section > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "Contact the BBC",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.co.uk/contact",
+   "title": "",
+   "source": "<a href=\"https://www.bbc.co.uk/contact\" data-testid=\"external-anchor\" target=\"_self\" class=\"LegalLinks-styles__LegalLinkItemStyled-sc-f9fd086a-3 iUVxwk\">Contact the BBC</a>",
+   "path": "section > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "Advertise with us",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://advertising.bbcstudios.com/",
+   "title": "",
+   "source": "<a href=\"https://advertising.bbcstudios.com/\" data-testid=\"external-anchor\" target=\"_self\" class=\"LegalLinks-styles__LegalLinkItemStyled-sc-f9fd086a-3 iUVxwk\">Advertise with us</a>",
+   "path": "section > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "Do not share or sell my info",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.com/usingthebbc/cookies/how-can-i-change-my-bbc-cookie-settings/",
+   "title": "",
+   "source": "<a href=\"https://www.bbc.com/usingthebbc/cookies/how-can-i-change-my-bbc-cookie-settings/\" data-testid=\"external-anchor\" target=\"_self\" class=\"LegalLinks-styles__LegalLinkItemStyled-sc-f9fd086a-3 iUVxwk\">Do not share or sell my info</a>",
+   "path": "section > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "BBC.com Help & FAQs",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://help.bbc.com/hc/",
+   "title": "",
+   "source": "<a href=\"https://help.bbc.com/hc/\" data-testid=\"external-anchor\" target=\"_self\" class=\"LegalLinks-styles__LegalLinkItemStyled-sc-f9fd086a-3 iUVxwk\">BBC.com Help &amp; FAQs</a>",
+   "path": "section > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "Content Index",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.com/pages/content-index",
+   "title": "",
+   "source": "<a href=\"https://www.bbc.com/pages/content-index\" data-testid=\"external-anchor\" target=\"_self\" class=\"LegalLinks-styles__LegalLinkItemStyled-sc-f9fd086a-3 iUVxwk\">Content Index</a>",
+   "path": "section > nav > ul > li > div > a"
+  },
+  {
+   "role": "link",
+   "name": "Set Preferred Source",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.com/future/article/20260128-how-to-make-google-put-trusted-sources-up-top-when-you-search",
+   "title": "",
+   "source": "<a href=\"https://www.bbc.com/future/article/20260128-how-to-make-google-put-trusted-sources-up-top-when-you-search\" data-testid=\"external-anchor\" target=\"_self\" class=\"LegalLinks-styles__LegalLinkItemStyled-sc-f9fd086a-3 iUVxwk\">Set Preferred Source</a>",
+   "path": "section > nav > ul > li > div > a"
+  },
+  {
+   "role": "text",
+   "name": "Copyright 2026 BBC. All rights reserved. The BBC is not responsible for the content of external sites.",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Read about our approach to external linking.",
+   "value": "",
+   "context": "Footer navigation",
+   "url": "https://www.bbc.com/editorialguidelines/guidance/links-and-feeds",
+   "title": "",
+   "source": "<a target=\"_self\" href=\"https://www.bbc.com/editorialguidelines/guidance/links-and-feeds\" class=\"LinkUrl-styles__LinkUrlStyled-sc-f4e3b82f-0 eGAhOs\"><b id=\"read-about-our-approach-to-external-linking.\" class=\"TextFragment-styles__TextFragmentStyled-sc-99e7c69b-0 fa-DACi\">Read about our approach to external linking.</b></a>",
+   "path": "div > div > footer > div > p > a"
+  },
+  {
+   "role": "heading",
+   "name": "Let us know you agree to cookies",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": "We use",
+   "value": "",
+   "context": "Let us know you agree to cookies",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "cookies",
+   "value": "",
+   "context": "Let us know you agree to cookies",
+   "url": "https://www.bbc.com/usingthebbc/cookies/what-do-i-need-to-know-about-cookies/",
+   "title": "",
+   "source": "<a href=\"https://www.bbc.com/usingthebbc/cookies/what-do-i-need-to-know-about-cookies/\">cookies</a>",
+   "path": "div > div > div > div > p > a"
+  },
+  {
+   "role": "text",
+   "name": "to give you the best online experience.",
+   "value": "",
+   "context": "cookies",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Please let us know if you agree to all of these cookies.",
+   "context": "Let us know you agree to cookies",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "Yes, I agree",
+   "value": "",
+   "context": "Let us know you agree to cookies",
+   "url": "",
+   "title": "",
+   "source": "<button type=\"button\" id=\"bbccookies-continue-button\" class=\"continue-button banner-button\"><span>Yes, I agree</span></button>",
+   "path": "div > div > div > ul > li > button"
+  },
+  {
+   "role": "link",
+   "name": "No, take me to settings",
+   "value": "",
+   "context": "Let us know you agree to cookies",
+   "url": "https://www.bbc.com/usingthebbc/cookies/how-can-i-change-my-bbc-cookie-settings/",
+   "title": "",
+   "source": "<a href=\"https://www.bbc.com/usingthebbc/cookies/how-can-i-change-my-bbc-cookie-settings/\" class=\"banner-button\"><span>No, take me to settings</span></a>",
+   "path": "div > div > div > ul > li > a"
+  },
+  {
+   "role": "dialog",
+   "name": "SP Consent Message",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "BBC Logo",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Let us know you agree to advertising cookies",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": "We and our 54 partners use cookies and similar technologies to collect and process personal data from your device, such as your IP address and the pages you visit.",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "We use this data to help us to better understand our audiences and to improve and personalise your experience. We also use this data to manage the advertising shown on our services. We make money from these ads, which in turn helps to fund our services and the creation of more BBC content.",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "strong",
+   "name": "Please let us know if you agree to:",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "Store and/or access information on a device",
+   "value": "Store and/or access information on a device",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "Personalised advertising and content, advertising and content measurement, audience research and services development",
+   "value": "Personalised advertising and content, advertising and content measurement, audience research and services development",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": "Click “Manage Options” to set your choice for specific purposes and to view the list of our",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "partners",
+   "value": "",
+   "context": "",
+   "url": "#",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": ". You can find out more on advertising cookies in our",
+   "value": "",
+   "context": "partners",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "privacy policy",
+   "value": "",
+   "context": "partners",
+   "url": "https://www.bbc.com/pages/privacy-policy",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": ". To change your preferences at any other time (including to withdraw consent or opt out of legitimate interest processing) by clicking on",
+   "value": "",
+   "context": "privacy policy",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "strong",
+   "name": "",
+   "value": "‘Do not share or sell my info‘",
+   "context": "privacy policy",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": "at the bottom of any page. Your choice only applies to BBC.com.",
+   "value": "",
+   "context": "privacy policy",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "I do not agree",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "I agree",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "Manage options",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  }
+ ]
+}

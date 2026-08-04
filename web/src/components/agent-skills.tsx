@@ -1,0 +1,226 @@
+"use client";
+
+import { Box, Flex, Span, Text } from "@chakra-ui/react";
+import { swallowed } from "@/lib/swallowed";
+import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
+// The same glyphs the transcript uses for these things — see `concept-icons.ts`.
+import { CONCEPT_ICONS } from "@/lib/concept-icons";
+import { fetchMcpTools, fetchSkills, subscribeEvents, type AgentCard, type AgentSkill, type McpServerTools, type McpTool } from "@/lib/api";
+import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
+import { SectionHeader } from "./ui/section-header";
+import { Pill } from "./ui/pill";
+import { InlineField } from "./ui/display";
+import { MarkdownContent } from "./markdown-content";
+
+// Renders a capability's display title: the human title when present, otherwise a
+// fallback to its identifier rendered in monospace to signal it is an id, not a
+// display title.
+function CapabilityTitle({ title, identifier }: { title?: string | null; identifier: string }) {
+  const display = (title ?? "").trim();
+  if (display && display !== identifier) return <>{display}</>;
+  return <Span fontFamily="var(--app-font-mono)" fontWeight="medium">{identifier}</Span>;
+}
+
+// MCP tool descriptions come from Python docstrings, whose Arguments:/
+// Returns:/etc. sections duplicate the tool's input schema. For the
+// capability browser we only show the human-readable summary above it.
+const DOCSTRING_SECTION = /\n[ \t]*(Arguments|Parameters|Params|Returns|Yields|Raises|Examples?|Notes?|See Also|References|Todo|Warnings?)(\s*\([^)]*\))?\s*:/i;
+
+function docstringSummary(description: string): string {
+  const match = description.match(DOCSTRING_SECTION);
+  return match ? description.slice(0, match.index ?? 0).trim() : description.trim();
+}
+
+// Comparator that pushes disabled capabilities (skills or servers) to the end
+// while preserving the relative order of everything else.
+function disabledLast(first: { enabled?: boolean }, second: { enabled?: boolean }): number {
+  return Number(first.enabled === false) - Number(second.enabled === false);
+}
+
+// Shows the selected agent's A2A AgentCard skills — broadcast from the served
+// agent and rendered as collapsible rows, so you can see what an agent can do —
+// plus the tools exposed by the configured MCP servers, grouped per server.
+// Every row starts collapsed to keep the empty state uncluttered.
+export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null; workingDirectory?: string }) {
+  const translation = useTranslations("AgentSkills");
+  const [mcpServers, setMcpServers] = useState<McpServerTools[]>([]);
+  const [folderSkills, setFolderSkills] = useState<AgentSkill[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Skills and MCP servers are both scoped to the selected folder (home globals
+    // plus that folder's own `.agents`), so refetch whenever the folder changes.
+    // Skills are listed independently of any agent, so a folder's global skills
+    // still appear even when it has no agents.
+    const loadCapabilities = () => {
+      fetchSkills(workingDirectory)
+        .then((skills) => {
+          if (!cancelled) setFolderSkills(skills);
+        })
+        .catch((caught) => swallowed({ component: "agent-skills", operation: "list the skills" }, caught));
+      fetchMcpTools(workingDirectory)
+        .then((servers) => {
+          if (!cancelled) setMcpServers(servers);
+        })
+        .catch((caught) => swallowed({ component: "agent-skills", operation: "list the MCP tools" }, caught));
+    };
+    loadCapabilities();
+    // Skills and MCP servers reload live (their files are watched server-side);
+    // refetch when the server signals a change so they stay current.
+    const unsubscribe = subscribeEvents((event) => {
+      if (event.type === "agents_changed") loadCapabilities();
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [workingDirectory]);
+
+  // Disabled capabilities are shown greyed out but sorted to the bottom of their
+  // list so they do not clutter the active ones (stable: relative order is kept).
+  const skillsById = new Map<string, AgentSkill>();
+  for (const skill of card?.skills ?? []) {
+    skillsById.set(skill.id, skill);
+  }
+  for (const skill of folderSkills) {
+    skillsById.set(skill.id, skill);
+  }
+  const skills = [...skillsById.values()].sort(disabledLast);
+  const hasSkills = skills.length > 0;
+  // Disabled servers are shown (greyed out) rather than hidden; enabled servers
+  // still connecting (no tools yet) stay hidden until they advertise something.
+  const toolServers = mcpServers
+    .filter((server) => server.enabled === false || server.tools.length > 0)
+    .sort(disabledLast);
+  const hasTools = toolServers.length > 0;
+  if (!hasSkills && !hasTools) return null;
+
+  // Split each list into the global capabilities (from ~/.agents) and the ones the
+  // selected folder contributes itself, so the two scopes can be shown apart. The
+  // scope labels only appear once the folder actually adds something workspace-local;
+  // a plain folder (only globals, e.g. home) stays an unlabelled flat list.
+  const globalSkills = skills.filter((skill) => skill.scope !== "workspace");
+  const workspaceSkills = skills.filter((skill) => skill.scope === "workspace");
+  const globalServers = toolServers.filter((server) => server.scope !== "workspace");
+  const workspaceServers = toolServers.filter((server) => server.scope === "workspace");
+
+  // The home folder has no workspace scope of its own, so its "This workspace" group
+  // (which would always be empty) is suppressed — only real workspace folders show it.
+
+  return (
+    // `minW={0}` because this sits in a centred flex column: a flex item's default minimum is
+    // the width of its content, so a long skill name or server identifier widened the whole panel
+    // past the 80rem column the chat is laid out in, instead of ellipsizing inside it.
+    <Box w="100%" minW={0} maxW="100%" pb={4}>
+      {hasSkills && (
+        <>
+          <SectionHeader
+            icon={<CONCEPT_ICONS.skill size={14} />}
+            title={translation("skillsAvailable")}
+            description={translation("skillsDescription")}
+          />
+          <Flex direction="column" gap={2}>
+            {/* One list, not two. Where a skill is defined is how it got here, not something
+                anyone picks it by — splitting on it made every capability one level deeper
+                and asked the reader to care about the filesystem. */}
+            {[...globalSkills, ...workspaceSkills].map((skill) => <SkillCard key={skill.id} skill={skill} />)}
+          </Flex>
+        </>
+      )}
+
+      {hasTools && (
+        <Box mt={hasSkills ? 6 : 0}>
+          <SectionHeader
+            icon={<CONCEPT_ICONS.mcp size={14} />}
+            title={translation("toolsAvailable")}
+            description={translation("toolsDescription")}
+          />
+          <Flex direction="column" gap={2}>
+            {[...globalServers, ...workspaceServers].map((server) => <McpServerGroup key={server.name} server={server} />)}
+          </Flex>
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+// One agent skill, collapsed by default. A disabled skill is greyed out and inert;
+// a skill with no description or examples is a plain, non-expanding line.
+function SkillCard({ skill }: { skill: AgentSkill }) {
+  const translation = useTranslations("AgentSkills");
+  const enabled = skill.enabled !== false;
+  const hasBody = !!skill.description || (skill.examples?.length ?? 0) > 0;
+  return (
+    <DisclosureRow
+      disabled={!enabled}
+      icon={<Box color="fg.muted"><CONCEPT_ICONS.skill /></Box>}
+      title={<DisclosureLabel><CapabilityTitle title={skill.title ?? skill.name} identifier={skill.id} /></DisclosureLabel>}
+      badges={enabled ? undefined : <Pill colorPalette="gray">{translation("disabled")}</Pill>}
+    >
+      {enabled && hasBody ? (
+        <>
+          {skill.description && (
+            <Box color="fg.muted">
+              <MarkdownContent content={skill.description} fontSize="xs" />
+            </Box>
+          )}
+          {skill.examples && skill.examples.length > 0 && (
+            <Box mt={2}>
+              <InlineField label={translation("examples")}>
+                <Flex direction="column" gap={1}>
+                  {skill.examples.map((example, index) => (
+                    <Text key={index} fontSize="xs" color="fg.muted">“{example}”</Text>
+                  ))}
+                </Flex>
+              </InlineField>
+            </Box>
+          )}
+        </>
+      ) : undefined}
+    </DisclosureRow>
+  );
+}
+
+// One MCP server's tools, collapsed by default. A disabled server is greyed out and
+// inert; an enabled server shows its tool count and expands to the tool rows.
+function McpServerGroup({ server }: { server: McpServerTools }) {
+  const translation = useTranslations("AgentSkills");
+  const enabled = server.enabled !== false;
+  return (
+    <DisclosureRow
+      disabled={!enabled}
+      icon={<Box color="fg.muted"><CONCEPT_ICONS.mcp /></Box>}
+      title={<DisclosureLabel><CapabilityTitle identifier={server.name} /></DisclosureLabel>}
+      badges={
+        enabled
+          ? <Pill colorPalette="gray">{translation("toolCount", { count: server.tools.length })}</Pill>
+          : <Pill colorPalette="gray">{translation("disabled")}</Pill>
+      }
+    >
+      {enabled && server.tools.length > 0 ? (
+        <Flex direction="column" gap={2}>
+          {server.tools.map((tool) => (
+            <McpToolRow key={tool.name} tool={tool} />
+          ))}
+        </Flex>
+      ) : undefined}
+    </DisclosureRow>
+  );
+}
+
+// A single MCP tool: its human title when present, else its name (id) in monospace.
+function McpToolRow({ tool }: { tool: McpTool }) {
+  return (
+    <Box>
+      <Text textStyle="fieldLabel">
+        <CapabilityTitle title={tool.title} identifier={tool.name} />
+      </Text>
+      {tool.description && (
+        <Box color="fg.muted">
+          <MarkdownContent content={docstringSummary(tool.description)} fontSize="xs" />
+        </Box>
+      )}
+    </Box>
+  );
+}

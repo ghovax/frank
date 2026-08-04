@@ -1,0 +1,118 @@
+[project]
+name = "frank"
+version = "0.1.0"
+description = "An agent harness where every session is a process you can address"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "langchain>=0.3.0",
+    "litellm>=1.60.0",
+    "sqlalchemy>=2.0",
+    "pyyaml>=6.0",
+    "pydantic>=2.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "httpx>=0.28.0",
+    "tenacity>=9.0.0",
+    "sse-starlette>=2.0.0",
+    "exa-py>=2.14.0",
+    "tiktoken>=0.8.0",
+    "a2a-sdk==0.3.7",
+    "pyjwt>=2.8.0",
+    "opentelemetry-sdk>=1.27.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.27.0",
+    "aiosqlite>=0.22.1",
+    "greenlet>=3.5.2",
+    "watchfiles>=1.2.0",
+    "mcp[cli]>=1.27,<2",
+    "markdownify>=1.2.2",
+    "firecrawl-py>=2.0.0",
+    "curl-cffi>=0.15.0",
+    "pillow>=11.0",
+    "python-multipart>=0.0.20",
+    "tree-sitter>=0.26",
+    "tree-sitter-python>=0.25",
+    "tree-sitter-javascript>=0.23",
+    "tree-sitter-typescript>=0.23",
+    "tree-sitter-json>=0.24",
+    "tree-sitter-yaml>=0.7",
+    "tree-sitter-toml>=0.6",
+    "tree-sitter-bash>=0.23",
+    "tree-sitter-html>=0.20",
+    "tree-sitter-css>=0.23",
+    "tree-sitter-c>=0.23",
+    "tree-sitter-cpp>=0.23",
+    "tree-sitter-go>=0.23",
+    "tree-sitter-rust>=0.23",
+    "tree-sitter-markdown>=0.3",
+    # Speech to text for the composer's dictation, on this machine. Apple-Silicon only, like
+    # the frameworks below it: MLX is what makes a gigabyte-class model practical to keep
+    # resident on a laptop. Imported only by the dictation worker, and only once somebody has
+    # turned dictation on — the weights are never bundled and download on first use.
+    "parakeet-mlx>=0.3; sys_platform == 'darwin'",
+    "pyobjc-framework-Cocoa>=11.0; sys_platform == 'darwin'",
+    "pyobjc-framework-Quartz>=11.0; sys_platform == 'darwin'",
+    "pyobjc-framework-ApplicationServices>=11.0; sys_platform == 'darwin'",
+    "playwright>=1.61.0",
+    "model2vec>=0.8.2",
+    "semble>=0.1.10",
+    "croniter>=6.2.4",
+    # `frank reach pair` prints its pairing link as a QR code, because the alternative is asking
+    # somebody to type a 43-character token into a phone. Pure Python and dependency-free, which
+    # matters for something the frozen build has to carry.
+]
+
+[project.scripts]
+frank = "frank.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/frank"]
+
+[tool.uv]
+package = true
+# Not a dependency — a floor on one the speech stack drags in. `librosa` (under `parakeet-mlx`)
+# depends on `numba`, and left alone the resolver settles on a release from before Python 3.13
+# existed, whose build then refuses the interpreter this project requires. A constraint states
+# the bound without adding the package: whoever pulls numba in gets a version that runs here.
+constraint-dependencies = ["numba>=0.61", "llvmlite>=0.44"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.21.0",
+    # The retrieval harness records one row per query per strategy and pivots it. A frame is the
+    # right shape for that: the questions asked of these measurements keep changing, and a saved
+    # frame answers a new one without re-running the sweep. Test-only — nothing the daemon ships
+    # imports it.
+    "pandas>=2.2",
+    "pyarrow>=18.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    # Pinned to a minor, not left open. Ruff's *default* rule set widens between releases, so
+    # an unpinned `ruff check` means a different check on every machine — 0 findings on one
+    # and 596 on another, from the same source. The rules this repository is checked against
+    # are stated in [tool.ruff] below rather than inherited.
+    "ruff>=0.14,<0.15",
+]
+
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+# The set the tree is actually written against and passes clean: pycodestyle errors, pyflakes.
+# Stated explicitly because Ruff's implicit default has grown over releases, and a linter whose
+# meaning depends on which version happens to be installed cannot gate anything.
+#
+# Widening this is worth doing and is deliberately not done here: the wider default reports
+# several hundred findings, and folding those into an unrelated change is how a diff stops
+# being reviewable. It is its own piece of work.
+select = ["E4", "E7", "E9", "F"]

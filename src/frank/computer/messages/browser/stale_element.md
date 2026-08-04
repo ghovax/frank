@@ -1,0 +1,1 @@
+"{{ identifier }}" is not on the page any more, so waiting for it will not help. Element ids describe the page as it was when a find ran, and this one has navigated or re-rendered since. Find the element again and act on what the find returns — passing the result itself, `screen.click(result)`, rather than its id string, keeps the two in step.

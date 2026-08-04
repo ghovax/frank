@@ -1,0 +1,2057 @@
+{
+ "site_name": "mdn",
+ "surface_name": "web",
+ "page_url": "https://developer.mozilla.org/en-US/docs/Web/Accessibility",
+ "elements": [
+  {
+   "role": "link",
+   "name": "Skip to main content",
+   "value": "",
+   "context": "",
+   "url": "#content",
+   "title": "",
+   "source": "<a href=\"#content\" data-glean-id=\"a11y_menu: click #content\">Skip to main content</a>",
+   "path": "html > body > ul > li > a"
+  },
+  {
+   "role": "link",
+   "name": "Skip to search",
+   "value": "",
+   "context": "",
+   "url": "#search",
+   "title": "",
+   "source": "<a href=\"#search\" data-glean-id=\"a11y_menu: click #search\">Skip to search</a>",
+   "path": "html > body > ul > li > a"
+  },
+  {
+   "role": "link",
+   "name": "GitLab See what your team can do with the intelligent orchestration platform for DevSecOps. Start your free trial",
+   "value": "",
+   "context": "",
+   "url": "/pong/click?code=aHR0cHM6Ly9zcnYuYnV5c2VsbGFkcy5jb20vYWRzL2NsaWNrL3gvR1RORDQyN1lDVzdENUs3RUZUNzRZS1FVRlRCREs1UU5DVFNJS1ozSkNBQURWNTNJQ1ZCSUxLUUtDNkJJNUtRV0Y2N0RFMjdVRlRZSTZLUU1DV0JJNjJKTUhFWUk1NTNNQ0s3RDY1M0VDVE5DWUJaNTJL.Q6fYd1PqM%2FB56EKVbxcZiwZU0Za6S8SsEmBGI0X3IRs%3D&version=2",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "GitLab",
+   "value": "",
+   "context": "GitLab See what your team can do with the intelligent orchestration platform for DevSecOps. Start your free trial",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "See what your team can do with the intelligent orchestration platform for DevSecOps.",
+   "context": "GitLab See what your team can do with the intelligent orchestration platform for DevSecOps. Start your free trial",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Start your free trial",
+   "context": "GitLab See what your team can do with the intelligent orchestration platform for DevSecOps. Start your free trial",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Ad",
+   "value": "",
+   "context": "GitLab See what your team can do with the intelligent orchestration platform for DevSecOps. Start your free trial",
+   "url": "/en-US/advertising",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Don't want to see ads?",
+   "value": "",
+   "context": "",
+   "url": "/en-US/plus?ref=nope",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "MDN",
+   "value": "",
+   "context": "",
+   "url": "/en-US/",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "MDN",
+   "value": "",
+   "context": "MDN",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "HTML",
+   "value": "",
+   "context": "MDN",
+   "url": "",
+   "title": "",
+   "source": "<button class=\"menu__tab-button\" type=\"button\" slot=\"button\" aria-expanded=\"false\" aria-controls=\"uid_lnogbh5253\"> <span class=\"menu__tab-label\">HTML</span> </button>",
+   "path": "div > div > nav > div > mdn-dropdown > button"
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "HTML",
+   "context": "MDN",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "CSS",
+   "value": "",
+   "context": "MDN",
+   "url": "",
+   "title": "",
+   "source": "<button class=\"menu__tab-button\" type=\"button\" slot=\"button\" aria-expanded=\"false\" aria-controls=\"uid_dew7pxpepnh\"> <span class=\"menu__tab-label\">CSS</span> </button>",
+   "path": "div > div > nav > div > mdn-dropdown > button"
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "CSS",
+   "context": "MDN",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "JavaScript",
+   "value": "",
+   "context": "MDN",
+   "url": "",
+   "title": "",
+   "source": "<button class=\"menu__tab-button\" type=\"button\" slot=\"button\" aria-expanded=\"false\" aria-controls=\"uid_bhh4bve2vs8\"> <span class=\"menu__tab-label\" data-type=\"long\">JavaScript</span><span class=\"menu__tab-label\" data-type=\"short\">JS</span> </button>",
+   "path": "div > div > nav > div > mdn-dropdown > button"
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "JavaScript",
+   "context": "MDN",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "Web APIs",
+   "value": "",
+   "context": "MDN",
+   "url": "",
+   "title": "",
+   "source": "<button class=\"menu__tab-button\" type=\"button\" slot=\"button\" aria-expanded=\"false\" aria-controls=\"uid_7xstekubiae\"> <span class=\"menu__tab-label\">Web APIs</span> </button>",
+   "path": "div > div > nav > div > mdn-dropdown > button"
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Web APIs",
+   "context": "MDN",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "All",
+   "value": "",
+   "context": "MDN",
+   "url": "",
+   "title": "",
+   "source": "<button class=\"menu__tab-button\" type=\"button\" slot=\"button\" aria-expanded=\"false\" aria-controls=\"uid_y4kveidayh\"> <span class=\"menu__tab-label\">All</span> </button>",
+   "path": "div > div > nav > div > mdn-dropdown > button"
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "All",
+   "context": "MDN",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "Learn",
+   "value": "",
+   "context": "MDN",
+   "url": "",
+   "title": "",
+   "source": "<button class=\"menu__tab-button\" type=\"button\" slot=\"button\" aria-expanded=\"false\" aria-controls=\"uid_29abx90mmg4\"> <span class=\"menu__tab-label\">Learn</span> </button>",
+   "path": "div > div > nav > div > mdn-dropdown > button"
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Learn",
+   "context": "MDN",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": "(external)",
+   "value": "",
+   "context": "MDN",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "Tools",
+   "value": "",
+   "context": "MDN",
+   "url": "",
+   "title": "",
+   "source": "<button class=\"menu__tab-button\" type=\"button\" slot=\"button\" aria-expanded=\"false\" aria-controls=\"uid_18wl7e1ve8z\"> <span class=\"menu__tab-label\">Tools</span> </button>",
+   "path": "div > div > nav > div > mdn-dropdown > button"
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Tools",
+   "context": "MDN",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "About",
+   "value": "",
+   "context": "MDN",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "About",
+   "context": "MDN",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": "(external)",
+   "value": "",
+   "context": "MDN",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Blog",
+   "value": "",
+   "context": "MDN",
+   "url": "/en-US/blog/",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "Search the site",
+   "value": "",
+   "context": "MDN",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Log in",
+   "value": "",
+   "context": "MDN",
+   "url": "https://developer.mozilla.org/users/fxa/login/authenticate/?next=%2Fen-US%2Fdocs%2FWeb%2FAccessibility",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Log in",
+   "context": "Log in",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Web",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Web",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web\" property=\"item\" typeof=\"WebPage\" data-glean-id=\"breadcrumb_click: 2/2\"><span property=\"name\">Web</span></a>",
+   "path": "body > header > div > ol > li > a"
+  },
+  {
+   "role": "link",
+   "name": "Accessibility",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Web/Accessibility",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "Switch color theme",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Theme",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "English (US)",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "English (US)",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Remember language",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Accessibility",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "strong",
+   "name": "",
+   "value": "Accessibility",
+   "context": "Accessibility",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": "(often abbreviated to",
+   "value": "",
+   "context": "Accessibility",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "strong",
+   "name": "",
+   "value": "A11y",
+   "context": "Accessibility",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": "a",
+   "value": "",
+   "context": "Accessibility",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "For many people, technology makes things easier. For people with disabilities, technology makes things possible. Accessibility means developing content to be as accessible as possible, no matter an individual's physical and cognitive abilities and how they access the web.",
+   "context": "Accessibility",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "strong",
+   "name": "",
+   "value": "The Web is fundamentally designed to work for all people",
+   "context": "Accessibility",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": ", whatever their hardware, software, language, location, or ability. When the Web meets this goal, it is accessible to people with a diverse range of hearing, movement, sight, and cognitive ability.",
+   "value": "",
+   "context": "Accessibility",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": "– (",
+   "value": "",
+   "context": "Accessibility",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "W3C - Accessibility (external)",
+   "value": "",
+   "context": "Accessibility",
+   "url": "https://www.w3.org/standards/webdesign/accessibility",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": ")",
+   "value": "",
+   "context": "W3C - Accessibility (external)",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "In this article",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Beginner's tutorials",
+   "value": "",
+   "context": "In this article",
+   "url": "#beginners_tutorials",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Accessibility guides",
+   "value": "",
+   "context": "In this article",
+   "url": "#accessibility_guides",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "References",
+   "value": "",
+   "context": "In this article",
+   "url": "#references",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "See also",
+   "value": "",
+   "context": "In this article",
+   "url": "#see_also",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "GitLab Take the assessment Take our 5-minute assessment to get your personalized roadmap for AI-powered development. Start here",
+   "value": "",
+   "context": "",
+   "url": "/pong/click?code=aHR0cHM6Ly9zcnYuYnV5c2VsbGFkcy5jb20vYWRzL2NsaWNrL3gvR1RORDQyN1lDVzdENUs3RUZUWUxZS1FVRlRCREs1UU5DVFNJUFozSkNBQURWNTNJQ1ZCSUUyN0tGNjdENks3VUNLQkk2NTNKQ0E3REtLUVlGNkFJTEszS0M2U0lFMlFJQ1Y3REVLM0VISk5DTFNJWg%3D%3D.GuKFfXHqAsPsj2kBJVRM5K78NzphPgeUZB4mROYDC1U%3D&version=2",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "GitLab",
+   "value": "",
+   "context": "GitLab Take the assessment Take our 5-minute assessment to get your personalized roadmap for AI-powered development. Start here",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "strong",
+   "name": "",
+   "value": "Take the assessment",
+   "context": "GitLab Take the assessment Take our 5-minute assessment to get your personalized roadmap for AI-powered development. Start here",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Take our 5-minute assessment to get your personalized roadmap for AI-powered development.",
+   "context": "GitLab Take the assessment Take our 5-minute assessment to get your personalized roadmap for AI-powered development. Start here",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Start here",
+   "context": "GitLab Take the assessment Take our 5-minute assessment to get your personalized roadmap for AI-powered development. Start here",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Ad",
+   "value": "",
+   "context": "GitLab Take the assessment Take our 5-minute assessment to get your personalized roadmap for AI-powered development. Start here",
+   "url": "/en-US/advertising",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Don't want to see ads?",
+   "value": "",
+   "context": "",
+   "url": "/en-US/plus?ref=nope",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "region",
+   "name": "Beginner's tutorials",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Beginner's tutorials",
+   "value": "",
+   "context": "Beginner's tutorials",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Beginner's tutorials",
+   "value": "",
+   "context": "Beginner's tutorials",
+   "url": "#beginners_tutorials",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": "Our learn web development",
+   "value": "",
+   "context": "Beginner's tutorials",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Accessibility module",
+   "value": "",
+   "context": "Beginner's tutorials",
+   "url": "/en-US/docs/Learn_web_development/Core/Accessibility",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Learn_web_development/Core/Accessibility\">Accessibility module</a>",
+   "path": "div > main > div > section > p > a"
+  },
+  {
+   "role": "text",
+   "name": "contains modern, up-to-date tutorials covering accessibility fundamentals.",
+   "value": "",
+   "context": "Accessibility module",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "What is accessibility?",
+   "value": "",
+   "context": "Beginner's tutorials",
+   "url": "/en-US/docs/Learn_web_development/Core/Accessibility/What_is_accessibility",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Learn_web_development/Core/Accessibility/What_is_accessibility\">What is accessibility?</a>",
+   "path": "main > div > section > dl > dt > a"
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "This article starts off the module with a good look at what accessibility is — this includes what groups of people we need to consider and why, what tools different people use to interact with the web, and how we can make accessibility part of our web development workflow.",
+   "context": "Beginner's tutorials",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Accessibility tooling and assistive technology",
+   "value": "",
+   "context": "Beginner's tutorials",
+   "url": "/en-US/docs/Learn_web_development/Core/Accessibility/Tooling",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Learn_web_development/Core/Accessibility/Tooling\">Accessibility tooling and assistive technology</a>",
+   "path": "main > div > section > dl > dt > a"
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Next we turn our attention to accessibility tooling, providing information on the kinds of tools you can use to help solve accessibility issues, and the assistive technologies used by people with disabilities as they browse the web. You'll be using these tools throughout subsequent articles.",
+   "context": "Beginner's tutorials",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "'link",
+   "name": "HTML: A good basis for accessibility",
+   "value": "",
+   "context": "Beginner's tutorials",
+   "url": "/en-US/docs/Learn_web_development/Core/Accessibility/HTML",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Learn_web_development/Core/Accessibility/HTML\">HTML: A good basis for accessibility</a>",
+   "path": "main > div > section > dl > dt > a"
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "A great deal of web content can be made accessible just by making sure the correct HTML elements are always used for the correct purpose. This article looks in detail at how HTML can be used to ensure maximum accessibility.",
+   "context": "Beginner's tutorials",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "CSS and JavaScript accessibility best practices",
+   "value": "",
+   "context": "Beginner's tutorials",
+   "url": "/en-US/docs/Learn_web_development/Core/Accessibility/CSS_and_JavaScript",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Learn_web_development/Core/Accessibility/CSS_and_JavaScript\">CSS and JavaScript accessibility best practices</a>",
+   "path": "main > div > section > dl > dt > a"
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "CSS and JavaScript, when used properly, also have the potential to allow for accessible web experiences, but if misused they can significantly harm accessibility. This article outlines some CSS and JavaScript best practices that should be considered to ensure that even complex content is as accessible as possible.",
+   "context": "Beginner's tutorials",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "WAI-ARIA basics",
+   "value": "",
+   "context": "Beginner's tutorials",
+   "url": "/en-US/docs/Learn_web_development/Core/Accessibility/WAI-ARIA_basics",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Learn_web_development/Core/Accessibility/WAI-ARIA_basics\">WAI-ARIA basics</a>",
+   "path": "main > div > section > dl > dt > a"
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Following on from the previous article, sometimes making complex UI controls that involve unsemantic HTML and dynamic JavaScript-updated content can be difficult. WAI-ARIA is a technology that can help with such problems by adding in further semantics that browsers and assistive technologies can recognize and use to let users know what is going on. Here we'll show how to use it at a basic level to improve accessibility.",
+   "context": "Beginner's tutorials",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Accessible multimedia",
+   "value": "",
+   "context": "Beginner's tutorials",
+   "url": "/en-US/docs/Learn_web_development/Core/Accessibility/Multimedia",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Learn_web_development/Core/Accessibility/Multimedia\">Accessible multimedia</a>",
+   "path": "main > div > section > dl > dt > a"
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Another category of content that can create accessibility problems is multimedia — video, audio, and image content need to be given proper textual alternatives, so they can be understood by assistive technologies and their users. This article shows how.",
+   "context": "Beginner's tutorials",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Mobile accessibility",
+   "value": "",
+   "context": "Beginner's tutorials",
+   "url": "/en-US/docs/Learn_web_development/Core/Accessibility/Mobile",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Learn_web_development/Core/Accessibility/Mobile\">Mobile accessibility</a>",
+   "path": "main > div > section > dl > dt > a"
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "With web access on mobile devices being so popular, and popular platforms such as iOS and Android having fully-fledged accessibility tools, it is important to consider the accessibility of your web content on these platforms. This article looks at mobile-specific accessibility considerations.",
+   "context": "Beginner's tutorials",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "region",
+   "name": "Accessibility guides",
+   "value": "",
+   "context": "Beginner's tutorials",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Accessibility guides",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Accessibility guides",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "#accessibility_guides",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": "The",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Accessibility guides",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "/en-US/docs/Web/Accessibility/Guides",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": "cover authoring principles, WCAG compliance, accessible widgets and navigation, mobile accessibility, and other key topics that will help you understand why accessibility is crucial for the web and how to improve it in your projects.",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Accessibility information for web authors",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "/en-US/docs/Web/Accessibility/Guides/Information_for_Web_authors",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/Guides/Information_for_Web_authors\">Accessibility information for web authors</a>",
+   "path": "main > div > section > dl > dt > a"
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "This document lists guidelines and regulations, how-to's, and tools for checking and repairing accessibility problems with websites.",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Personalization to help browse safely",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "/en-US/docs/Web/Accessibility/Guides/Browsing_safely",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/Guides/Browsing_safely\">Personalization to help browse safely</a>",
+   "path": "aside > nav > div > ol > li > a"
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "This article discusses making web content accessible for those with vestibular disorders, and those who support them, by taking advantage of personalization and accessibility settings built into the operating systems.",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Accessible web applications and widgets",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "/en-US/docs/Web/Accessibility/Guides/Accessible_web_applications_and_widgets",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/Guides/Accessible_web_applications_and_widgets\">Accessible web applications and widgets</a>",
+   "path": "aside > nav > div > ol > li > a"
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Most JavaScript libraries offer a library of client-side widgets that mimic the behavior of familiar desktop interfaces. While this results in a widget that looks like its desktop counterpart, there usually isn't enough semantic information in the markup to be usable by an assistive technology. This document describes techniques to improve accessibility of such widgets.",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Keyboard-navigable JavaScript widgets",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "/en-US/docs/Web/Accessibility/Guides/Keyboard-navigable_JavaScript_widgets",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/Guides/Keyboard-navigable_JavaScript_widgets\">Keyboard-navigable JavaScript widgets</a>",
+   "path": "aside > nav > div > ol > li > a"
+  },
+  {
+   "role": "text",
+   "name": "Until now, web developers who wanted to make their styled",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "code",
+   "name": "",
+   "value": "<div>",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": "and",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "code",
+   "name": "",
+   "value": "<span>",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": "based widgets accessible have lacked proper techniques.",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "strong",
+   "name": "",
+   "value": "Keyboard accessibility",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": "is part of the minimum accessibility requirements, which a developer should be aware of. This document describes techniques to make JavaScript widgets accessible with the keyboard.",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Mobile accessibility checklist",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "/en-US/docs/Web/Accessibility/Guides/Mobile_accessibility_checklist",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/Guides/Mobile_accessibility_checklist\">Mobile accessibility checklist</a>",
+   "path": "aside > nav > div > ol > li > a"
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "This document provides a concise checklist of accessibility requirements for mobile app developers.",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Understanding the Web Content Accessibility Guidelines (WCAG)",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "/en-US/docs/Web/Accessibility/Guides/Understanding_WCAG",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/Guides/Understanding_WCAG\">Understanding the Web Content Accessibility Guidelines (WCAG)</a>",
+   "path": "main > div > section > dl > dt > a"
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "A set of articles that provide quick explanations to help you understand the steps that need to be taken to conform to the recommendations outlined in the Web Content Accessibility Guidelines (WCAG).",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Cognitive accessibility",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "/en-US/docs/Web/Accessibility/Guides/Cognitive_accessibility",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/Guides/Cognitive_accessibility\">Cognitive accessibility</a>",
+   "path": "aside > nav > div > ol > li > a"
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Cognitive accessibility covers accessibility considerations for people with cognition and learning disabilities. This document introduces cognitive accessibility and improving accessibility of the web for people with cognitive and learning differences.",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Accessibility and spatial patterns",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "/en-US/docs/Web/Accessibility/Guides/Accessibility_and_Spatial_Patterns",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/Guides/Accessibility_and_Spatial_Patterns\">Accessibility and spatial patterns</a>",
+   "path": "main > div > section > dl > dt > a"
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "This document describes visual patterns that can induce physical symptoms in people who have photosensitive epilepsy, vestibular disorders, or other perceptual issues.",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "'link",
+   "name": "Web Accessibility: Understanding Colors and Luminance",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "/en-US/docs/Web/Accessibility/Guides/Colors_and_Luminance",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/Guides/Colors_and_Luminance\">Web Accessibility: Understanding Colors and Luminance</a>",
+   "path": "main > div > section > dl > dt > a"
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "While understanding color, luminance, and saturation is important for design and readability for all sighted users, they are essential for those with reduced vision and color-deficient vision and those with specific neurological, cognitive, and other impairments.",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Web accessibility for seizures and physical reactions",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "/en-US/docs/Web/Accessibility/Guides/Seizure_disorders",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/Guides/Seizure_disorders\">Web accessibility for seizures and physical reactions</a>",
+   "path": "main > div > section > dl > dt > a"
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Some types of visual web content can induce seizures in people with certain brain disorders. This article helps you understand the types of content that can be problematic and find tools and strategies to help you avoid them.",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "ARIA",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "/en-US/docs/Web/Accessibility/ARIA",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/ARIA\">ARIA</a>",
+   "path": "aside > nav > div > ol > li > a"
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "This is a collection of articles to learn how to use Accessible Rich Internet Applications (ARIA) to make your HTML documents more accessible.",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "region",
+   "name": "References",
+   "value": "",
+   "context": "Accessibility guides",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "References",
+   "value": "",
+   "context": "References",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "References",
+   "value": "",
+   "context": "References",
+   "url": "#references",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "ARIA reference",
+   "value": "",
+   "context": "References",
+   "url": "/en-US/docs/Web/Accessibility/ARIA/Reference",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/ARIA/Reference\">ARIA reference</a>",
+   "path": "aside > nav > div > ol > li > a"
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Reference documentation for Accessible Rich Internet Applications (ARIA) attributes and roles.",
+   "context": "References",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "region",
+   "name": "See also",
+   "value": "",
+   "context": "References",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "See also",
+   "value": "",
+   "context": "See also",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "See also",
+   "value": "",
+   "context": "See also",
+   "url": "#see_also",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Developer guides",
+   "value": "",
+   "context": "See also",
+   "url": "/en-US/docs/MDN/Guides",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/MDN/Guides\">Developer guides</a>",
+   "path": "main > div > section > ul > li > a"
+  },
+  {
+   "role": "link",
+   "name": "WAI Interest Group (external)",
+   "value": "",
+   "context": "See also",
+   "url": "https://www.w3.org/WAI/about/groups/waiig/",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "region",
+   "name": "Help improve MDN",
+   "value": "",
+   "context": "See also",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "heading",
+   "name": "Help improve MDN",
+   "value": "",
+   "context": "Help improve MDN",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Was this page helpful to you?",
+   "context": "Help improve MDN",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "Yes",
+   "value": "",
+   "context": "Help improve MDN",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "Yes",
+   "value": "",
+   "context": "Help improve MDN",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "button",
+   "name": "No",
+   "value": "",
+   "context": "Help improve MDN",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "No",
+   "value": "",
+   "context": "Help improve MDN",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Learn how to contribute",
+   "value": "",
+   "context": "Help improve MDN",
+   "url": "/en-US/docs/MDN/Community/Getting_started",
+   "title": "",
+   "source": "<a class=\"article-footer__contribute\" href=\"/en-US/docs/MDN/Community/Getting_started\">Learn how to contribute</a>",
+   "path": "div > main > div > section > div > a"
+  },
+  {
+   "role": "text",
+   "name": "This page was last modified on",
+   "value": "",
+   "context": "Learn how to contribute",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "time",
+   "name": "",
+   "value": "Oct 2, 2025",
+   "context": "Learn how to contribute",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": "by",
+   "value": "",
+   "context": "Learn how to contribute",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "MDN contributors",
+   "value": "",
+   "context": "Learn how to contribute",
+   "url": "/en-US/docs/Web/Accessibility/contributors.txt",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/contributors.txt\">MDN contributors</a>",
+   "path": "main > div > section > div > p > a"
+  },
+  {
+   "role": "text",
+   "name": ".",
+   "value": "",
+   "context": "MDN contributors",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "View this page on GitHub (external)",
+   "value": "",
+   "context": "Learn how to contribute",
+   "url": "https://github.com/mdn/content/blob/main/files/en-us/web/accessibility/index.md?plain=1",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": "•",
+   "value": "",
+   "context": "View this page on GitHub (external)",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Report a problem with this content (external)",
+   "value": "",
+   "context": "View this page on GitHub (external)",
+   "url": "https://github.com/mdn/content/issues/new?template=page-report.yml&mdn-url=https%3A%2F%2Fdeveloper.mozilla.org%2Fen-US%2Fdocs%2FWeb%2FAccessibility&metadata=%3C%21--+Do+not+make+changes+below+this+line+--%3E%0A%3Cdetails%3E%0A%3Csummary%3EPage+report+details%3C%2Fsummary%3E%0A%0A*+Folder%3A+%60en-us%2Fweb%2Faccessibility%60%0A*+MDN+URL%3A+https%3A%2F%2Fdeveloper.mozilla.org%2Fen-US%2Fdocs%2FWeb%2FAccessibility%0A*+GitHub+URL%3A+https%3A%2F%2Fgithub.com%2Fmdn%2Fcontent%2Fblob%2Fmain%2Ffiles%2Fen-us%2Fweb%2Faccessibility%2Findex.md%0A*+Last+commit%3A+https%3A%2F%2Fgithub.com%2Fmdn%2Fcontent%2Fcommit%2F04158640487c17d515de8078c9307a2f906377d0%0A*+Document+last+modified%3A+2025-10-02T08%3A33%3A44.000Z%0A%0A%3C%2Fdetails%3E",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "",
+   "value": "Filter sidebar",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "textbox",
+   "name": "Filter sidebar",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Accessibility",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Web/Accessibility",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Guides",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Web/Accessibility/Guides",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Information for web authors",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Web/Accessibility/Guides/Information_for_Web_authors",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/Guides/Information_for_Web_authors\">Information for web authors</a>",
+   "path": "aside > nav > div > ol > li > a"
+  },
+  {
+   "role": "link",
+   "name": "Personalization to help browse safely",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Web/Accessibility/Guides/Browsing_safely",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/Guides/Browsing_safely\">Personalization to help browse safely</a>",
+   "path": "aside > nav > div > ol > li > a"
+  },
+  {
+   "role": "link",
+   "name": "Accessible web applications and widgets",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Web/Accessibility/Guides/Accessible_web_applications_and_widgets",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/Guides/Accessible_web_applications_and_widgets\">Accessible web applications and widgets</a>",
+   "path": "aside > nav > div > ol > li > a"
+  },
+  {
+   "role": "link",
+   "name": "Keyboard-navigable JavaScript widgets",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Web/Accessibility/Guides/Keyboard-navigable_JavaScript_widgets",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/Guides/Keyboard-navigable_JavaScript_widgets\">Keyboard-navigable JavaScript widgets</a>",
+   "path": "aside > nav > div > ol > li > a"
+  },
+  {
+   "role": "link",
+   "name": "Mobile accessibility checklist",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Web/Accessibility/Guides/Mobile_accessibility_checklist",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/Guides/Mobile_accessibility_checklist\">Mobile accessibility checklist</a>",
+   "path": "aside > nav > div > ol > li > a"
+  },
+  {
+   "role": "link",
+   "name": "Cognitive accessibility",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Web/Accessibility/Guides/Cognitive_accessibility",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/Guides/Cognitive_accessibility\">Cognitive accessibility</a>",
+   "path": "aside > nav > div > ol > li > a"
+  },
+  {
+   "role": "link",
+   "name": "Spatial patterns",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Web/Accessibility/Guides/Accessibility_and_Spatial_Patterns",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/Guides/Accessibility_and_Spatial_Patterns\">Spatial patterns</a>",
+   "path": "aside > nav > div > ol > li > a"
+  },
+  {
+   "role": "link",
+   "name": "Colors and Luminance",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Web/Accessibility/Guides/Colors_and_Luminance",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/Guides/Colors_and_Luminance\">Colors and Luminance</a>",
+   "path": "aside > nav > div > ol > li > a"
+  },
+  {
+   "role": "link",
+   "name": "Preventing seizures and physical reactions",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Web/Accessibility/Guides/Seizure_disorders",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/Guides/Seizure_disorders\">Preventing seizures and physical reactions</a>",
+   "path": "aside > nav > div > ol > li > a"
+  },
+  {
+   "role": "generic",
+   "name": "Understanding WCAG",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Understanding WCAG",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Web/Accessibility/Guides/Understanding_WCAG",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "ARIA",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Web/Accessibility/ARIA",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/ARIA\">ARIA</a>",
+   "path": "aside > nav > div > ol > li > a"
+  },
+  {
+   "role": "generic",
+   "name": "ARIA guides",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "ARIA guides",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Web/Accessibility/ARIA/Guides",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "ARIA reference",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Web/Accessibility/ARIA/Reference",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web/Accessibility/ARIA/Reference\">ARIA reference</a>",
+   "path": "aside > nav > div > ol > li > a"
+  },
+  {
+   "role": "generic",
+   "name": "Attributes",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Attributes",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "generic",
+   "name": "Roles",
+   "value": "",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Roles",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Web/Accessibility/ARIA/Reference/Roles",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "WorkOS Homepage Bottom Banner",
+   "value": "",
+   "context": "",
+   "url": "/pong/click?code=aHR0cHM6Ly9zcnYuYnV5c2VsbGFkcy5jb20vYWRzL2NsaWNrL3gvR1RORDQyN1lDVzdENUtRTkM2N0xZS1FVRlRCRDVLM05DRTdJRVozSkNBQURWNTNKQ0tTSTRLUUtGVFlEQ0tRSkNBQURFMjNNQ0FZREs1UVVGVDdETEs3S0M2U0lFMlFJQ1Y3REVLM0VISk5DTFNJWg%3D%3D.BE20cyrfVKbOVKF7YHi%2FvVilMV4fXooFH75ye7p9LNs%3D&version=2",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "img",
+   "name": "WorkOS Homepage Bottom Banner",
+   "value": "",
+   "context": "WorkOS Homepage Bottom Banner",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Ad",
+   "value": "",
+   "context": "WorkOS Homepage Bottom Banner",
+   "url": "/en-US/advertising",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "MDN logo",
+   "value": "",
+   "context": "",
+   "url": "/",
+   "title": "",
+   "source": "<a class=\"footer__logo\" href=\"/\" aria-label=\"MDN logo\"><!--lit-part anjj6IBmI8g=--><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"83\" height=\"24\" viewBox=\"0 0 83 24\"><title>MDN</title><path d=\"M9.4 0 2.81 21.17H.12L6.69 0zm2.38 0v21.17H9.4V0h2.4Zm9.27 0-6.56 21.17H11.8L18.36 0zm2.39 0v21.17h-2.4V0zm22.11 16.83h-3.93v-1.27h.87v-3.63c0-.85-.16-1.45-.48-1.82a1.65 1.65 0 0 0-1.3-.52c-.74 0-1.3.25-1.66.78a3 3 0 0 0-.58 1.58v3.59h1.38v1.26h-3.93v-1.26h.87v-3.6c0-.88-.16-1.48-.48-1.83a1.7 1.7 0 0 0-1.29-.52 1.93 1.93 0 0 0-1.65.75 2.85 2.85 0 0 0-.58 1.6v3.62h1.59v1.27h-4.64v-1.27h1.37V9.75h-1.4V8.46",
+   "path": "body > div > footer > div > div > a"
+  },
+  {
+   "role": "img",
+   "name": "MDN",
+   "value": "",
+   "context": "MDN logo",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "paragraph",
+   "name": "",
+   "value": "Your blueprint for a better internet.",
+   "context": "MDN logo",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "MDN on GitHub",
+   "value": "",
+   "context": "",
+   "url": "https://github.com/mdn/",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "MDN on Bluesky",
+   "value": "",
+   "context": "",
+   "url": "https://bsky.app/profile/developer.mozilla.org",
+   "title": "",
+   "source": "<a href=\"https://bsky.app/profile/developer.mozilla.org\" target=\"_blank\" rel=\"noopener\" aria-label=\"MDN on Bluesky\" data-icon=\"bluesky\" data-glean-id=\"footer: social -&gt; bluesky\"></a>",
+   "path": "div > footer > div > ul > li > a"
+  },
+  {
+   "role": "link",
+   "name": "MDN on X",
+   "value": "",
+   "context": "",
+   "url": "https://x.com/mozdevnet",
+   "title": "",
+   "source": "<a href=\"https://x.com/mozdevnet\" target=\"_blank\" rel=\"noopener\" aria-label=\"MDN on X\" data-icon=\"x\" data-glean-id=\"footer: social -&gt; x\"></a>",
+   "path": "div > footer > div > ul > li > a"
+  },
+  {
+   "role": "link",
+   "name": "MDN on Mastodon",
+   "value": "",
+   "context": "",
+   "url": "https://mastodon.social/@mdn",
+   "title": "",
+   "source": "<a href=\"https://mastodon.social/@mdn\" target=\"_blank\" rel=\"noopener\" aria-label=\"MDN on Mastodon\" data-icon=\"mastodon\" data-glean-id=\"footer: social -&gt; mastodon\"></a>",
+   "path": "div > footer > div > ul > li > a"
+  },
+  {
+   "role": "link",
+   "name": "MDN blog RSS feed",
+   "value": "",
+   "context": "",
+   "url": "/en-US/blog/rss.xml",
+   "title": "",
+   "source": "<a href=\"/en-US/blog/rss.xml\" target=\"_blank\" rel=\"noopener\" aria-label=\"MDN blog RSS feed\" data-icon=\"rss\" data-glean-id=\"footer: social -&gt; rss\"></a>",
+   "path": "div > footer > div > ul > li > a"
+  },
+  {
+   "role": "term",
+   "name": "",
+   "value": "MDN",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "About",
+   "value": "",
+   "context": "",
+   "url": "/en-US/about",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Blog",
+   "value": "",
+   "context": "",
+   "url": "/en-US/blog/",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Mozilla careers (external)",
+   "value": "",
+   "context": "",
+   "url": "https://www.mozilla.org/en-US/careers/listings/",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Advertise with us",
+   "value": "",
+   "context": "",
+   "url": "/en-US/advertising",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "MDN Plus",
+   "value": "",
+   "context": "",
+   "url": "/en-US/plus",
+   "title": "",
+   "source": "<a href=\"/en-US/plus\" class=\"\" target=\"\" rel=\"\" data-glean-id=\"footer: link -&gt; /en-US/plus\"> MDN Plus </a>",
+   "path": "div > dl > dd > ul > li > a"
+  },
+  {
+   "role": "link",
+   "name": "Product help (external)",
+   "value": "",
+   "context": "",
+   "url": "https://support.mozilla.org/products/mdn-plus",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "term",
+   "name": "",
+   "value": "Contribute",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "MDN Community",
+   "value": "",
+   "context": "",
+   "url": "/en-US/community",
+   "title": "",
+   "source": "<a href=\"/en-US/community\" class=\"\" target=\"\" rel=\"\" data-glean-id=\"footer: link -&gt; /en-US/community\"> MDN Community </a>",
+   "path": "div > dl > dd > ul > li > a"
+  },
+  {
+   "role": "link",
+   "name": "Community resources",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/MDN/Community",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/MDN/Community\" class=\"\" target=\"\" rel=\"\" data-glean-id=\"footer: link -&gt; /en-US/docs/MDN/Community\"> Community resources </a>",
+   "path": "div > dl > dd > ul > li > a"
+  },
+  {
+   "role": "link",
+   "name": "Writing guidelines",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/MDN/Writing_guidelines",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/MDN/Writing_guidelines\" class=\"\" target=\"\" rel=\"\" data-glean-id=\"footer: link -&gt; /en-US/docs/MDN/Writing_guidelines\"> Writing guidelines </a>",
+   "path": "div > dl > dd > ul > li > a"
+  },
+  {
+   "role": "link",
+   "name": "MDN Discord (external)",
+   "value": "",
+   "context": "",
+   "url": "/discord",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "MDN on GitHub (external)",
+   "value": "",
+   "context": "",
+   "url": "https://github.com/mdn",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "term",
+   "name": "",
+   "value": "Developers",
+   "context": "",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Web technologies",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Web",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Web\" class=\"\" target=\"\" rel=\"\" data-glean-id=\"footer: link -&gt; /en-US/docs/Web\"> Web technologies </a>",
+   "path": "div > dl > dd > ul > li > a"
+  },
+  {
+   "role": "link",
+   "name": "Learn web development",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Learn_web_development",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Guides",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/MDN/Guides",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Tutorials",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/MDN/Tutorials",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/MDN/Tutorials\" class=\"\" target=\"\" rel=\"\" data-glean-id=\"footer: link -&gt; /en-US/docs/MDN/Tutorials\"> Tutorials </a>",
+   "path": "div > dl > dd > ul > li > a"
+  },
+  {
+   "role": "link",
+   "name": "Glossary",
+   "value": "",
+   "context": "",
+   "url": "/en-US/docs/Glossary",
+   "title": "",
+   "source": "<a href=\"/en-US/docs/Glossary\" class=\"\" target=\"\" rel=\"\" data-glean-id=\"footer: link -&gt; /en-US/docs/Glossary\"> Glossary </a>",
+   "path": "div > dl > dd > ul > li > a"
+  },
+  {
+   "role": "link",
+   "name": "Hacks blog (external)",
+   "value": "",
+   "context": "",
+   "url": "https://hacks.mozilla.org/",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Mozilla logo",
+   "value": "",
+   "context": "",
+   "url": "https://www.mozilla.org/",
+   "title": "",
+   "source": "<a class=\"footer__logo\" href=\"https://www.mozilla.org/\" aria-label=\"Mozilla logo\"><!--lit-part lm0Fgmo9xYQ=--><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"128\" height=\"30\" viewBox=\"0 0 256 60\"><title>Mozilla</title><path d=\"m13.32 22.1 5.1 24.3h2.1l5.1-24.3H39.3v37.34h-7.26V28.46h-2.1l-6.96 30.98h-7.02L9.02 28.46h-2.1v31H-.35V22.1h13.66Zm45.12 8.74c8.73 0 13.8 5.15 13.8 14.57S67.14 60 58.44 60c-8.73 0-13.8-5.17-13.8-14.59 0-9.43 5.07-14.57 13.8-14.57m0 23.34c4.1 0 6.16-2.1 6.16-6.73v-4.12c0-4.62-2.06-6.73-6.16-6.73s-6.15 2.1-6.15 6.73v4.12c0 4.63 2.05 6.73 6.15 6.73m17.68-.14 14.82-17.26H76.",
+   "path": "html > body > div > footer > div > a"
+  },
+  {
+   "role": "img",
+   "name": "Mozilla",
+   "value": "",
+   "context": "Mozilla logo",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Website Privacy Notice (external)",
+   "value": "",
+   "context": "Mozilla logo",
+   "url": "https://www.mozilla.org/privacy/websites/",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Telemetry Settings (external)",
+   "value": "",
+   "context": "Mozilla logo",
+   "url": "https://www.mozilla.org/en-US/privacy/websites/data-preferences/",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Legal (external)",
+   "value": "",
+   "context": "Mozilla logo",
+   "url": "https://www.mozilla.org/about/legal/terms/mozilla",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "Community Participation Guidelines (external)",
+   "value": "",
+   "context": "Mozilla logo",
+   "url": "https://www.mozilla.org/about/governance/policies/participation/",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "text",
+   "name": "Portions of this content are ©1998–2026 by individual mozilla.org contributors. Content available under",
+   "value": "",
+   "context": "Mozilla logo",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  },
+  {
+   "role": "link",
+   "name": "a Creative Commons license",
+   "value": "",
+   "context": "Mozilla logo",
+   "url": "/docs/MDN/Writing_guidelines/Attrib_copyright_license",
+   "title": "",
+   "source": "<a href=\"/docs/MDN/Writing_guidelines/Attrib_copyright_license\">a Creative Commons license</a>",
+   "path": "body > div > footer > div > p > a"
+  },
+  {
+   "role": "text",
+   "name": ".",
+   "value": "",
+   "context": "a Creative Commons license",
+   "url": "",
+   "title": "",
+   "source": "",
+   "path": ""
+  }
+ ]
+}

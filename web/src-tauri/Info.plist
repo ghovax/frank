@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- macOS privacy (TCC) usage strings. Tauri v2 merges this file into the app's generated
+       Info.plist. Each string is shown in the system permission prompt, so it explains, in
+       the user's terms, why Frank needs the access, and everything stays on-device.
+       These declarations are what let macOS prompt for the access instead of silently denying
+       it. Full Disk Access (Screen Time, Safari history) still has to be granted by hand in
+       System Settings, as macOS provides no prompt or entitlement for it — and the computer-use
+       tool's Accessibility access is likewise granted from the app's Settings › Computer control,
+       since macOS has no usage-string prompt for it either. -->
+  <!-- Dictation. Without this key macOS will not let the app ask for the microphone at all, and
+       WKWebView answers by not exposing `navigator.mediaDevices` — so the composer's dictate
+       button reported that the browser could not reach a microphone, which was true and said
+       nothing about why. The phone has always declared this in `mobile/app.json`; the desktop
+       never did, so dictation worked everywhere the interface ran except in its own app. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Frank records what you say so it can be typed into the composer. The recording is transcribed on this Mac and sent nowhere else.</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Frank uses other apps on your behalf — asking them and System Events to open pages, click, type, and report what is on screen — to carry out the tasks you ask for and to see which apps are open. Every action stays contained to one app, and this stays on your Mac.</string>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>Frank looks at the kinds of files on your Desktop and which you have used recently, to tailor its help. It never reads their contents; this stays on your Mac.</string>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>Frank looks at the kinds of files in your Documents and which you have used recently, to tailor its help. It never reads their contents; this stays on your Mac.</string>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>Frank looks at the kinds of files in your Downloads and which you have used recently, to tailor its help. It never reads their contents; this stays on your Mac.</string>
+  <key>NSSystemAdministrationUsageDescription</key>
+  <string>Frank reads basic system information — hardware, uptime, connected devices — to tailor its help. This stays on your Mac.</string>
+</dict>
+</plist>

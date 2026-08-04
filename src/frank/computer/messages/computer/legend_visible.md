@@ -1,0 +1,1 @@
+Whether this place is on screen right now. It is a fact about the desktop, not a precondition for acting: input is posted to the process rather than to the screen, so a window that is minimized, behind another, or on a different Space is driven exactly like any other. Never read `visible: false` as a reason to skip a place, relaunch its application, or bring it to the front.

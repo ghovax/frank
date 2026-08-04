@@ -1,0 +1,43 @@
+[package]
+name = "frank"
+version = "0.1.0"
+description = "Frank desktop app — native shell for the Frank session UI"
+authors = ["ghovax"]
+edition = "2021"
+default-run = "Frank"
+rust-version = "1.77.2"
+
+# The binary is named "Frank" (capitalized) so the built executable — and therefore
+# CFBundleExecutable — reads "Frank". The macOS Automation / Apple-Events permission prompt
+# shows the sending process's executable name, so a lowercase "frank" there would not match
+# the "Frank" the Accessibility pane shows; naming the binary properly keeps both consistent.
+[[bin]]
+name = "Frank"
+path = "src/main.rs"
+
+# The Rust code compiles to a library so the same `run()` entry point is shared by
+# the desktop binary (main.rs) and mobile builds.
+[lib]
+name = "frank_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# `unstable` is required for the multiwebview API (Window::add_child) used to embed
+# the native website-preview webview inside the main window.
+tauri = { version = "2", features = ["tray-icon", "unstable", "image-png"] }
+# The front-end-local store (saved connection profiles, UI prefs) lives in its own
+# SQLite database, separate from the harness server's history.db.
+# The native file picker — lets the user attach a local file by its real OS path so it
+# can be referenced in place (no copy). Drag-drop needs no plugin (webview core event).
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Low-level spawn control: the bundled server is launched "disclaimed" (its own TCC
+# responsible process) so the macOS Accessibility grant applies to it, not the app.
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSSound"] }

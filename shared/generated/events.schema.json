@@ -1,0 +1,905 @@
+{
+  "$defs": {
+    "CompactionEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "compaction",
+          "default": "compaction",
+          "type": "string"
+        },
+        "log_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "messages_after": {
+          "default": 0,
+          "type": "integer"
+        },
+        "messages_before": {
+          "default": 0,
+          "type": "integer"
+        },
+        "ok": {
+          "default": true,
+          "type": "boolean"
+        },
+        "reason": {
+          "default": "",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "started",
+            "done"
+          ],
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "tokens_after": {
+          "default": 0,
+          "type": "integer"
+        },
+        "tokens_before": {
+          "default": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "status",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "CumulativeUsage": {
+      "additionalProperties": false,
+      "description": "Session-lifetime running totals (monotonic), distinct from the per-call figures\non :class:`TokenUsageEvent` which describe only the latest model call.",
+      "properties": {
+        "cache_read_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "input_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "model_calls": {
+          "default": 0,
+          "type": "integer"
+        },
+        "output_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "reachable_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "reasoning_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "total_tokens": {
+          "default": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "DoneEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "done",
+          "default": "done",
+          "type": "string"
+        },
+        "state": {
+          "default": "completed",
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ErrorEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "default": "turn_failed",
+          "type": "string"
+        },
+        "kind": {
+          "const": "error",
+          "default": "error",
+          "type": "string"
+        },
+        "message": {
+          "default": "",
+          "type": "string"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "title": {
+          "default": "",
+          "type": "string"
+        },
+        "tool_call_id": {
+          "default": "",
+          "type": "string"
+        },
+        "tool_name": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "McpEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "tsType": "Record<string, unknown>"
+        },
+        "kind": {
+          "const": "mcp_event",
+          "default": "mcp_event",
+          "type": "string"
+        },
+        "server": {
+          "default": "",
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "tool": {
+          "default": "",
+          "type": "string"
+        },
+        "tool_call_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_call_id",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ModelToolResult": {
+      "additionalProperties": false,
+      "description": "The one-line JSON metadata header prepended to every tool result the model reads \u2014\ninline as a ToolMessage (``kind=\"tool_result\"``) or, for a background completion, as an\nappend-only system message (``kind=\"background_result\"``). The tool's raw output body\nfollows the header after a blank line, delivered **as-is**: prose stays prose (never\nre-encoded into an escaped JSON string), structured output stays JSON.",
+      "properties": {
+        "background_job_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "completed_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "default": "tool_result",
+          "enum": [
+            "tool_result",
+            "background_result"
+          ],
+          "type": "string"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "$ref": "#/$defs/ToolStatus"
+        },
+        "tool_call_id": {
+          "type": "string"
+        },
+        "tool_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_name",
+        "tool_call_id",
+        "status",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "PermissionReason": {
+      "additionalProperties": false,
+      "description": "Why approval is needed, as data rather than as a sentence.\n\nThe harness used to build the sentence itself \u2014 \"Sandbox approval required: this command\nreads outside the working directory (/a, /b).\" \u2014 and hand a client the finished English.\nThat put user-facing prose in the one place that cannot translate it: the daemon has no\nlocale, the string never reached the message catalogue, and a Japanese interface rendered\nan English clause with a colon and a parenthetical in the middle of its own layout.\n\nSo the harness states the *facts* and the client writes the sentence. `kind` selects the\nmessage; the paths ride as data the message interpolates. A reason the client does not\nrecognise falls back to the model's own explanation, which is prose either way.",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "paths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "PermissionRequestEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "tsType": "Record<string, unknown>"
+        },
+        "command": {
+          "default": "",
+          "type": "string"
+        },
+        "explanation": {
+          "default": "",
+          "type": "string"
+        },
+        "kind": {
+          "const": "permission_request",
+          "default": "permission_request",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionReason"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "risk": {
+          "default": "",
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "tool_call_id": {
+          "default": "",
+          "type": "string"
+        },
+        "tool_name": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "PrefixDivergence": {
+      "additionalProperties": false,
+      "description": "Where a request stopped matching the one before it.",
+      "properties": {
+        "current": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TracedSegment"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "index": {
+          "default": 0,
+          "type": "integer"
+        },
+        "previous": {
+          "$ref": "#/$defs/TracedSegment"
+        },
+        "rewritten": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "QuestionEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "question",
+          "default": "question",
+          "type": "string"
+        },
+        "questions": {
+          "items": {
+            "tsType": "Record<string, unknown>"
+          },
+          "type": "array"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "tool_call_id": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "StatusEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "default": "",
+          "type": "string"
+        },
+        "kind": {
+          "const": "status",
+          "default": "status",
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "SteeringEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "steering",
+          "default": "steering",
+          "type": "string"
+        },
+        "message_id": {
+          "default": "",
+          "type": "string"
+        },
+        "peer_sender": {
+          "default": "",
+          "type": "string"
+        },
+        "text": {
+          "default": "",
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "TextEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "text",
+          "default": "text",
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ThinkingDoneEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_ms": {
+          "default": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "const": "thinking_done",
+          "default": "thinking_done",
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ThinkingEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "block_id": {
+          "default": "",
+          "type": "string"
+        },
+        "kind": {
+          "const": "thinking",
+          "default": "thinking",
+          "type": "string"
+        },
+        "text": {
+          "default": "",
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "TokenUsageEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "cache_read_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "context_window": {
+          "default": 0,
+          "type": "integer"
+        },
+        "cumulative": {
+          "$ref": "#/$defs/CumulativeUsage"
+        },
+        "divergence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PrefixDivergence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "input_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "const": "token_usage",
+          "default": "token_usage",
+          "type": "string"
+        },
+        "output_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "prefix_intact": {
+          "default": false,
+          "type": "boolean"
+        },
+        "reachable_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "reasoning_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "segments": {
+          "default": 0,
+          "type": "integer"
+        },
+        "shared_segments": {
+          "default": 0,
+          "type": "integer"
+        },
+        "timestamp": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ToolCallEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "tsType": "Record<string, unknown>"
+        },
+        "kind": {
+          "const": "tool_call",
+          "default": "tool_call",
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "tool_call_id": {
+          "type": "string"
+        },
+        "tool_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_call_id",
+        "tool_name",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ToolMetadata": {
+      "additionalProperties": false,
+      "description": "Correlational + timing facts about a tool call. Shown in the UI and \u2014 per the\nproduct decision \u2014 kept visible to the model too, so it can reason about what it\nran and when.",
+      "properties": {
+        "background_job_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "completed_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tool_call_id": {
+          "type": "string"
+        },
+        "tool_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_name",
+        "tool_call_id"
+      ],
+      "type": "object"
+    },
+    "ToolResultEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "display": {
+          "default": null,
+          "tsType": "unknown"
+        },
+        "kind": {
+          "const": "tool_result",
+          "default": "tool_result",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/$defs/ToolMetadata"
+        },
+        "status": {
+          "$ref": "#/$defs/ToolStatus"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "tool_call_id": {
+          "type": "string"
+        },
+        "tool_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_call_id",
+        "tool_name",
+        "status",
+        "metadata",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ToolStatus": {
+      "enum": [
+        "running",
+        "ok",
+        "error"
+      ],
+      "type": "string"
+    },
+    "TracedSegment": {
+      "additionalProperties": false,
+      "description": "Which piece of a request a cache measurement is talking about.\n\nFields rather than a formatted label, so a consumer can count how often the tool schemas\nmove or which role tends to be rewritten. ``position`` is the index within the conversation,\nor ``-1`` for the parts a request has only one of.",
+      "properties": {
+        "kind": {
+          "default": "",
+          "type": "string"
+        },
+        "position": {
+          "default": -1,
+          "type": "integer"
+        },
+        "role": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "TurnContext": {
+      "additionalProperties": false,
+      "description": "The structured per-turn context injected at the end of the message list: the current time,\nwhere the agent is, its goal, its tasks, and its background work.",
+      "properties": {
+        "active_goal": {
+          "default": "",
+          "type": "string"
+        },
+        "background": {
+          "tsType": "Record<string, unknown>"
+        },
+        "confinement": {
+          "tsType": "Record<string, unknown>"
+        },
+        "locations": {
+          "items": {
+            "tsType": "Record<string, unknown>"
+          },
+          "type": "array"
+        },
+        "now": {
+          "default": "",
+          "type": "string"
+        },
+        "pwd": {
+          "default": "",
+          "type": "string"
+        },
+        "screen": {
+          "tsType": "Record<string, unknown>"
+        },
+        "tasks": {
+          "items": {
+            "tsType": "Record<string, unknown>"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "WarningEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "default": "",
+          "type": "string"
+        },
+        "kind": {
+          "const": "warning",
+          "default": "warning",
+          "type": "string"
+        },
+        "message": {
+          "default": "",
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "title": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "WireEvent": {
+      "discriminator": {
+        "mapping": {
+          "compaction": "#/$defs/CompactionEvent",
+          "done": "#/$defs/DoneEvent",
+          "error": "#/$defs/ErrorEvent",
+          "mcp_event": "#/$defs/McpEvent",
+          "permission_request": "#/$defs/PermissionRequestEvent",
+          "question": "#/$defs/QuestionEvent",
+          "status": "#/$defs/StatusEvent",
+          "steering": "#/$defs/SteeringEvent",
+          "text": "#/$defs/TextEvent",
+          "thinking": "#/$defs/ThinkingEvent",
+          "thinking_done": "#/$defs/ThinkingDoneEvent",
+          "token_usage": "#/$defs/TokenUsageEvent",
+          "tool_call": "#/$defs/ToolCallEvent",
+          "tool_result": "#/$defs/ToolResultEvent",
+          "warning": "#/$defs/WarningEvent"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TextEvent"
+        },
+        {
+          "$ref": "#/$defs/ThinkingEvent"
+        },
+        {
+          "$ref": "#/$defs/ThinkingDoneEvent"
+        },
+        {
+          "$ref": "#/$defs/ToolCallEvent"
+        },
+        {
+          "$ref": "#/$defs/ToolResultEvent"
+        },
+        {
+          "$ref": "#/$defs/McpEvent"
+        },
+        {
+          "$ref": "#/$defs/StatusEvent"
+        },
+        {
+          "$ref": "#/$defs/DoneEvent"
+        },
+        {
+          "$ref": "#/$defs/CompactionEvent"
+        },
+        {
+          "$ref": "#/$defs/SteeringEvent"
+        },
+        {
+          "$ref": "#/$defs/TokenUsageEvent"
+        },
+        {
+          "$ref": "#/$defs/PermissionRequestEvent"
+        },
+        {
+          "$ref": "#/$defs/QuestionEvent"
+        },
+        {
+          "$ref": "#/$defs/WarningEvent"
+        },
+        {
+          "$ref": "#/$defs/ErrorEvent"
+        }
+      ]
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "title": "FrankEvents",
+  "type": "object"
+}

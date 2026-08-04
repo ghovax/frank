@@ -1,0 +1,1 @@
+How far ahead of its own runner-up a near= anchor must score before a find will join on it. Below this the anchor is a guess, and organising a ranking around a guess is worse than not anchoring: it catches a third of the failures for one correct answer in 242.
