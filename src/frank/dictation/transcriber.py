@@ -277,9 +277,22 @@ class SpeechTranscriber:
                     self._stop_process()
                     raise DictationUnavailable("Dictation is shutting down.")
                 if not self._process.is_alive():
+                    status = self._process.exitcode
                     self._stop_process()
+                    # The exit status, because it separates two failures that read identically
+                    # and are fixed in completely different places. A worker that ran and could
+                    # not load the model has already written a traceback; one that never got as
+                    # far as its first line has written nothing, and pointing at the log is then
+                    # a false trail — which is exactly what happened when the frozen build's
+                    # spawned child was answered by the command-line parser instead of by
+                    # `multiprocessing`, and every launch died before executing anything.
+                    logger.error(
+                        "the dictation worker exited before reporting (status %s); it may not "
+                        "have started at all", status,
+                    )
                     raise DictationUnavailable(
-                        "The dictation model could not be started. The daemon log says why."
+                        f"The dictation model could not be started (worker exited: {status}). "
+                        "If the daemon log has no traceback from the worker, it never ran."
                     )
                 continue
             if kind == "ready":

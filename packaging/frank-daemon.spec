@@ -67,6 +67,13 @@ _collect = [
     "tree_sitter_language_pack",
     "joblib",
     "numpy",
+    # Dictation: the on-device speech model and the array framework under it. Absent from this
+    # list, `import mlx.core` inside the worker failed on `mlx._reprlib_fix` — a submodule
+    # nothing references by name, so nothing collected it, so the extension could not
+    # initialise. Dictation therefore worked from a checkout and had never once worked in the
+    # packaged app, which is a difference no amount of reading either would show.
+    "mlx",
+    "parakeet_mlx",
 ]
 
 for package in _collect:

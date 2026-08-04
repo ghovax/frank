@@ -37,6 +37,32 @@ def _run_bundled_script(relative_path: str, arguments: list) -> int:
 
 
 if __name__ == "__main__":
+    # A process this one spawns re-execs *this binary*, because frozen there is no separate
+    # interpreter to re-exec. `multiprocessing` therefore hands its own bootstrap on the command
+    # line, and without this the CLI's parser reads it as a subcommand and exits — the same
+    # mistake as the two roles below, and the reason dictation could not start in the packaged
+    # app: the worker was never reached, so it logged nothing, and the interface reported a
+    # failure whose explanation was in a log that had no entry.
+    #
+    # Called before anything else. It answers the child bootstrap and never returns in that
+    # case; in the parent it does nothing at all.
+    import multiprocessing
+
+    multiprocessing.freeze_support()
+
+    # And the other half of the same contract. `multiprocessing` starts its resource tracker
+    # with `sys.executable -E -c <code>`, which is the interpreter's own interface and not
+    # this program's. Unanswered, the tracker died on every launch and was relaunched forever —
+    # a warning a second, and shared memory nobody was tracking. Honouring `-c` here means
+    # anything that reasonably expects `sys.executable` to behave like an interpreter gets what
+    # it expects, rather than each caller needing a bespoke role invented for it.
+    if "-c" in sys.argv[1:4]:
+        marker = sys.argv.index("-c")
+        source = sys.argv[marker + 1] if len(sys.argv) > marker + 1 else ""
+        sys.argv = ["-c", *sys.argv[marker + 2:]]
+        exec(compile(source, "<string>", "exec"), {"__name__": "__main__"})
+        sys.exit(0)
+
     role = sys.argv[1] if len(sys.argv) > 1 else ""
     # The `control_screen` child. Stdlib-only by design: it holds no Frank code, bridges every
     # primitive to its parent over a pipe, and is thrown away when the script ends. Asking the
