@@ -42,7 +42,7 @@ already applies.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Optional, Protocol, runtime_checkable
 
 from langchain_core.tools import BaseTool, StructuredTool
 from pydantic import Field, ValidationError, create_model
@@ -82,7 +82,7 @@ class SessionAccess(Protocol):
     working_directory: str
     permission_mode: str
 
-    async def create(self, *, agent: str, working_directory: str, permission_mode: str) -> dict: ...
+    async def create(self, *, agent: str, working_directory: str) -> dict: ...
     async def send(self, session_id: str, text: str) -> None: ...
     async def get(self, session_id: str) -> dict: ...
     async def children(self) -> list[dict]: ...
@@ -101,8 +101,7 @@ def _unavailable(code: str) -> str:
 
 async def _create_session(
     agent: str,
-    working_directory: str = "",
-    permission_mode: str = "",
+    working_directory: Optional[str] = None,
     explanation: str = "",
 ) -> str:
     """Make a peer, and nothing else.
@@ -120,7 +119,6 @@ async def _create_session(
         record = await access.create(
             agent=agent,
             working_directory=working_directory or access.working_directory,
-            permission_mode=permission_mode,
         )
     except Exception as exception:  # noqa: BLE001 — surfaced to the model as a tool result
         return compact({"code": "create_session_error", "status": "error", "message": str(exception)})
@@ -130,9 +128,6 @@ async def _create_session(
         "status": "ok",
         "session": session_id,
         "agent": agent,
-        # The mode the peer actually got, not the one asked for: it is clamped against this
-        # session's, and a caller that cannot see the clamp cannot reason about what it made.
-        "permission_mode": str(record.get("permission_mode") or ""),
     })
 
 
@@ -224,13 +219,19 @@ def build_create_session_tool(agent_names: list[str]) -> BaseTool:
             Literal[names],  # type: ignore[valid-type]
             Field(description="The agent profile the peer runs."),
         ),
+        # Absent is how "the same as mine" is said, which a schema expresses by leaving a field
+        # out rather than by offering an empty string among the choices.
+        #
+        # There is deliberately no `permission_mode`. How much a session may do without a person
+        # is the person's policy, not a parameter for the thing being governed to set: a peer
+        # works the way its creator works, narrowed by whatever ceiling its agent profile
+        # declares, and both of those are decided outside this call. Offering the choice also
+        # meant the modes had to be explained to a model that has no use for the vocabulary — it
+        # declares a risk and a reason for each call, and what is done with that is not its
+        # business.
         working_directory=(
-            str,
-            Field(default="", description="Where the peer works. Defaults to your working directory."),
-        ),
-        permission_mode=(
-            Literal["", "default", "permissive", "self_classify", "read_only"],
-            Field(default="", description="The peer's permission mode. Defaults to yours."),
+            Optional[str],
+            Field(default=None, description="Where the peer works. Omit to use your working directory."),
         ),
         explanation=(str, Field(description=EXPLANATION)),
     )

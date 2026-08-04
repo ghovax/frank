@@ -44,7 +44,7 @@ export interface ChoiceSet<Value extends string = string> {
   choices: ChoiceDefinition<Value>[];
 }
 
-export type PermissionModeValue = "default" | "permissive" | "self_classify" | "read_only";
+export type PermissionModeValue = "default" | "permissive" | "classify" | "read_only";
 export type SandboxEnforceValue = "required" | "off";
 export type WorktreeStrategyValue = "none" | "branch" | "worktree";
 export type BooleanValue = "on" | "off";
@@ -75,10 +75,10 @@ export const PERMISSION_MODES: ChoiceSet<PermissionModeValue> = {
       palette: "orange",
     },
     {
-      value: "self_classify",
-      labelKey: "permissionSelfClassifyLabel",
-      nameKey: "permissionSelfClassifyName",
-      descriptionKey: "permissionSelfClassifyDescription",
+      value: "classify",
+      labelKey: "permissionClassifyLabel",
+      nameKey: "permissionClassifyName",
+      descriptionKey: "permissionClassifyDescription",
       glyph: "badge-check",
       palette: "blue",
     },

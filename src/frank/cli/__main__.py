@@ -185,9 +185,13 @@ def _command_tree(arguments: argparse.Namespace) -> int:
     return 0
 
 
-def _command_approve(arguments: argparse.Namespace) -> int:
-    decision = "deny" if arguments.deny else "allow_once"
-    _emit(call("session.respond", id=arguments.session, request_id=arguments.request, decision=decision))
+def _command_allow(arguments: argparse.Namespace) -> int:
+    _emit(call("session.respond", id=arguments.session, request_id=arguments.request, decision="allow_once"))
+    return 0
+
+
+def _command_deny(arguments: argparse.Namespace) -> int:
+    _emit(call("session.respond", id=arguments.session, request_id=arguments.request, decision="deny"))
     return 0
 
 
@@ -661,7 +665,7 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("-a", "--agent", required=True,
                         help="agent profile to run; required, because nothing can guess it for you")
     create.add_argument("-C", "--directory", help="working directory")
-    create.add_argument("-m", "--mode", choices=["default", "permissive", "self_classify", "read_only"],
+    create.add_argument("-m", "--mode", choices=["default", "permissive", "classify", "read_only"],
                         help="the permission mode this session starts under; it can be changed later, and the change reaches the turn in flight")
     create.add_argument("-w", "--workspace", help="workspace the session belongs to — the set of locations it may act in")
     create.add_argument("-P", "--parent", help="parent session; the child is clamped to no looser a mode")
@@ -680,7 +684,7 @@ def build_parser() -> argparse.ArgumentParser:
     schedule_create.add_argument("-w", "--workspace", required=True,
                                  help="workspace id, or a path inside one")
     schedule_create.add_argument("-m", "--mode", required=True,
-                                 choices=["default", "permissive", "self_classify", "read_only"],
+                                 choices=["default", "permissive", "classify", "read_only"],
                                  help="permission mode; required, because nobody is watching when "
                                       "this runs and an unstated mode is one nobody chose")
     schedule_create.add_argument("--timezone", default=_local_timezone(),
@@ -739,11 +743,19 @@ def build_parser() -> argparse.ArgumentParser:
     tree.add_argument("session")
     tree.set_defaults(handler=_command_tree)
 
-    approve = add("approve", help="answer a session's pending permission request")
-    approve.add_argument("session")
-    approve.add_argument("request")
-    approve.add_argument("-d", "--deny", action="store_true", help="deny instead of allowing")
-    approve.set_defaults(handler=_command_approve)
+    # Two verbs, because there are two answers and they are the two words used everywhere else:
+    # the decision on the wire is `allow_once` or `deny`, the classifier answers `allow` or
+    # `deny`, and the app's buttons say the same. One verb with a `--deny` flag made denying a
+    # modifier on approving, which is neither how it reads nor how it is recorded.
+    allow = add("allow", help="allow a session's pending permission request")
+    allow.add_argument("session")
+    allow.add_argument("request")
+    allow.set_defaults(handler=_command_allow)
+
+    deny = add("deny", help="deny a session's pending permission request")
+    deny.add_argument("session")
+    deny.add_argument("request")
+    deny.set_defaults(handler=_command_deny)
 
     kill = add("kill", help="end a session and everything under it")
     kill.add_argument("session")

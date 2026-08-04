@@ -50,7 +50,7 @@ function permissionAppearance(permissionMode: PermissionMode) {
       borderColor: "orange.muted",
       colorPalette: "orange",
     },
-    self_classify: {
+    classify: {
       icon: <LuBadgeCheck size={13} />,
       color: "blue.fg",
       background: "blue.subtle",
@@ -214,7 +214,7 @@ export function PermissionModeControl({
   const permissionChoices: { value: PermissionMode; label: string; description: string; icon: ReactNode; colorPalette?: "blue" | "green" | "orange" }[] = [
     { value: "default", label: translation("permissionDefaultLabel"), description: translation("permissionDefaultDescription"), icon: <LuHand size={13} /> },
     { value: "permissive", label: translation("permissionPermissiveLabel"), description: translation("permissionPermissiveDescription"), icon: <LuZap size={13} />, colorPalette: "orange" },
-    { value: "self_classify", label: translation("permissionSelfClassifyLabel"), description: translation("permissionSelfClassifyDescription"), icon: <LuBadgeCheck size={13} />, colorPalette: "blue" },
+    { value: "classify", label: translation("permissionClassifyLabel"), description: translation("permissionClassifyDescription"), icon: <LuBadgeCheck size={13} />, colorPalette: "blue" },
     { value: "read_only", label: translation("permissionReadOnlyLabel"), description: translation("permissionReadOnlyDescription"), icon: <LuEye size={13} />, colorPalette: "green" },
   ];
   const UNSET = "__unset__";

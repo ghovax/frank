@@ -281,7 +281,7 @@ export function ChatPanel({
   const tToolDisplay = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
   const format = useFormatter();
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(initialPermissionMode);
-  const { messages, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, abort, dequeueMessage, outboxHold, deliveringMessage, retryOutbox, handlePermission, handleQuestion, declineQuestion, compact } =
+  const { messages, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, abort, dequeueMessage, outboxHold, deliveringMessage, grantedPermissionMode, retryOutbox, handlePermission, handleQuestion, declineQuestion, compact } =
     useChat(agent, initialSessionId, workingDirectory, worktreeStrategy, permissionMode, sessionRunning, workspaceId);
 
   // Single source of truth for the working directory's validity and Git status —
@@ -446,6 +446,26 @@ export function ChatPanel({
     scrollToBottom();
     return result;
   }, [agent, initialSessionId, scrollToBottom, send, translation]);
+
+  // A session that was clamped says so, once, and the chip follows the truth rather than the
+  // request. Silence here is what made the control feel broken: the mode read "Autonomous"
+  // while the session stopped to ask, because its agent profile capped it.
+  //
+  // Derived during render rather than assigned from an effect: the granted mode is not a second
+  // source of truth to be copied into the first, it *is* the mode once the daemon has answered.
+  const effectivePermissionMode = grantedPermissionMode ?? permissionMode;
+  const announcedClampRef = useRef<string>("");
+  useEffect(() => {
+    if (!grantedPermissionMode || announcedClampRef.current === grantedPermissionMode) return;
+    announcedClampRef.current = grantedPermissionMode;
+    onPermissionModeChange?.(grantedPermissionMode);
+    toaster.create({
+      type: "info",
+      title: translation("permissionClampedTitle"),
+      description: translation("permissionClampedBody", { mode: grantedPermissionMode }),
+      closable: true,
+    });
+  }, [grantedPermissionMode, onPermissionModeChange, translation]);
 
   const openSettings = useCallback((section: SettingsSection) => {
     setSettingsSection(section);
@@ -1242,7 +1262,7 @@ export function ChatPanel({
           recentModels={recentModels}
           agentModel={agentModel}
           onAgentModelChange={onAgentModelChange}
-          permissionMode={permissionMode}
+          permissionMode={effectivePermissionMode}
           onPermissionModeChange={handlePermissionModeChange}
           sandboxEnforce={sandboxEnforce}
           sandboxBackend={sandboxBackend.backend}

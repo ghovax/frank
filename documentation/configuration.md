@@ -85,7 +85,7 @@ Which models each plan actually serves is discovered live from the account, so a
 
 Both are unofficial routes that the vendor can withdraw at any time.
 
-**Which model a session uses** is not set here — it belongs to the agent profile, in that agent's `configuration.json` under `preset`. See [Agents and skills](agents-and-skills.md#agents). A profile pinned to a provider you have no credentials for fails on its first call. It does not borrow another profile's model. Its own configuration defines an agent, and nothing else does.
+**Which model a session uses** is not set here — it belongs to the agent profile, in that agent's `AGENT.md` frontmatter (`model` and `provider`). See [Agents and skills](agents-and-skills.md#agents). A profile pinned to a provider you have no credentials for fails on its first call. It does not borrow another profile's model. Its own configuration defines an agent, and nothing else does.
 
 ## Web search and retrieval
 
@@ -192,12 +192,12 @@ It also clamps the confinement against the session that created it. Path sets in
 |------|-----------|
 | `default` | Follow the per-command rules; ask about anything they do not name. |
 | `permissive` | The same rules, but an unnamed command runs. Only the risk the model declared escalates: `low` runs, `medium` and `high` ask. No classifier, so no extra model call. |
-| `self_classify` | As `permissive`, plus a classifier that judges what the barrier could not settle — it approves the provably safe and escalates the rest. |
+| `classify` | A classifier settles every call the barrier could not, and **never asks**: it allows or denies. For work nobody is watching. A denial reaches the agent as a refused tool call, with a reason it can work around. A session in this mode can only create peers in it, since a peer that stopped to ask would be asking nobody. |
 | `read_only` | Allow reads; deny writes and side effects. The session's confinement is narrowed to match, so the kernel refuses a write the command scan did not catch. |
 
 They are listed from the most asking to the least, which is the order restrictiveness runs in and the order a session moves along as it earns trust. There is **no bypass mode**, and no standing "always allow": the only runtime decisions are allow-once and deny. A session's mode is chosen when the harness creates it and can be changed afterwards by the person running it; a session can never change its own. A session created by another is never looser than its parent, and tightening a session tightens the subtree it created.
 
-Bash additionally honours per-command rules on each agent (`sudo *: deny`, `rm *: ask`, …) — see [Agents and skills](agents-and-skills.md).
+Three tools take per-call rules on each agent, and they are the three whose calls can be named: `bash` by its command (`sudo *: deny`, `rm *: ask`, …), `mcp` by `server.tool` (`*.delete_*: deny`), and `screen` by the primitive a script reaches for (`evaluate: deny`). The longest matching pattern wins. A `deny` refuses the call outright in every mode, including `classify` — a classifier may not overrule a rule you wrote. See [Agents and skills](agents-and-skills.md).
 
 ## Conversation compaction
 

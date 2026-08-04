@@ -76,7 +76,7 @@ Neither is a fallback for the other, and the strongest scripts use both. Use `sc
 
 **Where you want data, reduce it in the page. This is a measured finding.** The numbers below are observations, not a rule to follow. On realistic pages, a `screen.evaluate` that filtered or aggregated in the page and returned only the result came back roughly one to two orders of magnitude smaller than pulling a whole API response into the conversation. A full response for a large list sometimes measured larger than simply reading the rendered page. A `find` behaved similarly: a few hundred tokens, where listing an entire element tree ran into the tens of thousands on a dense page. Weigh these as evidence about density. Do not read them as instructions.
 
-Note that `screen.evaluate` runs arbitrary script in the page, and the harness classifies it as state-changing, because nothing reading the call can tell a query from a mutation. So a read-only policy does not offer it at all. Where it is absent from your `primitives`, that is why, and `find` with `screen.read` is how you get data there.
+Note that `screen.evaluate` runs arbitrary script in the page, which counts as changing things — nothing reading the call can tell a query from a mutation. So a session that may not change anything is not given it. Where it is absent from your `primitives`, that is why, and `find` with `screen.read` is how you get data there.
 
 **When the screen cannot be read, stop and ask.** A `control_screen` that comes back needing a permission — macOS Accessibility not granted — or reporting that the browser is not connected, is a real blocker. Do not route around it. Tell the user plainly what is needed, and **wait for them**.
 

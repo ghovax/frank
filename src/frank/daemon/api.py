@@ -214,24 +214,27 @@ async def _session_create(params: dict) -> dict:
     if parent_id and parent is None:
         raise RpcError(f"No parent session {parent_id!r}.", status_code=404, code="no_such_session")
 
-    # Precedence: what the caller asked for, else the configured default. Either way a child
-    # is clamped against its parent, so the fallback can never be a way to gain authority the
-    # parent did not have.
     configured = getattr(getattr(state.global_configuration, "agent", None), "permission_mode", "")
-    requested = str(params.get("permission_mode") or "") or str(configured or "")
 
     working_directory = str(params.get("working_directory") or "")
     if parent is not None and not working_directory:
         working_directory = parent.working_directory
 
-    mode = PermissionMode.more_restrictive(
-        requested,
-        parent.permission_mode if parent is not None else None,
-        # The agent's own ceiling, which the runtime applies whether or not this record
-        # mentions it — so it is applied here too rather than leaving the record claiming a
-        # mode the session will not run under.
-        _agent_permission_ceiling(agent, working_directory),
-    )
+    try:
+        mode = PermissionMode.child_of(
+            parent.permission_mode if parent is not None else None,
+            requested=params.get("permission_mode"),
+            fallback=configured,
+            # The agent's own ceiling, which the runtime applies whether or not this record
+            # mentions it — so it is applied here too rather than leaving the record claiming a
+            # mode the session will not run under.
+            ceiling=_agent_permission_ceiling(agent, working_directory),
+        )
+    except ValueError as conflict:
+        # An agent whose profile caps it at a mode that asks, asked for by a session that cannot
+        # answer. Refused at creation, where it can be reported to whoever asked, rather than
+        # minting a peer that would park on its first gate and be waited on forever.
+        raise RpcError(str(conflict), status_code=409, code="unattended_conflict") from conflict
 
     sandbox = _resolve_sandbox(agent, working_directory, parent, mode)
 
@@ -401,7 +404,7 @@ async def _session_permission_mode(params: dict) -> dict:
     requested = PermissionMode.parse(params.get("permission_mode"))
     if requested is None:
         raise RpcError(
-            "permission_mode must be one of: default, permissive, self_classify, read_only.",
+            "permission_mode must be one of: default, permissive, classify, read_only.",
             status_code=400,
             code="invalid_permission_mode",
         )

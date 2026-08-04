@@ -6,7 +6,7 @@ A peer is a separate process. It runs its own agent profile and holds its own co
 
 This call returns as soon as the peer exists, and it gives you the peer's id — which is yours to address it with and not a thing to repeat to the user. After you brief it, **the peer sends you its answer as a message when it finishes**. That message arrives on its own, and it wakes you if your turn ended. So start the work, continue with whatever does not depend on it, and end your turn when everything left does depend on it. Never poll a peer to find out whether it finished.
 
-The peer is your child. The harness ends it when you end, and it cannot hold authority you do not have — the harness clamps a permission mode looser than yours down to yours. Pass `read_only` for a peer that only investigates.
+The peer is your child. It is ended when you are, and it can never hold more access than you have: a peer works the way you work, narrowed by whatever its agent profile allows. Choose the peer by its **agent** — that is what decides what it is for and what it may touch.
 
 A peer also works in the same tree you do. Your edits and its edits reach the same files, so tell it which part of the tree is its, and tell it that other agents work beside it.
 
@@ -15,5 +15,4 @@ A peer you create is reaped when you end, and until then it stays. Nothing you c
 Arguments:
   - agent: The agent profile the peer runs, from the list this tool enumerates. Required, and never invented.
   - working_directory: Where the peer works. Defaults to yours.
-  - permission_mode: The peer's mode — `default`, `permissive`, `self_classify` or `read_only`. Defaults to yours, and is clamped so a peer is never looser than you.
   - explanation: A short reason for creating this peer, in the words the user reads.

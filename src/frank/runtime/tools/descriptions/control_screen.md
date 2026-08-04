@@ -99,7 +99,7 @@ The harness reads what you import along with your script, when it decides whethe
 
 **There are two places to compose, and they are peers.** In the script, Python composes the primitives: loop over what a find returned, branch on it, wait for what an action reveals, compute the answer, report once. On a page, `evaluate` composes inside the document: one expression can filter a table to the rows that matter, aggregate a list into a number, read the page's own state, or call its signed-in API with `fetch` through the user's real session.
 
-Neither is the fallback for the other, and the strongest scripts use both. Use `evaluate` to work out *what* to act on, and the element primitives to act on it. The harness classifies `evaluate` as state-changing, because nothing reading a script can tell a query from a mutation, so a read-only policy does not offer it. There, `find` and `read` are the way.
+Neither is the fallback for the other, and the strongest scripts use both. Use `evaluate` to work out *what* to act on, and the element primitives to act on it. `evaluate` counts as changing things, because nothing reading a script can tell a query from a mutation, so a session that may not change anything is not given it. There, `find` and `read` are the way.
 
 ## Targets and elements
 

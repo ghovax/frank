@@ -17,8 +17,8 @@ model's.
 There is deliberately **no bypass mode**. An agent that runs with no gate at all is the one
 configuration whose blast radius is unbounded, and sessions now create sessions without a
 human in the loop, so the mode that disables the loop entirely is not offered. The loosest
-policy available is :attr:`SELF_CLASSIFY`, which still classifies every call and escalates
-anything it cannot prove safe.
+policy available is :attr:`CLASSIFY`, which judges every call it is given and answers for
+itself — but it does answer, and a call it cannot vouch for is refused rather than run.
 """
 
 from __future__ import annotations
@@ -35,22 +35,31 @@ class PermissionMode(StrEnum):
     - ``PERMISSIVE`` — an unmatched command runs; anything the model called medium or high
       risk asks. No classifier, so no model call and no judgement beyond the two facts the
       barrier already has.
-    - ``SELF_CLASSIFY`` — a classifier judges what the barrier could not settle: it approves
-      provably-safe calls and escalates the rest.
+    - ``CLASSIFY`` — a classifier settles what the barrier could not, and **never asks**: it
+      allows the call or it denies it.
     - ``READ_ONLY`` — every write is hard-blocked (investigation sessions).
 
-    ``PERMISSIVE`` exists because the gap between the first two was too wide to live in.
-    ``DEFAULT`` asks about every command its rules do not name, which on a real machine is most
-    of them; ``SELF_CLASSIFY`` stops asking about the ones a classifier can vouch for, at the cost of a
-    model call per ambiguous call and of trusting that judgement. What was missing was the
-    obvious middle: believe the risk the model already declared, run what it called low, and
-    ask about the rest. Between the two in restrictiveness, and cheaper than either to reason
-    about — no rule you wrote is ignored, and nothing is approved by a second model.
+    Only the first two ever put a question in front of a person, and that is the line between
+    them. ``DEFAULT`` and ``PERMISSIVE`` differ in how much they ask; ``CLASSIFY`` and
+    ``READ_ONLY`` differ in how they decide, and neither of them asks at all.
+
+    ``PERMISSIVE`` exists because the gap between the two interactive ends was too wide to live
+    in. ``DEFAULT`` asks about every command its rules do not name, which on a real machine is
+    most of them. What was missing was the obvious middle: believe the risk the model already
+    declared, run what it called low, and ask about the rest.
+
+    ``CLASSIFY`` is for work nobody is watching. An agent sent off to do a job cannot be
+    autonomous and also stop every few minutes for a click — a mode that escalates is a mode
+    that needs somebody at the keyboard, which is the opposite of what it is for. So the
+    classifier is given the whole decision: it allows what it can vouch for and denies the
+    rest, and a denial reaches the model as a refusal it can work around rather than a prompt
+    nobody is there to answer. The protection is that the judge still runs on every ambiguous
+    call, and still fails closed.
     """
 
     DEFAULT = "default"
     PERMISSIVE = "permissive"
-    SELF_CLASSIFY = "self_classify"
+    CLASSIFY = "classify"
     READ_ONLY = "read_only"
 
     @classmethod
@@ -58,12 +67,12 @@ class PermissionMode(StrEnum):
         """The mode a string names, or ``None`` when it names no known mode — so a caller can
         tell 'absent or invalid' apart from a real choice.
 
-        The four spellings above are the whole of it. A name this does not know — ``bypass`` from
-        before that mode was removed, ``auto`` from before ``self_classify`` was named for who
-        makes the decision — is not a mode, and reading it as one would mean two spellings for a
-        policy and configuration files that disagree about which is real. It falls back to the
-        interactive default, which is the safe end of the order and the one a person can see
-        being applied."""
+        The four spellings above are the whole of it. A name this does not know — ``bypass``
+        from before that mode was removed, ``self_classify`` from when the mode was named for
+        who judges rather than for what it does — is not a mode, and reading it as one would
+        mean two spellings for a policy and configuration files that disagree about which is
+        real. It falls back to the interactive default, which is the safe end of the order and
+        the one a person can see being applied."""
         if isinstance(value, cls):
             return value
         try:
@@ -81,7 +90,7 @@ class PermissionMode(StrEnum):
     @property
     def restrictiveness(self) -> int:
         """Position in the linear restrictiveness order, least to most:
-        ``self_classify < permissive < default < read_only``."""
+        ``classify < permissive < default < read_only``."""
         return _RESTRICTIVENESS[self]
 
     @classmethod
@@ -94,6 +103,53 @@ class PermissionMode(StrEnum):
         candidates = [mode for mode in (cls.parse(value) for value in modes) if mode is not None]
         return max(candidates, key=lambda mode: mode.restrictiveness) if candidates else cls.DEFAULT
 
+    @property
+    def never_asks(self) -> bool:
+        """Whether this mode can run with nobody watching.
+
+        Only :attr:`CLASSIFY`. `read_only` looks like it belongs here and does not: it still
+        stops for a read outside the working directory and for a request to widen access, so a
+        read-only session left alone parks on the first of either."""
+        return self is PermissionMode.CLASSIFY
+
+    @classmethod
+    def child_of(
+        cls,
+        parent: str | PermissionMode | None,
+        *,
+        requested: str | PermissionMode | None = None,
+        fallback: str | PermissionMode | None = None,
+        ceiling: str | PermissionMode | None = None,
+    ) -> PermissionMode:
+        """The mode a session created by ``parent`` runs under, or ``ValueError`` if there is
+        none it can have.
+
+        Three rules, in one place because they interact and a caller applying two of them is a
+        caller with a hole:
+
+        1. **Absent means inherit.** A peer created without a mode works the way its creator
+           works. Falling back to the machine default instead meant an unattended session could
+           delegate to a peer that stops and asks.
+        2. **Never looser than the parent**, and never looser than the agent profile's own
+           ceiling. This is the clamp, and it is what makes a session's authority something you
+           can reason about from the outside.
+        3. **A child of a session that cannot ask, cannot ask either.** Nobody is watching the
+           parent, so nobody is watching the child: a gate it raises reaches no one, it waits
+           forever, and the parent waits on it. Note this cannot be satisfied by *tightening* —
+           `read_only` is more restrictive and still asks — so it is a genuine constraint and
+           not a clamp, and where a profile's ceiling forbids it there is no legal answer.
+        """
+        parent_mode = cls.parse(parent)
+        chosen = cls.more_restrictive(
+            cls.parse(requested) or parent_mode or cls.parse(fallback), parent_mode, ceiling,
+        )
+        if parent_mode is not None and parent_mode.never_asks and not chosen.never_asks:
+            raise ValueError(
+                f"a session running unattended can only create sessions that also run "
+                f"unattended, and {chosen} stops to ask"
+            )
+        return chosen
+
     # One-hot views: call sites read a simple boolean, but off this single source of truth
     # rather than parallel fields that could drift out of sync.
     @property
@@ -101,9 +157,10 @@ class PermissionMode(StrEnum):
         return self is PermissionMode.READ_ONLY
 
     @property
-    def is_self_classifying(self) -> bool:
-        """Whether the harness asks a model to judge a call the barrier could not settle."""
-        return self is PermissionMode.SELF_CLASSIFY
+    def is_classifying(self) -> bool:
+        """Whether a classifier decides the calls the barrier could not settle — the whole
+        decision, allow or deny, with nothing escalated to a person."""
+        return self is PermissionMode.CLASSIFY
 
     @property
     def is_interactive(self) -> bool:
@@ -111,20 +168,20 @@ class PermissionMode(StrEnum):
 
         This is the one thing ``PERMISSIVE`` changes, and the whole of what it changes. Every
         other difference between the modes falls out of these three flags being false together:
-        not interactive, so an unmatched command is allowed; not self-classifying, so no
-        classifier is consulted and the declared risk stands; not read-only, so writes are not
-        blocked. The
+        not interactive, so an unmatched command is allowed; not classifying, so no classifier
+        is consulted and the declared risk stands; not read-only, so writes are not blocked. The
         result is exactly "run what the model called low-risk, ask about the rest"."""
         return self is PermissionMode.DEFAULT
 
 
 _RESTRICTIVENESS: dict[PermissionMode, int] = {
-    PermissionMode.SELF_CLASSIFY: 0,
-    # Above `self_classify` because it escalates everything the model called medium or high,
-    # where `self_classify` gives the classifier a chance to vouch for it; below `default`
-    # because it runs what `default` would have asked about. The clamp reads this, so a child of
-    # a `permissive` parent may be `permissive`, `default` or `read_only`, and never
-    # `self_classify`.
+    # Least restrictive because it is the only mode that can let a call through with nobody
+    # watching. That is the axis the clamp cares about: what a session may do without a person.
+    PermissionMode.CLASSIFY: 0,
+    # Above `classify` because it escalates everything the model called medium or high, where
+    # `classify` lets its judge vouch for it; below `default` because it runs what `default`
+    # would have asked about. The clamp reads this, so a child of a `permissive` parent may be
+    # `permissive`, `default` or `read_only`, and never `classify`.
     PermissionMode.PERMISSIVE: 1,
     PermissionMode.DEFAULT: 2,
     PermissionMode.READ_ONLY: 3,

@@ -11,17 +11,14 @@ Everything sits under `.agents/`:
 
 | Path | What it holds |
 |---|---|
-| `agents/<id>/agent.md` | The profile: frontmatter and the prompt body |
-| `agents/<id>/configuration.json` | Model preset, tools, permissions |
+| `agents/<id>/AGENT.md` | The whole profile: frontmatter and the prompt body |
 | `skills/<id>/SKILL.md` | A reusable capability, loaded on demand |
 | `memories/*.md` | Persistent project memory |
 | `mcp.json` | MCP server configuration |
 
 ## Agents
 
-An agent is a directory with a Markdown profile and a JSON configuration.
-
-**`agent.md`** — YAML frontmatter followed by the system-prompt body:
+An agent is a directory with one file in it: **`AGENT.md`**, spelled that way for the same reason a skill is `SKILL.md`. YAML frontmatter says everything the agent *is*; the body is its system prompt.
 
 ```markdown
 ---
@@ -30,27 +27,26 @@ title: Senior researcher
 description: A rigorous, skeptical researcher that pushes back before it builds.
 role: primary
 enabled: true
+model: mimo-v2.5
+provider: opencode
+reasoning_effort: high
+permission_mode: default
+tools:
+  bash:
+    enabled: true
+    background_allowed: true
+    permissions:
+      sudo *: deny
+      rm *: ask
+  mcp:
+    permissions:
+      "*.delete_*": deny
 ---
 
 You are the senior researcher. You do not take bullshit...
 ```
 
-**`configuration.json`** — the model preset, enabled tools, and permission rules:
-
-```json
-{
-  "preset": { "model": "mimo-v2.5", "provider": "opencode", "reasoningEffort": "high" },
-  "permissionMode": "default",
-  "tools": {
-    "enabledBuiltinTools": [],
-    "bash": {
-      "enabled": true,
-      "backgroundAllowed": true,
-      "permissions": { "sudo *": "deny", "rm *": "ask" }
-    }
-  }
-}
-```
+There used to be a `configuration.json` beside it holding the model preset, the permission ceiling and the tool toggles — in camelCase, while the frontmatter was snake_case. Loading an agent meant merging the two, so the same fact had two spellings and two places to be wrong. Settings edits this file directly, and leaves the prompt body untouched.
 
 Each agent is a profile a session can be created with, and a running session serves [A2A](https://github.com/google/A2A) on its own socket. A session that needs a peer creates one with its `create_session` tool, over the control plane your terminal uses. See [Tools](tools.md#composing-with-other-sessions) for how a peer reports back.
 

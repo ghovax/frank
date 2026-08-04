@@ -12,7 +12,8 @@ from frank.protocol.dtos import (
 )
 from frank.hub import state
 from frank.hub.services.broadcast import _publish_broadcast
-from frank.hub.services.agents import _agent_configuration_for_request, _agent_configuration_payload, _apply_agent_configuration_update, _card_for, _load_agent_sidecar, _path_scope, _record_model_selection, _reload_agent_cards, _save_agent_sidecar
+from frank.base.configuration import write_agent_markdown
+from frank.hub.services.agents import _agent_configuration_for_request, _agent_configuration_payload, _apply_agent_configuration_update, _card_for, _path_scope, _record_model_selection, _reload_agent_cards
 
 router = APIRouter()
 
@@ -56,9 +57,8 @@ async def agent_configuration(agent_name: str, working_directory: str = ""):
 async def update_agent_configuration(agent_name: str, request: AgentConfigurationUpdateRequest, working_directory: str = ""):
     assert state.global_configuration is not None
     try:
-        agent_markdown_path, _configuration_data = _agent_configuration_for_request(agent_name, working_directory)
-        sidecar = _load_agent_sidecar(agent_markdown_path)
-        _save_agent_sidecar(agent_markdown_path, _apply_agent_configuration_update(sidecar, request))
+        agent_markdown_path, configuration = _agent_configuration_for_request(agent_name, working_directory)
+        write_agent_markdown(agent_markdown_path, _apply_agent_configuration_update(configuration, request))
         saved_configuration = _agent_configuration_payload(agent_name, working_directory)
         if saved_configuration.provider and saved_configuration.model:
             await asyncio.to_thread(_record_model_selection, f"{saved_configuration.provider}/{saved_configuration.model}")

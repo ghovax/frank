@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 from frank.protocol.card import build_agent_card
 from frank.base.configuration import (
     agent_configuration_path,
-    AgentSidecar,
     list_agent_route_names,
     load_agent_configuration,
 )
@@ -20,9 +19,7 @@ from frank.base.models import find_model, provider_and_suffix
 from frank.base.skills import load_skills, skills_for_agent
 from frank.base.sqlite_lock import sqlite_write_lock
 from pathlib import Path
-from typing import Any
 import frank.base.configuration as _configuration
-import json
 from frank.hub import state
 from frank.hub.database import ModelHistoryRecord
 
@@ -159,53 +156,54 @@ def _agent_configuration_payload(agent_name: str, working_directory: str) -> Age
             background_allowed=configuration.tools.bash.background_allowed,
             permissions=dict(configuration.tools.bash.permissions),
         ),
-        path=str(path.with_name("configuration.json")),
+        path=str(path),
     )
 
 
-def _load_agent_sidecar(agent_markdown_path: Path) -> dict[str, Any]:
-    sidecar_path = agent_markdown_path.with_name("configuration.json")
-    if not sidecar_path.exists():
-        return {}
-    data = json.loads(sidecar_path.read_text())
-    return data if isinstance(data, dict) else {}
+def _apply_agent_configuration_update(
+    configuration: _configuration.AgentConfiguration, request: AgentConfigurationUpdateRequest
+) -> _configuration.AgentConfiguration:
+    """The profile with this request applied, as a value.
 
-
-def _save_agent_sidecar(agent_markdown_path: Path, data: dict[str, Any]) -> None:
-    sidecar_path = agent_markdown_path.with_name("configuration.json")
-    sidecar_path.parent.mkdir(parents=True, exist_ok=True)
-    sidecar_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
-
-
-def _apply_agent_configuration_update(sidecar: dict[str, Any], request: AgentConfigurationUpdateRequest) -> dict[str, Any]:
-    model = AgentSidecar.from_mapping(sidecar)
-    if request.model is not None or request.provider is not None or request.reasoning_effort is not None:
-        model.set_preset(
-            model=request.model if request.model is not None else ...,
-            provider=request.provider if request.provider is not None else ...,
-            reasoning_effort=request.reasoning_effort if request.reasoning_effort is not None else ...,
-        )
+    Edits land on the `AgentConfiguration` itself now. It used to be a camelCase JSON sidecar
+    parsed into its own parallel model, projected back onto the front matter's snake_case at
+    load time — two spellings of one fact, and a whole class whose job was to keep them in
+    step. The profile is one file, so there is one model of it.
+    """
+    updated = configuration.model_copy(deep=True)
+    if request.model is not None:
+        updated.model = request.model or None
+    if request.provider is not None:
+        updated.provider = request.provider or None
+    if request.reasoning_effort is not None:
+        updated.reasoning_effort = request.reasoning_effort
     # `model_fields_set`, not `is not None`, because `null` here means something: clear the
-    # ceiling. A card names a mode to declare the loosest its agent may run at, and "no ceiling"
-    # is a state the editor has to be able to return to — with `is not None` it could only ever
-    # set one, so a ceiling was a one-way door.
+    # ceiling. A profile names a mode to declare the loosest its agent may run at, and "no
+    # ceiling" is a state the editor has to be able to return to — with `is not None` it could
+    # only ever set one, so a ceiling was a one-way door.
     if "permission_mode" in request.model_fields_set:
-        model.permission_mode = request.permission_mode
+        updated.permission_mode = request.permission_mode
     if request.tools_enabled is not None:
-        model.set_tools_enabled(request.tools_enabled)
+        updated.tools_enabled = list(request.tools_enabled)
     if request.tools_disabled is not None:
-        model.set_tools_disabled(request.tools_disabled)
+        updated.tools.disabled = list(request.tools_disabled)
     if request.bash is not None:
-        model.set_bash(
-            enabled=request.bash.enabled if request.bash.enabled is not None else ...,
-            background_allowed=request.bash.background_allowed if request.bash.background_allowed is not None else ...,
-            permissions=(
-                AgentSidecar.normalized_permissions(request.bash.permissions)
-                if request.bash.permissions is not None
-                else ...
-            ),
-        )
-    return model.to_mapping()
+        if request.bash.enabled is not None:
+            updated.tools.bash.enabled = request.bash.enabled
+        if request.bash.background_allowed is not None:
+            updated.tools.bash.background_allowed = request.bash.background_allowed
+        if request.bash.permissions is not None:
+            updated.tools.bash.permissions = _normalized_permissions(request.bash.permissions)
+    return updated
+
+
+def _normalized_permissions(permissions: dict[str, str]) -> dict[str, str]:
+    """Rules with their decisions lowercased and anything unnamed dropped."""
+    return {
+        str(pattern): str(decision).lower()
+        for pattern, decision in (permissions or {}).items()
+        if str(pattern).strip()
+    }
 
 
 def _reload_agent_cards() -> None:

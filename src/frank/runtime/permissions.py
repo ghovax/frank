@@ -27,6 +27,7 @@ import logging
 import uuid
 from pathlib import Path
 from frank.base.serialization import compact
+from frank.base.tuning import Tunable, active_tuning
 
 logger = logging.getLogger(__name__)
 
@@ -176,8 +177,9 @@ def _control_script_assessment(script: str, import_roots: Sequence[str] = ()) ->
                         # Not ours to read: a third-party package, or a name that does not
                         # resolve at all. Either way its screen calls are invisible here, and a
                         # module holding a `click` would otherwise make the script that imports
-                        # it look read-only. `unknown` escalates rather than refuses, so this
-                        # costs one question and not the capability.
+                        # it look read-only. `unknown` is unsettled rather than refused, so it
+                        # goes to whoever decides — a person under the interactive modes, the
+                        # classifier under `classify` — and costs a decision, not the capability.
                         return "unknown", f"imports {module}, which cannot be read from here"
                     verdict, detail = assess(source_text, depth - 1)
                     if verdict == "unknown":
@@ -200,6 +202,19 @@ def _control_script_assessment(script: str, import_roots: Sequence[str] = ()) ->
     # Two levels: the script, and the module it imports. Deeper than that is a module importing a
     # module, where naming the offending call is no longer information a person can act on.
     return assess(script, depth=2)
+
+
+def _classifier_tool_kind(tool_name: str) -> str:
+    """Which kind of judgement the classifier prompt should apply.
+
+    The prompt reasons differently about a shell command and a script driving somebody's own
+    screen, so a request carried by `control_screen` must not be judged as if it were a command.
+    """
+    if tool_name == "control_screen":
+        return "screen"
+    if tool_name == "call_mcp_tool":
+        return "mcp"
+    return "bash"
 
 
 class _DecidesPermissions:
@@ -261,42 +276,78 @@ class _DecidesPermissions:
                     "writes": list(access_request.writes),
                     "network": access_request.network,
                 }} if access_request is not None and access_request.wants_widening else {}),
-                "allowed_actions": ["auto_approve", "escalate"],
+                "allowed_actions": ["allow", "deny"],
             },
         )
         prompt = self._prompt_loader.load("permission_classifier", {})
-        try:
-            model = self._llm.bind_tools([PermissionDecision], tool_choice="auto")
-            # Instructions and subject as separate messages. Folding the call being judged into
-            # the system prompt left the request with no input at all, which some providers
-            # reject outright — the ChatGPT Codex endpoint answers `400: One of "input" … must be
-            # provided`. On those the classifier never ran: every ambiguous call fell to the
-            # exception path below and escalated, so the permission system quietly degraded to
-            # "ask about everything" and reported an API error as its reason for asking.
-            response = await model.ainvoke([
-                SystemMessage(content=prompt),
-                HumanMessage(content=context),
-            ])
+        # Bounded attempts with a line per failure, the same shape a session uses to name
+        # itself. This was a single call whose every failure was a refusal, which conflates two
+        # different things: a judge that considered the call and would not vouch for it, and a
+        # judge that never got to consider it. The first is a decision and the second is a
+        # dropped request — and one dropped request meant an agent was refused a tool call for
+        # reasons that had nothing to do with the call. Retrying costs a second or two and only
+        # happens on a failure; not retrying costs the work.
+        #
+        # Failing closed still holds. What changed is when: after the attempts are spent, not on
+        # the first hiccup.
+        model = self._llm.bind_tools([PermissionDecision], tool_choice="auto")
+        # Instructions and subject as separate messages. Folding the call being judged into the
+        # system prompt left the request with no input at all, which some providers reject
+        # outright — the ChatGPT Codex endpoint answers `400: One of "input" … must be provided`.
+        # On those the classifier never ran, so the permission system quietly degraded to
+        # refusing everything and reported an API error as its reason.
+        request = [SystemMessage(content=prompt), HumanMessage(content=context)]
+        attempts = active_tuning().amount(Tunable.permission_classifier_attempts)
+        for attempt in range(1, attempts + 1):
+            try:
+                response = await model.ainvoke(request)
+            except Exception:  # noqa: BLE001 — one dropped call is not a verdict
+                logger.warning(
+                    "the permission classifier could not be reached (attempt %d of %d)",
+                    attempt, attempts, exc_info=True,
+                )
+                continue
             if not response.tool_calls:
-                return PermissionDecision(action="escalate", explanation="Classifier returned no structured decision.", risk="medium")
-            decision = PermissionDecision.model_validate(response.tool_calls[0]["args"])
-            if default_decision == "deny" and decision.action == "auto_approve":
-                return PermissionDecision(action="escalate", explanation="User-configured permissions deny this action.", risk="high")
+                logger.warning(
+                    "the permission classifier answered without a decision (attempt %d of %d)",
+                    attempt, attempts,
+                )
+                continue
+            try:
+                decision = PermissionDecision.model_validate(response.tool_calls[0]["args"])
+            except Exception:  # noqa: BLE001 — a malformed verdict is not a verdict either
+                logger.warning(
+                    "the permission classifier returned a malformed decision (attempt %d of %d)",
+                    attempt, attempts, exc_info=True,
+                )
+                continue
+            # A reason is not decoration: it is the whole of what the agent is told, and a
+            # verdict without one cannot be acted on. Treated as a failed attempt rather than as
+            # a refusal, because a model that forgot the field will usually supply it next time.
             if not decision.explanation.strip():
-                return PermissionDecision(action="escalate", explanation="Classifier did not provide a explanation.", risk="medium")
+                logger.warning(
+                    "the permission classifier gave no reason for its decision (attempt %d of %d)",
+                    attempt, attempts,
+                )
+                continue
+            # A rule the person wrote outranks the classifier's judgement, in that direction and
+            # only that one: it may refuse what the rules allow, and never allow what they deny.
+            if default_decision == "deny" and decision.action == "allow":
+                return PermissionDecision(
+                    action="deny", explanation="Your permission rules deny this action.", risk="high",
+                )
             return decision
-        except Exception:
-            # Fail closed — a classifier that cannot answer must not approve anything. But its
-            # failure is not a reason, and this used to hand the raw exception to the person as
-            # the explanation for the gate, so they were shown a provider's 400 where they
-            # expected to read why their approval was needed. The detail goes to the log, where
-            # somebody can act on it.
-            logger.warning("the permission classifier could not decide; escalating", exc_info=True)
-            return PermissionDecision(
-                action="escalate",
-                explanation="The safety check could not run, so this needs your decision.",
-                risk="medium",
-            )
+
+        # Every attempt spent. Fail closed: a judge that cannot answer must not allow anything,
+        # and there is nobody to hand the question to. The exception itself is not a reason and
+        # never reaches the agent — that used to hand a provider's 400 to a model as the account
+        # of why its call was risky. The detail is in the log, where somebody can act on it.
+        logger.warning("the permission classifier did not decide in %d attempts; denying", attempts)
+        return PermissionDecision(
+            action="deny",
+            explanation="The safety check could not run, so this call was refused.",
+            risk="medium",
+        )
 
     def _already_granted(self, request) -> bool:
         """Whether every path and capability this call asks for was approved earlier this session.
@@ -361,7 +412,7 @@ class _DecidesPermissions:
             "network": request.network, "purpose": purpose,
         })
 
-    def _access_request_gate(
+    async def _access_request_gate(
         self, request, *, policy, tool_call_identifier: str, tool_name: str, explanation: str,
     ) -> tuple[Optional[_PreflightGate], Optional[dict]]:
         """The verdict on one call's request for reach beyond its profile.
@@ -402,6 +453,25 @@ class _DecidesPermissions:
         if profile.grants_without_asking(sorted(asked_for), workspace=workspace) and not request.network:
             self._record_grant(request, explanation)
             return None, None
+        # Under `classify` this is decided here rather than put to somebody. A request for reach
+        # beyond the profile was the one gate that ignored the mode entirely: every other branch
+        # of the preflight consults the classifier, and this one raised a prompt whatever the
+        # session was set to — so an autonomous session asking to widen its own access stopped
+        # dead and waited for a click that was never coming.
+        if policy.classifies:
+            decision = await self._classify_permission(
+                tool_kind=_classifier_tool_kind(tool_name), command=tool_name, raw_command="",
+                default_decision="ask", read_only=False, risk="medium",
+                explanation=self._access_request_summary(request, explanation),
+                access_request=request,
+            )
+            if decision.action == "allow":
+                self._record_grant(request, explanation)
+                self._record_event("access_allowed", {
+                    "tool": tool_name, "reason": decision.explanation, "risk": decision.risk,
+                })
+                return None, None
+            return None, self._classifier_denial("", decision, self._access_request_summary(request, explanation))
         return _PreflightGate(
             request_id=self._new_permission_request_id(tool_call_identifier),
             tool_call_id=tool_call_identifier,
@@ -477,7 +547,7 @@ class _DecidesPermissions:
             # The rules allow it and the model called it low-risk — under the mode now in force
             # this call would never have been gated at all.
             return "allow"
-        if not policy.self_classifies:
+        if not policy.classifies:
             # Interactive: the ambiguous middle is exactly what a person is for.
             return ""
         decision = await self._classify_permission(
@@ -485,10 +555,28 @@ class _DecidesPermissions:
             default_decision=rule, read_only=False, risk=risk or "medium",
             explanation="", static_classification="", static_detail="",
         )
-        if decision.action == "auto_approve":
-            self._record_event("bash_auto_approved", {"command": command, "reason": decision.explanation, "risk": decision.risk})
+        if decision.action == "allow":
+            self._record_event("bash_allowed", {"command": command, "reason": decision.explanation, "risk": decision.risk})
             return "allow"
-        return ""
+        # Denied, not deferred. This mode answers its own questions, so "" — which means "ask a
+        # person" — is not one of the answers available to it.
+        self._record_event("bash_denied", {"command": command, "reason": decision.explanation, "risk": decision.risk})
+        return "deny"
+
+    def _classifier_denial(self, raw_command: str, decision, fallback: str = "") -> dict:
+        """A refusal from the classifier, in the words the model reads.
+
+        One place, because the alternative is four call sites each inventing a sentence, and
+        because model-facing prose belongs in the prompt corpus with the rest of it. The
+        message says plainly that nothing is pending: a model told only "not permitted" under
+        an interactive mode would sensibly wait for somebody to answer, and under this mode
+        nobody is going to.
+        """
+        self._record_event("classifier_denied", {"command": raw_command, "reason": decision.explanation, "risk": decision.risk})
+        message = self._prompt_loader.load("classifier_denied", {
+            "reason": decision.explanation or fallback or "the safety check would not vouch for this call",
+        })
+        return {"code": "", "message": message, "denied_injection": False, "raw_command": raw_command}
 
     def _new_permission_request_id(self, tool_call_id: str = "") -> str:
         """The id a person's answer is filed under. Derived from the call, not minted fresh.
@@ -601,7 +689,7 @@ class _DecidesPermissions:
         # for the rules to drift apart.
         access_request, _ = parse_access_request(tool_arguments.get("access_request"))
         if access_request is not None and access_request.wants_widening:
-            gate, denial = self._access_request_gate(
+            gate, denial = await self._access_request_gate(
                 access_request, policy=policy, tool_call_identifier=tool_call_identifier,
                 tool_name=tool_name, explanation=tool_arguments.get("explanation", ""),
             )
@@ -655,17 +743,18 @@ class _DecidesPermissions:
                 outside_workspace_note = self._prompt_loader.load("outside_workspace_read", {
                     "paths": ", ".join(outside_reads),
                 })
-                # A sandbox read escalates to the user like any other gate — the turn parks
-                # in place and resumes on the answer — rather than hard-denying. A session
-                # created by another parks the same way: its request reaches a person through
-                # `frank approve` or the app, because there is nobody else to answer it.
+                # A sandbox read is decided like any other call rather than hard-denied. Under
+                # the interactive modes that means a gate: the turn parks in place and resumes
+                # on the answer, and a session created by another parks the same way, because
+                # its request reaches a person through `frank allow` or the app. Under
+                # `classify` nothing parks — the classifier answers it.
                 permission_decision = self._evaluate_bash_permission(raw_command)
                 # Behind the same barrier as every other call. A read outside the working
                 # directory used to reach the classifier on every occurrence, whatever the
                 # rules said and whatever risk the model had declared — the one path that
                 # skipped the barrier, and the one that fires most often.
                 if (
-                    policy.self_classifies
+                    policy.classifies
                     and permission_decision != "deny"
                     and self._needs_a_second_opinion(permission_decision, risk or "medium")
                 ):
@@ -676,26 +765,26 @@ class _DecidesPermissions:
                         static_classification=static_classification, static_detail=static_detail,
                         outside_reads=outside_reads, access_request=access_request,
                     )
-                    if decision.action == "auto_approve":
-                        self._record_event("bash_auto_approved", {"command": raw_command, "reason": decision.explanation, "risk": decision.risk})
+                    if decision.action == "allow":
+                        self._record_event("bash_allowed", {"command": raw_command, "reason": decision.explanation, "risk": decision.risk})
                     else:
-                        plan.gates.append(_PreflightGate(
-                            request_id=self._new_permission_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
-                            kind="permission", command=raw_command,
-                            explanation=decision.explanation or outside_workspace_note, risk=decision.risk, is_bash=True,
-                            reason=None if decision.explanation else sandbox_reason,
-                            deny_message="You did not approve reading outside the working directory.",
-                        ))
-                else:
-                    if permission_decision == "deny":
-                        plan.denial = {"code": "", "message": "Sandbox read denied by the default permission policy.", "denied_injection": False, "raw_command": raw_command}
+                        plan.denial = self._classifier_denial(raw_command, decision, outside_workspace_note)
                         return plan
+                elif permission_decision == "deny":
+                    plan.denial = {"code": "", "message": "Sandbox read denied by the default permission policy.", "denied_injection": False, "raw_command": raw_command}
+                    return plan
+                elif not policy.classifies:
                     plan.gates.append(_PreflightGate(
                         request_id=self._new_permission_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
                         kind="permission", command=raw_command, explanation=outside_workspace_note, risk="medium", is_bash=True,
                         reason=sandbox_reason,
                         deny_message="You did not approve reading outside the working directory.",
                     ))
+                # The remaining case is `classify` where the barrier already settled it — the
+                # rules allow this command and the model called it low risk — so it runs. Falling
+                # into the gate here was the one place an autonomous session could still be made
+                # to wait for somebody, and it was the commonest gate there is: reading a path
+                # outside the working directory.
             # Read-only enforcement is a hard block (no human in the loop).
             if policy.read_only:
                 violation = None
@@ -713,7 +802,7 @@ class _DecidesPermissions:
                 plan.denial = {"code": "", "message": f"Command '{raw_command}' is not permitted.", "denied_injection": True, "raw_command": raw_command}
                 return plan
             elif self._needs_a_second_opinion(permission_decision, risk):
-                if policy.self_classifies:
+                if policy.classifies:
                     decision = await self._classify_permission(
                         tool_kind="bash", command=raw_command, raw_command=raw_command,
                         default_decision=permission_decision, read_only=read_only,
@@ -721,15 +810,11 @@ class _DecidesPermissions:
                         static_classification=static_classification, static_detail=static_detail,
                         outside_reads=outside_reads, access_request=access_request,
                     )
-                    if decision.action == "auto_approve":
-                        self._record_event("bash_auto_approved", {"command": raw_command, "reason": decision.explanation, "risk": decision.risk})
+                    if decision.action == "allow":
+                        self._record_event("bash_allowed", {"command": raw_command, "reason": decision.explanation, "risk": decision.risk})
                     else:
-                        plan.gates.append(_PreflightGate(
-                            request_id=self._new_permission_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
-                            kind="permission", command=raw_command,
-                            explanation=decision.explanation or explanation, risk=decision.risk, is_bash=True,
-                            deny_message="Command was not approved by the user.",
-                        ))
+                        plan.denial = self._classifier_denial(raw_command, decision, explanation)
+                        return plan
                 else:
                     plan.gates.append(_PreflightGate(
                         request_id=self._new_permission_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
@@ -745,27 +830,36 @@ class _DecidesPermissions:
                 deny_message = self._prompt_loader.load("read_only_denied", {"violation": "a mutating MCP tool call"})
                 plan.denial = {"code": "", "message": deny_message, "denied_injection": False, "raw_command": ""}
                 return plan
-            if not read_only and risk in ("medium", "high"):
-                action = f"MCP {tool_arguments.get('server', '')}.{tool_arguments.get('tool_name', '')}"
+            # What the configured rules say about *this* call. `server.tool` is the name an MCP
+            # call has, and it is the name a person writes a rule about. This used to be the
+            # literal string "ask" whatever was configured, so a `deny` written here was not
+            # unmatched — it was never read, and the classifier was told the rules had no
+            # opinion when they had a settled one.
+            mcp_subject = f"{tool_arguments.get('server', '')}.{tool_arguments.get('tool_name', '')}"
+            mcp_rule = self._agent_configuration.tools.mcp.decide(mcp_subject, unmatched="ask")
+            if mcp_rule == "deny":
+                plan.denial = {
+                    "code": "", "denied_injection": False, "raw_command": "",
+                    "message": f"The MCP call '{mcp_subject}' is denied by your permission rules.",
+                }
+                return plan
+            if not read_only and (risk in ("medium", "high") or mcp_rule == "ask"):
+                action = f"MCP {mcp_subject}"
                 explanation = tool_arguments.get("explanation", "")
-                if policy.self_classifies:
+                if policy.classifies:
                     decision = await self._classify_permission(
                         tool_kind="mcp", command=action,
                         raw_command=compact(tool_arguments.get("arguments") or {}),
-                        default_decision="ask", read_only=False, risk=risk, explanation=explanation,
+                        default_decision=mcp_rule, read_only=False, risk=risk, explanation=explanation,
                     )
-                    if decision.action == "auto_approve":
-                        self._record_event("mcp_auto_approved", {
+                    if decision.action == "allow":
+                        self._record_event("mcp_allowed", {
                             "server": tool_arguments.get("server", ""), "tool": tool_arguments.get("tool_name", ""),
                             "reason": decision.explanation, "risk": decision.risk,
                         })
                     else:
-                        plan.gates.append(_PreflightGate(
-                            request_id=self._new_permission_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
-                            kind="permission", command=action,
-                            explanation=decision.explanation or explanation, risk=decision.risk,
-                            deny_message="MCP tool call not approved by user",
-                        ))
+                        plan.denial = self._classifier_denial("", decision, explanation)
+                        return plan
                 else:
                     plan.gates.append(_PreflightGate(
                         request_id=self._new_permission_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
@@ -775,6 +869,17 @@ class _DecidesPermissions:
             return plan
 
         if tool_name == "ask_user":
+            # Not offered under `classify` — the tool is left out of the session's set entirely —
+            # so this is the second lock rather than the first. It matters because the two layers
+            # fail differently: a tool list is decided once when the runtime is built, and a plan
+            # that outlived a mode change, or a model naming a tool it was never given, would
+            # otherwise park an unattended session on a question with nobody to answer it.
+            if policy.classifies:
+                plan.denial = {
+                    "code": "", "denied_injection": False, "raw_command": "",
+                    "message": self._prompt_loader.load("nobody_to_ask", {}),
+                }
+                return plan
             plan.gates.append(_PreflightGate(
                 request_id=self._new_question_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
                 kind="question", questions=tool_arguments.get("questions", []) or [],
@@ -804,24 +909,32 @@ class _DecidesPermissions:
                 deny_message = self._prompt_loader.load("read_only_denied", {"violation": violation})
                 plan.denial = {"code": "", "message": deny_message, "denied_injection": False, "raw_command": ""}
                 return plan
-            if (static_classification != "read_only" or risk in ("medium", "high")):
-                if policy.self_classifies:
+            # A screen script's name is the primitive that made it count as mutating — `click`,
+            # `type`, `evaluate` — which is what `static_detail` carries and what a person would
+            # write a rule about. Same story as MCP: this path reported "ask" regardless.
+            screen_rule = self._agent_configuration.tools.screen.decide(
+                static_detail or static_classification, unmatched="ask",
+            )
+            if screen_rule == "deny":
+                plan.denial = {
+                    "code": "", "denied_injection": False, "raw_command": "",
+                    "message": f"Screen control is denied by your permission rules for '{static_detail or static_classification}'.",
+                }
+                return plan
+            if (static_classification != "read_only" or risk in ("medium", "high") or screen_rule == "ask"):
+                if policy.classifies:
                     decision = await self._classify_permission(
                         tool_kind="screen", command="control_screen", raw_command=script,
-                        default_decision="ask", read_only=(static_classification == "read_only"),
+                        default_decision=screen_rule, read_only=(static_classification == "read_only"),
                         risk=risk or "medium", explanation=explanation,
                         static_classification=static_classification, static_detail=static_detail,
                         access_request=access_request,
                     )
-                    if decision.action == "auto_approve":
-                        self._record_event("screen_auto_approved", {"reason": decision.explanation, "risk": decision.risk})
+                    if decision.action == "allow":
+                        self._record_event("screen_allowed", {"reason": decision.explanation, "risk": decision.risk})
                     else:
-                        plan.gates.append(_PreflightGate(
-                            request_id=self._new_permission_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,
-                            kind="permission", command="control_screen",
-                            explanation=decision.explanation or explanation, risk=decision.risk,
-                            deny_message="Screen action not approved by user",
-                        ))
+                        plan.denial = self._classifier_denial("", decision, explanation)
+                        return plan
                 else:
                     plan.gates.append(_PreflightGate(
                         request_id=self._new_permission_request_id(tool_call_identifier), tool_call_id=tool_call_identifier,

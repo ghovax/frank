@@ -184,7 +184,9 @@
     "reasonAccessRequest": "この呼び出しは、セッションが触れられる範囲の外にあるパスへのアクセスを求めています。",
     "delegatedWork": "他のセッションに任せた作業",
     "queuedUnreachable": "セッションに接続できませんでした",
-    "queuedRetry": "再試行"
+    "queuedRetry": "再試行",
+    "permissionClampedTitle": "このエージェントは権限に上限があります",
+    "permissionClampedBody": "セッションは「{mode}」で実行されます。エージェントのプロファイルに上限が設定されているため、選択したモードはそこまで引き下げられました。設定のエージェントから変更できます。"
   },
   "Common": {
     "cancel": "キャンセル",
@@ -449,13 +451,11 @@
     "dictationOff": "キーボードのみ",
     "dictationOn": "音声で入力",
     "permissionDefaultDescription": "ルールに従い、リスクのある操作の前に確認します",
-    "permissionDefaultLabel": "承認を求める",
+    "permissionDefaultLabel": "先に確認する",
     "permissionPermissiveDescription": "低リスクと判断された操作は実行し、中・高リスクのみ確認します",
     "permissionPermissiveLabel": "リスクがあるときに確認",
-    "permissionReadOnlyDescription": "読み取りは自動承認し、変更の前に確認します",
-    "permissionReadOnlyLabel": "読み取りのみ承認",
-    "permissionSelfClassifyDescription": "分類器が各操作を評価し、安全なものは実行し、それ以外は確認します",
-    "permissionSelfClassifyLabel": "安全と判断されたら承認",
+    "permissionReadOnlyDescription": "読み取りは実行し、変更はすべて拒否します",
+    "permissionReadOnlyLabel": "読み取りのみ許可",
     "sandboxGlobal": "全体アクセス",
     "sandboxRestricted": "制限付きアクセス",
     "sandboxUnavailable": "この環境では強制できません",
@@ -473,8 +473,10 @@
     "worktreeStrategyFallbackTitle": "セッション分離戦略",
     "permissionDefaultName": "都度確認",
     "permissionPermissiveName": "危険な操作のみ確認",
-    "permissionSelfClassifyName": "自己判断",
-    "permissionReadOnlyName": "読み取り専用"
+    "permissionReadOnlyName": "読み取り専用",
+    "permissionClassifyLabel": "自分で許可または拒否",
+    "permissionClassifyDescription": "分類器がすべての操作を自ら判断し、許可または拒否します。あなたに確認することはありません",
+    "permissionClassifyName": "自律"
   },
   "SessionsSidebar": {
     "activeFirst": "アクティブ順",

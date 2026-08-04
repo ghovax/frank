@@ -1,6 +1,6 @@
 # Tools
 
-A session acts through tools, and every tool call goes through the [permission engine](configuration.md#permission-modes). A risky call pauses for approval. The approval reaches you as a prompt in the app, or as `frank approve` in the terminal. The description the model reads is in the repo: a docstring in `src/frank/runtime/tools/registry.py` for most tools, a template in `src/frank/runtime/prompts/tool_*.md` for the peer-session ones.
+A session acts through tools, and every tool call goes through the [permission engine](configuration.md#permission-modes). Under the interactive modes a risky call pauses and reaches you as a prompt in the app, or as `frank allow` / `frank deny` in the terminal. Under `classify` it never pauses: the classifier allows or denies it. The description the model reads is in the repo: a docstring in `src/frank/runtime/tools/registry.py` for most tools, a template in `src/frank/runtime/prompts/tool_*.md` for the peer-session ones.
 
 There is no delegation tool and no in-process sub-agent. A session that needs a peer creates one with `create_session`, which reaches the same control plane your terminal does. See [Composing with other sessions](#composing-with-other-sessions).
 

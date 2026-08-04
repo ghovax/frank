@@ -7,11 +7,12 @@ import os
 from frank.base import environment_variables
 from frank.base.tuning import Scaling
 import re
+from fnmatch import fnmatch
 import shlex
 import shutil
 import sys
 from pathlib import Path
-from typing import Any, ClassVar, Literal, Optional
+from typing import ClassVar, Literal, Optional
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -861,30 +862,17 @@ class ProviderCredential(Section):
 class AgentDefaults(Section):
     """What a session gets when its creator did not say."""
 
-    permission_mode: Literal["default", "permissive", "self_classify", "read_only"] = Field(
+    permission_mode: Literal["default", "permissive", "classify", "read_only"] = Field(
         "default",
         description=(
             "default asks before anything its rules do not name; permissive runs what the "
-            "model called low-risk and asks about the rest; self_classify adds a classifier "
-            "that can vouch for the rest; read_only allows reads and denies every write and "
-            "side effect. A default, not a ceiling: `frank create --mode` overrides it, and a "
-            "child is clamped against its parent either way."
+            "model called low-risk and asks about the rest; classify decides every ambiguous "
+            "call itself, allowing or denying without ever asking, for work nobody is "
+            "watching; read_only allows reads and denies every write and side effect. A "
+            "default, not a ceiling: `frank create --mode` overrides it, and a child is "
+            "clamped against its parent either way."
         ),
     )
-
-    # Written before the mode was renamed, and read after. A `Literal` refuses an unknown string
-    # outright, so without this a configuration saying `auto` — which every install that had
-    # chosen it says — stops the daemon at load with a validation error rather than starting
-    # under the mode it names. `PermissionMode.parse` knows the old spelling; this is the hook
-    # that lets it be consulted, and the value is rewritten the next time the file is saved.
-    @field_validator("permission_mode", mode="before")
-    @classmethod
-    def _accept_renamed_mode(cls, value):
-        from frank.base.permission_mode import PermissionMode
-
-        parsed = PermissionMode.parse(value) if isinstance(value, str) else None
-        return str(parsed) if parsed is not None else value
-
 
 
 class Configuration(Section):
@@ -1121,6 +1109,32 @@ def _dedupe_paths(paths: Iterable[Path]) -> list[Path]:
     return result
 
 
+class NamedToolPermissions(BaseModel):
+    """Per-call permission rules for a tool whose calls have a *name*.
+
+    `bash` matches patterns against the segments of a command line, which is a shape only a
+    shell has. An MCP call and a screen script each have a simpler identity — `server.tool` and
+    the primitive a script reaches for — and both were left with no rules at all: whatever a
+    person had configured, these two paths reported "ask" to the barrier and to the classifier,
+    every time. So a `deny` written for one of them was not merely unmatched, it was unread.
+
+    Longest matching pattern wins, as with commands, so a specific rule beats a broad one
+    however they are ordered in the file.
+    """
+
+    permissions: dict[str, str] = {}
+
+    def decide(self, subject: str, unmatched: str = "ask") -> str:
+        """The configured decision for ``subject``, or ``unmatched`` when no pattern names it."""
+        best_length, best = 0, unmatched
+        for pattern, decision in self.permissions.items():
+            if not pattern or not fnmatch(subject, pattern):
+                continue
+            if len(pattern) > best_length:
+                best_length, best = len(pattern), str(decision).lower()
+        return best
+
+
 class BashToolConfiguration(BaseModel):
     enabled: bool = True
     background_allowed: bool = True
@@ -1322,10 +1336,11 @@ class BashToolConfiguration(BaseModel):
 class ToolsConfiguration(BaseModel):
     """Which of the harness's tools an agent has, and how the ones with settings behave.
 
-    Only `bash` has settings of its own, because only `bash` has anything to configure beyond
-    existing — a per-command permission table and whether it may background work. Every other
-    tool is on or off, which `disabled` says uniformly rather than by inventing a section per
-    tool that would carry one field.
+    Three tools have settings of their own, and they are the three whose calls can be told
+    apart from one another: `bash` by its command, `mcp` by `server.tool`, and `screen` by the
+    primitive a script reaches for. Each carries a permission table. Every other tool is on or
+    off, which `disabled` says uniformly rather than by inventing a section per tool that would
+    carry one field.
 
     Two ways to narrow the roster, and they are complements rather than duplicates.
     `tools_enabled` on the agent is an *allow-list*: naming one tool means naming all of them,
@@ -1335,6 +1350,10 @@ class ToolsConfiguration(BaseModel):
     """
 
     bash: BashToolConfiguration = BashToolConfiguration()
+    # The other two tools whose calls can be named, and so can be ruled on. Empty means no rule,
+    # which leaves the barrier's own default in force exactly as before.
+    mcp: NamedToolPermissions = NamedToolPermissions()
+    screen: NamedToolPermissions = NamedToolPermissions()
     disabled: list[str] = Field(
         default_factory=list,
         description=(
@@ -1376,31 +1395,18 @@ class AgentConfiguration(BaseModel):
     # default: per-command permission rules, and anything unmatched is asked about.
     # permissive: the same rules, but an unmatched command runs and only the risk the model
     # declared escalates — medium or high asks, low does not. No classifier, no model call.
-    # self_classify: the default rules plus an LLM classifier to approve safe bash calls and
-    # escalate the rest. read_only: hard-block all writes. There is no bypass mode.
+    # classify: the default rules plus a classifier that settles every ambiguous call itself,
+    # allowing or denying and never asking. read_only: hard-block all writes. No bypass mode.
     # `None` means the card has no opinion, and that is the default — the same convention as
     # `sandbox` below, and for the same reason.
     #
     # This used to default to `"default"`, which is a *value*, and the control plane reads it as
     # the loosest mode the profile allows. So every card that simply did not mention permissions
-    # — which is all of them — imposed a ceiling of `default`, and `permissive` and
-    # `self_classify` were unreachable: a person picked one, the daemon clamped it straight back,
+    # — which is all of them — imposed a ceiling of `default`, and `permissive` and `classify`
+    # were unreachable: a person picked one, the daemon clamped it straight back,
     # and the chip returned to "Ask for approval" with no explanation. A card that wants to bound
     # its agent still says so and is still obeyed; silence is no longer a bound.
-    permission_mode: Optional[Literal["default", "permissive", "self_classify", "read_only"]] = None
-
-    # Written before the mode was renamed, and read after. A `Literal` refuses an unknown string
-    # outright, so without this a configuration saying `auto` — which every install that had
-    # chosen it says — stops the daemon at load with a validation error rather than starting
-    # under the mode it names. `PermissionMode.parse` knows the old spelling; this is the hook
-    # that lets it be consulted, and the value is rewritten the next time the file is saved.
-    @field_validator("permission_mode", mode="before")
-    @classmethod
-    def _accept_renamed_mode(cls, value):
-        from frank.base.permission_mode import PermissionMode
-
-        parsed = PermissionMode.parse(value) if isinstance(value, str) else None
-        return str(parsed) if parsed is not None else value
+    permission_mode: Optional[Literal["default", "permissive", "classify", "read_only"]] = None
 
     # An agent's own confinement, narrowing the global one. An investigator and a build agent
     # genuinely want different filesystems, and the harness already accepts that agents differ in
@@ -1454,11 +1460,11 @@ class AgentConfiguration(BaseModel):
         frontmatter.setdefault("name", default_identifier)
         frontmatter.setdefault("title", frontmatter["name"])
 
-        # The per-agent JSON sidecar lives next to the markdown profile.
-        configuration_path = path.with_name("configuration.json")
-        if configuration_path.exists():
-            frontmatter = _merge_agent_configuration(frontmatter, json.loads(configuration_path.read_text()))
-
+        # Everything the agent is, in one file. There used to be a `configuration.json` beside
+        # this one holding the model preset, the permission ceiling and the tool toggles — in
+        # camelCase, while the front matter above is snake_case — and loading meant merging the
+        # two, which is why the same fact had two spellings and two places to be wrong. A skill
+        # is one `SKILL.md`; an agent is one `AGENT.md`.
         tools_data = frontmatter.pop("tools", {})
         tools_configuration = (
             ToolsConfiguration(**{name: value for name, value in tools_data.items()})
@@ -1471,6 +1477,31 @@ class AgentConfiguration(BaseModel):
             tools=tools_configuration,
             system_prompt=markdown_body,
         )
+
+
+def write_agent_markdown(path: str | Path, configuration: AgentConfiguration) -> None:
+    """Write a profile back to its `AGENT.md`, front matter and body together.
+
+    The body is the agent's system prompt and is written verbatim from
+    :attr:`AgentConfiguration.system_prompt`, so a round trip through the settings interface
+    cannot quietly reword an agent's instructions.
+
+    Only what differs from the defaults is written. A profile that says nothing about tools
+    should not grow a `tools:` block full of the values it would have had anyway — the file is
+    something a person reads and edits by hand, and every line in it should mean a decision
+    somebody made.
+    """
+    path = Path(path)
+    body = configuration.system_prompt.strip()
+    front = configuration.model_dump(
+        mode="json", exclude_defaults=True, exclude_none=True, exclude={"system_prompt"},
+    )
+    # `name` is the identity the rest of the harness addresses this agent by; it is worth
+    # stating even when it matches the directory it lives in.
+    front.setdefault("name", configuration.identifier)
+    rendered = yaml.safe_dump(front, sort_keys=False, allow_unicode=True, default_flow_style=False).strip()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"---\n{rendered}\n---\n\n{body}\n" if body else f"---\n{rendered}\n---\n")
 
 
 class PermissionEvaluator:
@@ -1630,10 +1661,12 @@ def _agent_paths(agents_directories: str | Path | Iterable[str | Path], include_
     for directory in _as_directories(agents_directories):
         if not directory.is_dir():
             continue
+        # `AGENT.md`, in that spelling, exactly as a skill is `SKILL.md`. Accepting a lowercase
+        # variant as well meant two files could name the same agent and which one won depended
+        # on glob order, and it meant the convention had to be explained twice.
         candidates = [
             *sorted(directory.glob("*.md")),
             *sorted(directory.glob("*/AGENT.md")),
-            *sorted(directory.glob("*/agent.md")),
         ]
         for path in candidates:
             try:
@@ -1696,159 +1729,3 @@ def list_agents(agents_directory: str | Path | Iterable[str | Path]) -> list[dic
     return agents
 
 
-class _SidecarPreset(BaseModel):
-    model_config = {"extra": "allow", "populate_by_name": True}
-    model: Optional[str] = None
-    provider: Optional[str] = None
-    reasoning_effort: Optional[str] = Field(default=None, alias="reasoningEffort")
-
-
-class _SidecarBash(BaseModel):
-    model_config = {"extra": "allow", "populate_by_name": True}
-    enabled: Optional[bool] = None
-    background_allowed: Optional[bool] = Field(default=None, alias="backgroundAllowed")
-    permissions: Optional[dict[str, str]] = None
-
-
-class _SidecarTools(BaseModel):
-    model_config = {"extra": "allow", "populate_by_name": True}
-    enabled_builtin_tools: Optional[list[str]] = Field(default=None, alias="enabledBuiltinTools")
-    disabled: Optional[list[str]] = None
-    bash: Optional[_SidecarBash] = None
-
-
-class AgentSidecar(BaseModel):
-    """The per-agent ``configuration.json`` sidecar as one validated model.
-
-    The sidecar is a camelCase JSON overlay on the markdown agent profile — the model/provider
-    preset, the permission mode, and the tool toggles a human edits in the settings UI. It used to
-    be read and rewritten as a raw dict in three separate places (merge-on-load, apply-an-update,
-    grant-an-allow-pattern), each re-deriving the mapping between camelCase and snake_case by hand. This owns
-    that shape: :meth:`from_mapping` parses it (accepting both the camelCase alias and the
-    snake_case name, and preserving any keys it does not model via ``extra='allow'``),
-    :meth:`to_mapping` writes it back losslessly, :meth:`frontmatter_overrides` projects it onto the
-    agent-frontmatter fields, and the typed setters + :meth:`grant_bash_patterns` mutate it without
-    hand-keyed dict poking."""
-
-    model_config = {"extra": "allow", "populate_by_name": True}
-    preset: Optional[_SidecarPreset] = None
-    permission_mode: Optional[str] = Field(default=None, alias="permissionMode")
-    tools: Optional[_SidecarTools] = None
-
-    @classmethod
-    def from_mapping(cls, data: dict[str, Any] | None) -> AgentSidecar:
-        return cls.model_validate(data if isinstance(data, dict) else {})
-
-    def to_mapping(self) -> dict[str, Any]:
-        """The sidecar as a JSON-ready dict, camelCase and lossless (unmodelled keys included)."""
-        return self.model_dump(by_alias=True, exclude_none=True)
-
-    def frontmatter_overrides(self) -> dict[str, Any]:
-        """The snake_case agent-frontmatter fields this sidecar overrides, for a caller to merge
-        over the markdown frontmatter. ``tools_enabled`` sits at the top level; ``bash`` and
-        sit under a nested ``tools`` dict, mirroring ``AgentConfiguration``."""
-        overrides: dict[str, Any] = {}
-        if self.preset is not None:
-            if self.preset.model is not None:
-                overrides["model"] = self.preset.model
-            if self.preset.provider is not None:
-                overrides["provider"] = self.preset.provider
-            if self.preset.reasoning_effort is not None:
-                overrides["reasoning_effort"] = self.preset.reasoning_effort
-        if self.permission_mode is not None:
-            overrides["permission_mode"] = self.permission_mode
-        if self.tools is not None:
-            if self.tools.enabled_builtin_tools is not None:
-                overrides["tools_enabled"] = self.tools.enabled_builtin_tools
-            tools: dict[str, Any] = {}
-            if self.tools.disabled is not None:
-                tools["disabled"] = self.tools.disabled
-            if self.tools.bash is not None:
-                bash = {
-                    key: value
-                    for key, value in {
-                        "enabled": self.tools.bash.enabled,
-                        "background_allowed": self.tools.bash.background_allowed,
-                        "permissions": self.tools.bash.permissions,
-                    }.items()
-                    if value is not None
-                }
-                if bash:
-                    tools["bash"] = bash
-            if tools:
-                overrides["tools"] = tools
-        return overrides
-
-    def _ensure_tools(self) -> _SidecarTools:
-        if self.tools is None:
-            self.tools = _SidecarTools()
-        return self.tools
-
-    def set_preset(self, *, model=..., provider=..., reasoning_effort=...) -> None:
-        preset = self.preset or _SidecarPreset()
-        if model is not ...:
-            preset.model = model
-        if provider is not ...:
-            preset.provider = provider
-        if reasoning_effort is not ...:
-            preset.reasoning_effort = reasoning_effort
-        self.preset = preset
-
-    def set_bash(self, *, enabled=..., background_allowed=..., permissions=...) -> None:
-        tools = self._ensure_tools()
-        bash = tools.bash or _SidecarBash()
-        if enabled is not ...:
-            bash.enabled = enabled
-        if background_allowed is not ...:
-            bash.background_allowed = background_allowed
-        if permissions is not ...:
-            bash.permissions = permissions
-        tools.bash = bash
-
-
-    def set_tools_enabled(self, tools_enabled: list[str]) -> None:
-        self._ensure_tools().enabled_builtin_tools = tools_enabled
-
-    def set_tools_disabled(self, tools_disabled: list[str]) -> None:
-        self._ensure_tools().disabled = tools_disabled
-
-    def grant_bash_patterns(self, patterns: Iterable[str]) -> bool:
-        """Add each pattern to the bash allow-list as ``allow``, never overriding an existing
-        decision (a deliberate deny/ask is not silently flipped). Returns whether anything changed."""
-        additions = [pattern.strip() for pattern in patterns if pattern.strip()]
-        if not additions:
-            return False
-        tools = self._ensure_tools()
-        bash = tools.bash or _SidecarBash()
-        permissions = dict(bash.permissions or {})
-        changed = False
-        for pattern in additions:
-            if pattern not in permissions:
-                permissions[pattern] = "allow"
-                changed = True
-        if changed:
-            bash.permissions = permissions
-            tools.bash = bash
-        return changed
-
-    @staticmethod
-    def normalized_permissions(permissions: dict[str, str]) -> dict[str, str]:
-        """Bash permission rules with patterns/decisions trimmed and only valid decisions kept."""
-        return {
-            pattern.strip(): decision.strip().lower()
-            for pattern, decision in permissions.items()
-            if pattern.strip() and decision.strip().lower() in {"allow", "ask", "deny"}
-        }
-
-
-def _merge_agent_configuration(frontmatter: dict, configuration: dict) -> dict:
-    """Overlay a parsed sidecar's fields onto the markdown frontmatter for loading."""
-    merged = dict(frontmatter)
-    overrides = AgentSidecar.from_mapping(configuration).frontmatter_overrides()
-    tools_override = overrides.pop("tools", None)
-    merged.update(overrides)
-    if tools_override is not None:
-        merged_tools = dict(merged.get("tools", {}))
-        merged_tools.update(tools_override)
-        merged["tools"] = merged_tools
-    return merged

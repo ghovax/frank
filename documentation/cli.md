@@ -32,9 +32,9 @@ frank create [-a AGENT] [-C DIRECTORY] [-m MODE] [-p PROJECT] [-P PARENT] [-t TI
 |------|--------------|
 | `-a`, `--agent` | **Required.** The agent profile to run. There is no default: which agent does the work is the one thing nothing can guess for you. |
 | `-C`, `--directory` | The working directory. Project-local agents, skills and MCP servers are resolved from here. |
-| `-m`, `--mode` | `default`, `permissive`, `self_classify`, or `read_only`. The mode a session *starts* under; the person running it can change it later, and the change reaches the turn in flight. |
+| `-m`, `--mode` | `default`, `permissive`, `classify`, or `read_only`. The mode a session *starts* under; the person running it can change it later, and the change reaches the turn in flight. `classify` is the one for unattended work: it never asks. |
 | `-p`, `--project` | The project this session belongs to. |
-| `-P`, `--parent` | The session creating this one. The child is clamped to no looser a mode than its parent, and is reaped when the parent ends. Defaults to `$FRANK_SESSION_ID`, which every session exports — so this command run from inside a session creates a child of it rather than an orphan. |
+| `-P`, `--parent` | The session creating this one. Without `--mode` the child **inherits the parent's**; either way it is clamped to no looser a mode than its parent, and is reaped when the parent ends. A parent running `classify` can only create children that also run `classify`, because a child that stops to ask would be asking nobody. Defaults to `$FRANK_SESSION_ID`, which every session exports — so this command run from inside a session creates a child of it rather than an orphan. |
 | `-t`, `--title` | A label for the session list. Left unset, the session names itself after its first message. |
 
 This is the **only** place a session's configuration is set. Nothing changes its agent, its directory, or its permission mode afterwards. That immutability makes a session's authority something you can reason about. A later call cannot widen it.
@@ -67,7 +67,7 @@ $ frank send "$id" "and check the tests too"
 frank: not sent — the session is waiting on a permission decision for `cat /srv/app/notes.txt`
 ```
 
-Answer it with `frank approve` (or in the app), then send. `--wait` does not wait on a message that was never delivered.
+Answer it with `frank allow` (or in the app), then send. `--wait` does not wait on a message that was never delivered.
 
 ## Watching
 
@@ -114,7 +114,8 @@ frank attach "$id" | jq -r 'select(.kind == "live") | .part.text // empty'
 When a session needs permission it parks, `awaiting_input` goes true, and `attach` emits a frame carrying the request and its id. Answer it with that id:
 
 ```text
-frank approve <session> <request> [-d|--deny]
+frank allow <session> <request>
+frank deny  <session> <request>
 ```
 
 There is no "always allow" and no bypass mode: every decision is allow-once or deny. That is a deliberate constraint — an approval you grant once cannot silently widen into a standing grant.

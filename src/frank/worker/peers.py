@@ -92,7 +92,7 @@ class PeerSessions:
 
     # The SessionAccess surface the runtime's tools call.
 
-    async def create(self, *, agent: str, working_directory: str, permission_mode: str) -> dict:
+    async def create(self, *, agent: str, working_directory: str) -> dict:
         """Make a peer. It is not named here.
 
         A session is named after the first thing it is asked to do, and that holds whoever asks:
@@ -104,7 +104,8 @@ class PeerSessions:
             "session.create",
             agent=agent,
             working_directory=working_directory,
-            permission_mode=permission_mode,
+            # No mode is sent. The daemon gives a child its parent's, narrowed by the agent
+            # profile's own ceiling — which is where that decision belongs.
             # Not a parameter of the tool. The caller is the parent, always.
             parent=self.session_id,
         )

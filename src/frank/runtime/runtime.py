@@ -193,10 +193,12 @@ def _build_tools(
     *,
     can_reach_peers: bool = False,
     extra_tools: Sequence[BaseTool] = (),
+    permission_mode: PermissionMode = PermissionMode.DEFAULT,
 ) -> list[BaseTool]:
     tools = _all_available_tools(
         agent_configuration, global_configuration, working_directory,
         can_reach_peers=can_reach_peers, extra_tools=extra_tools,
+        permission_mode=permission_mode,
     )
     # The agent profile's allow-list narrows *our* tools. It cannot narrow the caller's: a
     # profile is a file describing which of the harness's capabilities an agent should have,
@@ -256,6 +258,7 @@ def _all_available_tools(
     *,
     can_reach_peers: bool = False,
     extra_tools: Sequence[BaseTool] = (),
+    permission_mode: PermissionMode = PermissionMode.DEFAULT,
 ) -> list[BaseTool]:
     available = [
         bash_tool,
@@ -272,10 +275,15 @@ def _all_available_tools(
         update_tasks_tool,
         update_goal_tool,
         read_turn_tool,
-        # A session can always ask the user directly: the question parks the turn as a
-        # human-in-the-loop gate and resumes on the answer.
-        ask_user_tool,
     ]
+    # Asking a person parks the turn until somebody answers, which is a coherent thing to offer
+    # only where somebody is expected to be there. Under `classify` nobody is: that mode exists
+    # so a session can be sent off and left alone, and it is defined by never putting a question
+    # in front of anyone. A session that could still call this would have a way to stop dead and
+    # wait forever — the exact failure the mode is meant to remove — so it does not have one.
+    # Withheld rather than forbidden in prose, because a tool that is absent cannot be called.
+    if not permission_mode.is_classifying:
+        available.append(ask_user_tool)
     # Searching and controlling the live screen (the browser and native apps) drives the whole
     # machine, so it is opt-in: added only when the user has enabled it in Settings (which also
     # gates the Accessibility grant flow).
@@ -630,9 +638,15 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         # has never heard of this one, so there is no honest way to infer it; defaulting to a
         # mode that asks means adding a tool cannot silently widen what a session may do.
         self._tool_risk = tool_risk
+        # Resolved before the tools are assembled, because which tools exist depends on it: an
+        # autonomous session is not given the one that waits for a person.
+        self._permission_mode: PermissionMode = PermissionMode.more_restrictive(
+            permission_mode, agent_configuration.permission_policy
+        )
         self._tools = _build_tools(
             agent_configuration, global_configuration, self._working_directory,
             can_reach_peers=session_access is not None, extra_tools=tools,
+            permission_mode=self._permission_mode,
         )
         # Concrete tools are bound natively — the provider sees each tool's real
         # JSON schema and can constrain argument decoding to it, and it emits
@@ -725,9 +739,6 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         # `more_restrictive` ignores absent inputs and falls back to the interactive default
         # with none, which is what a session with neither a requested mode nor a card ceiling
         # should get.
-        self._permission_mode: PermissionMode = PermissionMode.more_restrictive(
-            permission_mode, agent_configuration.permission_policy
-        )
         self._a2a_turn_id: str = ""
         # Reads another A2A task (sibling/agent) by id from the shared store,
         # so context-aware agents can coordinate. Injected by the executor.
@@ -1047,7 +1058,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
 
     @property
     def _self_classifies(self) -> bool:
-        return self._permission_mode.is_self_classifying
+        return self._permission_mode.is_classifying
 
     def abort(self) -> None:
         # Stop tears down only the live turn: signal the loop to end and kill every
@@ -1165,10 +1176,10 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
 
     @property
     def _interactive_manual_mode(self) -> bool:
-        """The interactive ("manual") permission policy: not auto-classifying and not
-        read-only. Under it, a command the card does not explicitly allow is asked
-        (escalated to the user) rather than run. Auto self-classifies and read-only
-        hard-blocks mutations, so neither asks on an unmatched command."""
+        """The interactive ("manual") permission policy: neither classifying nor read-only.
+        Under it, a command the card does not explicitly allow is put to the user rather than
+        run. `classify` decides for itself and `read_only` hard-blocks mutations, so neither of
+        those asks about an unmatched command — neither of them asks about anything."""
         return self._permission_mode.is_interactive
 
     def _record_event(self, event_type: str, data: dict) -> None:

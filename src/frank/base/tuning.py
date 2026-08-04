@@ -313,6 +313,15 @@ class Tunable(Enum):
         one because the answer is a single tool call the model can fail to make, and a session
         with no name is one nobody can find again in a sidebar.""",
     )
+    permission_classifier_attempts = Default(
+        3, Scaling.NONE,
+        """How many times the permission classifier is asked before its silence counts as a
+        refusal. More than one for the same reason a title is asked for more than once — the
+        answer is a single tool call a model can fail to make, and a provider can drop a
+        request — but the failure here is not cosmetic: every attempt that does not land is a
+        tool call the agent is refused, so the work stops for a reason that has nothing to do
+        with whether the call was safe.""",
+    )
     prototype_start_seconds = Default(120.0, Scaling.TIME)
     prototype_restart_seconds = Default(
         5.0, Scaling.TIME,

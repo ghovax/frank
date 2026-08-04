@@ -60,8 +60,8 @@ class CallExecutionPolicy:
 
 
     @property
-    def self_classifies(self) -> bool:
-        return self.mode.is_self_classifying
+    def classifies(self) -> bool:
+        return self.mode.is_classifying
 
     @property
     def is_remote(self) -> bool:
@@ -75,8 +75,12 @@ _LOCATION_TOOLS = frozenset({"bash", "read_file", "write_file", "edit_file", "se
 
 
 class PermissionDecision(BaseModel):
-    """Structured decision for automatic permission classification."""
+    """What the classifier decided about one tool call.
 
-    action: Literal["auto_approve", "escalate"]
+    Two outcomes, and asking a person is not among them. The classifier used to answer
+    `auto_approve` or `escalate`, which made it an assistant to a human decision — and a mode
+    whose whole purpose is to run without one. Its verdict is now the verdict."""
+
+    action: Literal["allow", "deny"]
     explanation: str
     risk: Literal["low", "medium", "high"]

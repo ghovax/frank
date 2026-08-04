@@ -5,6 +5,28 @@ description: A neutral, general-purpose agent for everyday tasks.
 role: primary
 enabled: true
 connection-type: internal
+model: deepseek-v4-flash
+provider: opencode_go
+reasoning_effort: high
+permission_mode: default
+tools_enabled: []
+tools:
+  bash:
+    enabled: true
+    background_allowed: true
+    permissions:
+      rm *: ask
+      sudo *: deny
+      chmod *: ask
+      chown *: ask
+      chattr *: ask
+      dd *: ask
+      mkfs *: ask
+      mount *: ask
+      git *: ask
+      mv *: ask
+      kill *: ask
+      gh *: ask
 ---
 
 You are the assistant. Handle the user's request directly and keep the work grounded in the current project and working directory.

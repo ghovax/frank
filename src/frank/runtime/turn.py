@@ -68,22 +68,25 @@ class _RunsTurns:
     The loop the other three serve."""
 
     def _locations_summary(self) -> list[dict]:
-        """The workspace's locations as the model sees them: the `location` URI to pass,
-        plus name/kind/base_directory/permission so it can choose the right one per tool call.
+        """The workspace's locations as the model sees them: the `location` URI to pass, plus
+        name/kind/base_directory so it can choose the right one per tool call.
 
-        The permission reported is the mode a call against that location would actually be judged
-        by — `_call_policy`'s answer — rather than the mode recorded on the location. Those differ
-        in the ordinary case: a location that names no mode of its own records `default`, meaning
-        "whatever the session is", so reporting the record told the model `default` no matter what
-        the session had been set to. Now that this rides in the turn context and is rebuilt every
-        turn, it can state the live answer, which is the only version worth stating."""
+        What it does *not* carry is the permission mode in force. It used to, and that was the
+        policy layer talking to the thing it governs: the model was reading `classify` or
+        `read_only` off its own context every turn, which is knowledge it has no use for and
+        should not be reasoning about. Its job is to say what a call does and how risky it is;
+        deciding what may run on that basis happens above it and is none of its business.
+
+        What is left is the one thing it can act on. `writable` is an affordance, not a policy —
+        a location it cannot change is worth knowing about, because otherwise it plans work that
+        will be refused — and it names no mechanism and reveals no judgement."""
         return [
             {
                 "location": resolved.uri,
                 "name": resolved.name,
                 "kind": resolved.kind,
                 "base_directory": resolved.base_directory,
-                "permission_mode": self._call_policy(resolved).mode,
+                "writable": not self._call_policy(resolved).read_only,
             }
             for resolved in self._locations.values()
         ]

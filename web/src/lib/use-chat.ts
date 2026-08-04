@@ -1096,6 +1096,8 @@ export function useChat(
   const [historyReloadNonce, setHistoryReloadNonce] = useState(0);
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
   const [outboxHold, setOutboxHold] = useState<OutboxHold>(null);
+  // Set when the session was created under a stricter mode than the one asked for.
+  const [grantedPermissionMode, setGrantedPermissionMode] = useState<PermissionMode | null>(null);
   const [deliveringMessage, setDeliveringMessage] = useState<string | null>(null);
 
   // This hook's own attach subscription while it is driving a turn. A turn is sent
@@ -1582,6 +1584,15 @@ export function useChat(
             sessionIdentifier = created.id;
             sessionIdRef.current = created.id;
             setSessionId(created.id);
+            // The mode the session actually got, which is not always the one asked for: an agent
+            // profile carries a ceiling, and a child is clamped against its parent. The daemon
+            // has always answered with what it recorded and the client has always thrown it
+            // away — so picking a mode the profile caps produced a session running something
+            // else, with the chip still showing the choice. Nothing said so, which is exactly
+            // the kind of silence that makes a permission control untrustworthy.
+            if (created.permission_mode && created.permission_mode !== permissionMode) {
+              setGrantedPermissionMode(created.permission_mode);
+            }
           }
           // Attach before sending: the worker starts emitting the moment it accepts the
           // message, and a subscription opened afterwards would miss the opening frames.
@@ -1977,6 +1988,7 @@ export function useChat(
     dequeueMessage,
     outboxHold,
     deliveringMessage,
+    grantedPermissionMode,
     retryOutbox,
     handlePermission,
     handleQuestion,
