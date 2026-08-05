@@ -128,9 +128,23 @@ workspace: { strategy: "none" }
 agent:     { permission_mode: "default" }
 computer_control: { enabled: false }
 user_context:     { enabled: false }
+toolbox:          { enabled: true }
 ```
 
-`sandbox.enforce` sets what a tool child may do, and it is described below. `computer_control` turns on the macOS screen tools (`control_screen`), and it is opt-in; it is also described below. `user_context` puts a snapshot of how you work into the prompt, and it is opt-in too.
+`sandbox.enforce` sets what a tool child may do, and it is described below. `computer_control` turns on the macOS screen tools (`control_screen`), and it is opt-in; it is also described below. `user_context` puts a snapshot of how you work into the prompt, and it is opt-in too. `toolbox` is whether a session may install the tools it needs, and it is described below.
+
+### The session toolbox
+
+What a session may *reach* is the confinement's question. What a session *has* is this one, and until they were separated they gave the same answer: a missing tool and a forbidden path both came back as `Operation not permitted`, so an agent read a gap in its toolkit as a boundary and went looking for a way around it.
+
+```yaml
+toolbox:
+  enabled: true
+```
+
+With it on, each session gets a package profile of its own at the front of its `PATH`, and `nix profile add nixpkgs#jq` installs into that profile with no flag and no path. Nothing reaches your machine: the packages come from the shared read-only store, what the session owns is a directory of symlinks under `~/.local/state/frank/sessions/<id>`, and that directory is deleted when the session is reaped. Your own profile is never written to, and the confinement is unchanged — a tool a session installed is still refused every path the sandbox refuses.
+
+It needs [Nix](https://nixos.org). On a machine without it there is no toolbox, and the agent is told nothing about installing anything rather than being told about a capability it does not have.
 
 ### Confinement
 

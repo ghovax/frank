@@ -91,6 +91,25 @@ def uploads_directory() -> Path:
     return path
 
 
+def session_toolboxes_directory() -> Path:
+    """Where every session's own tools live, one directory per session.
+
+    Named in its own right rather than derived from a session's path, because the sweep that
+    removes the toolboxes of sessions that are gone needs *this* directory and nothing above
+    it. Taking it as the parent of a session's path is one empty string away from naming the
+    state directory itself, which is not a mistake worth leaving available to make."""
+    return state_directory() / "sessions"
+
+
+def session_toolbox_directory(session_id: str) -> Path:
+    """Where one session keeps the tools it installed for itself.
+
+    Under state rather than runtime: it has to survive the session going to sleep between turns,
+    which is what `XDG_RUNTIME_DIR` explicitly does not promise. Not created here — a session
+    that never installs anything should leave nothing behind — see `frank.base.toolbox`."""
+    return session_toolboxes_directory() / session_id
+
+
 def workspaces_directory() -> Path:
     path = data_directory() / "workspaces"
     path.mkdir(parents=True, exist_ok=True)

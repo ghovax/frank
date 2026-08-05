@@ -135,6 +135,14 @@ user_context:
   enabled: false
 
 
+# The tools a session installs for itself. On where the machine has Nix: each session gets a
+# package profile of its own at the front of its PATH, so a missing tool is something the agent
+# installs rather than a wall it works around. What it installs is deleted with the session, and
+# nothing reaches your own profile. Turn it off to keep every session to what the machine has.
+toolbox:
+  enabled: true
+
+
 # Driving the screen
 
 computer_control:

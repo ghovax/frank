@@ -125,6 +125,11 @@ class ComputerControlUpdateRequest(BaseModel):
     enabled: bool
 
 
+class ToolboxUpdateRequest(BaseModel):
+    """Turn a session's own tool profile on or off."""
+    enabled: bool
+
+
 class DictationUpdateRequest(BaseModel):
     """Opt-in/out of transcribing the composer's dictation on this machine."""
     enabled: bool

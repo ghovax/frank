@@ -19,6 +19,8 @@ There is no delegation tool and no in-process sub-agent. A session that needs a 
 
 There are no dedicated `find_files`/`search_content` tools; for literal file-name and content search, use `bash` with ripgrep (`rg`) and `fd`.
 
+A session can also install what it does not have. Where the machine has Nix, each session gets a package profile of its own on `PATH` and installs into it with an ordinary `nix profile add nixpkgs#<name>` — no path, no flag. What it installs belongs to that session and is deleted with it, and the confinement is untouched. See [Configuration](configuration.md#the-session-toolbox).
+
 **Web**
 
 | Tool | What it does |

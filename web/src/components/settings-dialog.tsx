@@ -4,7 +4,7 @@ import { Alert, Box, Button, Dialog, EmptyState, Flex, IconButton, Input, Portal
 import { swallowed } from "@/lib/swallowed";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LuClock, LuEye, LuEyeOff, LuKeyRound, LuMonitor, LuPlug, LuPlus, LuSearch, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
-import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, restartDaemon, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateDictationSetting, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel, type SandboxEnforce } from "@/lib/api";
+import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, restartDaemon, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateDictationSetting, updateToolboxSetting, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel, type SandboxEnforce } from "@/lib/api";
 import { ModelSelect } from "./model-select";
 import { ChatGPTAuthControl } from "./chatgpt-auth";
 import { CursorAuthControl } from "./cursor-auth";
@@ -18,7 +18,7 @@ import { ConfirmDialog } from "./ui/confirm-dialog";
 import { useTranslations } from "next-intl";
 import { useLocale } from "@/lib/i18n/locale-provider";
 import { LOCALES, type Locale } from "@shared/locales";
-import { AgentSelectControl, CompactionToggleControl, ComputerControlToggleControl, DictationToggleControl, PermissionModeControl, SandboxToggleControl, UserContextToggleControl, WorktreeStrategyControl, type WorktreeStrategyValue } from "./session-controls";
+import { AgentSelectControl, CompactionToggleControl, ComputerControlToggleControl, DictationToggleControl, PermissionModeControl, SandboxToggleControl, ToolboxToggleControl, UserContextToggleControl, WorktreeStrategyControl, type WorktreeStrategyValue } from "./session-controls";
 import { useScrollEdgeFade } from "@/lib/scroll-fade";
 import { Section } from "./ui/semantic";
 import { errorMessage } from "@/lib/errors";
@@ -123,6 +123,12 @@ export function SettingsDialog({
   const [userContextEnabled, setUserContextEnabled] = useState(false);
   const [savedUserContextEnabled, setSavedUserContextEnabled] = useState(false);
   const [computerControlEnabled, setComputerControlEnabled] = useState(false);
+  const [toolboxEnabled, setToolboxEnabled] = useState(false);
+  const [savedToolboxEnabled, setSavedToolboxEnabled] = useState(false);
+  // Whether the machine can offer a toolbox at all. Not a setting — a fact about the machine —
+  // so it disables the row and explains itself rather than silently accepting a change nothing
+  // would honour.
+  const [toolboxAvailable, setToolboxAvailable] = useState(false);
   const [savedComputerControlEnabled, setSavedComputerControlEnabled] = useState(false);
   const [dictationEnabled, setDictationEnabled] = useState(false);
   const [savedDictationEnabled, setSavedDictationEnabled] = useState(false);
@@ -169,6 +175,7 @@ export function SettingsDialog({
     || autoCompaction !== savedAutoCompaction
     || userContextEnabled !== savedUserContextEnabled
     || computerControlEnabled !== savedComputerControlEnabled
+    || toolboxEnabled !== savedToolboxEnabled
     || dictationEnabled !== savedDictationEnabled;
   const hasUnsavedChanges = generalDirty || agentDirty || connectionDirty;
 
@@ -191,6 +198,9 @@ export function SettingsDialog({
         setSavedUserContextEnabled(settings.user_context_enabled);
         setComputerControlEnabled(settings.computer_control_enabled);
         setSavedComputerControlEnabled(settings.computer_control_enabled);
+        setToolboxEnabled(settings.toolbox_enabled);
+        setSavedToolboxEnabled(settings.toolbox_enabled);
+        setToolboxAvailable(settings.toolbox_available);
         // Dictation was the one field of this payload nobody read. Both halves stayed at the
         // `false` they were initialised with, so the control said "Typing only" however the
         // daemon was configured — while the composer, which asks `/dictation` directly, showed
@@ -268,6 +278,7 @@ export function SettingsDialog({
     worktreeStrategy, savedWorktreeStrategy, autoCompaction, savedAutoCompaction,
     userContextEnabled, savedUserContextEnabled,
     computerControlEnabled, savedComputerControlEnabled,
+    toolboxEnabled, savedToolboxEnabled,
     dictationEnabled, savedDictationEnabled,
     exaApiKey, savedExaApiKey, composioApiKey, savedComposioApiKey,
     jinaApiKey, savedJinaApiKey, firecrawlApiKey, savedFirecrawlApiKey,
@@ -279,6 +290,7 @@ export function SettingsDialog({
       worktreeStrategy, savedWorktreeStrategy, autoCompaction, savedAutoCompaction,
       userContextEnabled, savedUserContextEnabled,
       computerControlEnabled, savedComputerControlEnabled,
+    toolboxEnabled, savedToolboxEnabled,
       dictationEnabled, savedDictationEnabled,
       exaApiKey, savedExaApiKey, composioApiKey, savedComposioApiKey,
     jinaApiKey, savedJinaApiKey, firecrawlApiKey, savedFirecrawlApiKey,
@@ -308,6 +320,8 @@ export function SettingsDialog({
           reconcile(settings.compaction?.automatic ?? false, fields.autoCompaction, fields.savedAutoCompaction, setAutoCompaction, setSavedAutoCompaction);
           reconcile(settings.user_context_enabled, fields.userContextEnabled, fields.savedUserContextEnabled, setUserContextEnabled, setSavedUserContextEnabled);
           reconcile(settings.computer_control_enabled, fields.computerControlEnabled, fields.savedComputerControlEnabled, setComputerControlEnabled, setSavedComputerControlEnabled);
+          reconcile(settings.toolbox_enabled, fields.toolboxEnabled, fields.savedToolboxEnabled, setToolboxEnabled, setSavedToolboxEnabled);
+          setToolboxAvailable(settings.toolbox_available);
           reconcile(settings.dictation_enabled, fields.dictationEnabled, fields.savedDictationEnabled, setDictationEnabled, setSavedDictationEnabled);
           reconcile(settings.exa_api_key, fields.exaApiKey, fields.savedExaApiKey, setExaApiKey, setSavedExaApiKey);
           reconcile(settings.composio_api_key, fields.composioApiKey, fields.savedComposioApiKey, setComposioApiKey, setSavedComposioApiKey);
@@ -427,6 +441,10 @@ export function SettingsDialog({
       if (userContextEnabled !== savedUserContextEnabled) {
         await updateUserContextSetting(userContextEnabled);
         setSavedUserContextEnabled(userContextEnabled);
+      }
+      if (toolboxEnabled !== savedToolboxEnabled) {
+        await updateToolboxSetting(toolboxEnabled);
+        setSavedToolboxEnabled(toolboxEnabled);
       }
       if (computerControlEnabled !== savedComputerControlEnabled) {
         await updateComputerControlSetting(computerControlEnabled);
@@ -557,6 +575,7 @@ export function SettingsDialog({
             { key: "compaction", title: translation("compaction"), control: <CompactionToggleControl enabled={autoCompaction} onChange={setAutoCompaction} /> },
             { key: "userContext", title: translation("userContext"), description: translation("userContextHint"), control: <UserContextToggleControl enabled={userContextEnabled} onChange={setUserContextEnabled} /> },
             { key: "computerControl", title: translation("computerControl"), description: translation("computerControlHint"), control: <ComputerControlToggleControl enabled={computerControlEnabled} onChange={accessibilityGranted ? setComputerControlEnabled : undefined} /> },
+            { key: "toolbox", title: translation("toolbox"), description: toolboxAvailable ? translation("toolboxHint") : translation("toolboxUnavailable"), control: <ToolboxToggleControl enabled={toolboxEnabled && toolboxAvailable} onChange={toolboxAvailable ? setToolboxEnabled : undefined} /> },
             { key: "dictation", title: translation("dictation"), description: translation("dictationHint"), control: <DictationToggleControl enabled={dictationEnabled} onChange={setDictationEnabled} /> },
           ],
           block: grantAlerts,

@@ -841,6 +841,10 @@ export interface Settings {
   user_context_enabled: boolean;
   // Opt-in: let the agent control macOS apps via the computer-use tool. Off by default.
   computer_control_enabled: boolean;
+  // Whether sessions may install tools for themselves, and whether this machine can offer it
+  // at all — a setting that is on where nothing can honour it is worth showing differently.
+  toolbox_enabled: boolean;
+  toolbox_available: boolean;
   dictation_enabled: boolean;
   worktree_strategy: "none" | "branch" | "worktree";
   compaction: CompactionSettings;
@@ -879,6 +883,15 @@ export async function updateCompactionSettings(changes: Partial<CompactionSettin
 // Toggle the opt-in user-context snapshot in the system prompt (rebuilds runtimes).
 export async function updateUserContextSetting(enabled: boolean): Promise<void> {
   await apiFetch(`/settings/user-context`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+// Toggle whether each session gets a tool profile of its own to install into (rebuilds runtimes).
+export async function updateToolboxSetting(enabled: boolean): Promise<void> {
+  await apiFetch(`/settings/toolbox`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ enabled }),
@@ -1084,7 +1097,7 @@ export async function savePreferences(changes: Partial<InterfacePreferences>): P
 export async function fetchSettings(): Promise<Settings> {
   const response = await apiFetch(`/settings`);
   if (!response.ok) {
-    return { permission_mode: "default", exa_api_key: "", composio_api_key: "", jina_api_key: "", firecrawl_api_key: "", web_fetch_proxy_url: "", sandbox: DEFAULT_SANDBOX, sandbox_backend: { backend: "", detail: "" }, user_context_enabled: false, computer_control_enabled: false, dictation_enabled: false, worktree_strategy: "none", compaction: DEFAULT_COMPACTION, providers: {} };
+    return { permission_mode: "default", exa_api_key: "", composio_api_key: "", jina_api_key: "", firecrawl_api_key: "", web_fetch_proxy_url: "", sandbox: DEFAULT_SANDBOX, sandbox_backend: { backend: "", detail: "" }, user_context_enabled: false, computer_control_enabled: false, toolbox_enabled: false, toolbox_available: false, dictation_enabled: false, worktree_strategy: "none", compaction: DEFAULT_COMPACTION, providers: {} };
   }
   return (await response.json()) as Settings;
 }

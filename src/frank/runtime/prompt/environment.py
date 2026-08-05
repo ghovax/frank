@@ -21,7 +21,7 @@ from frank.base import environment_variables
 import platform
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Optional, Sequence
 from frank.base.serialization import compact
 
 
@@ -153,11 +153,23 @@ def _shell_command_usage(
     return usage
 
 
-def probe_local_environment() -> str:
-    """A structured JSON snapshot of the local machine the agent's tools run on by
-    default: OS, key toolchain availability, PATH, locale, and the full environment.
-    It gives the agent initial pointers so it probes reality instead of assuming a
-    capability exists. The full environment is included, values as-is."""
+def probe_local_environment(path: Optional[Sequence[str]] = None) -> str:
+    """A structured JSON snapshot of the machine the agent's tools run on: OS, toolchain
+    availability, `PATH`, locale. It gives the agent initial pointers so it probes reality
+    instead of assuming a capability exists.
+
+    ``path`` is the `PATH` a *tool child* is given, which is not always this process's own — a
+    session with a toolbox leads with its own profile. Passing it is what keeps the snapshot
+    describing the environment commands actually run in; without it the model was told one `PATH`
+    and its commands used another, and `tools.present` was answered against the wrong one.
+
+    **The environment itself is deliberately not here.** This used to carry every variable of the
+    worker process with its values as-is, which on an ordinary machine means provider API keys —
+    sent to whichever model this session runs on, which may not be the provider whose key it is.
+    The confinement goes to some trouble to keep exactly those out of a tool child (see
+    `base.confinement`: "everything else the worker holds — API keys above all — is left behind"),
+    and handing them to the model instead is the same disclosure by a shorter route. What a
+    machine snapshot is *for* is the fields below: what this computer is and what it can run."""
     import shutil
     import socket
 
@@ -195,19 +207,14 @@ def probe_local_environment() -> str:
         # Editors and multiplexers
         "vim", "nvim", "emacs", "nano", "tmux", "screen", "code",
     ]
-    present = [name for name in probed if shutil.which(name)]
+    # Resolved against the `PATH` a command will actually be run with, so a tool the session
+    # itself installed counts as present and one only the worker can see does not.
+    lookup = os.pathsep.join(path) if path else os.environ.get(environment_variables.PATH, "")
+    present = [name for name in probed if shutil.which(name, path=lookup)]
     try:
         host = socket.gethostname()
     except Exception:
         host = None
-
-    # The full environment, values included as-is. PATH is dropped here since it is already
-    # broken out as a parsed list above.
-    environment = {
-        name: value
-        for name, value in os.environ.items()
-        if name != "PATH"
-    }
 
     payload = {
         "os": {
@@ -228,8 +235,10 @@ def probe_local_environment() -> str:
         # The user's habitual commands mapped to how they invoke them (sub-commands + flag
         # names), mined from their shell history. No positional args / flag values.
         "frequent_commands": _shell_command_usage(),
-        "path": [entry for entry in os.environ.get(environment_variables.PATH, "").split(os.pathsep) if entry],
-        "env": environment,
+        "editor": os.environ.get(environment_variables.EDITOR) or os.environ.get(environment_variables.VISUAL),
+        "path": list(path) if path else [
+            entry for entry in os.environ.get(environment_variables.PATH, "").split(os.pathsep) if entry
+        ],
     }
     return compact(payload)
 

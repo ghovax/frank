@@ -239,6 +239,40 @@ class _DecidesPermissions:
         except Exception:  # noqa: BLE001 — a classifier must not fail on a missing directory
             return []
 
+    def _classifier_model(self):
+        """The model that judges a tool call: the session's own, thinking less.
+
+        The same model as the agent, because a judge that knows a different world than the thing
+        it judges is a judge arguing from somewhere else — and the same reason the classifier
+        gets the session's own prompt fragments. What differs is effort: the agent's setting was
+        chosen for the work, and this is one command weighed against a page of rules, once per
+        ambiguous call. At the agent's effort a classifying session pays a long think before
+        every command it runs, which is a cost with nothing to show for it.
+
+        Built once and kept: a client per call would rebuild the provider's transport for a
+        question that takes a second to answer."""
+        if self._classifier_llm is not None:
+            return self._classifier_llm
+        # A caller that handed this runtime a model object rather than naming one — the library
+        # front door does exactly that — has no identifier to rebuild from, so the judge is that
+        # same object at whatever effort it was built with. Substituting a model of our own
+        # choosing there would be answering with a provider the caller never configured.
+        identifier = self.effective_model_identifier
+        if not identifier:
+            self._classifier_llm = self._llm
+            return self._classifier_llm
+        from frank.runtime.runtime import build_chat_model
+
+        effort = self._global_configuration.permission_classifier.reasoning_effort
+        self._classifier_llm = build_chat_model(
+            identifier,
+            self._global_configuration,
+            self._agent_configuration.model_copy(update={"reasoning_effort": effort}),
+            self._working_directory,
+            session_id=self._session_id,
+        )
+        return self._classifier_llm
+
     async def _classify_permission(
         self,
         *,
@@ -279,7 +313,17 @@ class _DecidesPermissions:
                 "allowed_actions": ["allow", "deny"],
             },
         )
-        prompt = self._prompt_loader.load("permission_classifier", {})
+        # The classifier is told how to think and what this session is expected to do, from the
+        # same fragments the agent's own prompt is built from. The toolbox section is present
+        # only where the session has one: a judge told to expect installs on a machine that
+        # cannot make them would be reasoning about a world that is not there.
+        prompt = self._prompt_loader.load("permission_classifier", {
+            "thinking_language": self._prompt_loader.load("thinking_language", {}).strip(),
+            "toolbox": (
+                self._prompt_loader.load("classifier_toolbox", {})
+                if getattr(self._tool_context, "toolbox", None) is not None else ""
+            ),
+        })
         # Bounded attempts with a line per failure, the same shape a session uses to name
         # itself. This was a single call whose every failure was a refusal, which conflates two
         # different things: a judge that considered the call and would not vouch for it, and a
@@ -290,7 +334,7 @@ class _DecidesPermissions:
         #
         # Failing closed still holds. What changed is when: after the attempts are spent, not on
         # the first hiccup.
-        model = self._llm.bind_tools([PermissionDecision], tool_choice="auto")
+        model = self._classifier_model().bind_tools([PermissionDecision], tool_choice="auto")
         # Instructions and subject as separate messages. Folding the call being judged into the
         # system prompt left the request with no input at all, which some providers reject
         # outright — the ChatGPT Codex endpoint answers `400: One of "input" … must be provided`.
@@ -771,7 +815,17 @@ class _DecidesPermissions:
                         plan.denial = self._classifier_denial(raw_command, decision, outside_workspace_note)
                         return plan
                 elif permission_decision == "deny":
-                    plan.denial = {"code": "", "message": "Sandbox read denied by the default permission policy.", "denied_injection": False, "raw_command": raw_command}
+                    # Named for what actually decided it. This said "Sandbox read denied by the
+                    # default permission policy", which is wrong twice over for the commonest
+                    # case: a rule the person wrote is not the sandbox, and the command that
+                    # reaches here is not necessarily a read — `sudo …` lands here whole. An
+                    # agent reading it went looking for a confinement problem that was not there.
+                    plan.denial = {
+                        "code": "",
+                        "message": "Your permission rules deny this command.",
+                        "denied_injection": False,
+                        "raw_command": raw_command,
+                    }
                     return plan
                 elif not policy.classifies:
                     plan.gates.append(_PreflightGate(

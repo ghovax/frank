@@ -115,6 +115,7 @@ def save_api_keys(
     compaction: dict | None = None,
     user_context_enabled: bool | None = None,
     computer_control_enabled: bool | None = None,
+    toolbox_enabled: bool | None = None,
     dictation_enabled: bool | None = None,
     tuning: dict | None = None,
     daemon: dict | None = None,
@@ -153,6 +154,8 @@ def save_api_keys(
         data.setdefault("user_context", {})["enabled"] = user_context_enabled
     if computer_control_enabled is not None:
         data.setdefault("computer_control", {})["enabled"] = computer_control_enabled
+    if toolbox_enabled is not None:
+        data.setdefault("toolbox", {})["enabled"] = toolbox_enabled
     if dictation_enabled is not None:
         data.setdefault("dictation", {})["enabled"] = dictation_enabled
     if provider_keys is not None or provider_base_urls is not None:
@@ -610,6 +613,35 @@ class ComputerControlConfiguration(Section):
     )
 
 
+class PermissionClassifierConfiguration(Section):
+    """The model call that settles a tool call nobody is there to be asked about.
+
+    It runs on the session's own model — one judge that knows the same world the agent does —
+    but not at the session's own reasoning effort. Judging one command against a page of rules
+    is not the work the agent's effort was chosen for, and it happens once per ambiguous call:
+    at the agent's setting a classifying session pays a long think for every command it runs."""
+
+    reasoning_effort: str = Field(
+        "low",
+        description="How hard the permission classifier thinks: minimal, low, medium or high.",
+    )
+
+
+class ToolboxConfiguration(Section):
+    """Whether a session may install tools for itself.
+
+    On when the machine can do it, because the alternative is what it replaces: an agent that
+    meets a missing tool, reads the refusal as a boundary, and spends the turn looking for a way
+    round it. What it installs belongs to that session and is deleted with it; nothing reaches
+    the machine's own profile, and the sandbox is untouched — what a session may *reach* is still
+    decided entirely by the confinement."""
+
+    enabled: bool = Field(
+        True,
+        description="Let each session install the tools it needs into a profile of its own.",
+    )
+
+
 class DictationTimingConfiguration(Section):
     """How long dictation waits, and how hard it tries, before it gives up and says so.
 
@@ -916,6 +948,14 @@ class Configuration(Section):
     )
     computer_control: ComputerControlConfiguration = Field(
         default_factory=ComputerControlConfiguration, description="Driving the screen."
+    )
+    toolbox: ToolboxConfiguration = Field(
+        default_factory=ToolboxConfiguration,
+        description="Whether a session may install the tools it needs into a profile of its own.",
+    )
+    permission_classifier: PermissionClassifierConfiguration = Field(
+        default_factory=PermissionClassifierConfiguration,
+        description="The model call that decides a tool call nobody is there to be asked about.",
     )
     dictation: DictationConfiguration = Field(
         default_factory=DictationConfiguration, description="Speaking to the composer instead of typing."

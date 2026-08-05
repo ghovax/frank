@@ -28,6 +28,7 @@ import contextvars
 from dataclasses import dataclass, field, replace
 from typing import Any, Optional, Sequence
 
+from frank.base import environment_variables
 from frank.base.confinement import Grant, Profile
 
 
@@ -55,6 +56,31 @@ class ToolContext:
     # How this session reaches its peers. Supplied by the worker, which is the layer that
     # knows which session this is; the runtime deliberately carries no identity of its own.
     session_access: Any = None
+
+    # Which session this is, for the children that have to say. A shell command that reaches for
+    # the `frank` CLI creates a *child* of this session rather than an orphan, and it can only do
+    # that if it is told who its parent is. It arrives here rather than being read back out of
+    # the worker's own environment, which is the pattern this whole module exists to end: a
+    # process global is process-wide, and a worker legitimately runs two turns at once.
+    session_id: str = ""
+
+    # The tools this session installed for itself, and where they live. `None` on a machine that
+    # cannot offer one, or when the person turned it off — and `None` is not a degraded toolbox:
+    # nothing is put on `PATH` and the agent is told nothing about installing anything.
+    toolbox: Any = None
+
+    def child_environment(self, inherited: Optional[dict] = None) -> dict:
+        """What a child process needs beyond the confinement's own environment: who it belongs
+        to, and — when this session has a toolbox — its own tools on `PATH` with the package
+        manager pointed at its own profile.
+
+        Passed explicitly because the confinement does not inherit: a child's environment is
+        built from an allowlist, so anything the harness wants a child to know has to be handed
+        over by name."""
+        environment = {environment_variables.FRANK_SESSION_ID: self.session_id} if self.session_id else {}
+        if self.toolbox is not None:
+            environment.update(self.toolbox.environment(inherited))
+        return environment
 
     def with_attachments(self, paths: "Sequence[str]") -> "ToolContext":
         """This context with read access to the exact files the user attached this turn.

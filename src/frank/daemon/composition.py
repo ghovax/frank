@@ -30,6 +30,7 @@ from frank.base.configuration import (
     list_agent_route_names,
     seed_home_agents,
 )
+from frank.base import toolbox
 from frank.base.file_leases import FileLeaseManager
 from frank.base.paths import data_directory
 from frank.base.worktrees import SessionWorktreeManager
@@ -76,6 +77,16 @@ async def open_shared_resources() -> None:
 
     # There is no landing page, so the app always opens into a project: guarantee one exists.
     await asyncio.to_thread(_ensure_default_project)
+
+    # The tools sessions installed for themselves outlive a daemon that was killed rather than
+    # asked to stop, and a directory belonging to a session that no longer exists is only
+    # taking up space. Reaping deletes them in every ordinary case; this is the case that is
+    # not ordinary, and it is answerable only here, where the whole set of live sessions is
+    # known at once.
+    live_sessions = [record.id for record in state.registry.live()] if state.registry is not None else []
+    swept = await asyncio.to_thread(toolbox.sweep, live_sessions)
+    if swept:
+        logger.info("swept %d toolbox(es) belonging to sessions that are gone", len(swept))
 
     # Composio's hosted endpoint is folded into the ordinary MCP set rather than being a
     # second path, so tool gating and the client manager both see it as just another server.

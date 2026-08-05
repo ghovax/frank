@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from frank.base.background_tasks import spawn_background_task
 import frank.base.confinement as _confinement
+import frank.base.toolbox as _toolbox
 import frank.base.configuration as _configuration
 from frank.base.credentials import ChatGPTLoginFlow, clear_tokens, load_tokens
 from frank.base.cursor_credentials import CursorLoginFlow
@@ -27,6 +28,7 @@ import asyncio
 from frank.protocol.dtos import (
     CompactionUpdateRequest,
     ComputerControlUpdateRequest,
+    ToolboxUpdateRequest,
     SandboxUpdateRequest,
     SettingsUpdateRequest,
     UserContextUpdateRequest,
@@ -349,6 +351,11 @@ async def get_settings():
         "compaction": state.global_configuration.compaction.model_dump(),
         "user_context_enabled": state.global_configuration.user_context.enabled,
         "computer_control_enabled": state.global_configuration.computer_control.enabled,
+        "toolbox_enabled": state.global_configuration.toolbox.enabled,
+        # Whether this machine could offer one at all, which is not the same question: the
+        # switch can be on while the machine has no package manager to honour it, and an
+        # interface that showed only the setting would be describing something that is not there.
+        "toolbox_available": _toolbox.available(),
         "dictation_enabled": state.global_configuration.dictation.enabled,
         "providers": {
             identifier: {"api_key": credential.api_key, "base_url": credential.base_url}
@@ -469,6 +476,19 @@ async def update_computer_control(request: ComputerControlUpdateRequest):
         await state.reset_runtimes()
     _publish_broadcast({"type": "settings_changed"})
     return {"status": "saved", "computer_control_enabled": state.global_configuration.computer_control.enabled}
+
+
+@router.post("/settings/toolbox")
+async def update_toolbox(request: ToolboxUpdateRequest):
+    """Persist and apply whether sessions may install tools for themselves. The tool context is
+    built per runtime, so cached runtimes are dropped for the change to reach the next turn."""
+    assert state.global_configuration is not None
+    async with state.configuration_lock:
+        await _persist_configuration(toolbox_enabled=request.enabled)
+        state.global_configuration.toolbox.enabled = request.enabled
+        await state.reset_runtimes()
+    _publish_broadcast({"type": "settings_changed"})
+    return {"status": "saved", "toolbox_enabled": state.global_configuration.toolbox.enabled}
 
 
 @router.post("/settings/compaction")

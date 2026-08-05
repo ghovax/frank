@@ -27,6 +27,7 @@ import signal
 import sys
 from pathlib import Path
 
+from frank.base import environment_variables
 from frank.base.serialization import compact
 
 logger = logging.getLogger("frank.worker")
@@ -64,11 +65,14 @@ async def serve(assignment: dict, ready_fd: int = -1, lifeline_fd: int = -1) -> 
         _report(ready_fd, {"ready": False, "reason": "assignment is missing the agent to run"})
         return 1
 
-    # Every subprocess this session starts inherits its identity, so a session that reaches
-    # for the `frank` command from a shell parents its peers correctly instead of orphaning
-    # them. The tools are the path meant to be taken and carry this themselves; this is what
-    # keeps the other path from being silently wrong.
-    os.environ["FRANK_SESSION_ID"] = session_id
+    # This process's identity, for the children that inherit its environment wholesale: an MCP
+    # server over stdio, a helper the worker spawns directly. A *confined* tool child does not
+    # inherit — the confinement builds its environment from an allowlist — so `bash` is handed
+    # the same fact explicitly, from the tool context rather than read back out of here. The
+    # reader that matters either way is the `frank` CLI: run from inside a session, `frank
+    # create` makes a child of that session instead of an orphan outside the tree, the reaper
+    # and the permission clamp.
+    os.environ[environment_variables.FRANK_SESSION_ID] = session_id
 
     configuration = Configuration.load()
     session = SessionExecutor(

@@ -166,8 +166,13 @@ async def bash(
                 return
 
     async def run() -> str:
-        spawn = _confinement.spawn_recipe(profile, workspace=workspace,
-                                          extra_environment={"FRANK_SESSION_ID": os.environ.get("FRANK_SESSION_ID", "")})
+        # The session's own tools ride in the same environment the confinement builds: its
+        # profile at the front of `PATH`, and the package manager already pointed at that
+        # profile — so `nix profile add nixpkgs#jq` needs no path, no flag and no variable, and
+        # a missing tool has an ordinary ending instead of becoming a wall to route around.
+        spawn = _confinement.spawn_recipe(
+            profile, workspace=workspace, extra_environment=active.child_environment(),
+        )
         process = await asyncio.create_subprocess_exec(
             # The command still runs through a shell — the confinement prefix wraps that shell,
             # it does not replace it — but the working directory is now the process's own rather

@@ -6,14 +6,29 @@ raw string::
 
     key = os.environ.get(environment_variables.EXA_API_KEY)
 
-Frank sets none of these itself; they are read from the process environment the host or user
-provides. Grouped by origin.
+Most are read from the process environment the host or user provides. The few Frank *sets* say so
+where they are defined, and each names the child that reads it — a variable a process sets for
+itself is a message to something, and the something is worth naming. Grouped by origin.
 """
 from __future__ import annotations
 
 # Frank-defined. Optional override for the outbound proxy the fetch/download tools route through;
 # falls back to the standard proxy variables below when unset.
 FRANK_FETCH_PROXY = "FRANK_FETCH_PROXY"
+
+# Set by a worker into its own environment, so that anything it spawns which is not a confined
+# tool child — an MCP server over stdio, a helper — carries the session's identity. The one
+# reader that matters is the `frank` CLI: run from inside a session, `frank create` makes a
+# *child* of that session rather than an orphan outside the tree, the reaper and the permission
+# clamp. A confined tool child does not inherit it, because the confinement builds its
+# environment from an allowlist rather than passing the parent's through.
+FRANK_SESSION_ID = "FRANK_SESSION_ID"
+
+# Set for a tool child, and only where the session has a toolbox: the two the package manager
+# reads to install into *this session's* profile rather than the machine's. See
+# `frank.base.toolbox` for why the environment answers this instead of a flag the agent carries.
+XDG_STATE_HOME = "XDG_STATE_HOME"
+NIX_CONFIG = "NIX_CONFIG"
 
 # Outbound proxy, host-provided. Consulted so server-initiated requests (A2A file fetches, push
 # notifications) honour the same egress path as the rest of the process.
@@ -30,5 +45,7 @@ COMPOSIO_API_KEY = "COMPOSIO_API_KEY"    # hosted MCP integrations
 # Standard OS variables, consulted read-only for the system/user snapshot shown in the prompt.
 SHELL = "SHELL"
 PATH = "PATH"
+EDITOR = "EDITOR"
+VISUAL = "VISUAL"
 TZ = "TZ"
 LANG = "LANG"

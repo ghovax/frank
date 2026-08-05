@@ -82,6 +82,7 @@ from frank.runtime.compaction import (
     _CompactsContext,
 )
 from frank.base.serialization import compact
+from frank.base.toolbox import toolbox_for
 from frank.runtime.goal import Goal
 from frank.runtime.internals import (
     _cap_model_result_payload,
@@ -359,6 +360,7 @@ def _build_tool_context(
     *,
     sandbox,
     workspace: str,
+    session_id: str = "",
     session_access: Any = None,
     mcp_manager: Any = None,
 ) -> ToolContext:
@@ -371,6 +373,16 @@ def _build_tool_context(
     the reverse. The two arguments that are *not* configuration are the two the runtime cannot
     derive: which session this is, and the MCP connections somebody else owns the lifetime of.
     """
+    # The session's own tools, and the one widening of the confinement that goes with them: a
+    # session cannot install into a directory it may not write. Widening here rather than in the
+    # profile the daemon resolved keeps `sandbox` what the person configured — the toolbox is
+    # Frank's own directory for this session, holding nothing of the user's, and it is created
+    # and deleted by the harness rather than named by anybody.
+    toolbox = toolbox_for(session_id, enabled=global_configuration.toolbox.enabled)
+    if toolbox is not None:
+        toolbox.prepare()
+        sandbox = sandbox.widened(writes=[str(toolbox.root)], workspace=workspace)
+
     exa_client = None
     exa_key = global_configuration.exa.effective_api_key
     if exa_key:
@@ -398,6 +410,8 @@ def _build_tool_context(
         jina_api_key=global_configuration.jina.effective_api_key,
         proxy_url=global_configuration.web_fetch.effective_proxy_url,
         session_access=session_access,
+        session_id=session_id,
+        toolbox=toolbox,
     )
 
 
@@ -728,6 +742,9 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         self._prompt_loader = _CataloguePrompts(catalogue)
         self._cached_system_prompt: str | None = None
         self._task_manager = TaskManager()
+        # The judge behind `classify`, built on first use and kept for the session's life. It is
+        # the session's own model at its own configured effort — see `_classifier_model`.
+        self._classifier_llm: Optional[BaseChatModel] = None
         self._goal: Optional[Goal] = None
         # Called whenever the goal changes, so the layer above can tell the daemon (and through
         # it the interface, which shows the goal with a control to call it off). Installed by the
@@ -765,6 +782,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             global_configuration,
             sandbox=self._sandbox,
             workspace=self._working_directory,
+            session_id=self._session_id,
             session_access=session_access,
             mcp_manager=mcp_manager,
         )

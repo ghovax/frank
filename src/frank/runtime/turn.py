@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from contextlib import suppress
 from datetime import datetime, timezone
 from frank.base import telemetry as _telemetry
@@ -157,6 +158,13 @@ class _RunsTurns:
             # is not there. Peer sessions and MCP were stated unconditionally, so a session
             # embedded as a library — no control plane, no MCP server — was told at length how to
             # `create_session` and `message_session`, and had neither.
+            # The same argument, for the tools a session can give itself: a machine without Nix
+            # has no toolbox, and telling a session to install what it needs there would be
+            # telling it to run a command that does not exist. Present only when it is real.
+            toolbox = (
+                self._prompt_loader.load("toolbox", {})
+                if self._tool_context.toolbox is not None else ""
+            )
             available = {tool.name for tool in self._tools}
             peer_sessions = (
                 self._prompt_loader.load("peer_sessions", {})
@@ -184,8 +192,13 @@ class _RunsTurns:
                 self._prompt_loader.load("instructions", {"files": instruction_files})
                 if instruction_files else ""
             )
+            # One statement of how to think, rendered into both places that want it — this
+            # prompt and the permission classifier's — so the two cannot drift into telling two
+            # models two different things about the same habit.
+            thinking_language = self._prompt_loader.load("thinking_language", {}).strip()
             self._cached_system_prompt = self._prompt_loader.load("system_prompt", {
                 "system_prompt": self._system_prompt,
+                "thinking_language": thinking_language,
                 "context": context_json,
                 "user_environment": user_environment,
                 "instructions": instructions,
@@ -193,6 +206,7 @@ class _RunsTurns:
                 "memories": compact(memories_payload(memories)),
                 "agent_context": agent_context,
                 "computer_control_guidance": computer_control_guidance,
+                "toolbox": toolbox,
                 "peer_sessions": peer_sessions,
                 "mcp_servers": mcp_servers,
             }).strip()
@@ -222,7 +236,10 @@ class _RunsTurns:
         """
         if any(message.additional_kwargs.get("environment_note") for message in self._conversation):
             return
-        snapshot = _maybe_json(probe_local_environment())
+        # Described with the `PATH` a tool child is given, not this process's own. A session
+        # with a toolbox leads with its own profile, and a snapshot that reported the worker's
+        # `PATH` would be describing an environment none of its commands run in.
+        snapshot = _maybe_json(probe_local_environment(self._child_path()))
         payload: dict[str, Any] = {"machine": snapshot if isinstance(snapshot, dict) else {}}
         if self._user_context_enabled():
             user_context = _maybe_json(probe_user_context())
@@ -289,6 +306,14 @@ class _RunsTurns:
         )
         return context.model_dump_json(exclude_defaults=True)
 
+    def _child_path(self) -> list[str]:
+        """The `PATH` a tool child is actually given, split into entries."""
+        from frank.base.confinement import child_environment
+
+        environment = child_environment(self._sandbox, workspace=self._working_directory or "")
+        environment.update(self._tool_context.child_environment(environment))
+        return [entry for entry in environment.get("PATH", "").split(os.pathsep) if entry]
+
     def _confinement_summary(self) -> dict:
         """The boundary the operating system will enforce, as the model needs to read it.
 
@@ -297,6 +322,12 @@ class _RunsTurns:
         one is what a person set up, the other is what this session has since been allowed, and a
         model that cannot tell them apart cannot tell a standing permission from one it asked for
         and must not spend on something else.
+
+        One path in the writable list is neither: the session's own toolbox, which the harness
+        widened for so a session can install into its own profile. It is listed because it is
+        genuinely writable and this summary has to be true — a boundary the model reads is worth
+        nothing if it omits things — and it is explained in the prompt beside the rest of the
+        toolbox rather than annotated here, because this structure carries paths, not captions.
 
         Absent entirely where nothing enforces a profile, because a list of paths captioned with
         a boundary that does not exist is worse than no list — it invites the model to route
