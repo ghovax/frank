@@ -37,8 +37,8 @@ from frank.base.paths import session_toolbox_directory, session_toolboxes_direct
 # `XDG_STATE_HOME` is where the package manager keeps a user's profile, and pointing it at the
 # session's directory is what makes `nix profile add nixpkgs#jq` install *here* with no flag, no
 # path and no variable for the agent to carry. The alternative spelling — handing the agent a
-# `$FRANK_PROFILE` to remember and pass on every call — works and reads like a chore, which is
-# exactly the kind of thing a model drops halfway through a long turn.
+# variable of its own to remember and pass on every call — works and reads like a chore, which
+# is exactly the kind of thing a model drops halfway through a long turn.
 _XDG_STATE = environment_variables.XDG_STATE_HOME
 _NIX_CONFIG = environment_variables.NIX_CONFIG
 # Additive rather than replacing: `NIX_CONFIG` is layered over the machine's and the user's

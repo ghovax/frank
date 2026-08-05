@@ -9,10 +9,10 @@ import type { NextConfig } from "next";
 const isProduction = process.env.NODE_ENV === "production";
 // Tauri sets TAURI_DEV_HOST when serving the dev UI to a device on the LAN
 // (e.g. mobile); assets must then resolve against that host rather than localhost.
-// FRANK_PORT lets a developer run the dev server on a different port (default
+// DEV_PORT lets a developer run the dev server on a different port (default
 // 3000); assets must use the same port the server is bound to.
 const internalHost = process.env.TAURI_DEV_HOST || "localhost";
-const devPort = process.env.FRANK_PORT || "3000";
+const devPort = process.env.DEV_PORT || "3000";
 
 const nextConfig: NextConfig = {
   output: "export",
@@ -29,7 +29,7 @@ const nextConfig: NextConfig = {
   // when something is proxying this, where the page is already on one origin and an absolute
   // `localhost:3000` is a machine the phone holding it does not have. `frank reach --interface`
   // sets this.
-  assetPrefix: isProduction || process.env.FRANK_PROXY_ENABLED ? undefined : `http://${internalHost}:${devPort}`,
+  assetPrefix: isProduction || process.env.PROXY_ENABLED ? undefined : `http://${internalHost}:${devPort}`,
   // `shared/` sits beside `web/`, not inside it, because the phone imports it too. Next resolves
   // modules from the project directory down, so both halves of this are needed: the root widens
   // what the bundler will look at, and the alias is what `@shared/...` means. TypeScript is told

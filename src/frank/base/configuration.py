@@ -241,7 +241,7 @@ class WebFetchConfiguration(Section):
 
     @property
     def effective_proxy_url(self) -> str:
-        return os.environ.get(environment_variables.FRANK_FETCH_PROXY) or self.proxy_url
+        return os.environ.get(environment_variables.FETCH_PROXY) or self.proxy_url
 
 
 class FilesystemConfiguration(Section):

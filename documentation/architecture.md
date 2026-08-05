@@ -134,7 +134,7 @@ A daemon's address and its token belong together. Each `frankd` mints its own to
 
 1. a connection you activated in **Settings**, under **Connections** (its URL and its token), then
 2. the endpoint the desktop shell reports for the local daemon, then
-3. the build-time default `NEXT_PUBLIC_FRANK_API_BASE`, then
+3. the build-time default `NEXT_PUBLIC_API_BASE`, then
 4. the conventional local address.
 
 That yields three ways to run:

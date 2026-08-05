@@ -77,7 +77,7 @@ class ToolContext:
         Passed explicitly because the confinement does not inherit: a child's environment is
         built from an allowlist, so anything the harness wants a child to know has to be handed
         over by name."""
-        environment = {environment_variables.FRANK_SESSION_ID: self.session_id} if self.session_id else {}
+        environment = {environment_variables.SESSION_ID: self.session_id} if self.session_id else {}
         if self.toolbox is not None:
             environment.update(self.toolbox.environment(inherited))
         return environment

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 # Frank-defined. Optional override for the outbound proxy the fetch/download tools route through;
 # falls back to the standard proxy variables below when unset.
-FRANK_FETCH_PROXY = "FRANK_FETCH_PROXY"
+FETCH_PROXY = "FETCH_PROXY"
 
 # Set by a worker into its own environment, so that anything it spawns which is not a confined
 # tool child — an MCP server over stdio, a helper — carries the session's identity. The one
@@ -22,7 +22,7 @@ FRANK_FETCH_PROXY = "FRANK_FETCH_PROXY"
 # *child* of that session rather than an orphan outside the tree, the reaper and the permission
 # clamp. A confined tool child does not inherit it, because the confinement builds its
 # environment from an allowlist rather than passing the parent's through.
-FRANK_SESSION_ID = "FRANK_SESSION_ID"
+SESSION_ID = "SESSION_ID"
 
 # Set for a tool child, and only where the session has a toolbox: the two the package manager
 # reads to install into *this session's* profile rather than the machine's. See

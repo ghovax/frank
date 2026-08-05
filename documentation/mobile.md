@@ -79,14 +79,14 @@ frank reach pair
 `frank reach` serves `web/out`, so a change to `web/src` needs `bun run build` — forty seconds, whether the change was a component or a colour. That is a poor loop for the thing most likely to need fixing, so it can serve a **dev server** instead, and then a change reaches the phone the moment it is saved:
 
 ```bash
-cd web && FRANK_PROXY_ENABLED=1 bunx next dev --webpack
+cd web && PROXY_ENABLED=1 bunx next dev --webpack
 ```
 
 ```bash
 frank reach --interface
 ```
 
-Two things about that command are load-bearing. `FRANK_PROXY_ENABLED` empties `assetPrefix`, which in dev is otherwise an absolute `http://localhost:3000` — a machine the phone holding the page does not have. And `--webpack` rather than the default Turbopack, because Turbopack's dev server bundles for Node and then cannot resolve what `bun install` laid out: it asks for `@swc/helpers-<hash>`, which is bun's deduplication naming and not a directory that exists. Nothing in this repository causes that and nothing here can fix it; webpack resolves the same tree without complaint.
+Two things about that command are load-bearing. `PROXY_ENABLED` empties `assetPrefix`, which in dev is otherwise an absolute `http://localhost:3000` — a machine the phone holding the page does not have. And `--webpack` rather than the default Turbopack, because Turbopack's dev server bundles for Node and then cannot resolve what `bun install` laid out: it asks for `@swc/helpers-<hash>`, which is bun's deduplication naming and not a directory that exists. Nothing in this repository causes that and nothing here can fix it; webpack resolves the same tree without complaint.
 
 Hot reload reaches the phone because reach relays the bundler's websocket too. The daemon still answers everything that is not the interface, and the reach token is still required — the dev server is handed no credential, because it is not the daemon.
 

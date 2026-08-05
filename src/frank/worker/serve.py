@@ -72,7 +72,7 @@ async def serve(assignment: dict, ready_fd: int = -1, lifeline_fd: int = -1) -> 
     # reader that matters either way is the `frank` CLI: run from inside a session, `frank
     # create` makes a child of that session instead of an orphan outside the tree, the reaper
     # and the permission clamp.
-    os.environ[environment_variables.FRANK_SESSION_ID] = session_id
+    os.environ[environment_variables.SESSION_ID] = session_id
 
     configuration = Configuration.load()
     session = SessionExecutor(

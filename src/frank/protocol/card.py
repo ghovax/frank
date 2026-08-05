@@ -18,7 +18,7 @@ from a2a.types import (
 
 from frank.base.configuration import AgentConfiguration
 from frank.base.skills import Skill
-from frank.protocol.metadata import FRANK_METADATA_KEY
+from frank.protocol.metadata import METADATA_KEY
 
 
 def build_agent_card(
@@ -78,7 +78,7 @@ def build_agent_card(
             push_notifications=True,
             state_transition_history=True,
             extensions=[AgentExtension(
-                uri=FRANK_METADATA_KEY,
+                uri=METADATA_KEY,
                 description=(
                     "Frank turn state and envelopes. Under this key: a message's per-turn inputs "
                     "(working directory, permission mode, peer sender), a task's durable "

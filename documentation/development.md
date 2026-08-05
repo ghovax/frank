@@ -58,7 +58,7 @@ Add provider keys with `frank configure`, in the configuration file, or through 
 
 Start the daemon first; the script asks it for its endpoint and passes that to the development server. It has to, and this is worth knowing before the first time it appears to be broken: the daemon takes an **ephemeral** loopback port and requires a **capability token** on every call. The desktop shell reads both out of the runtime directory; a browser tab can read neither, so a bare `bun run dev` addresses a port nothing is listening on and presents no token. The page loads, every list is empty, and nothing says why.
 
-The token reaches the page as `NEXT_PUBLIC_FRANK_TOKEN`, which the client ignores unless `NODE_ENV` is not production — Next eliminates that branch from a production build, so a token cannot end up inside a shipped export even if the variable is set on the machine that builds it.
+The token reaches the page as `NEXT_PUBLIC_TOKEN`, which the client ignores unless `NODE_ENV` is not production — Next eliminates that branch from a production build, so a token cannot end up inside a shipped export even if the variable is set on the machine that builds it.
 
 Run the script from an **ordinary shell, not from inside `nix develop`**. The devshell rewrites `TMPDIR`, the runtime directory hangs off it, and a daemon started outside the devshell is therefore invisible to anything started inside it — `frank ps` and `frank daemon endpoint` included. The script enters the devshell itself for the bun half, after it has already resolved the endpoint.
 

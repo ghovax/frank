@@ -19,3 +19,19 @@ import uuid
 def new_id(prefix: str) -> str:
     """Return ``"{prefix}-{canonical-uuid4}"``."""
     return f"{prefix}-{uuid.uuid4()}"
+
+
+def is_id(value: str, prefix: str) -> bool:
+    """Whether a value is one of ours, of that kind — a `{prefix}-{uuid4}` and nothing else.
+
+    Asked where a value arrives from somewhere this process does not own, which today means the
+    environment. `SESSION_ID` names a session for the CLI, and a name that plain can already
+    belong to somebody: a person with their own `SESSION_ID` exported, running `frank create`,
+    would otherwise be telling it to parent the new session to whatever that string was."""
+    head, _, tail = value.partition("-")
+    if head != prefix or not tail:
+        return False
+    try:
+        return str(uuid.UUID(tail)) == tail
+    except ValueError:
+        return False

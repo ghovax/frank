@@ -11,7 +11,7 @@ from a2a.types import DataPart, Part
 
 # See https://a2a-protocol.org/latest/topics/extensions — "extensions should place custom
 # attributes in the metadata map … using this URI-namespaced convention".
-FRANK_METADATA_KEY = "urn:frank:ext:turn:v1"
+METADATA_KEY = "urn:frank:ext:turn:v1"
 
 # DataPart discriminator: every structured part declares its kind in `data.kind`.
 PART_KIND = "kind"
@@ -42,7 +42,7 @@ REPORT_REMINDER_KIND = "report_reminder"
 
 
 class Metadata:
-    """Field names inside the turn-metadata object stored under :data:`FRANK_METADATA_KEY`.
+    """Field names inside the turn-metadata object stored under :data:`METADATA_KEY`.
 
     A client sets only ``WORKING_DIRECTORY``/``PERMISSION_MODE``/``WORKSPACE_ID`` at session
     creation; the rest are set internally once the daemon has resolved the session's runtime
@@ -67,14 +67,14 @@ class Metadata:
 
 def turn_metadata(message) -> dict:
     """The turn-metadata object an incoming message carries, or ``{}`` when absent."""
-    raw = (getattr(message, "metadata", None) or {}).get(FRANK_METADATA_KEY)
+    raw = (getattr(message, "metadata", None) or {}).get(METADATA_KEY)
     return dict(raw) if isinstance(raw, dict) else {}
 
 
 def turn_metadata_envelope(fields: dict) -> dict:
     """Wrap turn fields under the namespaced key for an outgoing message, dropping keys whose
     value is ``None`` so the object only carries what was actually set."""
-    return {FRANK_METADATA_KEY: {key: value for key, value in fields.items() if value is not None}}
+    return {METADATA_KEY: {key: value for key, value in fields.items() if value is not None}}
 
 
 def part_payload(data: dict | None) -> dict:
@@ -85,13 +85,13 @@ def part_payload(data: dict | None) -> dict:
     foreign implementation's — the same convention the turn metadata already uses, and the
     reason a bare ``data.kind`` is not enough: this module *dispatches* on that value, so a
     peer's unrelated ``input_response`` would be read as answering a permission gate."""
-    payload = (data or {}).get(FRANK_METADATA_KEY)
+    payload = (data or {}).get(METADATA_KEY)
     return payload if isinstance(payload, dict) else {}
 
 
 def wrap_part_payload(payload: dict) -> dict:
     """The ``DataPart.data`` dict carrying ``payload`` as the harness's."""
-    return {FRANK_METADATA_KEY: payload}
+    return {METADATA_KEY: payload}
 
 
 def envelope_part(kind: str, **fields) -> Part:

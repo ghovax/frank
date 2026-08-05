@@ -9,7 +9,7 @@
 //   1. an explicit target set via `setApiBase` (a connection the user activated), then
 //   2. the endpoint the Tauri shell reports (`daemon_endpoint`), then
 //   3. `frank web`'s runtime descriptor, when this page is served by it, then
-//   4. a build-time default from NEXT_PUBLIC_FRANK_API_BASE, then
+//   4. a build-time default from NEXT_PUBLIC_API_BASE, then
 //   5. the conventional local daemon address.
 // The connection layer (profiles UI / local store) writes the explicit target.
 // The port `frank serve` binds, and therefore the only port a browser can guess. It is
@@ -24,7 +24,7 @@ export const LOCAL_DAEMON_PORT = 8824;
 export const LOCAL_DAEMON_URL = `http://127.0.0.1:${LOCAL_DAEMON_PORT}`;
 
 const DEFAULT_API_BASE =
-  (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_FRANK_API_BASE : "") || LOCAL_DAEMON_URL;
+  (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_API_BASE : "") || LOCAL_DAEMON_URL;
 
 // The token a *development* page presents, and only ever a development page.
 //
@@ -42,7 +42,7 @@ const DEFAULT_API_BASE =
 // eliminated and the string cannot appear in the output.
 const DEVELOPMENT_TOKEN =
   typeof process !== "undefined" && process.env.NODE_ENV !== "production"
-    ? process.env.NEXT_PUBLIC_FRANK_TOKEN || ""
+    ? process.env.NEXT_PUBLIC_TOKEN || ""
     : "";
 
 function runningInTauri(): boolean {
@@ -680,9 +680,9 @@ export async function refreshRemoteAgent(name: string): Promise<{ health: string
 
 // Metadata key understood by a session's A2A surface.
 // A2A convention: an extension places its attributes under one URI-namespaced key in
-// the message `metadata` map, not as bare top-level keys. Mirrors FRANK_METADATA_KEY
+// the message `metadata` map, not as bare top-level keys. Mirrors METADATA_KEY
 // / Metadata in the backend's protocol layer.
-export const FRANK_METADATA_KEY = "urn:frank:ext:turn:v1";
+export const METADATA_KEY = "urn:frank:ext:turn:v1";
 export const CONTENT_BLOCK_METADATA_KEY = "urn:frank:ext:content-block:v1";
 
 export type PermissionMode = "default" | "permissive" | "classify" | "read_only";

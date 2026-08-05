@@ -29,9 +29,9 @@ from pydantic import BaseModel, Field
 # One key in ``Task.metadata`` holds the whole record — the same extension URI a message's turn
 # metadata uses, because it is the same extension. The harness's name belongs here, once, where
 # it means "these are Frank's attributes"; it does not belong in the field names underneath.
-from frank.protocol.metadata import FRANK_METADATA_KEY
+from frank.protocol.metadata import METADATA_KEY
 
-TURN_STATE_KEY = FRANK_METADATA_KEY
+TURN_STATE_KEY = METADATA_KEY
 
 # The field names inside that object. Plain, because the namespace already answered whose.
 PENDING_INTERACTION_FIELD = "pending"

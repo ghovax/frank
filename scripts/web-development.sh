@@ -42,11 +42,11 @@ read -r port token <<<"$(
     'import json, sys; endpoint = json.load(sys.stdin); print(endpoint["port"], endpoint["token"])'
 )"
 
-echo "Daemon on 127.0.0.1:$port — starting the UI at http://localhost:${FRANK_PORT:-3000}" >&2
+echo "Daemon on 127.0.0.1:$port — starting the UI at http://localhost:${DEV_PORT:-3000}" >&2
 
 cd "$repository/web"
-export NEXT_PUBLIC_FRANK_API_BASE="http://127.0.0.1:$port"
-export NEXT_PUBLIC_FRANK_TOKEN="$token"
+export NEXT_PUBLIC_API_BASE="http://127.0.0.1:$port"
+export NEXT_PUBLIC_TOKEN="$token"
 
 if command -v bun >/dev/null 2>&1; then
   exec bun run dev "$@"

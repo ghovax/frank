@@ -82,7 +82,11 @@ def _command_create(arguments: argparse.Namespace) -> int:
         # default. Without it a session that reached for the CLI created an orphan: outside the
         # tree, outside the reaper, and outside the permission clamp, which is skipped entirely
         # when there is no parent to clamp against.
-        parent=arguments.parent or os.environ.get("FRANK_SESSION_ID", ""),
+        #
+        # Read only when it is shaped like one of ours. The variable is a plain name that a
+        # person may already have exported for their own purposes, and this is the one place a
+        # value from the environment decides whose child a session is.
+        parent=arguments.parent or _session_from_environment(),
         title=arguments.title or "",
     )
     # The bare id, because the answer is one value: this is what makes `id=$(frank create …)`
@@ -173,6 +177,21 @@ def _follow(session_id: str, *, until_idle: bool, frames: bool, turn_id: str = "
         result = call("session.history", id=session_id, limit=1)
         _emit(result.get("turns") or [])
     return 0
+
+
+def _session_from_environment() -> str:
+    """The session this command is running inside, according to the environment, or ``""``.
+
+    Imports inside the function, like every other one in this module: the CLI's startup time is
+    the time a person waits before anything appears, and this file keeps its imports where they
+    are used for that reason."""
+    import os
+
+    from frank.base import environment_variables
+    from frank.base.identifiers import is_id
+
+    value = os.environ.get(environment_variables.SESSION_ID, "").strip()
+    return value if is_id(value, "session") else ""
 
 
 def _command_ps(arguments: argparse.Namespace) -> int:

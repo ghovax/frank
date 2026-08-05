@@ -101,7 +101,7 @@ web_fetch: { proxy_url: "" }
 | `exa` | `search_web` | `EXA_API_KEY` |
 | `jina` | `fetch_url`, on the free tier | `JINA_API_KEY` |
 | `firecrawl` | `fetch_url` | `FIRECRAWL_API_KEY`, `FIRECRAWL_API_URL` |
-| `web_fetch` | An outbound proxy | `FRANK_FETCH_PROXY` |
+| `web_fetch` | An outbound proxy | `FETCH_PROXY` |
 
 `fetch_url` uses a tiered engine: Jina Reader first, then Firecrawl, then a direct fetch. Each tier is optional; an unset key skips it. `proxy_url` overrides the standard `HTTPS_PROXY`/`ALL_PROXY` for the fetch and download tools only.
 
