@@ -86,6 +86,12 @@ cursor_login_flow: Any = None
 # a copy on the daemon side would leave the session list reading an attribute that is not there.
 _running_contexts: dict[str, int] = {}
 _awaiting_input_contexts: set[str] = set()
+# The goal each live session is working toward, as its worker last reported it. Here for the
+# reason the two above are: the daemon writes it from the event stream and the session list
+# reads it. Not in the registry, and not in the database, because a goal belongs to the live
+# context — a stored one would outlive the worker pursuing it and have the interface offering
+# to call off something nobody is working on.
+_session_goals: dict[str, dict] = {}
 
 # Where the daemon is listening, for the surfaces that must hand out an address.
 daemon_port: int = 0
@@ -133,6 +139,7 @@ __all__ = [
     "Broadcaster",
     "_awaiting_input_contexts",
     "_running_contexts",
+    "_session_goals",
     "agent_cards",
     "async_engine",
     "broadcaster",

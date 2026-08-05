@@ -83,6 +83,10 @@ class DaemonTurnStore(TaskStore):
             session_id=session_id, turn_id=turn_id, messages=messages, session_state=session_state,
         )
 
+    async def save_session_state(self, session_id: str, session_state: dict) -> None:
+        """Write the durable goal/task state alone, for a change that happened between turns."""
+        await self._call("turn.save_session_state", session_id=session_id, session_state=session_state)
+
     async def load_checkpoint(self, session_id: str) -> list:
         return await self._call("turn.load_checkpoint", session_id=session_id) or []
 

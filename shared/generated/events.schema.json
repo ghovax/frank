@@ -763,14 +763,13 @@
       "additionalProperties": false,
       "description": "The structured per-turn context injected at the end of the message list: the current time,\nwhere the agent is, its goal, its tasks, and its background work.",
       "properties": {
-        "active_goal": {
-          "default": "",
-          "type": "string"
-        },
         "background": {
           "tsType": "Record<string, unknown>"
         },
         "confinement": {
+          "tsType": "Record<string, unknown>"
+        },
+        "goal": {
           "tsType": "Record<string, unknown>"
         },
         "locations": {

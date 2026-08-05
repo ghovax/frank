@@ -547,7 +547,13 @@ class Session:
     async def stream(
         self, message: str, *, attachments: Sequence[str | Path] = (),
     ) -> AsyncIterator[TurnEventUnion]:
-        """Drive one turn, yielding each :class:`TurnEvent`.
+        """Drive a turn, yielding each :class:`TurnEvent`.
+
+        One turn, unless the agent sets a goal. A goal is a contract for an outcome that
+        outlives a single turn, so while one is open this keeps driving turns toward it and
+        keeps yielding their events — bounded by ``Tunable.goal_continuation_turns``, and ended
+        the moment the agent satisfies, clears or reports it blocked. Calling again gives the
+        allowance back, because being spoken to is what it was waiting for.
 
         ``attachments`` are local file paths the caller is handing to the agent, exactly as a
         person dragging a file into the desktop app would::
@@ -582,14 +588,53 @@ class Session:
         recording a turn that failed."""
         if not self._restored:
             await self.restore()
+        # Somebody is here again, so a goal that had used its allowance gets it back and is
+        # picked up where it stopped.
+        self.runtime.restore_goal_allowance()
         try:
             async for event in self.runtime.stream(self._compose(message, attachments)):
+                yield event
+            # A goal outlives the turn that set it, so this call is over when the *goal* is,
+            # not when the model first stops talking. Each further pass is a real turn — the
+            # same events, through the same loop — opened with the goal restated, and the whole
+            # stretch is bounded by `Tunable.goal_continuation_turns` so a program that asks one
+            # question cannot be handed an unbounded run. Without this, a library session could
+            # set a goal and nothing would ever act on it: in the desktop app the layer above
+            # opens those turns, and here there is no layer above.
+            async for event in self._pursue_goal():
                 yield event
         finally:
             await self.save()
 
+    async def _pursue_goal(self) -> AsyncIterator[TurnEventUnion]:
+        """Keep driving turns while the session's goal is open, up to its allowance."""
+        from frank.base.tuning import Tunable, active_tuning
+
+        allowance = active_tuning().amount(Tunable.goal_continuation_turns)
+        while True:
+            goal = self.runtime.goal
+            if goal is None or not goal.is_open:
+                return
+            if goal.continuations >= allowance:
+                self.runtime.park_goal()
+                return
+            self.runtime.note_goal_continuation()
+            async for event in self.runtime.stream(self._goal_continuation_note(goal), as_system_note=True):
+                yield event
+
+    def _goal_continuation_note(self, goal) -> str:
+        """The goal, restated as the next turn's opening message."""
+        from frank.base.tuning import Tunable, active_tuning
+
+        return self.runtime._prompt_loader.load("goal_continuation", {
+            "goal": goal.text,
+            "requirements": "\n".join(f"- {requirement}" for requirement in goal.requirements),
+            "blocked_turns": active_tuning().amount(Tunable.goal_blocked_turns),
+        })
+
     async def ask(self, message: str, *, attachments: Sequence[str | Path] = ()) -> str:
-        """Drive one turn and answer with the agent's prose.
+        """Drive a turn — or a goal to its end, as :meth:`stream` describes — and answer with
+        the agent's prose.
 
         ``attachments`` are local file paths handed to the agent, as in :meth:`stream`.
 

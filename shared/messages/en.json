@@ -296,6 +296,14 @@
     "aheadOfUpstream": "{count} ahead of upstream",
     "behindUpstream": "{count} behind upstream"
   },
+  "GoalBar": {
+    "working": "Working toward",
+    "blocked": "Blocked",
+    "waiting": "Waiting for you",
+    "requirements": "Done when",
+    "blocker": "In the way",
+    "stop": "Stop"
+  },
   "InterfaceScreen": {
     "daemonRefused": "The daemon refused.",
     "lookingFor": "Looking for {machine}…",
@@ -693,6 +701,10 @@
     "filesCount": "{count, plural, other {# files}}"
   },
   "ToolViews": {
+    "accessNetwork": "Network access",
+    "accessRead": "Reads from",
+    "accessRequested": "Access requested",
+    "accessWrite": "Writes to",
     "answers": "Answers",
     "browserAuthorizationBody": "Chrome is asking you to approve the debugging connection — the prompt is in the browser window, not here. Click Allow and this will connect. Don't toggle remote debugging off and on; that dismisses the prompt.",
     "browserAuthorizationTitle": "Waiting for you to allow Chrome's connection",
@@ -744,7 +756,11 @@
     "fullOutput": "Full output",
     "goal": "Goal",
     "goalActive": "Now working toward this",
+    "goalBlocked": "Blocked",
+    "goalBlocker": "In the way",
     "goalCleared": "Cleared",
+    "goalEvidence": "Checked",
+    "goalRequirements": "Done when",
     "goalSatisfied": "Satisfied",
     "goalUpdateError": "Could not be updated",
     "include": "Include",
@@ -808,6 +824,7 @@
     "statusBlocked": "Blocked",
     "statusCancelled": "Cancelled",
     "statusDeleted": "Deleted",
+    "statusFailed": "Failed",
     "statusInProgress": "In progress",
     "statusPending": "Pending",
     "statusUnknown": "Unknown",
@@ -822,12 +839,7 @@
     "url": "URL",
     "validation": "Validation",
     "violation": "Violation",
-    "yes": "Yes",
-    "accessRequested": "Access requested",
-    "accessRead": "Reads from",
-    "accessWrite": "Writes to",
-    "accessNetwork": "Network access",
-    "statusFailed": "Failed"
+    "yes": "Yes"
   },
   "WorkspaceLocationsPanel": {
     "loadError": "Could not load workspace environments",

@@ -35,6 +35,7 @@ from frank.base.worktrees import SessionWorktree
 from frank.protocol.metadata import (
     AUTONOMOUS_RESUME_KIND,
     COMPACTION_KIND,
+    GOAL_CONTINUATION_KIND,
     REPORT_REMINDER_KIND,
     INPUT_RESPONSE_KIND,
     Metadata,
@@ -274,6 +275,57 @@ class SessionExecutor(AgentExecutor):
         await self._drive_self_sent_turn(
             session_id, REPORT_REMINDER_KIND, metadata_flags={Metadata.REPORT_REMINDER: True},
         )
+
+    async def continue_goal(self, session_id: str) -> None:
+        """Open one turn for a goal the session has not finished.
+
+        The mechanism behind a goal outliving the turn that set it: the session picks the work
+        back up by sending itself a prose-less envelope, so what a person sees in the transcript
+        is the agent carrying on — which is what actually happened — rather than a message they
+        never wrote. Whether another one is owed after this is decided in that turn's teardown,
+        the same as this one was."""
+        await self._drive_self_sent_turn(
+            session_id, GOAL_CONTINUATION_KIND, metadata_flags={Metadata.GOAL_CONTINUATION: True},
+        )
+
+    def clear_goal(self, session_id: str) -> bool:
+        """Call the session's goal off, because the person said so.
+
+        The stop button behind a goal that keeps opening turns for itself. It drops the goal
+        rather than parking it: a person who asks for this is not asking to be reminded later.
+        Nothing is interrupted here — a turn in flight runs to its end — but that turn's teardown
+        finds no goal and opens nothing after it. Returns False when the session has no goal."""
+        state = self._contexts.get(session_id)
+        runtime = state.runtime if state is not None else None
+        if runtime is None or runtime.goal is None:
+            return False
+        runtime.write_goal(None)
+        spawn_background_task(self._persist_session_state(session_id, runtime))
+        return True
+
+    async def _persist_session_state(self, session_id: str, runtime: AgentRuntime) -> None:
+        """Write the durable session state (goal, tasks) outside a turn.
+
+        Everything else writes it at a turn's safe points, because everything else changes it
+        during a turn. A person calling off a goal changes it between turns, and a change that
+        only exists in memory is one the next restart undoes."""
+        snapshot = runtime.dirty_session_snapshot()
+        if snapshot is None:
+            return
+        try:
+            await self._turn_store.save_session_state(session_id, snapshot)
+        except Exception:  # noqa: BLE001 — the goal is already off in the live session
+            logger.exception("could not persist the session state for %s", session_id)
+            return
+        runtime.clear_session_dirty()
+
+    def _notify_goal_state(self, session_id: str, goal) -> None:
+        """Tell the daemon what this session's goal is now, so the interface can show it and
+        offer to call it off. Fire-and-forget, like every other thing a worker reports."""
+        spawn_background_task(self._turn_store.publish_event({
+            "session_id": session_id,
+            "goal": goal.public() if goal is not None else None,
+        }))
 
     async def _run_compaction_turn(self, session_id: str) -> None:
         """Drive one manual-compaction turn (a self-sent agent-role compaction message), so
@@ -658,6 +710,10 @@ class SessionExecutor(AgentExecutor):
         # `AttributeError: 'AgentRuntime' object has no attribute 'set_agent_event_sink'`
         # before it could start — reported to the interface as "the turn stopped unexpectedly".
         runtime.set_turn_reader(self._make_turn_reader())
+        # Every goal change reaches the daemon, and through it the interface — which is what
+        # makes a goal something the person can see and call off rather than something they
+        # infer from the session refusing to go quiet.
+        runtime.set_goal_listener(lambda goal: self._notify_goal_state(session_id, goal))
         return runtime
 
     def _make_turn_reader(self):
@@ -709,6 +765,11 @@ class SessionExecutor(AgentExecutor):
             session_state = await self._turn_store.load_session_state(session_id)
             if session_state:
                 runtime.restore_session(session_state)
+                # Announce the restored goal, so a session reopened after a restart shows what
+                # it is working toward. `restore_session` deliberately does not announce: it is
+                # the one write that changes nothing, and routing it through the listener would
+                # have every rebuilt runtime republish a goal that never moved.
+                self._notify_goal_state(session_id, runtime.goal)
             state.runtime = runtime
             # First time this process builds a runtime for the context: replay any
             # background results the durable store holds but never delivered (e.g.

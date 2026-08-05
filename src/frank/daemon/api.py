@@ -121,7 +121,7 @@ def _public(record: SessionRecord) -> dict:
     from merely alive without any of it being written down. The record itself carries only
     what is durable: whether the session exists, not what it is doing."""
     record.busy = record.id in state._running_contexts
-    return record.public()
+    return {**record.public(), "goal": state._session_goals.get(record.id)}
 
 
 def _resolve_sandbox(agent: str, working_directory: str, parent, mode=None) -> dict:
@@ -472,6 +472,13 @@ async def _session_compact(params: dict) -> dict:
     return await state.wake_then_relay(record, "session/compact", params)
 
 
+async def _session_goal_clear(params: dict) -> dict:
+    """Call off a session's goal, because the person asked. The session stops opening turns for
+    it; whatever turn is in flight finishes on its own."""
+    record = _session(_require(params, "id"))
+    return await state.wake_then_relay(record, "session/goal-clear", params)
+
+
 async def _jobs_list(params: dict) -> dict:
     """What background work a session has in flight. Read from the session rather than the
     store: a background job lives in the process running it."""
@@ -790,6 +797,7 @@ METHODS: dict[str, Callable[[dict], Awaitable[dict]]] = {
     "turn.cancel": _turn_cancel,
     "session.respond": _session_respond,
     "session.compact": _session_compact,
+    "session.goal_clear": _session_goal_clear,
     "jobs.list": _jobs_list,
     "jobs.detach": _jobs_detach,
     "session.history": _session_history,

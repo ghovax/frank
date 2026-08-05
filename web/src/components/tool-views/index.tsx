@@ -21,6 +21,7 @@ import {
   Mono,
   MonoBlock,
   MonoList,
+  ProseList,
 } from "../ui/display";
 import { asArray, asRecord, asString } from "@/lib/coerce";
 import { declaredNonMutating, requestedAccess } from "@/lib/tool-display";
@@ -220,6 +221,7 @@ const PROSE_FIELD_KEYS = new Set([
   // A goal is a sentence somebody wrote, whether it is the current one or the one just
   // finished — monospace made the second read as an identifier.
   "previous_goal",
+  "blocker",
   "message",
   "prompt",
   "reason",
@@ -242,6 +244,7 @@ const PROSE_FIELD_KEYS = new Set([
 const GOAL_OUTCOME_KEYS: Record<string, string> = {
   goal_active: "goalActive",
   goal_satisfied: "goalSatisfied",
+  goal_blocked: "goalBlocked",
   goal_cleared: "goalCleared",
 };
 
@@ -253,6 +256,9 @@ const FIELD_LABEL_KEYS: Record<string, string> = {
   status: "fieldStatus",
   goal: "goal",
   previous_goal: "previousGoal",
+  requirements: "goalRequirements",
+  evidence: "goalEvidence",
+  blocker: "goalBlocker",
   message: "message",
   error: "error",
   result: "result",
@@ -863,15 +869,31 @@ function SessionResultView({ data }: { data: Record<string, unknown> }) {
  * and confirms it there; finishing one carries no argument worth rendering at all, since
  * `explanation` is already the heading.
  */
+/** A goal's requirements or evidence: prose lines, each its own row. */
+function GoalLines({ label, lines }: { label: string; lines: string[] }) {
+  if (!lines.length) return null;
+  return (
+    <Field label={label}>
+      <ProseList items={lines} />
+    </Field>
+  );
+}
+
 function UpdateGoalCallView({ args }: { args: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   const goal = asString(args.goal).trim();
-  if (!goal) return null;
+  // The requirements are the half of a goal that says what "done" means, so a call that sets
+  // one shows both — a goal stated without them reads as complete when it is not yet checkable.
+  const requirements = asArray(args.requirements).map(asString).filter(Boolean);
+  if (!goal && !requirements.length) return null;
   return (
     <FieldList>
-      <Field label={translation("goal")}>
-        <MarkdownContent content={goal} fontSize="xs" />
-      </Field>
+      {goal ? (
+        <Field label={translation("goal")}>
+          <MarkdownContent content={goal} fontSize="xs" />
+        </Field>
+      ) : null}
+      <GoalLines label={translation("goalRequirements")} lines={requirements} />
     </FieldList>
   );
 }
@@ -900,11 +922,16 @@ function UpdateGoalResultView({ data }: { data: Record<string, unknown> }) {
   const outcome = GOAL_OUTCOME_KEYS[code];
   const goal = asString(data.goal).trim();
   const previous = asString(data.previous_goal).trim();
+  const requirements = asArray(data.requirements).map(asString).filter(Boolean);
+  // What was checked, when a goal was satisfied. This is the claim's evidence, and showing it
+  // is what lets a reader disagree with a "done" rather than take it on trust.
+  const evidence = asArray(data.evidence).map(asString).filter(Boolean);
+  const blocker = asString(data.blocker).trim();
   if (!outcome) return <ErrorView message={asString(data.message) || code} />;
   return (
     <FieldList>
       <InlineField label={translation("fieldOutcome")}>
-        <Pill colorPalette={code === "goal_active" ? "blue" : "green"}>
+        <Pill colorPalette={code === "goal_active" ? "blue" : code === "goal_blocked" ? "orange" : "green"}>
           {translation(outcome as Parameters<typeof translation>[0])}
         </Pill>
       </InlineField>
@@ -913,6 +940,11 @@ function UpdateGoalResultView({ data }: { data: Record<string, unknown> }) {
       ) : null}
       {previous ? (
         <Field label={translation("previousGoal")}><MarkdownContent content={previous} fontSize="xs" /></Field>
+      ) : null}
+      <GoalLines label={translation("goalRequirements")} lines={requirements} />
+      <GoalLines label={translation("goalEvidence")} lines={evidence} />
+      {blocker ? (
+        <Field label={translation("goalBlocker")}><MarkdownContent content={blocker} fontSize="xs" /></Field>
       ) : null}
     </FieldList>
   );

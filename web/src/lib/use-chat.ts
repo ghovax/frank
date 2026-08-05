@@ -784,8 +784,8 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       // in-flight thinking indicator. (The thinking ping itself is a `thinking`
       // event now, not a status — this only handles the wait edge.)
       if (event.code === "waiting_for_tools") finishRunningThinking(state);
-      // A status (e.g. goal_check between answer attempts) ends the current prose
-      // block, so the next text starts its own message instead of concatenating.
+      // Anything else a status says is already shown by the row it belongs to; this arm
+      // exists so a status never falls through to the unknown-event path.
       break;
     }
     case "thinking":

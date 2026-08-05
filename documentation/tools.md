@@ -31,11 +31,13 @@ There are no dedicated `find_files`/`search_content` tools; for literal file-nam
 | Tool | What it does |
 |------|--------------|
 | `set_tasks` / `update_tasks` | Maintain a task list for a multi-step job. |
-| `update_goal` | Track an overarching goal. |
+| `update_goal` | Set the outcome the session is working toward, and say when it is met, blocked, or no longer wanted. |
 | `read_turn` | Read a sibling turn handed to this session from outside. |
 | `load_skill` | Load a `SKILL.md` capability on demand. |
 | `ask_user` | Ask the user a question and wait for the answer. |
 | `wait_for` | Pause for a few seconds without a model round trip, to re-check something that was not ready. |
+
+A goal is not a longer task list. The task list is the steps; the goal is the outcome the steps are for, and the difference is what happens when a turn ends. A session with an open goal keeps going: it opens itself another turn, with the goal restated, until the agent satisfies it, clears it, or reports it blocked — bounded by an allowance for how long it runs with nobody watching, after which the goal is parked and waits for you. Setting one takes both the end state and the conditions that would prove it, and satisfying one takes the evidence that each was met; a goal that cannot be audited is one that gets called done from memory. See [Architecture](architecture.md#goals).
 
 **Peer sessions**
 

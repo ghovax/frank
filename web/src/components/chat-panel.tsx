@@ -34,6 +34,7 @@ import { BackgroundJobsPanel } from "./background-jobs-panel";
 import { DelegatedWorkPanel } from "./delegated-work-panel";
 import type { SessionEntry } from "./session-row";
 import { GitStatusBar } from "./git-status-bar";
+import { GoalBar } from "./goal-bar";
 import { LocationChip } from "./location-status";
 import { SectionHeader } from "./ui/section-header";
 import { CONCEPT_ICONS } from "@/lib/concept-icons";
@@ -47,7 +48,7 @@ import { AgentSkills } from "./agent-skills";
 import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-display";
 import { permissionReasonPaths, permissionReasonText, type ToolPermission, type ToolQuestion } from "@/lib/tool-event";
 
-import { fetchSettings, getWorkspace, revealInFinder, saveSessionDraft, saveAgentConfiguration, saveSettings, setSessionPermissionMode, subscribeEvents, type AgentCard, type AgentSummary, type Location, type PermissionMode, type SandboxEnforce, type WorktreeStrategy } from "@/lib/api";
+import { clearSessionGoal, fetchSettings, getWorkspace, revealInFinder, saveSessionDraft, saveAgentConfiguration, saveSettings, setSessionPermissionMode, subscribeEvents, type AgentCard, type AgentSummary, type Location, type PermissionMode, type SandboxEnforce, type WorktreeStrategy } from "@/lib/api";
 import { PdfDocumentView } from "./pdf-view";
 import { scrollFade, scrollFadeTopBottom } from "@/lib/scroll-fade";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -466,6 +467,23 @@ export function ChatPanel({
       closable: true,
     });
   }, [grantedPermissionMode, onPermissionModeChange, translation]);
+
+  // The session's goal, read from the session list rather than kept here. The daemon already
+  // pushes a change to every client the moment a worker reports one, and the list is what that
+  // push refreshes — a second copy in this component could only ever be the same fact, one
+  // render later and wrong whenever the two disagreed.
+  const activeGoal = useMemo(
+    () => sessions.find((entry) => entry.sessionId === sessionId)?.goal ?? null,
+    [sessions, sessionId],
+  );
+  const handleClearGoal = useCallback(() => {
+    if (!sessionId) return;
+    // Optimism would be a lie here: whether the goal was still there to call off is the
+    // session's answer, and a turn in flight keeps running either way. So the bar clears when
+    // the daemon says it cleared, which is the same push that put it on screen.
+    clearSessionGoal(sessionId).catch((caught) =>
+      swallowed({ component: "chat-panel", operation: "call off the goal" }, caught));
+  }, [sessionId]);
 
   const openSettings = useCallback((section: SettingsSection) => {
     setSettingsSection(section);
@@ -1239,6 +1257,10 @@ export function ChatPanel({
           style={{ scrollbarGutter: "stable both-edges" }}
         >
         <Box w="full" maxW="80rem" mx="auto">
+        {/* Above the composer, because it is the state you are typing *into*: a session with a
+            goal is one that will keep working after this turn, and the person deciding what to
+            say next is the person who should see that — and be able to end it. */}
+        {activeGoal && <GoalBar goal={activeGoal} onClear={handleClearGoal} />}
         <ChatInput
           onSend={handleSend}
           onAbort={abort}

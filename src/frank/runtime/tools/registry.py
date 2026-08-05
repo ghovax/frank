@@ -475,8 +475,11 @@ def update_tasks(updates: list[dict], explanation: str = Field(..., description=
 
 @tool
 def update_goal(
+    status: Literal["active", "satisfied", "blocked", "cleared"] = "active",
     goal: str = "",
-    status: Literal["active", "satisfied", "cleared"] = "active",
+    requirements: list[str] | None = None,
+    evidence: list[str] | None = None,
+    blocker: str = "",
     explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/update_goal.md."""

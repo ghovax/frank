@@ -453,6 +453,36 @@ class AppendOnlyTaskStore(TaskStore):
         finally:
             release_sqlite_write_lock(write_lock)
 
+    async def save_session_state(self, session_id: str, session_state: dict) -> None:
+        """Write a context's durable goal/task state on its own, without touching the
+        conversation checkpoint.
+
+        The pair is written together by :meth:`save_turn_state` because a turn changes both and
+        they must not diverge. This exists for the changes that happen *between* turns — a person
+        calling off a goal — where there is no conversation to write and no turn to hang the
+        write on, and where borrowing the paired path would mean sending the whole checkpoint
+        back to have it written over itself."""
+        await self._ensure_initialized()
+        if not session_id:
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        write_lock = await acquire_sqlite_write_lock()
+        try:
+            async with self._engine.begin() as connection:
+                state_insert = sqlite_insert(self._session_state).values(
+                    session_id=session_id,
+                    state=json.dumps(session_state),
+                    updated_at=now,
+                )
+                await connection.execute(
+                    state_insert.on_conflict_do_update(
+                        index_elements=[self._session_state.c.session_id],
+                        set_={"state": state_insert.excluded.state, "updated_at": now},
+                    )
+                )
+        finally:
+            release_sqlite_write_lock(write_lock)
+
     async def load_checkpoint(self, session_id: str) -> list:
         """The context's model-facing conversation snapshot (``messages_to_dict`` form),
         or ``[]`` when there is none. The caller rehydrates it with ``messages_from_dict``

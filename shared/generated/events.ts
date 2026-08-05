@@ -310,9 +310,9 @@ export interface ToolResultEvent {
  * via the `definition` "TurnContext".
  */
 export interface TurnContext {
-  active_goal?: string;
   background?: Record<string, unknown>;
   confinement?: Record<string, unknown>;
+  goal?: Record<string, unknown>;
   locations?: Record<string, unknown>[];
   now?: string;
   pwd?: string;

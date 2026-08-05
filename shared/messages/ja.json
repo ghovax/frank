@@ -296,6 +296,14 @@
     "aheadOfUpstream": "アップストリームより {count} コミット先行",
     "behindUpstream": "アップストリームより {count} コミット遅延"
   },
+  "GoalBar": {
+    "working": "取り組み中",
+    "blocked": "行き詰まり",
+    "waiting": "確認待ち",
+    "requirements": "完了条件",
+    "blocker": "障害",
+    "stop": "中止"
+  },
   "InterfaceScreen": {
     "daemonRefused": "デーモンが拒否しました。",
     "lookingFor": "{machine} を探しています…",
@@ -693,6 +701,10 @@
     "filesCount": "{count, plural, other {# 件のファイル}}"
   },
   "ToolViews": {
+    "accessNetwork": "ネットワークアクセス",
+    "accessRead": "読み取り元",
+    "accessRequested": "要求したアクセス",
+    "accessWrite": "書き込み先",
     "answers": "回答",
     "browserAuthorizationBody": "Chrome がデバッグ接続の承認を求めています。プロンプトはこの画面ではなくブラウザーのウィンドウに表示されます。「許可」をクリックすれば接続されます。リモートデバッグを切り替え直さないでください — プロンプトが消えてしまいます。",
     "browserAuthorizationTitle": "Chrome の接続許可を待っています",
@@ -744,7 +756,11 @@
     "fullOutput": "完全な出力",
     "goal": "ゴール",
     "goalActive": "このゴールに取り組み中",
+    "goalBlocked": "行き詰まり",
+    "goalBlocker": "障害",
     "goalCleared": "解除",
+    "goalEvidence": "確認した内容",
+    "goalRequirements": "完了条件",
     "goalSatisfied": "達成",
     "goalUpdateError": "更新できませんでした",
     "include": "対象",
@@ -808,6 +824,7 @@
     "statusBlocked": "ブロック中",
     "statusCancelled": "キャンセル済み",
     "statusDeleted": "削除済み",
+    "statusFailed": "失敗",
     "statusInProgress": "進行中",
     "statusPending": "保留中",
     "statusUnknown": "不明",
@@ -822,12 +839,7 @@
     "url": "URL",
     "validation": "検証",
     "violation": "違反",
-    "yes": "はい",
-    "accessRequested": "要求したアクセス",
-    "accessRead": "読み取り元",
-    "accessWrite": "書き込み先",
-    "accessNetwork": "ネットワークアクセス",
-    "statusFailed": "失敗"
+    "yes": "はい"
   },
   "WorkspaceLocationsPanel": {
     "loadError": "ワークスペースの環境を読み込めませんでした",

@@ -34,6 +34,7 @@ from frank.runtime.background import (
     unbind_tool_call_id,
 )
 from frank.protocol.events import ToolStatus
+from frank.runtime.goal import Goal
 from frank.base.file_leases import FileLeaseConflict
 from frank.base.skills import enabled_skills, load_skills
 from frank.runtime.locations import (
@@ -72,6 +73,20 @@ logger = logging.getLogger(__name__)
 # what makes the test safe: the cost of reading a description as an id is a failed lookup a caller
 # can see, where the cost of reading an id as a description was a semantic search for "e1594".
 _ELEMENT_ID = re.compile(r"(?:f\d+)?e\d+|req\d+|ws\d+|\d+(?:\.\d+)+")
+
+
+def _goal_lines(value: Any) -> list[str]:
+    """A goal's requirements or evidence, as a list of non-empty lines.
+
+    Models write a list of conditions three ways — a real list, one string with newlines in it,
+    or one string — and all three mean the same thing to the person reading them back. Accepting
+    the shape is not the same as accepting the content: an empty list still fails the check at
+    the call site, which is what makes the field mandatory in practice."""
+    if isinstance(value, str):
+        value = value.splitlines()
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [line for line in (str(entry).strip() for entry in value) if line]
 
 
 def _with_schema_defaults(schema: Any, arguments: dict) -> dict:
@@ -1239,38 +1254,72 @@ class _DispatchesTools:
         decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
-        status = tool_arguments.get("status", "active")
+        status = str(tool_arguments.get("status", "active"))
         goal = str(tool_arguments.get("goal", "")).strip()
+        requirements = _goal_lines(tool_arguments.get("requirements"))
+        evidence = _goal_lines(tool_arguments.get("evidence"))
+        blocker = str(tool_arguments.get("blocker", "")).strip()
+        current = self.goal
+
+        def refuse(message: str) -> dict:
+            return {"code": "goal_update_error", "status": ToolStatus.ERROR.value, "message": message}
+
         if status == "active":
+            # Both halves are demanded at the point of setting, because this is the only moment
+            # the goal can be stated against a fresh reading of the request. An outcome recorded
+            # without the conditions that would prove it is one that gets audited later against
+            # whatever was built in the meantime, which is how a goal quietly shrinks to fit.
             if not goal:
-                result = {
-                    "code": "goal_update_error",
-                    "status": ToolStatus.ERROR.value,
-                    "message": "A non-empty goal is required when status is 'active'.",
-                }
+                result = refuse("Say what the goal is: the end state, in one sentence.")
+            elif not requirements:
+                result = refuse(
+                    "A goal needs requirements: the conditions that must hold for it to be met, "
+                    "each one something you can check."
+                )
             else:
-                self._active_goal = goal
-                self._session_dirty = True
-                result = {
-                    "code": "goal_active",
-                    "goal": self._active_goal,
-                }
+                # The allowance carries across a replacement. It bounds how long the session
+                # runs without anybody looking at it, which is a fact about the stretch and not
+                # about any one wording of the goal — otherwise restating the goal each time
+                # would buy an unbounded run, and the ceiling would bind only an agent that had
+                # not thought to restate it.
+                self.write_goal(Goal(
+                    text=goal,
+                    requirements=requirements,
+                    continuations=current.continuations if current is not None else 0,
+                ))
+                result = {"code": "goal_active", "goal": goal, "requirements": requirements}
                 self._record_event("goal_updated", result)
-        elif status in ("satisfied", "cleared"):
-            previous_goal = self._active_goal
-            self._active_goal = ""
-            self._session_dirty = True
-            result = {
-                "code": f"goal_{status}",
-                "previous_goal": previous_goal,
-            }
-            self._record_event("goal_updated", result)
+        elif status == "satisfied":
+            if current is None:
+                result = refuse("There is no goal to satisfy.")
+            elif not evidence:
+                # The audit, made structural. The prompt has always asked for it; asking for it
+                # here is what stops "satisfied" from being assertable on memory alone.
+                result = refuse(
+                    "Say what proves it: for each requirement, what you looked at and what it showed."
+                )
+            else:
+                self.write_goal(None)
+                result = {"code": "goal_satisfied", "previous_goal": current.text, "evidence": evidence}
+                self._record_event("goal_updated", result)
+        elif status == "blocked":
+            if current is None:
+                result = refuse("There is no goal to report blocked.")
+            elif not blocker:
+                result = refuse("Say what is in the way, and what would clear it.")
+            else:
+                self.write_goal(current.model_copy(update={"status": Goal.BLOCKED, "blocker": blocker}))
+                result = {"code": "goal_blocked", "goal": current.text, "blocker": blocker}
+                self._record_event("goal_updated", result)
+        elif status == "cleared":
+            if current is None:
+                result = refuse("There is no goal to clear.")
+            else:
+                self.write_goal(None)
+                result = {"code": "goal_cleared", "previous_goal": current.text}
+                self._record_event("goal_updated", result)
         else:
-            result = {
-                "code": "goal_update_error",
-                "status": ToolStatus.ERROR.value,
-                "message": "Status must be one of 'active', 'satisfied', or 'cleared'.",
-            }
+            result = refuse("Status must be one of 'active', 'satisfied', 'blocked', or 'cleared'.")
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
 
 

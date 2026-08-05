@@ -295,14 +295,26 @@ class Tunable(Enum):
         a moment rather than the whole action.""",
     )
 
+    goal_continuation_turns = Default(
+        12, Scaling.NONE,
+        """How many turns in a row a session may open for its own goal before it stops and waits
+        for the person.
+
+        A goal is what keeps a session working when nobody is watching, and the same property is
+        what makes an allowance necessary: an agent convinced it is nearly there can be nearly
+        there for a very long time. The count starts again the moment the person says anything,
+        so this bounds an unattended stretch rather than the goal itself. Reaching it parks the
+        goal — it is neither abandoned nor declared blocked, because neither would be true; it is
+        simply waiting for somebody to look.""",
+    )
+
     goal_blocked_turns = Default(
         3, Scaling.NONE,
-        """How many consecutive turns the same condition must stop a goal before the agent may
-        report it blocked. One failure is not an impasse, and a goal abandoned on the first
-        refusal is one nobody asked to abandon. How many failures do constitute an impasse
-        depends on the work, which is why this is a setting and not a number in a prompt — the
-        value here is what the agent is told, so the instruction and the threshold cannot
-        drift apart.""",
+        """How many times the same condition must stop a goal before the agent may report it
+        blocked. One failure is not an impasse, and a goal abandoned on the first refusal is one
+        nobody asked to abandon. How many failures do constitute an impasse depends on the work,
+        which is why this is a setting and not a number in a prompt — the value here is what the
+        agent is told, so the instruction and the threshold cannot drift apart.""",
     )
 
     # The control plane and the processes it supervises.

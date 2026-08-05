@@ -162,6 +162,17 @@ A session's permission mode is chosen when the session is created and can be cha
 - **Screen control** (`control_screen`), against the local machine.
 - **MCP**, against the session's own connections. Stateful connections and stdio subprocesses do not cross a process boundary, so a session connects its own rather than sharing the daemon's.
 5. Results stream back as structured events. The session posts them to the daemon, which is the only writer of `history.db`, and fans them out to whoever is attached.
+6. The turn ends when the model stops asking for tools — unless the session holds a **goal**, in which case the session opens itself another turn and carries on. See below.
+
+## Goals
+
+A turn ends when the model stops talking. That is the wrong unit for work that was asked for as an outcome, because the model can stop for reasons that have nothing to do with the outcome being real.
+
+So a session can hold one **goal**: the end state in a sentence, plus the conditions that must hold for it to be true, both written by the agent through `update_goal` and both durable beside the conversation. While a goal is open, the end of a turn is not the end of the work — the session opens itself another turn, with the goal restated, until the agent satisfies it (naming the evidence for each condition), clears it, or reports it blocked.
+
+Two bounds keep that from being an unattended machine that never stops. `Tunable.goal_continuation_turns` is how many turns a session may open in a row with nobody watching; reaching it *parks* the goal, which is neither abandoning it nor calling it stuck — the session simply waits, and anything anyone says gives the allowance back and picks the goal up where it stopped. And the goal itself is visible in the app above the composer, with a control that calls it off outright.
+
+What opens those turns is the layer that owns the session, never the model: the agent is shown the goal and the conditions, and nothing about the counting behind it.
 
 ## Prompt caching, and what is recorded about it
 

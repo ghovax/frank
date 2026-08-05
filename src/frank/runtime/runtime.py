@@ -10,7 +10,7 @@ from langchain_core.messages import (
     AIMessage,
 )
 from langchain_core.tools import BaseTool
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, SecretStr, ValidationError
 
 
 from frank.base.configuration import (
@@ -82,6 +82,7 @@ from frank.runtime.compaction import (
     _CompactsContext,
 )
 from frank.base.serialization import compact
+from frank.runtime.goal import Goal
 from frank.runtime.internals import (
     _cap_model_result_payload,
     _maybe_json,
@@ -727,7 +728,11 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         self._prompt_loader = _CataloguePrompts(catalogue)
         self._cached_system_prompt: str | None = None
         self._task_manager = TaskManager()
-        self._active_goal: str = ""
+        self._goal: Optional[Goal] = None
+        # Called whenever the goal changes, so the layer above can tell the daemon (and through
+        # it the interface, which shows the goal with a control to call it off). Installed by the
+        # executor; a library session leaves it unset and simply keeps the goal to itself.
+        self._on_goal_change: Optional[Callable[[Optional[Goal]], None]] = None
         # Set when the goal or task list changes, so the executor persists the durable
         # session state only on mutation rather than on every checkpoint.
         self._session_dirty = False
@@ -1151,16 +1156,80 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         self._turn_reader = task_reader
 
     def session_snapshot(self) -> dict:
-        """The context's durable non-conversation state — the active goal and the task
-        list — persisted alongside the conversation checkpoint so a restart restores the
-        agent's objective, not just its transcript."""
-        return {"goal": self._active_goal, "tasks": self._task_manager.snapshot()}
+        """The context's durable non-conversation state — the goal and the task list —
+        persisted alongside the conversation checkpoint so a restart restores the agent's
+        objective, not just its transcript."""
+        return {
+            "goal": self._goal.model_dump() if self._goal is not None else None,
+            "tasks": self._task_manager.snapshot(),
+        }
 
     def restore_session(self, snapshot: dict) -> None:
         """Rehydrate goal and tasks from :meth:`session_snapshot` when a context is rebuilt
-        (e.g. a session reopened after a restart). A missing snapshot leaves both empty."""
-        self._active_goal = str(snapshot.get("goal", ""))
+        (e.g. a session reopened after a restart). A missing snapshot leaves both empty.
+
+        A goal that does not validate is dropped rather than guessed at: the record is what the
+        harness reads to decide whether to keep the session working, and half a record would
+        have it working toward something nobody can see."""
+        stored = snapshot.get("goal")
+        goal = None
+        if isinstance(stored, dict) and str(stored.get("text", "")).strip():
+            try:
+                goal = Goal.model_validate(stored)
+            except ValidationError:
+                logger.warning("discarding a stored goal that no longer validates")
+        self._goal = goal
         self._task_manager.restore(snapshot.get("tasks", {}) or {})
+
+    # The goal, and the four things anyone outside this class does with it.
+
+    @property
+    def goal(self) -> Optional[Goal]:
+        """The session's goal, or ``None`` when it has none."""
+        return self._goal
+
+    def set_goal_listener(self, listener: Optional[Callable[[Optional[Goal]], None]]) -> None:
+        """Install the callback that hears every goal change. The executor uses it to tell the
+        daemon, which is how the interface learns there is a goal to show."""
+        self._on_goal_change = listener
+
+    def write_goal(self, goal: Optional[Goal]) -> None:
+        """Set, replace or drop the goal, and announce it.
+
+        The single writer. Everything that changes a goal — the agent's tool, the harness parking
+        one that has run long enough, a person calling it off — comes through here, so no path
+        can change the goal without it being persisted at the next safe point and shown to
+        whoever is watching."""
+        self._goal = goal
+        self._session_dirty = True
+        if self._on_goal_change is not None:
+            self._on_goal_change(goal)
+
+    def note_goal_continuation(self) -> None:
+        """Count one harness-opened turn against the goal's allowance."""
+        if self._goal is None:
+            return
+        self.write_goal(self._goal.model_copy(update={"continuations": self._goal.continuations + 1}))
+
+    def restore_goal_allowance(self) -> None:
+        """A person spoke, so the goal's allowance starts again — and a goal parked for having
+        used it up is picked back up, because being spoken to is the thing it was waiting for.
+
+        A goal the agent reported *blocked* is left alone: the obstacle it named does not go away
+        because somebody typed, and the agent is the one that decides it has passed."""
+        goal = self._goal
+        if goal is None or goal.status == Goal.BLOCKED:
+            return
+        if goal.continuations == 0 and goal.status == Goal.ACTIVE:
+            return
+        self.write_goal(goal.model_copy(update={"continuations": 0, "status": Goal.ACTIVE}))
+
+    def park_goal(self) -> None:
+        """Stop working the goal until a person says something. Called when the allowance runs
+        out; the goal itself is kept, because it is still what the session is for."""
+        if self._goal is None or not self._goal.is_open:
+            return
+        self.write_goal(self._goal.model_copy(update={"status": Goal.PARKED}))
 
     def dirty_session_snapshot(self) -> Optional[dict]:
         """The session snapshot if the goal or tasks changed since the last persist, else

@@ -257,6 +257,7 @@ function Workspace() {
       awaitingInput: session.awaiting_input ?? false,
       exitReason: session.exit_reason,
       permissionMode: session.permission_mode,
+      goal: session.goal ?? null,
     }));
   }, []);
 

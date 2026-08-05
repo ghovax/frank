@@ -1,7 +1,7 @@
 """The AgentRuntime turn-loop concern (a mixin composed into AgentRuntime).
 
-The ``stream()`` driver and its phases — the model call, the no-tool-calls finalize (goal nudge,
-agent messaging, completion), and the tool batch — plus turn-message assembly, the static/dynamic
+The ``stream()`` driver and its phases — the model call, the no-tool-calls finalize (agent
+messaging, completion), and the tool batch — plus turn-message assembly, the static/dynamic
 system prompt, steering drain, and turn recording."""
 from __future__ import annotations
 
@@ -30,11 +30,9 @@ from frank.base.memories import memories_payload
 from frank.base.message_content import message_content_deltas, message_text
 from frank.base.model_errors import ContextWindowExceeded, over_context_window
 from frank.base.skills import enabled_skills, skills_for_agent, skills_payload
-from frank.base.tuning import Tunable, active_tuning
 from frank.runtime.turn_events import (
     Checkpoint,
     Done,
-    Status,
     Steering,
     Suspended,
     SuspensionGate,
@@ -275,7 +273,10 @@ class _RunsTurns:
         context = TurnContext(
             now=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
             pwd=self._working_directory or str(Path.cwd()),
-            active_goal=self._active_goal,
+            # The goal as the agent stated it, with the bookkeeping around it left out: what is
+            # counted to keep a session working is the harness's affair, and a model shown the
+            # count would start pacing itself against it.
+            goal=self._goal.for_model() if self._goal is not None else {},
             tasks=self._task_manager.to_dict_list(),
             background={
                 "running": self._background.active_by_context_key(),
@@ -540,11 +541,9 @@ class _RunsTurns:
     ) -> AsyncIterator[TurnEvent]:
         self._abort_event.clear()
         # The turn runs until the model is done or the user interrupts it — there is no
-        # iteration count and no stuck-detector. The goal reconsideration flag lets an active
-        # goal nudge the model once each time it stops, without a nudge counter; it is instance
-        # state so the no-tool-calls phase can advance it across iterations.
-        self._awaiting_goal_reconsideration = False
-
+        # iteration count and no stuck-detector. A turn that stops, stops: an unfinished goal is
+        # not this loop's business, because a goal outlives the turn that set it and the layer
+        # that owns the session is the one that can act on that.
         turn_tool_calls_log: list[dict] = []
         turn_tool_results_log: list[dict] = []
 
@@ -673,9 +672,9 @@ class _RunsTurns:
                 if not invalid.get("id"):
                     invalid["id"] = f"call_invalid_{uuid.uuid4().hex[:24]}"
 
-            # Phase 2 — no tool calls: retry a malformed batch, answer or await agents,
-            # nudge an active goal, or finish the turn. Always ends the iteration
-            # (_CONTINUE to loop again, _STOP once a terminal event was yielded).
+            # Phase 2 — no tool calls: retry a malformed batch, answer or await agents, or
+            # finish the turn. Always ends the iteration (_CONTINUE to loop again, _STOP once a
+            # terminal event was yielded).
             if not response.tool_calls:
                 step = _PhaseStep()
                 async for event in self._finalize_no_tool_calls(
@@ -685,10 +684,6 @@ class _RunsTurns:
                 if step.directive == _STOP:
                     return
                 continue
-
-            # A tool batch means the model is acting again, so a prior goal nudge is
-            # answered — the next time it stops, it will be re-nudged fresh.
-            self._awaiting_goal_reconsideration = False
 
             # Phase 3 — run the tool batch (append the checkpoint AIMessage, preflight the
             # whole batch's permissions, suspend if a human is needed, drain the tools,
@@ -860,9 +855,9 @@ class _RunsTurns:
         turn_tool_calls_log: list[dict], turn_tool_results_log: list[dict], step: _PhaseStep,
     ) -> AsyncIterator[TurnEvent]:
         """Handle a model response that made no tool calls. Retries a malformed-only
-        batch, delivers or awaits agent messages, nudges an active goal once to keep
-        working, or finishes the turn — advancing the loop bookkeeping and setting ``step``
-        to ``_CONTINUE`` (iterate again) or ``_STOP`` (a terminal ``Done`` was yielded)."""
+        batch, delivers or awaits agent messages, or finishes the turn — advancing the loop
+        bookkeeping and setting ``step`` to ``_CONTINUE`` (iterate again) or ``_STOP`` (a
+        terminal ``Done`` was yielded)."""
         if response.invalid_tool_calls:
             # A response carrying only malformed tool calls (arguments that failed to
             # parse). These are NOT valid tool_calls — the LiteLLM model serializes only
@@ -891,24 +886,11 @@ class _RunsTurns:
                 yield steering_event
             step.directive = _CONTINUE
             return
-        if self._active_goal and not self._awaiting_goal_reconsideration:
-            # The model stopped while a goal is active. Nudge it once to reconsider — but
-            # only once per stop: if it produces no tool calls again (it reaffirms it is
-            # done), the turn completes below. Any tool call in between clears the flag, so
-            # a model that keeps working is nudged fresh each time it next stops, with no
-            # nudge counter and no ceiling.
-            self._awaiting_goal_reconsideration = True
-            # The threshold is rendered from the same setting anything else would read, so the
-            # number the model is told and the number in the configuration cannot drift apart.
-            goal_continuation = self._prompt_loader.load("goal_continuation", {
-                "goal": self._active_goal,
-                "blocked_turns": active_tuning().amount(Tunable.goal_blocked_turns),
-            })
-            self._conversation.append(self._reminder_message(goal_continuation))
-            yield Status(code="goal_check",
-            )
-            step.directive = _CONTINUE
-            return
+        # An unfinished goal does not hold the turn open. Keeping the model in one turn until it
+        # agreed it was done bought a single reconsideration — it could refuse once and the turn
+        # ended, goal and all, with nothing left watching. The goal is durable and the session
+        # outlives the turn, so the decision to keep working belongs to whoever owns the session:
+        # this turn ends honestly, and another is opened for the goal if one is owed.
         self._record_turn(
             recorded_user_message, turn_tool_calls_log,
             turn_tool_results_log, final_text,

@@ -1,0 +1,74 @@
+"use client";
+
+import { Box, Button, Flex, Text } from "@chakra-ui/react";
+import { useTranslations } from "next-intl";
+import { LuTarget } from "react-icons/lu";
+import { Tooltip } from "./ui/tooltip";
+import { ProseList } from "./ui/display";
+import type { SessionGoal } from "@/lib/api";
+
+// What the session is working toward, and the way to call it off.
+//
+// It sits above the composer rather than in the transcript because it is not a thing that
+// happened — it is the state the session is in right now, and it stays true while the
+// transcript scrolls away from the tool call that set it. A goal is also the one piece of
+// state that makes a session keep working on its own, so the control that ends it belongs
+// wherever the goal is shown; a person who wants it to stop should not have to find the
+// message that started it.
+//
+// Three states, three different things to say. Working is the ordinary one and says the
+// least. Blocked is the agent's own report that it cannot pass an obstacle, so it names the
+// obstacle. Waiting is the harness's: the goal ran a long stretch with nobody looking, so it
+// stopped — nothing is wrong, but somebody should look.
+export function GoalBar({ goal, onClear }: { goal: SessionGoal; onClear: () => void }) {
+  const translation = useTranslations("GoalBar");
+  const text = (goal.text ?? "").trim();
+  if (!text) return null;
+
+  const status = goal.status || "active";
+  const tone = status === "blocked" ? "red.fg" : status === "parked" ? "orange.fg" : "fg.muted";
+  const statusLabel =
+    status === "blocked" ? translation("blocked")
+      : status === "parked" ? translation("waiting")
+        : translation("working");
+
+  // The requirements are the goal's substance — they are what "done" was defined as — but a
+  // list of them is taller than the composer it sits above, so they live in the hover card
+  // beside the state and the blocker.
+  const detail = (
+    <Box whiteSpace="normal" maxW="360px">
+      <Flex align="center" gap={1} mb={1} color="fg">
+        <LuTarget size={12} />
+        <Text fontWeight="semibold">{statusLabel}</Text>
+      </Flex>
+      <Text mb={goal.requirements?.length || goal.blocker ? 2 : 0}>{text}</Text>
+      {!!goal.requirements?.length && (
+        <Box>
+          <Text textStyle="fieldLabel" color="fg.subtle" mb={0.5}>{translation("requirements")}</Text>
+          <ProseList items={goal.requirements} />
+        </Box>
+      )}
+      {!!goal.blocker && (
+        <Box mt={2}>
+          <Text textStyle="fieldLabel" color="fg.subtle" mb={0.5}>{translation("blocker")}</Text>
+          <Text>{goal.blocker}</Text>
+        </Box>
+      )}
+    </Box>
+  );
+
+  return (
+    <Flex align="center" gap={2} mb={2} px={2} py={1.5} borderRadius="md" border="1px solid" borderColor="border" bg="bg.subtle">
+      <Tooltip content={detail} rich openDelay={200} closeDelay={60} positioning={{ placement: "top" }}>
+        <Flex align="center" gap={2} flex={1} minW={0} color={tone}>
+          <LuTarget size={12} />
+          <Text textStyle="fieldLabel" flexShrink={0}>{statusLabel}</Text>
+          <Text fontSize="sm" color="fg.muted" truncate>{text}</Text>
+        </Flex>
+      </Tooltip>
+      <Button size="2xs" variant="outline" flexShrink={0} onClick={onClear}>
+        {translation("stop")}
+      </Button>
+    </Flex>
+  );
+}

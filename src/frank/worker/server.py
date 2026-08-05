@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from a2a.types import DataPart, Part, TextPart
 
@@ -61,51 +61,17 @@ def build_app(session) -> FastAPI:
         if not isinstance(params, dict):
             return JSONResponse({"error": {"code": "invalid_request", "message": "params must be an object."}}, status_code=400)
 
+        handler = METHODS.get(method)
+        if handler is None:
+            return JSONResponse({"error": {"code": "no_such_method", "message": f"Unknown method {method!r}."}}, status_code=404)
         try:
-            if method == "message/send":
-                return JSONResponse({"result": await _send(session, params)})
-            if method == "input/respond":
-                return JSONResponse({"result": await _respond(session, params)})
-            if method == "tasks/cancel":
-                return JSONResponse({"result": await _cancel(session, params)})
-            if method == "session/status":
-                return JSONResponse({"result": session.status_payload()})
-            if method == "input/abort":
-                return JSONResponse({"result": {"aborted": await session.abort_pending_input()}})
-            if method == "session/compact":
-                return JSONResponse({"result": {"compacting": session.compact()}})
-            if method == "jobs/list":
-                return JSONResponse({"result": {"jobs": session.background_jobs()}})
-            if method == "jobs/detach":
-                identifier = str(params.get("tool_call_id") or "")
-                return JSONResponse({"result": {"backgrounded": session.background_tool_call(identifier)}})
-            if method == "session/locations":
-                # The workspace's environments were edited under a live session. The daemon
-                # re-resolved them and sends the whole set, because an edit can rename or
-                # repoint one as easily as add one.
-                entries = params.get("locations")
-                resolved = entries if isinstance(entries, list) else None
-                return JSONResponse({"result": {"locations": session.set_locations(resolved)}})
-            if method == "session/permission-mode":
-                # The person changed this session's approval policy while it runs. The daemon
-                # has already clamped it and written it to the record; this is what makes it
-                # true for the turn currently in flight rather than only for the next one.
-                mode = str(params.get("permission_mode") or "")
-                applied = await session.set_permission_mode(mode)
-                return JSONResponse({"result": {"permission_mode": applied}})
-            if method == "session/reset":
-                # Settings changed under a live session. Drop the cached runtime so the next
-                # turn rebuilds it against the new configuration, rather than the session
-                # keeping the model and tool set it happened to start with.
-                session.reset_runtimes()
-                return JSONResponse({"result": {"ok": True}})
+            return JSONResponse({"result": await handler(session, params)})
         except Exception as error:  # noqa: BLE001 — one bad call must not kill the session
             logger.exception("session call %s failed", method)
             return JSONResponse(
                 {"error": {"code": "internal_error", "message": f"{method} failed: {error}"}},
                 status_code=500,
             )
-        return JSONResponse({"error": {"code": "no_such_method", "message": f"Unknown method {method!r}."}}, status_code=404)
 
     return app
 
@@ -200,3 +166,75 @@ async def _cancel(session, params: dict) -> dict:
         # so the id is implicit here and passing only the tool call would be a missing argument.
         return {"cancelled": session.abort_tool_call(tool_call_id)}
     return {"cancelled": session.abort()}
+
+
+async def _status(session, _params: dict) -> dict:
+    return session.status_payload()
+
+
+async def _abort_input(session, _params: dict) -> dict:
+    return {"aborted": await session.abort_pending_input()}
+
+
+async def _clear_goal(session, _params: dict) -> dict:
+    """The person called the goal off. Dropping it is what stops the session opening further
+    turns for itself — see :meth:`SessionExecutor.clear_goal`."""
+    return {"cleared": session.clear_goal(session.session_id)}
+
+
+async def _compact(session, _params: dict) -> dict:
+    return {"compacting": session.compact()}
+
+
+async def _list_jobs(session, _params: dict) -> dict:
+    return {"jobs": session.background_jobs()}
+
+
+async def _detach_job(session, params: dict) -> dict:
+    return {"backgrounded": session.background_tool_call(str(params.get("tool_call_id") or ""))}
+
+
+async def _set_locations(session, params: dict) -> dict:
+    """The workspace's environments were edited under a live session. The daemon re-resolved
+    them and sends the whole set, because an edit can rename or repoint one as easily as add
+    one."""
+    entries = params.get("locations")
+    return {"locations": session.set_locations(entries if isinstance(entries, list) else None)}
+
+
+async def _set_permission_mode(session, params: dict) -> dict:
+    """The person changed this session's approval policy while it runs. The daemon has already
+    clamped it and written it to the record; this is what makes it true for the turn currently
+    in flight rather than only for the next one."""
+    return {"permission_mode": await session.set_permission_mode(str(params.get("permission_mode") or ""))}
+
+
+async def _reset(session, _params: dict) -> dict:
+    """Settings changed under a live session. Drop the cached runtime so the next turn rebuilds
+    it against the new configuration, rather than the session keeping the model and tool set it
+    happened to start with."""
+    session.reset_runtimes()
+    return {"ok": True}
+
+
+# Every verb this socket answers, in one table.
+#
+# The same shape the control plane's `METHODS` and the ingest intake use, and for the same
+# reason: what a surface accepts is a list, and a list is a thing you can read, enumerate and
+# test. This was a chain of `if method == ...` returning its own `JSONResponse` per arm, which
+# meant the envelope and the error handling were rewritten at every verb and the surface could
+# only be discovered by reading the whole chain. The wrapping now happens once, above.
+METHODS: dict[str, Callable[[Any, dict], Awaitable[dict]]] = {
+    "message/send": _send,
+    "input/respond": _respond,
+    "input/abort": _abort_input,
+    "tasks/cancel": _cancel,
+    "session/status": _status,
+    "session/goal-clear": _clear_goal,
+    "session/compact": _compact,
+    "session/locations": _set_locations,
+    "session/permission-mode": _set_permission_mode,
+    "session/reset": _reset,
+    "jobs/list": _list_jobs,
+    "jobs/detach": _detach_job,
+}

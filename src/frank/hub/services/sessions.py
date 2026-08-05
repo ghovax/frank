@@ -214,6 +214,10 @@ def _sessions_payload() -> dict[str, list[dict[str, Any]]]:
                     ),
                     "running": row.id in state._running_contexts,
                     "awaiting_input": row.id in state._awaiting_input_contexts,
+                    # What this session is working toward, when it has said. Read from the live
+                    # map for the same reason `running` is: the goal belongs to the process
+                    # pursuing it, and the interface shows it with a control to call it off.
+                    "goal": state._session_goals.get(row.id),
                     # What the session is *doing*, which `lifecycle` deliberately does not say.
                     # The interface reads this to choose a status dot, and it was simply absent
                     # from this payload — so `session.activity || "idle"` on the other side made

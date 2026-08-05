@@ -1371,6 +1371,17 @@ export async function fetchHostHomeDirectory(alias: string): Promise<string> {
 // one — a peer is an ordinary session, so the hierarchy belongs in the
 // sidebar rather than in a separate agents panel. The capability token is never listed:
 // it is handed to the creator once, at `create`.
+// What a session is working toward, as its worker last reported it. Absent when it has no
+// goal — which is most sessions, most of the time.
+export interface SessionGoal {
+  text: string;
+  requirements: string[];
+  // `active` while it is being worked, `blocked` when the agent reported an obstacle it
+  // cannot pass, `parked` when it ran a long stretch unattended and stopped to wait.
+  status: "active" | "blocked" | "parked";
+  blocker: string;
+}
+
 export interface SessionSummary {
   id: string;
   agent: string;
@@ -1393,6 +1404,7 @@ export interface SessionSummary {
   created_at: string;
   updated_at: string;
   exit_reason: string;
+  goal?: SessionGoal | null;
 }
 
 // Live sessions only by default; `all` includes the ones that have exited.
@@ -1709,6 +1721,19 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
     return true;
   } catch (caught) {
     swallowed({ component: "api", operation: "delete a session" }, caught);
+    return false;
+  }
+}
+
+// Call off a session's goal. The session stops working toward it and stops opening turns of
+// its own; a turn already in flight finishes on its own, which is why this reports whether
+// there was a goal rather than whether the session has gone quiet.
+export async function clearSessionGoal(sessionId: string): Promise<boolean> {
+  try {
+    const result = await rpc<{ cleared?: boolean }>("session.goal_clear", { id: sessionId });
+    return Boolean(result?.cleared);
+  } catch (caught) {
+    swallowed({ component: "api", operation: "call off a session goal" }, caught);
     return false;
   }
 }

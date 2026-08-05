@@ -25,6 +25,7 @@ from langchain_core.messages import messages_to_dict
 from frank.base import telemetry as _telemetry
 from frank.base.background_tasks import spawn_background_task
 from frank.base.configuration import PromptLoader
+from frank.base.tuning import Tunable, active_tuning
 from frank.protocol.errors import _safe_turn_error
 from frank.protocol.events import ErrorEvent, StatusEvent
 from frank.protocol.metadata import (
@@ -98,6 +99,8 @@ class _Ingested:
     compaction: bool
     # Opened only to remind this session it has not answered the one that created it.
     report_reminder: bool
+    # Opened for a goal the session has not finished.
+    goal_continuation: bool
     # The session that sent this message, when another session did. Empty for a person's
     # message and for a harness-initiated turn.
     peer_sender: str
@@ -105,6 +108,20 @@ class _Ingested:
     requested_working_directory: str
     requested_worktree_strategy: str
     structured_payloads: list
+
+    @property
+    def from_outside(self) -> bool:
+        """Whether somebody outside this session asked for this turn — a person, or the session
+        that created it — as opposed to the session sending it to itself.
+
+        The four flags above each name *which* envelope a session sent itself; this names the
+        one thing several decisions actually turn on, which is whether anybody is there. Stated
+        once, because the sites that ask it must agree: two of them used to test `autonomous or
+        compaction` and so read a report reminder — which nobody typed — as a person speaking,
+        lifting the suppression that Stop puts on self-opened turns and clearing the marker
+        saying the session was parked on a decision. Neither is something a session is entitled
+        to do to itself."""
+        return not (self.autonomous or self.compaction or self.report_reminder or self.goal_continuation)
 
 
 @dataclass(frozen=True)
@@ -212,6 +229,8 @@ class _TurnRunner:
             if prepared is self._DONE:
                 return
             assert isinstance(prepared, _Prepared)
+            if await self._reconcile_goal(prepared) is self._DONE:
+                return
             if await self._run_compaction_turn(prepared) is self._DONE:
                 return
             composed = await self._compose_turn_input(prepared)
@@ -292,6 +311,7 @@ class _TurnRunner:
         self._autonomous = bool(self._metadata.get(Metadata.AUTONOMOUS_RESUME))
         self._compaction = bool(self._metadata.get(Metadata.COMPACTION))
         self._report_reminder = bool(self._metadata.get(Metadata.REPORT_REMINDER))
+        self._goal_continuation = bool(self._metadata.get(Metadata.GOAL_CONTINUATION))
         self._peer_sender = str(self._metadata.get(Metadata.PEER_SENDER, ""))
         return _Ingested(
             message=message,
@@ -300,6 +320,7 @@ class _TurnRunner:
             autonomous=self._autonomous,
             compaction=self._compaction,
             report_reminder=self._report_reminder,
+            goal_continuation=self._goal_continuation,
             peer_sender=self._peer_sender,
             permission_mode=self._permission_mode,
             requested_working_directory=self._requested_working_directory,
@@ -350,7 +371,7 @@ class _TurnRunner:
             task.metadata = cleared.apply_to(task.metadata)
             await self._executor._turn_store.save(task)
             self._is_resume = True
-        elif not ingested.autonomous and not ingested.compaction and self._executor._on_permission_state is not None:
+        elif ingested.from_outside and self._executor._on_permission_state is not None:
             # A fresh user turn supersedes any prior input-required pause for this context
             # (the runtime closes the dangling checkpoint), so drop the awaiting-input marker.
             self._executor._on_permission_state(task.context_id, False)
@@ -370,7 +391,7 @@ class _TurnRunner:
         self._context_state = self._executor._context(task.context_id)
         should_acknowledge = await self._executor._claim_work_habits_acknowledgement(
             task.context_id,
-            autonomous=ingested.autonomous,
+            autonomous=ingested.autonomous or ingested.goal_continuation,
             compaction=ingested.compaction,
         )
         if should_acknowledge:
@@ -397,7 +418,7 @@ class _TurnRunner:
         self._turn_kind = (
             # The reminder is harness-initiated like a wake, and reads as one to a person
             # scrolling the transcript; it differs only in having nothing to deliver.
-            TurnKind.AUTONOMOUS if ingested.autonomous or ingested.report_reminder
+            TurnKind.AUTONOMOUS if ingested.autonomous or ingested.report_reminder or ingested.goal_continuation
             else TurnKind.COMPACTION if ingested.compaction
             # A message from another session is not the user speaking. Getting this wrong is
             # not a labelling slip: the model would read a peer's report as an instruction
@@ -442,10 +463,11 @@ class _TurnRunner:
 
         self._track_context_activity = self._on_turn_state is not None
         self._track_steerable_turn = self._on_turn_state is not None
-        # A real user turn (not an autonomous wake or a compaction) means the user wants
-        # the agent working again, so lift any prior Stop suppression — future background
-        # completions may once more arm a resume pump.
-        if not self._autonomous and not self._compaction:
+        # A turn somebody outside opened — a person, or the session that created this one —
+        # means this session is wanted working again, so lift any prior Stop suppression: future
+        # background completions may once more arm a resume pump, and an unfinished goal may
+        # once more open a turn.
+        if resolved.ingested.from_outside:
             self._executor._context(task.context_id).aborted = False
         if self._track_context_activity and self._on_turn_state is not None:
             self._on_turn_state(task.context_id, True)
@@ -476,6 +498,30 @@ class _TurnRunner:
         )
         return _Prepared(resolved=resolved, runtime=runtime, sink=self._sink)
 
+    async def _reconcile_goal(self, prepared: _Prepared) -> object | None:
+        """Settle the session's goal against what opened this turn, now that the runtime is
+        built and the goal has been restored from the checkpoint.
+
+        Two facts, and they belong together because they are the same bookkeeping seen from
+        either end. A turn opened *for* the goal spends one of its allowance — and finds nothing
+        to do if the goal was finished in the meantime, which is the same race an autonomous wake
+        runs and is settled the same way: close the task without a model call. A turn somebody
+        *outside* opened gives the allowance back, because the allowance only ever bounded how
+        long the session would work with nobody looking, and somebody has just looked.
+
+        Returns ``_DONE`` when the goal this turn was opened for is already resolved."""
+        runtime = prepared.runtime
+        if prepared.resolved.ingested.goal_continuation:
+            goal = runtime.goal
+            if goal is None or not goal.is_open:
+                await self._updater.complete()
+                return self._DONE
+            runtime.note_goal_continuation()
+            return None
+        if prepared.resolved.ingested.from_outside:
+            runtime.restore_goal_allowance()
+        return None
+
     async def _run_compaction_turn(self, prepared: _Prepared) -> object | None:
         """A manual compaction turn runs no model turn: it summarizes the older history
         in place and emits the compaction parts (the live indicator + the separator),
@@ -494,8 +540,23 @@ class _TurnRunner:
         autonomous framing note, structured attachments (with vision blocks when the model
         supports them), or plain user text."""
         runtime = prepared.runtime
-        self._as_system_note = self._autonomous or self._report_reminder
-        if self._report_reminder:
+        self._as_system_note = self._autonomous or self._report_reminder or self._goal_continuation
+        if self._goal_continuation:
+            # The goal, restated as the turn's opening message — delivered as a reminder, the
+            # same way every other harness-authored note is, so nothing in the transcript claims
+            # a person asked for this. What it says is the goal and how to tell whether it is
+            # met; what opened the turn, and what is counted to decide whether another one
+            # follows, is not the model's business and is not in here.
+            goal = runtime.goal
+            requirements = "\n".join(f"- {requirement}" for requirement in (goal.requirements if goal else []))
+            self._turn_input = _PROMPTS.load("goal_continuation", {
+                "goal": goal.text if goal else "",
+                "requirements": requirements,
+                # Rendered from the same setting anything else would read, so the number the
+                # agent is told and the number in the configuration cannot drift apart.
+                "blocked_turns": active_tuning().amount(Tunable.goal_blocked_turns),
+            })
+        elif self._report_reminder:
             # Same delivery as a wake — a reminder, never user prose —
             # because this is the harness speaking, not the person the session works for.
             self._turn_input = _PROMPTS.load("report_reminder_note", {"parent": self._executor._parent})
@@ -643,7 +704,55 @@ class _TurnRunner:
         # turn used (not a cache lookup) so a reset that cleared the cache mid-turn cannot
         # strand the pending work.
         self._executor._arm_resume_pump(task.context_id, self._runtime)
+        await self._maybe_continue_goal()
         self._maybe_nudge_to_report()
+
+    async def _maybe_continue_goal(self) -> None:
+        """Open another turn when this one ended with the session's goal still unfinished.
+
+        This is what makes a goal mean anything after the turn that set it. A goal is the contract
+        for an outcome, and an outcome does not stop mattering because the model decided it had
+        said enough for now — so the session picks the work back up on its own, and keeps picking
+        it up, until the goal is satisfied, cleared, reported blocked, or has used the allowance
+        that bounds how long it runs unattended.
+
+        Five conditions, each of them somebody's answer rather than a heuristic:
+
+        - the turn *completed*. A failed turn, a stopped one, or one parked on a permission
+          request has not finished, and reopening it would either loop on the same failure or
+          talk over the person being asked something;
+        - the person has not pressed Stop. The context's abort flag survives the turn for exactly
+          this reason, and only a message from outside lifts it;
+        - the goal is open. Blocked and parked goals are waiting on somebody, which is the
+          opposite of work to get on with;
+        - the allowance is not spent. When it is, the goal is parked rather than dropped: nothing
+          has gone wrong, it has simply run long enough without a person to be worth a look;
+        - no background work is pending. The resume pump is already going to open a turn for the
+          result that is landing, and that turn ends in this same teardown — so letting it own the
+          wake keeps the two from opening one apiece for the same moment.
+
+        Spawned rather than awaited, for the reason the report reminder is: this runs inside the
+        ending turn's teardown, and what it opens is itself a turn."""
+        if not self._completed:
+            return
+        state = self._executor._contexts.get(self._task.context_id)
+        if state is None or state.aborted:
+            return
+        runtime = self._runtime
+        goal = runtime.goal if runtime is not None else None
+        if goal is None or not goal.is_open:
+            return
+        if runtime is not None and runtime.has_pending_jobs():
+            return
+        if goal.continuations >= active_tuning().amount(Tunable.goal_continuation_turns):
+            # Written now rather than left for the next turn's checkpoint: parking is what stops
+            # the session working, and a stop that is only in memory is one a restart undoes. The
+            # session-state write on its own, not the paired checkpoint write — the conversation
+            # was already saved above this in the teardown and has not changed since.
+            runtime.park_goal()
+            await self._executor._persist_session_state(self._task.context_id, runtime)
+            return
+        spawn_background_task(self._executor.continue_goal(self._task.context_id))
 
     def _maybe_nudge_to_report(self) -> None:
         """Remind the session, once, if a completed turn left the session that created it with

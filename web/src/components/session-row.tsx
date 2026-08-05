@@ -21,7 +21,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LuEllipsis, LuFolderOpen, LuMessagesSquare, LuTrash2 } from "react-icons/lu";
 import { DropdownMenu, MenuOption } from "@/components/ui/menu";
 import { Tooltip } from "@/components/ui/tooltip";
-import { revealInFinder, type AgentSummary, type PermissionMode } from "@/lib/api";
+import { revealInFinder, type AgentSummary, type PermissionMode, type SessionGoal } from "@/lib/api";
 import { PERMISSION_MODES } from "@shared/controls";
 import { InlineField } from "./ui/display";
 import { TreeRow, type TreeRowDisclosure } from "./ui/tree-row";
@@ -50,6 +50,8 @@ export interface SessionEntry {
   // Why an ended session ended, when the daemon knows — shown on the status dot.
   exitReason: string;
   permissionMode: PermissionMode;
+  // What this session is working toward, when it has said. Null for a session with no goal.
+  goal: SessionGoal | null;
 }
 
 // Extra left-shift, beyond the raw overflow, so a fully-scrolled title comes to rest with

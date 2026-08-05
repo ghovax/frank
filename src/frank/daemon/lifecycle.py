@@ -264,6 +264,13 @@ class SessionLifecycle:
         if record is None:
             return 0
         descendants = [record for record in self._registry.descendants_of(session_id) if record.is_live]
+        # A goal describes work in progress, so it ends with the session that was pursuing it.
+        # Left behind, it would keep a finished session showing an objective in the interface,
+        # with a control offering to call off something nobody is working on.
+        from frank.daemon import state as daemon_state
+
+        for ending in ([] if skip_self else [record]) + descendants:
+            daemon_state._session_goals.pop(ending.id, None)
         for descendant in descendants:
             self._registry.end(
                 descendant.id, outcome=EXITED, updated_at=_now(),

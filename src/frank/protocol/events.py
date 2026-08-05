@@ -359,7 +359,10 @@ class TurnContext(BaseModel):
 
     now: str = ""
     pwd: str = ""
-    active_goal: str = ""
+    # The session's goal as the agent wrote it: the end state and the conditions that would
+    # prove it, plus where it stands when that is anything other than open. What is counted in
+    # order to keep the session working is not here — see `frank.runtime.goal`.
+    goal: dict[str, Any] = Field(default_factory=dict)
     tasks: list[dict[str, Any]] = Field(default_factory=list)
     background: dict[str, Any] = Field(default_factory=dict)
     # Where tools may run, and under which permission mode. Here because the mode is changeable

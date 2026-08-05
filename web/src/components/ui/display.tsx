@@ -145,6 +145,26 @@ export function MonoList({ items }: { items: string[] }) {
   );
 }
 
+/**
+ * Several sentences as a real bullet list — one item per sentence.
+ *
+ * The prose counterpart of :func:`MonoList`, and for the same reason: a goal's requirements, or
+ * the evidence that each was met, are peers rather than one value with punctuation between them.
+ * Monospace would be wrong here — these are sentences somebody wrote, not identifiers — which is
+ * the whole of the difference between the two.
+ */
+export function ProseList({ items }: { items: string[] }) {
+  return (
+    <List.Root pl={4} fontSize="xs" listStyleType="disc">
+      {items.map((item, index) => (
+        <List.Item key={index} mb={0.5} _last={{ mb: 0 }}>
+          {item}
+        </List.Item>
+      ))}
+    </List.Root>
+  );
+}
+
 export function EmptyHint({ children }: { children: ReactNode }) {
   return (
     <Text fontSize="xs" color="fg.subtle" fontStyle="italic">

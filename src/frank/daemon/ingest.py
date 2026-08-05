@@ -57,6 +57,13 @@ async def _turn_save_state(params: dict) -> dict:
     return {"saved": True}
 
 
+async def _turn_save_session_state(params: dict) -> dict:
+    await state.turn_store.save_session_state(
+        str(params.get("session_id") or ""), params.get("session_state") or {},
+    )
+    return {"saved": True}
+
+
 async def _turn_load_checkpoint(params: dict) -> Any:
     return await state.turn_store.load_checkpoint(str(params.get("session_id") or ""))
 
@@ -202,6 +209,18 @@ async def _session_event(params: dict) -> dict:
             # checkpoint, which is a path that already existed for surviving a restart.
             _sleep_when_idle(session_id)
         return {"noted": True}
+    if "goal" in event:
+        # The session's goal changed. Held beside the registry rather than in it, exactly as the
+        # running-turn count is: a goal belongs to the live context, and a stored one would
+        # outlive the worker that was pursuing it. The interface reads it from the session
+        # listing, so a change is announced the same way every other change to a session is.
+        goal = event.get("goal")
+        if isinstance(goal, dict):
+            state._session_goals[session_id] = goal
+        else:
+            state._session_goals.pop(session_id, None)
+        state.broadcaster.publish({"type": "sessions_changed"})
+        return {"noted": True}
     part = event.get("part")
     if part is not None:
         # A monotonic sequence per session lets a client order frames and notice a gap, which
@@ -261,6 +280,7 @@ _METHODS = {
     "turn.get": _turn_get,
     "turn.delete": _turn_delete,
     "turn.save_state": _turn_save_state,
+    "turn.save_session_state": _turn_save_session_state,
     "session.claim_work_habits": _session_claim_work_habits,
     "turn.load_checkpoint": _turn_load_checkpoint,
     "turn.load_session_state": _turn_load_session_state,

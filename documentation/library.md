@@ -428,6 +428,8 @@ async for event in session.stream("Refactor the parser to use the streaming read
             ...
 ```
 
+Both drive one turn, unless the agent sets itself a goal with `update_goal`. A goal is a contract for an outcome rather than a note about one, so while it is open the session keeps taking turns toward it and keeps yielding their events — until the agent satisfies it, clears it, reports it blocked, or reaches the allowance in `Tunable.goal_continuation_turns`, at which point the goal is parked and waits. Asking again gives the allowance back and picks a parked goal up where it stopped.
+
 The harness checkpoints the conversation when a turn ends, including when it ends badly. A turn that raised still changed the conversation. To lose that is worse than to record a failure.
 
 Resuming is giving a new `Session` the same id and the same store:
