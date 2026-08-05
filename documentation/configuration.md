@@ -6,7 +6,7 @@ Three ways to change it, all writing the same file:
 
 - `frank configure` from the terminal:
 
-- `frank configure --all` lists every setting that exists, with what it is for, what it ships at, and what this machine runs on.
+- `frank configure --all` lists every setting that exists, with what it ships at and what this machine runs on.
 - `frank configure` alone lists only what you changed.
 - `frank configure <setting>` reads one setting.
 - `frank configure <setting> <value>` sets it, and `--unset` removes it. A name the schema does not define, or a value it would reject, is refused with the reason rather than written;
@@ -20,9 +20,7 @@ This document is the reference for the file itself.
 
 A change applies to whatever starts **next**. A running session keeps the configuration it was built with. That is the same guarantee its permission mode carries. Some settings are the exception: the daemon pushes them out, and the sandbox, computer control, and the user-context snapshot each ask live sessions to rebuild.
 
-**`frank configure --all` is the complete reference.** It prints every setting the schema defines. Each one shows what it is for, what it ships at, and what your machine runs on now. There is deliberately no checked-in file that says the same thing. A second copy of the defaults is a second thing to keep true, and it drifts. It names settings under the wrong names, and misses settings entirely. This command reads the running code, so it cannot drift.
-
-This document is the *narrative* — what the settings mean and how they relate. The command is the exhaustive list.
+Three places say something about a setting, and each says a different thing. **This document** is the narrative: what the settings mean and how they relate, for the ones worth explaining at length. The **[configuration reference](configuration-reference.md)** is the list: every setting there is, its type, what it ships at, and what it is for, in one row each. **`frank configure`** reads the running code, so it is the only one that can tell you what *this machine* is set to.
 
 Names the schema does not define are **refused**, not ignored. A setting that cannot take effect should say so where it is written, rather than being discovered when the behaviour never changes.
 
@@ -119,8 +117,6 @@ composio:
 `api_key` also reads `COMPOSIO_API_KEY` from the environment.
 
 When you enable Composio, it joins the ordinary MCP set. It is not a second path. Tool gating and the client both see it as another server.
-
-Every setting there is — its path, its type, what it ships at, and what it is for — is listed in the [configuration reference](configuration-reference.md). This guide covers the ones worth explaining at length; that one covers all of them.
 
 ## Execution and permissions
 
@@ -259,9 +255,7 @@ Those three move whole families. `defaults` is the escape hatch for a single val
 
 The names are lowercase because they are not constants. Each one is a default the file may replace, and the casing is the first thing that says so.
 
-`frank configure --all` lists every tunable with what it is for, what it ships at, and what this machine currently runs on. [`configuration.example.yaml`](configuration.example.yaml) is the same surface as a file — every setting that exists, grouped and annotated, at its shipped value. Read it; do not copy it over your own configuration. Everything in it is already the default, so a copy changes nothing now and pins all of it later, which is exactly why the file you get on first run is nearly empty.
-
-The longest tunable notes live as markdown beside the code, in `src/frank/base/tuning_notes/`, and are read at runtime rather than restated — so what `frank configure` prints is the same text a reader of the repository sees.
+`frank configure --all` lists every setting with what it ships at and what this machine runs on; what each one is *for* is in the [configuration reference](configuration-reference.md), which also carries the longer reasoning behind the eleven tunables that need it. [`configuration.example.yaml`](configuration.example.yaml) is the same surface as a file — every setting that exists, grouped and annotated, at its shipped value. Read it; do not copy it over your own configuration. Everything in it is already the default, so a copy changes nothing now and pins all of it later, which is exactly why the file you get on first run is nearly empty.
 
 Settling — how long a screen surface is given to stop changing after an action — lives with the surface rather than here, under [`computer_control.settle`](#screen-control).
 

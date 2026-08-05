@@ -3,7 +3,7 @@
 An Expo client for the Frank daemon. It is a **client** — it contains no harness and starts no
 daemon. The Mac has to be awake, `frankd` running, and `frank reach` serving.
 
-Full guide: [documentation/mobile.md](../documentation/mobile.md).
+`frank reach` is documented with the rest of the CLI: [Reaching it from a phone](../documentation/cli.md#reaching-it-from-a-phone).
 
 ## Running it
 
@@ -15,7 +15,11 @@ bun run start
 Then install Expo Go on your phone and scan the code. Everything the app uses — the camera for
 pairing, the keychain, the microphone — is in Expo Go, so no native build is needed.
 
-On the Mac, in another terminal:
+Set Tailscale up first, once: turn on **MagicDNS**, then **HTTPS Certificates**, then **Serve**,
+in that order, for your tailnet. `frank reach` refuses to start until they are done and says which
+one is missing.
+
+Then, on the Mac, in another terminal:
 
 ```sh
 frank reach
@@ -43,9 +47,8 @@ Almost nothing. The interface is `web/`, and this app is a window onto it — pl
 page cannot do for itself: reading a pairing code with the camera, and keeping the token in the
 keychain. If you are looking for the sessions list or the composer, they are in `web/src`.
 
-Which means: **UI work happens in `web/`, not here.** See
-[documentation/mobile.md](../documentation/mobile.md) for what has been hardened for narrow
-screens and what has not.
+Which means: **UI work happens in `web/`, not here.** A dialog that is unusable at 390pt is
+unusable in a narrow browser window too, so it is fixed in one place.
 
 ## Notes for whoever edits this next
 

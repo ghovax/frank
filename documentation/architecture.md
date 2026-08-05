@@ -17,14 +17,7 @@ Six terms carry most of the meaning here, and four of them are Frank's own.
 
 ## The four layers
 
-Each layer uses the one below it and adds a single thing.
-
-| Layer | What it adds | What it knows about your machine |
-|---|---|---|
-| `frank.Session` | The harness: the turn loop, the tools, the prompts, the permissions | Nothing. Every value is one you passed |
-| `frank.daemon.machine` | Turns a home directory into what the harness takes | The XDG paths, and your `.agents` |
-| `frankd` | A process per session, a socket each, and the databases | Everything, and it is the right place to |
-| `frank`, and the app | A way for a person to reach the daemon | Where the daemon is |
+Each layer uses the one below it and adds a single thing — the [documentation index](README.md) lists them, and what each one knows about your machine.
 
 The bottom layer is the whole of the harness. A program can embed it and never start a daemon; see [As a library](library.md). Everything below in this document is what the three layers above add.
 

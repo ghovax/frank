@@ -77,7 +77,7 @@ Outside `web/` the package layering runs `base`, then `protocol`, then `computer
 `threading.enumerate()` cannot see those threads; only the kernel's count can. The prototype therefore measures with mach `task_threads`, and refuses to fork when the answer is not 1.
 - **The runtime keeps no process-wide state.** Nothing under `runtime/` parks a caller's argument in a module global. Nothing installs a signal handler or registers an exit hook. The runtime is a library now, and one process may host more than one session.
 
-A new setting needs nothing beyond its `Field(description=...)` — no reference file to update, no listing to add it to. `frank configure --all` walks the schema, so a setting is discoverable from the moment it exists. Write the description as the sentence you would want printed at a terminal, because that is exactly where it goes.
+A new setting is a field on the configuration model, and then three things that are not in the code with it. The schema walk finds the field on its own, so `frank configure` and the settings panel both have it from the moment it exists — but the panel draws it with **a label and a sentence from `shared/messages/*.json`**, in every locale, and the [configuration reference](configuration-reference.md) needs **a row**. What a setting is called and what it is for are words to translate, so they live where the rest of the interface's words live; the schema carries only what a setting *is*.
 
 ## Running the desktop app in dev
 
@@ -182,4 +182,30 @@ Beyond the battery: lint with `uv run ruff check`, and drive the affected path t
 
 ## Project layout
 
-See the [documentation index](README.md#the-shape-of-the-project) for the directory map. The harness is in `src/frank/` (with `packaging/entry.py` as the frozen build's entry point), the UI in `web/src/`, and the Tauri shell in `web/src-tauri/`.
+**`src/frank/`** — the Python image, in the import order stated below:
+
+| Module | What lives there |
+|---|---|
+| `base/` | Configuration, XDG paths, skills, ports, the catalogue |
+| `protocol/` | A2A cards, DTOs, the wire contract |
+| `computer/` | macOS screen-control bridges: native apps and Chrome |
+| `locations/` | Where files live: local, SSH, containers |
+| `runtime/` | The agent loop, prompts, tools, models |
+| `worker/` | A session process, and the prototype it is forked from |
+| `__init__.py` | The library surface: `frank.Session` and its seams |
+| `workspace/` | Projects, locations, settings, terminals — beside the rest, not above |
+| `daemon/` | `frankd`: registry, lifecycle, prototype client, machine loaders |
+| `rest/` | The REST surface the browser uses; never imports `daemon` |
+| `cli/` | The `frank` command and its renderers |
+| `__main__.py` | argv dispatch: `frank`, `frankd`, `prototype`, `session` |
+
+**Everything else:**
+
+| Path | What lives there |
+|---|---|
+| `.agents/` | Bundled agents, skills, memories, MCP configuration |
+| `web/` | The desktop app: Next.js UI, and the Tauri shell in `src-tauri/` |
+| `packaging/` | PyInstaller freeze and signing, plus `entry.py` for the frozen build |
+| `scripts/` | Layering, import and translation checks; the verification battery |
+| `examples/` | Example MCP servers |
+

@@ -186,20 +186,37 @@ Needs the interface to have been built (`cd web && bun run build` in a checkout)
 
 | Command | What it does |
 |---|---|
-| `frank reach` | Serve an authenticated endpoint on `0.0.0.0:8825`, and print a pairing code |
-| `frank reach pair` | Print the pairing code for an endpoint already running |
+| `frank reach` | Serve the phone's door, and print a pairing code |
+| `frank reach pair` | Print the pairing code for a door already open |
 | `frank reach rotate` | Mint a new token, unpairing every device |
-| `frank reach --advertise https://frank.example.com` | Hand the phone the address of whatever fronts this |
-| `frank reach --tls-certificate cert.pem --tls-key key.pem` | Serve TLS directly |
+| `-p`, `--port` | The loopback port Tailscale proxies to. Default 8825 |
+| `--interface [PORT]` | Serve the interface from a running dev server instead of the built export |
 
-The same proxy as `frank serve`, with the three differences that let it leave the machine. **It authenticates** — a request without the reach token gets a 401 and never touches the daemon, and websocket handshakes are checked too, which is the case an HTTP-shaped check forgets. **Its token is durable**, kept in `~/.local/share/frank/reach-token` rather than minted per boot, so a paired device stays paired across a restart. And **it knows where it can be found**: the pairing code carries every address this machine answers on, best first, and the app races them and keeps whichever works — so the phone uses the LAN at home and the tailnet away, without being told.
+The same proxy as `frank serve`, with the two differences that let it leave the machine. **It
+authenticates** — a request without the reach token gets a 401 and never touches the daemon, and
+websocket handshakes are checked too, which is the case an HTTP-shaped check forgets. And **its
+token is durable**, kept in `~/.local/share/frank/reach-token` rather than minted per boot, so a
+paired device stays paired across a restart.
+
+It still binds `127.0.0.1`, and there is no flag that changes that. What carries it off the
+machine is `tailscale serve`, which puts a listener on your tailnet, terminates TLS with a
+certificate for this machine's `*.ts.net` name, and proxies to that loopback port. That is not
+only about exposure: a page served over plain HTTP to anything but `localhost` is not a secure
+context, and browsers withhold the microphone, the clipboard and `crypto.randomUUID` from it — so
+the interface would break one API at a time, with errors that read as faults in Frank.
+
+Tailscale needs three things turned on for your tailnet, once, in this order: **MagicDNS**, then
+**HTTPS Certificates**, then **Serve**. `frank reach` refuses to start until they are done and
+says which one is missing, with the link to fix it.
 
 > [!WARNING]
-> This is a bearer token over whatever transport you gave it. On a tailnet that is fine — WireGuard
-> is the encryption, and nothing is listening on a public port. Anywhere else, put TLS in front of
-> it. Do not forward the port on your router.
+> The pairing code carries a bearer token with full control of the daemon. Show it to a phone,
+> not to a room. `frank reach rotate` invalidates every device holding the old one.
 
-It serves no browser interface, deliberately: that bundle authenticates by being on the same machine as the daemon, so it carries no reach token and every call it made through this door would come back 401. `frank serve` is the browser's door; this is the phone's. See [The phone](mobile.md).
+It serves no browser interface, deliberately: that bundle authenticates by being on the same
+machine as the daemon, so it carries no reach token and every call it made through this door
+would come back 401. `frank serve` is the browser's door; this is the phone's. The app itself,
+and how to run it, are in [`mobile/`](../mobile/README.md).
 
 ## The desktop app
 

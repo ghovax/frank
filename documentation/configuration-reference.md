@@ -302,7 +302,7 @@ How large, how many, and how patient the tools are.
 
 ## Notes on individual tunables
 
-Eleven tunables carry more than a sentence's worth of reasoning. Those notes live as markdown beside the code, one file per tunable, under `src/frank/base/tuning_notes`, and are reproduced here.
+Eleven of them carry more reasoning than a table row holds. This is where it is written down.
 
 ### `tuning.defaults.accessibility_walk_budget_seconds`
 

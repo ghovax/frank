@@ -17,7 +17,7 @@ Frank is four layers. Each one uses the layer under it and adds a single thing:
 1. **The library** — `import frank`. `frank.Session` runs an agent in your own process. You give it the agent, the model, the working directory and the credentials; it reads no file you did not name. This is the harness itself, and the three layers above are all built on it. See [As a library](documentation/library.md).
 2. **The machine loaders** — `frank.daemon.machine`. These read your configuration file and the agents in your `.agents` directory, and turn them into what the library takes. This is the first layer that knows your home directory exists.
 3. **The daemon** — `frankd`. It gives each session its own OS process, with a pid you can kill and a socket you can reach. It keeps the register of what exists, owns the databases, and relays every call. That buys three things the library alone cannot. A session outlives the program that made it, another machine can reach it, and its crash takes nothing else down.
-4. **The clients** — the `frank` command, the macOS app, and a phone. All three talk to the daemon and contain no harness of their own. Anything one can do, the others can. The phone reaches it over `frank reach`, which is the one surface here that is meant to leave the machine — a loopback listener that Tailscale fronts with a stable name and a real certificate, opt-in and authenticated. See [The phone](documentation/mobile.md).
+4. **The clients** — the `frank` command, the macOS app, and a phone. All three talk to the daemon and contain no harness of their own. Anything one can do, the others can. The phone reaches it over `frank reach`, which is the one surface here that is meant to leave the machine — a loopback listener that Tailscale fronts with a stable name and a real certificate, opt-in and authenticated. See [`frank reach`](documentation/cli.md#reaching-it-from-a-phone).
 
 An agent can use these too. When a session needs help it creates a second session and messages it, over the same API your terminal uses. The helper appears in `frank ps`, you can watch it, and it ends when its parent does. Its answer arrives as a message, in its own words.
 
@@ -187,7 +187,7 @@ Only the holder of a session's handle can reach it. `create` mints a capability 
 That token does not say *which* session is calling. A session runs as the same user and could read the file. So on the unix socket the daemon asks the kernel for the peer's pid. It resolves the pid to a session through the process session that every worker leads. A call is therefore attributed to whoever made it.
 
 > [!NOTE]
-> A session's permission mode is fixed when the session is created. You cannot change it afterwards. A child gets a mode no looser than its parent's. There is no bypass mode and no standing "always allow". The only decisions at runtime are allow-once and deny. See the [Security notes](SECURITY.md).
+> A session's permission mode can be changed while it runs, and the change reaches the turn already in flight — a conversation that starts under manual approvals and earns trust does not have to be restarted to run under a looser mode. A child gets a mode no looser than its parent's, and tightening a session tightens everything it created. There is no bypass mode and no standing "always allow"; the only decisions at runtime are allow-once and deny. See the [Security notes](SECURITY.md).
 
 ## Documentation
 

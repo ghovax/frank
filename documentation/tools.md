@@ -104,7 +104,7 @@ Nothing stops an agent from closing a tab it did not open. It has an instruction
 
 Frank attaches to **the Chrome you already use**, with your real logins and sessions, not a throwaway profile. It therefore only ever *connects* to the browser. It never launches it, quits it, or copies it.
 
-Frank reads structure, not pixels: there is no screenshot path for computer use. A drawn surface, such as a canvas or WebGL, exposes nothing to find. A structured visual fallback is planned, but it does not exist yet. See [the plan](plans/visual-fallback.md).
+Frank reads structure, not pixels: there is no screenshot path for computer use. A drawn surface, such as a canvas or WebGL, exposes nothing to find. A structured visual fallback is planned, but it does not exist yet.
 
 **Enable it:**
 

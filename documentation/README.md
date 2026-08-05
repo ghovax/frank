@@ -18,7 +18,7 @@ Start with the layer you are actually using.
 | **Embed the harness in your own program** — `import frank`, no daemon, no socket | [As a library](library.md) |
 | **Drive it from a terminal** — create, send, attach, approve | [The `frank` command](cli.md) |
 | **Use the macOS app** | [The desktop app](app.md) |
-| **Reach it from your phone** — a stable address, and the Expo client | [The phone](mobile.md) |
+| **Reach it from your phone** | [`frank reach`](cli.md#reaching-it-from-a-phone) |
 
 Then the rest, in the order they build on each other. [Architecture](architecture.md) defines the words the others use, so it comes first:
 
@@ -29,7 +29,6 @@ Then the rest, in the order they build on each other. [Architecture](architectur
 | [As a library](library.md) | `frank.Session` in your own process, and every seam you can replace |
 | [The `frank` command](cli.md) | Every verb, the session states, JSON and exit codes |
 | [The desktop app](app.md) | The window, decisions, environments, and screen control |
-| [The phone](mobile.md) | `frank reach`, pairing, and the mobile client |
 | [Agents and skills](agents-and-skills.md) | Authoring agents, skills, memory, and MCP servers |
 | [Configuration](configuration.md) | Providers, keys, permissions, MCP, and every config key |
 | [Tools](tools.md) | The full tool surface, including screen control (`control_screen`) |
@@ -67,40 +66,7 @@ That reads nothing from your home directory, writes nothing to it, and starts no
 To swap one, pass an object with the right methods. Each seam is a `typing.Protocol`: no base class to inherit, and no import of Frank in your type. [As a library](library.md) has the full table and a worked Redis checkpoint store.
 
 
-## The shape of the project
-
-**`src/frank/`** — the Python image, in the import order stated below:
-
-| Module | What lives there |
-|---|---|
-| `base/` | Configuration, XDG paths, skills, ports, the catalogue |
-| `protocol/` | A2A cards, DTOs, the wire contract |
-| `computer/` | macOS screen-control bridges: native apps and Chrome |
-| `locations/` | Where files live: local, SSH, containers |
-| `runtime/` | The agent loop, prompts, tools, models |
-| `worker/` | A session process, and the prototype it is forked from |
-| `__init__.py` | The library surface: `frank.Session` and its seams |
-| `workspace/` | Projects, locations, settings, terminals — beside the rest, not above |
-| `daemon/` | `frankd`: registry, lifecycle, prototype client, machine loaders |
-| `rest/` | The REST surface the browser uses; never imports `daemon` |
-| `cli/` | The `frank` command and its renderers |
-| `__main__.py` | argv dispatch: `frank`, `frankd`, `prototype`, `session` |
-
-**Everything else:**
-
-| Path | What lives there |
-|---|---|
-| `.agents/` | Bundled agents, skills, memories, MCP configuration |
-| `web/` | The desktop app: Next.js UI, and the Tauri shell in `src-tauri/` |
-| `packaging/` | PyInstaller freeze and signing, plus `entry.py` for the frozen build |
-| `scripts/` | Layering, import and translation checks; the verification battery |
-| `examples/` | Example MCP servers |
-
-The layering runs `base`, then `protocol`, then `computer`/`locations`, then `runtime`, then `worker`, with `workspace` beside them and `rest` above it. Two rules do most of the work.
-
-**The daemon never imports the runtime.** That keeps the control plane small. It is also why the *prototype* lives in `worker/` and is reached over a socket, rather than being a function the daemon calls. Every session is forked out of the prototype. Whatever forks a session must already have paid for the runtime import, and the daemon must never be that.
-
-**`rest` never imports `daemon`.** The browser surface reaches `workspace`: projects, locations, settings, agents, terminals. None of that supervises anything, so a GUI surface never imports the process that supervises agents. Where a workspace change has a supervision consequence, the workspace calls a hook that the composition root filled in.
+## Where Frank keeps your things
 
 Runtime state never lives in the repository. Frank follows the XDG convention:
 

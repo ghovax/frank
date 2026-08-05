@@ -1,13 +1,6 @@
 # Frank as a library
 
-**The library is the bottom of the stack, and everything else is built on it.**
-
-| Layer | What it is | What it knows about your machine |
-|---|---|---|
-| `frank.Session` | The harness: the turn loop, the tools, the prompts, the permissions | Nothing. Every value is one you passed |
-| `frank.daemon.machine` | The loaders that turn a home directory into what `Session` takes | The XDG paths, and your `.agents` |
-| `frankd` | Supervision: a process per session, a socket each, the databases | Everything, and it is the right place to |
-| `frank`, and the app | Clients of the daemon | Where the daemon is |
+**The library is the bottom of the stack, and everything else is built on it** — see the [documentation index](README.md) for the four layers and what each knows about your machine.
 
 `Session` runs an agent in your own process. It reads no path you did not give it, resolves no name against anything, and leaves nothing behind. That is what makes it embeddable. A library that writes a database into your home directory, because you imported it, is one you cannot ship inside something else.
 
