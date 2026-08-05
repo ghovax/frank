@@ -179,85 +179,39 @@ class Tunable(Enum):
     # Text budgets, in TOKENS unless a character clip, scaled by the window and context_share.text.
     # As a share of a 200K window: 16K ≈ 8% for one command's output, 24K ≈ 12% for a whole fetched
     # page (the rest overflows to a file). Enforced by clip_to_tokens.
-    output_tokens = Default(
-        16_000, Scaling.TEXT,
-        """Tokens of inline output one tool may return before the rest overflows to a file.""",
-    )
-    fetch_tokens = Default(24_000, Scaling.TEXT, "Tokens of a fetched web page's text kept inline.")
-    maximum_line_chars = Default(
-        2_048, Scaling.TEXT,
-        """Characters of a single over-long line kept before it is clipped, so one minified blob
-        cannot fill a result on its own.""",
-    )
-    upstream_error_detail_tokens = Default(
-        256, Scaling.TEXT,
-        """Tokens of an upstream service's error body kept in the failure this harness raises —
-        enough to carry the provider's own explanation, short of pasting a whole page into a
-        message someone has to read.""",
-    )
+    output_tokens = Default(16_000, Scaling.TEXT)
+    fetch_tokens = Default(24_000, Scaling.TEXT)
+    maximum_line_chars = Default(2_048, Scaling.TEXT)
+    upstream_error_detail_tokens = Default(256, Scaling.TEXT)
 
     # Listing budgets, in item COUNTS, scaled by the window and context_share.results.
-    read_lines = Default(
-        2_000, Scaling.RESULTS,
-        """Lines a file read returns when no explicit limit is given.""",
-    )
-    grep_results = Default(512, Scaling.RESULTS, "Total matches one search returns.")
-    grep_per_file = Default(
-        512, Scaling.RESULTS,
-        """Matches one search returns from any single file.""",
-    )
-    glob_results = Default(1_000, Scaling.RESULTS, "Paths one glob returns.")
-    web_search_maximum = Default(
-        10, Scaling.RESULTS,
-        """Ceiling on the result count a web search may ask for, however many it requests.""",
-    )
-    remote_listing = Default(
-        32_768, Scaling.RESULTS,
-        """Paths listed on a remote machine before glob matching is applied locally.""",
-    )
+    read_lines = Default(2_000, Scaling.RESULTS)
+    grep_results = Default(512, Scaling.RESULTS)
+    grep_per_file = Default(512, Scaling.RESULTS)
+    glob_results = Default(1_000, Scaling.RESULTS)
+    web_search_maximum = Default(10, Scaling.RESULTS)
+    remote_listing = Default(32_768, Scaling.RESULTS)
     # What a browser session keeps of the page's own traffic, so a `find` can surface the API
     # behind a rendered view. Budgets like any other listing: a bigger window affords more.
-    web_exchanges = Default(
-        250, Scaling.RESULTS,
-        """Recent request/response pairs a browser session keeps, so a search can surface the API
-        behind a rendered view.""",
-    )
-    web_websockets = Default(
-        32, Scaling.RESULTS,
-        """Live websockets a browser session tracks at once.""",
-    )
-    web_websocket_frames = Default(200, Scaling.RESULTS, "Frames retained per tracked websocket.")
+    web_exchanges = Default(250, Scaling.RESULTS)
+    web_websockets = Default(32, Scaling.RESULTS)
+    web_websocket_frames = Default(200, Scaling.RESULTS)
 
     # Timeouts. Milliseconds (read with amount) for Playwright, seconds (read with duration) for the
     # subprocess/AX/settle IO; both scale only with timeout_multiplier.
-    action_timeout_ms = Default(
-        5_000, Scaling.TIME,
-        """How long one browser action (click, type, hover) waits for its element.""",
-    )
-    navigation_timeout_ms = Default(
-        20_000, Scaling.TIME,
-        """How long a page load or navigation waits.""",
-    )
-    snapshot_timeout_ms = Default(
-        10_000, Scaling.TIME,
-        """How long an accessibility snapshot of a page waits.""",
-    )
-    connect_timeout_ms = Default(10_000, Scaling.TIME, "How long attaching to a browser waits.")
+    action_timeout_ms = Default(5_000, Scaling.TIME)
+    navigation_timeout_ms = Default(20_000, Scaling.TIME)
+    snapshot_timeout_ms = Default(10_000, Scaling.TIME)
+    connect_timeout_ms = Default(10_000, Scaling.TIME)
     # A person's reaction time, not a network one: Chrome shows a consent box when a debugging
     # client attaches, and this is how long we wait for somebody to find it and click Allow. It
     # was ten seconds, budgeted as if the browser were the slow party, and anyone slower than
     # that was told their endpoint had gone stale and advised to toggle the switch — dismissing
     # the prompt they were on their way to approving.
-    browser_authorization_ms = Default(
-        90_000, Scaling.TIME,
-        """How long attaching waits for the user to approve Chrome's prompt.""",
-    )
-    drag_timeout_ms = Default(8_000, Scaling.TIME, "How long a drag between two elements waits.")
-    screenshot_timeout_ms = Default(
-        20_000, Scaling.TIME,
-        """How long capturing a page screenshot waits.""",
-    )
-    read_text_timeout_ms = Default(10_000, Scaling.TIME, "How long reading a page's text waits.")
+    browser_authorization_ms = Default(90_000, Scaling.TIME)
+    drag_timeout_ms = Default(8_000, Scaling.TIME)
+    screenshot_timeout_ms = Default(20_000, Scaling.TIME)
+    read_text_timeout_ms = Default(10_000, Scaling.TIME)
     # Resolving a frame id to its live frame. Deliberately far below the action timeout: a stale
     # aria-ref does not error, it waits, and `frames()` resolves every iframe it found — so one that
     # has gone would otherwise hold up the whole listing.
@@ -267,237 +221,82 @@ class Tunable(Enum):
     # case, which was the same concept under a second name, at a different value, and outside the
     # timeout scale. The more generous of the two won: a session being wound down has more to
     # flush than a single command being cancelled.
-    sigterm_grace_seconds = Default(
-        3.0, Scaling.TIME,
-        """How long a cancelled command or a reaped session has after SIGTERM before SIGKILL.""",
-    )
-    ripgrep_seconds = Default(30.0, Scaling.TIME, "How long one content search may run.")
+    sigterm_grace_seconds = Default(3.0, Scaling.TIME)
+    ripgrep_seconds = Default(30.0, Scaling.TIME)
     # How long a backgroundable tool waits inline before it hands the work to the background
     # runner (a non-killing wait window, the model-overridable `timeout` tool parameter's
     # default — NOT a network deadline). Central so the three tools' defaults live in one place
     # rather than as scattered private module constants.
-    bash_sync_window_seconds = Default(
-        60.0, Scaling.TIME,
-        """How long a shell command runs inline before it moves to the background. It is not killed
-        at this point, only handed off, and the model can override it per call.""",
-    )
-    slow_tool_sync_window_seconds = Default(
-        10.0, Scaling.TIME,
-        """The same inline window for fetching a URL or downloading a file.""",
-    )
-    web_search_sync_window_seconds = Default(
-        10.0, Scaling.TIME,
-        """The same inline window for a web search.""",
-    )
-    ax_messaging_seconds = Default(
-        2.0, Scaling.TIME,
-        """How long one accessibility message to an application waits, so a hung application costs
-        a moment rather than the whole action.""",
-    )
+    bash_sync_window_seconds = Default(60.0, Scaling.TIME)
+    slow_tool_sync_window_seconds = Default(10.0, Scaling.TIME)
+    web_search_sync_window_seconds = Default(10.0, Scaling.TIME)
+    accessibility_messaging_seconds = Default(2.0, Scaling.TIME)
 
-    goal_continuation_turns = Default(
-        12, Scaling.NONE,
-        """How many turns in a row a session may open for its own goal before it stops and waits
-        for the person.
+    goal_continuation_turns = Default(12, Scaling.NONE)
 
-        A goal is what keeps a session working when nobody is watching, and the same property is
-        what makes an allowance necessary: an agent convinced it is nearly there can be nearly
-        there for a very long time. The count starts again the moment the person says anything,
-        so this bounds an unattended stretch rather than the goal itself. Reaching it parks the
-        goal — it is neither abandoned nor declared blocked, because neither would be true; it is
-        simply waiting for somebody to look.""",
-    )
-
-    goal_blocked_turns = Default(
-        3, Scaling.NONE,
-        """How many times the same condition must stop a goal before the agent may report it
-        blocked. One failure is not an impasse, and a goal abandoned on the first refusal is one
-        nobody asked to abandon. How many failures do constitute an impasse depends on the work,
-        which is why this is a setting and not a number in a prompt — the value here is what the
-        agent is told, so the instruction and the threshold cannot drift apart.""",
-    )
+    goal_blocked_turns = Default(3, Scaling.NONE)
 
     # The control plane and the processes it supervises.
     warm_workers = Default(2, Scaling.NONE)
-    session_title_attempts = Default(
-        3, Scaling.NONE,
-        """How many times a session asks the model to name itself before giving up. More than
-        one because the answer is a single tool call the model can fail to make, and a session
-        with no name is one nobody can find again in a sidebar.""",
-    )
-    permission_classifier_attempts = Default(
-        3, Scaling.NONE,
-        """How many times the permission classifier is asked before its silence counts as a
-        refusal. More than one for the same reason a title is asked for more than once — the
-        answer is a single tool call a model can fail to make, and a provider can drop a
-        request — but the failure here is not cosmetic: every attempt that does not land is a
-        tool call the agent is refused, so the work stops for a reason that has nothing to do
-        with whether the call was safe.""",
-    )
+    session_title_attempts = Default(3, Scaling.NONE)
+    permission_classifier_attempts = Default(3, Scaling.NONE)
     prototype_start_seconds = Default(120.0, Scaling.TIME)
-    prototype_restart_seconds = Default(
-        5.0, Scaling.TIME,
-        """How long the daemon waits before trying again after the prototype failed to restart.""",
-    )
+    prototype_restart_seconds = Default(5.0, Scaling.TIME)
     session_idle_sleep_seconds = Default(18000.0, Scaling.TIME)
-    session_start_seconds = Default(
-        60.0, Scaling.TIME,
-        """How long the daemon waits for a forked session to bind its socket and report ready.""",
-    )
-    daemon_startup_seconds = Default(
-        45.0, Scaling.TIME,
-        """How long a command waits for a daemon it just started to become reachable.""",
-    )
-    control_plane_call_seconds = Default(
-        60.0, Scaling.TIME,
-        """How long one call to the daemon waits.""",
-    )
-    model_catalogue_ttl_seconds = Default(
-        60.0, Scaling.TIME,
-        """How long the list of available models is cached.""",
-    )
-    credential_refresh_leeway_seconds = Default(
-        300.0, Scaling.TIME,
-        """How far ahead of its expiry an access token is refreshed.""",
-    )
-    daemon_probe_interval_seconds = Default(
-        0.05, Scaling.TIME,
-        """Pause between asks of whether another process's daemon socket answers yet, or whether a
-        daemon being replaced has finally exited.""",
-    )
-    daemon_probe_connect_seconds = Default(
-        0.5, Scaling.TIME,
-        """How long one connect to a daemon socket waits before it counts as unanswered.""",
-    )
-    oauth_poll_interval_seconds = Default(
-        1.0, Scaling.TIME,
-        """First pause between asks of whether a browser sign-in has completed; it widens from
-        here.""",
-    )
-    oauth_poll_ceiling_seconds = Default(
-        10.0, Scaling.TIME,
-        """Ceiling on the widening pause between sign-in polls, so a slow sign-in is not asked
-        about every second for minutes.""",
-    )
-    oauth_poll_give_up_seconds = Default(
-        300.0, Scaling.TIME,
-        """How long a browser sign-in is waited for before it is abandoned — a person's whole trip
-        through a consent screen, not a network round trip.""",
-    )
-    subscription_resume_ttl_seconds = Default(
-        1_800.0, Scaling.TIME,
-        """How long a subscription provider's server-side conversation state stays worth resuming
-        from before the whole conversation is resent instead.""",
-    )
-    model_silence_give_up_seconds = Default(
-        180.0, Scaling.TIME,
-        """How long a model may hold a stream open saying nothing at all before the turn is ended.
-        Long, because a model weighing a hard problem is silent and still working.""",
-    )
-    file_url_ttl_seconds = Default(600.0, Scaling.TIME, "How long a signed file URL stays valid.")
-    mcp_connect_seconds = Default(
-        20.0, Scaling.TIME,
-        """How long connecting to one MCP server waits.""",
-    )
-    card_resolve_seconds = Default(
-        20.0, Scaling.TIME,
-        """How long fetching a remote agent's card waits.""",
-    )
+    session_start_seconds = Default(60.0, Scaling.TIME)
+    daemon_startup_seconds = Default(45.0, Scaling.TIME)
+    control_plane_call_seconds = Default(60.0, Scaling.TIME)
+    model_catalogue_ttl_seconds = Default(60.0, Scaling.TIME)
+    credential_refresh_leeway_seconds = Default(300.0, Scaling.TIME)
+    daemon_probe_interval_seconds = Default(0.05, Scaling.TIME)
+    daemon_probe_connect_seconds = Default(0.5, Scaling.TIME)
+    oauth_poll_interval_seconds = Default(1.0, Scaling.TIME)
+    oauth_poll_ceiling_seconds = Default(10.0, Scaling.TIME)
+    oauth_poll_give_up_seconds = Default(300.0, Scaling.TIME)
+    subscription_resume_ttl_seconds = Default(1_800.0, Scaling.TIME)
+    model_silence_give_up_seconds = Default(180.0, Scaling.TIME)
+    file_url_ttl_seconds = Default(600.0, Scaling.TIME)
+    mcp_connect_seconds = Default(20.0, Scaling.TIME)
+    card_resolve_seconds = Default(20.0, Scaling.TIME)
 
     # Commands on another machine, where patience is a property of the network.
-    remote_command_seconds = Default(
-        120.0, Scaling.TIME,
-        """How long a command on another machine may run.""",
-    )
-    remote_connect_seconds = Default(
-        16.0, Scaling.TIME,
-        """How long opening an SSH connection waits.""",
-    )
-    remote_control_persist_seconds = Default(
-        120.0, Scaling.TIME,
-        """How long a shared SSH connection lingers after its last use, so the next command reuses
-        it.""",
-    )
+    remote_command_seconds = Default(120.0, Scaling.TIME)
+    remote_connect_seconds = Default(16.0, Scaling.TIME)
+    remote_control_persist_seconds = Default(120.0, Scaling.TIME)
 
     # The control_screen timeout stack, which has to stay ordered rather than merely equal. The
     # script's own ceiling is the one anybody would want to raise; the surface's guard and its
     # worker thread each sit a margin above it, so a long script can never outlive the machinery
     # waiting on it — which used to drop the connection and leave the surface half-dead.
-    control_script_seconds = Default(
-        120.0, Scaling.TIME,
-        """How long one screen-control script may run.""",
-    )
-    surface_guard_margin_seconds = Default(
-        30.0, Scaling.TIME,
-        """How far above the script's own limit the machinery waiting on it sits, so raising that
-        limit can never make the guard fire first and leave the surface half-dead.""",
-    )
-    screencapture_seconds = Default(15.0, Scaling.TIME, "How long capturing the screen waits.")
-    open_url_seconds = Default(
-        5.0, Scaling.TIME,
-        """How long handing a URL to the system browser waits.""",
-    )
+    control_script_seconds = Default(120.0, Scaling.TIME)
+    surface_guard_margin_seconds = Default(30.0, Scaling.TIME)
+    screencapture_seconds = Default(15.0, Scaling.TIME)
+    open_url_seconds = Default(5.0, Scaling.TIME)
 
     # Fixed, deliberately NOT scaled — physical input-event pacing the OS needs for a synthesized
     # click/keystroke/drag to register, fixed shapes, and pixel sizes.
-    type_chunk_size = Default(20, Scaling.NONE, "Characters sent per synthesized keyboard event.")
-    drag_steps = Default(
-        12, Scaling.NONE,
-        """Segments a drag is split into, so it looks like a hand moved it.""",
-    )
-    scroll_amount_pixels = Default(
-        300, Scaling.NONE,
-        """Pixels one scroll step moves a native window.""",
-    )
-    settle_stable_reads = Default(
-        2, Scaling.NONE,
-        """Identical consecutive reads that count a surface as having stopped changing.""",
-    )
+    type_chunk_size = Default(20, Scaling.NONE)
+    drag_steps = Default(12, Scaling.NONE)
+    scroll_amount_pixels = Default(300, Scaling.NONE)
+    settle_stable_reads = Default(2, Scaling.NONE)
     find_rephrasing_similarity = Default(0.45, Scaling.NONE)
     find_near_weight = Default(0.5, Scaling.NONE)
     find_anchor_margin = Default(0.02, Scaling.NONE)
-    find_candidates = Default(
-        5, Scaling.RESULTS,
-        """Elements find_one weighs against its best match, and offers back when it cannot choose
-        between them.""",
-    )
+    find_candidates = Default(5, Scaling.RESULTS)
     find_one_margin = Default(0.20, Scaling.NONE)
     find_many_ceiling = Default(50, Scaling.RESULTS)
     find_relevance_floor = Default(0.25, Scaling.NONE)
-    click_interval_seconds = Default(
-        0.01, Scaling.NONE,
-        """Pause between successive synthesized clicks.""",
-    )
-    drag_step_interval_seconds = Default(
-        0.01, Scaling.NONE,
-        """Pause between the interpolated steps of a drag.""",
-    )
-    type_chunk_interval_seconds = Default(0.005, Scaling.NONE, "Pause between typed chunks.")
-    focus_settle_seconds = Default(
-        0.03, Scaling.NONE,
-        """Pause after focusing a field, before typing into it.""",
-    )
+    click_interval_seconds = Default(0.01, Scaling.NONE)
+    drag_step_interval_seconds = Default(0.01, Scaling.NONE)
+    type_chunk_interval_seconds = Default(0.005, Scaling.NONE)
+    focus_settle_seconds = Default(0.03, Scaling.NONE)
     # Pixels, not a share of anybody's context — this sat in the text family, where raising
     # `context_share.text` silently enlarged every screenshot.
-    stamped_image_side = Default(
-        2_048, Scaling.NONE,
-        """Longest side, in pixels, of a screenshot annotated with element labels.""",
-    )
-    ax_walk_budget_seconds = Default(3.0, Scaling.TIME)
-    ax_ready_probe_seconds = Default(
-        0.4, Scaling.TIME,
-        """How long the readiness poll may spend deciding whether an app's tree has built yet.
-        Short on purpose: it runs repeatedly while an app is still starting, and it only has to
-        see past the window chrome.""",
-    )
-    ax_prewarm_interval_seconds = Default(
-        0.4, Scaling.NONE,
-        """Pause between pre-warming the frontmost application's accessibility tree.""",
-    )
-    ax_ready_backoff_seconds = Default(
-        0.2, Scaling.NONE,
-        """Ceiling on the widening pause between accessibility readiness probes.""",
-    )
+    stamped_image_side = Default(2_048, Scaling.NONE)
+    accessibility_walk_budget_seconds = Default(3.0, Scaling.TIME)
+    accessibility_ready_probe_seconds = Default(0.4, Scaling.TIME)
+    accessibility_prewarm_interval_seconds = Default(0.4, Scaling.NONE)
+    accessibility_ready_backoff_seconds = Default(0.2, Scaling.NONE)
 
     def __new__(cls, default: Default) -> "Tunable":
         """Give every member a value of its own.

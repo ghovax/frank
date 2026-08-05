@@ -3,7 +3,7 @@
 import { Box, Button, createListCollection, Flex, Portal, Select, Span, Text } from "@chakra-ui/react";
 import { useMemo, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
-import { LuBadgeCheck, LuBox, LuCircleSlash, LuEye, LuGitBranch, LuGitFork, LuGlobe, LuHand, LuHardDrive, LuMic, LuMousePointerClick, LuPackage, LuUser, LuUserSearch, LuZap } from "react-icons/lu";
+import { LuBadgeCheck, LuBox, LuCheck, LuCircleSlash, LuEye, LuGitBranch, LuGitFork, LuGlobe, LuHand, LuHardDrive, LuMic, LuMousePointerClick, LuPackage, LuUser, LuUserSearch, LuZap } from "react-icons/lu";
 import type { PermissionMode } from "@/lib/api";
 
 export type WorktreeStrategyValue = "none" | "branch" | "worktree";
@@ -488,6 +488,27 @@ export function ComputerControlToggleControl({
   const appearance: ToggleAppearance = enabled
     ? { label: translation("computerControlOn"), icon: <LuMousePointerClick size={13} />, color: "blue.fg", background: "blue.subtle", borderColor: "blue.muted", hover: "blue.muted" }
     : { label: translation("computerControlOff"), icon: <LuCircleSlash size={13} />, color: "fg.muted", background: "bg.subtle", borderColor: "border", hover: "bg.muted" };
+  return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
+}
+
+export function SettingToggleControl({
+  enabled,
+  onChange,
+  layout = "chip",
+}: {
+  enabled: boolean;
+  onChange?: (enabled: boolean) => void;
+  layout?: "chip" | "field";
+}) {
+  // The toggle for a setting that has no words of its own — the generated rows, where the name
+  // and the explanation are the row's and the control only has to say on or off. Every other
+  // toggle in this file names its subject twice, once in each state ("Own tools" / "No own
+  // tools"), which reads well beside a chip in the composer and reads as a stutter under a
+  // label that just said it.
+  const translation = useTranslations("SessionControls");
+  const appearance: ToggleAppearance = enabled
+    ? { label: translation("settingOn"), icon: <LuCheck size={13} />, color: "blue.fg", background: "blue.subtle", borderColor: "blue.muted", hover: "blue.muted" }
+    : { label: translation("settingOff"), icon: <LuCircleSlash size={13} />, color: "fg.muted", background: "bg.subtle", borderColor: "border", hover: "bg.muted" };
   return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
 }
 

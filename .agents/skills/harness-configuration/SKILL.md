@@ -27,12 +27,12 @@ The harness is multi-provider. Credentials are keyed by **provider id** under a 
 
 ```yaml
 providers:
-  opencode:                         # One key unlocks OpenCode Zen and OpenCode Go
+  opencode:
     api_key: ""
     base_url: "https://opencode.ai/zen/v1"
-  opencode_go:                     # Optional endpoint override; key comes from opencode
+  opencode_go:
     base_url: "https://opencode.ai/zen/go/v1"
-  anthropic:  { api_key: "" }        # first-party clouds omit base_url (LiteLLM knows the endpoint)
+  anthropic:  { api_key: "" }
   openai:     { api_key: "" }
   google:     { api_key: "" }
   openrouter: { api_key: "" }
@@ -40,10 +40,12 @@ providers:
   deepseek:   { api_key: "" }
   groq:       { api_key: "" }
   mistral:    { api_key: "" }
-  custom:                            # any other OpenAI-compatible endpoint
+  custom:
     api_key: ""
     base_url: ""
 ```
+
+One `opencode` key unlocks both OpenCode Zen and OpenCode Go; `opencode_go` carries only the endpoint override and takes its key from `opencode`. The first-party clouds omit `base_url` because LiteLLM already knows their endpoints. `custom` is any other OpenAI-compatible endpoint, which is why it needs both.
 
 **Key/base-url resolution** (`providers.py`): an explicit configured value (file or UI) **wins**; otherwise the provider's conventional env var is read (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`/`GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `XAI_API_KEY`, `DEEPSEEK_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`). OpenCode Zen and Go share the `opencode` key but keep separate endpoints. First-party clouds ignore `base_url`; custom OpenAI-compatible providers use it.
 

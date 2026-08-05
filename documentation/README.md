@@ -110,4 +110,4 @@ Runtime state never lives in the repository. Frank follows the XDG convention:
 - Logs in **`~/.local/state/frank/`**
 - Caches in **`~/.cache/frank/`**
 
-The [Configuration guide](configuration.md) is the reference for it.
+The [Configuration guide](configuration.md) explains the settings worth explaining, and the [configuration reference](configuration-reference.md) lists every one of them.

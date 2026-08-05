@@ -23,91 +23,23 @@ their own configuration is not this command's business.
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
-import yaml
-
-from frank.base.paths import configuration_file_path
+from frank.base.configuration_file import (
+    flatten as _flatten,
+    load as _load,
+    parse as _parse,
+    read as _read,
+    rejects as _validates,
+    remove as _remove,
+    save as _save,
+    write as _write,
+)
 from frank.base.serialization import compact
 
 
 logger = logging.getLogger("frank.configure")
-
-
-def _load() -> dict:
-    path = configuration_file_path()
-    if not path.exists():
-        return {}
-    try:
-        return yaml.safe_load(path.read_text()) or {}
-    except yaml.YAMLError as error:
-        raise RuntimeError(f"{path} is not valid YAML: {error}") from error
-
-
-def _save(data: dict) -> None:
-    path = configuration_file_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(data, sort_keys=False))
-
-
-def _flatten(data: Any, prefix: str = "") -> list[tuple[str, Any]]:
-    """Every leaf as a dotted path, so settings can be addressed the way they are written."""
-    if isinstance(data, dict):
-        entries: list[tuple[str, Any]] = []
-        for key, value in data.items():
-            entries.extend(_flatten(value, f"{prefix}.{key}" if prefix else str(key)))
-        return entries
-    return [(prefix, data)]
-
-
-def _read(data: dict, path: str) -> Any:
-    node: Any = data
-    for part in path.split("."):
-        if not isinstance(node, dict) or part not in node:
-            raise KeyError(path)
-        node = node[part]
-    return node
-
-
-def _write(data: dict, path: str, value: Any) -> None:
-    parts = path.split(".")
-    node = data
-    for part in parts[:-1]:
-        existing = node.get(part)
-        if not isinstance(existing, dict):
-            existing = {}
-            node[part] = existing
-        node = existing
-    node[parts[-1]] = value
-
-
-def _parse(raw: str) -> Any:
-    """Interpret a value the way the file would hold it.
-
-    A setting written as `true` or `8` should land as a boolean or a number, not as the string
-    the shell handed over — otherwise a toggle set from the terminal reads as truthy text and
-    can never be turned off.
-
-    `none` is deliberately *not* one of the null spellings, even though YAML accepts it as one.
-    It is a real value here — `workspace.strategy: none` is the default — and coercing it to
-    null wrote a configuration the schema rejects, which stopped the daemon from starting at
-    all. Neither is the empty string: most settings that can be blank are typed as strings, so
-    coercing `""` to null made clearing one impossible — it was refused by the very schema the
-    blank value satisfies. Removing a setting is what `--unset` is for; `null` and `~` still
-    spell null for the fields that genuinely take one."""
-    lowered = raw.strip().lower()
-    if lowered in {"true", "yes", "on"}:
-        return True
-    if lowered in {"false", "no", "off"}:
-        return False
-    if lowered in {"null", "~"}:
-        return None
-    try:
-        return json.loads(raw)
-    except ValueError:
-        return raw
 
 
 def _known(path: str):
@@ -157,8 +89,6 @@ def _everything(data: dict) -> dict:
         except KeyError:
             current = setting.default
         entry: dict[str, Any] = {"default": setting.default, "current": current}
-        if setting.about:
-            entry["about"] = setting.about
         if setting.open_ended:
             entry["open_ended"] = True
         listing[setting.path] = entry
@@ -186,7 +116,6 @@ def run(arguments) -> int:
         known = _known(arguments.setting)
         try:
             value = _read(data, arguments.setting)
-            source = "set in " + str(configuration_file_path())
         except KeyError:
             if known is None:
                 # A name the schema does not have will never do anything at all. Nothing on
@@ -196,14 +125,10 @@ def run(arguments) -> int:
                 return 1
             # A real setting simply not in the file runs on what the code ships. Printing that
             # value rather than nothing is what makes reading a setting mean the same thing
-            # whether or not somebody happened to write it down.
+            # whether or not somebody happened to write it down — and printing *only* it is what
+            # makes `$(frank configure …)` in a script mean the value.
             value = known.default
-            source = "default"
         print(compact(value) if isinstance(value, (dict, list)) else value)
-        if known is not None and known.about:
-            logger.info(f"{known.about} ({source})")
-        else:
-            logger.info(f"({source})")
         return 0
 
     if _known(arguments.setting) is None:
@@ -224,20 +149,11 @@ def run(arguments) -> int:
 
 def run_unset(arguments) -> int:
     data = _load()
-    parts = arguments.setting.split(".")
-    node = data
-    for part in parts[:-1]:
-        if not isinstance(node, dict) or part not in node:
-            logger.info(f"frank: no setting named {arguments.setting!r}")
-            return 1
-        node = node[part]
-    if not isinstance(node, dict) or parts[-1] not in node:
+    if not _remove(data, arguments.setting):
         logger.info(f"frank: no setting named {arguments.setting!r}")
         return 1
-    removed = node.pop(parts[-1])
     invalid = _validates(data)
     if invalid:
-        node[parts[-1]] = removed
         logger.info(f"frank: {arguments.setting} cannot be removed: {invalid}")
         return 1
     _save(data)

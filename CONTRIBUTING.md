@@ -6,11 +6,13 @@ Thanks for improving Frank. This is the short version; the full guides live in t
 
 Frank targets **macOS on Apple Silicon**. **Nix** (a flake devshell) manages the toolchain, so you get the exact pinned versions of bun, Rust, and the Tauri CLI.
 
-```sh
-git clone https://github.com/ghovax/frank.git
-cd frank
-direnv allow          # or: nix develop
+```console
+$ git clone https://github.com/ghovax/frank.git
+$ cd frank
+$ direnv allow
 ```
+
+`direnv allow` enters the flake's devshell on every `cd` into the directory. Without direnv, `nix develop` does the same thing for one shell.
 
 Then follow the [Development guide](documentation/development.md) to run the daemon, the web UI, and the desktop app. The [`frank` command](documentation/cli.md) is the day-to-day surface.
 

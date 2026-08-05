@@ -191,21 +191,21 @@ def _is_incomplete(snapshot: accessibility.Snapshot) -> bool:
     Chromium/Electron app whose real tree has not built yet). Such a read is not acted on."""
     if not snapshot.elements:
         return True
-    return all(ax.subrole in _WINDOW_CHROME_SUBROLES for ax in snapshot.elements)
+    return all(accessible.subrole in _WINDOW_CHROME_SUBROLES for accessible in snapshot.elements)
 
 
-def _to_element(ax: accessibility.Element, token: RegistryEntry) -> Element:
+def _to_element(accessible: accessibility.Element, token: RegistryEntry) -> Element:
     flags: dict[str, Any] = {}
-    if ax.enabled is False:
+    if accessible.enabled is False:
         flags["enabled"] = False
-    if ax.selected:
+    if accessible.selected:
         flags["selected"] = True
-    if ax.placeholder:
-        flags["placeholder"] = ax.placeholder
-    if ax.role_description:
-        flags["role_description"] = ax.role_description
+    if accessible.placeholder:
+        flags["placeholder"] = accessible.placeholder
+    if accessible.role_description:
+        flags["role_description"] = accessible.role_description
     return Element(
-        role=ax.role,
+        role=accessible.role,
         # The role description last, because it is what the system calls this *kind* of control
         # rather than this one — "increment arrow button", "close button". It is prose, it is
         # present on every element, and for the controls that publish no title, description or
@@ -216,12 +216,12 @@ def _to_element(ax: accessibility.Element, token: RegistryEntry) -> Element:
         # element's own content — every Finder sidebar row became "text" while "Recents",
         # "Desktop" and "Documents" sat unused in `value`. It is applied in `documents()` as the
         # last resort, after the value, where it can only fill a key that would be empty.
-        name=ax.title or ax.description or ax.help or ax.placeholder,
-        value=ax.value,
-        clickable=bool(ax.actions),
+        name=accessible.title or accessible.description or accessible.help or accessible.placeholder,
+        value=accessible.value,
+        clickable=bool(accessible.actions),
         flags=flags,
-        children=ax.child_count,
-        actions=ax.actions,
+        children=accessible.child_count,
+        actions=accessible.actions,
         token=token,
     )
 
@@ -305,7 +305,7 @@ class NativeSurface(Surface):
         delay = active_tuning().settle_poll()
         while time.monotonic() < deadline:
             time.sleep(delay)
-            delay = min(delay * 2, active_tuning().duration(Tunable.ax_ready_backoff_seconds))
+            delay = min(delay * 2, active_tuning().duration(Tunable.accessibility_ready_backoff_seconds))
             if self._tree_ready(pid, window):
                 return accessibility.snapshot_app(pid, **kwargs)
         return accessibility.snapshot_app(pid, **kwargs)
@@ -317,7 +317,7 @@ class NativeSurface(Surface):
         uses (``_is_incomplete``)."""
         probe = accessibility.snapshot_app(
             pid, window=window,
-            budget_seconds=active_tuning().duration(Tunable.ax_ready_probe_seconds),
+            budget_seconds=active_tuning().duration(Tunable.accessibility_ready_probe_seconds),
         )
         return not _is_incomplete(probe)
 
@@ -370,11 +370,11 @@ class NativeSurface(Surface):
             state.elements = {}
             documents: list[Document] = []
             sections = _sections_in(snapshot)
-            for ax in snapshot.elements:
-                entry = RegistryEntry(pid=pid, name=_element_name(ax), handle=ax.handle, path=ax.path, center=ax.center)
-                ref = ".".join(str(step) for step in ax.path) or "root"
+            for accessible in snapshot.elements:
+                entry = RegistryEntry(pid=pid, name=_element_name(accessible), handle=accessible.handle, path=accessible.path, center=accessible.center)
+                ref = ".".join(str(step) for step in accessible.path) or "root"
                 state.elements[ref] = entry
-                element = _to_element(ax, entry)
+                element = _to_element(accessible, entry)
                 # Two strings, deliberately. `shown` is the element's own words, which is what a
                 # reader is given; `key` is what is embedded. Putting the kind into what is shown
                 # would have the model reading "text label Shared" as an element's text. As on the
@@ -435,11 +435,11 @@ class NativeSurface(Surface):
                 # one. The browser has always reported this and a window never did, so a caller
                 # who narrowed with `context=` on a window matched nothing and the search silently
                 # widened to the whole tree — a facet that looked like it worked and did not.
-                context = _context_for(ax.path, sections)
+                context = _context_for(accessible.path, sections)
                 if context:
                     payload["context"] = context
                     element.context = context
-                parent = ".".join(str(step) for step in ax.path[:-1]) if len(ax.path) > 1 else ""
+                parent = ".".join(str(step) for step in accessible.path[:-1]) if len(accessible.path) > 1 else ""
                 if parent:
                     payload["parent"] = parent
                 # Where it is. Computed for every element already — it is how a click knows where
@@ -459,7 +459,7 @@ class NativeSurface(Surface):
                 # Reported, never ranked. Fusing a second signal into the score is the experiment
                 # this module already ran and lost, and geometry is not what a query says. It is
                 # here for the model to *read* when two candidates look alike.
-                where = accessibility.rectangle(ax.frame)
+                where = accessibility.rectangle(accessible.frame)
                 if where is not None:
                     payload["bounds"] = where
                 documents.append(Document(id=ref, text=key, payload=payload, parent=parent))
@@ -501,13 +501,13 @@ class NativeSurface(Surface):
                 available_actions = set(accessibility.action_names(handle))
                 if button == "right" and "AXShowMenu" in available_actions:
                     if AS.AXUIElementPerformAction(handle, "AXShowMenu") == 0:
-                        return {"ok": True, "did": f"Opened context menu on {entry.name!r}", "via": "ax"}
+                        return {"ok": True, "did": f"Opened context menu on {entry.name!r}", "via": "accessible"}
                 elif button == "left":
                     preferred_actions = _OPEN_ACTIONS if count >= 2 else _ACTIVATE_ACTIONS
                     action = next((name for name in preferred_actions if name in available_actions), "")
                     if action and AS.AXUIElementPerformAction(handle, action) == 0:
                         did = f"Opened {entry.name!r}" if count >= 2 else f"Clicked {entry.name!r}"
-                        return {"ok": True, "did": did, "via": "ax"}
+                        return {"ok": True, "did": did, "via": "accessible"}
             if entry.center is None:
                 return {"ok": False, "error": f"Element {entry.name!r} exposes no action and has no on-screen position to click."}
             input_synthesis.click(entry.pid, entry.center[0], entry.center[1], clicks=count, button=button)
@@ -549,7 +549,7 @@ class NativeSurface(Surface):
         """The text itself: set through accessibility where the field allows it, typed where not."""
         if mode == "insert":
             if accessibility.set_selected_text(handle, text):
-                return {"ok": True, "did": f"Inserted {len(text)} chars", "via": "ax"}
+                return {"ok": True, "did": f"Inserted {len(text)} chars", "via": "accessible"}
             AS.AXUIElementSetAttributeValue(handle, accessibility.FOCUSED, True)
             time.sleep(active_tuning().duration(Tunable.focus_settle_seconds))
             input_synthesis.type_text(entry.pid, text)
@@ -557,7 +557,7 @@ class NativeSurface(Surface):
         if accessibility.attribute_settable(handle, accessibility.VALUE) \
                 and AS.AXUIElementSetAttributeValue(handle, accessibility.VALUE, text) == 0:
             landed = accessibility.text_value(handle)
-            result: dict[str, Any] = {"ok": True, "did": f"Set {entry.name!r}", "via": "ax"}
+            result: dict[str, Any] = {"ok": True, "did": f"Set {entry.name!r}", "via": "accessible"}
             if landed is not None:
                 result["value"] = landed
                 if landed != text:
@@ -583,7 +583,7 @@ class NativeSurface(Surface):
                 entry = self._entry(state, element)
                 handle = self._live_handle(entry)
                 if handle is not None and AS.AXUIElementPerformAction(handle, "AXScrollToVisible") == 0:
-                    return {"ok": True, "did": f"Scrolled {entry.name!r} into view", "via": "ax"}
+                    return {"ok": True, "did": f"Scrolled {entry.name!r} into view", "via": "accessible"}
                 pid = entry.pid
             else:
                 pid = state.pid
@@ -614,7 +614,7 @@ class NativeSurface(Surface):
             else:
                 start, length = resolve_range(content, text=text, occurrence=occurrence)
             if accessibility.set_selected_range(handle, start, length):
-                return {"ok": True, "did": f"Selected {length} chars", "via": "ax"}
+                return {"ok": True, "did": f"Selected {length} chars", "via": "accessible"}
             return {"ok": False, "error": message("select_unsupported")}
 
         return self.guard(run)
@@ -634,7 +634,7 @@ class NativeSurface(Surface):
                 to_start=edge == "start", to_end=edge == "end", occurrence=occurrence,
             )
             if accessibility.set_selected_range(handle, offset, 0):
-                return {"ok": True, "did": f"Caret at {offset}", "via": "ax"}
+                return {"ok": True, "did": f"Caret at {offset}", "via": "accessible"}
             return {"ok": False, "error": message("select_unsupported")}
 
         return self.guard(run)
@@ -666,12 +666,12 @@ class NativeSurface(Surface):
             snapshot = accessibility.snapshot_app(pid, budget_seconds=1.0)
         except Exception:  # noqa: BLE001 — an observation must never be the thing that fails
             return Glance()
-        focused = next((_element_name(ax) for ax in snapshot.elements if getattr(ax, "focused", False)), None)
-        selected = [_element_name(ax) for ax in snapshot.elements if ax.selected]
+        focused = next((_element_name(accessible) for accessible in snapshot.elements if getattr(accessible, "focused", False)), None)
+        selected = [_element_name(accessible) for accessible in snapshot.elements if accessible.selected]
         return Glance(
             facts={"title": snapshot.window_title or "", "focus": focused,
                    "selection": selected[0] if selected else None},
-            ids=frozenset(".".join(str(step) for step in ax.path) or "root" for ax in snapshot.elements),
+            ids=frozenset(".".join(str(step) for step in accessible.path) or "root" for accessible in snapshot.elements),
         )
 
     def _primitive_focus(self, state: _WindowState, element: Optional[str] = None, **_: Any) -> dict:

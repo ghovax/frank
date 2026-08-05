@@ -28,6 +28,7 @@ import asyncio
 from frank.protocol.dtos import (
     CompactionUpdateRequest,
     ComputerControlUpdateRequest,
+    SettingValueRequest,
     ToolboxUpdateRequest,
     SandboxUpdateRequest,
     SettingsUpdateRequest,
@@ -39,7 +40,11 @@ from frank.hub import state
 from frank.hub.services.broadcast import _publish_broadcast
 from frank.hub.services.sessions import _normalize_permission_mode, _reset_work_habits_acknowledgements
 from frank.hub.services.agents import _recent_models
-from frank.hub.services.settings import _apply_live_credentials, _persist_configuration
+from frank.hub.services.settings import (
+    _apply_live_credentials,
+    _persist_configuration,
+    _reload_configuration_from_disk,
+)
 from frank.hub.services.workspaces import _reset_all_runtimes
 
 router = APIRouter()
@@ -426,6 +431,110 @@ async def update_settings(request: SettingsUpdateRequest):
         await _apply_live_credentials()
     _publish_broadcast({"type": "settings_changed"})
     return {"status": "saved"}
+
+
+@router.get("/settings/schema")
+async def settings_schema():
+    """Every setting there is, with what it holds and what it is set to.
+
+    One endpoint for the whole file rather than one per toggle. The endpoints it replaces each
+    named a single field in their signature, their request model, their persistence call and
+    their response — four statements of the same fact per setting, which is why only a dozen of
+    the hundred and thirty-three ever reached the interface: each one cost more than it was
+    worth. This costs nothing per setting, because it does not know their names.
+
+    **No words.** What a setting is called, and the sentence explaining it, are not here and are
+    not on the wire: they live in the message catalogue, keyed by the same dotted path, and are
+    translated there like everything else a person reads. Serving them from here made them
+    English for everyone — switching the interface to Japanese translated every label in the
+    panel and left these as they were, because a wire has no locale."""
+    from frank.base import configuration_file
+    from frank.base.configuration_schema import KIND_SECTION, settings as all_settings
+
+    document = await asyncio.to_thread(configuration_file.load)
+    sections: dict[str, dict] = {}
+    for setting in all_settings():
+        section = setting.path.split(".")[0]
+        if setting.kind == KIND_SECTION and "." not in setting.path:
+            sections.setdefault(section, {"path": section, "settings": []})
+            continue
+        entry = sections.setdefault(section, {"path": section, "settings": []})
+        if setting.kind == KIND_SECTION:
+            continue
+        try:
+            value = configuration_file.read(document, setting.path)
+            configured = True
+        except KeyError:
+            value = setting.default
+            configured = False
+        entry["settings"].append({
+            "path": setting.path,
+            "kind": setting.kind,
+            "choices": list(setting.choices),
+            "optional": setting.optional,
+            "secret": setting.secret,
+            "default": setting.default,
+            "value": value,
+            # Whether the file says this, as opposed to the code shipping it. What a person
+            # changed is the question they actually ask of their own configuration.
+            "configured": configured,
+        })
+    return {"sections": [section for section in sections.values() if section["settings"]]}
+
+
+@router.post("/settings/value")
+async def update_setting(request: SettingValueRequest):
+    """Set one setting, addressed the way it is written in the file.
+
+    Validated against the schema before anything is written, because the daemon reads this file
+    at startup: a value it rejects does not fail the call that set it, it fails every start
+    after — including the one that would put it back."""
+    from frank.base import configuration_file
+    from frank.base.configuration_schema import setting_for
+
+    if setting_for(request.path) is None:
+        raise HTTPException(status_code=404, detail=f"No setting named {request.path!r}.")
+    async with state.configuration_lock:
+        document = await asyncio.to_thread(configuration_file.load)
+        entry = setting_for(request.path)
+        if request.value is None and entry is not None and not entry.optional:
+            # Nothing, for a setting that cannot hold nothing, means "put it back" rather than
+            # "write a null the schema will refuse at the next start".
+            configuration_file.remove(document, request.path)
+        else:
+            configuration_file.write(document, request.path, request.value)
+        invalid = configuration_file.rejects(document)
+        if invalid:
+            raise HTTPException(status_code=400, detail=invalid)
+        await asyncio.to_thread(configuration_file.save, document)
+        # Read back, applied live, and every session told to rebuild — the same three steps
+        # every bespoke endpoint performed for its own field, done once for all of them.
+        await _reload_configuration_from_disk()
+        await state.reset_runtimes()
+    return {"status": "saved", "path": request.path}
+
+
+@router.delete("/settings/value")
+async def reset_setting(path: str):
+    """Put one setting back to what the code ships, by removing it from the file. A setting
+    that is not written is not a setting set to its default — it is one that follows the
+    default, including when a later release moves it."""
+    from frank.base import configuration_file
+    from frank.base.configuration_schema import setting_for
+
+    if setting_for(path) is None:
+        raise HTTPException(status_code=404, detail=f"No setting named {path!r}.")
+    async with state.configuration_lock:
+        document = await asyncio.to_thread(configuration_file.load)
+        removed = configuration_file.remove(document, path)
+        if removed:
+            invalid = configuration_file.rejects(document)
+            if invalid:
+                raise HTTPException(status_code=400, detail=invalid)
+            await asyncio.to_thread(configuration_file.save, document)
+            await _reload_configuration_from_disk()
+            await state.reset_runtimes()
+    return {"status": "reset", "path": path, "removed": removed}
 
 
 @router.post("/settings/sandbox")

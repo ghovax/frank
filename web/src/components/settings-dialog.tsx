@@ -2,7 +2,7 @@
 
 import { Alert, Box, Button, Dialog, EmptyState, Flex, IconButton, Input, Portal, Spinner, Text, VStack } from "@chakra-ui/react";
 import { swallowed } from "@/lib/swallowed";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LuClock, LuEye, LuEyeOff, LuKeyRound, LuMonitor, LuPlug, LuPlus, LuSearch, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
 import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, restartDaemon, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateDictationSetting, updateToolboxSetting, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel, type SandboxEnforce } from "@/lib/api";
 import { ModelSelect } from "./model-select";
@@ -18,20 +18,19 @@ import { ConfirmDialog } from "./ui/confirm-dialog";
 import { useTranslations } from "next-intl";
 import { useLocale } from "@/lib/i18n/locale-provider";
 import { LOCALES, type Locale } from "@shared/locales";
+import { useSchemaSettingsPage } from "./settings-schema-pages";
 import { AgentSelectControl, CompactionToggleControl, ComputerControlToggleControl, DictationToggleControl, PermissionModeControl, SandboxToggleControl, ToolboxToggleControl, UserContextToggleControl, WorktreeStrategyControl, type WorktreeStrategyValue } from "./session-controls";
 import { useScrollEdgeFade } from "@/lib/scroll-fade";
 import { Section } from "./ui/semantic";
 import { errorMessage } from "@/lib/errors";
 import { usePreferences } from "@/lib/preferences";
 
-export type SettingsSection = "general" | "locations" | "schedules" | "agents" | "connection";
+// The panel's own pages, plus `configuration:<section>` for each section of the configuration
+// file. A string rather than a union, because the second set is not knowable here: it is
+// whatever the schema has, which is the point of it.
+export type SettingsSection = string;
 
-// One setting modeled as data (so the search box can match it): a title + optional
-// description that renders on the left, and a `control` that renders on the right. `stacked`
-// puts a wide control (an API-key field) on its own line beneath the label instead.
-type SettingRowDef = { key: string; title: string; description?: string; control: ReactNode; layout?: "row" | "stacked" };
-type SettingsPageSection = { title?: string; rows: SettingRowDef[]; block?: ReactNode };
-type SettingsPage = { id: SettingsSection; label: string; icon: ReactNode; sections: SettingsPageSection[] };
+import type { SettingRowDef, SettingsPage } from "@/lib/settings-model";
 
 // A titled section: a heading over a stack of rows separated by hairline dividers (the
 // trailing full-width block, if any, sits beneath the rows).
@@ -562,7 +561,15 @@ export function SettingsDialog({
     layout: "stacked",
   });
 
-  const pages: SettingsPage[] = [
+  // The generated rows render through the panel's own row component, passed in rather than
+  // imported the other way: a row is the panel's shape, and the page that builds them should
+  // not have to know how one is drawn.
+  const renderSettingRow = useCallback((row: SettingRowDef) => (
+    <SettingRow key={row.key} title={row.title} description={row.description} layout={row.layout}>{row.control}</SettingRow>
+  ), []);
+  const configurationPage = useSchemaSettingsPage(renderSettingRow);
+
+  const curatedPages: SettingsPage[] = [
     {
       id: "general", label: translation("tabGeneral"), icon: <LuKeyRound size={14} />,
       sections: [
@@ -641,6 +648,13 @@ export function SettingsDialog({
     },
   ];
 
+  // Everything else the configuration file holds, as one entry in the rail after the pages a
+  // person actually visits. Appended rather than merged into the curated pages above: those
+  // exist because a few settings are worth a control of their own — a permission mode is not a
+  // string, it is four buttons and a sentence about each — and the rest are worth exactly what
+  // the schema says they are. It is absent until the daemon answers, so the rail never shows a
+  // page with nothing in it.
+  const pages = configurationPage ? [...curatedPages, configurationPage] : curatedPages;
   const activePage = pages.find((page) => page.id === section) ?? pages[0];
   const rowMatches = (row: SettingRowDef) => `${row.title} ${row.description ?? ""}`.toLowerCase().includes(query);
   // When searching, collapse every page's sections into just those with matching rows, so

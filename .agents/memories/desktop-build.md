@@ -10,12 +10,10 @@ Frank ships as **two independent macOS artifacts**: the harness (`Frank Computer
 
 ## Two builds, neither triggering the other
 
-```sh
-packaging/build-daemon.sh                       # the harness; FORCE=1 to override the freshness guard
-cd web && bun run tauri:build                   # the app (run from web/ — beforeBuildCommand's ../packaging paths assume it)
-packaging/sign-app.sh "packaging/dist/Frank Computer Use.app"
-packaging/sign-app.sh web/src-tauri/target/release/bundle/macos/Frank.app
-```
+- `packaging/build-daemon.sh` — the harness. `FORCE=1` overrides the freshness guard.
+- `cd web && bun run tauri:build` — the app. Run it from `web/`, because `beforeBuildCommand`'s `../packaging` paths assume that is where you are.
+- `packaging/sign-app.sh "packaging/dist/Frank Computer Use.app"` — sign the harness, which is what gives it the identity the Accessibility grant is attached to.
+- `packaging/sign-app.sh web/src-tauri/target/release/bundle/macos/Frank.app` — the same for the app.
 
 `tauri.conf.json`'s `beforeBuildCommand` no longer invokes the freeze and `bundle.resources` no longer exists, so the app build is a Rust compile and a static export — nothing Python. Install the harness by `ditto`-ing it to `/Applications` and symlinking `Contents/MacOS/frank` onto `PATH`; install the app the same way. `frank app` then starts the daemon if needed and launches the window.
 

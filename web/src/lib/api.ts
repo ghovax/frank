@@ -889,6 +889,73 @@ export async function updateUserContextSetting(enabled: boolean): Promise<void> 
   });
 }
 
+// Every setting the schema defines, with what it holds and what it is set to — and no words.
+//
+// What a setting is called and the sentence under it come from the message catalogue, keyed by
+// the same dotted path. They used to come down this wire, which made them English whatever the
+// interface was set to: a wire has no locale, so switching to Japanese translated every label
+// around them and left the descriptions in English.
+export type SettingKind = "boolean" | "integer" | "number" | "string" | "choice" | "list" | "map" | "section";
+
+export interface SettingEntry {
+  // The dotted path it is written under: how it is addressed to change it, and the key its
+  // label and description are looked up under.
+  path: string;
+  kind: SettingKind;
+  choices: string[];
+  optional: boolean;
+  // A credential, as the field itself declares. The client masks it because the schema says so
+  // rather than because of how the path is spelled.
+  secret: boolean;
+  default: unknown;
+  value: unknown;
+  // Whether the file says this, as opposed to the code shipping it.
+  configured: boolean;
+}
+
+export interface SettingsSectionSchema {
+  path: string;
+  settings: SettingEntry[];
+}
+
+export async function fetchSettingsSchema(): Promise<SettingsSectionSchema[]> {
+  const response = await apiFetch(`/settings/schema`);
+  if (!response.ok) return [];
+  const data = (await response.json()) as { sections?: SettingsSectionSchema[] };
+  return data.sections ?? [];
+}
+
+// Set one setting. The server validates it against the schema before writing, so a refusal is a
+// refusal of the value and not of the request — its message is what the person needs to read.
+export async function updateSettingValue(path: string, value: unknown): Promise<void> {
+  const response = await apiFetch(`/settings/value`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path, value }),
+  });
+  if (!response.ok) throw new Error(await refusalText(response));
+}
+
+// Put one setting back to what the code ships, by removing it from the file — which is not the
+// same as writing the default: a setting that is not written follows the default when it moves.
+export async function resetSettingValue(path: string): Promise<void> {
+  const response = await apiFetch(`/settings/value?path=${encodeURIComponent(path)}`, { method: "DELETE" });
+  if (!response.ok) throw new Error(await refusalText(response));
+}
+
+// What the server said when it would not take a value. Its own words, because it is the thing
+// that knows: "Input should be 'required', 'preferred' or 'off'" is worth reading, and a
+// generic "could not save" replaces the one useful sentence with none.
+async function refusalText(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as { detail?: unknown };
+    if (typeof body.detail === "string" && body.detail.trim()) return body.detail;
+  } catch {
+    // A refusal that is not JSON is still a refusal; fall through to the status.
+  }
+  return `${response.status}`;
+}
+
 // Toggle whether each session gets a tool profile of its own to install into (rebuilds runtimes).
 export async function updateToolboxSetting(enabled: boolean): Promise<void> {
   await apiFetch(`/settings/toolbox`, {

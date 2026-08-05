@@ -282,6 +282,12 @@
     "signedInAs": "Signed in as {account}",
     "planNotice": "Uses your Cursor plan through the Cursor CLI sign-in. Unofficial and may change."
   },
+  "DelegatedWorkPanel": {
+    "title": "Delegated work",
+    "collapsePanel": "Collapse panel",
+    "emptyTitle": "Nothing delegated yet",
+    "emptyDescription": "When this conversation hands work to another session, it appears here."
+  },
   "GitStatusBar": {
     "detached": "detached @ {ref}",
     "commit": "Commit",
@@ -473,6 +479,8 @@
     "sandboxGlobal": "Global access",
     "sandboxRestricted": "Restricted access",
     "sandboxUnavailable": "Unenforceable here",
+    "settingOff": "Off",
+    "settingOn": "On",
     "toolboxOff": "No own tools",
     "toolboxOn": "Own tools",
     "userContextOff": "Habits private",
@@ -533,7 +541,468 @@
     "hideWorkspace": "Hide this workspace's conversations",
     "showWorkspace": "Show this workspace's conversations"
   },
+  "Settings": {
+    "agent": {
+      "_": "Agent defaults",
+      "permission_mode": "Permission mode"
+    },
+    "workspace": {
+      "_": "Workspaces",
+      "strategy": "Strategy"
+    },
+    "sandbox": {
+      "_": "Confinement",
+      "enforce": "When it cannot be enforced",
+      "filesystem": {
+        "_": "Paths",
+        "readable": "Readable paths",
+        "writable": "Writable paths",
+        "grantable": "Grantable without asking",
+        "deny": "Refused paths"
+      },
+      "network": "Network access",
+      "limits": "Resource limits",
+      "umask": "File-creation mask",
+      "nice": "Process priority"
+    },
+    "toolbox": {
+      "_": "Session toolbox",
+      "enabled": "Let a session install its own tools"
+    },
+    "permission_classifier": {
+      "_": "Permission classifier",
+      "reasoning_effort": "Reasoning effort"
+    },
+    "compaction": {
+      "_": "Conversation compaction",
+      "automatic": "Compact automatically",
+      "reclaim_at_fraction": "Compact at (share of window)",
+      "condense_log_at_fraction": "Condense the log at (share)",
+      "output_reserve_fraction": "Reserved for the answer (share)",
+      "recent_working_set_fraction": "Kept verbatim (share)",
+      "verbatim_user_fraction": "Your own messages kept (share)"
+    },
+    "user_context": {
+      "_": "User snapshot",
+      "enabled": "Include the user snapshot"
+    },
+    "computer_control": {
+      "_": "Screen control",
+      "enabled": "Let the agent drive the screen",
+      "settle": {
+        "_": "Settling",
+        "poll_seconds": "Re-check interval (seconds)",
+        "give_up_seconds": "Give up after (seconds)"
+      },
+      "retrieval": {
+        "_": "Ranking the screen",
+        "multilingual_rank_model": "Multilingual ranking model",
+        "english_rank_model": "English ranking model",
+        "lexical_gate_short_words": "Treated as a quoted label, up to (words)",
+        "lexical_gate_long_words": "Treated as a description, from (words)"
+      }
+    },
+    "dictation": {
+      "_": "Dictation",
+      "enabled": "Take dictation",
+      "model": "Speech model",
+      "timing": {
+        "_": "Timing",
+        "minimum_transcription_timeout_seconds": "Minimum transcription timeout (seconds)",
+        "transcription_timeout_realtime_multiplier": "Added per second of audio",
+        "maximum_attempts": "Attempts per recording",
+        "worker_shutdown_seconds": "Worker shutdown grace (seconds)"
+      }
+    },
+    "providers": {
+      "_": "Model providers"
+    },
+    "exa": {
+      "_": "Web search",
+      "api_key": "Exa API key"
+    },
+    "jina": {
+      "_": "Page fetching (Jina)",
+      "api_key": "Jina API key"
+    },
+    "firecrawl": {
+      "_": "Page fetching (Firecrawl)",
+      "api_key": "Firecrawl API key",
+      "api_url": "Firecrawl URL"
+    },
+    "web_fetch": {
+      "_": "Web fetch",
+      "proxy_url": "Proxy"
+    },
+    "composio": {
+      "_": "Composio",
+      "enabled": "Expose Composio",
+      "url": "Composio URL",
+      "api_key": "Composio API key",
+      "server_name": "Server name",
+      "timeout_seconds": "Call timeout (seconds)"
+    },
+    "mcp": {
+      "_": "MCP servers",
+      "servers": "Servers"
+    },
+    "remote_agents": {
+      "_": "Remote peers",
+      "agents": "Peers"
+    },
+    "telemetry": {
+      "_": "Telemetry",
+      "enabled": "Send telemetry",
+      "exporter": {
+        "_": "Exporter",
+        "endpoint": "OTLP endpoint",
+        "protocol": "OTLP protocol",
+        "headers": "OTLP headers"
+      },
+      "sample_ratio": "Share of traces exported"
+    },
+    "tuning": {
+      "_": "Tuning",
+      "context_share": {
+        "_": "Context share",
+        "text": "Text budgets (share of window)",
+        "results": "Result counts (share of window)"
+      },
+      "timeout_multiplier": "Timeout multiplier",
+      "defaults": {
+        "_": "Individual defaults",
+        "accessibility_messaging_seconds": "Accessibility message timeout (seconds)",
+        "accessibility_prewarm_interval_seconds": "Accessibility prewarm interval (seconds)",
+        "accessibility_ready_backoff_seconds": "Accessibility readiness backoff (seconds)",
+        "accessibility_ready_probe_seconds": "Accessibility readiness probe (seconds)",
+        "accessibility_walk_budget_seconds": "Accessibility tree read budget (seconds)",
+        "action_timeout_ms": "Action timeout (ms)",
+        "bash_sync_window_seconds": "Bash sync window (seconds)",
+        "browser_authorization_ms": "Browser authorization (ms)",
+        "card_resolve_seconds": "Agent card fetch (seconds)",
+        "click_interval_seconds": "Click interval (seconds)",
+        "connect_timeout_ms": "Connect timeout (ms)",
+        "control_plane_call_seconds": "Control plane call (seconds)",
+        "control_script_seconds": "Control script (seconds)",
+        "credential_refresh_leeway_seconds": "Credential refresh leeway (seconds)",
+        "daemon_probe_connect_seconds": "Daemon probe connect (seconds)",
+        "daemon_probe_interval_seconds": "Daemon probe interval (seconds)",
+        "daemon_startup_seconds": "Daemon startup (seconds)",
+        "drag_step_interval_seconds": "Drag step interval (seconds)",
+        "drag_steps": "Steps a drag is split into",
+        "drag_timeout_ms": "Drag timeout (ms)",
+        "fetch_tokens": "Fetched page kept (tokens)",
+        "file_url_ttl_seconds": "Signed file URL lifetime (seconds)",
+        "find_anchor_margin": "near= anchor margin",
+        "find_candidates": "Elements find_one weighs",
+        "find_many_ceiling": "Elements find_many returns at most",
+        "find_near_weight": "Weight of sitting near the anchor",
+        "find_one_margin": "find_one decisiveness margin",
+        "find_relevance_floor": "Relevance floor",
+        "find_rephrasing_similarity": "Rephrasing similarity",
+        "focus_settle_seconds": "Focus settle (seconds)",
+        "frame_resolve_timeout_ms": "Frame resolve timeout (ms)",
+        "glob_results": "Paths a glob returns",
+        "goal_blocked_turns": "Goal blocked turns",
+        "goal_continuation_turns": "Goal continuation turns",
+        "grep_per_file": "Search matches per file",
+        "grep_results": "Search matches in total",
+        "maximum_line_chars": "Longest line kept (characters)",
+        "mcp_connect_seconds": "MCP connect (seconds)",
+        "model_catalogue_ttl_seconds": "Model catalogue lifetime (seconds)",
+        "model_silence_give_up_seconds": "Model silence give up (seconds)",
+        "navigation_timeout_ms": "Navigation timeout (ms)",
+        "oauth_poll_ceiling_seconds": "OAuth poll ceiling (seconds)",
+        "oauth_poll_give_up_seconds": "OAuth poll give-up (seconds)",
+        "oauth_poll_interval_seconds": "OAuth poll interval (seconds)",
+        "open_url_seconds": "Open URL (seconds)",
+        "output_tokens": "Inline tool output (tokens)",
+        "permission_classifier_attempts": "Permission classifier attempts",
+        "prototype_restart_seconds": "Prototype restart (seconds)",
+        "prototype_start_seconds": "Prototype start (seconds)",
+        "read_lines": "Lines a read returns",
+        "read_text_timeout_ms": "Read text timeout (ms)",
+        "remote_command_seconds": "Remote command (seconds)",
+        "remote_connect_seconds": "Remote connect (seconds)",
+        "remote_control_persist_seconds": "Remote control persist (seconds)",
+        "remote_listing": "Paths listed on a remote machine",
+        "ripgrep_seconds": "Ripgrep (seconds)",
+        "screencapture_seconds": "Screen capture (seconds)",
+        "screenshot_timeout_ms": "Screenshot timeout (ms)",
+        "scroll_amount_pixels": "Pixels per scroll step",
+        "session_idle_sleep_seconds": "Session idle sleep (seconds)",
+        "session_start_seconds": "Session start (seconds)",
+        "session_title_attempts": "Session title attempts",
+        "settle_stable_reads": "Identical reads that count as settled",
+        "sigterm_grace_seconds": "SIGTERM grace (seconds)",
+        "slow_tool_sync_window_seconds": "Slow tool sync window (seconds)",
+        "snapshot_timeout_ms": "Snapshot timeout (ms)",
+        "stamped_image_side": "Annotated screenshot size (pixels)",
+        "subscription_resume_ttl_seconds": "Subscription resume lifetime (seconds)",
+        "surface_guard_margin_seconds": "Surface guard margin (seconds)",
+        "type_chunk_interval_seconds": "Type chunk interval (seconds)",
+        "type_chunk_size": "Characters per keystroke event",
+        "upstream_error_detail_tokens": "Upstream error detail (tokens)",
+        "warm_workers": "Workers kept warm",
+        "web_exchanges": "Request/response pairs kept",
+        "web_search_maximum": "Web search maximum",
+        "web_search_sync_window_seconds": "Web search sync window (seconds)",
+        "web_websocket_frames": "Frames kept per WebSocket",
+        "web_websockets": "Tracked WebSockets"
+      }
+    }
+  },
+  "SettingsAbout": {
+    "agent": {
+      "_": "What a session runs under when its creator does not say.",
+      "permission_mode": "How much a session may do without asking you, unless its agent profile caps it lower."
+    },
+    "workspace": {
+      "_": "Where a session's tools run.",
+      "strategy": "Where a session's work happens: the project directory itself, a branch of its own, or a git worktree of its own."
+    },
+    "sandbox": {
+      "_": "What a session's tool children may do, enforced by the operating system.",
+      "enforce": "What to do on a machine that cannot enforce confinement: refuse to start the session, run with resource limits only, or do not confine.",
+      "filesystem": {
+        "_": "Which paths a tool child may read and write.",
+        "readable": "Paths under your home a tool child may read. The system is readable and is not listed.",
+        "writable": "Paths a tool child may write. Deliberately narrower than readable, because a wrong write is the failure people actually meet.",
+        "grantable": "Paths an agent may be granted at runtime without asking. Empty means every request is put to you.",
+        "deny": "Paths refused outright. Wins over readable and writable, and no request opens them."
+      },
+      "network": "Whether a tool child may reach the network at all.",
+      "limits": "Per-child resource limits, by their setrlimit names.",
+      "umask": "The file-creation mask a tool child runs under. Empty leaves the machine's own.",
+      "nice": "How far to lower a tool child's scheduling priority, so a runaway command does not take the machine with it."
+    },
+    "toolbox": {
+      "_": "Whether a session may install the tools it needs into a profile of its own.",
+      "enabled": "Let each session install the tools it needs into a package profile of its own, deleted with the session."
+    },
+    "permission_classifier": {
+      "_": "The model call that decides a tool call nobody is there to be asked about.",
+      "reasoning_effort": "How hard the judge thinks about one tool call. It weighs a command against a page of rules, which is not what an agent's own effort is for."
+    },
+    "compaction": {
+      "_": "How conversation history is folded as it grows.",
+      "automatic": "Reclaim context on its own as it fills. Manual compaction works either way.",
+      "reclaim_at_fraction": "Fold once the conversation passes this share of the usable window. Late on purpose: a fold is the one thing that rewrites the prefix a provider had cached, so the fewer of them the better.",
+      "condense_log_at_fraction": "Condense the observation log once the log itself passes this share.",
+      "output_reserve_fraction": "Share of the window held back for the answer, so folding still has room to run. The rest is the usable window every other fraction here is measured against.",
+      "recent_working_set_fraction": "Share of the usable window kept verbatim rather than folded into the log. Sized in tokens rather than turns because an unattended run is one turn and hundreds of tool results.",
+      "verbatim_user_fraction": "Share of the usable window that carries the user's own messages through a fold, word for word. Their instructions are the specification, and a paraphrase of a specification is a different specification."
+    },
+    "user_context": {
+      "_": "Whether the system prompt describes how you work on this machine.",
+      "enabled": "Include a snapshot of how you work — your editor, your habits, your machine — in the system prompt."
+    },
+    "computer_control": {
+      "_": "Driving the screen.",
+      "enabled": "Let the agent drive native applications and your browser. It also needs Accessibility granted in System Settings.",
+      "settle": {
+        "_": "How long a screen surface is given to stop changing after an action.",
+        "poll_seconds": "How often to re-check whether the surface has settled.",
+        "give_up_seconds": "The longest to wait before reading it anyway."
+      },
+      "retrieval": {
+        "_": "Which models rank a screen, and when a query's spelling stops being evidence.",
+        "multilingual_rank_model": "The static embedding that ranks by meaning across languages. Also the model whose plain cosine backs the relevance floor, so clearing it disables that floor. Empty turns it off.",
+        "english_rank_model": "A second static embedding, ranked alongside the first rather than instead of it. Stronger on queries that describe what an element is for; weaker on exact labels. Empty turns it off.",
+        "lexical_gate_short_words": "Queries of this many words or fewer are treated as a label quoted off the screen, and the character similarity counts in full.",
+        "lexical_gate_long_words": "Queries of this many words or more are treated as a description of a purpose, and the character similarity is ignored — its spelling agrees with nothing, so it ranks by coincidence."
+      }
+    },
+    "dictation": {
+      "_": "Speaking to the composer instead of typing.",
+      "enabled": "Let the composer take speech. The model runs on this machine.",
+      "model": "The speech model dictation downloads and runs locally.",
+      "timing": {
+        "_": "How long dictation waits before it gives up.",
+        "minimum_transcription_timeout_seconds": "The floor on how long one transcription may take before it is treated as wedged.",
+        "transcription_timeout_realtime_multiplier": "Added to the floor, per second of audio. Transcription runs comfortably faster than real time on Apple Silicon, so reaching the limit means stuck, not busy.",
+        "maximum_attempts": "How many workers one recording may be given.",
+        "worker_shutdown_seconds": "How long a worker is given to exit on its own before it is killed."
+      }
+    },
+    "providers": "Credentials for each model provider. The provider's own environment variable wins over anything stored here.",
+    "exa": {
+      "_": "The web-search backend.",
+      "api_key": "Exa API key. The EXA_API_KEY environment variable wins over this."
+    },
+    "jina": {
+      "_": "The default page-fetching engine.",
+      "api_key": "Jina API key, which raises the rate limit. JINA_API_KEY wins over this."
+    },
+    "firecrawl": {
+      "_": "The fallback page-fetching engine.",
+      "api_key": "Firecrawl API key. FIRECRAWL_API_KEY wins over this.",
+      "api_url": "A self-hosted Firecrawl instance to use instead of the hosted API."
+    },
+    "web_fetch": {
+      "_": "Fetching a page directly.",
+      "proxy_url": "Route direct fetches and file downloads through an HTTP or SOCKS proxy, for sites that block by address. Empty fetches directly. Credentials may be embedded as http://user:pass@host:port."
+    },
+    "composio": {
+      "_": "Composio's hosted MCP gateway.",
+      "enabled": "Expose Composio's hosted gateway as one MCP server.",
+      "url": "The hosted MCP URL from the Composio dashboard's \"connect\" page.",
+      "api_key": "The API key shown beside that URL. COMPOSIO_API_KEY wins over this.",
+      "server_name": "The MCP server name its tools appear under.",
+      "timeout_seconds": "How long one call to that gateway waits."
+    },
+    "mcp": {
+      "_": "MCP servers, read from mcp.json.",
+      "servers": "MCP servers, by name. Edited on the MCP panel, which is where a server's command and credentials belong."
+    },
+    "remote_agents": {
+      "_": "Agents on other hosts, read from remote-agents.json.",
+      "agents": "Remote peers, by name. Edited on the peers panel."
+    },
+    "telemetry": {
+      "_": "OpenTelemetry export.",
+      "enabled": "Export traces at all.",
+      "exporter": {
+        "_": "Where traces are sent.",
+        "endpoint": "Where traces are sent. Empty sends none.",
+        "protocol": "The OTLP protocol that collector speaks.",
+        "headers": "Headers sent with every export, for a collector that authenticates."
+      },
+      "sample_ratio": "Share of traces exported. 1.0 exports every one."
+    },
+    "tuning": {
+      "_": "How large, how many, and how patient the tools are.",
+      "context_share": {
+        "_": "What proportion of the live context window one result may fill.",
+        "text": "Share one result's text may fill — output, fetched pages.",
+        "results": "Share a set of results may fill — matches, lines, records."
+      },
+      "timeout_multiplier": "Multiplier on every wait. 2.0 doubles them for a slow machine; 1.0 is neutral.",
+      "defaults": {
+        "_": "Override one tunable by its own name, in its own unit — see frank configure --all. An override replaces the shipped default, so context_share and timeout_multiplier still apply on top.",
+        "accessibility_messaging_seconds": "How long one accessibility message to an application waits, so a hung application costs a moment rather than the whole action.",
+        "accessibility_prewarm_interval_seconds": "Pause between pre-warming the frontmost application's accessibility tree.",
+        "accessibility_ready_backoff_seconds": "Ceiling on the widening pause between accessibility readiness probes.",
+        "accessibility_ready_probe_seconds": "How long the readiness poll may spend deciding whether an app's tree has built yet. Short on purpose: it runs repeatedly while an app is still starting, and it only has to see past the window chrome.",
+        "accessibility_walk_budget_seconds": "How long one read of an app's accessibility tree may take.",
+        "action_timeout_ms": "How long one browser action (click, type, hover) waits for its element.",
+        "bash_sync_window_seconds": "How long a shell command runs inline before it moves to the background. It is not killed at this point, only handed off, and the model can override it per call.",
+        "browser_authorization_ms": "How long attaching waits for the user to approve Chrome's prompt.",
+        "card_resolve_seconds": "How long fetching a remote agent's card waits.",
+        "click_interval_seconds": "Pause between successive synthesized clicks.",
+        "connect_timeout_ms": "How long attaching to a browser waits.",
+        "control_plane_call_seconds": "How long one call to the daemon waits.",
+        "control_script_seconds": "How long one screen-control script may run.",
+        "credential_refresh_leeway_seconds": "How far ahead of its expiry an access token is refreshed.",
+        "daemon_probe_connect_seconds": "How long one connect to a daemon socket waits before it counts as unanswered.",
+        "daemon_probe_interval_seconds": "Pause between asks of whether another process's daemon socket answers yet, or whether a daemon being replaced has finally exited.",
+        "daemon_startup_seconds": "How long a command waits for a daemon it just started to become reachable.",
+        "drag_step_interval_seconds": "Pause between the interpolated steps of a drag.",
+        "drag_steps": "Segments a drag is split into, so it looks like a hand moved it.",
+        "drag_timeout_ms": "How long a drag between two elements waits.",
+        "fetch_tokens": "Tokens of a fetched web page's text kept inline.",
+        "file_url_ttl_seconds": "How long a signed file URL stays valid.",
+        "find_anchor_margin": "How far ahead of its own runner-up a near= anchor must score before a find will join on it.",
+        "find_candidates": "Elements find_one weighs against its best match, and offers back when it cannot choose between them.",
+        "find_many_ceiling": "Elements find_many will return however many are asked for.",
+        "find_near_weight": "How much sitting beside the anchor is worth against matching the query, when a find names one with near=.",
+        "find_one_margin": "How far ahead of the runner-up find_one's best match must score, in units of the shortlist's own spread, before it answers with one element instead of asking which was meant.",
+        "find_relevance_floor": "How well an element must match, as a cosine against the query, before find_many will return it at all. It cuts the noise band and nothing more.",
+        "find_rephrasing_similarity": "How alike two screen queries must be, as a cosine in the retrieval model's own space, before a second one landing on the same element counts as the first asked again.",
+        "focus_settle_seconds": "Pause after focusing a field, before typing into it.",
+        "frame_resolve_timeout_ms": "How long resolving a frame reference waits. Deliberately well below the action timeout: a frame that has gone waits out its budget rather than erroring, and listing every frame would otherwise stall on the one that left.",
+        "glob_results": "Paths one glob returns.",
+        "goal_blocked_turns": "How many times the same condition must stop a goal before the agent may report it blocked. One failure is not an impasse, and a goal abandoned on the first refusal is one nobody asked to abandon.",
+        "goal_continuation_turns": "How many turns in a row a session may open for its own goal before it stops and waits for the person.",
+        "grep_per_file": "Matches one search returns from any single file.",
+        "grep_results": "Total matches one search returns.",
+        "maximum_line_chars": "Characters of a single over-long line kept before it is clipped, so one minified blob cannot fill a result on its own.",
+        "mcp_connect_seconds": "How long connecting to one MCP server waits.",
+        "model_catalogue_ttl_seconds": "How long the list of available models is cached.",
+        "model_silence_give_up_seconds": "How long a model may hold a stream open saying nothing at all before the turn is ended. Long, because a model weighing a hard problem is silent and still working.",
+        "navigation_timeout_ms": "How long a page load or navigation waits.",
+        "oauth_poll_ceiling_seconds": "Ceiling on the widening pause between sign-in polls, so a slow sign-in is not asked about every second for minutes.",
+        "oauth_poll_give_up_seconds": "How long a browser sign-in is waited for before it is abandoned — a person's whole trip through a consent screen, not a network round trip.",
+        "oauth_poll_interval_seconds": "First pause between asks of whether a browser sign-in has completed; it widens from here.",
+        "open_url_seconds": "How long handing a URL to the system browser waits.",
+        "output_tokens": "Tokens of inline output one tool may return before the rest overflows to a file.",
+        "permission_classifier_attempts": "How many times the permission classifier is asked before its silence counts as a refusal.",
+        "prototype_restart_seconds": "How long the daemon waits before trying again after the prototype failed to restart.",
+        "prototype_start_seconds": "How long the daemon waits for the prototype to start and accept a connection. The prototype itself imports nothing heavy; it starts the workers that do, and keeps a couple of them started ahead of demand.",
+        "read_lines": "Lines a file read returns when no explicit limit is given.",
+        "read_text_timeout_ms": "How long reading a page's text waits.",
+        "remote_command_seconds": "How long a command on another machine may run.",
+        "remote_connect_seconds": "How long opening an SSH connection waits.",
+        "remote_control_persist_seconds": "How long a shared SSH connection lingers after its last use, so the next command reuses it.",
+        "remote_listing": "Paths listed on a remote machine before glob matching is applied locally.",
+        "ripgrep_seconds": "How long one content search may run.",
+        "screencapture_seconds": "How long capturing the screen waits.",
+        "screenshot_timeout_ms": "How long capturing a page screenshot waits.",
+        "scroll_amount_pixels": "Pixels one scroll step moves a native window.",
+        "session_idle_sleep_seconds": "How long a session keeps its process after its last turn before it sleeps.",
+        "session_start_seconds": "How long the daemon waits for a forked session to bind its socket and report ready.",
+        "session_title_attempts": "How many times a session asks the model to name itself before giving up.",
+        "settle_stable_reads": "Identical consecutive reads that count a surface as having stopped changing.",
+        "sigterm_grace_seconds": "How long a cancelled command or a reaped session has after SIGTERM before SIGKILL.",
+        "slow_tool_sync_window_seconds": "The same inline window for fetching a URL or downloading a file.",
+        "snapshot_timeout_ms": "How long an accessibility snapshot of a page waits.",
+        "stamped_image_side": "Longest side, in pixels, of a screenshot annotated with element labels.",
+        "subscription_resume_ttl_seconds": "How long a subscription provider's server-side conversation state stays worth resuming from before the whole conversation is resent instead.",
+        "surface_guard_margin_seconds": "How far above the script's own limit the machinery waiting on it sits, so raising that limit can never make the guard fire first and leave the surface half-dead.",
+        "type_chunk_interval_seconds": "Pause between typed chunks.",
+        "type_chunk_size": "Characters sent per synthesized keyboard event.",
+        "upstream_error_detail_tokens": "Tokens of an upstream service's error body kept in the failure this harness raises — enough to carry the provider's own explanation, short of pasting a whole page into a message someone has to read.",
+        "warm_workers": "How many session workers to keep started and waiting.",
+        "web_exchanges": "Recent request/response pairs a browser session keeps, so a search can surface the API behind a rendered view.",
+        "web_search_maximum": "Ceiling on the result count a web search may ask for, however many it requests.",
+        "web_search_sync_window_seconds": "The same inline window for a web search.",
+        "web_websocket_frames": "Frames retained per tracked websocket.",
+        "web_websockets": "Live websockets a browser session tracks at once."
+      }
+    }
+  },
+  "SettingsChoices": {
+    "agent": {
+      "permission_mode": {
+        "default": "Ask about anything unusual",
+        "permissive": "Ask only about risky work",
+        "classify": "Allow or deny on its own",
+        "read_only": "Read only"
+      }
+    },
+    "workspace": {
+      "strategy": {
+        "none": "The project directory",
+        "branch": "A branch per session",
+        "worktree": "A worktree per session"
+      }
+    },
+    "sandbox": {
+      "enforce": {
+        "required": "Refuse to start",
+        "preferred": "Limits only",
+        "off": "Do not confine"
+      }
+    },
+    "permission_classifier": {
+      "reasoning_effort": {
+        "minimal": "Minimal",
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High"
+      }
+    },
+    "telemetry": {
+      "exporter": {
+        "protocol": {
+          "http/protobuf": "HTTP (protobuf)",
+          "grpc": "gRPC"
+        }
+      }
+    }
+  },
   "SettingsDialog": {
+    "addEntry": "Add",
     "addRule": "Add rule",
     "agent": "Agent",
     "apiKeys": "API keys",
@@ -586,6 +1055,8 @@
     "profile": "Profile",
     "proxyServer": "Proxy server",
     "proxyServerHint": "Routes web fetches and downloads through a proxy for IP-blocked sites.",
+    "removeEntry": "Remove",
+    "resetSetting": "Put back to the default",
     "restartBody": "Frank needs to restart for the Accessibility permission to take effect — the daemon re-reads it only on a fresh start. Your sessions are kept: each one loses its process and picks back up where it left off on the next message. Computer control turns on automatically once it does.",
     "restartConfirm": "Restart now",
     "restartLater": "Later",
@@ -598,8 +1069,12 @@
     "searchNoResults": "Nothing matches “{query}”",
     "searchNoResultsTitle": "No matching settings",
     "searchPlaceholder": "Search settings",
+    "settingMapEmpty": "Nothing configured",
+    "settingMapEntries": "{count, plural, one {# configured: {names}} other {# configured: {names}}}",
+    "settingsSchemaError": "Could not save: {reason}",
     "show": "Show",
     "tabAgents": "Agents",
+    "tabConfiguration": "Configuration",
     "tabConnection": "Connection",
     "tabGeneral": "General",
     "tabLocations": "Environments",
@@ -850,11 +1325,5 @@
     "loadError": "Could not load workspace environments",
     "saveError": "Could not save workspace environments",
     "saveChanges": "Save changes"
-  },
-  "DelegatedWorkPanel": {
-    "title": "Delegated work",
-    "collapsePanel": "Collapse panel",
-    "emptyTitle": "Nothing delegated yet",
-    "emptyDescription": "When this conversation hands work to another session, it appears here."
   }
 }

@@ -282,7 +282,7 @@ tuning:
     bash_sync_window_seconds: 60.0
     slow_tool_sync_window_seconds: 10.0
     web_search_sync_window_seconds: 10.0
-    ax_messaging_seconds: 2.0
+    accessibility_messaging_seconds: 2.0
     control_script_seconds: 120.0
     surface_guard_margin_seconds: 30.0
     screencapture_seconds: 15.0
@@ -328,10 +328,10 @@ tuning:
     stamped_image_side: 2048
 
     # Reading an accessibility tree, in seconds.
-    ax_walk_budget_seconds: 3.0
-    ax_ready_probe_seconds: 0.4
-    ax_prewarm_interval_seconds: 0.4
-    ax_ready_backoff_seconds: 0.2
+    accessibility_walk_budget_seconds: 3.0
+    accessibility_ready_probe_seconds: 0.4
+    accessibility_prewarm_interval_seconds: 0.4
+    accessibility_ready_backoff_seconds: 0.2
 
     # Finding an element on a screen. `find_one_margin` is how far ahead of the runner-up the
     # best match must score, in units of the shortlist's own spread, before it answers instead of

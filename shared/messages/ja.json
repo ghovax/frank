@@ -282,6 +282,12 @@
     "signedInAs": "{account} としてサインイン済み",
     "planNotice": "Cursor CLI のサインインを通じて Cursor プランを利用します。非公式であり、変更される可能性があります。"
   },
+  "DelegatedWorkPanel": {
+    "title": "任せた作業",
+    "collapsePanel": "パネルを閉じる",
+    "emptyTitle": "まだ何も任せていません",
+    "emptyDescription": "この会話が別のセッションに作業を任せると、ここに表示されます。"
+  },
   "GitStatusBar": {
     "detached": "切り離し @ {ref}",
     "commit": "コミット",
@@ -473,6 +479,8 @@
     "sandboxGlobal": "全体アクセス",
     "sandboxRestricted": "制限付きアクセス",
     "sandboxUnavailable": "この環境では強制できません",
+    "settingOff": "オフ",
+    "settingOn": "オン",
     "toolboxOff": "専用ツールなし",
     "toolboxOn": "専用ツールあり",
     "userContextOff": "行動は非公開",
@@ -533,7 +541,468 @@
     "hideWorkspace": "このワークスペースの会話を非表示",
     "showWorkspace": "このワークスペースの会話を表示"
   },
+  "Settings": {
+    "agent": {
+      "_": "エージェントの既定",
+      "permission_mode": "権限モード"
+    },
+    "workspace": {
+      "_": "ワークスペース",
+      "strategy": "方式"
+    },
+    "sandbox": {
+      "_": "サンドボックス",
+      "enforce": "強制できない場合",
+      "filesystem": {
+        "_": "パス",
+        "readable": "読み取り可能なパス",
+        "writable": "書き込み可能なパス",
+        "grantable": "確認なしで許可できるパス",
+        "deny": "拒否するパス"
+      },
+      "network": "ネットワーク接続",
+      "limits": "リソース上限",
+      "umask": "ファイル作成マスク",
+      "nice": "プロセス優先度"
+    },
+    "toolbox": {
+      "_": "セッションのツール",
+      "enabled": "セッション専用ツールを許可"
+    },
+    "permission_classifier": {
+      "_": "権限の判定",
+      "reasoning_effort": "推論の深さ"
+    },
+    "compaction": {
+      "_": "会話の圧縮",
+      "automatic": "自動で圧縮",
+      "reclaim_at_fraction": "圧縮を始める割合",
+      "condense_log_at_fraction": "ログを要約する割合",
+      "output_reserve_fraction": "回答用に確保する割合",
+      "recent_working_set_fraction": "そのまま残す割合",
+      "verbatim_user_fraction": "ユーザー発言を残す割合"
+    },
+    "user_context": {
+      "_": "ユーザー情報",
+      "enabled": "ユーザー情報を含める"
+    },
+    "computer_control": {
+      "_": "画面操作",
+      "enabled": "画面操作を許可",
+      "settle": {
+        "_": "安定待ち",
+        "poll_seconds": "再確認の間隔（秒）",
+        "give_up_seconds": "諦めるまで（秒）"
+      },
+      "retrieval": {
+        "_": "画面の順位付け",
+        "multilingual_rank_model": "多言語の順位付けモデル",
+        "english_rank_model": "英語の順位付けモデル",
+        "lexical_gate_short_words": "引用ラベルと見なす語数の上限",
+        "lexical_gate_long_words": "説明と見なす語数の下限"
+      }
+    },
+    "dictation": {
+      "_": "音声入力",
+      "enabled": "音声入力を使う",
+      "model": "音声モデル",
+      "timing": {
+        "_": "タイミング",
+        "minimum_transcription_timeout_seconds": "書き起こしの最短タイムアウト（秒）",
+        "transcription_timeout_realtime_multiplier": "音声 1 秒あたりの加算",
+        "maximum_attempts": "1 録音あたりの試行回数",
+        "worker_shutdown_seconds": "ワーカー終了の猶予（秒）"
+      }
+    },
+    "providers": {
+      "_": "モデルプロバイダー"
+    },
+    "exa": {
+      "_": "ウェブ検索",
+      "api_key": "Exa API キー"
+    },
+    "jina": {
+      "_": "ページ取得 (Jina)",
+      "api_key": "Jina API キー"
+    },
+    "firecrawl": {
+      "_": "ページ取得 (Firecrawl)",
+      "api_key": "Firecrawl API キー",
+      "api_url": "Firecrawl の URL"
+    },
+    "web_fetch": {
+      "_": "ウェブ取得",
+      "proxy_url": "プロキシ"
+    },
+    "composio": {
+      "_": "Composio",
+      "enabled": "Composio を公開",
+      "url": "Composio の URL",
+      "api_key": "Composio API キー",
+      "server_name": "サーバー名",
+      "timeout_seconds": "呼び出しのタイムアウト（秒）"
+    },
+    "mcp": {
+      "_": "MCP サーバー",
+      "servers": "サーバー"
+    },
+    "remote_agents": {
+      "_": "リモートのピア",
+      "agents": "ピア"
+    },
+    "telemetry": {
+      "_": "テレメトリ",
+      "enabled": "テレメトリを送信",
+      "exporter": {
+        "_": "エクスポーター",
+        "endpoint": "OTLP エンドポイント",
+        "protocol": "OTLP プロトコル",
+        "headers": "OTLP ヘッダー"
+      },
+      "sample_ratio": "送信するトレースの割合"
+    },
+    "tuning": {
+      "_": "チューニング",
+      "context_share": {
+        "_": "コンテキスト配分",
+        "text": "テキスト予算（ウィンドウ比）",
+        "results": "結果件数（ウィンドウ比）"
+      },
+      "timeout_multiplier": "タイムアウト倍率",
+      "defaults": {
+        "_": "個々の既定値",
+        "accessibility_messaging_seconds": "アクセシビリティ通信のタイムアウト（秒）",
+        "accessibility_prewarm_interval_seconds": "アクセシビリティ事前読み込みの間隔（秒）",
+        "accessibility_ready_backoff_seconds": "アクセシビリティ準備確認の待機上限（秒）",
+        "accessibility_ready_probe_seconds": "アクセシビリティ準備確認（秒）",
+        "accessibility_walk_budget_seconds": "アクセシビリティツリー読み取りの上限（秒）",
+        "action_timeout_ms": "ブラウザ操作のタイムアウト（ミリ秒）",
+        "bash_sync_window_seconds": "コマンドを同期実行する時間（秒）",
+        "browser_authorization_ms": "ブラウザ承認の待ち時間（ミリ秒）",
+        "card_resolve_seconds": "エージェントカードの取得（秒）",
+        "click_interval_seconds": "クリックの間隔（秒）",
+        "connect_timeout_ms": "ブラウザ接続のタイムアウト（ミリ秒）",
+        "control_plane_call_seconds": "デーモン呼び出しの待ち時間（秒）",
+        "control_script_seconds": "画面操作スクリプトの実行上限（秒）",
+        "credential_refresh_leeway_seconds": "トークン更新の前倒し時間（秒）",
+        "daemon_probe_connect_seconds": "デーモンへの接続確認（秒）",
+        "daemon_probe_interval_seconds": "デーモン確認の間隔（秒）",
+        "daemon_startup_seconds": "デーモン起動の待ち時間（秒）",
+        "drag_step_interval_seconds": "ドラッグ各段の間隔（秒）",
+        "drag_steps": "ドラッグの分割数",
+        "drag_timeout_ms": "ドラッグのタイムアウト（ミリ秒）",
+        "fetch_tokens": "取得したページの保持量（トークン）",
+        "file_url_ttl_seconds": "署名付き URL の有効期間（秒）",
+        "find_anchor_margin": "near= アンカーの必要差",
+        "find_candidates": "find_one が比較する要素数",
+        "find_many_ceiling": "find_many が返す最大要素数",
+        "find_near_weight": "アンカー近接の重み",
+        "find_one_margin": "find_one が確定と見なす差",
+        "find_relevance_floor": "関連度の下限",
+        "find_rephrasing_similarity": "言い換えと見なす類似度",
+        "focus_settle_seconds": "フォーカス後の待ち時間（秒）",
+        "frame_resolve_timeout_ms": "フレーム解決のタイムアウト（ミリ秒）",
+        "glob_results": "glob が返すパス数",
+        "goal_blocked_turns": "ゴールを行き詰まりと報告できるまでの回数",
+        "goal_continuation_turns": "無人で続けられるターン数",
+        "grep_per_file": "1 ファイルあたりの検索一致数",
+        "grep_results": "検索一致数の合計",
+        "maximum_line_chars": "1 行あたりの保持文字数",
+        "mcp_connect_seconds": "MCP サーバー接続の待ち時間（秒）",
+        "model_catalogue_ttl_seconds": "モデル一覧の保持時間（秒）",
+        "model_silence_give_up_seconds": "モデルの無応答を打ち切るまで（秒）",
+        "navigation_timeout_ms": "ページ遷移のタイムアウト（ミリ秒）",
+        "oauth_poll_ceiling_seconds": "サインイン確認の待機上限（秒）",
+        "oauth_poll_give_up_seconds": "サインインを諦めるまで（秒）",
+        "oauth_poll_interval_seconds": "サインイン確認の初回間隔（秒）",
+        "open_url_seconds": "URL をブラウザに渡す待ち時間（秒）",
+        "output_tokens": "ツール出力の埋め込み量（トークン）",
+        "permission_classifier_attempts": "権限判定の試行回数",
+        "prototype_restart_seconds": "プロトタイプ再起動の待ち時間（秒）",
+        "prototype_start_seconds": "プロトタイプ起動の待ち時間（秒）",
+        "read_lines": "読み取りが返す行数",
+        "read_text_timeout_ms": "ページ本文取得のタイムアウト（ミリ秒）",
+        "remote_command_seconds": "リモートコマンドの実行上限（秒）",
+        "remote_connect_seconds": "SSH 接続の待ち時間（秒）",
+        "remote_control_persist_seconds": "SSH 接続の再利用時間（秒）",
+        "remote_listing": "リモートで列挙するパス数",
+        "ripgrep_seconds": "内容検索の実行上限（秒）",
+        "screencapture_seconds": "画面キャプチャの待ち時間（秒）",
+        "screenshot_timeout_ms": "スクリーンショットのタイムアウト（ミリ秒）",
+        "scroll_amount_pixels": "1 スクロールの移動量（ピクセル）",
+        "session_idle_sleep_seconds": "セッションが休止するまでの時間（秒）",
+        "session_start_seconds": "セッション起動の待ち時間（秒）",
+        "session_title_attempts": "セッション名生成の試行回数",
+        "settle_stable_reads": "安定と見なす連続一致回数",
+        "sigterm_grace_seconds": "SIGTERM から SIGKILL までの猶予（秒）",
+        "slow_tool_sync_window_seconds": "取得・ダウンロードを同期実行する時間（秒）",
+        "snapshot_timeout_ms": "ページのアクセシビリティ取得のタイムアウト（ミリ秒）",
+        "stamped_image_side": "注釈付きスクリーンショットの長辺（ピクセル）",
+        "subscription_resume_ttl_seconds": "会話状態を再利用できる期間（秒）",
+        "surface_guard_margin_seconds": "スクリプト上限に対する余裕（秒）",
+        "type_chunk_interval_seconds": "入力チャンクの間隔（秒）",
+        "type_chunk_size": "1 キーイベントあたりの文字数",
+        "upstream_error_detail_tokens": "上流エラー本文の保持量（トークン）",
+        "warm_workers": "待機させるワーカー数",
+        "web_exchanges": "保持する通信の組数",
+        "web_search_maximum": "ウェブ検索の最大件数",
+        "web_search_sync_window_seconds": "ウェブ検索を同期実行する時間（秒）",
+        "web_websocket_frames": "WebSocket ごとに保持するフレーム数",
+        "web_websockets": "同時に追跡する WebSocket 数"
+      }
+    }
+  },
+  "SettingsAbout": {
+    "agent": {
+      "_": "エージェントの既定値。",
+      "permission_mode": "あなたに確認せずセッションができることの範囲。エージェントのプロファイルがより厳しければそちらが優先されます。"
+    },
+    "workspace": {
+      "_": "セッションが作業する場所。",
+      "strategy": "セッションの作業場所。プロジェクトのディレクトリそのもの、専用のブランチ、専用の git worktree のいずれか。"
+    },
+    "sandbox": {
+      "_": "ツールの子プロセスに対する、OS が強制する制限。",
+      "enforce": "サンドボックスを強制できないマシンでの動作。セッションを作らない、リソース制限のみで実行する、まったく制限しない、のいずれか。",
+      "filesystem": {
+        "_": "読み書きできる場所。",
+        "readable": "ツールの子プロセスがホーム以下で読めるパス。システム領域は既定で読めるため列挙しません。",
+        "writable": "ツールの子プロセスが書き込めるパス。読み取りより意図的に狭くしています。実害が出るのは書き込みだからです。",
+        "grantable": "確認なしで実行時に許可してよいパス。空ならすべての要求をあなたに確認します。",
+        "deny": "常に拒否するパス。読み取り・書き込みの指定より優先され、どんな要求でも開きません。"
+      },
+      "network": "ツールの子プロセスがネットワークに出られるかどうか。",
+      "limits": "子プロセスごとのリソース上限。setrlimit の名前で指定します。",
+      "umask": "ツールの子プロセスの umask。空ならマシンの設定のままです。",
+      "nice": "ツールの子プロセスの優先度をどれだけ下げるか。暴走したコマンドがマシン全体を巻き込まないようにします。"
+    },
+    "toolbox": {
+      "_": "セッションが自分で導入するツール。",
+      "enabled": "各セッションが必要なツールを自分専用のプロファイルに導入できるようにします。セッションと共に削除されます。"
+    },
+    "permission_classifier": {
+      "_": "あなたに確認できないときにツール呼び出しを判定するモデル。",
+      "reasoning_effort": "1 回のツール呼び出しを判定するときの推論の深さ。ルールと突き合わせるだけなので、エージェント本体ほどの深さは要りません。"
+    },
+    "compaction": {
+      "_": "会話が長くなったときの畳み方。",
+      "automatic": "コンテキストが埋まってきたら自動で圧縮します。手動の圧縮はどちらの設定でも使えます。",
+      "reclaim_at_fraction": "使用可能なウィンドウのこの割合を超えたら圧縮します。あえて遅めです。圧縮は情報を捨てる唯一の操作だからです。",
+      "condense_log_at_fraction": "観測ログ自体がこの割合を超えたら、ログを要約します。",
+      "output_reserve_fraction": "回答のために残しておくウィンドウの割合。残りが使用可能なウィンドウです。",
+      "recent_working_set_fraction": "圧縮せずそのまま残す割合。ターン数ではなくトークン量で決めます。",
+      "verbatim_user_fraction": "圧縮後もユーザーの発言をそのまま残す割合。指示は要約すべきものではありません。"
+    },
+    "user_context": {
+      "_": "あなた自身についてのスナップショット。",
+      "enabled": "あなたの使い方 — エディタ、習慣、マシン — のスナップショットをシステムプロンプトに含めます。"
+    },
+    "computer_control": {
+      "_": "画面の操作。",
+      "enabled": "エージェントがネイティブアプリとブラウザを操作できるようにします。システム設定でアクセシビリティの許可も必要です。",
+      "settle": {
+        "_": "操作後に画面が落ち着くのを待つ時間。",
+        "poll_seconds": "画面が落ち着いたかを確認する間隔。",
+        "give_up_seconds": "落ち着かなくても読み取るまでの最長待ち時間。"
+      },
+      "retrieval": {
+        "_": "画面上の要素の順位付け。",
+        "multilingual_rank_model": "言語をまたいで意味で順位付けする埋め込みモデル。関連度の基準にも使われます。",
+        "english_rank_model": "併用するもう一つの埋め込みモデル。目的を説明する英語のクエリに強いモデルです。",
+        "lexical_gate_short_words": "これ以下の語数のクエリは画面から引用したラベルとみなし、文字の一致を重視します。",
+        "lexical_gate_long_words": "これ以上の語数のクエリは目的の説明とみなし、文字の一致を重視しません。"
+      }
+    },
+    "dictation": {
+      "_": "入力欄での音声入力。",
+      "enabled": "入力欄で音声入力を使えるようにします。モデルはこのマシン上で動きます。",
+      "model": "音声入力がダウンロードしてローカルで実行するモデル。",
+      "timing": {
+        "_": "待ち時間と再試行。",
+        "minimum_transcription_timeout_seconds": "1 回の書き起こしが停止扱いになるまでの最短時間。",
+        "transcription_timeout_realtime_multiplier": "音声 1 秒あたりに上記へ加算する時間。Apple Silicon では実時間より十分速く処理されます。",
+        "maximum_attempts": "1 回の録音に割り当てるワーカーの数。",
+        "worker_shutdown_seconds": "ワーカーを強制終了するまでに自発的な終了を待つ時間。"
+      }
+    },
+    "providers": "モデルプロバイダーの認証情報。",
+    "exa": {
+      "_": "ウェブ検索のバックエンド。",
+      "api_key": "Exa の API キー。環境変数 EXA_API_KEY が優先されます。"
+    },
+    "jina": {
+      "_": "既定のページ取得エンジン。",
+      "api_key": "Jina の API キー。レート制限が緩和されます。環境変数 JINA_API_KEY が優先されます。"
+    },
+    "firecrawl": {
+      "_": "代替のページ取得エンジン。",
+      "api_key": "Firecrawl の API キー。環境変数 FIRECRAWL_API_KEY が優先されます。",
+      "api_url": "ホスト版の代わりに使う自前の Firecrawl のアドレス。"
+    },
+    "web_fetch": {
+      "_": "ページ取得とダウンロードの経路。",
+      "proxy_url": "取得とダウンロードを HTTP または SOCKS プロキシ経由にします。空なら直接接続します。"
+    },
+    "composio": {
+      "_": "Composio のホスト型 MCP ゲートウェイ。",
+      "enabled": "Composio のホスト型ゲートウェイを 1 つの MCP サーバーとして公開します。",
+      "url": "Composio のダッシュボードの connect ページに表示される MCP の URL。",
+      "api_key": "その URL の横に表示される API キー。環境変数 COMPOSIO_API_KEY が優先されます。",
+      "server_name": "そのツール群が表示される MCP サーバー名。",
+      "timeout_seconds": "そのゲートウェイへの 1 回の呼び出しの待ち時間。"
+    },
+    "mcp": {
+      "_": "MCP サーバー。",
+      "servers": "MCP サーバー（名前ごと）。コマンドや認証情報は MCP のパネルで編集します。"
+    },
+    "remote_agents": {
+      "_": "リモートのピア。",
+      "agents": "リモートのピア（名前ごと）。ピアのパネルで編集します。"
+    },
+    "telemetry": {
+      "_": "トレースの送信先。",
+      "enabled": "トレースを送信するかどうか。",
+      "exporter": {
+        "_": "OTLP エクスポーター。",
+        "endpoint": "トレースの送信先。空なら送信しません。",
+        "protocol": "コレクターが話す OTLP のプロトコル。",
+        "headers": "毎回の送信に付けるヘッダー。認証が要るコレクター向けです。"
+      },
+      "sample_ratio": "送信するトレースの割合。1.0 ですべて送ります。"
+    },
+    "tuning": {
+      "_": "大きさ・回数・待ち時間。",
+      "context_share": {
+        "_": "コンテキストの配分。",
+        "text": "モデルのウィンドウのうち、テキスト予算に充てる割合。上げるとすべてのテキスト上限が比例して広がります。",
+        "results": "モデルのウィンドウのうち、件数の上限に充てる割合。"
+      },
+      "timeout_multiplier": "すべての待ち時間にかかる倍率。遅いマシンや遠いホストで一律に延ばせます。",
+      "defaults": {
+        "_": "個々の既定値を、その名前と単位で上書きします（frank configure --all を参照）。上書きは出荷時の値を置き換え、context_share と timeout_multiplier はその上に適用されます。",
+        "accessibility_messaging_seconds": "アプリへのアクセシビリティ通信 1 回の待ち時間。応答しないアプリで操作全体が止まらないようにします。",
+        "accessibility_prewarm_interval_seconds": "最前面アプリのアクセシビリティツリーを事前に読み込む間隔。",
+        "accessibility_ready_backoff_seconds": "準備確認の待ち時間を延ばしていくときの上限。",
+        "accessibility_ready_probe_seconds": "アプリのツリーが構築されたかを確認する 1 回の時間。起動中に繰り返し実行され、ウィンドウの枠組みが見えれば十分なので短くしています。",
+        "accessibility_walk_budget_seconds": "アプリのアクセシビリティツリーを 1 回読むのにかけられる時間。",
+        "action_timeout_ms": "ブラウザ操作（クリック・入力・ホバー）が対象要素を待つ時間。",
+        "bash_sync_window_seconds": "シェルコマンドがバックグラウンドに移るまで同期実行される時間。ここで強制終了はされず、モデルは呼び出しごとに上書きできます。",
+        "browser_authorization_ms": "Chrome の承認ダイアログにユーザーが応じるのを待つ時間。",
+        "card_resolve_seconds": "リモートエージェントのカード取得の待ち時間。",
+        "click_interval_seconds": "連続したクリックの間隔。",
+        "connect_timeout_ms": "ブラウザへの接続を待つ時間。",
+        "control_plane_call_seconds": "デーモンへの 1 回の呼び出しの待ち時間。",
+        "control_script_seconds": "画面操作スクリプト 1 本の実行時間の上限。",
+        "credential_refresh_leeway_seconds": "アクセストークンを失効の何秒前に更新するか。",
+        "daemon_probe_connect_seconds": "デーモンのソケットへの接続を、応答なしと見なすまで待つ時間。",
+        "daemon_probe_interval_seconds": "他プロセスのデーモンが応答するか、置き換え対象が終了したかを確認する間隔。",
+        "daemon_startup_seconds": "起動したばかりのデーモンに接続できるようになるまで待つ時間。",
+        "drag_step_interval_seconds": "ドラッグを分割した各段の間隔。",
+        "drag_steps": "ドラッグを分割する段数。人の手の動きに見えるようにします。",
+        "drag_timeout_ms": "2 つの要素間のドラッグを待つ時間。",
+        "fetch_tokens": "取得したウェブページの本文をそのまま渡す量。",
+        "file_url_ttl_seconds": "署名付きファイル URL が有効な時間。",
+        "find_anchor_margin": "near= のアンカーが採用されるために、次点をどれだけ上回る必要があるか。",
+        "find_candidates": "find_one が最有力候補と比較する要素数。判断できないときに提示する候補数でもあります。",
+        "find_many_ceiling": "要求された数によらず find_many が返す上限。",
+        "find_near_weight": "near= を指定したとき、アンカーの近さをクエリ一致に対してどれだけ重視するか。",
+        "find_one_margin": "find_one が 1 要素を返すために、次点を候補群のばらつき何個分だけ上回る必要があるか。",
+        "find_relevance_floor": "find_many が返す最低限の一致度（クエリとのコサイン類似度）。ノイズを切るためだけの値です。",
+        "find_rephrasing_similarity": "2 つの画面クエリが同じ問い直しと見なされる類似度（検索モデル上のコサイン）。",
+        "focus_settle_seconds": "入力欄にフォーカスしてから入力を始めるまでの待ち。",
+        "frame_resolve_timeout_ms": "フレーム参照の解決を待つ時間。操作のタイムアウトより意図的に短くしています。消えたフレームがあっても列挙が止まらないようにするためです。",
+        "glob_results": "1 回の glob が返すパス数。",
+        "goal_blocked_turns": "同じ原因が何回ゴールを止めたら行き詰まりと報告してよいか。1 回の失敗は行き詰まりではありません。",
+        "goal_continuation_turns": "セッションが自分のゴールのために連続して開けるターン数。これを超えると人を待ちます。",
+        "grep_per_file": "1 つのファイルから返す一致数。",
+        "grep_results": "1 回の検索が返す一致数の合計。",
+        "maximum_line_chars": "長すぎる 1 行から残す文字数。圧縮された 1 行が結果全体を埋めないようにします。",
+        "mcp_connect_seconds": "MCP サーバー 1 台への接続を待つ時間。",
+        "model_catalogue_ttl_seconds": "利用可能なモデル一覧をキャッシュする時間。",
+        "model_silence_give_up_seconds": "モデルが何も返さないままストリームを保持できる時間。難問を考えている間は無言なので長めです。",
+        "navigation_timeout_ms": "ページの読み込みや遷移を待つ時間。",
+        "oauth_poll_ceiling_seconds": "サインイン確認の間隔を広げていくときの上限。時間のかかるサインインを何分も毎秒確認しないようにします。",
+        "oauth_poll_give_up_seconds": "ブラウザでのサインインを諦めるまでの時間。同意画面を通り抜ける人の所要時間であって、通信の往復時間ではありません。",
+        "oauth_poll_interval_seconds": "サインインが完了したかを確認する最初の間隔。ここから広がっていきます。",
+        "open_url_seconds": "URL をシステムのブラウザに渡す処理の待ち時間。",
+        "output_tokens": "1 つのツールがそのまま返せる出力量。超えた分はファイルに退避されます。",
+        "permission_classifier_attempts": "権限の判定を何回まで求めるか。これを超えた無応答は拒否として扱われます。",
+        "prototype_restart_seconds": "プロトタイプの再起動に失敗したあと、次に試すまでの待ち時間。",
+        "prototype_start_seconds": "プロトタイプが起動して接続を受け付けるまで待つ時間。プロトタイプ自体は重い読み込みをせず、実際に読み込むワーカーを事前に用意します。",
+        "read_lines": "行数の指定がないときにファイル読み取りが返す行数。",
+        "read_text_timeout_ms": "ページ本文の取得を待つ時間。",
+        "remote_command_seconds": "他マシン上のコマンドの実行時間の上限。",
+        "remote_connect_seconds": "SSH 接続の確立を待つ時間。",
+        "remote_control_persist_seconds": "共有した SSH 接続を最後の利用後どれだけ保つか。次のコマンドで再利用されます。",
+        "remote_listing": "リモートで列挙してからローカルで glob を適用する、そのパス数。",
+        "ripgrep_seconds": "内容検索 1 回の実行時間の上限。",
+        "screencapture_seconds": "画面のキャプチャを待つ時間。",
+        "screenshot_timeout_ms": "ページのスクリーンショット取得を待つ時間。",
+        "scroll_amount_pixels": "ネイティブウィンドウを 1 段スクロールする量。",
+        "session_idle_sleep_seconds": "最後のターンのあと、セッションがプロセスを保つ時間。",
+        "session_start_seconds": "fork したセッションがソケットを開いて準備完了を報告するまで待つ時間。",
+        "session_title_attempts": "セッション名の生成をモデルに何回求めるか。",
+        "settle_stable_reads": "画面が変化しなくなったと見なすための、同じ内容が連続する回数。",
+        "sigterm_grace_seconds": "SIGTERM のあと SIGKILL までに与える猶予。",
+        "slow_tool_sync_window_seconds": "URL の取得やファイルのダウンロードを同期実行する時間。",
+        "snapshot_timeout_ms": "ページのアクセシビリティ情報の取得を待つ時間。",
+        "stamped_image_side": "要素ラベルを重ねたスクリーンショットの長辺（ピクセル）。",
+        "subscription_resume_ttl_seconds": "サブスクリプション提供元に残る会話状態を再利用できる期間。過ぎると会話全体を送り直します。",
+        "surface_guard_margin_seconds": "スクリプト自身の上限に対して、待つ側が持つ余裕。上限を上げたときに監視側が先に発火して画面を中途半端にしないためです。",
+        "type_chunk_interval_seconds": "入力を分割したチャンクの間隔。",
+        "type_chunk_size": "1 回のキーボードイベントで送る文字数。",
+        "upstream_error_detail_tokens": "上流サービスのエラー本文から残す量。提供元の説明を伝えるには足り、ページ全体を貼り付けるには足りない量です。",
+        "warm_workers": "起動して待機させておくセッションワーカーの数。",
+        "web_exchanges": "ブラウザセッションが保持する直近のリクエスト／レスポンスの組数。表示の裏にある API を検索で見つけられます。",
+        "web_search_maximum": "ウェブ検索が要求できる結果件数の上限。",
+        "web_search_sync_window_seconds": "ウェブ検索を同期実行する時間。",
+        "web_websocket_frames": "追跡中の WebSocket ごとに保持するフレーム数。",
+        "web_websockets": "ブラウザセッションが同時に追跡する WebSocket の数。"
+      }
+    }
+  },
+  "SettingsChoices": {
+    "agent": {
+      "permission_mode": {
+        "default": "通常と異なる操作は確認",
+        "permissive": "危険な操作のみ確認",
+        "classify": "自動で許可・拒否",
+        "read_only": "読み取り専用"
+      }
+    },
+    "workspace": {
+      "strategy": {
+        "none": "プロジェクトのディレクトリ",
+        "branch": "セッションごとのブランチ",
+        "worktree": "セッションごとの worktree"
+      }
+    },
+    "sandbox": {
+      "enforce": {
+        "required": "起動しない",
+        "preferred": "リソース制限のみ",
+        "off": "制限しない"
+      }
+    },
+    "permission_classifier": {
+      "reasoning_effort": {
+        "minimal": "最小",
+        "low": "低",
+        "medium": "中",
+        "high": "高"
+      }
+    },
+    "telemetry": {
+      "exporter": {
+        "protocol": {
+          "http/protobuf": "HTTP (protobuf)",
+          "grpc": "gRPC"
+        }
+      }
+    }
+  },
   "SettingsDialog": {
+    "addEntry": "追加",
     "addRule": "ルールを追加",
     "agent": "エージェント",
     "apiKeys": "API キー",
@@ -586,6 +1055,8 @@
     "profile": "プロファイル",
     "proxyServer": "プロキシサーバー",
     "proxyServerHint": "IP がブロックされたサイト向けに、Web フェッチとダウンロードをプロキシ経由でルーティングします。",
+    "removeEntry": "削除",
+    "resetSetting": "既定値に戻す",
     "restartBody": "アクセシビリティ権限を反映するには Frank の再起動が必要です。デーモンは起動時にのみ権限を読み直します。セッションは保持され、プロセスが停止するだけで、次のメッセージで中断した箇所から再開します。再起動すると、コンピュータ操作は自動的に有効になります。",
     "restartConfirm": "今すぐ再起動",
     "restartLater": "後で",
@@ -598,8 +1069,12 @@
     "searchNoResults": "「{query}」に一致するものはありません",
     "searchNoResultsTitle": "一致する設定がありません",
     "searchPlaceholder": "設定を検索",
+    "settingMapEmpty": "未設定",
+    "settingMapEntries": "{count} 件: {names}",
+    "settingsSchemaError": "保存できませんでした: {reason}",
     "show": "表示",
     "tabAgents": "エージェント",
+    "tabConfiguration": "設定ファイル",
     "tabConnection": "接続",
     "tabGeneral": "一般",
     "tabLocations": "環境",
@@ -850,11 +1325,5 @@
     "loadError": "ワークスペースの環境を読み込めませんでした",
     "saveError": "ワークスペースの環境を保存できませんでした",
     "saveChanges": "変更を保存"
-  },
-  "DelegatedWorkPanel": {
-    "title": "任せた作業",
-    "collapsePanel": "パネルを閉じる",
-    "emptyTitle": "まだ何も任せていません",
-    "emptyDescription": "この会話が別のセッションに作業を任せると、ここに表示されます。"
   }
 }

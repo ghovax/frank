@@ -151,7 +151,7 @@ RANGE_TYPE = getattr(AS, "kAXValueCFRangeType", getattr(AS, "kAXValueTypeCFRange
 # A single message to a wedged app must not block the walk forever. This is a safety valve against
 # a hung process, not an accuracy cap: a healthy element answers in well under a millisecond, so a
 # generous ceiling never drops a real one. The ceiling lives in the central tuning policy
-# (``ax_messaging_seconds``, scaled by the timeout knob), read at each call site.
+# (``accessibility_messaging_seconds``, scaled by the timeout knob), read at each call site.
 
 
 @dataclass
@@ -464,7 +464,7 @@ def application_root(pid: int) -> Any:
     back with none, was reported as "does not publish its windows to accessibility", and became
     unaddressable, which is the exact opposite of true."""
     root = AS.AXUIElementCreateApplication(pid)
-    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.ax_messaging_seconds))
+    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.accessibility_messaging_seconds))
     enable_rich_accessibility(root)
     return root
 
@@ -674,7 +674,7 @@ def prime_accessibility(pid: int) -> None:
     AXManualAccessibility again is a no-op once the tree is up); called by the pre-warm watcher when
     an app comes to the front. Best-effort: an app that ignores the handshake is left as it was."""
     root = AS.AXUIElementCreateApplication(pid)
-    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.ax_messaging_seconds))
+    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.accessibility_messaging_seconds))
     enable_rich_accessibility(root)
 
 
@@ -687,7 +687,7 @@ class _Prewarmer:
     def start(self) -> None:
         with self._lock:
             if self._thread is None or not self._thread.is_alive():
-                self._thread = threading.Thread(target=self._run, name="frank-ax-prewarm", daemon=True)
+                self._thread = threading.Thread(target=self._run, name="frank-accessibility-prewarm", daemon=True)
                 self._thread.start()
 
     def _run(self) -> None:
@@ -699,7 +699,7 @@ class _Prewarmer:
                     prime_accessibility(pid)
             except Exception:
                 pass
-            time.sleep(active_tuning().duration(Tunable.ax_prewarm_interval_seconds))
+            time.sleep(active_tuning().duration(Tunable.accessibility_prewarm_interval_seconds))
 
 
 _prewarmer = _Prewarmer()
@@ -909,7 +909,7 @@ def snapshot_app(
         seeds = [(node, 0, (index,)) for index, node in enumerate(roots) if node is not None]
 
     budget = budget_seconds if budget_seconds is not None else active_tuning().duration(
-        Tunable.ax_walk_budget_seconds)
+        Tunable.accessibility_walk_budget_seconds)
     elements, visited, exhausted = _collect(seeds, window_rect, budget)
     return Snapshot(
         pid=pid,

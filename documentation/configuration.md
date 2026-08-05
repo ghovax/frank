@@ -120,6 +120,8 @@ composio:
 
 When you enable Composio, it joins the ordinary MCP set. It is not a second path. Tool gating and the client both see it as another server.
 
+Every setting there is — its path, its type, what it ships at, and what it is for — is listed in the [configuration reference](configuration-reference.md). This guide covers the ones worth explaining at length; that one covers all of them.
+
 ## Execution and permissions
 
 ```yaml

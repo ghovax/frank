@@ -6,10 +6,11 @@ is by definition the part they already know about. Nothing enumerated the rest, 
 knew what the rest was — the settings existed as Pydantic fields and the descriptions for them
 existed as comments beside those fields, in a form no program could read.
 
-So the descriptions moved into ``Field(description=...)`` and the tunables' into
-:class:`~frank.base.tuning.Default`, and this module walks the models to produce the list. Both
-the terminal listing and the generated reference file read it, which is what keeps them from
-disagreeing with the code or with each other.
+So this module walks the models to produce the list: every path there is, what it holds, what it
+ships at. What each one is *called* and what it is *for* are not here — they are words, and words
+belong in the message catalogue (`shared/messages/`) where they can be translated, and in the
+configuration reference. Keeping them beside the fields put the interface in one language
+whatever the person had chosen, and put the same sentence in the repository twice.
 """
 
 from __future__ import annotations
@@ -17,10 +18,23 @@ from __future__ import annotations
 import typing
 from dataclasses import dataclass
 from enum import Enum
+from types import UnionType
 from typing import Any, Optional
 
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
+
+
+#: What a setting holds, in the vocabulary a control is chosen from. Derived from the
+#: annotation rather than declared, so a field that changes type cannot keep a stale control.
+KIND_SECTION = "section"    # a place to put things, not a thing itself
+KIND_BOOLEAN = "boolean"
+KIND_INTEGER = "integer"
+KIND_NUMBER = "number"
+KIND_STRING = "string"
+KIND_CHOICE = "choice"      # a fixed set of values: a Literal or an Enum
+KIND_LIST = "list"          # a list of strings — paths, names, patterns
+KIND_MAP = "map"            # keys the user invents
 
 
 @dataclass(frozen=True)
@@ -28,11 +42,22 @@ class Setting:
     """One thing a person may set, addressed the way they would write it."""
 
     path: str
-    about: str
     default: Any
     # A map that accepts any key — `providers`, `mcp.servers`. The names under it are the
     # user's own, so the walk stops here rather than inventing entries that do not exist yet.
     open_ended: bool = False
+    #: What it holds, so an interface can choose a control without a table of its own. A table
+    #: like that is the thing that goes stale: it lives away from the field, nothing checks the
+    #: two agree, and the first symptom is a checkbox writing a string into a number.
+    kind: str = KIND_STRING
+    #: The values a `choice` accepts, in the order the schema declares them.
+    choices: tuple[str, ...] = ()
+    #: Whether the field may hold nothing at all, which is not the same as holding "".
+    optional: bool = False
+    #: A credential. Declared on the field, because whether a value is a secret is a fact about
+    #: the field and not about its name — a client that guessed from the spelling would show a
+    #: token in the clear the first time somebody added one called `authorization`.
+    secret: bool = False
 
 
 def _plain(value: Any) -> Any:
@@ -46,6 +71,12 @@ def _plain(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_plain(item) for item in value]
     return value
+
+
+def _is_secret(field) -> bool:
+    """Whether this field holds a credential, as its own declaration says."""
+    extra = getattr(field, "json_schema_extra", None)
+    return bool(extra.get("secret")) if isinstance(extra, dict) else False
 
 
 def _field_default(field) -> Any:
@@ -71,6 +102,53 @@ def _is_open_ended_map(annotation: Any) -> bool:
     return typing.get_origin(annotation) is dict and _model_of(typing.get_args(annotation)[1]) is not None
 
 
+def _unwrapped(annotation: Any) -> tuple[Any, bool]:
+    """An annotation with ``Optional`` peeled off, and whether it was there."""
+    arguments = typing.get_args(annotation)
+    if typing.get_origin(annotation) in (typing.Union, UnionType) and type(None) in arguments:
+        remaining = [argument for argument in arguments if argument is not type(None)]
+        return (remaining[0] if len(remaining) == 1 else annotation), True
+    return annotation, False
+
+
+def _choices(annotation: Any) -> tuple[str, ...]:
+    """The values a fixed-set annotation accepts: a ``Literal``'s arguments, or an ``Enum``'s."""
+    if typing.get_origin(annotation) is typing.Literal:
+        return tuple(str(argument) for argument in typing.get_args(annotation))
+    if isinstance(annotation, type) and issubclass(annotation, Enum):
+        return tuple(str(member.value) for member in annotation)
+    return ()
+
+
+def _kind_of(annotation: Any, default: Any) -> tuple[str, tuple[str, ...], bool]:
+    """What this field holds, how to offer it, and whether it may be nothing.
+
+    Read from the annotation, with the default as the tie-breaker for the one case an
+    annotation cannot answer: a bare `dict` or a `list` says nothing about what goes in it."""
+    inner, optional = _unwrapped(annotation)
+    choices = _choices(inner)
+    if choices:
+        return KIND_CHOICE, choices, optional
+    origin = typing.get_origin(inner)
+    if origin in (list, tuple, set, frozenset):
+        return KIND_LIST, (), optional
+    if origin is dict:
+        return KIND_MAP, (), optional
+    if inner is bool:
+        return KIND_BOOLEAN, (), optional
+    if inner is int:
+        return KIND_INTEGER, (), optional
+    if inner is float:
+        return KIND_NUMBER, (), optional
+    if isinstance(default, bool):
+        return KIND_BOOLEAN, (), optional
+    if isinstance(default, list):
+        return KIND_LIST, (), optional
+    if isinstance(default, dict):
+        return KIND_MAP, (), optional
+    return KIND_STRING, (), optional
+
+
 # The one map whose keys are neither fixed by a model nor invented by the user: they are the
 # names in `Tunable`. `_walk` enumerates them, so `_descend` must not also accept whatever it is
 # handed under this prefix — that is what let a misspelled tunable resolve as if it existed.
@@ -87,7 +165,13 @@ def _tuning_defaults(prefix: str) -> list[Setting]:
     from frank.base.tuning import Tunable
 
     return [
-        Setting(path=f"{prefix}.{tunable.name}", about=tunable.about, default=tunable.default)
+        Setting(
+            path=f"{prefix}.{tunable.name}",
+            default=tunable.default,
+            # Every tunable is a number: an amount, a duration, or a fraction. `Default` holds
+            # the shipped value, so the value itself says which of integer and number it is.
+            kind=KIND_INTEGER if isinstance(tunable.default, int) and not isinstance(tunable.default, bool) else KIND_NUMBER,
+        )
         for tunable in Tunable
     ]
 
@@ -98,41 +182,58 @@ def _walk(model: type[BaseModel], prefix: str) -> list[Setting]:
         path = f"{prefix}.{name}" if prefix else name
         annotation = field.annotation
         if path == TUNING_DEFAULTS:
-            settings.append(Setting(
-                path=path,
-                about=str(field.description or ""),
-                default={},
-                open_ended=True,
-            ))
+            settings.append(Setting(path=path, default={}, open_ended=True, kind=KIND_SECTION))
             settings.extend(_tuning_defaults(path))
             continue
         if _is_open_ended_map(annotation):
             settings.append(Setting(
-                path=path,
-                about=str(field.description or ""),
-                default=_field_default(field),
-                open_ended=True,
+                path=path, default=_field_default(field), open_ended=True, kind=KIND_MAP,
             ))
             continue
         nested = _model_of(annotation)
         if nested is not None:
-            settings.append(Setting(
-                path=path, about=str(field.description or ""), default=_field_default(field)
-            ))
+            settings.append(Setting(path=path, default=_field_default(field), kind=KIND_SECTION))
             settings.extend(_walk(nested, path))
             continue
+        kind, choices, optional = _kind_of(annotation, _field_default(field))
         settings.append(Setting(
-            path=path, about=str(field.description or ""), default=_field_default(field)
+            path=path, default=_field_default(field),
+            kind=kind, choices=choices, optional=optional, secret=_is_secret(field),
         ))
     return settings
 
 
+#: The order a person meets the sections in, from what they decide to what they tune.
+#:
+#: Declaration order is the order the *file* is written in, which is a different question and
+#: was answering this one badly: a panel built from it opened on provider credentials and put
+#: how much a session may do without asking below eighty-odd timeouts. So the sequence is
+#: stated, once, and every surface that lists settings — the panel, `frank configure --all`,
+#: the generated reference — reads the same one. A section missing from here is appended rather
+#: than dropped, because a new section must appear somewhere without anybody remembering this
+#: list exists.
+SECTION_ORDER = (
+    # What the agent may do, and where.
+    "agent", "workspace", "sandbox", "toolbox", "permission_classifier",
+    # What it carries between turns, and what it knows about you.
+    "compaction", "user_context",
+    # The surfaces it can reach for.
+    "computer_control", "dictation",
+    # Who it talks to, and with what credentials.
+    "providers", "exa", "jina", "firecrawl", "web_fetch", "composio", "mcp", "remote_agents",
+    # What is watching, and the numbers underneath everything.
+    "telemetry", "tuning",
+)
+
+
 def settings() -> list[Setting]:
-    """Every setting, in the order the schema declares them — which is the order a person
-    reading the file top to bottom would meet them, not alphabetical."""
+    """Every setting, sections ordered from what a person decides to what they tune, and within
+    a section in the order the schema declares them."""
     from frank.base.configuration import Configuration
 
-    return _walk(Configuration, "")
+    walked = _walk(Configuration, "")
+    position = {name: index for index, name in enumerate(SECTION_ORDER)}
+    return sorted(walked, key=lambda setting: position.get(setting.path.split(".")[0], len(position)))
 
 
 def leaf_settings() -> list[Setting]:

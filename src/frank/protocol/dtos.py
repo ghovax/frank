@@ -8,7 +8,7 @@ unresolved string annotations, crashing the routes that used them.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -123,6 +123,18 @@ class UserContextUpdateRequest(BaseModel):
 class ComputerControlUpdateRequest(BaseModel):
     """Opt-in/out of the computer-use tool that controls macOS apps."""
     enabled: bool
+
+
+class SettingValueRequest(BaseModel):
+    """One setting, addressed by the dotted path it is written under in the configuration file.
+
+    `value` is whatever that setting holds — a boolean, a number, a string, a list — so it is
+    typed as the schema will type it, at the moment it is validated against the schema. A
+    request model per setting is what this replaces, and what made a hundred and twenty of them
+    unreachable from anywhere but a text editor."""
+
+    path: str
+    value: Any = None
 
 
 class ToolboxUpdateRequest(BaseModel):

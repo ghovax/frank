@@ -191,7 +191,7 @@ class Section(BaseModel):
 class ExaConfiguration(Section):
     """Exa — the web-search tool's backend."""
 
-    api_key: str = Field("", description="Exa API key. The EXA_API_KEY environment variable wins over this.")
+    api_key: str = Field("", json_schema_extra={"secret": True})
 
     @property
     def effective_api_key(self) -> str:
@@ -202,7 +202,7 @@ class JinaConfiguration(Section):
     """Jina Reader — the web-fetch tool's default engine. It works without a key at a lower
     rate limit, so this is optional."""
 
-    api_key: str = Field("", description="Jina API key, which raises the rate limit. JINA_API_KEY wins over this.")
+    api_key: str = Field("", json_schema_extra={"secret": True})
 
     @property
     def effective_api_key(self) -> str:
@@ -213,10 +213,8 @@ class FirecrawlConfiguration(Section):
     """Firecrawl — the web-fetch tool's fallback engine, for pages Jina returns thin or
     blocked. Without a key the fallback is simply skipped."""
 
-    api_key: str = Field("", description="Firecrawl API key. FIRECRAWL_API_KEY wins over this.")
-    api_url: str = Field(
-        "", description="A self-hosted Firecrawl instance to use instead of the hosted API."
-    )
+    api_key: str = Field("", json_schema_extra={"secret": True})
+    api_url: str = Field("")
 
     @property
     def effective_api_key(self) -> str:
@@ -230,14 +228,7 @@ class FirecrawlConfiguration(Section):
 class WebFetchConfiguration(Section):
     """Fetching a page directly, for sites that refuse the reader engines."""
 
-    proxy_url: str = Field(
-        "",
-        description=(
-            "Route direct fetches and file downloads through an HTTP or SOCKS proxy, for sites "
-            "that block by address. Empty fetches directly. Credentials may be embedded as "
-            "http://user:pass@host:port."
-        ),
-    )
+    proxy_url: str = Field("")
 
     @property
     def effective_proxy_url(self) -> str:
@@ -266,35 +257,19 @@ class FilesystemConfiguration(Section):
             "~/.config", "~/.local", "~/.ssh", "~/.gitconfig", "~/.gitignore_global",
             "~/.cargo", "~/.rustup", "~/.npmrc", "~/.nvm", "~/.pyenv", "~/.docker", "~/.netrc",
         ],
-        description="Paths under your home a tool child may read. The system is readable and is not listed.",
     )
-    writable: list[str] = Field(
-        default=["$WORKSPACE", "$TMPDIR", "/tmp", "$XDG_CACHE_HOME", "~/.cache"],
-        description=(
-            "Paths a tool child may write. Deliberately narrower than readable, because a wrong "
-            "write is the failure people actually meet. $WORKSPACE is the session's own directory."
-        ),
-    )
+    writable: list[str] = Field(default=["$WORKSPACE", "$TMPDIR", "/tmp", "$XDG_CACHE_HOME", "~/.cache"])
     # `/tmp` is listed beside `$TMPDIR` because on macOS they are not the same place. `$TMPDIR`
     # expands to a per-user directory under `/var/folders`, so a session whose writable set named
     # only `$TMPDIR` was refused at `/tmp` — the one scratch path every convention points at, and
     # the first one anything reaches for. What came back was `Operation not permitted`, naming no
     # path, which reads as a broken tool rather than a boundary. Nothing of the user's lives in
     # `/tmp`; it is world-writable already, and cleared by the system.
-    grantable: list[str] = Field(
-        default=[],
-        description=(
-            "Paths an agent may be granted at runtime without asking a person. Empty means every "
-            "request is asked about. Paths under deny are never grantable, whatever is listed here."
-        ),
-    )
-    deny: list[str] = Field(
-        default=[
+    grantable: list[str] = Field(default=[])
+    deny: list[str] = Field(default=[
             "~/Documents", "~/Desktop", "~/Downloads", "~/Pictures", "~/Movies", "~/Music",
             "~/Library/Mail", "~/Library/Messages", "~/Library/Safari",
-        ],
-        description="Paths refused outright. Wins over readable and writable.",
-    )
+        ])
 
 
 class SandboxConfiguration(Section):
@@ -307,32 +282,16 @@ class SandboxConfiguration(Section):
     create the session and says what is missing, which is the direct answer to how this setting
     came to exist: a key that claimed to confine and silently did not."""
 
-    enforce: Literal["required", "preferred", "off"] = Field(
-        "required",
-        description=(
-            "What to do where no backend can enforce this. required refuses to create the "
-            "session and says what is missing; preferred runs with resource limits only and says "
-            "so; off does not confine at all."
-        ),
-    )
-    filesystem: FilesystemConfiguration = Field(
-        default_factory=FilesystemConfiguration,
-        description="Which paths a tool child may read and write.",
-    )
-    network: bool = Field(True, description="Whether a tool child may reach the network at all.")
-    limits: dict[str, int] = Field(
-        default={
+    enforce: Literal["required", "preferred", "off"] = Field("required")
+    filesystem: FilesystemConfiguration = Field(default_factory=FilesystemConfiguration)
+    network: bool = Field(True)
+    limits: dict[str, int] = Field(default={
             "RLIMIT_CORE": 0,
             "RLIMIT_FSIZE": 8 * 1024 * 1024 * 1024,
             "RLIMIT_NPROC": 2048,
-        },
-        description="POSIX resource limits, by their setrlimit(2) names and in that call's own units.",
-    )
-    umask: Optional[str] = Field(
-        None,
-        description='Octal umask for tool children, as a string such as "0077". Null leaves it alone.',
-    )
-    nice: int = Field(0, description="Scheduling priority for tool children, as nice(2) takes it.")
+        })
+    umask: Optional[str] = Field(None)
+    nice: int = Field(0)
 
     def to_profile(self):
         """This configuration as the :class:`frank.base.confinement.Profile` the spawn path
@@ -357,14 +316,7 @@ class SandboxConfiguration(Section):
 class WorkspaceConfiguration(Section):
     """Where a session's tools actually run."""
 
-    strategy: Literal["none", "branch", "worktree"] = Field(
-        "none",
-        description=(
-            "none runs in the project directory itself; branch gives each session its own "
-            "branch; worktree gives each session its own git worktree, so parallel sessions "
-            "never tread on each other."
-        ),
-    )
+    strategy: Literal["none", "branch", "worktree"] = Field("none")
 
 
 #: Compaction settings that were renamed, and the name that now carries their value. A section
@@ -420,43 +372,12 @@ class CompactionConfiguration(Section):
                 )
         return carried
 
-    automatic: bool = Field(
-        True, description="Reclaim context on its own as it fills. Manual compaction works either way."
-    )
-    reclaim_at_fraction: float = Field(
-        0.85,
-        description=(
-            "Fold once the conversation passes this share of the usable window. Late on purpose: "
-            "a fold is the one thing that rewrites the prefix a provider had cached, so the "
-            "fewer of them the better."
-        ),
-    )
-    condense_log_at_fraction: float = Field(
-        0.3, description="Condense the observation log once the log itself passes this share."
-    )
-    output_reserve_fraction: float = Field(
-        0.1,
-        description=(
-            "Share of the window held back for the answer, so folding still has room to run. "
-            "The rest is the usable window every other fraction here is measured against."
-        ),
-    )
-    recent_working_set_fraction: float = Field(
-        0.25,
-        description=(
-            "Share of the usable window kept verbatim rather than folded into the log. Sized "
-            "in tokens rather than turns because an unattended run is one turn and hundreds "
-            "of tool results."
-        ),
-    )
-    verbatim_user_fraction: float = Field(
-        0.1,
-        description=(
-            "Share of the usable window that carries the user's own messages through a fold, "
-            "word for word. Their instructions are the specification, and a paraphrase of a "
-            "specification is a different specification."
-        ),
-    )
+    automatic: bool = Field(True)
+    reclaim_at_fraction: float = Field(0.85)
+    condense_log_at_fraction: float = Field(0.3)
+    output_reserve_fraction: float = Field(0.1)
+    recent_working_set_fraction: float = Field(0.25)
+    verbatim_user_fraction: float = Field(0.1)
 
 
 class ContextShareConfiguration(Section):
@@ -467,14 +388,8 @@ class ContextShareConfiguration(Section):
     family's multiplier is 1.0 — so a copy typed out in this file is a copy that can disagree with
     the arithmetic that assumes it, silently and in a direction nobody would think to check."""
 
-    text: float = Field(
-        Scaling.TEXT.value.calibrated,
-        description="Share one result's text may fill — output, fetched pages.",
-    )
-    results: float = Field(
-        Scaling.RESULTS.value.calibrated,
-        description="Share a set of results may fill — matches, lines, records.",
-    )
+    text: float = Field(Scaling.TEXT.value.calibrated)
+    results: float = Field(Scaling.RESULTS.value.calibrated)
 
 
 class TuningConfiguration(Section):
@@ -483,21 +398,9 @@ class TuningConfiguration(Section):
     small model gets tight caps and a large one gets room; `context_share` says how much of that
     window one result may take, and `timeout_multiplier` stretches every wait."""
 
-    context_share: ContextShareConfiguration = Field(
-        default_factory=ContextShareConfiguration,
-        description="What proportion of the live context window one result may fill.",
-    )
-    timeout_multiplier: float = Field(
-        1.0, description="Multiplier on every wait. 2.0 doubles them for a slow machine; 1.0 is neutral."
-    )
-    defaults: dict[str, float] = Field(
-        default_factory=dict,
-        description=(
-            "Override one tunable by its own name, in its own unit — see `frank configure --all`. "
-            "An override replaces the shipped default, so context_share and timeout_multiplier "
-            "still apply on top."
-        ),
-    )
+    context_share: ContextShareConfiguration = Field(default_factory=ContextShareConfiguration)
+    timeout_multiplier: float = Field(1.0)
+    defaults: dict[str, float] = Field(default_factory=dict)
 
     @field_validator("defaults")
     @classmethod
@@ -528,22 +431,15 @@ class UserContextConfiguration(Section):
     counts are kept, so browsing content is never included. Enable it only when the
     behavioral boost is worth surfacing this data to the model."""
 
-    enabled: bool = Field(
-        False,
-        description=(
-            "Put a snapshot of how you work — frequent folders, applications, sites — in the "
-            "system prompt. Off by default: it puts personally identifying information in front "
-            "of your model provider."
-        ),
-    )
+    enabled: bool = Field(False)
 
 
 class SettleConfiguration(Section):
     """After an action, how long to wait for a surface to stop changing before reading it. Polling
     rather than a fixed sleep, so a fast page costs one interval and a slow one costs the ceiling."""
 
-    poll_seconds: float = Field(0.05, description="How often to re-check whether the surface has settled.")
-    give_up_seconds: float = Field(1.5, description="The longest to wait before reading it anyway.")
+    poll_seconds: float = Field(0.05)
+    give_up_seconds: float = Field(1.5)
 
 
 class RetrievalConfiguration(Section):
@@ -561,39 +457,10 @@ class RetrievalConfiguration(Section):
     the other — used alone the English model is 4.3 points worse on native windows — so both run,
     and either can be turned off by clearing its name."""
 
-    multilingual_rank_model: str = Field(
-        "minishlab/M2V_multilingual_output",
-        description=(
-            "The static embedding that ranks by meaning across languages. Also the model whose "
-            "plain cosine backs the relevance floor, so clearing it disables that floor. Empty "
-            "turns it off."
-        ),
-    )
-    english_rank_model: str = Field(
-        "minishlab/potion-base-32M",
-        description=(
-            "A second static embedding, ranked alongside the first rather than instead of it. "
-            "Stronger on queries that describe what an element is for; weaker on exact labels. "
-            "Empty turns it off."
-        ),
-    )
-    lexical_gate_short_words: int = Field(
-        3, ge=0,
-        description=(
-            "Queries of this many words or fewer are treated as a label quoted off the screen, "
-            "and the character similarity counts in full. This is what makes a retyped number, a "
-            "changed case or a truncated label still find its element."
-        ),
-    )
-    lexical_gate_long_words: int = Field(
-        7, ge=1,
-        description=(
-            "Queries of this many words or more are treated as a description of a purpose, and "
-            "the character similarity is ignored — its spelling agrees with nothing, so it ranks "
-            "by coincidence. Between the two bounds it fades out linearly. Raising this makes "
-            "long queries behave more like short ones."
-        ),
-    )
+    multilingual_rank_model: str = Field("minishlab/M2V_multilingual_output")
+    english_rank_model: str = Field("minishlab/potion-base-32M")
+    lexical_gate_short_words: int = Field(3, ge=0)
+    lexical_gate_long_words: int = Field(7, ge=1)
 
 
 class ComputerControlConfiguration(Section):
@@ -602,15 +469,9 @@ class ComputerControlConfiguration(Section):
     it lets the agent drive the whole machine; enabling it also requires the user to grant
     Accessibility access in System Settings."""
 
-    enabled: bool = Field(False, description="Let the agent drive native macOS apps and your Chrome.")
-    settle: SettleConfiguration = Field(
-        default_factory=SettleConfiguration,
-        description="How long a screen surface is given to stop changing after an action.",
-    )
-    retrieval: RetrievalConfiguration = Field(
-        default_factory=RetrievalConfiguration,
-        description="Which models rank a screen, and when a query's spelling stops being evidence.",
-    )
+    enabled: bool = Field(False)
+    settle: SettleConfiguration = Field(default_factory=SettleConfiguration)
+    retrieval: RetrievalConfiguration = Field(default_factory=RetrievalConfiguration)
 
 
 class PermissionClassifierConfiguration(Section):
@@ -621,10 +482,7 @@ class PermissionClassifierConfiguration(Section):
     is not the work the agent's effort was chosen for, and it happens once per ambiguous call:
     at the agent's setting a classifying session pays a long think for every command it runs."""
 
-    reasoning_effort: str = Field(
-        "low",
-        description="How hard the permission classifier thinks: minimal, low, medium or high.",
-    )
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] = Field("low")
 
 
 class ToolboxConfiguration(Section):
@@ -636,10 +494,7 @@ class ToolboxConfiguration(Section):
     the machine's own profile, and the sandbox is untouched — what a session may *reach* is still
     decided entirely by the confinement."""
 
-    enabled: bool = Field(
-        True,
-        description="Let each session install the tools it needs into a profile of its own.",
-    )
+    enabled: bool = Field(True)
 
 
 class DictationTimingConfiguration(Section):
@@ -655,29 +510,10 @@ class DictationTimingConfiguration(Section):
     what the model takes, so it is a fact rather than a preference, and a setting for it would
     only be a way to make transcription quietly wrong."""
 
-    minimum_transcription_timeout_seconds: float = Field(
-        30.0,
-        description="The floor on how long one transcription may take before it is treated as wedged.",
-    )
-    transcription_timeout_realtime_multiplier: float = Field(
-        0.5,
-        description=(
-            "Added to the floor, per second of audio. Transcription runs comfortably faster "
-            "than real time on Apple Silicon, so reaching the limit means stuck, not busy."
-        ),
-    )
-    maximum_attempts: int = Field(
-        2,
-        ge=1,
-        description=(
-            "How many workers one recording may be given. A hung or crashed worker is replaced "
-            "and the same audio submitted again, because asking somebody to say it twice is the "
-            "worst answer available; beyond this it is a real fault and is reported."
-        ),
-    )
-    worker_shutdown_seconds: float = Field(
-        2.0, description="How long a worker is given to exit on its own before it is killed."
-    )
+    minimum_transcription_timeout_seconds: float = Field(30.0)
+    transcription_timeout_realtime_multiplier: float = Field(0.5)
+    maximum_attempts: int = Field(2, ge=1)
+    worker_shutdown_seconds: float = Field(2.0)
 
 
 class DictationConfiguration(Section):
@@ -692,15 +528,9 @@ class DictationConfiguration(Section):
     every other tool on the machine that uses it — so turning this on twice, or reinstalling,
     does not download them twice."""
 
-    enabled: bool = Field(False, description="Let the composer take dictation, transcribed on this Mac.")
-    model: str = Field(
-        "mlx-community/parakeet-tdt-0.6b-v3",
-        description="The speech-recognition model to transcribe with, from Hugging Face.",
-    )
-    timing: DictationTimingConfiguration = Field(
-        default_factory=DictationTimingConfiguration,
-        description="How long dictation waits before it gives up.",
-    )
+    enabled: bool = Field(False)
+    model: str = Field("mlx-community/parakeet-tdt-0.6b-v3")
+    timing: DictationTimingConfiguration = Field(default_factory=DictationTimingConfiguration)
 
 
 class ComposioConfiguration(Section):
@@ -714,17 +544,11 @@ class ComposioConfiguration(Section):
     and runs them with COMPOSIO_MULTI_EXECUTE_TOOL, authorizing accounts via
     COMPOSIO_MANAGE_CONNECTIONS on first use."""
 
-    enabled: bool = Field(False, description="Expose Composio's hosted gateway as one MCP server.")
-    url: str = Field(
-        "https://connect.composio.dev/mcp",
-        description='The hosted MCP URL from the Composio dashboard\'s "connect" page.',
-    )
-    api_key: str = Field(
-        "",
-        description="The API key shown beside that URL. COMPOSIO_API_KEY wins over this.",
-    )
-    server_name: str = Field("composio", description="The MCP server name its tools appear under.")
-    timeout_seconds: float = Field(60, description="How long one call to that gateway waits.")
+    enabled: bool = Field(False)
+    url: str = Field("https://connect.composio.dev/mcp")
+    api_key: str = Field("", json_schema_extra={"secret": True})
+    server_name: str = Field("composio")
+    timeout_seconds: float = Field(60)
 
     @property
     def effective_api_key(self) -> str:
@@ -755,9 +579,7 @@ class MCPConfiguration(Section):
     rather than from the configuration file — a list that changes on its own schedule and is
     watched for live reload."""
 
-    servers: dict[str, MCPServerConfiguration] = Field(
-        default={}, description="Declared MCP servers, by name. Read from mcp.json, not from this file."
-    )
+    servers: dict[str, MCPServerConfiguration] = Field(default={})
 
     def enabled_servers(self) -> dict[str, MCPServerConfiguration]:
         return {
@@ -817,10 +639,7 @@ class RemoteAgentsConfiguration(Section):
     """The set of external A2A agents the harness may delegate to, loaded from
     ``remote-agents.json`` in the ``.agents`` roots rather than from the configuration file."""
 
-    agents: dict[str, RemoteAgentServerConfiguration] = Field(
-        default={},
-        description="Registered remote agents, by name. Read from remote-agents.json, not from this file.",
-    )
+    agents: dict[str, RemoteAgentServerConfiguration] = Field(default={})
 
     def enabled_agents(self) -> dict[str, RemoteAgentServerConfiguration]:
         return {
@@ -853,12 +672,9 @@ class RemoteAgentsConfiguration(Section):
 class TelemetryExporterConfiguration(Section):
     """Where traces are sent."""
 
-    endpoint: str = Field("", description="The OTLP collector to export to. Empty exports nothing.")
-    protocol: str = Field("http/protobuf", description="The OTLP protocol that collector speaks.")
-    headers: dict[str, str] = Field(
-        default={},
-        description="Headers sent with each export, for a collector that authenticates. ${VARIABLE} is expanded.",
-    )
+    endpoint: str = Field("")
+    protocol: Literal["http/protobuf", "grpc"] = Field("http/protobuf")
+    headers: dict[str, str] = Field(default={})
 
 
 class TelemetryConfiguration(Section):
@@ -866,11 +682,9 @@ class TelemetryConfiguration(Section):
     endpoint is set, so nothing leaves the machine by default. Only span structure and
     usage/metadata are exported (no prompt or completion bodies)."""
 
-    enabled: bool = Field(False, description="Export traces at all.")
-    exporter: TelemetryExporterConfiguration = Field(
-        default_factory=TelemetryExporterConfiguration, description="Where traces are sent."
-    )
-    sample_ratio: float = Field(1.0, description="Share of traces exported. 1.0 exports every one.")
+    enabled: bool = Field(False)
+    exporter: TelemetryExporterConfiguration = Field(default_factory=TelemetryExporterConfiguration)
+    sample_ratio: float = Field(1.0)
 
     def resolved_headers(self) -> dict[str, str]:
         return {key: os.path.expandvars(value) for key, value in self.exporter.headers.items()}
@@ -879,32 +693,14 @@ class TelemetryConfiguration(Section):
 class ProviderCredential(Section):
     """Credentials for one model provider."""
 
-    api_key: str = Field(
-        "", description="This provider's API key. Its conventional environment variable wins over this."
-    )
-    base_url: str = Field(
-        "",
-        description=(
-            "Where to reach it, for an OpenAI-compatible provider. The first-party clouds leave "
-            "this blank, since their endpoints are already known."
-        ),
-    )
+    api_key: str = Field("", json_schema_extra={"secret": True})
+    base_url: str = Field("")
 
 
 class AgentDefaults(Section):
     """What a session gets when its creator did not say."""
 
-    permission_mode: Literal["default", "permissive", "classify", "read_only"] = Field(
-        "default",
-        description=(
-            "default asks before anything its rules do not name; permissive runs what the "
-            "model called low-risk and asks about the rest; classify decides every ambiguous "
-            "call itself, allowing or denying without ever asking, for work nobody is "
-            "watching; read_only allows reads and denies every write and side effect. A "
-            "default, not a ceiling: `frank create --mode` overrides it, and a child is "
-            "clamped against its parent either way."
-        ),
-    )
+    permission_mode: Literal["default", "permissive", "classify", "read_only"] = Field("default")
 
 
 class Configuration(Section):
@@ -913,78 +709,25 @@ class Configuration(Section):
     AGENTS_DIRECTORY: ClassVar[str] = ".agents/agents"
     SKILLS_DIRECTORY: ClassVar[str] = ".agents/skills"
 
-    providers: dict[str, ProviderCredential] = Field(
-        default={},
-        description=(
-            "Credentials per model provider, keyed by provider name — anthropic, openai, google, "
-            "openrouter, xai and the rest; frank.base.providers holds the full list with each "
-            "one's environment variable. Which model a session runs is chosen by its agent "
-            "profile, so nothing here nominates one."
-        ),
-    )
-    exa: ExaConfiguration = Field(default_factory=ExaConfiguration, description="The web-search backend.")
-    jina: JinaConfiguration = Field(
-        default_factory=JinaConfiguration, description="The default page-fetching engine."
-    )
-    firecrawl: FirecrawlConfiguration = Field(
-        default_factory=FirecrawlConfiguration, description="The fallback page-fetching engine."
-    )
-    web_fetch: WebFetchConfiguration = Field(
-        default_factory=WebFetchConfiguration, description="Fetching a page directly."
-    )
-    sandbox: SandboxConfiguration = Field(
-        default_factory=SandboxConfiguration,
-        description="What a session's tool children may do, enforced by the operating system.",
-    )
-    workspace: WorkspaceConfiguration = Field(
-        default_factory=WorkspaceConfiguration, description="Where a session's tools run."
-    )
-    compaction: CompactionConfiguration = Field(
-        default_factory=CompactionConfiguration, description="How conversation history is folded as it grows."
-    )
-    user_context: UserContextConfiguration = Field(
-        default_factory=UserContextConfiguration,
-        description="Whether the system prompt describes how you work on this machine.",
-    )
-    computer_control: ComputerControlConfiguration = Field(
-        default_factory=ComputerControlConfiguration, description="Driving the screen."
-    )
-    toolbox: ToolboxConfiguration = Field(
-        default_factory=ToolboxConfiguration,
-        description="Whether a session may install the tools it needs into a profile of its own.",
-    )
-    permission_classifier: PermissionClassifierConfiguration = Field(
-        default_factory=PermissionClassifierConfiguration,
-        description="The model call that decides a tool call nobody is there to be asked about.",
-    )
-    dictation: DictationConfiguration = Field(
-        default_factory=DictationConfiguration, description="Speaking to the composer instead of typing."
-    )
-    tuning: TuningConfiguration = Field(
-        default_factory=TuningConfiguration,
-        description="How large, how many, and how patient the tools are.",
-    )
-    composio: ComposioConfiguration = Field(
-        default_factory=ComposioConfiguration, description="Composio's hosted MCP gateway."
-    )
-    mcp: MCPConfiguration = Field(
-        default_factory=MCPConfiguration, description="MCP servers, read from mcp.json."
-    )
-    remote_agents: RemoteAgentsConfiguration = Field(
-        default_factory=RemoteAgentsConfiguration,
-        description="Agents on other hosts, read from remote-agents.json.",
-    )
-    telemetry: TelemetryConfiguration = Field(
-        default_factory=TelemetryConfiguration, description="OpenTelemetry export."
-    )
-    agent: AgentDefaults = Field(
-        default_factory=AgentDefaults,
-        description=(
-            "What a session runs under when its creator does not say. An agent profile that "
-            "declares its own stricter mode still wins: this is a floor for sessions created "
-            "without one, not a way to loosen a profile written to be careful."
-        ),
-    )
+    providers: dict[str, ProviderCredential] = Field(default={})
+    exa: ExaConfiguration = Field(default_factory=ExaConfiguration)
+    jina: JinaConfiguration = Field(default_factory=JinaConfiguration)
+    firecrawl: FirecrawlConfiguration = Field(default_factory=FirecrawlConfiguration)
+    web_fetch: WebFetchConfiguration = Field(default_factory=WebFetchConfiguration)
+    sandbox: SandboxConfiguration = Field(default_factory=SandboxConfiguration)
+    workspace: WorkspaceConfiguration = Field(default_factory=WorkspaceConfiguration)
+    compaction: CompactionConfiguration = Field(default_factory=CompactionConfiguration)
+    user_context: UserContextConfiguration = Field(default_factory=UserContextConfiguration)
+    computer_control: ComputerControlConfiguration = Field(default_factory=ComputerControlConfiguration)
+    toolbox: ToolboxConfiguration = Field(default_factory=ToolboxConfiguration)
+    permission_classifier: PermissionClassifierConfiguration = Field(default_factory=PermissionClassifierConfiguration)
+    dictation: DictationConfiguration = Field(default_factory=DictationConfiguration)
+    tuning: TuningConfiguration = Field(default_factory=TuningConfiguration)
+    composio: ComposioConfiguration = Field(default_factory=ComposioConfiguration)
+    mcp: MCPConfiguration = Field(default_factory=MCPConfiguration)
+    remote_agents: RemoteAgentsConfiguration = Field(default_factory=RemoteAgentsConfiguration)
+    telemetry: TelemetryConfiguration = Field(default_factory=TelemetryConfiguration)
+    agent: AgentDefaults = Field(default_factory=AgentDefaults)
 
     @classmethod
     def load(cls, *, seed: bool = True) -> Configuration:
@@ -1394,13 +1137,7 @@ class ToolsConfiguration(BaseModel):
     # which leaves the barrier's own default in force exactly as before.
     mcp: NamedToolPermissions = NamedToolPermissions()
     screen: NamedToolPermissions = NamedToolPermissions()
-    disabled: list[str] = Field(
-        default_factory=list,
-        description=(
-            "Tools this agent may not use, by name. The complement of the profile's "
-            "tools_enabled allow-list, for an agent that should have everything except a few."
-        ),
-    )
+    disabled: list[str] = Field(default_factory=list)
 
     def is_enabled(self, tool_name: str) -> bool:
         """Whether this agent may use `tool_name` at all.
