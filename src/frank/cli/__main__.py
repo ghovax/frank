@@ -70,8 +70,6 @@ def _note(message: str) -> None:
 
 
 def _command_create(arguments: argparse.Namespace) -> int:
-    import os
-
     result = call(
         "session.create",
         agent=arguments.agent,

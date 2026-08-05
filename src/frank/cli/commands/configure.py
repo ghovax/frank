@@ -57,29 +57,10 @@ def _known(path: str):
     return setting_for(path)
 
 
-def _validates(data: dict) -> str:
-    """Whether the configuration would still load, and what is wrong if not.
-
-    Checked before the file is written, because the daemon reads this file at startup: a value
-    the schema rejects does not fail the command that set it, it fails every command after —
-    including the one that would put it back."""
-    from frank.base.configuration import Configuration
-
-    try:
-        Configuration.model_validate(data)
-    except Exception as error:  # noqa: BLE001 — the validator's message is the useful part
-        # Pydantic reports the field, then the reason, then a documentation URL. The first two
-        # are what a person needs; the URL is noise at a terminal.
-        lines = [line.strip() for line in str(error).splitlines()[1:3] if line.strip()]
-        reason = " ".join(line for line in lines if not line.startswith("For further"))
-        return reason.split(" [type=")[0] or str(error)
-    return ""
-
-
 def _everything(data: dict) -> dict:
-    """Every setting the schema defines, each with what it is for, what it ships at, and what
-    this machine currently runs on. The whole point of `--all`: what a person wants to know is
-    what they *could* change, and that is a property of the code, not of their file."""
+    """Every setting the schema defines, with what it ships at and what this machine currently
+    runs on. The whole point of `--all`: what a person wants to know is what they *could*
+    change, and that is a property of the code, not of their file."""
     from frank.base.configuration_schema import leaf_settings
 
     listing: dict[str, dict] = {}

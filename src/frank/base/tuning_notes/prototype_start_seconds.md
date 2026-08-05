@@ -1,1 +1,0 @@
-How long the daemon waits for the prototype to start and accept a connection. The prototype itself imports nothing heavy; it starts the workers that do, and keeps a couple of them started ahead of demand.

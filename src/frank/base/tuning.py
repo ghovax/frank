@@ -127,43 +127,17 @@ def _clamp(value: float, low: float, high: float) -> float:
 #: form that cannot hold a paragraph break, a list, or a number somebody wants to scan for. The
 #: short ones stay inline, where a reader scanning the enum can see what a value is for without
 #: opening anything; the long ones live next door as markdown and are read on demand.
-#:
-#: The same shape as ``runtime/tools/descriptions/*.md``, and read with a loader of this module's
-#: own rather than that package's: ``tuning`` deliberately does not import the configuration
-#: module, and the twelve lines below are cheaper than the dependency would be.
-NOTES_DIRECTORY = Path(__file__).resolve().parent / "tuning_notes"
-
-
-def _note(name: str) -> str:
-    """The markdown note for one tunable, or "" when it has none."""
-    path = NOTES_DIRECTORY / f"{name}.md"
-    try:
-        return path.read_text(encoding="utf-8").strip()
-    except OSError:
-        return ""
-
-
 @dataclass(frozen=True)
 class Default:
-    """One tunable's shipped value, how it scales, and what it is for.
+    """One tunable's shipped value, and how it scales.
 
-    ``about`` is carried rather than left in a comment because `frank configure` renders it and the
-    configuration reference is generated from it — an explanation only a reader can see is one that
-    drifts from the value beside it.
-
-    Leave ``about`` empty and the text is read from ``tuning_notes/<member>.md`` instead — see
-    :data:`NOTES_DIRECTORY`. An inline note may be written as an ordinary triple-quoted string
-    laid out to fit the file; its whitespace is collapsed here, so how it is *wrapped* in the
-    source is a question about reading the code and never about what a user is shown."""
+    What it is *for* is not here. A setting's explanation is a sentence to translate, so it lives
+    with the rest of the interface's words in ``shared/messages/*.json``, keyed by the same dotted
+    path — and the reference table in the documentation lists them all. This carries only what a
+    tunable is."""
 
     value: float
     scaling: Scaling
-    about: str = ""
-
-    def __post_init__(self) -> None:
-        collapsed = " ".join(self.about.split())
-        if collapsed != self.about:
-            object.__setattr__(self, "about", collapsed)
 
 
 class Tunable(Enum):
@@ -318,16 +292,6 @@ class Tunable(Enum):
     def __init__(self, default: Default) -> None:
         self.default = default.value
         self.scaling = default.scaling
-        self._about = default.about
-
-    @property
-    def about(self) -> str:
-        """What this tunable is for: the inline note, or the markdown file named after it.
-
-        Read on demand rather than at import. Only `frank configure` and the generated
-        configuration reference ask for these, and a process that never renders a settings page
-        should not pay for seventy-four file reads to start."""
-        return self._about or _note(self.name)
 
 
 # Tokenizer-backed text budgeting. A real tokenizer maps a token budget to an accurate character

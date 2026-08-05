@@ -1,1 +1,0 @@
-How long a session keeps its process after its last turn before it sleeps. Five hours by default: long enough that a working day of on-and-off use never pays a wake, short enough that a machine left overnight is not holding interpreters for conversations nobody returned to.

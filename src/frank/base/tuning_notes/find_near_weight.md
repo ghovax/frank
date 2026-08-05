@@ -1,1 +1,0 @@
-How much sitting beside the anchor is worth against matching the query, when a find names one with ``near=``. Measured over 284 anchored cases on ten applications: relevance alone answers 20.8% of them and proximity alone 21.5%, while the two together answer 85.2%. Neither half carries this on its own.

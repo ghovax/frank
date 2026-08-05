@@ -273,7 +273,6 @@ def _descend(model: type[BaseModel], segments: list[str], full_path: str) -> Opt
     if not remaining:
         return Setting(
             path=full_path,
-            about=str(field.description or ""),
             default=_field_default(field),
             open_ended=_is_open_ended_map(field.annotation),
         )
@@ -288,13 +287,12 @@ def _descend(model: type[BaseModel], segments: list[str], full_path: str) -> Opt
             shipped = _field_default(field)
             return Setting(
                 path=full_path,
-                about=str(field.description or ""),
-                default=shipped.get(remaining[0]) if isinstance(shipped, dict) else None,
+                    default=shipped.get(remaining[0]) if isinstance(shipped, dict) else None,
             )
         # The next segment is the user's own name for an entry; what follows it is that
         # entry's own field.
         if not remaining[1:]:
-            return Setting(path=full_path, about=str(field.description or ""), default=None)
+            return Setting(path=full_path, default=None)
         return _descend(value_model, remaining[1:], full_path)
     nested = _model_of(annotation)
     return _descend(nested, remaining, full_path) if nested is not None else None

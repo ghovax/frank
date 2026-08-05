@@ -1,1 +1,0 @@
-Elements find_many will return however many are asked for. There used to be an `all=True` that bypassed the limit entirely and returned the whole ranking; on one ordinary page that was 590 elements and 1.5MB, which ended the turn by exceeding the model's context window. A find is a ranked search, and the tail of a ranking is not more answer.
