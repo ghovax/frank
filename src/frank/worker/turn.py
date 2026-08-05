@@ -12,6 +12,7 @@ import asyncio
 import logging
 from contextlib import suppress
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -29,6 +30,7 @@ from frank.base.tuning import Tunable, active_tuning
 from frank.protocol.errors import _safe_turn_error
 from frank.protocol.events import ErrorEvent, StatusEvent
 from frank.protocol.metadata import (
+    METADATA_KEY,
     Metadata,
     PART_KIND,
     turn_metadata,
@@ -305,6 +307,17 @@ class _TurnRunner:
         if ingested_attachments:
             self._structured_payloads.append({PART_KIND: "attachments", "attachments": ingested_attachments})
         self._metadata = turn_metadata(message)
+        # Dated on arrival, and written back onto the message so it is dated in the record too.
+        # `_ingest` is the one door every inbound message comes through — typed, sent by a peer,
+        # or opened by the session itself — so one line here dates all of them, and a message
+        # that already carries a stamp (a re-delivery) keeps its first one.
+        # Milliseconds, because that is the precision the ECMAScript date format actually
+        # defines. Both engines this runs in front of happen to accept Python's microseconds,
+        # but a displayed timestamp gains nothing from three digits nobody reads, and it is not
+        # worth resting on two implementations agreeing to be lenient.
+        if not self._metadata.get(Metadata.RECEIVED_AT):
+            self._metadata[Metadata.RECEIVED_AT] = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+            message.metadata = {**(message.metadata or {}), METADATA_KEY: self._metadata}
         self._requested_working_directory = str(self._metadata.get(Metadata.WORKING_DIRECTORY, ""))
         self._requested_worktree_strategy = str(self._metadata.get(Metadata.WORKSPACE_STRATEGY, ""))
         self._permission_mode = str(self._metadata.get(Metadata.PERMISSION_MODE, ""))

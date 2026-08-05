@@ -3,7 +3,7 @@
 import { Box, Button, Dialog, Flex, IconButton, Image, Link, Portal, Span, Text } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
 import { useState, type ReactNode } from "react";
-import { LuExternalLink, LuMousePointerClick, LuX } from "react-icons/lu";
+import { LuExternalLink, LuX } from "react-icons/lu";
 import { localFileUrl } from "@/lib/api";
 import { iconForFilePath } from "@/lib/file-icons";
 import type { MessageAttachment } from "@/lib/use-chat";

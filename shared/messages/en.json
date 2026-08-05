@@ -135,7 +135,10 @@
     "compactedTooltip": "{before, plural, =1 {Compacted # message down to {after}} other {Compacted # messages down to {after}}}",
     "compactingContext": "Compacting the conversation…",
     "contextCompacted": "Conversation compacted",
-    "fromPeerSession": "From a peer session"
+    "fromPeerSession": "From a peer session",
+    "copy": "Copy",
+    "copied": "Copied",
+    "deleteQueued": "Delete"
   },
   "ChatPanel": {
     "buildPrompt": "What should we build in {folder}?",
@@ -144,7 +147,6 @@
     "close": "Close",
     "created": "Created",
     "delete": "Delete",
-    "deleteQueuedMessage": "Delete queued message",
     "deleteSession": "Delete session",
     "deleteSessionConfirmBody": "This permanently removes the conversation and its tasks. This can’t be undone.",
     "deleteSessionConfirmTitle": "Delete this session?",

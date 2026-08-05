@@ -135,7 +135,10 @@
     "compactedTooltip": "{before, plural, other {# 件のメッセージを {after} 件に要約しました}}",
     "compactingContext": "会話を圧縮中…",
     "contextCompacted": "会話を圧縮しました",
-    "fromPeerSession": "ピアセッションから"
+    "fromPeerSession": "ピアセッションから",
+    "copy": "コピー",
+    "copied": "コピーしました",
+    "deleteQueued": "削除"
   },
   "ChatPanel": {
     "buildPrompt": "{folder} で何を作りましょうか？",
@@ -144,7 +147,6 @@
     "close": "閉じる",
     "created": "作成日時",
     "delete": "削除",
-    "deleteQueuedMessage": "キュー内のメッセージを削除",
     "deleteSession": "セッションを削除",
     "deleteSessionConfirmBody": "会話とそのタスクが完全に削除されます。この操作は取り消せません。",
     "deleteSessionConfirmTitle": "このセッションを削除しますか？",

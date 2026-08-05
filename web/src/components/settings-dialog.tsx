@@ -3,7 +3,7 @@
 import { Alert, Box, Button, Dialog, EmptyState, Flex, IconButton, Input, Portal, Spinner, Text, VStack } from "@chakra-ui/react";
 import { swallowed } from "@/lib/swallowed";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { LuClock, LuEye, LuEyeOff, LuKeyRound, LuMonitor, LuPlug, LuPlus, LuSearch, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
+import { LuClock, LuEye, LuEyeOff, LuKeyRound, LuMonitor, LuPlus, LuSearch, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
 import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, restartDaemon, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateDictationSetting, updateToolboxSetting, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel, type SandboxEnforce } from "@/lib/api";
 import { ModelSelect } from "./model-select";
 import { ChatGPTAuthControl } from "./chatgpt-auth";
@@ -149,8 +149,6 @@ export function SettingsDialog({
   const [savedFirecrawlApiKey, setSavedFirecrawlApiKey] = useState("");
   const [webFetchProxyUrl, setWebFetchProxyUrl] = useState("");
   const [savedWebFetchProxyUrl, setSavedWebFetchProxyUrl] = useState("");
-  const [connectionDirty, setConnectionDirty] = useState(false);
-  const [connectionResetToken, setConnectionResetToken] = useState(0);
   const [settingsAgent, setSettingsAgent] = useState(selectedAgent);
   const [agentConfiguration, setAgentConfiguration] = useState<AgentConfiguration | null>(null);
   const [savedAgentConfiguration, setSavedAgentConfiguration] = useState<AgentConfiguration | null>(null);
@@ -176,7 +174,7 @@ export function SettingsDialog({
     || computerControlEnabled !== savedComputerControlEnabled
     || toolboxEnabled !== savedToolboxEnabled
     || dictationEnabled !== savedDictationEnabled;
-  const hasUnsavedChanges = generalDirty || agentDirty || connectionDirty;
+  const hasUnsavedChanges = generalDirty || agentDirty;
 
   // Pre-fill from the server each time the dialog opens.
   useEffect(() => {
@@ -466,11 +464,7 @@ export function SettingsDialog({
         setSavedAgentConfiguration(savedConfiguration);
         onAgentChange?.(settingsAgent);
       }
-      if (connectionDirty) {
-        setDiscardConfirmOpen(true);
-      } else {
-        onOpenChange(false);
-      }
+      onOpenChange(false);
     } finally {
       setSaving(false);
     }
@@ -498,8 +492,6 @@ export function SettingsDialog({
     setComputerControlEnabled(savedComputerControlEnabled);
     setAgentConfiguration(savedAgentConfiguration);
     setSettingsAgent(selectedAgent || agents[0]?.id || "");
-    setConnectionResetToken((current) => current + 1);
-    setConnectionDirty(false);
     setDiscardConfirmOpen(false);
     onOpenChange(false);
   }

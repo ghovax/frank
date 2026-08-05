@@ -30,6 +30,7 @@ import type { TokenUsage } from "@/lib/use-chat";
 import { InlineField } from "./ui/display";
 import { Strong } from "./ui/semantic";
 import { swallowed } from "@/lib/swallowed";
+import { useFittedRow } from "@/lib/use-fitted-row";
 import { errorMessage } from "@/lib/errors";
 
 interface ChatInputProps {
@@ -93,6 +94,28 @@ interface ChatInputProps {
   // button stayed hidden through exactly the session that needed it.
   compactionReclaimAtFraction: number;
 }
+
+// What the selectors row gives up, and in what order, when it cannot hold everything.
+//
+// Least load-bearing first. The rule throughout is that a hidden label leaves an icon and a
+// colour, which still say which control this is — so the question at each step is only which
+// *word* is carrying the least. The provider is implied by the model beside it; the capability
+// glyphs and the exact token counts are detail nobody navigates by; "Compact" is a fold icon that
+// already looks like folding. Of the two toggles the sandbox goes first, its icon being the most
+// literal of any here — a globe against a box, in red against green. The two identity labels go
+// last because they are the two facts a person actually reads before sending, and the context
+// percentage goes last of all: it is the whole of what that chip says at a glance.
+const COMPOSER_FIT_ORDER = [
+  "model-provider",
+  "model-capabilities",
+  "context-detail",
+  "compact",
+  "sandbox",
+  "permission",
+  "agent",
+  "model",
+  "context-percent",
+] as const;
 
 // A filling circle for how full the model's context window is. The arc grows with
 // the fill fraction and shifts colour as it approaches the limit (blue -> amber ->
@@ -163,9 +186,13 @@ function useChatGPTUsage(agentModel: string | undefined, isStreaming: boolean): 
 function ContextUsageChip({
   tokenUsage,
   chatgptUsage,
+  hidden,
 }: {
   tokenUsage?: TokenUsage | null;
   chatgptUsage?: ChatGPTUsage | null;
+  /** Which of this chip's parts the row has had to give up. The ring is not among them: it is
+   * the whole of what this says at a glance, and it is already only 13px wide. */
+  hidden: ReadonlySet<string>;
 }) {
   const translation = useTranslations("ChatInput");
   if (!tokenUsage || tokenUsage.contextTokens <= 0) return null;
@@ -251,16 +278,16 @@ function ContextUsageChip({
         {hasContext && (
           <>
             <ContextFillRing fraction={contextFraction} />
-            <Text data-composer-context-percent="" textStyle="fieldLabel" whiteSpace="nowrap">
+            <Text data-fit-label="context-percent" data-fit-hidden={hidden.has("context-percent") ? "" : undefined} textStyle="fieldLabel" whiteSpace="nowrap">
               {contextPercent}%
             </Text>
-            <Separator data-composer-context-detail="" orientation="vertical" h={3.5} flexShrink={0} />
+            <Separator data-fit-label="context-detail" data-fit-hidden={hidden.has("context-detail") ? "" : undefined} orientation="vertical" h={3.5} flexShrink={0} />
           </>
         )}
-        <Box data-composer-context-detail="" display="flex" alignItems="center" flexShrink={0}>
+        <Box data-fit-label="context-detail" data-fit-hidden={hidden.has("context-detail") ? "" : undefined} display="flex" alignItems="center" flexShrink={0}>
           <LuCoins size={13} />
         </Box>
-        <Text data-composer-context-detail="" textStyle="fieldLabel" whiteSpace="nowrap">
+        <Text data-fit-label="context-detail" data-fit-hidden={hidden.has("context-detail") ? "" : undefined} textStyle="fieldLabel" whiteSpace="nowrap">
           {tokenUsage.contextTokens.toLocaleString()}
           {hasContext ? ` / ${tokenUsage.contextWindow.toLocaleString()}` : ""}
         </Text>
@@ -321,6 +348,7 @@ export function ChatInput({
   const [sendPending, setSendPending] = useState(false);
   const [stopPending, setStopPending] = useState(false);
   const [compactConfirmOpen, setCompactConfirmOpen] = useState(false);
+  const { rowRef: selectorsRowRef, hidden: hiddenLabels } = useFittedRow(COMPOSER_FIT_ORDER);
   // Dictation, which is off until somebody turns it on in Settings — so the microphone is
   // absent rather than disabled when they have not. `recording` holds the take in progress:
   // the button is a toggle, and what a toggle owns is the thing it can stop.
@@ -677,75 +705,6 @@ export function ChatInput({
     <Box
       position="relative"
       pb={2}
-      containerType="inline-size"
-      // The selectors row is `nowrap`, so every control in it has to be told how to give way as
-      // the composer narrows. A control that is in none of these rules keeps its full width for
-      // ever, and because nothing in the row can shrink past its content the row simply grows
-      // wider than the box — which is seen as the context chip riding over the selectors rather
-      // than as an overflow. The sandbox toggle was added without an entry here and did exactly
-      // that; it now sheds its label with the other toggles and can shrink like its neighbours.
-      //
-      // **Drop before you truncate.** That ordering is the whole design and it was the wrong way
-      // round: the first band capped every control's width while the first band that removed any
-      // *label* was three steps further down, so a composer around 800px wide showed a row of
-      // words cut mid-syllable — "ChatGPT Su… > GP…" for the model, "Global ac…" for the sandbox.
-      // A hidden label leaves an icon and a colour, which still say which control this is. A
-      // truncated one says nothing and takes the same room to say it.
-      //
-      // So each band now removes the least load-bearing *text* remaining, and the caps exist only
-      // to stop a pathologically long name from bullying its neighbours — not as the mechanism.
-      // `data-composer-*` marks what may be dropped; a control with no marker is one whose text
-      // is the whole point.
-      css={{
-        // First to go, and by a distance: the provider before the model, and the capability
-        // glyphs beside it. Nobody navigates by the provider — it is implied by the model, and it
-        // is what pushes that chip into truncating the one name that matters.
-        "@container (max-width: 900px)": {
-          "& [data-composer-model-provider], & [data-composer-model-capabilities]": { display: "none" },
-          "& [data-composer-agent-control]": { minWidth: "0 !important", maxWidth: "190px", flexShrink: 1 },
-          "& [data-composer-model]": { minWidth: "0 !important", maxWidth: "230px", flexShrink: 1 },
-          "& [data-composer-permission-control]": { minWidth: "0 !important", maxWidth: "180px", flexShrink: 1 },
-          "& [data-composer-sandbox-control]": { minWidth: "0 !important", maxWidth: "170px", flexShrink: 1 },
-        },
-        // Then the sandbox word. Of the three toggles it is the one whose icon carries most on its
-        // own — a globe against a box, in red against green — so it can lose its label a step
-        // before the others without the row looking half-collapsed.
-        "@container (max-width: 820px)": {
-          "& [data-composer-sandbox-label]": { display: "none" },
-        },
-        // Then the permission word and the exact token counts. The percentage stays: it is the
-        // part of the usage chip anybody actually reads at a glance.
-        "@container (max-width: 720px)": {
-          "& [data-composer-permission-label], & [data-composer-compact-label]": { display: "none" },
-          "& [data-composer-context-detail]": { display: "none" },
-        },
-        // Last, the two identity labels. These are the ones worth keeping longest, which is why
-        // they go last rather than being capped into ellipses early.
-        "@container (max-width: 560px)": {
-          "& [data-composer-agent-label], & [data-composer-model-label], & [data-composer-context-percent]": { display: "none" },
-          // Said here as well as on the elements themselves. The `flexWrap` props are one edit
-          // away from being changed by somebody adding a control, and an easy one to miss; this
-          // is where the rest of the narrow-screen behaviour is stated, so the rule that matters
-          // most at a narrow width belongs here too.
-          "& [data-composer-row], & [data-composer-selectors]": { flexWrap: "nowrap" },
-        },
-        // Never two rows.
-        //
-        // This used to wrap here, and the reasoning is still in the history: with labels showing,
-        // the row genuinely could not hold every control and the usage chip. But by this width the
-        // rules above have already reduced every one of them to its glyph, and four glyphs plus a
-        // ring come to about half of a 390pt panel — so the wrap was firing on a width it had
-        // stopped applying to, and spending a whole line of the transcript to put one small chip
-        // on its own beneath four others.
-        //
-        // The spacing stays the desktop's. Tightening it here was the obvious next lever and the
-        // wrong one: the controls already fit, so the gap was being spent to buy room nothing
-        // needed, and a row of glyphs four points apart reads as one crowded control rather than
-        // as four. If something is ever added that genuinely does not fit, reduce it the way the
-        // rules above reduce everything else — a second line under a text box reads as a layout
-        // that has come apart, not as one adapting.
-
-      }}
     >
       <ConfirmDialog
         open={compactConfirmOpen}
@@ -973,45 +932,73 @@ export function ChatInput({
         </Flex>
       </Box>
 
-      {/* Selectors row (below the input): the agent and model selectors, with the
-          context-usage chip and Compact action on the right. */}
-      <Flex data-composer-row="" justify="space-between" align="center" columnGap={2} flexWrap="nowrap" px={0} pt={1} pb={2}>
-        <Flex data-composer-selectors="" align="center" gap={2} flexWrap="nowrap" flex={1} minW={0}>
-          <AgentSelectControl
-            agents={agents}
-            value={selectedAgent}
-            onChange={onAgentChange}
-            placeholder={translation("agentPlaceholder")}
-            responsiveCompact
-          />
-          <ModelSelect
-            models={models}
-            providers={modelProviders}
-            recent={recentModels}
-            value={agentModel}
-            onChange={onAgentModelChange}
-            fallbackModelId={agentModel}
-            compact
-            responsiveCompact
-          />
-          {/* Adjustable at any point in a session's life, not only before it starts: a
-              conversation that begins under manual approvals and earns trust should not have
-              to be restarted to run under a looser one. */}
-          <PermissionModeControl
-            value={permissionMode}
-            onChange={(mode) => { if (mode) onPermissionModeChange?.(mode); }}
-            responsiveCompact
-          />
-          {/* The same control Settings shows, not a second rendering of the same fact: one
-              component means the two can never disagree about what "restricted" looks like. */}
-          <SandboxToggleControl
-            enforce={sandboxEnforce}
-            backend={sandboxBackend}
-            onChange={onSandboxEnforceChange}
-            responsiveCompact
-          />
-        </Flex>
-        <Flex align="center" gap={2} flexShrink={0} justify="flex-end">
+      {/* Selectors row (below the input): what this turn will run as, and what it has spent.
+          One line, and it stays one line by being *measured* rather than guessed at — see
+          `useFittedRow`. Every control here is its natural width and cannot shrink, which is what
+          lets the row see that it does not fit; when it does not, labels are given up in
+          `COMPOSER_FIT_ORDER` until it does, each control falling back to its icon.
+
+          `overflow="clip"` is not the mechanism, it is the guarantee. The fit runs before paint,
+          but a first render, a late-loading font or a control nobody told this row about would
+          each be a frame where the arithmetic is stale — and a stale frame must be a clipped edge
+          rather than two controls drawn on top of each other. `clip` rather than `hidden` because
+          `hidden` would make this a scroll container, and focusing a clipped control would then
+          scroll the row sideways. */}
+      <Flex
+        ref={selectorsRowRef}
+        align="center"
+        gap={2}
+        flexWrap="nowrap"
+        px={0}
+        pt={1}
+        pb={2}
+        overflow="clip"
+        // Enough for a focus ring to bleed past the edge and nothing more.
+        css={{ overflowClipMargin: "3px" }}
+      >
+        <AgentSelectControl
+          agents={agents}
+          value={selectedAgent}
+          onChange={onAgentChange}
+          placeholder={translation("agentPlaceholder")}
+          fitted
+          labelHidden={hiddenLabels.has("agent")}
+        />
+        <ModelSelect
+          models={models}
+          providers={modelProviders}
+          recent={recentModels}
+          value={agentModel}
+          onChange={onAgentModelChange}
+          fallbackModelId={agentModel}
+          compact
+          fitted
+          providerHidden={hiddenLabels.has("model-provider")}
+          capabilitiesHidden={hiddenLabels.has("model-capabilities")}
+          labelHidden={hiddenLabels.has("model")}
+        />
+        {/* Adjustable at any point in a session's life, not only before it starts: a
+            conversation that begins under manual approvals and earns trust should not have
+            to be restarted to run under a looser one. */}
+        <PermissionModeControl
+          value={permissionMode}
+          onChange={(mode) => { if (mode) onPermissionModeChange?.(mode); }}
+          fitted
+          labelHidden={hiddenLabels.has("permission")}
+        />
+        {/* The same control Settings shows, not a second rendering of the same fact: one
+            component means the two can never disagree about what "restricted" looks like. */}
+        <SandboxToggleControl
+          enforce={sandboxEnforce}
+          backend={sandboxBackend}
+          onChange={onSandboxEnforceChange}
+          fitted
+          labelHidden={hiddenLabels.has("sandbox")}
+        />
+        {/* What the turn has spent, pushed to the far end. `auto` rather than a spacer element,
+            because a spacer would be a child of the row with a width of its own and the fit would
+            have to be taught to ignore it. A margin is not a child. */}
+        <Flex ms="auto" align="center" gap={2} flexShrink={0}>
           {/* Offered from half the threshold the server reclaims at, so there is a window in
               which compacting is your call before it becomes the harness's. Measured against how
               full the context actually is — the one fact that says whether folding would help. */}
@@ -1019,9 +1006,16 @@ export function ChatInput({
             && (isCompacting
               || tokenUsage.contextTokens / tokenUsage.contextWindow >= compactionReclaimAtFraction / 2) && (
             <Button
+              data-fit-control="compact"
+              {...(hiddenLabels.has("compact") ? { "data-fit-collapsed": "" } : {})}
               variant="outline"
               h="var(--control-height)"
+              // Stated rather than inherited, like the model chip's: the button recipe's own gap
+              // is not the 6px every other control in this row uses, and it is the number that is
+              // cancelled when this button gives up its word.
+              gap={1.5}
               px={2}
+              justifyContent="center"
               bg="bg"
               borderColor="border"
               flexShrink={0}
@@ -1030,10 +1024,12 @@ export function ChatInput({
               title={isCompacting ? translation("compactingTooltip") : translation("compactTooltip")}
             >
               {isCompacting ? <Spinner size="xs" /> : <LuFoldVertical size={13} />}
-              <Text data-composer-compact-label="">{isCompacting ? translation("compacting") : translation("compact")}</Text>
+              <Text data-fit-label="compact" data-fit-hidden={hiddenLabels.has("compact") ? "" : undefined}>
+                {isCompacting ? translation("compacting") : translation("compact")}
+              </Text>
             </Button>
           )}
-          <ContextUsageChip tokenUsage={tokenUsage} chatgptUsage={chatgptUsage} />
+          <ContextUsageChip tokenUsage={tokenUsage} chatgptUsage={chatgptUsage} hidden={hiddenLabels} />
         </Flex>
       </Flex>
 

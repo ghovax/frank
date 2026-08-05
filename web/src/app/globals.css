@@ -37,19 +37,14 @@ body {
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
 
-  /* The gap above the app shell, matching the one the floating panels carry on
-     their other three sides — so the chat's top bar and the cards' top edges
-     land on one line.
-
-     Zero on a phone, and that is the whole reason it is a variable. Below `md`
-     those panels are not floating: they are the screen, full-bleed on the left,
-     the right and the bottom. The gap was reserving a strip above them that
-     nothing on the other three sides had, which reads as the page hanging
-     slightly below the top of the screen for no reason. */
   /* How tall a control is. 32px suits a pointer and is below both Apple's and
      Google's floor for a finger, so it grows on a coarse-pointer device — see
      the rule further down, which is the same number by another route. */
   --control-height: 32px;
+
+  /* The column a dropdown arrow keeps at the end of a control that has given up its label. Taken
+     out of the padding, so what remains for the icon is exactly the square. */
+  --fit-arrow-column: 14px;
 
   /* And how tall the ones beside the composer's text box are, which is not the
      same number. Those are Chakra `size="sm"` buttons — `h: 9`, 36px — while the
@@ -61,6 +56,15 @@ body {
      pointer it sat 4px short of the send button it stands against. */
   --composer-control-height: 36px;
 
+  /* The gap above the app shell, matching the one the floating panels carry on
+     their other three sides — so the chat's top bar and the cards' top edges
+     land on one line.
+
+     Zero on a phone, and that is the whole reason it is a variable. Below `md`
+     those panels are not floating: they are the screen, full-bleed on the left,
+     the right and the bottom. The gap was reserving a strip above them that
+     nothing on the other three sides had, which reads as the page hanging
+     slightly below the top of the screen for no reason. */
   --app-gap-top: 8px;
 
   /* The one value the app shell reserves at the top: whichever chrome is above
@@ -216,24 +220,32 @@ samp {
    Percentages cannot do this — `background-position` percentages are relative to the
    difference between the element and the background, so seamlessness would pin the tile to
    half the element, putting two highlights on every title and halving the distance each one
-   travels. In `em` the tile is set by how a gloss should look, not by that arithmetic: wide
-   enough that one band crosses at a time, with the bright part narrow so it reads as a
-   sheen passing rather than a gradient sloshing. */
+   travels. In `em` the tile is set by how a gloss should look, not by that arithmetic.
+
+   **The bright part is as long as the tile.** It used to be a fifth of it — muted for 40%, a
+   ramp up and back down across the middle 20%, muted for the last 40% — which is a narrow spike
+   with four fifths of every cycle flat behind it. On a short label that reads as a sheen; on a
+   title of any length it reads as a bright dot crossing an otherwise still line, and a moving
+   dot is the thing an eye cannot stop following. Ramping the whole way instead leaves no flat
+   stretch to separate one peak from the next, so what travels is a slow swell rather than a
+   glint: a letter now spends half a cycle brightening and half fading, where before the whole
+   rise and fall passed it in a fifth of one and it sat flat for the other four.
+
+   The tile and the duration grew together, which keeps the speed the gloss travels at — the
+   same fourteen ems a second as before, spent on one long wave instead of a spike and a gap. */
 .running-title-shimmer {
   color: transparent;
   background-image: repeating-linear-gradient(
     90deg,
     var(--chakra-colors-fg-muted) 0%,
-    var(--chakra-colors-fg-muted) 40%,
     var(--chakra-colors-fg) 50%,
-    var(--chakra-colors-fg-muted) 60%,
     var(--chakra-colors-fg-muted) 100%
   );
-  background-size: 26em 100%;
+  background-size: 42em 100%;
   background-repeat: repeat;
   background-clip: text;
   -webkit-background-clip: text;
-  animation: running-title-shimmer 1.8s linear infinite;
+  animation: running-title-shimmer 3s linear infinite;
 }
 
 @keyframes running-title-shimmer {
@@ -242,7 +254,7 @@ samp {
   }
 
   to {
-    background-position: 26em 0;
+    background-position: 42em 0;
   }
 }
 
@@ -281,16 +293,6 @@ samp {
     opacity: 1;
   }
 }
-
-/* Disclosure content enters directly beneath its trigger with a simple local fade. */
-/* A disclosure body appears at once, with no fade.
-
-   It used to fade in over 0.12s. Opening a tool call is a deliberate act — you clicked the row
-   because you want to read what is inside it — and an animation between the click and the text
-   is time spent not reading, every single time. It also arrives *while* the body is already
-   pushing the rows below it down, so the two are easy to confuse: the content is still fading up
-   as the layout settles, which reads as the page being unsettled rather than as a panel opening.
-   The expansion itself is the feedback that the click landed. */
 
 /* Streaming markdown uses opacity only. Flowtoken's wrapper layout is normalized by
    MarkdownContent, so this animation cannot alter wrapping, metrics, or glyph positions. */
@@ -364,6 +366,80 @@ samp {
      moving under was still on screen. Declaring it on the element means both directions are
      animated by the same rule and at the same speed. */
   transition: transform var(--marquee-duration, 0s) linear;
+}
+
+/* A label that a row may take away when it runs out of room — see `useFittedRow`.
+ *
+ * Squeezed to nothing rather than removed, and that is the whole trick. `display: none` would be
+ * the obvious way to hide it and would make it unmeasurable: an element with no box has no width,
+ * so the row could never work out what putting the label back would cost, and would be reduced to
+ * guessing — which is what the two previous attempts at this row did, and why they were wrong in
+ * every language they were not written in. At zero width the element still reports `scrollWidth`,
+ * which is its content's own width, so it can be costed at any moment in either direction.
+ *
+ * The negative margin cancels the flex gap that would otherwise be spent on an empty element, so
+ * a hidden label costs exactly nothing rather than six pixels of nothing. It is stated as a custom
+ * property because the row reads the same value back when it costs the label: one number, one
+ * place, and no constant in the code that can drift away from the one in the stylesheet. */
+[data-fit-label] {
+  --fit-label-gap: 6px;
+  white-space: nowrap;
+}
+
+[data-fit-label][data-fit-hidden] {
+  max-width: 0;
+  overflow: hidden;
+  margin-inline-start: calc(-1 * var(--fit-label-gap));
+}
+
+/* And what is left of the control the label belonged to.
+ *
+ * Here rather than in the component, and that is the point rather than a preference. `useFittedRow`
+ * chooses what to give up by *applying* a candidate to the DOM and measuring the result, so the
+ * collapsed state has to be reachable by setting an attribute — if half of it lived in a React prop
+ * the arrangement being measured would not be the arrangement that ends up on screen, and the
+ * measurement would be a guess again. One attribute is the whole state, so trying and drawing are
+ * the same act.
+ *
+ * A control showing nothing but its icon is square: the same width as it is tall. A rounded
+ * rectangle a few pixels wider than it is tall reads as a button that has been cut off rather than
+ * one meant to be that size, and four in a row read as four separate mistakes. The one asymmetry
+ * allowed is a dropdown arrow — a second thing the control is genuinely showing — which gets a
+ * column of its own beside the square. Both are stated against `--control-height`, so a control
+ * stays square on a touch device, where that is 40px rather than 32. */
+[data-fit-control][data-fit-collapsed] {
+  width: var(--control-height);
+  min-width: var(--control-height);
+  padding-inline: 0;
+  justify-content: center;
+}
+
+[data-fit-control][data-fit-arrow][data-fit-collapsed] {
+  width: calc(var(--control-height) + var(--fit-arrow-column));
+  min-width: calc(var(--control-height) + var(--fit-arrow-column));
+  padding-inline-end: var(--fit-arrow-column);
+}
+
+/* The utilities under a message you sent — the time it was sent, and a button to copy it.
+   They are always laid out, so revealing them moves nothing; only the ink changes.
+
+   Hidden at rest on a pointer only, and that polarity is the point: a device with no hover has
+   no way to ask for them, so it keeps them. The same reason the sidebar's row actions are gated
+   this way — WebKit gives the first tap on an element whose `:hover` changes what is rendered to
+   the hover state, so a hidden-until-hover control costs a phone two taps.
+
+   A queued message opts out (it carries no `.message-actions`), because one of its buttons
+   deletes it and a destructive control you cannot see is a trap rather than a tidy default. */
+@media (hover: hover) {
+  .message-actions {
+    opacity: 0;
+    transition: opacity 0.12s ease-out;
+  }
+
+  .message-row:hover .message-actions,
+  .message-row:focus-within .message-actions {
+    opacity: 1;
+  }
 }
 
 /* Everything below is what a *pointer* does, and none of it is what a finger does.
@@ -445,7 +521,6 @@ samp {
     transform: none;
   }
 }
-
 
 @media (prefers-reduced-motion: reduce) {
   .running-title-shimmer {

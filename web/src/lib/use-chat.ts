@@ -14,6 +14,7 @@ import {
   sessionCreate,
   sessionSend,
   CONTENT_BLOCK_METADATA_KEY,
+  METADATA_KEY,
   partPayload,
   turnState,
   type A2AMessage,
@@ -607,6 +608,15 @@ function attachmentsFromMessage(message: A2AMessage): MessageAttachment[] {
   return attachments;
 }
 
+// When the session took a message, as it recorded it. The harness stamps this on every
+// inbound message under its own namespaced metadata key, so a conversation reloaded a week
+// later still knows when each thing was said. Empty for a message stored before it existed.
+function receivedAt(message: A2AMessage): string {
+  const extension = asRecord(message.metadata?.[METADATA_KEY]);
+  const stamp = extension.receivedAt;
+  return typeof stamp === "string" ? stamp : "";
+}
+
 // A message a session received from outside itself: the user typed it, or another session
 // sent it. `peerSender` is set only in the second case, and telling them apart is not
 // cosmetic — a peer's report rendered as a user message attributes words to a person who
@@ -628,7 +638,11 @@ function reduceInboundMessage(state: ReduceState, message: A2AMessage, peerSende
     id: stableMessageId(state, peerSender ? "peer" : "user", message.messageId),
     role: peerSender ? "peer" : "user",
     content: text,
-    timestamp: new Date().toISOString(),
+    // When the session took it, from the message itself. Replay used to stamp `now`, which
+    // dated every message in a reloaded conversation to the moment the page opened — a
+    // transcript where everything was sent seconds ago and the order was the only thing left
+    // that was true. `now` survives only as the fallback for a message that predates the stamp.
+    timestamp: receivedAt(message) || new Date().toISOString(),
     ...(Object.keys(meta).length > 0 ? { meta } : {}),
   });
 }

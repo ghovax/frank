@@ -37,7 +37,12 @@ interface ModelSelectProps {
   // Optional display fallback for a controlled value that has not loaded yet.
   fallbackModelId?: string;
   compact?: boolean;
-  responsiveCompact?: boolean;
+  fitted?: boolean;
+  /** Parts the row it sits in has told it to give up, in the order it gives them up: the
+   * provider before the model, the capability glyphs, then the model's own name. */
+  providerHidden?: boolean;
+  capabilitiesHidden?: boolean;
+  labelHidden?: boolean;
 }
 
 // Sentinel option in the model dropdown that reveals the free-form Model ID
@@ -138,7 +143,10 @@ function keyByProvider(settings: Settings): Record<string, string> {
   );
 }
 
-export function ModelSelect({ models, providers, value, onChange, recent = [], fallbackModelId = "", compact, responsiveCompact = false }: ModelSelectProps) {
+export function ModelSelect({
+  models, providers, value, onChange, recent = [], fallbackModelId = "", compact,
+  fitted = false, providerHidden = false, capabilitiesHidden = false, labelHidden = false,
+}: ModelSelectProps) {
   const translation = useTranslations("ModelSelect");
   const tc = useTranslations("Common");
   const [open, setOpen] = useState(false);
@@ -295,7 +303,6 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
   return (
     <>
       <Button
-        data-composer-model=""
         variant="outline"
         px={2}
         // The icon-to-label gap is stated rather than inherited: the button recipe's `xs`
@@ -305,18 +312,42 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
         gap={1.5}
         bg="bg"
         borderColor="border"
+        // With every word gone this is an icon and an arrow, sized like the pickers beside it —
+        // stated in `globals.css` against `data-fit-collapsed`, so the arrangement the row tries
+        // is the arrangement it draws.
+        {...(fitted ? { "data-fit-control": "model", "data-fit-arrow": "", ...(labelHidden ? { "data-fit-collapsed": "" } : {}) } : {})}
         minW={compact ? "max-content" : undefined}
-        maxW={responsiveCompact ? "none" : compact ? "220px" : "100%"}
+        maxW={fitted ? "none" : compact ? "220px" : "100%"}
         flexShrink={0}
         onClick={openDialog}
       >
         <LuBot size={compact ? 13 : 14} />
         {chipProviderLabel ? (
-          <Span data-composer-model-label={responsiveCompact ? "" : undefined} display="flex" alignItems="center" minW={0}>
-            <Span data-composer-model-provider={responsiveCompact ? "" : undefined} color="fg.muted" truncate>
+          <Span
+            data-fit-label={fitted ? "model" : undefined}
+            data-fit-hidden={fitted && labelHidden ? "" : undefined}
+            display="flex"
+            alignItems="center"
+            minW={0}
+          >
+            <Span
+              data-fit-label={fitted ? "model-provider" : undefined}
+              data-fit-hidden={fitted && providerHidden ? "" : undefined}
+              css={{ "--fit-label-gap": "0px" }}
+              color="fg.muted"
+              truncate
+            >
               {chipProviderLabel}
             </Span>
-            <Span data-composer-model-provider={responsiveCompact ? "" : undefined} color="fg.subtle" display="flex" alignItems="center" flexShrink={0}>
+            <Span
+              data-fit-label={fitted ? "model-provider" : undefined}
+              data-fit-hidden={fitted && providerHidden ? "" : undefined}
+              css={{ "--fit-label-gap": "0px" }}
+              color="fg.subtle"
+              display="flex"
+              alignItems="center"
+              flexShrink={0}
+            >
               <LuChevronRight size={compact ? 11 : 13} />
             </Span>
             <Span truncate fontFamily={chipNameIsFallback ? "var(--app-font-mono)" : undefined} fontSize={chipNameIsFallback ? "xs" : undefined}>
@@ -324,11 +355,22 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
             </Span>
           </Span>
         ) : (
-          <Span data-composer-model-label={responsiveCompact ? "" : undefined} truncate fontFamily={chipNameIsFallback ? "var(--app-font-mono)" : undefined} fontSize={chipNameIsFallback ? "xs" : undefined}>
+          <Span
+            data-fit-label={fitted ? "model" : undefined}
+            data-fit-hidden={fitted && labelHidden ? "" : undefined}
+            truncate
+            fontFamily={chipNameIsFallback ? "var(--app-font-mono)" : undefined}
+            fontSize={chipNameIsFallback ? "xs" : undefined}
+          >
             {chipModelName}
           </Span>
         )}
-        <Box data-composer-model-capabilities={responsiveCompact ? "" : undefined} display="flex" flexShrink={0}>
+        <Box
+          data-fit-label={fitted ? "model-capabilities" : undefined}
+          data-fit-hidden={fitted && capabilitiesHidden ? "" : undefined}
+          display="flex"
+          flexShrink={0}
+        >
           <ModelCapabilityBadges model={chipModel} size={compact ? 11 : 13} />
         </Box>
         <LuChevronDown size={compact ? 13 : 15} />

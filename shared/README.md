@@ -1,16 +1,12 @@
-# `shared/` — what both clients are made of
+# `shared/` — what the desktop and the phone both read
 
-The desktop and the phone are two renderers over one daemon. Everything that decides *what* to
-show lives here and is written once; only the drawing is written twice.
+The phone is a WebView onto the same interface the desktop shows, so there is one implementation
+of the screens and nothing to keep in step. What is still genuinely two programs is the shell
+around that page: the phone's pairing screen and machine list are its own, and they show the same
+words in the same languages as everything else.
 
-That split is not a compromise, it is the boundary the platforms actually have. The desktop is
-React DOM and Chakra — `<Flex>`, `<Badge>`, CSS. The phone is React Native — `<View>`, `<Text>`,
-no DOM and no stylesheet. A Chakra component cannot render on a phone and a React Native view
-cannot render in a browser, so a literally shared component tree would mean rewriting the desktop
-in React Native primitives and losing xterm, pdf.js, Mermaid and every other thing that assumes a
-document. The duplication worth removing is not the markup. It is the *decisions* — and those
-were what had drifted: one client said "Medium risk" and the other said "medium", one named a
-workspace after all its locations and the other invented a `+1`.
+So this directory holds what has no renderer in it — text, names, colours, and the wire contract.
+Anything here can be read by a React DOM page, by a React Native screen, or by neither.
 
 ## What belongs here
 
@@ -29,11 +25,9 @@ Anything with no import from `react-dom`, `@chakra-ui/*`, `react-native`, or `ne
 
 Components. Styling. Anything that imports a renderer.
 
-Icons are the interesting edge: the desktop draws with `react-icons/lu` and the phone with
-`lucide-react-native`, which are different packages exporting different objects. So `tools.ts`
-names the glyph — `"terminal"`, `"file-text"` — and each client maps that name to its own
-package's component. One decision about which glyph means `bash`; two tiny tables turning a name
-into something drawable.
+`tools.ts` names a glyph — `"terminal"`, `"file-text"` — rather than exporting a component, so
+what a tool call *is called* and what it is *drawn with* are one decision, made where the other
+decisions about that tool are made.
 
 ## How each side reaches it
 

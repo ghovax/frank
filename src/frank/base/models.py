@@ -135,7 +135,13 @@ def _catalog() -> list[ModelDefinition]:
         if get_provider_definition(local_id) is None:
             continue
         for model_id, model_info in provider_info.get("models", {}).items():
-            name = model_info.get("name", "") or model_id
+            # Stripped, because the catalogue is a community-maintained file and some of its
+            # names carry a leading or trailing space. A name is laid out beside a provider,
+            # an icon and a set of capability glyphs, and a space at either end pushes it off
+            # the alignment every other row keeps. Done here rather than where it is drawn:
+            # the name is also sorted on, matched against and written into a session record,
+            # and one of those would have kept the space.
+            name = (model_info.get("name", "") or model_id).strip() or model_id
             identifier = f"{local_id}/{model_id}"
             modalities = model_info.get("modalities") or {}
             input_modalities = tuple(
@@ -161,7 +167,7 @@ def _catalog() -> list[ModelDefinition]:
                 vision="image" in input_modalities,
                 input_modalities=input_modalities,
                 context_length=int((model_info.get("limit") or {}).get("context") or 0),
-                release_date=str(model_info.get("release_date") or ""),
+                release_date=str(model_info.get("release_date") or "").strip(),
                 litellm_prefix=litellm_prefix,
             ))
     return list(models.values())

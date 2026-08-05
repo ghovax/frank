@@ -8,25 +8,20 @@ import {
   Heading,
   IconButton,
   Menu,
-  Separator,
-  Span,
   Text,
   VStack,
 } from "@chakra-ui/react";
-import { LuAppWindow, LuArrowDown, LuChevronLeft, LuChevronRight, LuClock, LuDownload, LuEllipsis, LuFile, LuFolderOpen, LuGitBranch, LuHistory, LuMaximize2, LuMinimize2, LuMessageSquare, LuMoon, LuMousePointerClick, LuPanelLeftClose, LuPanelLeftOpen, LuPlugZap, LuRotateCcw, LuRotateCw, LuSettings, LuSun, LuTerminal, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
+import { LuArrowDown, LuEllipsis, LuFolderOpen, LuGitBranch, LuMessageSquare, LuMoon, LuPanelLeftClose, LuPanelLeftOpen, LuPlugZap, LuSettings, LuSun, LuTerminal, LuTrash2, LuTriangleAlert } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { FadeIn } from "@/components/ui/fade-in";
-import { useFormatter, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { toaster } from "@/components/ui/toaster";
 import { PanelTiles, type TilePanel } from "./panel-tiles";
 import { useColorMode } from "./ui/color-mode";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { useChat, type ChatMessage } from "@/lib/use-chat";
-import { ChatMessageItem, ChatToolGroup } from "./chat-message";
-import { InlineField } from "./ui/display";
-import { PanelTab } from "./ui/panel-tab";
-import { PanelCard, PanelHeader, PanelEmptyState, TOP_BAR_HEIGHT } from "@/components/ui/panel";
-import { SegmentedToggle } from "@/components/ui/segmented-toggle";
+import { ChatMessageItem, ChatToolGroup, UserMessageCard } from "./chat-message";
+import { TOP_BAR_HEIGHT } from "@/components/ui/panel";
 import { ChatInput } from "./chat-input";
 import { QuestionOverlay } from "./question-overlay";
 import { SettingsDialog, type SettingsSection } from "./settings-dialog";
@@ -49,7 +44,6 @@ import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-displ
 import { permissionReasonPaths, permissionReasonText, type ToolPermission, type ToolQuestion } from "@/lib/tool-event";
 
 import { clearSessionGoal, fetchSettings, getWorkspace, revealInFinder, saveSessionDraft, saveAgentConfiguration, saveSettings, setSessionPermissionMode, subscribeEvents, type AgentCard, type AgentSummary, type Location, type PermissionMode, type SandboxEnforce, type WorktreeStrategy } from "@/lib/api";
-import { PdfDocumentView } from "./pdf-view";
 import { scrollFade, scrollFadeTopBottom } from "@/lib/scroll-fade";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { playAttentionSound, playTurnEndSound } from "@/lib/sounds";
@@ -280,7 +274,6 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const translation = useTranslations("ChatPanel");
   const tToolDisplay = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
-  const format = useFormatter();
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(initialPermissionMode);
   const { messages, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, abort, dequeueMessage, outboxHold, deliveringMessage, grantedPermissionMode, retryOutbox, handlePermission, handleQuestion, declineQuestion, compact } =
     useChat(agent, initialSessionId, workingDirectory, worktreeStrategy, permissionMode, sessionRunning, workspaceId);
@@ -717,22 +710,18 @@ export function ChatPanel({
     }
   }, [messages, send]);
 
-  // A tool call awaiting the user's approval or answer pauses the turn. While it is
-  // outstanding the composer stays open and queues (`useChat` holds anything typed until the
-  // decision is made), and Stop auto-denies it.
-  // Deliberately not gated on `isStreaming`. A turn parked on a permission is *not* running —
-  // the daemon sleeps the session, because the whole turn is checkpointed and holding an
-  // interpreter to wait for a person is what sleeping exists to avoid. So the one moment a
-  // decision must be shown is the moment the turn stops. Requiring a live turn hid every
-  // prompt behind the thing that raised it.
-  const hasInputRequired = messages.some(
-    (message) => message.role === "tool_call" && message.meta?.status === "input_required"
-  );
   // The first pending input-required prompt (an ask_user question or a permission
   // approval), surfaced as an overlay above the input. Both live outside the tool
   // card so a pending decision always grabs attention at the bottom of the chat,
   // and resolving one reveals the next. A question takes precedence on the same
   // card, though in practice a card carries only one.
+  //
+  // A tool call awaiting approval pauses the turn. While it is outstanding the composer stays
+  // open and queues (`useChat` holds anything typed until the decision is made), and Stop
+  // auto-denies it. Deliberately not gated on `isStreaming`: a turn parked on a permission is
+  // *not* running — the daemon sleeps the session, because the whole turn is checkpointed and
+  // holding an interpreter to wait for a person is what sleeping exists to avoid. So the one
+  // moment a decision must be shown is the moment the turn stops.
   let pendingPrompt: (
     | { kind: "question"; question: ToolQuestion }
     | { kind: "permission"; permission: ToolPermission; title: string; detail?: string; detailPaths?: string[]; command?: string; arguments?: Record<string, unknown> }
@@ -1123,62 +1112,32 @@ export function ChatPanel({
                           </FadeIn>
                         );
                     })}
+                    {/* A message the session has not taken yet, drawn as the message it already
+                        is. What it says differently it says in its footer: a message being
+                        handed over right now is not waiting for anything, so it carries no
+                        label at all — calling the few milliseconds of an ordinary send "queued"
+                        reported a wait that was not happening. The rest name which wait they are
+                        in. "Queued" is waiting behind the work. "Waiting for your decision" is
+                        waiting behind *you*, and answering the prompt above is what sends it.
+                        "Couldn't reach the session" is a fault, and it offers the retry rather
+                        than sitting there looking patient. */}
                     {queuedMessages.map((message, index) => (
-                      <Flex key={message.id} align="flex-start" alignSelf="flex-end" maxW="80%" gap={1.5}>
-                        <IconButton
-                          aria-label={translation("deleteQueuedMessage")}
-                          variant="ghost"
-                          colorPalette="red"
-                          mt={0.5}
-                          flexShrink={0}
-                          onClick={() => dequeueMessage(index)}
-                        >
-                          <LuTrash2 size={13} />
-                        </IconButton>
-                        <Box
-                          px={2}
-                          py={1.5}
-                          borderRadius="md"
-                          border="1px dashed"
-                          borderColor="border"
-                          bg="bg.subtle"
-                          opacity={0.7}
-                          flex={1}
-                          minW={0}
-                        >
-                          {/* A message that is being handed over right now is not waiting for
-                              anything, so it is drawn plainly, with no label. Saying "Queued"
-                              about the ordinary case — type, send, gone in a few milliseconds —
-                              reported a wait that was not happening, and read as a fault every
-                              time a message went through normally.
-
-                              The rest do say which wait they are in. "Queued" is waiting behind
-                              the work. "Waiting for your decision" is waiting behind *you*, and
-                              answering the prompt above is what sends it. "Couldn't reach the
-                              session" is a fault, and it offers the retry rather than sitting
-                              there looking patient. */}
-                          {message.id !== deliveringMessage && (
-                          <Flex align="center" gap={1.5}>
-                            <Span display="inline-flex" alignItems="center" color={outboxHold === "unreachable" ? "red.fg" : undefined}>
-                              {outboxHold === "unreachable" ? <LuTriangleAlert size={11} /> : <LuClock size={11} />}
-                            </Span>
-                            <Text textStyle="fieldLabel" color={outboxHold === "unreachable" ? "red.fg" : "fg.subtle"}>
-                              {translation(
-                                outboxHold === "unreachable" ? "queuedUnreachable"
-                                  : outboxHold === "decision" ? "queuedForDecision"
-                                    : "queued"
-                              )}
-                            </Text>
-                            {outboxHold === "unreachable" && index === 0 && (
-                              <Button size="2xs" variant="outline" onClick={retryOutbox}>
-                                {translation("queuedRetry")}
-                              </Button>
-                            )}
-                          </Flex>
-                          )}
-                          <Text fontSize="sm" color="fg.muted">{message.text}</Text>
-                        </Box>
-                      </Flex>
+                      <UserMessageCard
+                        key={message.id}
+                        message={{ id: message.id, role: "user", content: message.text, timestamp: "" }}
+                        queued={{
+                          status: message.id === deliveringMessage ? "" : translation(
+                            outboxHold === "unreachable" ? "queuedUnreachable"
+                              : outboxHold === "decision" ? "queuedForDecision"
+                                : "queued"
+                          ),
+                          failed: outboxHold === "unreachable",
+                          onDelete: () => dequeueMessage(index),
+                          ...(outboxHold === "unreachable" && index === 0
+                            ? { onRetry: retryOutbox, retryLabel: translation("queuedRetry") }
+                            : {}),
+                        }}
+                      />
                     ))}
                   </VStack>
                 </motion.div>

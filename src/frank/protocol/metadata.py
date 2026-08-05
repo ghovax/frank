@@ -63,6 +63,12 @@ class Metadata:
     # Set by a session sending another session a message. Its presence is what makes the turn
     # a peer turn — the field carries who, and "who" and "not the user" are the same fact here.
     PEER_SENDER = "peerSender"
+    # When the harness took this message, as an ISO-8601 instant in UTC. Stamped once, by the
+    # side that receives it, because that is the only clock in the exchange this side can vouch
+    # for: a sender's clock is its own, and the clock of whoever *reads* the transcript later is
+    # nobody's. Without it a replayed conversation had no time in it at all — a client rebuilding
+    # the transcript could only date each message to the moment it loaded the page.
+    RECEIVED_AT = "receivedAt"
 
 
 def turn_metadata(message) -> dict:

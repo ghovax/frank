@@ -34,6 +34,20 @@ function controlMetrics(layout: "chip" | "field") {
     : { ...base, width: "max-content", justifyContent: "space-between" as const };
 }
 
+// A control in a row that fits itself: what it answers to, and whether it is currently down to its
+// icon. The size that goes with `data-fit-collapsed` lives in `globals.css` rather than here,
+// because `useFittedRow` decides by *applying* a candidate to the DOM and measuring it — so the
+// collapsed state has to be reachable by setting one attribute, or what gets measured is not what
+// gets drawn. `hasArrow` says the control keeps a dropdown arrow beside the square.
+function fitMarkers(id: string | undefined, labelHidden: boolean, hasArrow: boolean) {
+  if (!id) return {};
+  return {
+    "data-fit-control": id,
+    ...(hasArrow ? { "data-fit-arrow": "" } : {}),
+    ...(labelHidden ? { "data-fit-collapsed": "" } : {}),
+  };
+}
+
 function permissionAppearance(permissionMode: PermissionMode) {
   return {
     default: {
@@ -91,17 +105,21 @@ export function AgentSelectControl({
   onChange,
   layout = "chip",
   placeholder,
-  responsiveCompact = false,
+  fitted = false,
+  labelHidden = false,
 }: {
   agents: { id: string; name: string; title?: string; description?: string }[];
   value: string;
   onChange: (agent: string) => void;
   layout?: "chip" | "field";
   placeholder?: string;
-  responsiveCompact?: boolean;
+  fitted?: boolean;
+  /** The row this sits in has no space for the name; show the icon and the arrow alone. */
+  labelHidden?: boolean;
 }) {
   const translation = useTranslations("SessionControls");
   const metrics = controlMetrics(layout);
+  const markers = fitMarkers(fitted ? "agent" : undefined, labelHidden, true);
   const collection = useMemo(
     () => createListCollection({
       items: agents.map((agent) => ({ label: agent.title || agent.name, value: agent.id })),
@@ -110,21 +128,21 @@ export function AgentSelectControl({
   );
   return (
     <Select.Root
-      data-composer-agent-control={responsiveCompact ? "" : undefined}
       collection={collection}
       value={value ? [value] : []}
       onValueChange={(details) => {
         if (details.value[0]) onChange(details.value[0]);
       }}
       size="xs"
+      {...markers}
       w={metrics.width}
       minW={layout === "field" ? 0 : "max-content"}
       maxW="none"
       flexShrink={0}
     >
-      <Select.Control data-composer-agent-control={responsiveCompact ? "" : undefined} w={metrics.width} minW={layout === "field" ? 0 : "max-content"} maxW="none">
+      <Select.Control {...markers} w={metrics.width} minW={layout === "field" ? 0 : "max-content"} maxW="none">
         <Select.Trigger
-          data-composer-agent-control={responsiveCompact ? "" : undefined}
+          {...markers}
           w={metrics.width}
           borderRadius={metrics.borderRadius}
           fontSize={metrics.fontSize}
@@ -145,7 +163,8 @@ export function AgentSelectControl({
             <LuUser size={13} />
           </Box>
           <Select.ValueText
-            data-composer-agent-label={responsiveCompact ? "" : undefined}
+            data-fit-label={fitted ? "agent" : undefined}
+            data-fit-hidden={fitted && labelHidden ? "" : undefined}
             placeholder={placeholder ?? translation("agentPlaceholder")}
             fontSize={metrics.contentFontSize}
             maxW={metrics.labelMaximumWidth}
@@ -191,14 +210,17 @@ export function PermissionModeControl({
   value,
   onChange,
   layout = "chip",
-  responsiveCompact = false,
+  fitted = false,
+  labelHidden = false,
   unsetLabel,
 }: {
   value: PermissionMode | null;
   onChange: (mode: PermissionMode | null) => void;
   size?: "xs" | "sm";
   layout?: "chip" | "field";
-  responsiveCompact?: boolean;
+  fitted?: boolean;
+  /** The row this sits in has no space for the mode's name; the icon and its colour say it. */
+  labelHidden?: boolean;
   /**
    * When given, the control offers this as a first choice meaning "no mode", and `onChange`
    * answers `null` for it.
@@ -223,6 +245,7 @@ export function PermissionModeControl({
     ...permissionChoices.map(({ value: itemValue, label }) => ({ value: itemValue, label })),
   ];
   const metrics = controlMetrics(layout);
+  const markers = fitMarkers(fitted ? "permission" : undefined, labelHidden, true);
   const collection = createListCollection({ items: permissionItems });
   const selectedAppearance = permissionAppearance(value ?? "default");
   const selectedLabel = permissionItems.find((item) => item.value === (value ?? UNSET))?.label
@@ -230,7 +253,6 @@ export function PermissionModeControl({
 
   return (
     <Select.Root
-      data-composer-permission-control={responsiveCompact ? "" : undefined}
       collection={collection}
       value={[value ?? UNSET]}
       onValueChange={(details) => {
@@ -239,14 +261,15 @@ export function PermissionModeControl({
         onChange(chosen === UNSET ? null : (chosen as PermissionMode));
       }}
       size="xs"
+      {...markers}
       w={metrics.width}
       minW={layout === "field" ? 0 : "max-content"}
       maxW="none"
       flexShrink={0}
     >
-      <Select.Control data-composer-permission-control={responsiveCompact ? "" : undefined} w={metrics.width} minW={layout === "field" ? 0 : "max-content"} maxW="none">
+      <Select.Control {...markers} w={metrics.width} minW={layout === "field" ? 0 : "max-content"} maxW="none">
         <Select.Trigger
-          data-composer-permission-control={responsiveCompact ? "" : undefined}
+          {...markers}
           w={metrics.width}
           borderRadius={metrics.borderRadius}
           fontSize={metrics.fontSize}
@@ -267,7 +290,15 @@ export function PermissionModeControl({
           <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color={selectedAppearance.color} flexShrink={0}>
             {selectedAppearance.icon}
           </Box>
-          <Text data-composer-permission-label={responsiveCompact ? "" : undefined} fontSize={metrics.contentFontSize} fontWeight="medium" whiteSpace="nowrap" maxW={metrics.labelMaximumWidth} truncate={metrics.labelMaximumWidth !== "none"}>
+          <Text
+            data-fit-label={fitted ? "permission" : undefined}
+            data-fit-hidden={fitted && labelHidden ? "" : undefined}
+            fontSize={metrics.contentFontSize}
+            fontWeight="medium"
+            whiteSpace="nowrap"
+            maxW={metrics.labelMaximumWidth}
+            truncate={metrics.labelMaximumWidth !== "none"}
+          >
             {selectedLabel}
           </Text>
         </Select.Trigger>
@@ -325,31 +356,29 @@ function ToggleControl({
   enabled,
   onChange,
   layout,
-  labelMarker,
-  controlMarker,
+  fitId,
+  labelHidden = false,
 }: {
   appearance: ToggleAppearance;
   enabled: boolean;
   onChange?: (enabled: boolean) => void;
   layout: "chip" | "field";
-  // A `data-` hook so the composer's container queries can drop this label as the row narrows,
-  // exactly as they drop the agent, model and permission ones.
-  labelMarker?: string;
-  // A second hook, on the control rather than the label. The composer's row is `nowrap`, so a
-  // child that cannot shrink does not get smaller when there is no room for it — it pushes the
-  // row wider than its container and the right-hand group rides over the left. Hiding the label
-  // is most of the fix; being *allowed to shrink* is the rest of it, and the two are separate
-  // because a control that has given up its label can still be the one thing too many.
-  controlMarker?: string;
+  /** The name this toggle's label answers to when the row it is in has to shed labels. */
+  fitId?: string;
+  labelHidden?: boolean;
 }) {
   const metrics = controlMetrics(layout);
+  // No arrow: this is a button, not a picker, so with its word gone it is a plain square.
+  const markers = fitMarkers(fitId, labelHidden, false);
   return (
     <Button
-      {...(controlMarker ? { [controlMarker]: "" } : {})}
+      {...markers}
       variant="outline"
       borderRadius={metrics.borderRadius}
       fontSize={metrics.fontSize}
-      h={8}
+      // Both dimensions from the same variable, so the square stays square on a touch device,
+      // where a control is 40px rather than 32.
+      h="var(--control-height)"
       px={metrics.paddingX}
       gap={metrics.gap}
       w={metrics.width}
@@ -369,7 +398,8 @@ function ToggleControl({
         {appearance.icon}
       </Box>
       <Span
-        {...(labelMarker ? { [labelMarker]: "" } : {})}
+        data-fit-label={fitId}
+        data-fit-hidden={fitId && labelHidden ? "" : undefined}
         fontSize={metrics.contentFontSize}
         fontWeight="medium"
         minW={0}
@@ -394,14 +424,17 @@ export function SandboxToggleControl({
   backend,
   onChange,
   layout = "chip",
-  responsiveCompact = false,
+  fitted = false,
+  labelHidden = false,
 }: {
   enforce: "required" | "preferred" | "off";
   backend?: string;
   onChange?: (enforce: "required" | "preferred" | "off") => void;
   size?: "xs" | "sm";
   layout?: "chip" | "field";
-  responsiveCompact?: boolean;
+  fitted?: boolean;
+  /** The row this sits in has no space for the word; the globe and the box carry it alone. */
+  labelHidden?: boolean;
 }) {
   const translation = useTranslations("SessionControls");
   const confining = enforce !== "off";
@@ -417,8 +450,8 @@ export function SandboxToggleControl({
       enabled={confining}
       onChange={onChange ? (next) => onChange(next ? "required" : "off") : undefined}
       layout={layout}
-      labelMarker={responsiveCompact ? "data-composer-sandbox-label" : undefined}
-      controlMarker={responsiveCompact ? "data-composer-sandbox-control" : undefined}
+      fitId={fitted ? "sandbox" : undefined}
+      labelHidden={labelHidden}
     />
   );
 }
