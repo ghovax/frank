@@ -55,6 +55,8 @@ A goal is not a longer task list. The task list is the steps; the goal is the ou
 
 The caller is the parent, always — it is not an argument. That puts a peer inside the tree, inside the reaper, and under the permission clamp. A peer can therefore never hold authority that its parent does not have.
 
+The peer starts with a copy of its parent's model-facing conversation, while keeping its own agent profile, permissions, process, and context window. The unfinished `create_session` tool call is excluded so its history begins at a valid message boundary.
+
 **A peer answers by messaging.** When the peer finishes, it calls `message_session` on the session that created it. That session's id is in its context, as `parent_session`. The message lands in the caller's context like any other inbound message. `create_session` therefore does not wait, and there is no handle to hold.
 
 Nothing reconstructs a result. The peer decides its own answer, in its own words, at the moment it knows. A caller starts the work, carries on with whatever does not depend on it, and ends its turn — the reply wakes it.

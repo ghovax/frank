@@ -8,6 +8,7 @@ from typing import Any, Callable, Optional, Sequence
 
 from langchain_core.messages import (
     AIMessage,
+    messages_to_dict,
 )
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, SecretStr, ValidationError
@@ -287,6 +288,7 @@ def _build_tool_context(
     workspace: str,
     session_id: str = "",
     session_access: Any = None,
+    conversation_snapshot: Optional[Callable[[], list[dict[str, Any]]]] = None,
     mcp_manager: Any = None,
 ) -> ToolContext:
     """The session-shaped state this runtime's tools read, derived from configuration rather than installed."""
@@ -332,6 +334,7 @@ def _build_tool_context(
         jina_api_key=global_configuration.jina.effective_api_key,
         proxy_url=global_configuration.web_fetch.effective_proxy_url,
         session_access=session_access,
+        conversation_snapshot=conversation_snapshot,
         session_id=session_id,
         toolbox=toolbox,
     )
@@ -612,13 +615,14 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         # The latest call's occupancy and the model's window, so compaction can fire before an overflow.
         self._latest_context_tokens: int = 0
         self._context_window: int = 0
-        # What the module-level tools read at call time, built from this runtime's own configuration.
+        # What the module-level tools read at call time, built from this runtime's own configuration and conversation.
         self._tool_context = _build_tool_context(
             global_configuration,
             sandbox=self._sandbox,
             workspace=self._working_directory,
             session_id=self._session_id,
             session_access=session_access,
+            conversation_snapshot=self._peer_conversation_snapshot,
             mcp_manager=mcp_manager,
         )
         # What was approved beyond the configured profile, held for the session so one grant is not re-asked.
@@ -735,6 +739,13 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
     @property
     def conversation(self) -> list:
         return self._conversation
+
+    def _peer_conversation_snapshot(self) -> list[dict[str, Any]]:
+        """Serialize the usable conversation prefix inherited by a newly created peer."""
+        inherited_messages = self._conversation
+        if inherited_messages and isinstance(inherited_messages[-1], AIMessage) and inherited_messages[-1].tool_calls:
+            inherited_messages = inherited_messages[:-1]
+        return messages_to_dict(inherited_messages)
 
     @property
     def background_jobs(self) -> BackgroundJobs:
