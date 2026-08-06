@@ -1,25 +1,4 @@
-"""Outbound A2A client — reach third-party A2A agents over the wire, letting a local
-session hand work to an agent that lives on someone else's server.
-
-Responsibilities:
-
-* Resolve and cache each remote agent's :class:`AgentCard` (fetch on register, refresh
-  on a TTL or on demand), so a card fetch is not on the hot path of a delegation.
-* Build an :class:`a2a.client.Client` per agent, letting :class:`ClientFactory` negotiate
-  the transport (JSONRPC / gRPC / HTTP+JSON) from the card — so the harness can talk to
-  any of them while itself serving only JSONRPC.
-* Inject per-agent authentication (static bearer / api-key header, or an OAuth2
-  client-credentials token that is fetched and refreshed) by baking it into that agent's
-  own :class:`httpx.AsyncClient`.
-* Enforce host trust *before* any network call: the card's advertised URLs must stay on
-  the origin the user registered, and private/loopback ranges are refused unless the user
-  explicitly opts in — so a malicious or compromised card cannot redirect the harness at
-  an internal endpoint (an SSRF-shaped attack).
-
-The mapping from a remote task's streamed events into the harness's own relayed-child
-event vocabulary lives with the session executor in ``frank.worker.session``; this module stays
-transport-focused and returns the raw A2A client stream.
-"""
+"""The outbound A2A client: reach third-party agents on someone else's server and hand them work."""
 
 from __future__ import annotations
 
@@ -43,13 +22,7 @@ from frank.base.tuning import Tunable, active_tuning
 logger = logging.getLogger(__name__)
 
 def _available_transports() -> list[TransportProtocol]:
-    """Transports the client is willing to negotiate, in preference order. The peer's card
-    decides which is actually used; the harness serves only JSONRPC but can *call* any.
-
-    gRPC is included only when its optional dependency is importable — ``ClientFactory``
-    eagerly imports the gRPC transport for any listed transport, so advertising it without
-    ``a2a-sdk[grpc]`` installed would raise at client construction. JSON-RPC and HTTP+JSON
-    are always available."""
+    """Transports the client will negotiate, in preference order, with gRPC only when its dependency is installed."""
     transports = [TransportProtocol.jsonrpc, TransportProtocol.http_json]
     try:
         from a2a.client.transports.grpc import GrpcTransport  # noqa: F401
@@ -62,13 +35,7 @@ def _available_transports() -> list[TransportProtocol]:
 
 @dataclass
 class RemoteAgentAuth:
-    """How to authenticate to one remote agent.
-
-    ``kind`` is ``"none"`` (public), ``"bearer"`` / ``"api_key"`` (a static token placed
-    in a header), or ``"oauth2"`` (an OAuth2 client-credentials token fetched from
-    ``token_url`` and refreshed before expiry). Secrets are resolved from the environment
-    by the config loader before they reach here — never stored inline.
-    """
+    """How to authenticate to one remote agent: nothing, a static token in a header, or fetched client credentials."""
 
     kind: str = "none"
     token: str = ""
@@ -83,16 +50,13 @@ class RemoteAgentAuth:
 
 @dataclass
 class RemoteAgentConfiguration:
-    """One registered remote agent. ``name`` is the local handle the model uses to
-    delegate to it (same namespace as local agent names); ``card_url`` is the agent-card
-    URL the user vetted, and is the trust anchor every later URL is checked against."""
+    """One registered remote agent: the local handle the model delegates to, and the card URL that anchors trust."""
 
     name: str
     card_url: str
     auth: RemoteAgentAuth = field(default_factory=RemoteAgentAuth)
     card_ttl_seconds: int = 3600
-    # Extra hostnames allowed beyond the card_url origin (rare; e.g. a documented
-    # separate RPC host). The card_url host is always allowed.
+    # Extra hostnames allowed beyond the card's origin, which is always allowed.
     allowed_hosts: list[str] = field(default_factory=list)
     # Opt in to private/loopback/link-local targets (e.g. a Frank-to-Frank loopback test).
     allow_private: bool = False
@@ -101,14 +65,11 @@ class RemoteAgentConfiguration:
 
 
 class RemoteAgentTrustError(Exception):
-    """A remote card's URL failed the host-trust check (origin mismatch or a
-    disallowed private/loopback target)."""
+    """A remote card's URL failed the host-trust check."""
 
 
 class _OAuth2ClientCredentials(httpx.Auth):
-    """httpx auth flow that keeps a valid OAuth2 client-credentials bearer token,
-    fetching a fresh one (and caching it until shortly before expiry) as needed. Sync
-    flow is unsupported — the harness only makes async calls."""
+    """An httpx auth flow that keeps a valid client-credentials bearer token, refreshing it before expiry."""
 
     def __init__(self, auth: RemoteAgentAuth):
         self._auth = auth
@@ -132,8 +93,7 @@ class _OAuth2ClientCredentials(httpx.Auth):
             data = {"grant_type": "client_credentials"}
             if self._auth.scopes:
                 data["scope"] = " ".join(self._auth.scopes)
-            # No redirects on the token endpoint either — a redirect could replay the
-            # client_id/secret HTTP-Basic credentials to a host the config did not name.
+            # No redirects on the token endpoint, since one could replay the credentials to a host the configuration never named.
             async with httpx.AsyncClient(timeout=active_tuning().duration(Tunable.card_resolve_seconds), follow_redirects=False) as client:
                 response = await client.post(
                     self._auth.token_url,
@@ -152,12 +112,7 @@ def _host_of(url: str) -> str:
 
 
 def _assert_url_trusted(url: str, configuration: RemoteAgentConfiguration) -> None:
-    """Refuse a URL that leaves the registered origin or resolves into a private range.
-
-    The card's ``url`` and every ``additionalInterfaces`` URL flow through here before the
-    client is built, so a card cannot point the harness anywhere the user did not vet. The
-    private-range check resolves the host and inspects the resolved IPs (not just an IP
-    literal), so a hostname pointing at an internal address is caught too."""
+    """Refuse a URL that leaves the registered origin or resolves into a private range."""
     host = _host_of(url)
     if not host:
         raise RemoteAgentTrustError(f"Remote agent {configuration.name!r}: malformed URL {url!r}.")
@@ -170,8 +125,7 @@ def _assert_url_trusted(url: str, configuration: RemoteAgentConfiguration) -> No
     try:
         assert_public_host(host, allow_private=configuration.allow_private)
     except UntrustedHostError as exception:
-        # The inner error already names the remedy; repeating it here printed the same hint
-        # twice in one sentence.
+        # The inner error already names the remedy, so repeating it printed the same hint twice.
         raise RemoteAgentTrustError(
             f"Remote agent {configuration.name!r}: {exception}."
         ) from exception
@@ -185,9 +139,7 @@ def _card_urls(card: AgentCard) -> list[str]:
 
 
 class _RemoteAgent:
-    """Live state for one registered remote agent: its config, its own auth-bearing httpx
-    client, the last resolved card (+ when), a health string, and a lazily built A2A
-    client. Kept per-agent so different agents never share auth headers."""
+    """Live state for one remote agent, kept per agent so two never share a client or a credential."""
 
     def __init__(self, configuration: RemoteAgentConfiguration):
         self.configuration = configuration
@@ -217,8 +169,7 @@ class _RemoteAgent:
         return self._httpx
 
     async def resolve_card(self, *, force: bool = False) -> Optional[AgentCard]:
-        """Fetch (or reuse a still-fresh) card, enforcing host trust on every URL it
-        advertises. On failure the previous card is kept and health reflects the fault."""
+        """Fetch or reuse a card, enforcing host trust on every URL it advertises and keeping the previous one on failure."""
         ttl = max(0, self.configuration.card_ttl_seconds)
         fresh = self.card is not None and (time.monotonic() - self.card_fetched_at) < ttl
         if fresh and not force:
@@ -259,8 +210,7 @@ class _RemoteAgent:
                 streaming=bool(card.capabilities and card.capabilities.streaming),
             )
             self._client = ClientFactory(config).create(card)
-            # If the agent offers an authenticated extended card, fetch the richer version
-            # now that the client carries auth — re-checking trust on every URL it names.
+            # Fetch the richer authenticated card now that the client carries auth, re-checking trust on every URL.
             if getattr(card, "supports_authenticated_extended_card", False):
                 try:
                     extended = await self._client.get_card()
@@ -268,8 +218,7 @@ class _RemoteAgent:
                         _assert_url_trusted(url, self.configuration)
                     self.card = extended
                 except RemoteAgentTrustError as exception:
-                    # A trust violation on the extended card is a real signal, not an optional
-                    # miss — surface it as untrusted rather than silently keeping the base card.
+                    # A trust violation on the extended card is a real signal, so it is surfaced rather than silently ignored.
                     self.health, self.error = "untrusted", str(exception)
                     logger.warning("remote agent %r extended card untrusted: %s", self.configuration.name, exception)
                 except Exception:  # noqa: BLE001 — a non-trust extended-card fetch failure is optional
@@ -288,9 +237,7 @@ class _RemoteAgent:
 
 
 class RemoteAgentManager:
-    """Facade over the registered remote agents. Construction is cheap; cards resolve on
-    :meth:`start` (best-effort) and refresh on TTL/demand, and :meth:`reconcile` applies a
-    new config set live (used by the file watcher)."""
+    """Facade over the registered remote agents, resolving cards at start and applying a new configuration set live."""
 
     def __init__(self, configurations: Optional[dict[str, RemoteAgentConfiguration]] = None):
         self._agents: dict[str, _RemoteAgent] = {
@@ -305,10 +252,7 @@ class RemoteAgentManager:
         return name in self._agents
 
     def is_allowed_for(self, name: str, profile: str) -> bool:
-        """Whether a local ``profile`` may delegate to remote agent ``name``. An empty
-        allow-list permits all; a non-empty one is the containment boundary — a profile not
-        on it (including the empty profile a delegated agent carries) is denied, so a
-        delegated agent cannot evade an allow-list its parent is bound by."""
+        """Whether a local profile may delegate to this agent, where an empty allow-list permits all."""
         agent = self._agents.get(name)
         if agent is None:
             return False
@@ -330,8 +274,7 @@ class RemoteAgentManager:
         return {"health": agent.health, "error": agent.error}
 
     async def start(self) -> None:
-        """Resolve every agent's card once, isolating failures so one bad agent never
-        blocks the others (or startup)."""
+        """Resolve every agent's card once, isolating failures so one bad agent never blocks the others."""
         await asyncio.gather(*(agent.resolve_card() for agent in self._agents.values()), return_exceptions=True)
 
     async def refresh(self, name: str) -> Optional[AgentCard]:
@@ -346,8 +289,7 @@ class RemoteAgentManager:
         return bool(self._agents)
 
     async def reconcile(self, configurations: dict[str, RemoteAgentConfiguration]) -> None:
-        """Apply a new config set live: drop removed/changed agents (closing their
-        clients), keep unchanged ones connected, resolve new/changed ones."""
+        """Apply a new configuration set live: drop what changed, keep what did not, resolve what is new."""
         for name, agent in list(self._agents.items()):
             if name not in configurations or configurations[name] != agent.configuration:
                 await agent.aclose()
@@ -358,9 +300,7 @@ class RemoteAgentManager:
         await self.start()
 
     async def message_session(self, name: str, message: Message) -> AsyncIterator[ClientEvent | Message]:
-        """Stream a message to a remote agent, yielding the A2A client's ``(Task, Update)``
-        pairs (or a final ``Message``). Raises ``LookupError`` if the agent is unknown and
-        ``RuntimeError`` if it cannot currently be reached (unresolved/untrusted card)."""
+        """Stream a message to a remote agent, yielding the client's updates."""
         agent = self._agents.get(name)
         if agent is None:
             raise LookupError(f"No remote agent named {name!r}.")

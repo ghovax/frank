@@ -1,24 +1,4 @@
-"""The directory of sessions: what exists, where it lives, and who may reach it.
-
-The registry turns a session id into an address and a capability token, and remembers the
-parent/child shape of a tree so a subtree can be reaped together. It deliberately does not sit
-between peers: once a caller holds an address it talks to that session's socket directly.
-
-**A session is a record, not a process.** That is the change this file carries. A session used
-to *be* its worker — the record existed because the process did, and both ended together — so
-a session parked on a permission prompt held a whole interpreter to wait, and a daemon restart
-ended everything. Now the record is durable and the process is an activity: a session with no
-worker is asleep, not gone, and the next message to it forks a new one.
-
-Two facts follow, and they are why `status` had to split. Whether a session **exists** is
-durable and is the registry's own answer (`lifecycle`). Whether it is **doing anything** is
-derived from the world — does it have a process, is a turn in flight, is it waiting on a person
-— and cannot be stored, because storing it means writing "working" to disk and then being
-killed (`activity`). The old single field tried to be both, which is why `_public()` had to
-merge `busy` in from somewhere else to answer "is it working".
-
-Entries outlive the process they describe, and now outlive the daemon too.
-"""
+"""The directory of sessions: what exists, where it lives, who may reach it, and how the tree is shaped."""
 
 from __future__ import annotations
 
@@ -39,8 +19,7 @@ from frank.base.paths import runtime_directory, session_socket_path
 LIVE = "live"
 ENDED = "ended"
 
-# What is it doing right now? Derived on read from the process, the turn and the gate — never
-# stored, because a stored "working" survives the kill that made it false.
+# What it is doing right now, derived on read rather than stored, since a stored "working" survives the kill that ended it.
 WORKING = "working"   # a turn is in flight
 WAITING = "waiting"   # parked on a human decision
 IDLE = "idle"         # has a worker, doing nothing
@@ -56,17 +35,7 @@ TERMINAL_OUTCOMES = frozenset({EXITED, FAILED})
 
 
 def _master_key() -> bytes:
-    """The per-install key session tokens are derived from.
-
-    A durable registry has to hand a token to a *new* worker when it wakes a slept session,
-    which means the token must be recomputable rather than remembered. Deriving it stores
-    nothing at rest: the table has no token column, and a database read discloses no
-    capability. The precedent is `FileUrlSigner(load_or_create_secret(...))`.
-
-    The widening this accepts is real and bounded: whatever can read this key can mint any
-    session's token. The same reader could already read the daemon's own token out of the same
-    0600 directory, which is a strictly stronger capability.
-    """
+    """The per-install key session tokens are derived from, so a woken session's token is recomputable rather than remembered."""
     path = runtime_directory() / "session_master_key"
     if path.exists():
         existing = path.read_bytes()
@@ -83,35 +52,22 @@ def _master_key() -> bytes:
 
 
 def token_for(session_id: str) -> str:
-    """This session's capability token, derived rather than stored.
-
-    HMAC rather than a bare hash so the key is a key and not a prefix, and keyed on the
-    session id alone so that waking a session re-derives exactly the token its creator was
-    handed."""
+    """This session's capability token, derived by HMAC from its id so waking re-derives exactly the same one."""
     digest = hmac.new(_master_key(), session_id.encode(), hashlib.sha256).digest()
     return digest.hex()
 
 
 @dataclass
 class SessionRecord:
-    """One session: its identity, where to reach it, and its place in the tree.
-
-    Everything here is durable except `pid` and `awaiting_input`, which describe a process
-    that may not exist. That division is the point: the durable half survives a restart, the
-    volatile half is rebuilt from what is actually running.
-    """
+    """One session: its identity, where to reach it, and its place in the tree, durable except for what describes a process."""
 
     id: str
     agent: str
     working_directory: str
     permission_mode: str
-    # What this session's tool children may touch, resolved at creation from the machine's
-    # configuration and the agent profile and clamped against the creating session — the same
-    # once-and-immutable treatment the permission mode gets, and for the same reason.
+    # What this session's tool children may touch, resolved and clamped once at creation.
     sandbox: dict = field(default_factory=dict)
-    # Where the session's tools actually run. Equal to `working_directory` unless the
-    # workspace strategy put the session in its own worktree or branch, which is decided once
-    # when the session is created — the same moment everything else about it is fixed.
+    # Where the session's tools actually run, which a worktree strategy decides once when the session is created.
     runtime_working_directory: str = ""
     workspace_id: str = ""
     parent: str = ""
@@ -125,15 +81,11 @@ class SessionRecord:
     outcome: str = ""
     exit_reason: str = ""
 
-    # Volatile: the process, if there is one right now. Zero means asleep — the record is
-    # intact and the next message forks a worker for it.
+    # The process, if there is one right now; zero means asleep and the next message forks a worker.
     pid: int = 0
-    # Set when the session is parked on a human decision, so a listing can show that it is
-    # waiting on someone rather than working. Rebuilt on restart from the turn store, which is
-    # where the suspension durably lives.
+    # Set when the session is parked on a decision, rebuilt on restart from the turn store where the suspension lives.
     awaiting_input: bool = False
-    # Set while a turn is in flight. Purely in-memory, and deliberately: a stored "working"
-    # outlives the kill that made it false.
+    # Set while a turn is in flight, purely in memory because a stored value outlives the kill that ended it.
     busy: bool = False
 
     @property
@@ -156,11 +108,7 @@ class SessionRecord:
 
     @property
     def activity(self) -> str:
-        """What this session is doing, derived from the world rather than remembered.
-
-        The order is the order of interest: a session parked on a person is the fact worth
-        surfacing even though a turn is technically open, and one with no process is asleep
-        regardless of what it was doing when it went."""
+        """What this session is doing, derived from the world, ordered so the most interesting fact wins."""
         if not self.is_live:
             return ENDED_ACTIVITY
         if self.awaiting_input:
@@ -172,10 +120,7 @@ class SessionRecord:
         return IDLE
 
     def public(self) -> dict:
-        """The view a client gets.
-
-        The capability token is never included: it is derived for the creator at `create`, and
-        a listing must not hand it to anyone who can enumerate sessions."""
+        """The view a client gets, never including the capability token that a listing must not hand out."""
         return {
             "id": self.id,
             "agent": self.agent,
@@ -198,63 +143,29 @@ class SessionRecord:
 
 
 class SessionRegistry:
-    """Every session the daemon knows about, live or finished.
-
-    In memory, and written through to a durable store so the answer survives a restart. Both,
-    rather than one or the other, because `session_for_token` runs on every control-plane call
-    and must be a dictionary lookup, while "which sessions exist" must outlive the process
-    holding the dictionary.
-
-    The store is supplied rather than found — a `SessionStore` with `load_all` and `save`, the
-    same shape as the other ports — so a daemon persists to SQLite and a test persists to
-    nothing without either knowing about the other.
-    """
+    """Every session the daemon knows, in memory and written through so the answer survives a restart."""
 
     def __init__(self, store: Optional[Any] = None) -> None:
         self._sessions: dict[str, SessionRecord] = {}
         self._store = store
 
     def restore(self, records: list[SessionRecord]) -> None:
-        """Adopt the durable records at boot.
-
-        Every live session comes back with no process, which is exactly right: its worker died
-        with the daemon, and `asleep` is what a live session with no process *is*. The first
-        message to one forks it a new worker.
-        """
+        """Adopt the durable records at boot, each with no process, which is what a live session asleep is."""
         for record in records:
             self._sessions[record.id] = replace(record, pid=0, busy=False)
 
     def _persist(self, record: SessionRecord) -> None:
-        """Write a record durably, from a thread that may block.
-
-        Never call this from a coroutine. The store takes the synchronous history lock,
-        which the async turn writer holds across its transaction's await — so a loop-side
-        call waits on something only the loop can finish. `sqlite_write_lock` now refuses
-        rather than hanging, which is what turned this from a frozen daemon into a stack
-        trace. Loop-side callers use :meth:`persist_off_loop`.
-        """
+        """Write a record durably from a thread that may block, never from a coroutine."""
         if self._store is not None:
             self._store.save(record)
 
     async def persist_off_loop(self, record: SessionRecord) -> None:
-        """Write a record durably from the event loop, without blocking it.
-
-        For a caller that must not continue until the row exists — `create`, whose session
-        is about to be handed to a worker that will look for it.
-        """
+        """Write a record durably from the event loop without blocking it, for a caller that must not continue until the row exists."""
         if self._store is not None:
             await asyncio.to_thread(self._persist, record)
 
     def _persist_wherever_we_are(self, record: SessionRecord) -> None:
-        """Write a record from either side of the loop, without ever blocking it.
-
-        `mark` is called from coroutines and from threads alike — a turn ending, a title
-        arriving, a worker reporting its pid — and none of them can reasonably be asked to
-        know which they are. Off the loop the write happens now; on it the write is handed to
-        a thread and the caller carries on. This is bookkeeping, so a write that lands a
-        moment later is correct; `create` deliberately does not use this, because the row has
-        to be there before the worker looks for it.
-        """
+        """Write a record from either side of the loop, since `mark` is called from coroutines and threads alike."""
         if self._store is None:
             return
         try:
@@ -277,11 +188,7 @@ class SessionRegistry:
         created_at: str = "",
         runtime_working_directory: str = "",
     ) -> SessionRecord:
-        """Mint a session record.
-
-        The capability token is not minted here and not stored anywhere: it is derived from
-        the session id on demand (:func:`token_for`), which is what lets a woken session hand
-        its new worker the same token its creator was given."""
+        """Mint a session record, with the capability token derived on demand rather than stored."""
         identifier = new_id("session")
         record = SessionRecord(
             id=identifier,
@@ -316,11 +223,7 @@ class SessionRegistry:
         return [record for record in self._sessions.values() if record.parent == session_id]
 
     def descendants_of(self, session_id: str) -> Iterator[SessionRecord]:
-        """Every session under this one, depth-first.
-
-        Guarded against cycles: a corrupted parent pointer must not turn reaping into an
-        infinite walk, because reaping is what runs when the daemon is already shutting down.
-        """
+        """Every session under this one, depth-first and guarded against cycles."""
         seen: set[str] = set()
         frontier = [session_id]
         while frontier:
@@ -333,17 +236,7 @@ class SessionRegistry:
                 yield child
 
     def session_for_token(self, token: str) -> Optional[SessionRecord]:
-        """Which session a token belongs to, if any.
-
-        The reverse of :meth:`authorize`, and the reason a control-plane call can be
-        attributed at all: the daemon token says a caller may drive the daemon, while a
-        session token says *which* session is driving it. Compared in constant time against
-        every record — a token comparison that leaks timing is a token comparison that leaks
-        the token.
-
-        Every session is checked, not only the live ones. A token that belonged to a finished
-        session must resolve to that finished session so the caller is told what happened,
-        rather than falling through to "unattributed" and being treated as a person."""
+        """Which session a token belongs to, which is what lets a control-plane call be attributed to a session."""
         if not token:
             return None
         for record in self._sessions.values():
@@ -352,20 +245,14 @@ class SessionRegistry:
         return None
 
     def authorize(self, session_id: str, token: str) -> Optional[SessionRecord]:
-        """The session, if the token matches. A constant-time comparison, because this is the
-        check that stands between one session and every other session on the machine."""
+        """The session, if the token matches, compared in constant time."""
         record = self._sessions.get(session_id)
         if record is None or not token:
             return None
         return record if secrets.compare_digest(record.token, token) else None
 
     def mark(self, session_id: str, *, updated_at: str = "", **fields) -> Optional[SessionRecord]:
-        """Update a record and persist it if anything durable changed.
-
-        `pid`, `busy` and `awaiting_input` are volatile — they describe a process — so a change
-        to one of those alone does not touch the store. Writing them would mean a hard kill
-        leaves "working" on disk forever, which is precisely the confusion the lifecycle and
-        activity split exists to prevent."""
+        """Update a record and persist it if anything durable changed, leaving the volatile fields out of the store."""
         record = self._sessions.get(session_id)
         if record is None:
             return None
