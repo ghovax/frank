@@ -3,11 +3,17 @@ name: general-assistant
 title: General assistant
 description: A neutral, general-purpose agent for everyday tasks.
 role: primary
+enabled: true
+connection-type: internal
 model: deepseek-v4-flash
 provider: opencode_go
+reasoning_effort: high
 permission_mode: ask
+tools_enabled: []
 tools:
   bash:
+    enabled: true
+    background_allowed: true
     permissions:
       rm *: ask
       sudo *: deny
