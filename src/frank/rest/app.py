@@ -1,13 +1,4 @@
-"""Mounting the GUI's REST surface.
-
-The desktop client cannot open a unix socket, so it drives everything over the daemon's
-loopback listener — which means these routes hang off the same application, behind the same
-capability token, as the control plane. The CLI never touches them; it has the socket.
-
-This lives in `rest` rather than in the daemon because `rest` is the layer above: it may
-reach down into the daemon's services, and the daemon must not reach up into it. The daemon's
-entry point calls this when it assembles its app, which is the one place both are in view.
-"""
+"""Mounting the GUI's REST surface."""
 
 from __future__ import annotations
 

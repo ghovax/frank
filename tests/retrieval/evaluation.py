@@ -1,16 +1,4 @@
-"""Scoring a strategy, and deciding whether two strategies actually differ.
-
-The second half matters more than the first. Most differences between encoding strategies are
-noise, and a ranked table printed without intervals invites the exact mistake this investigation
-made repeatedly: reading a two-point gap on a few hundred queries as a result. Every comparison
-here therefore comes with a paired bootstrap interval, and a difference whose interval contains
-zero is reported as indistinguishable no matter where it sits in the ranking.
-
-What this module produces is one row per query per strategy — the raw record, not a summary.
-Aggregation belongs to whoever is asking a question of it, which is why :mod:`tests.retrieval.report`
-loads these rows into a dataframe and pivots them rather than this module deciding in advance
-which totals are the interesting ones.
-"""
+"""Scoring a strategy, and deciding whether two strategies actually differ."""
 
 from __future__ import annotations
 
@@ -65,11 +53,7 @@ class QueryOutcome:
 
 
 def build_queries(corpora: list[Corpus]) -> dict[str, dict[str, list[Query]]]:
-    """Every family's queries for every corpus, built once and shared by all strategies.
-
-    Building them once is what makes the comparison paired. If each strategy built its own set,
-    the difference between two strategies would be confounded with the difference between two
-    query sets."""
+    """Every family's queries for every corpus, built once and shared by all strategies."""
     return {
         corpus.site_name: {
             family_name: build_family(corpus)
@@ -81,10 +65,7 @@ def build_queries(corpora: list[Corpus]) -> dict[str, dict[str, list[Query]]]:
 
 def evaluate_strategy(strategy_name: str, strategy: EncodingStrategy, corpora: list[Corpus],
                       queries: dict[str, dict[str, list[Query]]]) -> list[QueryOutcome]:
-    """Rank every corpus with one strategy and record what happened to every query.
-
-    The real :class:`frank.computer.retrieval.Index` does the ranking, so this measures the
-    product's own retrieval rather than a reimplementation that could drift from it."""
+    """Rank every corpus with one strategy and record what happened to every query."""
     outcomes: list[QueryOutcome] = []
     for corpus in corpora:
         index = Index([
@@ -111,11 +92,7 @@ def paired_bootstrap_interval(candidate_hits: np.ndarray, baseline_hits: np.ndar
                               confidence: float = 0.95,
                               resamples: int = DEFAULT_BOOTSTRAP_RESAMPLES,
                               seed: int = DEFAULT_BOOTSTRAP_SEED) -> tuple[float, float, float]:
-    """The mean difference in top-1 accuracy and its confidence interval, resampled in pairs.
-
-    Returns ``(difference, low, high)``. An interval containing zero means the two strategies are
-    not distinguishable on this evidence, which is the common case and should be reported as such
-    rather than resolved in favour of whichever number happens to be larger."""
+    """The mean difference in top-1 accuracy and its confidence interval, resampled in pairs."""
     if candidate_hits.size != baseline_hits.size:
         raise ValueError("a paired comparison needs both strategies scored on the same queries")
     differences = candidate_hits - baseline_hits

@@ -1,20 +1,4 @@
-"""What a Cursor subscription is, as an account rather than as a conversation.
-
-The sibling of :mod:`frank.base.subscription`, which does the same job for the ChatGPT
-plan: the endpoints, the header set every call carries, and the account's live model
-catalogue. :mod:`frank.runtime.models.cursor` builds turns on top of this and owns
-nothing that is true of the account rather than of a turn.
-
-The split is the same one that module draws, for the same reason. The REST layer needs
-the catalogue on every ``/models`` poll, and the REST layer may not import the runtime —
-so the catalogue lives here, where anything may import it, instead of behind a deferred
-import into the model module.
-
-Two things here are Cursor's and not ours. ``request_headers`` sends the exact set the
-``RunSSE`` transport was exercised with rather than a superset, and :func:`_checksum`
-computes a value that proves nothing and is sent only because the service refuses a
-request without it. Both are documented where they are defined.
-"""
+"""What a Cursor subscription is, as an account rather than as a conversation."""
 
 from __future__ import annotations
 
@@ -58,13 +42,7 @@ STATUS_UNAUTHENTICATED = 16
 
 
 def machine_time_zone() -> str:
-    """The machine's IANA zone name, as Cursor's own client reports it.
-
-    Python has no portable API for this — ``time.tzname`` gives an abbreviation like
-    ``CET``, not ``Europe/Rome`` — so ``TZ`` is preferred and the ``/etc/localtime``
-    symlink is read next, which is where the name actually lives on Linux and macOS. The
-    abbreviation is the last resort rather than the first, because a plausible-looking
-    wrong value is worse than a coarse right one."""
+    """The machine's IANA zone name, as Cursor's own client reports it."""
     if configured := os.environ.get("TZ", "").strip():
         return configured
     try:
@@ -77,12 +55,7 @@ def machine_time_zone() -> str:
 
 
 def _checksum(access_token: str) -> str:
-    """The ``x-cursor-checksum`` the service expects alongside the bearer token.
-
-    It is not a signature and proves nothing — it is a client-side obfuscation of a
-    half-hour-rounded timestamp plus two truncated digests of the token. It is here
-    because Cursor's own client sends it and a request without it is refused; there is
-    nothing to verify and nothing to keep secret."""
+    """The ``x-cursor-checksum`` the service expects alongside the bearer token."""
     slot = int(time.time() // 1800) * 1800
     stamp = (slot * 1000) // 1_000_000
     obfuscated = bytearray(stamp.to_bytes(6, "big"))
@@ -98,13 +71,7 @@ def _checksum(access_token: str) -> str:
 
 
 def request_headers(tokens: CursorTokens, request_id: str) -> dict[str, str]:
-    """The header set the ``RunSSE`` + ``BidiAppend`` transport was tested with.
-
-    Which headers to send is not a free choice, because the two transports through this
-    service were exercised with different sets. The plugins that hold an HTTP/2 stream open
-    for ``Run`` send no checksum, no timezone and no streaming hint; the one that uses this
-    transport sends all three. Matching that one is deliberate — a header set assembled by
-    taking the union of two tested combinations is a third combination nobody has tried."""
+    """The header set the ``RunSSE`` + ``BidiAppend`` transport was tested with."""
     return {
         "Authorization": f"Bearer {tokens.access_token}",
         # Not Connect's own content type: this service answers 415 to application/connect+proto over HTTP/1.1 and expects the gRPC-web framing.
@@ -133,16 +100,12 @@ _observed_context_windows: dict[str, int] = {}
 
 
 def record_context_window(model_id: str, maximum_tokens: int) -> None:
-    """Remember a window the server reported. Keeps the largest seen for a model: a turn that
-    has not yet grown past a smaller budget can be told a smaller one."""
+    """Remember a window the server reported."""
     if maximum_tokens > _observed_context_windows.get(model_id, 0):
         _observed_context_windows[model_id] = maximum_tokens
 
 def observed_context_window(model_id: str) -> int:
-    """The largest window the server itself reported for a model, or ``0`` when it never has.
-
-    An accessor rather than a shared dict because the store is this module's, and a model
-    reading it is asking a question rather than reaching into state it owns."""
+    """The largest window the server itself reported for a model, or ``0`` when it never has."""
     return _observed_context_windows.get(model_id, 0)
 
 
@@ -151,11 +114,7 @@ _EFFORT_SUFFIX = re.compile(r"-(high|medium|low|max|xhigh)$")
 
 
 def _display_name(entry: dict[str, Any], model_id: str) -> str:
-    """A model's label, with its effort named when the id carries one.
-
-    Cursor gives the same display name to every effort variant of a model, so a picker
-    that trusted it would list "Claude 4.6 Opus" three times with no way to tell which is
-    which. The effort is in the id, so it goes in the label."""
+    """A model's label, with its effort named when the id carries one."""
     name = model_id
     for key in ("displayName", "displayNameShort", "displayModelId"):
         value = entry.get(key)
@@ -169,8 +128,7 @@ def _display_name(entry: dict[str, Any], model_id: str) -> str:
 
 
 def _token_limit(value: Any) -> int:
-    """A Cursor parameter value as a token count. It states windows the way its interface
-    displays them — ``200k``, ``1m``, ``272000`` — so all three have to read."""
+    """A Cursor parameter value as a token count."""
     text_value = str(value or "").strip().lower().replace(",", "")
     match = re.fullmatch(r"(\d+(?:\.\d+)?)([km])?", text_value)
     if match is None:
@@ -180,8 +138,7 @@ def _token_limit(value: Any) -> int:
 
 
 async def _connect_json(url: str, body: dict, tokens: CursorTokens) -> dict:
-    """One unary RPC over Connect's JSON encoding, which these two model endpoints accept —
-    so discovering models needs no protobuf at all, unlike running a turn."""
+    """One unary RPC over Connect's JSON encoding, which these two model endpoints accept — so discovering models needs no protobuf at all, unlike running a turn."""
     headers = {
         **request_headers(tokens, str(uuid.uuid4())),
         "Content-Type": "application/json",
@@ -197,8 +154,7 @@ async def _connect_json(url: str, body: dict, tokens: CursorTokens) -> dict:
 
 @dataclass
 class _Variant:
-    """How the backend routes one model variant: its server-side name, its max-mode flag, and the
-    parameter values that pick it out from the others sharing that name."""
+    """How the backend routes one model variant: its server-side name, its max-mode flag, and the parameter values that pick it out from the others sharing that name."""
 
     server_model: str
     maximum_mode: bool
@@ -207,20 +163,7 @@ class _Variant:
 
 
 async def _fetch_variants(tokens: CursorTokens) -> dict[str, _Variant]:
-    """Every model variant the account can reach, from ``AvailableModels``.
-
-    This is the only endpoint that states a context window, and the only one that describes how a
-    variant is *selected* — both live in the same place, so they are read together. It answers with
-    base models rather than the effort-suffixed ids a run request takes, each carrying variants
-    whose ``parameterValues`` hold the window and the reasoning effort, so the result is keyed both
-    by a variant's own ``legacySlug`` (an exact match for a run id) and by the base name (a prefix
-    match). Where variants of one base name disagree about the window, the smallest is kept: a
-    window that reads too large overruns the model, while one that reads too small only compacts
-    early.
-
-    Nothing is requested by name. ``additionalModelNames`` exists to make the service mention
-    models it would otherwise omit, and reaching for it would mean hardcoding model names to
-    discover models — which is the thing discovery is for."""
+    """Every model variant the account can reach, from ``AvailableModels``."""
     payload = await _connect_json(
         AVAILABLE_MODELS_URL,
         {"isNightly": False, "excludeMaxNamedModels": True, "additionalModelNames": [],
@@ -262,8 +205,7 @@ async def _fetch_variants(tokens: CursorTokens) -> dict[str, _Variant]:
 
 
 def _variant_for(model_id: str, variants: dict[str, _Variant]) -> Optional[_Variant]:
-    """The variant for a run id: an exact match on a slug, else the longest base name the id
-    starts with — ``claude-4.6-opus-high`` resolving through ``claude-4.6-opus``."""
+    """The variant for a run id: an exact match on a slug, else the longest base name the id starts with — ``claude-4.6-opus-high`` resolving through ``claude-4.6-opus``."""
     if (exact := variants.get(model_id)) is not None:
         return exact
     candidates = [name for name in variants if model_id.startswith(name)]
@@ -271,16 +213,7 @@ def _variant_for(model_id: str, variants: dict[str, _Variant]) -> Optional[_Vari
 
 
 async def fetch_subscription_models() -> dict[str, dict[str, Any]]:
-    """The account's live Cursor model list as ``{model_id: {"name", "context"}}``.
-
-    Two endpoints, because each knows half of it. ``GetUsableModels`` answers with the ids a
-    run request accepts verbatim — it returns the very message type the request echoes back —
-    so it owns the list. ``AvailableModels`` is the only one that states context windows, so
-    it owns those, and a failure there costs windows rather than the whole catalog.
-
-    Returns an empty dict when signed out or on any failure, which is what greys this
-    provider's models in the picker. Cached briefly because the interface polls ``/models``
-    and this must not be a round-trip each time."""
+    """The account's live Cursor model list as ``{model_id: {"name", "context"}}``."""
     global _models_cache
     ttl = active_tuning().duration(Tunable.model_catalogue_ttl_seconds)
     if _models_cache is not None and time.monotonic() - _models_cache[0] < ttl:
@@ -319,13 +252,11 @@ async def fetch_subscription_models() -> dict[str, dict[str, Any]]:
 
 
 def cached_subscription_models() -> dict[str, dict[str, Any]]:
-    """The last live list fetched, without a network round-trip (``{}`` if never
-    fetched). For sync callers that only want the freshest *known* value."""
+    """The last live list fetched, without a network round-trip (``{}`` if never fetched)."""
     return _models_cache[1] if _models_cache is not None else {}
 
 
 def clear_subscription_models_cache() -> None:
-    """Drop the cached list so the next ``/models`` reflects a fresh sign-in or sign-out
-    immediately rather than waiting out the TTL."""
+    """Drop the cached list so the next ``/models`` reflects a fresh sign-in or sign-out immediately rather than waiting out the TTL."""
     global _models_cache
     _models_cache = None

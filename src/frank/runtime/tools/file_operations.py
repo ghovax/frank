@@ -1,18 +1,4 @@
-r"""Concrete implementations of the file/search/edit tools.
-
-These are plain functions (synchronous for filesystem work, async for HTTP) that
-the agent runtime dispatches to from ``_execute_tool``. They mirror opencode's
-tool semantics but follow this harness's convention of returning results as
-``compact({...})`` payloads with a ``code`` discriminator — the same shape
-``bash`` and ``web_search`` already use. Errors are raised so the runtime's
-tool-call wrapper surfaces them as ERROR events to the model.
-
-Every function operates through a :class:`~frank.locations.executor.LocationExecutor`,
-so a call against a remote (SSH) location runs through exactly the same
-result-building code as a local one — same ``cat -n`` formatting, staleness
-hashes, whitespace/escape fallbacks, near-miss candidates, and syntax
-validation. Only the IO primitives differ.
-"""
+"""Concrete implementations of the file/search/edit tools."""
 
 from __future__ import annotations
 
@@ -56,20 +42,7 @@ MAXIMUM_INLINE_IMAGE_BYTES = 20 * 1024 * 1024
 
 
 def _normalize_tool_escapes(value: str) -> str:
-    """Collapse JSON escape sequences that survived the tool-call parsing pipeline.
-
-    When a model sees previously-serialised tool call arguments in its conversation
-    history (e.g. ``\"`` rendered as ``\\\"`` inside a JSON string), it may copy the
-    escaped form literally into its own tool call.  By the time the arguments reach
-    this handler they have already been through ``json.loads`` once, which should
-    have unescaped them — but some model providers double-encode, and some models
-    re-escape when reading from history.
-
-    This is strictly a *fallback*: source code legitimately contains literal
-    escape sequences (``"a\\nb"`` in a string, ``\\w+`` in a regex), so the
-    transformation is only ever applied after the verbatim text failed to match —
-    never unconditionally, which would corrupt those edits.
-    """
+    """Collapse JSON escape sequences that survived the tool-call parsing pipeline."""
     value = value.replace('\\"', '"')
     value = value.replace("\\'", "'")
     value = value.replace('\\n', '\n')
@@ -80,18 +53,12 @@ def _normalize_tool_escapes(value: str) -> str:
 
 
 def _rstrip_lines(value: str) -> str:
-    """Strip trailing whitespace from every line — the common cause of near-miss
-    ``find`` failures (editor-added trailing spaces on either side)."""
+    """Strip trailing whitespace from every line — the common cause of near-miss ``find`` failures (editor-added trailing spaces on either side)."""
     return "\n".join(line.rstrip() for line in value.split("\n"))
 
 
 def _context_diff_window(before: str, after: str, context_lines: int = 4) -> tuple[str, str]:
-    """Extract a focused window around the first difference in before/after.
-
-    Returns a (before_window, after_window) pair trimmed to the changed region
-    plus ``context_lines`` lines of surrounding context, so the frontend can
-    render a meaningful diff without sending the entire file content.
-    """
+    """Extract a focused window around the first difference in before/after."""
     before_lines = before.splitlines(keepends=True)
     after_lines = after.splitlines(keepends=True)
 
@@ -140,16 +107,7 @@ def read_file(
     offset: int = 1,
     limit: int | None = None,
 ) -> str:
-    """Read a file and return its lines in ``cat -n`` format.
-
-    ``offset`` is the 1-indexed line to start reading from and ``limit`` caps the
-    number of lines returned (``None`` reads to the end; a non-positive value falls
-    back to the window-scaled default). Each returned line is prefixed with its
-    right-aligned line number and a tab, exactly like ``cat -n``. Lines longer than
-    the window-scaled line clip are cut; their numbers are reported in the
-    ``long_lines_truncated`` field so the model knows their tails are missing (and
-    must not be copied into an ``edit_file`` ``find``).
-    """
+    """Read a file and return its lines in ``cat -n`` format."""
     resolved_path = executor.resolve(base_directory, file_path)
     if not executor.exists(resolved_path):
         raise FileNotFoundError(f"Path does not exist: {resolved_path}")
@@ -196,15 +154,7 @@ def read_image_file(
     *,
     attach_pixels: bool,
 ) -> tuple[str, str | None]:
-    """Read an image file, returning ``(payload_json, data_uri_or_None)``.
-
-    The payload is the model/UI-facing tool result: structured metadata (mime
-    type, byte size, pixel dimensions) with ``kind: "image"`` — never the base64
-    itself, which would bloat every surface that stores the result. When
-    ``attach_pixels`` is set and the file fits the inline ceiling, the second
-    element carries a data URI the runtime attaches to the conversation as an
-    image block so a vision model actually sees the pixels. Works against any
-    location — the bytes come through the executor."""
+    """Read an image file, returning ``(payload_json, data_uri_or_None)``."""
     resolved_path = executor.resolve(base_directory, file_path)
     if not executor.exists(resolved_path):
         raise FileNotFoundError(f"Path does not exist: {resolved_path}")
@@ -261,14 +211,7 @@ def _fuzzy_find_candidates(
     maximum_candidates: int = 5,
     threshold: float = 0.7,
 ) -> list[dict]:
-    """Find near-matches of find within before using line-level indexing.
-
-    Normalizes every line (rstrip), builds a hash lookup from line content
-    to positions, then scores only windows where the first find line matches.
-    This avoids the O(m * n) character-level sliding-window of SequenceMatcher.
-    Falls back to SequenceMatcher on the first line only when the index
-    produces no candidates.
-    """
+    """Find near-matches of find within before using line-level indexing."""
     from collections import defaultdict
 
     find_lines = find.split("\n")
@@ -289,12 +232,7 @@ def _fuzzy_find_candidates(
         content_to_lines[line].append(position)
 
     def _score_window(start: int) -> float:
-        """Average SequenceMatcher ratio across each line pair in the window.
-
-        Per-line matching catches within-line whitespace differences
-        (extra spaces, indentation shifts) that exact string comparison
-        would miss, while being fast because individual lines are short.
-        """
+        """Average SequenceMatcher ratio across each line pair in the window."""
         from difflib import SequenceMatcher
 
         chunk = normalized_before[start : start + window_size]
@@ -358,25 +296,12 @@ def _fuzzy_find_candidates(
 
 
 def _edit_failure(code: str, message: str, **data: object) -> str:
-    """A structured edit failure: one short human ``message`` plus the failure's facts as
-    real structured fields (``candidates``, ``occurrences``, ``diagnostic``, ``path``) —
-    never stitched into the message. The same payload serves the model and the UI, so there
-    is no prose/data split to reconcile. ``status="error"`` marks the call failed for both."""
+    """A structured edit failure: one short human ``message`` plus the failure's facts as real structured fields (``candidates``, ``occurrences``, ``diagnostic``, ``path``) — never stitched into the message."""
     return compact({"code": code, "status": "error", "message": message.strip(), **data})
 
 
 def _match_find_text(before: str, find: str, replace: str) -> tuple[str, str, str, int] | None:
-    """Locate ``find`` in ``before``, trying progressively more forgiving variants.
-
-    Order matters: the verbatim text first (so code that legitimately contains
-    escape sequences is matched as written), then trailing-whitespace-normalized,
-    then the escape-normalized fallback (for models that double-escaped their
-    arguments), then both combined. Returns the effective
-    ``(before, find, replace, occurrences)`` for the first variant that matches,
-    or ``None`` when nothing does. When the escape-normalized ``find`` is the one
-    that matched, ``replace`` is normalized the same way — a double-escaped call
-    is double-escaped on both sides.
-    """
+    """Locate ``find`` in ``before``, trying progressively more forgiving variants."""
     occurrences = before.count(find)
     if occurrences:
         return before, find, replace, occurrences
@@ -412,16 +337,7 @@ def edit_file(
     skip_validation: bool = False,
     replace_all: bool = False,
 ) -> str:
-    """Edit a file by replacing ``find`` with ``replace``.
-
-    ``find`` must occur verbatim in the file. Unless ``replace_all`` is set,
-    it must be unique. The edit is staged in memory, validated against a
-    language parser (AST or tree-sitter), and either committed or aborted with
-    a diagnostic payload.
-
-    When the caller provides a previously read SHA-256, it is checked in the
-    isolation phase to reject stale edits.
-    """
+    """Edit a file by replacing ``find`` with ``replace``."""
     resolved_path = executor.resolve(base_directory, file_path)
     if not executor.exists(resolved_path):
         raise FileNotFoundError(
@@ -639,10 +555,7 @@ _register_tree_sitter([".rs"], "rust")
 def _edit_payload(
     code: str, path: str, *, created: bool, before: str, after: str
 ) -> str:
-    """Build the tool result for write_file.
-
-    ``before``/``after`` carry the full old and new file content for the UI's diff viewer.
-    """
+    """Build the tool result for write_file."""
     return compact(
         {
             "code": code,
@@ -681,14 +594,7 @@ def write_file(
 
 
 async def fetch_url(url: str, fmt: str = "markdown", timeout: int = 30) -> str:
-    """Fetch a URL and return its content in the requested format.
-
-    The page is retrieved through a cascade of engines, each better at defeating
-    JS-rendering and anti-bot walls than a raw request: Jina Reader first (free,
-    handles most pages), Firecrawl next when a key is configured (full browser
-    rendering for the hardest SPAs), and a plain HTTP GET as a last resort. The
-    first engine to return non-thin content wins. A very large page is truncated
-    inline, with the full content written to a temp file (``output_file``)."""
+    """Fetch a URL and return its content in the requested format."""
     from urllib.parse import urlparse
 
     fmt = (fmt or "markdown").lower()
@@ -712,8 +618,7 @@ async def fetch_url(url: str, fmt: str = "markdown", timeout: int = 30) -> str:
 
 
 def _fetch_engines():
-    """The fetch engines to try, in order. Firecrawl is only offered when a client
-    is configured; Jina and the direct GET are always available."""
+    """The fetch engines to try, in order."""
     yield ("jina", _fetch_via_jina)
     if tool_context.current().firecrawl_client is not None:
         yield ("firecrawl", _fetch_via_firecrawl)
@@ -721,8 +626,7 @@ def _fetch_engines():
 
 
 async def _fetch_through_engines(url: str, fmt: str, timeout: int) -> tuple[str, str]:
-    """Walk the engine cascade, returning the first non-thin result. If every engine
-    yields thin content, return the longest one; if all raise, raise a combined error."""
+    """Walk the engine cascade, returning the first non-thin result."""
     best_content = ""
     best_engine = ""
     failures: list[str] = []
@@ -746,8 +650,7 @@ _JINA_RETURN_FORMAT = {"markdown": "markdown", "text": "text", "html": "html"}
 
 
 async def _fetch_via_jina(url: str, fmt: str, timeout: int) -> str:
-    """Fetch through Jina Reader (r.jina.ai) — returns clean content in the requested
-    format. Works keyless; a configured key raises the rate limit."""
+    """Fetch through Jina Reader (r.jina.ai) — returns clean content in the requested format."""
     import httpx
 
     headers = {"X-Return-Format": _JINA_RETURN_FORMAT[fmt]}
@@ -761,8 +664,7 @@ async def _fetch_via_jina(url: str, fmt: str, timeout: int) -> str:
 
 
 async def _fetch_via_firecrawl(url: str, fmt: str, timeout: int) -> str:
-    """Fetch through Firecrawl's full-browser scrape (the configured client). Returns
-    HTML for ``html``, otherwise its clean markdown."""
+    """Fetch through Firecrawl's full-browser scrape (the configured client)."""
     scrape_format = "html" if fmt == "html" else "markdown"
     client = tool_context.current().firecrawl_client
     document = await client.scrape(url, formats=[scrape_format], timeout=timeout * 1000)
@@ -771,11 +673,7 @@ async def _fetch_via_firecrawl(url: str, fmt: str, timeout: int) -> str:
 
 
 async def _impersonated_get(url: str, timeout: int):
-    """A GET that mimics a real Chrome — TLS/JA3 and HTTP/2 fingerprints, not just
-    the User-Agent — so requests that a plain client gets flagged and blocked for
-    still go through. Routes through the configured proxy when one is set. Returns the
-    (fully-buffered) curl_cffi response, whose ``.text``/``.content`` stay readable
-    after the session closes."""
+    """A GET that mimics a real Chrome — TLS/JA3 and HTTP/2 fingerprints, not just the User-Agent — so requests that a plain client gets flagged and blocked for still go through."""
     from curl_cffi import AsyncSession
 
     session_kwargs: dict[str, object] = {"impersonate": "chrome", "timeout": timeout}
@@ -789,9 +687,7 @@ async def _impersonated_get(url: str, timeout: int):
 
 
 async def _fetch_direct(url: str, fmt: str, timeout: int) -> str:
-    """Last-resort direct fetch (browser-impersonated, no JS rendering) with local
-    HTML-to-format conversion — the safety net when the scraping services are unset or
-    unreachable, and the tier that defeats plain fingerprint-based blocks."""
+    """Last-resort direct fetch (browser-impersonated, no JS rendering) with local HTML-to-format conversion — the safety net when the scraping services are unset or unreachable, and the tier that defeats plain fingerprint-based blocks."""
     response = await _impersonated_get(url, timeout)
     body = response.text
     if fmt == "html":
@@ -802,10 +698,7 @@ async def _fetch_direct(url: str, fmt: str, timeout: int) -> str:
 
 
 async def download_file(executor: LocationExecutor, url: str, resolved_path: str, timeout: int = 120) -> str:
-    """Download a URL's raw bytes to ``resolved_path`` using browser impersonation
-    (and the configured proxy), then write them through the location executor so the
-    file lands on the target location — local or remote. Returns the path, byte size,
-    and content type."""
+    """Download a URL's raw bytes to ``resolved_path`` using browser impersonation (and the configured proxy), then write them through the location executor so the file lands on the target location — local or remote."""
     from urllib.parse import urlparse
 
     parsed = urlparse(url)

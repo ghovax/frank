@@ -1,13 +1,4 @@
-"""Recorded corpora of real web-page elements, and the types that carry them.
-
-A corpus is a snapshot of one real page, read through frank's own snapshot parser and written to
-a JSON fixture. The fixtures are committed and the tests read only those, never the network. A
-test that reaches eight websites is slow, fails whenever a site is down, and quietly reports
-different numbers every week as those sites are redesigned — which is indistinguishable from a
-regression in our own code, and therefore worse than useless as a signal.
-
-Refreshing the fixtures is a deliberate, separate act: run :mod:`tests.retrieval.harvest`.
-"""
+"""Recorded corpora of real web-page elements, and the types that carry them."""
 
 from __future__ import annotations
 
@@ -20,12 +11,7 @@ FIXTURE_DIRECTORY = Path(__file__).parent / "fixtures"
 
 @dataclass(frozen=True)
 class RecordedElement:
-    """One element of a page, holding every field any encoding strategy might want.
-
-    The fields are stored even when the strategy currently shipping ignores them, because the
-    point of the harness is to compare what we do against what we could do. A fixture that only
-    recorded the fields already in use could never demonstrate that a different choice is better.
-    """
+    """One element of a page, holding every field any encoding strategy might want."""
 
     role: str
     name: str
@@ -54,12 +40,7 @@ class RecordedElement:
 
 @dataclass(frozen=True)
 class Corpus:
-    """Every element recorded from one surface, with where it was read from.
-
-    ``surface_name`` separates the two, because they are different retrieval problems and must
-    not be pooled: a web page supplies link destinations and tooltips that no native window has,
-    so a strategy scored across both would be credited on one surface for a field the other
-    cannot provide."""
+    """Every element recorded from one surface, with where it was read from."""
 
     site_name: str
     page_url: str
@@ -71,11 +52,7 @@ class Corpus:
 
 
 def fixture_path(surface_name: str, site_name: str) -> Path:
-    """Where the fixture for one recording lives: a directory per surface, named by the source.
-
-    The surface is a directory rather than a prefix on the filename. A prefix encodes a fact about
-    a file in its name, so every reader has to parse it back out, and adding a third surface would
-    mean renaming everything that already exists."""
+    """Where the fixture for one recording lives: a directory per surface, named by the source."""
     return FIXTURE_DIRECTORY / surface_name / f"{site_name}.json"
 
 
@@ -105,10 +82,7 @@ def read_corpus(path: Path) -> Corpus:
 
 
 def load_all_corpora(surface_name: str | None = None) -> list[Corpus]:
-    """Every committed corpus, ordered by site name so that reports are stable between runs.
-
-    Pass ``surface_name`` to take only one surface's corpora — the usual case, since pooling web
-    and native measures neither."""
+    """Every committed corpus, ordered by site name so that reports are stable between runs."""
     if not FIXTURE_DIRECTORY.exists():
         return []
     pattern = f"{surface_name}/*.json" if surface_name else "*/*.json"

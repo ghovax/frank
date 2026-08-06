@@ -18,12 +18,7 @@ from frank.base.providers import (
 
 @dataclass(frozen=True)
 class ModelDefinition:
-    """A pickable model. The ``identifier`` is the canonical, provider-namespaced
-    technical id a user references the model by (``anthropic/claude-sonnet-4``,
-    ``opencode/deepseek-v4-flash``); ``name`` is the user-facing label from the
-    models.dev catalog, falling back to the raw model suffix when no display name
-    is available (the frontend renders those in monospace).
-    """
+    """A pickable model."""
 
     identifier: str
     name: str
@@ -102,11 +97,7 @@ _MODELS_DEV_PROVIDER_MAP: dict[str, str] = {
 
 
 def _catalog() -> list[ModelDefinition]:
-    """Model catalog from models.dev's open-source API.
-
-    Best-effort — returns an empty list when the API is unreachable so the harness
-    can still start without a model catalog.
-    """
+    """Model catalog from models.dev's open-source API."""
     MODELS_DEV_URL = "https://models.dev/api.json"
     try:
         response = httpx.get(MODELS_DEV_URL, timeout=5)
@@ -176,10 +167,7 @@ def _codex_eligible(model_suffix: str) -> bool:
 
 
 def _chatgpt_models(base: list[ModelDefinition]) -> list[ModelDefinition]:
-    """The experimental ``chatgpt`` subscription models, derived from the OpenAI
-    entries in the live models.dev catalog filtered to the codex-eligible set — so
-    new GPT-5.x models appear automatically as models.dev learns of them, with their
-    real names and context windows, instead of a stale hand-written list."""
+    """The experimental ``chatgpt`` subscription models, derived from the OpenAI entries in the live models.dev catalog filtered to the codex-eligible set — so new GPT-5.x models appear automatically as models.dev learns of them, with their real names and context windows, instead of a stale hand-written list."""
     chatgpt: list[ModelDefinition] = []
     for model in base:
         if model.provider != "openai":
@@ -206,25 +194,7 @@ _catalogue_lock = threading.Lock()
 
 
 def list_models() -> list[ModelDefinition]:
-    """The model catalogue, fetched on first use and then cached for the process.
-
-    This is a function rather than a module-level list for a reason that is not style.
-    Building the catalogue performs a blocking HTTP GET to models.dev, and doing that at
-    *import* time made every process that imports this module — which is every process
-    that imports the runtime — pay a second of startup, depend on a reachable third-party
-    host, and silently end up with an empty catalogue when offline.
-
-    It also broke the invariant the prototype rests on. On macOS that fetch spawns two
-    persistent native network threads, and a multi-threaded parent cannot legally
-    ``fork()``: the child aborts inside the Objective-C runtime with a message that reads
-    like a CoreFoundation verdict and is not one. Deferring the fetch is what keeps the
-    prototype single-threaded up to the moment it forks, and the fetch then happens in the
-    child, where threads are nobody's problem.
-
-    Best-effort by design: an unreachable models.dev yields an empty catalogue rather than
-    an exception, and the result — empty or not — is cached, so a failed fetch does not
-    retry on every call. :func:`clear_catalogue_cache` is how a caller asks for another try.
-    """
+    """The model catalogue, fetched on first use and then cached for the process."""
     global _catalogue_cache
     if _catalogue_cache is not None:
         return list(_catalogue_cache)
@@ -236,10 +206,7 @@ def list_models() -> list[ModelDefinition]:
 
 
 def clear_catalogue_cache() -> None:
-    """Drop the cached catalogue so the next :func:`list_models` refetches.
-
-    For a process that started offline and now has a network, and for the settings surface
-    after a provider changes."""
+    """Drop the cached catalogue so the next :func:`list_models` refetches."""
     global _catalogue_cache
     _catalogue_cache = None
 
@@ -252,9 +219,7 @@ def find_model(model_identifier: str) -> ModelDefinition | None:
 
 
 def provider_and_suffix(model_identifier: str) -> tuple[str, str] | None:
-    """Split a model id into its provider id and the model suffix (everything after
-    the first ``/``). The suffix may itself contain slashes (OpenRouter's
-    ``anthropic/claude-sonnet-4``), so only the first slash is significant."""
+    """Split a model id into its provider id and the model suffix (everything after the first ``/``)."""
     if "/" not in model_identifier:
         return None
     provider_identifier, suffix = model_identifier.split("/", 1)
@@ -262,11 +227,7 @@ def provider_and_suffix(model_identifier: str) -> tuple[str, str] | None:
 
 
 def available_models(configured_keys: dict[str, str]) -> list[ModelDefinition]:
-    """Catalog entries whose provider has a resolvable credential. A provider is
-    unlocked by an explicit configured key or any of its env vars. Native providers
-    (``chatgpt``, ``cursor``) are excluded here — their availability is resolved
-    per-model against the live subscription list by the ``/models`` endpoint, not by a
-    key."""
+    """Catalog entries whose provider has a resolvable credential."""
     unlocked_providers = {
         provider.identifier
         for provider in PROVIDERS.values()
@@ -278,20 +239,7 @@ def available_models(configured_keys: dict[str, str]) -> list[ModelDefinition]:
 
 
 def _gateway_api_base(provider_base_url: str, litellm_prefix: str) -> str:
-    """The base URL to hand LiteLLM for a gateway that speaks several wire protocols.
-
-    A gateway like OpenCode Zen serves Anthropic, Gemini and OpenAI traffic from one host, so the
-    provider's base URL names the host and the model's protocol decides the path. LiteLLM builds
-    that path itself for every protocol *except* one, and the exception is the reason this exists:
-    for `anthropic` it appends `/v1/messages` unless the base already ends that way, which would
-    turn `…/zen/v1` into `…/zen/v1/v1/messages`. Ending the base at `/v1/messages` ourselves is
-    what makes that append a no-op.
-
-    Gemini deliberately gets nothing. LiteLLM's `_check_custom_proxy` already renders a custom
-    Gemini base as `{base}/models/{model}:{generateContent|streamGenerateContent}` — including
-    picking the streaming verb per call — so composing that path here would double it, and would
-    also need a second base URL just to carry the streaming variant.
-    """
+    """The base URL to hand LiteLLM for a gateway that speaks several wire protocols."""
     if litellm_prefix == "anthropic":
         return f"{provider_base_url.rstrip('/')}/messages"
     return provider_base_url

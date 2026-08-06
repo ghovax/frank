@@ -6,14 +6,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ProviderDefinition:
-    """One routable LLM provider.
-
-    The ``litellm_prefix`` is the default LiteLLM model prefix (the segment before
-    the first ``/`` in the model string LiteLLM receives). A catalog model can
-    override it when a gateway serves different models through different protocols.
-    ``credential_identifier`` lets related gateways share one stored API key; an
-    empty value means that the provider's own identifier owns the credential.
-    """
+    """One routable LLM provider."""
 
     identifier: str
     name: str

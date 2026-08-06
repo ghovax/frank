@@ -1,33 +1,4 @@
-"""What a script can be pointed at: one window, or one browser tab.
-
-A target is a *place* — a thing with a tree inside it, a title, a focus state and a lifetime.
-An application is not a place: it has zero windows or five, and naming one addresses none of them
-in particular. That distinction is the whole of this module, and it exists because naming a place
-by its application's display name resolved to the wrong process the first time two copies of one
-application were open, and cost an investigation before anybody suspected the address rather than
-the thing addressed.
-
-**Accessibility says what exists; the window server says what it is called and whether you can see
-it.** Both halves are needed and neither is sufficient. CoreGraphics numbers every compositing
-layer — title bars, shadows, sheet backdrops — so it reported nineteen entries for RStudio's single
-window and twenty-one for Finder's five; no size or layer filter separates those from real windows,
-which is why the pixel floor this module used to apply removed nothing on screen and a hundred and
-forty-four nameless strips off it. Accessibility publishes exactly the real windows, one entry each.
-So AX decides what exists, and :func:`accessibility.windows_of` carries the window-server id across
-for identity.
-
-**Every window, on every Space.** ``kCGWindowListOptionOnScreenOnly`` means *on the current Space
-and not minimized*, which made fifty-six of seventy-four windows unaddressable and reported them as
-closed — a window on the next desktop is not a window that never opened. Synthesized input has never
-needed a window to be on screen (every event goes through ``CGEventPostToPid``), so the restriction
-bought nothing and cost the model most of the machine. What survives is ``visible``, a fact rather
-than a filter.
-
-The model never sees which surface a target belongs to. That is the point: ``win-10337`` and
-``tab-3`` are both places to act, and choosing the machinery behind them is this module's job
-rather than the model's. What it does see is ``can`` — the vocabulary a place answers to, which is
-a fact about the place rather than about the implementation underneath it.
-"""
+"""What a script can be pointed at: one window, or one browser tab."""
 
 from __future__ import annotations
 
@@ -55,11 +26,7 @@ FURNITURE_OWNERS = frozenset({"Control Center", "Window Server", "Dock", "Spotli
 
 @dataclass(frozen=True)
 class Target:
-    """One addressable place, in the vocabulary the model reads.
-
-    ``surface`` is present for the dispatcher and deliberately absent from what the model is
-    shown: it is the implementation detail this whole design exists to stop leaking.
-    """
+    """One addressable place, in the vocabulary the model reads."""
 
     id: str
     app: str
@@ -77,12 +44,7 @@ class Target:
     address: dict[str, Any] = field(default_factory=dict)   # how the surface finds it again
 
     def described(self) -> dict[str, Any]:
-        """The form handed to the model: a place, its owner, what it says, what it answers to.
-
-        A key is absent when there is nothing to say rather than present and false, so the model
-        learns one shape and reads whatever it finds. ``visible`` is the exception and is always
-        stated when false, because a window on another Space is a thing worth telling a person
-        about before acting in it."""
+        """The form handed to the model: a place, its owner, what it says, what it answers to."""
         described: dict[str, Any] = {"id": self.id, "app": self.app, "title": self.title, "can": self.can}
         if self.focused:
             described["focused"] = True
@@ -107,11 +69,7 @@ class Target:
 
 
 def _window_server_windows() -> tuple[dict[int, dict[str, Any]], set[int]]:
-    """Every window the system has numbered, and the subset currently on screen.
-
-    Two listings rather than one: ``kCGWindowListOptionAll`` is the world, and the on-screen
-    listing is what ``visible`` means. Asking for the world and marking the difference is the
-    whole change from filtering the world down to whatever happens to be in front."""
+    """Every window the system has numbered, and the subset currently on screen."""
     try:
         import Quartz
     except Exception:  # noqa: BLE001 — a machine without Quartz simply has no native targets
@@ -155,13 +113,7 @@ def _frontmost_process_id() -> int:
 
 
 def _native_targets() -> list[Target]:
-    """Every window worth addressing, named by accessibility and numbered by the window server.
-
-    When Accessibility is not granted there is nothing to join against, and the honest answer is
-    neither an empty list — which reads as "you have no windows open" — nor the raw window-server
-    listing, which is nineteen nameless rows for one RStudio. Each application collapses to a
-    single unaddressable entry carrying the reason, so the model can see what is running, cannot
-    pretend to address a window it has no name for, and knows which permission would fix it."""
+    """Every window worth addressing, named by accessibility and numbered by the window server."""
     numbered, visible_ids = _window_server_windows()
     if not numbered:
         return []
@@ -230,11 +182,7 @@ def _is_ordinary_application(pid: int) -> bool:
 
 
 def _readable_document(document: str) -> str:
-    """A window's document as a person would write it: a plain path, or the url as it stands.
-
-    ``AXDocument`` gives a ``file://`` URL, percent-encoded. Handing that to a model that is about
-    to compare it against a path it read from the filesystem makes it do URL decoding to answer
-    "is this the same file", which is a question the answer should not depend on."""
+    """A window's document as a person would write it: a plain path, or the url as it stands."""
     if not document:
         return ""
     if document.startswith("file://"):
@@ -270,13 +218,7 @@ def _collapsed(numbered: dict[int, dict[str, Any]], visible_ids: set[int],
 
 
 def _browser_targets() -> list[Target]:
-    """Every open tab of an already-connected browser.
-
-    Not connecting on demand: enumerating targets happens on every turn, and a listing must never
-    be the thing that starts a browser session — Chrome asks the user to approve a debugging
-    connection, so an enumeration that connected would put a consent dialog in front of them once
-    per turn. Until something has deliberately opened a session, a browser contributes its
-    *windows*, which the window server knows about for free, and not its tabs."""
+    """Every open tab of an already-connected browser."""
     try:
         from frank.computer import web
     except Exception:  # noqa: BLE001
@@ -308,12 +250,7 @@ def _browser_targets() -> list[Target]:
 
 
 def vocabularies() -> dict[str, dict[str, str]]:
-    """What each kind of place can be told to do, with the shape of every call, read off the
-    surfaces themselves.
-
-    Computed rather than written down, because a written list is a second statement of a fact the
-    code already holds, and the two drift. One source, so the promise and the enforcement cannot
-    disagree."""
+    """What each kind of place can be told to do, with the shape of every call, read off the surfaces themselves."""
     from frank.computer import engine, web
 
     return {
@@ -323,22 +260,14 @@ def vocabularies() -> dict[str, dict[str, str]]:
 
 
 def _worth_naming(target: Target) -> tuple:
-    """Sort key: the window a person would mean, first.
-
-    Two windows of one application are not equally likely to be the one meant. The visible one
-    beats the hidden one, the application's own main window beats a secondary, a window that holds
-    a document beats one that holds nothing, and a big window beats a small one — a model shown
-    two entries called "RStudio" was picking between them on nothing at all."""
+    """Sort key: the window a person would mean, first."""
     width, height = target.bounds[2], target.bounds[3]
     return (not target.focused, not target.visible, not target.main, not target.document,
             -(width * height), target.app.lower())
 
 
 def list_windows() -> list[Target]:
-    """Native windows only, from accessibility and the window server. Never touches a browser.
-
-    Ordered so the likeliest window is first: a listing is read top-down, and an arbitrary order
-    makes the reader guess where a random one does not."""
+    """Native windows only, from accessibility and the window server."""
     return sorted(_native_targets(), key=_worth_naming)
 
 
@@ -348,10 +277,7 @@ def list_tabs() -> list[Target]:
 
 
 def list_targets() -> list[Target]:
-    """Every place a script can be pointed at, windows and tabs together, in one list.
-
-    Order is stable — browser tabs after native windows, each in the platform's own order — so
-    that a diff between two listings reflects the world changing rather than the enumeration."""
+    """Every place a script can be pointed at, windows and tabs together, in one list."""
     global _warmed
     targets = _native_targets() + _browser_targets()
     # Set on the way out rather than on the way in: a listing that is still running has not paid the connection cost yet, and something checking `warm()` in the meantime must not be told it is cheap and then wait out the whole of it.
@@ -374,14 +300,7 @@ def find_tab(target_id: str) -> Optional[Target]:
 
 
 def find_target(target_id: str) -> Optional[Target]:
-    """The target with this id on either surface, or ``None`` if it has gone.
-
-    Re-enumerates rather than consulting a cache. A cached target is a promise about a window
-    that may have closed since, and the failure it produces — acting into a place that no longer
-    exists — is exactly the one this module is meant to make impossible to reach silently.
-
-    Windows are searched first, so resolving a window id never enumerates tabs and never opens a
-    browser connection."""
+    """The target with this id on either surface, or ``None`` if it has gone."""
     found = find_window(target_id)
     return found if found is not None else find_tab(target_id)
 
@@ -418,15 +337,7 @@ def warm() -> bool:
 
 
 def prewarm() -> None:
-    """Open this process's accessibility connections before a turn needs them.
-
-    Called off the event loop when a session starts. The enumeration it performs is thrown
-    away; what survives is the connection, and with it :func:`warm` answering true — so the
-    first turn that would have paid 1.8 seconds inside the model request either finds the work
-    already done or is told to ask for the listing instead of waiting for it.
-
-    Swallows everything. A machine that refuses the listing simply leaves the process cold, and
-    a cold process is a state the callers already handle."""
+    """Open this process's accessibility connections before a turn needs them."""
     global _warmed
     try:
         _native_targets()
@@ -436,23 +347,7 @@ def prewarm() -> None:
 
 
 def context_block() -> dict[str, Any]:
-    """What the model is told about the screen, once per turn.
-
-    Structured rather than prose, and carrying the vocabularies beside the places, because those
-    are the two questions a script must answer before it can be written at all: *where am I
-    acting*, and *what may I call there*. Both were already computed; neither was ever handed
-    over, so the first call of every screen task had to fail to find them out.
-
-    The signatures come with the names. A description that lists them separately is a second
-    statement of the same fact, and it drifted three times over before anyone noticed.
-
-    The legend travels with the listing for the same reason. ``visible`` is a fact rather than a
-    filter — that is stated at the top of this module and again where the dispatcher notes an
-    off-screen action, and both times in a comment nobody reading the listing can see. A model
-    shown a bare ``visible: false`` on the one window it needed concluded the application
-    "does not expose an open window I can address", ran an `open -a` against an application that
-    had been running for nineteen hours, and then acted on that very window. A key written only
-    when it is false reads as a defect flag unless something says otherwise."""
+    """What the model is told about the screen, once per turn."""
     from frank.computer.surface import message_loader
 
     targets = list_targets()
@@ -468,11 +363,7 @@ def context_block() -> dict[str, Any]:
 
 
 def difference(before: list[Target], after: list[Target]) -> dict[str, Any]:
-    """What changed between two listings: added, removed, and changed in place.
-
-    Sent instead of the whole list because a full enumeration repeats twenty unchanged lines to
-    report that one window's title changed. The same principle as an action's diff, applied to
-    the world rather than to one window."""
+    """What changed between two listings: added, removed, and changed in place."""
     before_by_id = {target.id: target for target in before}
     after_by_id = {target.id: target for target in after}
     added = [target.described() for identifier, target in after_by_id.items() if identifier not in before_by_id]

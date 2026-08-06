@@ -1,10 +1,4 @@
-"""One turn, from an inbound message to a persisted, streamed result.
-
-The runner is the per-turn state machine, and its phases form a typed pipeline: each takes
-the previous phase's result and returns its own, so the ordering is a type constraint rather
-than an unwritten rule. Once the turn takes the session lock every exit — normal, early, or
-failed — runs through one teardown exactly once.
-"""
+"""One turn, from an inbound message to a persisted, streamed result."""
 
 from __future__ import annotations
 
@@ -63,12 +57,7 @@ _PROMPTS = PromptLoader(Path(__file__).resolve().parent.parent / "runtime" / "pr
 
 @dataclass
 class _ContextState:
-    """The session's live execution state, with one explicit lifecycle: created on its first
-    turn, dropped whole when the session ends. A worker holds exactly one of these.
-
-    The conversation is deliberately not here — it is the durable checkpoint's in-memory
-    counterpart, restored from the store on the first turn and written back at safe points.
-    """
+    """The session's live execution state, with one explicit lifecycle: created on its first turn, dropped whole when the session ends."""
 
     # Serializes the session's turns, so a message and an autonomous background wake never drive the one runtime concurrently.
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -85,10 +74,7 @@ class _ContextState:
 
 @dataclass(frozen=True)
 class _Ingested:
-    """The parsed request — the turn's inputs and mode flags — produced by ``_ingest``. Each
-    later phase takes the result of the phase before it as a required argument, so the ordering
-    is a type constraint (a phase literally cannot be called without its predecessor's output)
-    rather than the unwritten rule that a shared instance-var machine leaves implicit."""
+    """The parsed request — the turn's inputs and mode flags — produced by ``_ingest``."""
     message: Message
     user_text: str
     metadata: dict
@@ -107,16 +93,7 @@ class _Ingested:
 
     @property
     def from_outside(self) -> bool:
-        """Whether somebody outside this session asked for this turn — a person, or the session
-        that created it — as opposed to the session sending it to itself.
-
-        The four flags above each name *which* envelope a session sent itself; this names the
-        one thing several decisions actually turn on, which is whether anybody is there. Stated
-        once, because the sites that ask it must agree: two of them used to test `autonomous or
-        compaction` and so read a report reminder — which nobody typed — as a person speaking,
-        lifting the suppression that Stop puts on self-opened turns and clearing the marker
-        saying the session was parked on a decision. Neither is something a session is entitled
-        to do to itself."""
+        """Whether somebody outside this session asked for this turn — a person, or the session that created it — as opposed to the session sending it to itself."""
         return not (self.autonomous or self.compaction or self.report_reminder or self.goal_continuation)
 
 
@@ -148,30 +125,7 @@ class _ComposedTurn:
 
 
 class _TurnRunner:
-    """One run of the executor's ``execute()`` — the per-turn state machine made explicit.
-
-    The phases form a **typed pipeline**: each takes the previous phase's typed result and
-    returns its own — ``_ingest`` gives :class:`_Ingested`, ``_resolve_task`` gives :class:`_Resolved`,
-    ``_prepare_runtime`` gives :class:`_Prepared`, ``_compose_turn_input`` gives :class:`_ComposedTurn` —
-    so the ordering is a type constraint (``_prepare_runtime`` cannot be called before
-    ``_resolve_task`` because it *requires* a ``_Resolved``), not the unwritten rule a shared
-    instance-var machine leaves implicit. The data that flows from phase to phase rides those results;
-    the *lifecycle* state that the shared collaborators (``_emit``/``_suspend_turn``/
-    ``_save_runtime_conversation``) and the single ``finally`` teardown read — the task, updater,
-    runtime, sink, telemetry span, and a fistful of teardown flags — stays as instance
-    attributes, because teardown must run on a *partial* completion, reading whatever was set so
-    far. The sequence: ingest the request, resolve the task and any resume answer, acknowledge
-    work habits, serialize on the per-context lock, build the runtime, compose the model input,
-    stream, and finalize — with one teardown that always runs once the turn has taken the lock.
-
-    The phases up to and including the lock acquisition can short-circuit the turn
-    before any teardown is owed (a stale resume answer, a partial answer, a failed
-    work-habits acknowledgement); they signal that by returning :data:`_DONE`. Once the
-    lock and span are taken, every exit — normal, early (an autonomous no-op wake, a
-    manual compaction), or failed — runs through the ``finally`` teardown exactly once.
-
-    Instances are single-use: ``execute()`` builds one per call and awaits ``run()``.
-    """
+    """One run of the executor's ``execute()`` — the per-turn state machine made explicit."""
 
     # A phase decided the turn is finished, so the spine should stop after any owed teardown runs.
     _DONE = object()
@@ -253,10 +207,7 @@ class _TurnRunner:
     # The phases themselves.
 
     async def _publish_usage_snapshot(self) -> None:
-        """Send the daemon whatever this turn learned about the account's limits.
-
-        Best-effort and never fatal: a turn that worked must not be reported as failed
-        because a usage reading did not reach the daemon."""
+        """Send the daemon whatever this turn learned about the account's limits."""
         from frank.base.subscription import get_usage_snapshot
 
         snapshot = get_usage_snapshot()
@@ -268,9 +219,7 @@ class _TurnRunner:
             logger.warning("could not publish the subscription usage snapshot", exc_info=True)
 
     async def _ingest(self) -> _Ingested:
-        """Parse the request message into the turn's inputs and mode flags. Returns them as a
-        typed ``_Ingested`` (threaded into the next phase) and also stores the lifecycle bits
-        (`_message`, `_metadata`, …) the shared collaborators and teardown read."""
+        """Parse the request message into the turn's inputs and mode flags."""
         message = self._request.message
         if message is None:
             raise ValueError("Request context message is required.")
@@ -310,9 +259,7 @@ class _TurnRunner:
         )
 
     async def _resolve_task(self, ingested: _Ingested) -> _Resolved | object:
-        """Materialize the task, then either record a resume answer or start a fresh
-        turn. Returns ``_DONE`` when the request is fully handled without streaming (a
-        stale or partial answer), else the :class:`_Resolved` the next phases thread."""
+        """Materialize the task, then either record a resume answer or start a fresh turn."""
         message = ingested.message
         task = self._request.current_task
         if task is None:
@@ -361,8 +308,7 @@ class _TurnRunner:
         )
 
     async def _acknowledge_work_habits(self, resolved: _Resolved) -> object | None:
-        """Emit the once-per-context work-habits acknowledgement. Returns ``_DONE`` if
-        the acknowledgement itself failed (the turn is reported failed)."""
+        """Emit the once-per-context work-habits acknowledgement."""
         task, ingested = resolved.task, resolved.ingested
         self._context_state = self._executor._context(task.context_id)
         should_acknowledge = await self._executor._claim_work_habits_acknowledgement(
@@ -412,9 +358,7 @@ class _TurnRunner:
         self._turn_span = self._turn_span_context.__enter__()
 
     async def _prepare_runtime(self, resolved: _Resolved) -> _Prepared | object:
-        """Build (or warm-fetch) the runtime, register it, and stand up the event sink.
-        Returns ``_DONE`` for an autonomous wake that has nothing left to deliver, else the
-        :class:`_Prepared` the streaming phases thread."""
+        """Build (or warm-fetch) the runtime, register it, and stand up the event sink."""
         task = resolved.task
         # An autonomous wake with nothing left to deliver — a concurrent user turn already drained the result while this one waited on the lock — is a no-op: close the task without a model call rather than emit an empty turn.
         if self._autonomous:
@@ -459,17 +403,7 @@ class _TurnRunner:
         return _Prepared(resolved=resolved, runtime=runtime, sink=self._sink)
 
     async def _reconcile_goal(self, prepared: _Prepared) -> object | None:
-        """Settle the session's goal against what opened this turn, now that the runtime is
-        built and the goal has been restored from the checkpoint.
-
-        Two facts, and they belong together because they are the same bookkeeping seen from
-        either end. A turn opened *for* the goal spends one of its allowance — and finds nothing
-        to do if the goal was finished in the meantime, which is the same race an autonomous wake
-        runs and is settled the same way: close the task without a model call. A turn somebody
-        *outside* opened gives the allowance back, because the allowance only ever bounded how
-        long the session would work with nobody looking, and somebody has just looked.
-
-        Returns ``_DONE`` when the goal this turn was opened for is already resolved."""
+        """Settle the session's goal against what opened this turn, now that the runtime is built and the goal has been restored from the checkpoint."""
         runtime = prepared.runtime
         if prepared.resolved.ingested.goal_continuation:
             goal = runtime.goal
@@ -483,10 +417,7 @@ class _TurnRunner:
         return None
 
     async def _run_compaction_turn(self, prepared: _Prepared) -> object | None:
-        """A manual compaction turn runs no model turn: it summarizes the older history
-        in place and emits the compaction parts (the live indicator + the separator),
-        then completes. Persisted like any turn, so the separator replays; fanned out, so
-        viewers see it live. Returns ``_DONE`` when this was a compaction turn."""
+        """A manual compaction turn runs no model turn: it summarizes the older history in place and emits the compaction parts (the live indicator + the separator), then completes."""
         if not prepared.resolved.ingested.compaction:
             return None
         async for compaction_event in prepared.runtime.compact(reason="manual"):
@@ -496,9 +427,7 @@ class _TurnRunner:
         return self._DONE
 
     async def _compose_turn_input(self, prepared: _Prepared) -> _ComposedTurn:
-        """Build the model-facing input for this segment from the turn's payloads: an
-        autonomous framing note, structured attachments (with vision blocks when the model
-        supports them), or plain user text."""
+        """Build the model-facing input for this segment from the turn's payloads: an autonomous framing note, structured attachments (with vision blocks when the model supports them), or plain user text."""
         runtime = prepared.runtime
         self._as_system_note = self._autonomous or self._report_reminder or self._goal_continuation
         if self._goal_continuation:
@@ -544,8 +473,7 @@ class _TurnRunner:
         )
 
     async def _stream_and_finalize(self, composed: _ComposedTurn) -> None:
-        """Drive the runtime's event stream through the sink, then close the task as
-        completed or canceled once it drains (a durable suspension returns early)."""
+        """Drive the runtime's event stream through the sink, then close the task as completed or canceled once it drains (a durable suspension returns early)."""
         resolved = composed.prepared.resolved
         # A resume drives the turn from the durable checkpoint (the pending tool-call AIMessage the rebuilt runtime already holds) with the answered decisions; a fresh turn drives the model from this segment's input.
         event_source = (
@@ -617,31 +545,7 @@ class _TurnRunner:
         self._maybe_nudge_to_report()
 
     async def _maybe_continue_goal(self) -> None:
-        """Open another turn when this one ended with the session's goal still unfinished.
-
-        This is what makes a goal mean anything after the turn that set it. A goal is the contract
-        for an outcome, and an outcome does not stop mattering because the model decided it had
-        said enough for now — so the session picks the work back up on its own, and keeps picking
-        it up, until the goal is satisfied, cleared, reported blocked, or has used the allowance
-        that bounds how long it runs unattended.
-
-        Five conditions, each of them somebody's answer rather than a heuristic:
-
-        - the turn *completed*. A failed turn, a stopped one, or one parked on a permission
-          request has not finished, and reopening it would either loop on the same failure or
-          talk over the person being asked something;
-        - the person has not pressed Stop. The context's abort flag survives the turn for exactly
-          this reason, and only a message from outside lifts it;
-        - the goal is open. Blocked and parked goals are waiting on somebody, which is the
-          opposite of work to get on with;
-        - the allowance is not spent. When it is, the goal is parked rather than dropped: nothing
-          has gone wrong, it has simply run long enough without a person to be worth a look;
-        - no background work is pending. The resume pump is already going to open a turn for the
-          result that is landing, and that turn ends in this same teardown — so letting it own the
-          wake keeps the two from opening one apiece for the same moment.
-
-        Spawned rather than awaited, for the reason the report reminder is: this runs inside the
-        ending turn's teardown, and what it opens is itself a turn."""
+        """Open another turn when this one ended with the session's goal still unfinished."""
         if not self._completed:
             return
         state = self._executor._contexts.get(self._task.context_id)
@@ -661,27 +565,7 @@ class _TurnRunner:
         spawn_background_task(self._executor.continue_goal(self._task.context_id))
 
     def _maybe_nudge_to_report(self) -> None:
-        """Remind the session, once, if a completed turn left the session that created it with
-        no answer.
-
-        Reporting cannot be enforced — only the model can decide what its answer is and when it
-        has one — so this is a nudge and not a gate. It fires at most once per session and only
-        after a turn that actually completed: a peer that failed, was stopped, or is parked on a
-        permission request has not finished and forgotten, it simply has not finished. The
-        daemon's notice when the session is eventually reaped stays the backstop for everything
-        this does not catch.
-
-        Never after the *person* has spoken to this session, and that exception is the whole of a
-        bug worth naming. A delegated session is addressable: you can open it in the interface and
-        talk to it, which is the ordinary way to ask a peer what it meant. Nudging after such a
-        turn told the session it owed its parent an answer when what had just happened was
-        somebody saying hello — so it dutifully sent "Hello, how can I help?" up the tree, as a
-        report. The obligation belongs to the work the parent briefed, not to a conversation the
-        parent is not in; and a person reading the transcript needs no reminder relayed for them.
-
-        Spawned rather than awaited, because this runs inside the ending turn's teardown and the
-        reminder is itself a turn — driving it inline would re-enter the machinery that is
-        currently unwinding."""
+        """Remind the session, once, if a completed turn left the session that created it with no answer."""
         peers = getattr(self._executor, "_peers", None)
         if peers is None or not self._completed or self._report_reminder:
             return

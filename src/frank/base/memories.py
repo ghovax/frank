@@ -1,9 +1,4 @@
-"""Durable notes an agent keeps about a project, loaded from `.agents/memories/*.md`.
-
-In `base` rather than beside the prompt that renders them because they are *material* — the
-same kind of thing as a skill — and the catalogue that supplies them is the lowest layer. A
-loader that lived above the catalogue could not be reached by it.
-"""
+"""Durable notes an agent keeps about a project, loaded from `.agents/memories/*.md`."""
 
 from __future__ import annotations
 

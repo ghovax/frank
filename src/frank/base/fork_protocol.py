@@ -1,16 +1,4 @@
-"""The words the fork protocol uses, shared by everyone who speaks it.
-
-Three processes exchange these: the daemon asks for a session, the prototype forks it, and
-the session itself reports whether it came up. A failure crosses two boundaries — a pipe and
-a socket — and on the far side it is matched, logged and turned into a message for a person.
-
-Which is why a reason is a **code, not a sentence**. A sentence cannot be compared without
-guessing at its wording, cannot be translated, and drifts the moment someone improves the
-phrasing at one end and not the other. The prose belongs at the edge, next to the person
-reading it; the wire carries the name of what happened.
-
-`describe` is that edge, and the only place the two are tied together.
-"""
+"""The words the fork protocol uses, shared by everyone who speaks it."""
 
 from __future__ import annotations
 
@@ -50,12 +38,7 @@ _PROSE: dict[StartFailure, str] = {
 
 
 def describe(reason: str, detail: str = "") -> str:
-    """Turn a wire reason into a sentence, keeping any detail that came with it.
-
-    Unknown codes are passed through rather than swallowed: a reason this build does not
-    recognise is still better in the log than "unknown", which is what made a mismatched pair
-    of builds impossible to diagnose.
-    """
+    """Turn a wire reason into a sentence, keeping any detail that came with it."""
     try:
         sentence = _PROSE[StartFailure(reason)]
     except ValueError:

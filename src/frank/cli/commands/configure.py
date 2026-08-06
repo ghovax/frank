@@ -1,25 +1,4 @@
-"""`frank configure`: read and change what the daemon and its sessions start with.
-
-Settings live in one YAML file, and until now the only way to change them was to edit that
-file by hand or open the desktop app. This exposes the same values to the terminal, addressed
-by dotted path, so a setting can be inspected, changed, and scripted without either.
-
-What it lists comes from the *schema*, not from the file. Reading the file could only ever
-show what somebody had already written down — which is the part they know about — so every
-setting left at its default was invisible, and the way to discover one was to read the source.
-Walking the schema instead means a setting exists in the listing from the moment it exists in
-the code, along with what it ships at and what it is for.
-
-Changes apply to what starts *next*. A running session keeps the configuration it was built
-with — the same guarantee its permission mode carries — so nothing here can reach into work
-already in flight and change the rules underneath it.
-
-Output is plumbing, like every other verb: a listing is a JSON object keyed by dotted path,
-and reading one setting prints its value bare, with the explanation on stderr so a script
-reading stdout never has to strip it. Values are printed as they are stored, credentials
-included — this reads a file the user owns, and deciding on their behalf what they may see of
-their own configuration is not this command's business.
-"""
+"""`frank configure`: read and change what the daemon and its sessions start with."""
 
 from __future__ import annotations
 
@@ -43,24 +22,14 @@ logger = logging.getLogger("frank.configure")
 
 
 def _known(path: str):
-    """The schema's entry for a dotted path, or ``None`` if it defines none.
-
-    Without this, a typo — or a setting that has since been removed, like the default agent —
-    is written to the file, listed back, and silently does nothing. A setting that cannot take
-    effect should be refused at the point it is set, not discovered when the behaviour never
-    changes.
-
-    Open-ended maps (`providers`, `mcp.servers`) accept any key at their level and are walked
-    through into the model of their values, so `providers.anthropic.api_key` resolves."""
+    """The schema's entry for a dotted path, or ``None`` if it defines none."""
     from frank.base.configuration_schema import setting_for
 
     return setting_for(path)
 
 
 def _everything(data: dict) -> dict:
-    """Every setting the schema defines, with what it ships at and what this machine currently
-    runs on. The whole point of `--all`: what a person wants to know is what they *could*
-    change, and that is a property of the code, not of their file."""
+    """Every setting the schema defines, with what it ships at and what this machine currently runs on."""
     from frank.base.configuration_schema import leaf_settings
 
     listing: dict[str, dict] = {}

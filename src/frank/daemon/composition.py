@@ -1,22 +1,4 @@
-"""What the daemon owns on behalf of everyone, and the watchers that keep it current.
-
-The registry, the prototype and the stores are the daemon's *lifecycle* half, built in
-:mod:`frank.daemon.__main__`. This is the other half: what has to be singular — file leases
-that coordinate writes between sessions, workspaces, terminals, signed file URLs, push
-notifications, remote peers — plus the GUI surface that reads and edits them.
-
-They live here rather than in a worker because there can only sensibly be one of each. A
-file lease is only a lease if a single process arbitrates it.
-
-The MCP pool is the exception that proves the rule. The daemon keeps one for the GUI's
-server browser, but a session connects its own for its tool calls: MCP connections are
-stateful and a stdio server is a subprocess, neither of which crosses a process boundary.
-That is a real cost of process-per-session, taken deliberately.
-
-Deliberately free of `frank.runtime` at import: the three GUI endpoints that genuinely need
-the runtime import it when called. Keeping the daemon's startup graph clear of LangChain
-and LiteLLM is what keeps it small enough to be the always-on process.
-"""
+"""What the daemon owns on behalf of everyone, and the watchers that keep it current."""
 
 from __future__ import annotations
 
@@ -127,9 +109,7 @@ async def open_shared_resources() -> None:
 
 
 async def close_shared_resources() -> None:
-    """Release everything `open_shared_resources` built. Ordered so nothing is torn down
-    while something else is still using it, and individually guarded so one failure cannot
-    strand the rest."""
+    """Release everything `open_shared_resources` built."""
     for task in [*getattr(state, "_watchers", []), state.__dict__.get("_mcp_start_task"), state.__dict__.get("_remote_start_task")]:
         if task is not None and not task.done():
             task.cancel()
@@ -148,11 +128,7 @@ async def close_shared_resources() -> None:
 
 
 def _watched_agent_paths() -> list[str]:
-    """Every directory whose contents define what agents and skills exist.
-
-    The `.agents` roots are watched recursively so `mcp.json` and `remote-agents.json` are
-    picked up alongside the profiles themselves — all three are live, and the only thing that
-    needs a restart is a change to the harness itself."""
+    """Every directory whose contents define what agents and skills exist."""
     assert hub_state.global_configuration is not None
     candidates = [
         *hub_state.global_configuration.agents_root_directories(),
@@ -198,11 +174,7 @@ async def _watch_agents_and_skills() -> None:
 
 
 async def _watch_configuration() -> None:
-    """Mirror hand edits of the configuration file into the running daemon and its clients.
-
-    The file is the single source of truth, so editing an API key in it takes effect without
-    a restart. Our own writes come back as changes too; they are recognised by digest and
-    skipped, so a save made in the UI does not echo round as an external edit."""
+    """Mirror hand edits of the configuration file into the running daemon and its clients."""
     from watchfiles import awatch
 
     from frank.hub.services.settings import _configuration_digest as digest_of
@@ -229,10 +201,7 @@ async def _watch_configuration() -> None:
 
 
 async def _watch_ssh_hosts() -> None:
-    """Broadcast when the SSH host registry changes, so host pickers refresh in place.
-
-    Filtered to `config` alone: the same directory holds keys and `known_hosts`, which churn
-    for reasons that have nothing to do with which hosts are defined."""
+    """Broadcast when the SSH host registry changes, so host pickers refresh in place."""
     from watchfiles import awatch
 
     ssh_config = Path("~/.ssh/config").expanduser()

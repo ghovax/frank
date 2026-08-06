@@ -19,10 +19,7 @@ router = APIRouter()
 
 @router.get("/agents")
 async def agents(working_directory: str = ""):
-    """List agent profiles for the UI selector, scoped to the selected folder:
-    the home globals plus that folder's own ``.agents/agents`` (deduped), never
-    the directory the daemon was launched in. Passing ``working_directory`` is
-    what makes the list track the chosen folder."""
+    """List agent profiles for the UI selector, scoped to the selected folder: the home globals plus that folder's own ``.agents/agents`` (deduped), never the directory the daemon was launched in."""
     assert state.global_configuration is not None
     if working_directory:
         directories = state.global_configuration.agent_directories_for(working_directory)
@@ -70,14 +67,7 @@ async def update_agent_configuration(agent_name: str, request: AgentConfiguratio
 
 @router.get("/agents/cards")
 async def agent_cards(working_directory: str = ""):
-    """Discovery: the full A2A AgentCard for every served agent, including their
-    skills, so the UI can broadcast what each agent can do.
-
-    Skills are scoped to ``working_directory`` when given: the home globals plus
-    that path's own ``.agents`` skills (deduped), and crucially *not* the skills of
-    the directory the daemon happens to have been launched in. The UI passes the
-    selected project path so the advertised skills match what a session there can
-    actually find, refreshing whenever the user picks a different folder."""
+    """Discovery: the full A2A AgentCard for every served agent, including their skills, so the UI can broadcast what each agent can do."""
     assert state.global_configuration is not None
     skill_roots = (
         state.global_configuration.skill_directories_for(working_directory)
@@ -116,10 +106,7 @@ async def agent_cards(working_directory: str = ""):
 
 @router.get("/skills")
 async def skills(working_directory: str = ""):
-    """List the skills available in the selected folder — home globals plus that
-    folder's own ``.agents/skills`` (deduped), never the launch directory. This is
-    independent of any agent, so the UI can show a folder's skills even when it has
-    no agents. Disabled skills are returned (flagged) so the UI greys them out."""
+    """List the skills available in the selected folder — home globals plus that folder's own ``.agents/skills`` (deduped), never the launch directory."""
     assert state.global_configuration is not None
     roots = (
         state.global_configuration.skill_directories_for(working_directory)

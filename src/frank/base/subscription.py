@@ -1,23 +1,4 @@
-"""The ChatGPT subscription's account state: which models it serves, and what it has left.
-
-Both are properties of an *account*, not of a session or of a model call, which is why they
-live here beside the token store that already owns that account's credentials rather than
-inside the chat model that happens to observe them.
-
-Keeping them out of `runtime` earns two things. The browser surface reads all four of these to
-render Settings, and it was the only reason anything above the runtime imported it — so the
-layer table can now say plainly that nothing does. And a snapshot written by one caller and
-read by another is exactly the shape the layering checker refuses inside `runtime`, correctly:
-a value taken from a caller and parked at module scope. It is legitimate here because the thing
-being described is genuinely one per process — a machine has one signed-in account, and two
-sessions billing it share its limits.
-
-The catalogue is the authoritative answer to "which models actually work": a subscription
-serves a plan-specific subset, where the models.dev catalogue is the offline superset the
-interface greys against. The usage snapshot has no cheaper source than a turn — the limits ride
-on `/responses` reply headers and the `/models` GET does not carry them — so it is only as
-fresh as the last turn and is absent until the first one after signing in.
-"""
+"""The ChatGPT subscription's account state: which models it serves, and what it has left."""
 
 from __future__ import annotations
 
@@ -47,22 +28,7 @@ USER_AGENT = (
 
 
 def request_headers(tokens: ChatGPTTokens, session_id: str = "") -> dict[str, str]:
-    """The header set the endpoint expects: a bearer token, the account to bill, an originator
-    and User-Agent naming us, the conversation this request belongs to, and the streaming
-    negotiation.
-
-    `session-id` is the conversation's id, and it is the whole of why prompt caching worked or
-    did not. It used to be a fresh `uuid4()` per request — described in this docstring as "a
-    per-request session id", which is what it was and exactly what it should never have been.
-    The endpoint routes a cache lookup by it, so a new id every call sent every call to a shard
-    that had never seen the prefix: measured across three sessions, every request after the
-    first carried a byte-identical, strictly-extending prefix and still read zero cached tokens,
-    with one 5,632-token partial that landed whenever a random id happened to repeat a route.
-
-    The Codex CLI sends its conversation id here (`build_session_headers`), and the same value
-    again as `prompt_cache_key`. So do we. A caller with no conversation — the models catalogue
-    fetch — still gets a random one, because a request that is not part of a conversation has
-    no prefix to find and nothing to gain by pretending otherwise."""
+    """The header set the endpoint expects: a bearer token, the account to bill, an originator and User-Agent naming us, the conversation this request belongs to, and the streaming negotiation."""
     return {
         "Authorization": f"Bearer {tokens.access_token}",
         "ChatGPT-Account-Id": tokens.account_id,
@@ -79,12 +45,7 @@ _models_cache_lock = asyncio.Lock()
 
 
 async def fetch_subscription_models() -> dict[str, dict[str, Any]]:
-    """The account's live model catalogue as ``{slug: {"name", "context"}}``.
-
-    Answers with an empty mapping when signed out or on any failure — network, auth, parse — so
-    callers fall back to the static list. Cached briefly because the interface polls this and it
-    must not be a network round-trip each time.
-    """
+    """The account's live model catalogue as ``{slug: {"name", "context"}}``."""
     global _models_cache
     ttl = active_tuning().duration(Tunable.model_catalogue_ttl_seconds)
     if _models_cache is not None and time.monotonic() - _models_cache[0] < ttl:
@@ -122,16 +83,12 @@ async def fetch_subscription_models() -> dict[str, dict[str, Any]]:
 
 
 def cached_subscription_models() -> dict[str, dict[str, Any]]:
-    """The last catalogue fetched, with no network round-trip, or empty if never fetched.
-
-    For synchronous callers that only want the freshest *known* value. The interface polls the
-    model list constantly, so it is warm in practice."""
+    """The last catalogue fetched, with no network round-trip, or empty if never fetched."""
     return _models_cache[1] if _models_cache is not None else {}
 
 
 def clear_subscription_models_cache() -> None:
-    """Drop the cached catalogue, so the next read reflects a fresh sign-in or sign-out
-    immediately rather than waiting out the time to live."""
+    """Drop the cached catalogue, so the next read reflects a fresh sign-in or sign-out immediately rather than waiting out the time to live."""
     global _models_cache
     _models_cache = None
 
@@ -156,10 +113,7 @@ def _header_bool(value: Optional[str]) -> bool:
 
 
 def capture_usage_headers(headers: httpx.Headers) -> None:
-    """Snapshot the account's rate-limit state from a reply's ``x-codex-*`` headers.
-
-    A no-op when they are absent, which some error paths are, so it never replaces a good
-    snapshot with an empty one."""
+    """Snapshot the account's rate-limit state from a reply's ``x-codex-*`` headers."""
     global _usage_snapshot
     if "x-codex-primary-window-minutes" not in headers and "x-codex-plan-type" not in headers:
         return
@@ -194,8 +148,7 @@ def capture_usage_headers(headers: httpx.Headers) -> None:
 
 
 def get_usage_snapshot() -> Optional[dict[str, Any]]:
-    """The most recent rate-limit snapshot captured from a turn, or ``None`` when no turn has
-    run since signing in — the headers ride only on responses replies."""
+    """The most recent rate-limit snapshot captured from a turn, or ``None`` when no turn has run since signing in — the headers ride only on responses replies."""
     return _usage_snapshot
 
 

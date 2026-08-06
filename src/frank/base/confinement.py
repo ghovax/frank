@@ -1,26 +1,4 @@
-"""What a tool's child process is actually allowed to do, enforced by the operating system.
-
-The harness spawns two kinds of child that run code nobody wrote in advance: the shell command a
-`bash` call asks for, and the Python a `control_screen` script is made of. This module is the
-boundary both of them run inside. A heuristic over source is not confinement, and bounding
-runaway resource use is not bounding authority, so neither stands in for what is here.
-
-Almost all of a confined child is POSIX and needs no platform code: resource limits are
-``setrlimit(2)`` under their own constant names, the file-creation mask is ``umask(2)``, priority
-is ``nice(2)``, and the environment is built rather than inherited. All four are applied between
-fork and exec, which is where a Unix process has always configured itself.
-
-Two things have no POSIX spelling — which files a process may touch, and whether it may reach the
-network — and they are the two that matter. macOS answers with `sandbox-exec` and a generated SBPL
-profile; Linux answers with Landlock for the filesystem and a network namespace for the network.
-The macOS interface is deprecated by Apple and depended on anyway, because the alternatives either
-need privileges the harness does not have or take away the user's own files, which is the thing the
-harness exists to reach.
-
-A profile is resolved once, when a session is created, and clamped against the session that created
-it: path sets intersect, the stricter network setting wins, the lower limit wins. Without that a
-confined session could create an unconfined peer and the boundary would be one call deep.
-"""
+"""What a tool's child process is actually allowed to do, enforced by the operating system."""
 
 from __future__ import annotations
 
@@ -56,12 +34,7 @@ class ConfinementUnavailable(RuntimeError):
 
 @dataclass(frozen=True)
 class Filesystem:
-    """Which paths a child may read and which it may write.
-
-    The system is readable and is not listed: `/usr` and `/etc` are not secrets, and denying them
-    breaks every command while protecting nothing. What the lists govern is the user's own home,
-    which is denied by default — so `readable` is the allowlist that keeps toolchains working and
-    `deny` is what wins over it."""
+    """Which paths a child may read and which it may write."""
 
     readable: tuple[str, ...] = ()
     writable: tuple[str, ...] = ()
@@ -72,9 +45,7 @@ class Filesystem:
     attached: tuple[str, ...] = ()
 
     def intersect(self, parent: "Filesystem") -> "Filesystem":
-        """This filesystem clamped against a parent's: never wider, and the parent's denials are
-        inherited whole. Path containment rather than string equality, so a child asking for a
-        subdirectory of what its parent holds keeps it."""
+        """This filesystem clamped against a parent's: never wider, and the parent's denials are inherited whole."""
         return Filesystem(
             readable=_contained_in(self.readable, parent.readable),
             writable=_contained_in(self.writable, parent.writable),
@@ -88,15 +59,7 @@ class Filesystem:
 
 @dataclass(frozen=True)
 class AccessRequest:
-    """What one call says it needs beyond the confinement it already has.
-
-    ``mutates`` is
-    three-valued on purpose. ``False`` says the call changes nothing; ``True`` says it does;
-    ``None`` says the model made no claim, because it omitted the request entirely. The third
-    case has to stay distinguishable from the second — treating "said nothing" as "said it
-    mutates" would be safe but would lose the signal that nothing was declared, which is what
-    the static scan needs to know before it decides whether `unknown` should escalate.
-    """
+    """What one call says it needs beyond the confinement it already has."""
 
     mutates: Optional[bool] = None
     reads: tuple[str, ...] = ()
@@ -105,19 +68,12 @@ class AccessRequest:
 
     @property
     def wants_widening(self) -> bool:
-        """Whether this asks for anything at all. A request that only declares ``mutates`` is a
-        statement about the call, not a request for access, and must not raise a gate."""
+        """Whether this asks for anything at all."""
         return bool(self.reads or self.writes or self.network)
 
 
 def parse_access_request(value: object) -> tuple[Optional[AccessRequest], str]:
-    """One tool argument as an :class:`AccessRequest`, or a sentence saying why it is not.
-
-    Returns ``(None, "")`` for an absent request, which is the ordinary case and not an error.
-    Validation is strict about the shape and forgiving about nothing: a malformed request is
-    refused rather than partially understood, because the half that parsed would become a grant
-    request nobody wrote.
-    """
+    """One tool argument as an :class:`AccessRequest`, or a sentence saying why it is not."""
     if value is None:
         return None, ""
     if not isinstance(value, dict):
@@ -158,27 +114,7 @@ def parse_access_request(value: object) -> tuple[Optional[AccessRequest], str]:
 
 @dataclass(frozen=True)
 class Grant:
-    """One widening that was approved, what it was approved for, and who approved it.
-
-    Held by the session rather than by the call, because a grant re-asked on every command in a
-    build produces a row of gates nobody reads by the fourth. How often somebody is asked is
-    itself a security property, and it does not point the way intuition says: an approval asked
-    too often trains the person to approve without looking.
-
-    ``purpose`` is the explanation the call carried when the grant was approved. It is kept so
-    the person can see, in the listing, what they said yes to — a path with no reason beside it
-    is a permission nobody can audit later.
-
-    ``approved_by`` names the authority behind the widening — a person at the keyboard, a rule
-    they wrote in advance, or the reviewer a session runs under when nobody is there. A grant is
-    the only thing that widens a confinement, so every one of them says who said yes.
-
-    ``whole_disk`` is the answer to a command the operating system refused. It cannot name the
-    path it wanted — a Seatbelt denial is an ``EPERM`` with no file in it — so the only honest
-    thing to offer is "let this one command reach past the workspace". It widens to the root and
-    **does not** turn confinement off: the deny list is applied after every allowance on both
-    backends, so what a person declared off-limits stays off-limits through a grant that names
-    everything. There is deliberately no way to spell "run this unconfined"."""
+    """One widening that was approved, what it was approved for, and who approved it."""
 
     reads: tuple[str, ...] = ()
     writes: tuple[str, ...] = ()
@@ -223,11 +159,7 @@ def approved(
     purpose: str = "",
     whole_disk: bool = False,
 ) -> Grant:
-    """Mint a grant. The one place a :class:`Grant` is built outside deserialization.
-
-    Every widening in the harness comes through here, so "who said yes" is asked once, and a
-    site that cannot answer it cannot widen anything.
-    """
+    """Mint a grant. The one place a :class:`Grant` is built outside deserialization."""
     if by not in (APPROVED_BY_PERSON, APPROVED_BY_RULE, APPROVED_BY_REVIEWER):
         raise ValueError(f"a grant must name its authority, not {by!r}")
     return Grant(
@@ -261,11 +193,7 @@ class Profile:
     enforce: str = ENFORCE_REQUIRED
 
     def clamp(self, parent: Optional["Profile"]) -> "Profile":
-        """This profile as a child of ``parent`` — never wider on any axis.
-
-        The clamp is what makes confinement compose. Path sets intersect, the stricter network
-        setting wins, the lower limit wins, and the stricter enforcement wins, so a session cannot
-        hand a peer authority it does not hold itself."""
+        """This profile as a child of ``parent`` — never wider on any axis."""
         if parent is None:
             return self
         limits = dict(parent.limits)
@@ -283,12 +211,7 @@ class Profile:
         )
 
     def narrowed(self, *, writable: Iterable[str], network: bool, workspace: str = "") -> "Profile":
-        """A stricter variant of this profile, for a child that needs less than the session does.
-
-        The `control_screen` child is the case: everything it can do is bridged to its parent over
-        a pipe, so it needs no network and no filesystem beyond somewhere to put a temporary file.
-        Derived rather than separately configurable — two profiles to configure would be two
-        profiles to get wrong, and there is no case for giving that child a network."""
+        """A stricter variant of this profile, for a child that needs less than the session does."""
         return replace(
             self,
             filesystem=Filesystem(
@@ -303,28 +226,7 @@ class Profile:
         )
 
     def with_grant(self, grant: Grant, *, workspace: str = "") -> "Profile":
-        """This profile plus one approved widening. The mirror of :meth:`narrowed`, and the only
-        method that makes a profile wider than it was.
-
-        A grant is the answer to the question the confinement could not previously be asked. The
-        profile says a session may write to four directories; the work in front of it needs a
-        fifth; and the only other way to say so is to edit the configuration, which is not
-        something that can happen inside a turn.
-
-        It takes a :class:`Grant` rather than loose paths on purpose. A grant is minted in one
-        place and has to name who approved it, so there is no spelling of "widen this profile"
-        that does not carry an authority — the check cannot be skipped by a caller that passes
-        paths directly, because there is no such caller.
-
-        **The deny list wins, unconditionally.** A path under `deny` is not widenable by any
-        grant, however it was approved — that list is what a person declared never-negotiable
-        before any of this started, and a runtime decision must not be able to reach past a
-        standing one. This holds for ``whole_disk`` too: it widens to the root, and both backends
-        apply the denials over the top of every allowance.
-
-        Nothing here narrows. A grant that names a path already writable is a no-op rather than a
-        replacement, which is what makes applying several in sequence safe.
-        """
+        """This profile plus one approved widening."""
         if grant.whole_disk:
             return replace(
                 self,
@@ -366,18 +268,7 @@ class Profile:
         )
 
     def with_attachments(self, paths: Iterable[str]) -> "Profile":
-        """This profile plus read access to exactly the files a person attached.
-
-        Not a grant, and deliberately a separate route. A grant answers a request the *model*
-        made, so `deny` must beat it — a model asking to read `~/Documents/tax.pdf` is the
-        attack that list exists for. An attachment is the opposite direction: a person picked
-        one file in the interface and handed it over. Nothing the model does can put a path
-        here, because no tool attaches a file.
-
-        So `deny` does not apply, and the allowance is per file. Somebody who attaches
-        `~/Downloads/report.pdf` has opened that document and nothing else — not the folder,
-        not its siblings.
-        """
+        """This profile plus read access to exactly the files a person attached."""
         files = tuple(path for path in paths if path)
         if not files:
             return self
@@ -390,15 +281,7 @@ class Profile:
         )
 
     def may_read(self, path: str, *, workspace: str = "") -> bool:
-        """Whether a child of this profile could read ``path``.
-
-        The harness writes and reads files two ways: through a shell command, which runs in a
-        confined child, and through its own file tools, which run in the worker process where no
-        sandbox applies. Both are the session reaching the disk, so both answer to this.
-
-        The order matches what the backends emit — allowances, then denials, then the files a
-        person attached by hand, which beat the denials because a person named them one by one.
-        """
+        """Whether a child of this profile could read ``path``."""
         resolved = expand(path, workspace=workspace)
         if not resolved:
             return False
@@ -417,8 +300,7 @@ class Profile:
         )
 
     def may_write(self, path: str, *, workspace: str = "") -> bool:
-        """Whether a child of this profile could write ``path``. Writes are denied wholesale and
-        granted back, so only the writable list — never the system, never an attachment."""
+        """Whether a child of this profile could write ``path``."""
         resolved = expand(path, workspace=workspace)
         if not resolved or self._is_denied(resolved, workspace=workspace):
             return False
@@ -439,12 +321,7 @@ class Profile:
         )
 
     def grants_without_asking(self, paths: Iterable[str], *, workspace: str = "") -> bool:
-        """Whether every one of ``paths`` lies inside what a person already said may be granted.
-
-        The quiet path, and it is deliberately all-or-nothing: a request that reaches one listed
-        path and one unlisted one is asked about whole. Approving the half that was pre-cleared
-        and gating the rest would split one intent into two decisions and show the person a
-        request that no longer matches what the agent asked for."""
+        """Whether every one of ``paths`` lies inside what a person already said may be granted."""
         listed = tuple(paths)
         if not listed or not self.filesystem.grantable:
             return False
@@ -469,18 +346,7 @@ class Profile:
         }
 
     def describe(self, *, workspace: str = "") -> dict:
-        """This profile as the model is told it: resolved paths, and nothing it cannot act on.
-
-        Resolved rather than written the way the configuration writes it, because the whole
-        confusion this exists to end is that `$TMPDIR` is not `/tmp`. A model asked whether it
-        may write to `/tmp` cannot expand a shell variable in its head, and one shown
-        `$TMPDIR` in a list will read it as covering the obvious temporary directory. It does
-        not: on macOS it expands to a per-user path under `/var/folders`.
-
-        The system is readable and is deliberately absent, for the reason the configuration
-        gives about its own defaults — `/usr` and `/etc` are not secrets, and listing them
-        would bury the handful of entries that decide anything.
-        """
+        """This profile as the model is told it: resolved paths, and nothing it cannot act on."""
         backend = backend_name()
         if not backend:
             # Nothing on this machine can enforce a path.
@@ -525,10 +391,7 @@ class Profile:
 
 
 def expand(path: str, *, workspace: str = "") -> str:
-    """One path from the configuration as an absolute path on this machine.
-
-    ``$WORKSPACE`` is the session's own directory, which is not known until the session exists;
-    the rest is ordinary shell expansion so a person writes what they would write anywhere else."""
+    """One path from the configuration as an absolute path on this machine."""
     text = path.replace("$WORKSPACE", workspace or "")
     text = os.path.expandvars(os.path.expanduser(text))
     if not text or "$" in text:
@@ -540,18 +403,7 @@ def expand(path: str, *, workspace: str = "") -> str:
 
 
 def expand_for_display(path: str, *, workspace: str = "") -> str:
-    """One configured path as a person or a model would write it, not as the kernel stores it.
-
-    The same expansion as :func:`expand` — `$WORKSPACE`, environment variables, `~` — but it
-    stops short of following symbolic links. That last step is right for enforcement and wrong
-    for display, and on macOS the difference is the whole point: `/tmp` is a symlink to
-    `/private/tmp`, so a resolved listing tells a model that it may write to `/private/tmp` and
-    says nothing about the path it was actually going to use.
-
-    The model would then read the list, fail to find `/tmp`, and either ask for access it
-    already holds or route around a wall that is not there. Both are the confusion this listing
-    exists to end, reintroduced by the formatting.
-    """
+    """One configured path as a person or a model would write it, not as the kernel stores it."""
     text = path.replace("$WORKSPACE", workspace or "")
     text = os.path.expandvars(os.path.expanduser(text))
     if not text or "$" in text:
@@ -570,22 +422,13 @@ def _within(path: str, root: str) -> bool:
 
 
 def _outside_home(resolved: str) -> bool:
-    """Whether a path lies outside the user's home directory, which both backends leave
-    readable: `/usr` and `/etc` are not secrets, and denying them breaks every toolchain while
-    protecting nothing."""
+    """Whether a path lies outside the user's home directory, which both backends leave readable: `/usr` and `/etc` are not secrets, and denying them breaks every toolchain while protecting nothing."""
     home = os.path.expanduser("~")
     return not home or home == "/" or not _within(resolved, home)
 
 
 def _contained_in(paths: Iterable[str], allowed: Iterable[str], *, workspace: str = "") -> tuple[str, ...]:
-    """The paths that lie within ``allowed``. An empty allowance permits nothing, which is what
-    makes the clamp a clamp: a parent that may write nowhere gives a child nowhere.
-
-    Both sides are expanded first. They were not, and a parent whose allowance is written the way
-    every allowance is written — ``$WORKSPACE``, ``$TMPDIR`` — was compared against a real
-    directory, matched nothing, and clamped its child to nowhere. The child then also lost the
-    *read* that came with that allowance, which is how a screen-control helper ended up unable to
-    execute the interpreter running it."""
+    """The paths that lie within ``allowed``."""
     allowed_paths = [Path(resolved) for entry in allowed if (resolved := expand(entry, workspace=workspace))]
     kept = []
     for entry in paths:
@@ -599,8 +442,7 @@ def _contained_in(paths: Iterable[str], allowed: Iterable[str], *, workspace: st
 
 
 def _apply_posix(profile: Profile) -> None:
-    """Configure the child between fork and exec. Runs in the child, so it must not raise past
-    what `subprocess` will report — a failure here would otherwise appear as an unexplained exit."""
+    """Configure the child between fork and exec."""
     for name in _SUPPORTED_LIMITS:
         value = profile.limits.get(name)
         if value is None:
@@ -624,9 +466,7 @@ def _apply_posix(profile: Profile) -> None:
 
 
 def child_environment(profile: Profile, *, workspace: str = "", extra: Optional[dict] = None) -> dict[str, str]:
-    """The environment a confined child gets: a base of what makes a process usable, whatever the
-    profile added, and nothing else the worker happened to be holding — the model provider's API
-    key above all, which no shell command has any reason to see."""
+    """The environment a confined child gets: a base of what makes a process usable, whatever the profile added, and nothing else the worker happened to be holding — the model provider's API key above all, which no shell command has any reason to see."""
     environment = {key: os.environ[key] for key in _BASE_ENVIRONMENT_KEYS if key in os.environ}
     if workspace:
         environment["PWD"] = workspace
@@ -645,11 +485,7 @@ def _quote_sbpl(text: str) -> str:
 
 
 def _interpreter_roots() -> tuple[str, ...]:
-    """The directories a child needs in order to be the Python that was asked for.
-
-    Deduplicated and resolved, because in a virtualenv `sys.prefix` and `sys.base_prefix` differ
-    and the child needs both — one for the environment it was launched from, one for the
-    interpreter and standard library it actually is."""
+    """The directories a child needs in order to be the Python that was asked for."""
     roots = []
     for candidate in (os.path.realpath(sys.executable), sys.prefix, sys.base_prefix):
         resolved = os.path.realpath(candidate)
@@ -661,24 +497,7 @@ def _interpreter_roots() -> tuple[str, ...]:
 
 
 def _package_root() -> str:
-    """The directory frank itself is imported from.
-
-    A child is launched by file path — `computer/control_child.py` — so it has to be able to read
-    the package it lives in. When frank is installed into the environment that is already covered
-    by :func:`_interpreter_roots`, because the package sits under `sys.prefix`. From a source
-    checkout or an editable install it does not: the package is somewhere under the user's home,
-    and the home is denied wholesale a few lines below. The result was that screen control worked
-    when frank was installed and failed with "the sandbox refused to run it" for anyone running
-    from source, which is every embedder developing against the library.
-
-    The directory the package is imported *from*, not the package directory itself — one level
-    further up than it looks. `import frank` has to read the parent to find `frank` in it, and
-    granting only `.../src/frank` left the child able to read every file in the package and
-    unable to discover that the package was there: `ModuleNotFoundError: No module named 'frank'`,
-    from a process standing inside it. The name and the docstring were right and the code was one
-    `dirname` short.
-
-    Read-only and execute: the child needs to run the helper, never to modify it."""
+    """The directory frank itself is imported from."""
     package = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return os.path.realpath(os.path.dirname(package))
 
@@ -700,11 +519,7 @@ _DEVICE_LITERALS: tuple[str, ...] = (
 
 
 def build_sbpl(profile: Profile, *, workspace: str = "") -> str:
-    """The Seatbelt profile for one child.
-
-    Order is the whole game: SBPL is last-match-wins, so the permissive rules are emitted first and
-    the denials last. Anything surprising about a profile's behaviour is answered by reading from
-    the bottom up."""
+    """The Seatbelt profile for one child."""
     lines = ["(version 1)", "(allow default)"]
     if not profile.network:
         lines.append("(deny network*)")
@@ -770,11 +585,7 @@ _CLONE_NEWNET = 0x40000000
 
 
 def _libc():
-    """libc with the signatures spelled out.
-
-    `syscall(2)` is variadic, so `ctypes` will default its return to `c_int` and guess at its
-    arguments — which truncates a `long` return and can mangle a pointer on the way in. Every
-    call below depends on both being right, so both are declared."""
+    """libc with the signatures spelled out."""
     import ctypes
 
     library = ctypes.CDLL(None, use_errno=True)
@@ -788,8 +599,7 @@ def _libc():
 
 
 def _landlock_available() -> bool:
-    """Whether this kernel has Landlock, asked by requesting its ABI version — the call the kernel
-    documents for exactly this question, and one that needs no privilege."""
+    """Whether this kernel has Landlock, asked by requesting its ABI version — the call the kernel documents for exactly this question, and one that needs no privilege."""
     if sys.platform != "linux":
         return False
     try:
@@ -809,11 +619,7 @@ _LANDLOCK_FS_WRITE = 0x0000377A     # write_file, create/remove of every kind, t
 
 
 def _apply_landlock(profile: Profile, workspace: str) -> None:
-    """Restrict this process's filesystem, then exec. Runs in the child after fork.
-
-    Landlock restricts rather than remounts, which is why it is the Linux backend: its
-    path-beneath rules are the same shape as the configuration, so nothing has to be translated
-    into a different model the way a bind-mount view would be."""
+    """Restrict this process's filesystem, then exec. Runs in the child after fork."""
     import ctypes
 
     class RulesetAttribute(ctypes.Structure):
@@ -851,18 +657,7 @@ def _apply_landlock(profile: Profile, workspace: str) -> None:
             os.close(descriptor)
 
     def allow(path: str, access: int) -> None:
-        """Grant a subtree, minus anything the profile denies inside it.
-
-        Landlock has no denial: a ruleset is allowances, and everything unnamed is already
-        refused. That is not enough on its own here, because a denied path can sit inside a
-        granted one — `~/.config` is readable by default and `~/.config/something-private` is
-        exactly the kind of entry `deny` is for — and a whole-disk grant names the root, under
-        which every denied path lies.
-
-        So a granted root that contains a denial is expanded: walk down towards each denial,
-        granting the siblings at every level and never granting the denied entry itself. The
-        walk is bounded by the number of denied paths, not by the size of the tree.
-        """
+        """Grant a subtree, minus anything the profile denies inside it."""
         resolved = expand(path, workspace=workspace)
         if not resolved or not os.path.exists(resolved):
             return
@@ -916,9 +711,7 @@ def _apply_landlock(profile: Profile, workspace: str) -> None:
 
 
 def _unshare_network() -> None:
-    """Put the child in an empty network namespace, which is how a Linux process is denied the
-    network without privilege: a new user namespace first, because that is what makes the network
-    namespace creatable by an ordinary user."""
+    """Put the child in an empty network namespace, which is how a Linux process is denied the network without privilege: a new user namespace first, because that is what makes the network namespace creatable by an ordinary user."""
     libc, _ = _libc()
     libc.unshare(_CLONE_NEWUSER | _CLONE_NEWNET)
 
@@ -949,8 +742,7 @@ def describe_backend() -> str:
 
 @dataclass
 class Spawn:
-    """Everything a caller needs to start a confined child: what to run it through, how to set it
-    up in the child, and what environment it gets."""
+    """Everything a caller needs to start a confined child: what to run it through, how to set it up in the child, and what environment it gets."""
 
     prefix: list[str]
     preexec: Callable[[], None]
@@ -960,16 +752,7 @@ class Spawn:
 
 @dataclass(frozen=True)
 class Attempt:
-    """What one child is about to be run with. The only thing :func:`spawn_recipe` accepts.
-
-    A profile alone cannot say whether it has been widened, which leaves every spawn site to
-    remember to fold the session's grants in. Making the attempt the argument moves that from
-    something each site remembers to something the type states.
-
-    ``grant`` is empty on a first attempt and cannot be otherwise: :func:`first_attempt` takes no
-    grant, and it is the only way to build one. That is what makes the retry safe to offer — the
-    first run of any command happened inside the box, so whatever it managed to do before the
-    operating system stopped it, it did in there."""
+    """What one child is about to be run with. The only thing :func:`spawn_recipe` accepts."""
 
     profile: Optional[Profile]
     grant: Optional[Grant] = None
@@ -984,11 +767,7 @@ class Attempt:
 
 
 def first_attempt(profile: Optional[Profile], *, workspace: str = "") -> Attempt:
-    """The way every command starts: inside the session's own box, widened by nothing.
-
-    Takes no grant, so there is no call site that can start a command outside its confinement.
-    The session's standing grants are folded into ``profile`` before it gets here — those are
-    approvals that already happened, not an escape from this one."""
+    """The way every command starts: inside the session's own box, widened by nothing."""
     return Attempt(profile=profile, grant=None, workspace=workspace)
 
 
@@ -1026,16 +805,7 @@ class Denial:
 
 
 def denial_in(*, exit_code: int, output: str, attempt: Attempt) -> Optional[Denial]:
-    """Whether a finished child looks like it hit the boundary, and which half of it.
-
-    Deliberately a reading of exit code and output rather than a report from the enforcer,
-    because neither backend gives one. What keeps that honest is where the answer is used: it
-    decides whether to *ask*, never whether to allow. Being wrong in one direction spends a
-    question nobody needed; being wrong in the other returns the error to the model exactly as
-    it does today.
-
-    An unconfined attempt is never a denial: if there was no boundary, nothing was refused by it.
-    """
+    """Whether a finished child looks like it hit the boundary, and which half of it."""
     profile = attempt.profile
     if profile is None or profile.enforce == ENFORCE_OFF or exit_code == 0:
         return None
@@ -1056,11 +826,7 @@ def spawn_recipe(
     workspace: str = "",
     extra_environment: Optional[dict] = None,
 ) -> Spawn:
-    """Turn an attempt into the arguments a spawn needs.
-
-    Raises :class:`ConfinementUnavailable` when the profile demands enforcement this machine cannot
-    provide. That is deliberately noisy: the defect this module exists to correct was a setting
-    that claimed to confine and quietly did not."""
+    """Turn an attempt into the arguments a spawn needs."""
     profile = attempt.confined_profile
     if profile is None or profile.enforce == ENFORCE_OFF:
         return Spawn(prefix=[], preexec=lambda: None, environment=dict(os.environ), confined=False)
@@ -1101,22 +867,7 @@ def spawn_recipe(
 
 
 def temporary_directory(profile: Optional[Profile], *, workspace: str = "") -> str:
-    """A directory this profile permits writing *scratch* to, or ``""`` when it permits none.
-
-    The bash tool writes its own log, and a log written outside the profile would make the tool
-    fail on its own bookkeeping rather than on anything the user asked for — so the answer is
-    drawn from the profile rather than from the system.
-
-    The workspace is considered last, and that is the whole point of the ordering. This used to
-    return the first writable entry in declaration order, and ``$WORKSPACE`` is first in every
-    default profile — so every command dropped a ``bash-<id>.log`` into the user's source tree,
-    where it turned up in ``git status``, invited an accidental commit, and had to be swept by
-    hand. Scratch belongs somewhere scratch is thrown away; the tree the agent is editing is the
-    one place it must not accumulate.
-
-    Empty rather than `tempfile.gettempdir()` when nothing qualifies, deliberately. Falling back
-    to the system temporary directory would hand a caller a path the profile denies, and every
-    caller would then be confined to less than the directory it had just been told to use."""
+    """A directory this profile permits writing *scratch* to, or ``""`` when it permits none."""
     if profile is None or profile.enforce == ENFORCE_OFF:
         return tempfile.gettempdir()
 
@@ -1138,24 +889,7 @@ def temporary_directory(profile: Optional[Profile], *, workspace: str = "") -> s
 
 
 def private_scratch(profile: Optional[Profile], *, workspace: str = "", prefix: str = "frank-") -> str:
-    """A fresh directory of a child's own, or ``""`` when the profile permits nowhere suitable.
-
-    :func:`temporary_directory` answers a different question — *somewhere* this profile may write —
-    and it falls back to the workspace when nothing else qualifies, which is right for the bash
-    tool's log and wrong for a child that is being narrowed down to scratch. Narrowing a child to
-    "the workspace" is not narrowing it: it is handing the user's source tree to a process whose
-    whole point is that it needs nothing but somewhere to put a temporary file.
-
-    That failure inverted with configuration, which is what makes it worth its own function. The
-    shipped profile lists ``$TMPDIR`` among its writable paths, so the fallback never fired and the
-    child was correctly confined; a person who *hardened* their profile down to ``$WORKSPACE``
-    alone — the obvious way to tighten it — removed the only candidate outside the tree and thereby
-    widened the child to the whole of it. Nothing about that is visible from either setting.
-
-    So the workspace is refused outright here rather than preferred last, and a fresh subdirectory
-    is made inside whatever does qualify: two children of one session cannot see each other's
-    scratch, and no child can write the tree. Empty when nothing qualifies, which leaves the child
-    unable to write anywhere at all — the correct answer for one that only bridges."""
+    """A fresh directory of a child's own, or ``""`` when the profile permits nowhere suitable."""
     base = temporary_directory(profile, workspace=workspace)
     if not base:
         return ""
@@ -1171,18 +905,13 @@ def private_scratch(profile: Optional[Profile], *, workspace: str = "", prefix: 
 
 
 def resolve_command(command: str, spawn: Spawn) -> list[str]:
-    """The argv for a shell command under a spawn recipe. A confined command is still a shell
-    command — the prefix wraps the shell, it does not replace it."""
+    """The argv for a shell command under a spawn recipe."""
     shell = shutil.which("bash") or "/bin/sh"
     return [*spawn.prefix, shell, "-c", command]
 
 
 def probe() -> dict:
-    """Whether confinement actually works here, checked rather than assumed.
-
-    Run once at daemon start. On macOS this executes a trivial profile, because the presence of
-    `sandbox-exec` on disk and Apple's willingness to honour it are different questions and the
-    deprecation makes the second one worth asking every boot."""
+    """Whether confinement actually works here, checked rather than assumed."""
     name = backend_name()
     if name == "sandbox-exec":
         try:

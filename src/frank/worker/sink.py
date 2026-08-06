@@ -1,10 +1,4 @@
-"""The consuming half of the turn-event catalog.
-
-Every :class:`TurnEvent` the runtime yields is translated to its A2A wire part here — in a
-single exhaustive, typed dispatch — and nowhere else. The sink owns the assistant-text
-buffer, so a structured part forces an ordered flush, and it accumulates the turn's terminal
-text and stop reason for the runner to read once the stream drains.
-"""
+"""The consuming half of the turn-event catalog."""
 
 from __future__ import annotations
 
@@ -51,12 +45,7 @@ from frank.runtime.turn_events import (
 )
 
 class _TextPartBuffer:
-    """Coalesce adjacent text chunks before publishing A2A task updates.
-
-    The buffering is intentionally at the semantic event layer, not the SSE/ASGI
-    layer: structured parts such as tool calls, status changes, and agent
-    lifecycle events must force a flush so replay order remains exact.
-    """
+    """Coalesce adjacent text chunks before publishing A2A task updates."""
 
     def __init__(
         self,
@@ -101,18 +90,7 @@ class _TextPartBuffer:
 
 
 class _TurnEventSink:
-    """The consuming half of the one turn-event catalog.
-
-    Every :class:`TurnEvent` variant the runtime yields is translated to its A2A
-    wire part here — in a single exhaustive, typed dispatch — and nowhere else. The
-    sink owns the assistant-text buffer (so a structured part forces an ordered
-    flush) and the turn's telemetry span, and it accumulates the turn's terminal
-    text and stop reason for the orchestrator to read once the stream drains.
-
-    A suspension goes to the injected ``suspend`` strategy, which returns whether the stream
-    is finished: every pause is durable now — the segment closes and a later answer rebuilds
-    the turn from its checkpoint — where a delegated turn used to park in place instead.
-    """
+    """The consuming half of the one turn-event catalog."""
 
     def __init__(
         self,
@@ -148,9 +126,7 @@ class _TurnEventSink:
         await self._thinking.flush(force=force)
 
     async def emit_compaction(self, event: CompactionStarted | CompactionDone) -> None:
-        """Map a runtime compaction event to its ``compaction`` DataPart, so both the
-        manual pass and mid-turn auto-compaction render identically (a live
-        "compacting" indicator, then the separator)."""
+        """Map a runtime compaction event to its ``compaction`` DataPart, so both the manual pass and mid-turn auto-compaction render identically (a live "compacting" indicator, then the separator)."""
         if isinstance(event, CompactionStarted):
             await self._emit(_event_part(CompactionEvent(
                 status="started",
@@ -171,12 +147,7 @@ class _TurnEventSink:
             )))
 
     async def handle(self, event: TurnEventUnion) -> bool:
-        """Consume one runtime event — emit its wire parts and advance turn state. Dispatch is
-        a ``match`` over the closed :data:`TurnEventUnion`; the ``case _`` calls
-        :func:`assert_never`, so a new variant a consumer forgets is a static exhaustiveness
-        error, not a silently dropped branch (and a wiring bug at runtime if one slips through).
-        Returns True when the turn should stop consuming and return from ``execute`` (a durable
-        top-level suspension closed the segment), False to keep consuming."""
+        """Consume one runtime event — emit its wire parts and advance turn state."""
         match event:
             case TextChunk():
                 content_block_identifier = str(event.block_id)

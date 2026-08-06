@@ -1,15 +1,4 @@
-"""`frankd`: the control plane.
-
-It owns the registry, the prototype, the databases, and the shared brokers, and it serves
-one API two ways — a unix socket for the CLI and for sessions, and a loopback TCP port for
-the desktop client, which cannot open a socket. Both require the capability token written
-beside them in the runtime directory.
-
-The daemon runs no agents, and it never imports the runtime. That is what keeps this side
-small — and it is also why the *prototype* is a process rather than a function here: the thing
-that forks a session has to be the thing that has already paid for the runtime import, and the
-daemon must never be that.
-"""
+"""`frankd`: the control plane."""
 
 from __future__ import annotations
 
@@ -59,10 +48,7 @@ def _free_port() -> int:
 
 
 def _write_handshake(token: str, port: int) -> None:
-    """Publish where the daemon is and what proves you may talk to it.
-
-    Both files are 0600 in a 0700 directory: on a shared machine, file permissions are the
-    access control, so a token another user could read would be no token at all."""
+    """Publish where the daemon is and what proves you may talk to it."""
     token_path = daemon_token_path()
     token_path.write_text(token)
     token_path.chmod(0o600)
@@ -87,17 +73,7 @@ def _clear_handshake() -> None:
 
 
 def _acquire_singleton_lock() -> int | None:
-    """An exclusive, process-lifetime lock: exactly one daemon per user.
-
-    The socket alone cannot enforce this. Two `frank` commands run at the same moment both find
-    no daemon, both start one, and uvicorn unlinks an existing unix socket before binding — so
-    the second daemon silently takes the socket from the first and the first becomes an orphan
-    supervising sessions nothing will ever reap. An advisory lock is decided by the kernel
-    rather than by who checked first, which is what closes the window between looking and
-    binding.
-
-    The descriptor is deliberately never closed: the lock lives exactly as long as the process
-    that holds it, and the kernel drops it even if the daemon is killed outright."""
+    """An exclusive, process-lifetime lock: exactly one daemon per user."""
     path = runtime_directory() / "frankd.lock"
     handle = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
     try:
@@ -109,17 +85,7 @@ def _acquire_singleton_lock() -> int | None:
 
 
 async def _defer_to_running_daemon() -> int:
-    """Stand down for the daemon that won the lock, once it is actually serving.
-
-    Reporting ready is the point: whoever started this process is waiting on that one line
-    before it sends its first command, and the daemon it will reach is the other one. Exiting
-    silently instead would fail a command that has a perfectly good daemon to talk to.
-
-    This waits by connecting, unlike everything else in the daemon, because the thing being
-    waited on is in another process — there is no event to await across that boundary, only the
-    socket itself becoming answerable. The waiting itself is tenacity's, so what is left here is
-    the probe and what to do once it answers; the interval and the deadline are policy settings
-    like every other duration in the harness."""
+    """Stand down for the daemon that won the lock, once it is actually serving."""
     path = daemon_socket_path()
     tuning = active_tuning()
 
@@ -151,13 +117,7 @@ async def _defer_to_running_daemon() -> int:
 
 
 def _reclaim_socket() -> None:
-    """Remove a socket left behind by a daemon that died without cleaning up.
-
-    A stale socket file is indistinguishable from a live one by existence alone, so the test
-    is whether anything is actually listening: connect, and if the connection is refused the
-    file is a corpse and can be removed. Getting this wrong in either direction is bad — a
-    false positive kills a running daemon's socket, a false negative makes startup fail
-    forever — which is why it is a connect and not a `path.exists()`."""
+    """Remove a socket left behind by a daemon that died without cleaning up."""
     path = daemon_socket_path()
     if not path.exists():
         return
@@ -179,11 +139,7 @@ def _announcing_server_class():
     import uvicorn
 
     class AnnouncingServer(uvicorn.Server):
-        """A uvicorn server that sets an event once it is accepting connections.
-
-        uvicorn exposes readiness only as a `started` attribute, which leaves callers spinning
-        on it. Overriding `startup` makes readiness awaitable, so nothing polls, and a server
-        that fails to bind surfaces as a failed task rather than a loop that never ends."""
+        """A uvicorn server that sets an event once it is accepting connections."""
 
         def __init__(self, config) -> None:  # noqa: ANN001 — matches uvicorn's signature
             super().__init__(config)
@@ -208,11 +164,7 @@ def build_app() -> FastAPI:
 
     @app.exception_handler(RpcError)
     async def _rpc_error(_request: Request, error: RpcError) -> JSONResponse:
-        """The same error shape whether it was raised under `/rpc` or under a plain route.
-
-        `/rpc` catches these itself; the streaming routes do not, and without this an
-        `attach` to a session that does not exist came back as an opaque 500 with the
-        reason — the one useful part — swallowed by the default handler."""
+        """The same error shape whether it was raised under `/rpc` or under a plain route."""
         return JSONResponse(
             {"error": {"code": error.code, "message": error.message}}, status_code=error.status_code
         )
@@ -261,12 +213,7 @@ def build_app() -> FastAPI:
 
         @staticmethod
         async def _refuse(scope, receive, send) -> None:
-            """Say no in the shape the caller's transport understands.
-
-            A websocket is closed *without being accepted*, which is what ASGI calls refusing a
-            handshake and what the server turns into an HTTP failure. Accepting first and closing
-            after would look like a connection that was allowed and then dropped — and would give
-            the route a moment in which it believed it had a client."""
+            """Say no in the shape the caller's transport understands."""
             if scope["type"] == "websocket":
                 # 1008 is "policy violation", which is the closest the protocol has to a 401.
                 return await WebSocketClose(code=1008)(scope, receive, send)
@@ -288,8 +235,7 @@ def build_app() -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict:
-        """Unauthenticated on purpose: a client needs to know the daemon is up before it has
-        read the token, and this says nothing else."""
+        """Unauthenticated on purpose: a client needs to know the daemon is up before it has read the token, and this says nothing else."""
         return {"ok": True, "service": "frankd"}
 
     app.include_router(control_router)
@@ -402,12 +348,7 @@ async def _serve() -> int:
             loop.add_signal_handler(received, _stop)
 
     async def _shutdown_on_signal() -> None:
-        """Wait for a signal, then tell both servers to stop.
-
-        Setting `should_exit` from inside the loop rather than from the signal handler is what
-        makes it take effect: uvicorn only observes the flag between its own iterations, so a
-        handler that sets it while the loop is parked leaves the daemon running until something
-        else happens to wake it — which is how a `stop` came back as "still running"."""
+        """Wait for a signal, then tell both servers to stop."""
         await stopping.wait()
         # Streams first, servers second.
         hub_state.shutting_down.set()

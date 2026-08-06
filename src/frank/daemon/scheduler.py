@@ -1,15 +1,4 @@
-"""The loop that fires schedules: one task, waking each minute, starting whatever is due.
-
-One loop rather than a timer per schedule. A timer per schedule is more precise and buys
-nothing here — a job that runs at 09:00:00 rather than 09:00:37 is not a better job — while
-costing a set of tasks to cancel and rebuild every time a schedule is created, edited, paused
-or deleted, and a way for those tasks to disagree with the table. The loop reads the table.
-
-Firing creates an ordinary session and sends it the prompt, through the same calls a person's
-client makes. There is deliberately no unattended execution path: a second way to run a turn is
-a second thing to keep correct, and the one that runs unwatched is the one nobody would notice
-had drifted.
-"""
+"""The loop that fires schedules: one task, waking each minute, starting whatever is due."""
 
 from __future__ import annotations
 
@@ -58,11 +47,7 @@ async def _fire(record) -> None:
 
 
 async def run() -> None:
-    """Wake, fire what is due, sleep. Forever, until the daemon cancels it.
-
-    Every failure is caught and logged rather than raised. A scheduler that dies on one bad row
-    takes every other schedule with it silently, and the person who would notice is the one who
-    went to bed expecting a report in the morning."""
+    """Wake, fire what is due, sleep. Forever, until the daemon cancels it."""
     logger.info("scheduler: watching for due schedules every %ds", TICK_SECONDS)
     while True:
         try:

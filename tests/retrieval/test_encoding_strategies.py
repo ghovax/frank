@@ -1,17 +1,4 @@
-"""Guards on the retrieval key: the findings from ``the-input-is-the-ceiling``, as assertions.
-
-These exist to stop a settled question from being quietly reopened. Each corresponds to a result
-that cost real measurement to reach, and each fails with a message naming the finding rather than
-only the number, so whoever hits it learns why the code is the way it is.
-
-Every assertion is about a **field**, not about whichever composition a surface happens to use
-today. "Adding the section label costs accuracy" stays checkable when the key is rearranged; "the
-current key beats the old one" would not. The live key is checked separately, and only for not
-having drifted behind the best composition available to it.
-
-Thresholds are deliberately loose. The point is to catch a reversal, not to pin an accuracy that
-would break the moment the fixtures are refreshed.
-"""
+"""Guards on the retrieval key: the findings from ``the-input-is-the-ceiling``, as assertions."""
 
 from __future__ import annotations
 
@@ -71,10 +58,7 @@ def test_corpora_are_varied_enough_to_measure(corpora):
 
 
 def test_every_query_family_is_populated(queries):
-    """A family that silently yields nothing turns its column into a false pass.
-
-    This guards the failure mode that wasted the most time in this investigation: a harness that
-    skipped a corpus and reported the remainder as though it were complete."""
+    """A family that silently yields nothing turns its column into a false pass."""
     totals: dict[str, int] = {}
     for families in queries.values():
         for family_name, family_queries in families.items():
@@ -89,11 +73,7 @@ def test_every_query_family_is_populated(queries):
     (("name",), ("name", "context")),
 ])
 def test_adding_the_section_label_to_the_key_costs_accuracy(outcomes, without, with_context):
-    """The largest single finding, checked against three different bases.
-
-    A section's label reads as disambiguation and behaves as its opposite: written into every
-    child's key, it makes those children indistinguishable to a cosine. Parametrised so the result
-    cannot be an artefact of one particular composition."""
+    """The largest single finding, checked against three different bases."""
     interval = paired_bootstrap_interval(hits_of(outcomes, name_of(with_context)),
                                          hits_of(outcomes, name_of(without)))
     difference, low, high = interval
@@ -105,10 +85,7 @@ def test_adding_the_section_label_to_the_key_costs_accuracy(outcomes, without, w
 
 
 def test_link_destinations_carry_retrieval_signal_of_their_own(outcomes):
-    """Parsing ``/url:`` was the change that separated the top compositions from the rest.
-
-    Scored only on the slug family, whose wording shares no word at all with the visible label, so
-    a strategy cannot pass by matching the label instead."""
+    """Parsing ``/url:`` was the change that separated the top compositions from the rest."""
     with_url = accuracy_on(outcomes, name_of(("name", "url", "role")), "slug")
     without_url = accuracy_on(outcomes, name_of(("name", "role")), "slug")
     assert with_url > without_url + 0.10, (
@@ -117,11 +94,7 @@ def test_link_destinations_carry_retrieval_signal_of_their_own(outcomes):
 
 
 def test_the_tooltip_does_not_cost_accuracy_elsewhere(outcomes):
-    """The tooltip's value on its own family is circular, so it is judged on the other families.
-
-    Capturing it was a judgement call rather than a measured one — the only benchmark for a
-    description is the description itself. What *can* be checked is that carrying it does no harm
-    where the scoring is honest, which is the condition the decision was made under."""
+    """The tooltip's value on its own family is circular, so it is judged on the other families."""
     with_title = name_of(("name", "url", "role", "title"))
     without_title = name_of(("name", "url", "role"))
     for family_name in ("literal", "partial", "slug"):
@@ -133,13 +106,7 @@ def test_the_tooltip_does_not_cost_accuracy_elsewhere(outcomes):
 
 
 def test_machine_tokens_are_not_available_as_fields():
-    """``id``, ``class`` and ``data-*`` cost 11 points of exact-label accuracy and bought nothing.
-
-    Asserted against the field vocabulary rather than against rendered keys. Matching on the text
-    a key produces looks stricter and is in fact wrong: a Wikipedia citation's visible label
-    genuinely contains ``government-data-reveals-accessible-homes``, which is page content and not
-    a DOM attribute leaking through. What actually needs guarding is that no encoding can *source*
-    these attributes, and the recorder does not carry them in the first place."""
+    """``id``, ``class`` and ``data-*`` cost 11 points of exact-label accuracy and bought nothing."""
     forbidden = {"id", "class", "data", "dataset", "test_id", "testid"}
     available_fields = set(FIELD_SOURCES) | {field.name for field in fields(RecordedElement)}
     assert not (available_fields & forbidden), (
@@ -149,14 +116,7 @@ def test_machine_tokens_are_not_available_as_fields():
 
 
 def test_the_live_key_is_judged_on_reach_as_well_as_rank(outcomes, corpora):
-    """The live key may rank slightly below a composition of its own fields — but only by reaching
-    further, never by being worse at the same job.
-
-    An earlier version of this test compared top-1 alone and failed the moment the browser key
-    gained its `value` fallback, because a key with no fallback *wins* that comparison: the
-    elements it cannot reach ask no questions, so burying them lifts the average over the queries
-    that remain. Judging reach and rank together is the only honest form of the assertion, and the
-    asymmetry is deliberate — a loss is tolerated when it buys reach, and never otherwise."""
+    """The live key may rank slightly below a composition of its own fields — but only by reaching further, never by being worse at the same job."""
     from tests.retrieval.strategies import live_browser_key
 
     equivalent = name_of(("name", "url", "title"))
@@ -180,19 +140,7 @@ def test_the_live_key_is_judged_on_reach_as_well_as_rank(outcomes, corpora):
 
 
 def test_the_role_signal_in_the_embedding_stays_too_weak_to_act_on(corpora):
-    """Same-role elements sit measurably closer — and nowhere near closely enough.
-
-    This is the measurement behind faceted narrowing in `dispatch.py`. The cohesion is about
-    +0.134, which is real: roles correlate with wording, since buttons say "Submit" and links
-    carry article titles. It is also far too weak to isolate a kind of control, because a median
-    browser element shares its role with 222 others. Hence an explicit set operation rather than
-    words appended to the query.
-
-    The bound is two-sided on purpose. If cohesion collapsed toward zero the space would have
-    stopped encoding role at all; if it rose past a quarter, similarity might isolate a role on
-    its own and the facet would deserve re-examining. An earlier version of this analysis reported
-    0.000 — the result of indexing a similarity matrix with positions from a different sample,
-    which is the kind of mistake that survives precisely because its answer looks tidy."""
+    """Same-role elements sit measurably closer — and nowhere near closely enough."""
     from model2vec import StaticModel
     import numpy
 
@@ -227,12 +175,7 @@ def test_the_role_signal_in_the_embedding_stays_too_weak_to_act_on(corpora):
 
 
 def test_no_element_carrying_words_is_left_unreachable(corpora):
-    """An element with words to offer must produce a non-empty key.
-
-    An empty key is not a bad ranking, it is an absence: no query can reach that element at any
-    depth. Two thirds of a native window and a tenth of a page were in that state until ``value``
-    became a fallback, and the failure is invisible in a top-1 average because those elements are
-    never the answer to a question anyone could successfully ask."""
+    """An element with words to offer must produce a non-empty key."""
     from frank.computer.retrieval import web_element_text
 
     unreachable = []

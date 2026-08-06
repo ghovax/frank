@@ -103,13 +103,7 @@ def test_resolver_uses_each_gateway_endpoint_and_model_protocol(open_code_catalo
 def test_a_catalog_model_without_an_override_keeps_its_provider_prefix(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A per-model prefix is an override, and an absent one means "the provider's own".
-
-    Only the multi-protocol gateways set it; every other model in the catalogue leaves it empty.
-    Reading it as the answer whenever a catalogue entry existed dropped the prefix altogether, so
-    `anthropic/claude-…` resolved to `/claude-…` and routed nowhere — and only once the catalogue
-    had been fetched, which is why a cold start looked healthy.
-    """
+    """A per-model prefix is an override, and an absent one means "the provider's own"."""
     payload = {"anthropic": {"models": {"claude-sonnet-4-5": {"name": "Claude Sonnet 4.5"}}}}
     monkeypatch.setattr(model_catalog.httpx, "get", lambda *_arguments, **_keywords: CatalogResponse(payload))
     model_catalog.clear_catalogue_cache()

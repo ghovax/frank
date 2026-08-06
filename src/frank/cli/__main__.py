@@ -1,26 +1,4 @@
-"""`frank`: the command.
-
-The verbs mirror the API exactly — create a session, send it a message, read it, watch it,
-list what exists, kill a tree. The CLI adds no capability of its own; it is the ergonomic
-face of the same surface the desktop client and sessions use. A session reaches that surface
-through its own tools rather than through this command — a typed call carries the caller's
-identity, which an argv string cannot — but it is the same API underneath.
-
-`create` is the only place a session's configuration is set. `send` only does work. That
-split is the permission model made visible: there is no verb that loosens a running session,
-because there is no such operation.
-
-**Everything on stdout is plumbing.** A read prints the API's payload as JSON; a stream
-prints one JSON object per line; a verb whose answer *is* a single value prints that value
-bare, so `id=$(frank create …)` works. There is no formatting layer, no colour, and no
-alternate human mode to choose between — anything that wants a table can pipe to `jq`, and
-anything that wants to parse this never has to guess which mode it is in. Diagnostics go to
-stderr and outcomes go to the exit code, so neither can ever contaminate the data.
-
-It is minified, and every JSON object is exactly one line. Pretty-printing exists for a reader
-who does not have `jq`, and this output has no such reader: agents drive these verbs constantly
-and pay for the indentation by the token. `jq .` puts it back for a person.
-"""
+"""`frank`: the command."""
 
 from __future__ import annotations
 
@@ -38,8 +16,7 @@ from frank.base.tuning import Tunable, active_tuning
 
 
 class _StillRunning(Exception):
-    """A process being waited on has not exited yet. Raised so a retry keeps waiting, rather
-    than being a return value a caller could forget to check."""
+    """A process being waited on has not exited yet."""
 
 
 logger = logging.getLogger("frank")
@@ -51,21 +28,13 @@ def _emit(payload: Any) -> None:
 
 
 def _emit_line(payload: Any) -> None:
-    """One frame of a stream. Identical to `_emit` but flushed, so a reader consumes the
-    stream as it arrives rather than in whatever chunks the buffer decides on — which is the
-    whole point of watching a session live."""
+    """One frame of a stream."""
     _emit(payload)
     sys.stdout.flush()
 
 
 def _note(message: str) -> None:
-    """A diagnostic. Never stdout — that carries data, and a reader must not have to filter
-    prose out of it.
-
-    Through the logger rather than around it, so that everything this program says goes out one
-    way. `main` configures the handler to write the bare message to stderr: at a terminal a
-    timestamp and a level in front of every sentence is noise, and the sentences here are
-    addressed to a person, not to a log."""
+    """A diagnostic."""
     logger.info(message)
 
 
@@ -124,16 +93,7 @@ def _still_working(turn: dict) -> bool:
 
 
 def _follow(session_id: str, *, until_idle: bool, frames: bool, turn_id: str = "") -> int:
-    """Watch a session's stream.
-
-    `attach` prints every frame and follows until the session ends or you interrupt it.
-    `wait` prints nothing while it waits and emits the session's last turn once it goes idle —
-    both read the same stream, so waiting is not polling.
-
-    The snapshot the stream opens with is what makes waiting race-free. It is sent *after* the
-    subscription exists, so a turn that ends from that point on cannot be missed, and a turn
-    that had already ended is visible in the snapshot itself. Checking the session's state
-    separately could fall between the two and wait for an edge that had already gone by."""
+    """Watch a session's stream."""
     try:
         for frame in stream(f"/sessions/{session_id}/attach"):
             if frames:
@@ -161,11 +121,7 @@ def _follow(session_id: str, *, until_idle: bool, frames: bool, turn_id: str = "
 
 
 def _session_from_environment() -> str:
-    """The session this command is running inside, according to the environment, or ``""``.
-
-    Imports inside the function, like every other one in this module: the CLI's startup time is
-    the time a person waits before anything appears, and this file keeps its imports where they
-    are used for that reason."""
+    """The session this command is running inside, according to the environment, or ``""``."""
     import os
 
     from frank.base import environment_variables
@@ -224,11 +180,7 @@ def _command_configure(arguments: argparse.Namespace) -> int:
 
 
 def _command_remote(arguments: argparse.Namespace) -> int:
-    """Registered peers on other hosts: list them, or hand one a message.
-
-    Deliberately not `send`. A remote agent runs on someone else's machine, at their cost,
-    with no shared history and no access to this filesystem — a different bargain from a local
-    peer, and one a caller should never be unsure it made."""
+    """Registered peers on other hosts: list them, or hand one a message."""
     if not arguments.name:
         _emit(call("remote.list")["agents"])
         return 0
@@ -305,8 +257,7 @@ def _command_daemon(arguments: argparse.Namespace) -> int:
         tuning = active_tuning()
 
         def check_exited() -> None:
-            """Return once the process is gone; raise while it is still there, which is what the
-            retry below retries on."""
+            """Return once the process is gone; raise while it is still there, which is what the retry below retries on."""
             try:
                 os.kill(pid, 0)
             except (ProcessLookupError, PermissionError):
@@ -335,53 +286,21 @@ APPLICATION_BUNDLE_ID = "com.ghovax.frank"
 
 
 def _command_serve(arguments: argparse.Namespace) -> int:
-    """Make Frank available: a control plane, and the interface in front of it.
-
-    One verb rather than two, because starting the daemon and serving the interface were never
-    separately useful. Every other command starts a daemon on demand anyway, so a command whose
-    only job was to start one early was a command for a problem nobody had — and having both
-    `serve` and `web` meant two names for "make this reachable", which is exactly the kind of
-    second vocabulary this surface exists to remove.
-
-    It runs in the foreground, because it is a server. That is also what a supervisor wants, so
-    the old `--foreground` flag has nothing left to mean.
-
-    The interface **proxies** the daemon rather than pointing a browser at it: the capability
-    token is attached here and never reaches the page, the daemon's ephemeral port stays this
-    process's business, and everything is one origin, so there is no CORS to configure.
-
-    Imported on use — it pulls in uvicorn and starlette, which every other verb has no reason
-    to pay for.
-    """
+    """Make Frank available: a control plane, and the interface in front of it."""
     from frank.cli.commands import serve
 
     return serve.run(arguments)
 
 
 def _command_reach(arguments: argparse.Namespace) -> int:
-    """Make Frank reachable from somewhere that is not this machine.
-
-    `serve` is the same proxy for a browser on the same host, and stops at loopback because that
-    is all a browser on the same host needs. This one is the case that surface cannot cover: a
-    phone, on a network, tomorrow. What it adds is the two things that turn an address into an
-    endpoint — authentication, so binding past loopback is not a hole, and a token that survives
-    the reboot that gives the daemon a new one.
-    """
+    """Make Frank reachable from somewhere that is not this machine."""
     from frank.cli.commands import reach
 
     return reach.run(arguments)
 
 
 def _command_run(arguments: argparse.Namespace) -> int:
-    """One turn, in this process, with no daemon at all.
-
-    The shortest possible use of the harness, and the first consumer of the library surface:
-    everything below is `frank.Session`. That is the point of it being here — a library nothing
-    uses is a library nobody can trust, and this is the same code path an embedder takes.
-
-    No daemon means no session record, no address and no crash isolation. Reach for `create`
-    and `send` when you want any of those; this is for a question with an answer.
-    """
+    """One turn, in this process, with no daemon at all."""
     import asyncio
 
     prompt = arguments.prompt
@@ -396,8 +315,7 @@ def _command_run(arguments: argparse.Namespace) -> int:
         from frank import Approval, Session
 
         class AllowEverything:
-            """Answers every gate with yes. Only reachable through `--allow`, which is a
-            deliberate act: unattended means nobody is watching what it agrees to."""
+            """Answers every gate with yes."""
 
             async def decide(self, _gate):
                 return Approval(allow=True, reason="--allow was passed")
@@ -450,12 +368,7 @@ def _command_run(arguments: argparse.Namespace) -> int:
 
 
 def _command_auth(arguments: argparse.Namespace) -> int:
-    """Sign in to a provider that uses an account rather than an API key.
-
-    Only ChatGPT works this way today. It existed only in the browser interface, which meant a
-    headless install could not reach the one provider that needs no key — so this is a gap
-    being closed rather than a second way to do something.
-    """
+    """Sign in to a provider that uses an account rather than an API key."""
     import asyncio
 
     from frank.base.credentials import ChatGPTAuthError, ChatGPTLoginFlow, clear_tokens, load_tokens
@@ -501,18 +414,7 @@ def _command_auth(arguments: argparse.Namespace) -> int:
 
 
 def _command_open(arguments: argparse.Namespace) -> int:
-    """Bring the daemon up and launch the desktop app.
-
-    The dependency runs this way — command line to window — and that is the whole reason this
-    is comfortable. The app used to start the daemon, which meant carrying a frozen copy of the
-    harness inside itself and owning its lifetime. Launching an application is not owning it:
-    nothing is bundled, nothing is supervised, and if the app is not installed this says so and
-    exits rather than half-working.
-
-    The daemon comes up first because the app is useless without one, and starting it is
-    something the command line does anyway. Unconditionally: `ensure_daemon` returns at once when
-    one is already running and never starts a second, so the `--no-daemon` that used to be here
-    could only ever turn a window that would have worked into one that opens onto nothing."""
+    """Bring the daemon up and launch the desktop app."""
     import shutil
     import subprocess
 
@@ -540,15 +442,7 @@ def _command_open(arguments: argparse.Namespace) -> int:
 
 
 def _local_timezone() -> str:
-    """This machine's IANA zone, so a cron line means what a person meant by it.
-
-    Read from where the system keeps it rather than from ``datetime``: an aware datetime carries
-    a fixed *offset*, not a zone, so `astimezone().tzinfo` answers "+02:00" and has no name to
-    give — which silently produced UTC for everybody, and a schedule an hour or two off.
-
-    Defaulted rather than required because "nine every weekday" almost always means nine where
-    the person typing it is. Written into the record either way, so a machine that later moves
-    or changes its own zone does not quietly take the schedule with it."""
+    """This machine's IANA zone, so a cron line means what a person meant by it."""
     from pathlib import Path
 
     localtime = Path("/etc/localtime")
@@ -560,11 +454,7 @@ def _local_timezone() -> str:
 
 
 def _resolve_workspace(reference: str) -> str:
-    """A workspace id, or the id of the workspace owning a path.
-
-    Taking a path is what lets `--workspace ~/code/thing` read the way somebody would say it.
-    Resolved here rather than in the daemon because it is a convenience of *this* interface —
-    the RPC takes an id, as every other caller does."""
+    """A workspace id, or the id of the workspace owning a path."""
     reference = (reference or "").strip()
     if not reference:
         return ""

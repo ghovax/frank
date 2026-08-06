@@ -1,13 +1,4 @@
-"""Where workers' writes land — the sole-writer intake.
-
-Workers never open the database. They send their persistence calls here, and this module
-performs them against the one store the daemon owns. That keeps the append-only store's
-single-writer property intact and keeps every write ordered, which is what the row-ordered
-history depends on.
-
-Live turn events arrive on the same channel and are fanned out to whoever is attached, so an
-event reaches a watcher at the moment it is persisted rather than on some later poll.
-"""
+"""Where workers' writes land — the sole-writer intake."""
 
 from __future__ import annotations
 
@@ -78,11 +69,7 @@ async def _turn_list_for_session(params: dict) -> Any:
 
 
 def _set_turn_state(session_id: str, running: bool, retains: bool = False) -> None:
-    """Count the turns a session has in flight, and act on the idle/busy edge.
-
-    A count rather than a flag because a session can have more than one turn open at once —
-    a compaction or an autonomous wake alongside the user's — and the sidebar must not go
-    quiet when the first of them finishes."""
+    """Count the turns a session has in flight, and act on the idle/busy edge."""
     if running:
         # Used again, so any pending idle timer is stale.
         cancel_idle_sleep(session_id)
@@ -131,26 +118,7 @@ async def _sleep_after_idle(session_id: str, delay: float) -> None:
 
 
 def _sleep_when_idle(session_id: str) -> None:
-    """Stop an idle session's process after the idle window, keeping the session itself.
-
-    **Not immediately.** A session used to sleep the moment its turn ended, on the reasoning
-    that waking is only a fork and therefore cheap. Waking is cheap; the things that live in
-    the process are not. Anything a session holds in memory between turns — a usage snapshot
-    read from a reply's headers, a warm connection, an in-flight background job — died with
-    every turn, and the only way to keep it was to give it a home outside the process. That is
-    the right answer for durable state and the wrong one for everything else.
-
-    So a session now keeps its process until it has been idle for
-    `Tunable.session_idle_sleep_seconds` — five hours by default. A conversation you come back
-    to is still there; a machine left overnight is not holding interpreters for conversations
-    nobody returned to.
-
-    `retains` still stops this outright, and it comes from the worker because only the worker
-    can know it: a background job is an in-process `asyncio.Task` and sleeping would kill it.
-
-    A session parked on a permission prompt takes a different path — it never had a running
-    turn to end — so it is handled where the suspension is reported rather than here.
-    """
+    """Stop an idle session's process after the idle window, keeping the session itself."""
     if state.lifecycle is None:
         return
     record = state.registry.get(session_id) if state.registry is not None else None
@@ -162,10 +130,7 @@ def _sleep_when_idle(session_id: str) -> None:
 
 
 async def _session_claim_work_habits(params: dict) -> dict:
-    """The once-per-session work-habits acknowledgement, claimed atomically.
-
-    Here rather than in the worker because a worker is per activation now, and "once per
-    session" has to outlive one."""
+    """The once-per-session work-habits acknowledgement, claimed atomically."""
     from frank.hub.services.sessions import claim_work_habits_acknowledgement
 
     session_id = str(params.get("session_id") or "")
@@ -213,11 +178,7 @@ async def _session_event(params: dict) -> dict:
 
 
 async def _session_usage(params: dict) -> dict:
-    """A subscription's rate-limit snapshot, as a worker read it off a reply.
-
-    Captured in the session process because that is where the model call happens, and held
-    here because the daemon is what serves the settings surface. The daemon keeps the latest;
-    there is one account, and an older reading of it is of no interest."""
+    """A subscription's rate-limit snapshot, as a worker read it off a reply."""
     from frank.base import subscription
 
     usage = params.get("usage")
@@ -226,10 +187,7 @@ async def _session_usage(params: dict) -> dict:
 
 
 async def _session_title(params: dict) -> dict:
-    """A title a session generated for itself.
-
-    Produced in the worker because producing it means calling a model, which is the runtime's
-    job and not the control plane's. Written here because the daemon is the sole writer."""
+    """A title a session generated for itself."""
     from frank.hub.services.sessions import _set_session_title
 
     session_id = str(params.get("session_id") or "")

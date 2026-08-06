@@ -1,18 +1,4 @@
-"""Local-machine and user-context probes for the system prompt.
-
-Two entry points build the JSON snapshots injected into the prompt:
-:func:`probe_local_environment` (the neutral machine snapshot — OS, toolchain, PATH,
-environment, and the shell-history-derived ``frequent_commands`` histogram) and
-:func:`probe_user_context` (the opt-in, more personal snapshot — where/what/who/when the
-user works, and what they browse). Everything here reads local metadata only and degrades
-to silence on failure; the module holds no state.
-
-Privacy: both snapshots are injected into the system prompt and therefore travel to the
-configured model provider, so they place machine and (opt-in) user PII in front of that
-provider. This is a deliberate design choice — the agent is meant to know who the user is,
-what they do, and what it can do for them — and it is open to revisiting (narrower snapshots,
-field redaction, wider opt-in). See the privacy section of SECURITY.md.
-"""
+"""Local-machine and user-context probes for the system prompt."""
 
 from __future__ import annotations
 
@@ -33,19 +19,14 @@ _HISTORY_WRAPPERS = frozenset({
 
 
 def _is_subcommand_token(token: str) -> bool:
-    """A bare word that is safely a sub-command/verb (git *status*, uv *run*) rather than a
-    value like a path, URL, or secret — so it can be shown without leaking anything."""
+    """A bare word that is safely a sub-command/verb (git *status*, uv *run*) rather than a value like a path, URL, or secret — so it can be shown without leaking anything."""
     return bool(token) and token[0].isalpha() and len(token) <= 25 and all(
         character.isalnum() or character in "_-" for character in token
     )
 
 
 def _parse_history_invocation(line: str) -> tuple[str, str, list[str]] | None:
-    """Reduce one history line to ``(base, subcommand_chain, flag_names)``. The chain is the
-    leading sub-command verbs joined by spaces (``compose up`` for ``docker compose up``),
-    empty when the command takes none. Only verbs and flag NAMES are extracted — positional
-    arguments and flag values (paths, URLs, secrets) are dropped, so nothing sensitive is
-    read. Returns ``None`` for a line with no usable command."""
+    """Reduce one history line to ``(base, subcommand_chain, flag_names)``."""
     tokens = line.split()
     index = 0
     # Skip leading VAR=value assignments and command wrappers (sudo, env, …).
@@ -91,21 +72,7 @@ def _top_counter(counter: dict[str, int], limit: int) -> dict[str, int]:
 def _shell_command_usage(
     command_limit: int = 24, subcommand_limit: int = 8, flag_limit: int = 8
 ) -> dict[str, dict]:
-    """The user's habitual commands AND how they invoke them, mined from shell history so
-    the agent can match the user's actual workflow. Returns a *nested histogram* that names
-    each root command once and hangs its usage beneath it, avoiding the repetition of a flat
-    ``git commit -m`` / ``git push`` / ``git status`` list::
-
-        {"git": {"count": 812,
-                 "subcommands": {"commit": {"count": 240, "flags": {"-m": 236, "--amend": 31}},
-                                 "push":   {"count": 118, "flags": {"--force": 12}}},
-                 "flags": {"--version": 3}}}
-
-    Each command carries its total ``count``, a ``subcommands`` histogram (each with its own
-    ``count`` and per-subcommand ``flags`` histogram), and a top-level ``flags`` histogram
-    for invocations that used no sub-command. Only sub-command verbs and flag NAMES are ever
-    recorded; positional arguments and flag values (paths, URLs, secrets) are never read,
-    so nothing sensitive leaves the history file. Silent on any failure."""
+    """The user's habitual commands AND how they invoke them, mined from shell history so the agent can match the user's actual workflow."""
     # command -> {"count", "subcommands": {chain: {"count", "flags": {name: count}}}, "flags": {name: count}}
     commands: dict[str, dict] = {}
     for line in _iter_history_lines():
@@ -152,22 +119,7 @@ def _shell_command_usage(
 
 
 def probe_local_environment(path: Optional[Sequence[str]] = None) -> str:
-    """A structured JSON snapshot of the machine the agent's tools run on: OS, toolchain
-    availability, `PATH`, locale. It gives the agent initial pointers so it probes reality
-    instead of assuming a capability exists.
-
-    ``path`` is the `PATH` a *tool child* is given, which is not always this process's own — a
-    session with a toolbox leads with its own profile. Passing it is what keeps the snapshot
-    describing the environment commands actually run in; without it the model was told one `PATH`
-    and its commands used another, and `tools.present` was answered against the wrong one.
-
-    **The environment itself is deliberately not here.** This used to carry every variable of the
-    worker process with its values as-is, which on an ordinary machine means provider API keys —
-    sent to whichever model this session runs on, which may not be the provider whose key it is.
-    The confinement goes to some trouble to keep exactly those out of a tool child (see
-    `base.confinement`: "everything else the worker holds — API keys above all — is left behind"),
-    and handing them to the model instead is the same disclosure by a shorter route. What a
-    machine snapshot is *for* is the fields below: what this computer is and what it can run."""
+    """A structured JSON snapshot of the machine the agent's tools run on: OS, toolchain availability, `PATH`, locale."""
     import shutil
     import socket
 
@@ -239,8 +191,7 @@ def probe_local_environment(path: Optional[Sequence[str]] = None) -> str:
 
 
 def _iter_history_lines() -> Iterator[str]:
-    """Yield each shell-history command line, normalized across zsh/bash/fish formats.
-    Shared by the environment and user-context probes. Silent on unreadable files."""
+    """Yield each shell-history command line, normalized across zsh/bash/fish formats."""
     home = Path.home()
     sources: list[tuple[Path, str]] = [
         (home / ".zsh_history", "zsh"),
@@ -295,9 +246,7 @@ _CHROMIUM_HISTORY_GLOBS = (
 
 
 def _run_command(argv: list[str], timeout: float = 4) -> str:
-    """Run a short, read-only system command and return its stripped stdout, or ``""`` on any
-    failure/non-zero exit/timeout. The backbone of the macOS metadata probes below — every one
-    of them degrades to nothing rather than raising or blocking the prompt build."""
+    """Run a short, read-only system command and return its stripped stdout, or ``""`` on any failure/non-zero exit/timeout."""
     import subprocess
 
     try:
@@ -308,8 +257,7 @@ def _run_command(argv: list[str], timeout: float = 4) -> str:
 
 
 def _normalize_host(url: str) -> str:
-    """The bare hostname of a URL, lowercased and with a leading ``www.`` stripped; ``""`` for
-    URLs with no usable host or for local loopbacks (which say nothing about browsing habits)."""
+    """The bare hostname of a URL, lowercased and with a leading ``www.`` stripped; ``""`` for URLs with no usable host or for local loopbacks (which say nothing about browsing habits)."""
     from urllib.parse import urlsplit
 
     host = (urlsplit(url).hostname or "").lower()
@@ -327,12 +275,7 @@ _CHROMIUM_EPOCH_OFFSET_SECONDS = 11644473600
 def _browser_site_activity(
     most_visited_limit: int = 22, recent_limit: int = 15, recent_days: int = 14
 ) -> dict:
-    """Two complementary views of the user's browsing, summed across every browser's history
-    database: ``most_visited_sites`` (hostname to all-time visit count — enduring interests) and
-    ``recently_active_sites`` (hostnames touched within the last ``recent_days``, newest first —
-    current focus). Only hostnames, counts, and last-visit *timestamps* are read; never full
-    URLs, titles, or page content. Databases are opened read-only/immutable so a running browser
-    is never disturbed. Silent on failure; omits either view when empty."""
+    """Two complementary views of the user's browsing, summed across every browser's history database: ``most_visited_sites`` (hostname to all-time visit count — enduring interests) and ``recently_active_sites`` (hostnames touched within the last ``recent_days``, newest first — current focus)."""
     import sqlite3
     import time
 
@@ -381,8 +324,7 @@ def _browser_site_activity(
 
 
 def _installed_applications(limit: int = 48) -> list[str]:
-    """Names of installed macOS applications across the standard bundle locations — a strong
-    signal of the tools and platforms the user has available. Names only, sorted, deduped."""
+    """Names of installed macOS applications across the standard bundle locations — a strong signal of the tools and platforms the user has available."""
     names: set[str] = set()
     for directory in (Path("/Applications"), Path.home() / "Applications", Path("/System/Applications")):
         try:
@@ -395,9 +337,7 @@ def _installed_applications(limit: int = 48) -> list[str]:
 
 
 def _running_applications(limit: int = 30) -> list[str]:
-    """Names of the currently *visible* applications (foreground, not background daemons),
-    read via System Events. Best-effort: returns empty if automation is unavailable or the
-    probe times out, and never blocks the prompt build for long."""
+    """Names of the currently *visible* applications (foreground, not background daemons), read via System Events."""
     import subprocess
 
     try:
@@ -423,9 +363,7 @@ _MAC_EPOCH_OFFSET_SECONDS = 978307200
 
 
 def _system_uptime() -> dict:
-    """When the machine last booted and how long it has been up, from ``sysctl kern.boottime``
-    (instant, no permissions). A small but real signal of the user's session rhythm — a box
-    up for weeks reads differently from one rebooted this morning. Empty off macOS."""
+    """When the machine last booted and how long it has been up, from ``sysctl kern.boottime`` (instant, no permissions)."""
     import re
     import time
 
@@ -444,12 +382,7 @@ def _system_uptime() -> dict:
 
 
 def _app_usage(days: int = 7, limit: int = 18) -> dict:
-    """How the user actually spends time in their apps: total hours each app has been *in
-    focus* over the last ``days``, mined from macOS's Screen Time / Knowledge store
-    (``knowledgeC.db``). This is the real utilization pattern — which apps dominate the day
-    — not just what happens to be open now. Keyed by bundle id, valued in hours (one decimal), top
-    apps only. Read-only/immutable so Screen Time is never disturbed; needs Full Disk Access,
-    so it degrades to empty when unreadable. Silent on any failure."""
+    """How the user actually spends time in their apps: total hours each app has been *in focus* over the last ``days``, mined from macOS's Screen Time / Knowledge store (``knowledgeC.db``)."""
     import sqlite3
     import time
 
@@ -496,10 +429,7 @@ def _parse_etime(text: str) -> int | None:
 
 
 def _running_app_durations(limit: int = 22) -> dict:
-    """Currently-running GUI apps and how many hours each has been open, from ``ps`` process
-    elapsed time — a reliable 'what's running and for how long' that needs no permissions and
-    works even when Screen Time's deeper history is locked. Only top-level app bundles are
-    counted (nested helper processes — browser renderers, etc. — are skipped). App to hours."""
+    """Currently-running GUI apps and how many hours each has been open, from ``ps`` process elapsed time — a reliable 'what's running and for how long' that needs no permissions and works even when Screen Time's deeper history is locked."""
     import re
 
     # `command=` gives the full executable path (unlike `comm=`, which truncates to the short accounting name); macOS uses `etime` (formatted), not Linux's `etimes`.
@@ -526,8 +456,7 @@ def _running_app_durations(limit: int = 22) -> dict:
 
 
 def _login_items(limit: int = 25) -> list[str]:
-    """Applications set to launch at login — what the user always wants running from the
-    moment they sit down. Read via System Events; best-effort, empty if unavailable."""
+    """Applications set to launch at login — what the user always wants running from the moment they sit down."""
     import subprocess
 
     try:
@@ -543,9 +472,7 @@ def _login_items(limit: int = 25) -> list[str]:
 
 
 def _homebrew_packages(limit: int = 80) -> dict:
-    """The tools the user deliberately installed with Homebrew — one of the sharpest signals
-    of their toolset and interests. ``leaves`` are the top-level formulae they asked for (not
-    pulled in as dependencies); casks are GUI apps. Names only. Empty when brew is absent."""
+    """The tools the user deliberately installed with Homebrew — one of the sharpest signals of their toolset and interests."""
     profile: dict = {}
     formulae = _run_command(["brew", "leaves"], timeout=8)
     if formulae:
@@ -557,10 +484,7 @@ def _homebrew_packages(limit: int = 80) -> dict:
 
 
 def _editor_extensions(limit: int = 70) -> list[str]:
-    """Installed VS Code / Cursor extensions (by id) — a precise signal of the languages,
-    frameworks, and tools the user actually works in. Read from the extensions directories;
-    the trailing ``-<version>[-platform]`` is stripped so multiple installed versions of the
-    same extension collapse to one id. Names only, sorted."""
+    """Installed VS Code / Cursor extensions (by id) — a precise signal of the languages, frameworks, and tools the user actually works in."""
     import re
 
     names: set[str] = set()
@@ -576,8 +500,7 @@ def _editor_extensions(limit: int = 70) -> list[str]:
 
 
 def _appearance() -> dict:
-    """Small interface preferences that colour the user's day — light vs dark mode. Instant
-    ``defaults`` read; light mode simply has no key set. Empty off macOS."""
+    """Small interface preferences that colour the user's day — light vs dark mode."""
     style = _run_command(["defaults", "read", "-g", "AppleInterfaceStyle"])
     if not style:
         return {}
@@ -585,9 +508,7 @@ def _appearance() -> dict:
 
 
 def _bluetooth_devices(limit: int = 15) -> list[str]:
-    """Connected Bluetooth peripherals (keyboard, mouse, headphones, trackpad, …) — part of
-    the user's physical setup. From ``system_profiler`` (slow, so tightly timed); degrades to
-    empty. Names only."""
+    """Connected Bluetooth peripherals (keyboard, mouse, headphones, trackpad, …) — part of the user's physical setup."""
     import json as json_module
 
     raw = _run_command(["system_profiler", "-json", "SPBluetoothDataType"], timeout=8)
@@ -610,9 +531,7 @@ def _bluetooth_devices(limit: int = 15) -> list[str]:
 
 
 def _file_type_activity(limit: int = 14, scan_limit: int = 6000) -> dict:
-    """What the user works with, by file type: a histogram of file extensions across their
-    Desktop, Downloads, and Documents. Reveals whether the day is code, images, PDFs,
-    spreadsheets, media, … Counts only, never file names."""
+    """What the user works with, by file type: a histogram of file extensions across their Desktop, Downloads, and Documents."""
     home = Path.home()
     counts: dict[str, int] = {}
     scanned = 0
@@ -639,10 +558,7 @@ def _file_type_activity(limit: int = 14, scan_limit: int = 6000) -> dict:
 
 
 def _home_dotfiles(limit: int = 64) -> list[str]:
-    """Every hidden dotfile and dot-directory at the top of the home directory, by name — a
-    dense fingerprint of the shells, tools, and services the user has configured (``.ssh``,
-    ``.aws``, ``.docker``, ``.config``, ``.vimrc``, ``.gitconfig``, …). Names only, sorted.
-    Empty on failure. Complements ``home_layout`` (the visible folders)."""
+    """Every hidden dotfile and dot-directory at the top of the home directory, by name — a dense fingerprint of the shells, tools, and services the user has configured (``.ssh``, ``.aws``, ``.docker``, ``.config``, ``.vimrc``, ``.gitconfig``, …)."""
     home = Path.home()
     try:
         return sorted(
@@ -656,10 +572,7 @@ def _home_dotfiles(limit: int = 64) -> list[str]:
 def _recent_entries_by_mtime(
     roots: list[Path], want_directories: bool, limit: int, scan_limit: int = 4000
 ) -> list[str]:
-    """The most recently modified non-hidden entries (files or directories, per
-    ``want_directories``) directly under the given roots, newest first, as ``~``-relative
-    paths, deduped. A cheap, dependency-free view of what the user has been touching lately.
-    Scanning is capped so a huge folder cannot stall the probe."""
+    """The most recently modified non-hidden entries (files or directories, per ``want_directories``) directly under the given roots, newest first, as ``~``-relative paths, deduped."""
     candidates: list[tuple[float, str]] = []
     scanned = 0
     for root in roots:
@@ -688,23 +601,17 @@ def _recent_entries_by_mtime(
 
 
 def _recent_files(roots: list[Path], limit: int = 18) -> list[str]:
-    """The most recently modified files directly under the given roots — what the user has
-    been editing/creating lately."""
+    """The most recently modified files directly under the given roots — what the user has been editing/creating lately."""
     return _recent_entries_by_mtime(roots, want_directories=False, limit=limit)
 
 
 def _recent_directories(roots: list[Path], limit: int = 15) -> list[str]:
-    """The most recently modified sub-directories directly under the given roots — a
-    folder-level view of the user's *current* focus (the projects and folders touched most
-    recently), complementing ``frequent_directories`` (all-time navigation counts)."""
+    """The most recently modified sub-directories directly under the given roots — a folder-level view of the user's *current* focus (the projects and folders touched most recently), complementing ``frequent_directories`` (all-time navigation counts)."""
     return _recent_entries_by_mtime(roots, want_directories=True, limit=limit)
 
 
 def _frequent_directories(limit: int = 15) -> dict[str, int]:
-    """Directory to count of how often the user changed into it (``cd``/``z``/``pushd`` …),
-    mined from shell history. The clearest signal of where the user actually works. Only
-    destinations that resolve to a directory *still on disk* are kept — long-deleted or
-    unresolvable relative targets are dropped as noise — and each is rendered ``~``-relative."""
+    """Directory to count of how often the user changed into it (``cd``/``z``/``pushd`` …), mined from shell history."""
     counts: dict[str, int] = {}
     for line in _iter_history_lines():
         tokens = line.split()
@@ -723,11 +630,7 @@ def _frequent_directories(limit: int = 15) -> dict[str, int]:
 
 
 def _shell_activity_timeline() -> dict:
-    """The *rhythm* of the user's work, mined from timestamped shell history: how their commands
-    distribute across the 24 hours of the day and the 7 days of the week, the span the history
-    covers, and when they were last active. This is the temporal backbone of the snapshot — it
-    tells the agent *when* the user works, not just what they run. Timestamps only; no command
-    text is read here. Returns an empty dict when no timestamped history is available."""
+    """The *rhythm* of the user's work, mined from timestamped shell history: how their commands distribute across the 24 hours of the day and the 7 days of the week, the span the history covers, and when they were last active."""
     home = Path.home()
     timestamps: list[int] = []
     for path, fmt in ((home / ".zsh_history", "zsh"), (home / ".local/share/fish/fish_history", "fish")):
@@ -782,9 +685,7 @@ def _shell_activity_timeline() -> dict:
 
 
 def _hardware_profile() -> dict:
-    """The machine's silicon: model identifier, CPU/chip, core count, and memory. Read from
-    ``sysctl`` (instant, no permissions) so the agent knows the horsepower it is working with —
-    what will run locally, how much parallelism is reasonable. Empty off macOS."""
+    """The machine's silicon: model identifier, CPU/chip, core count, and memory."""
     profile: dict = {}
     model = _run_command(["sysctl", "-n", "hw.model"])
     if model:
@@ -802,11 +703,7 @@ def _hardware_profile() -> dict:
 
 
 def _hardware_status() -> dict:
-    """Live hardware and connectivity status: battery charge and power source, whether Wi-Fi is
-    connected (with signal strength, and the network name when macOS discloses it), the attached
-    displays, and connected USB peripherals. Tells the agent whether the user is on battery or
-    plugged in, on Wi-Fi, and what is physically attached. From ``pmset``/``system_profiler``;
-    each field degrades to absent. Empty off macOS."""
+    """Live hardware and connectivity status: battery charge and power source, whether Wi-Fi is connected (with signal strength, and the network name when macOS discloses it), the attached displays, and connected USB peripherals."""
     import json as json_module
     import re
 
@@ -900,9 +797,7 @@ def _hardware_status() -> dict:
 
 
 def _locale_profile() -> dict:
-    """The user's region and language settings — locale, preferred languages, measurement units,
-    and the system time zone. Tells the agent what language to lean toward, how to format dates,
-    numbers, and units, and what "today"/working hours mean locally. Empty off macOS."""
+    """The user's region and language settings — locale, preferred languages, measurement units, and the system time zone."""
     import re
 
     profile: dict = {}
@@ -927,9 +822,7 @@ def _locale_profile() -> dict:
 
 
 def _git_identity() -> dict:
-    """The user's global Git identity and preferences — name, email, default branch, and editor.
-    Lets the agent author commits and configuration that match the user rather than guessing.
-    Empty when Git is absent or unconfigured."""
+    """The user's global Git identity and preferences — name, email, default branch, and editor."""
     identity: dict = {}
     for key, field in (
         ("user.name", "name"), ("user.email", "email"),
@@ -942,9 +835,7 @@ def _git_identity() -> dict:
 
 
 def _dock_applications(limit: int = 30) -> list[str]:
-    """The applications the user has pinned to their Dock, in order — a curated, high-signal list
-    of the tools they value most (distinct from everything merely installed). Names only. Empty
-    when the Dock preference cannot be read."""
+    """The applications the user has pinned to their Dock, in order — a curated, high-signal list of the tools they value most (distinct from everything merely installed)."""
     import re
 
     raw = _run_command(["defaults", "read", "com.apple.dock", "persistent-apps"])
@@ -971,9 +862,7 @@ _TOOLING_MARKERS = {
 
 
 def _tooling_preferences() -> dict:
-    """The user's environment and tooling preferences: shell/editor environment variables and the
-    developer tools their config files reveal they have set up. Rounds out *how* the user likes to
-    work at the terminal. Env values are plain strings (editor/pager names), never secrets."""
+    """The user's environment and tooling preferences: shell/editor environment variables and the developer tools their config files reveal they have set up."""
     profile: dict = {}
     # NOTE ON NAMING: ``$EDITOR`` is the *terminal fallback* editor (what pops up for a git commit message), not the user's real IDE — it is labelled ``cli_editor`` so it is never mistaken for how they actually edit code.
     for variable, label in (("EDITOR", "cli_editor"), ("VISUAL", "cli_visual_editor"),
@@ -991,10 +880,7 @@ def _tooling_preferences() -> dict:
 
 
 def _spotlight_app_usage(limit: int = 24) -> dict:
-    """How often the user actually launches each app, from Spotlight's ``kMDItemUseCount`` —
-    the real 'which apps do they live in' ranking, and it needs **no** Full Disk Access. This
-    is the authoritative signal for the user's true tools (their editor, browser, terminal),
-    far stronger than any config default. App name to launch count. Empty if unavailable."""
+    """How often the user actually launches each app, from Spotlight's ``kMDItemUseCount`` — the real 'which apps do they live in' ranking, and it needs **no** Full Disk Access."""
     import re
 
     app_paths: list[str] = []
@@ -1041,9 +927,7 @@ _HANDLER_CONTENT_TYPES = {
 
 
 def _default_handlers() -> dict:
-    """The app the user has set as the *default* for each kind of file, plus their default web
-    browser — a direct statement of preference (e.g. source code opening in their real editor). Parsed
-    from LaunchServices. Empty if unreadable. Values are bundle ids."""
+    """The app the user has set as the *default* for each kind of file, plus their default web browser — a direct statement of preference (e.g. source code opening in their real editor)."""
     import json as json_module
 
     plist = Path.home() / "Library" / "Preferences" / "com.apple.LaunchServices" / "com.apple.launchservices.secure.plist"
@@ -1072,9 +956,7 @@ def _default_handlers() -> dict:
 
 
 def _recently_used_files(limit: int = 20) -> list[str]:
-    """Files the user has actually **opened** in the last week (``kMDItemLastUsedDate``), not
-    merely modified — a direct access-pattern signal from Spotlight, no Full Disk Access
-    needed. ``~``-relative paths; library/cache/trash noise is filtered out."""
+    """Files the user has actually **opened** in the last week (``kMDItemLastUsedDate``), not merely modified — a direct access-pattern signal from Spotlight, no Full Disk Access needed."""
     output = _run_command(
         ["mdfind", "-onlyin", str(Path.home()), "kMDItemLastUsedDate >= $time.this_week"],
         timeout=8,
@@ -1102,10 +984,7 @@ _SHELL_TOOL_MARKERS = (
 
 
 def _shell_setup() -> dict:
-    """The shape of the user's terminal from ``~/.zshrc``: the framework and plugins they load
-    (oh-my-zsh + its plugin list), the version managers / tools they source (nvm, pyenv, conda,
-    direnv, starship, …), and how many aliases they have — i.e. how customized, and toward
-    what, their shell is. No command text or secrets. Empty if there is no zshrc."""
+    """The shape of the user's terminal from ``~/.zshrc``: the framework and plugins they load (oh-my-zsh + its plugin list), the version managers / tools they source (nvm, pyenv, conda, direnv, starship, …), and how many aliases they have — i.e. how customized, and toward what, their shell is."""
     import re
 
     try:
@@ -1128,18 +1007,7 @@ def _shell_setup() -> dict:
 
 
 def probe_user_context() -> str:
-    """An opt-in JSON snapshot of *who the user is and how they work on this machine* — as
-    complete a picture as local metadata allows. It spans where they work (frequent directories,
-    home layout, recent files), what they work with (installed, running, and Dock-pinned apps;
-    configured developer tooling; hardware), who they are (Git identity, locale, languages, time
-    zone), when they work (a shell-activity timeline across hours and weekdays), and what they
-    are into (most-visited and recently-active sites).
-
-    This is deliberately far more personal than :func:`probe_local_environment` and is only ever
-    built when the user has enabled it in settings. Everything here is local metadata — filesystem
-    timestamps, application bundles, browser-history visit *counts and timestamps*, system
-    preferences — reduced to names, counts, and times so no file contents or browsing content
-    travel with it. Every sub-probe degrades to silence on failure; empty sections are omitted."""
+    """An opt-in JSON snapshot of *who the user is and how they work on this machine* — as complete a picture as local metadata allows."""
     home = Path.home()
     payload: dict = {}
 

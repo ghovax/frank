@@ -1,14 +1,4 @@
-"""Refresh the committed corpora from live websites. Run deliberately, never from a test.
-
-    uv run python -m tests.retrieval.harvest
-
-This reads each page through frank's own snapshot parser and tooltip reader, so a fixture is a
-recording of what the product actually sees rather than of what a separate scraper thinks a page
-contains. When the parser improves, re-harvesting is how the fixtures catch up.
-
-The pages are public, read-only, and opened in a headless browser of our own. Nothing here
-attaches to a browser the user is using, and nothing clicks, submits, or otherwise touches a page.
-"""
+"""Refresh the committed corpora from live websites. Run deliberately, never from a test."""
 
 from __future__ import annotations
 

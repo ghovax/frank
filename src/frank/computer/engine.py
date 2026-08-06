@@ -1,16 +1,4 @@
-"""The native macOS automation surface: any running app, driven through its accessibility tree.
-
-The model drives it through one tool, ``control_screen``, whose script both reads and acts:
-**``find_one``/``find_many``** read the app into a flat set of elements (via
-:meth:`NativeSurface.documents`), each keyed by its position in the accessibility tree, and
-retrieval ranks them against the model's plain-language query; the acting primitives then drive the
-chosen elements (via :meth:`NativeSurface.perform`) with trusted input — semantic AX actions where
-the element exposes them, synthesized mouse and keyboard where it does not.
-
-Reading and acting through the accessibility tree is the accurate way to drive native UI; this
-module keeps the tree walk, the AX actions, the synthesized input, and the permission gate, and
-leaves perceiving (retrieval) and composing (the control sandbox) to their own layers.
-"""
+"""The native macOS automation surface: any running app, driven through its accessibility tree."""
 from __future__ import annotations
 
 import time
@@ -55,10 +43,7 @@ class RegistryEntry:
 
 @dataclass
 class _WindowState:
-    """Everything the surface knows about one target window, keyed by that target's id.
-
-    Per target rather than per surface. The elements map is rebuilt by a ``documents`` read of
-    *this* window, so a read of another window cannot silently re-point ids a script is holding."""
+    """Everything the surface knows about one target window, keyed by that target's id."""
 
     pid: int
     window_id: int
@@ -66,22 +51,7 @@ class _WindowState:
 
 
 def _name_containers_from_their_contents(documents: list[Document]) -> None:
-    """Give a container the text of what it contains, when it has none of its own.
-
-    A Finder row carries no title, description or help: the file name lives in the static text
-    inside it. So a listing came back as a wall of `{'id': ..., 'role': 'AXRow'}` with nothing to
-    tell one row from another, and an agent asked to list a folder could see that there were
-    eleven things and not what any of them were.
-
-    What a row contains is a record, not a sentence: a file name, a date, a size, a kind. They
-    stay separate in ``contains``, and the first becomes the row's ``name``, because that is the
-    one a person would call it. Flattening them into one string would ask every caller to guess
-    where a file name ends and its modification date begins.
-
-    This walks ``parent``, which every document carries. It used to take ids apart and match on a
-    shared prefix — the same answer, but read out of how ids happen to be spelled rather than out
-    of the thing they describe.
-    """
+    """Give a container the text of what it contains, when it has none of its own."""
     children: dict[str, list[Document]] = {}
     for document in documents:
         if document.parent:
@@ -117,12 +87,7 @@ _SECTION_ROLES = frozenset({
 
 
 def _sections_in(snapshot: accessibility.Snapshot) -> dict[tuple[int, ...], str]:
-    """Every element in this tree that names a region, by its path.
-
-    Read from the accessibility names the application actually publishes, before
-    ``_name_containers_from_their_contents`` gives unnamed containers the words of what they hold:
-    a Finder row borrowing its first cell's filename is a useful *name* for that row and a
-    nonsense *context* for the cells inside it."""
+    """Every element in this tree that names a region, by its path."""
     named: dict[tuple[int, ...], str] = {}
     for element in snapshot.elements:
         if element.role not in _SECTION_ROLES:
@@ -134,11 +99,7 @@ def _sections_in(snapshot: accessibility.Snapshot) -> dict[tuple[int, ...], str]
 
 
 def _context_for(path: tuple[int, ...], sections: dict[tuple[int, ...], str]) -> str:
-    """The nearest named region enclosing this element, or ``""``.
-
-    Nearest rather than a whole trail: the browser reports one label for the same reason, and a
-    section's name repeated down every descendant is what makes those descendants
-    indistinguishable to a cosine."""
+    """The nearest named region enclosing this element, or ``""``."""
     for depth in range(len(path) - 1, 0, -1):
         label = sections.get(tuple(path[:depth]))
         if label:
@@ -154,12 +115,7 @@ def _element_name(element: accessibility.Element) -> str:
 
 
 def _displayed_window(pid: int) -> Optional[tuple[int, int]]:
-    """The size of a real window this process is showing, or ``None`` if it is showing none.
-
-    Asked of the window server rather than of accessibility, because the whole point is to tell
-    those two apart: an app can draw a window and publish nothing about it, and only the window
-    server can say so. Menu-bar strips and other chrome are excluded by size.
-    """
+    """The size of a real window this process is showing, or ``None`` if it is showing none."""
     import Quartz
 
     try:
@@ -180,8 +136,7 @@ def _displayed_window(pid: int) -> Optional[tuple[int, int]]:
 
 
 def _is_incomplete(snapshot: accessibility.Snapshot) -> bool:
-    """Whether a read produced nothing usable: an empty tree, or only window-chrome controls (a
-    Chromium/Electron app whose real tree has not built yet). Such a read is not acted on."""
+    """Whether a read produced nothing usable: an empty tree, or only window-chrome controls (a Chromium/Electron app whose real tree has not built yet)."""
     if not snapshot.elements:
         return True
     return all(accessible.subrole in _WINDOW_CHROME_SUBROLES for accessible in snapshot.elements)
@@ -211,8 +166,7 @@ def _to_element(accessible: accessibility.Element, token: RegistryEntry) -> Elem
 
 
 class NativeSurface(Surface):
-    """The macOS accessibility implementation of the shared ``Surface``. Snapshots an app into
-    ranked-elsewhere documents, and performs trusted actions on the elements a search returned."""
+    """The macOS accessibility implementation of the shared ``Surface``."""
 
     def __init__(self) -> None:
         super().__init__("frank-accessibility", message)
@@ -226,13 +180,7 @@ class NativeSurface(Surface):
     # Target and element resolution.
 
     def _state_for(self, target: str) -> _WindowState:
-        """The live state of one window, resolving the target if this is the first touch.
-
-        There is no "current" window and no fallback to the last one. A single ``_last_pid``
-        lived here, set by whichever read ran last anywhere in the process, and everything that
-        did not take a ref read it: ``press`` sent keys to it, ``focus`` raised it, ``read()``
-        refused with "nothing to read yet" when it happened to be unset. Two scripts running
-        concurrently shared it. A target is an argument now, all the way down."""
+        """The live state of one window, resolving the target if this is the first touch."""
         from frank.computer import targets as target_registry
 
         state = self._windows.get(target)
@@ -271,12 +219,7 @@ class NativeSurface(Surface):
         return None
 
     def _ready_snapshot(self, pid: int, window: str) -> accessibility.Snapshot:
-        """Read the app's tree, waiting out the asynchronous build a Chromium/Electron app does the
-        first time its accessibility is switched on. The pre-warm watcher means the front app's tree
-        is usually already up, so the common path is a single full read. When it is not — an app just
-        launched, or one targeted by name that was never frontmost — a shallow readiness probe polls
-        with a widening backoff until content appears past the window chrome, then the full read is
-        taken. On timeout the last (possibly incomplete) read is returned for the caller to report."""
+        """Read the app's tree, waiting out the asynchronous build a Chromium/Electron app does the first time its accessibility is switched on."""
         accessibility.start_prewarm()
         kwargs: dict[str, Any] = {"window": window}
         snapshot = accessibility.snapshot_app(pid, **kwargs)
@@ -292,10 +235,7 @@ class NativeSurface(Surface):
         return accessibility.snapshot_app(pid, **kwargs)
 
     def _tree_ready(self, pid: int, window: str) -> bool:
-        """A cheap read that answers one question: has the app's real tree built, or is only window
-        chrome up? Bounded by a short budget rather than a shallow depth — the poll wants to be
-        quick, and time is what "quick" means. Readiness is judged by exactly the rule a full read
-        uses (``_is_incomplete``)."""
+        """A cheap read that answers one question: has the app's real tree built, or is only window chrome up?"""
         probe = accessibility.snapshot_app(
             pid, window=window,
             budget_seconds=active_tuning().duration(Tunable.accessibility_ready_probe_seconds),
@@ -303,8 +243,7 @@ class NativeSurface(Surface):
         return not _is_incomplete(probe)
 
     def _environment(self, pid: int) -> dict:
-        """The situational awareness a person gets from a glance: this app's other windows, and
-        what else is open to switch to."""
+        """The situational awareness a person gets from a glance: this app's other windows, and what else is open to switch to."""
         env: dict[str, Any] = {}
         windows = accessibility.window_titles(pid)
         if len(windows) > 1:
@@ -327,8 +266,7 @@ class NativeSurface(Surface):
         return None
 
     def documents(self, target: str = "") -> dict:
-        """Read the app into retrieval documents: one per element, keyed by its tree path, its text
-        the element's own words. Rebuilds the id-to-element map that ``perform`` acts through."""
+        """Read the app into retrieval documents: one per element, keyed by its tree path, its text the element's own words."""
 
         def run() -> dict:
             state = self._state_for(target)
@@ -444,13 +382,7 @@ class NativeSurface(Surface):
 
     def _primitive_type(self, state: _WindowState, element: str, text: str, *, submit: bool = False,
                         mode: str = "replace", **_: Any) -> dict:
-        """Put text into a field, and — with ``submit`` — post the Return that commits it.
-
-        ``submit`` exists here because it exists on a page, and a script is written against
-        ``type``, not against whichever surface happens to be answering. It used to be accepted
-        and silently dropped into ``**_``: the call returned ``ok`` with a cheerful ``did``, the
-        form was never submitted, and nothing anywhere said so. The model that hit this diagnosed
-        a focus race that had never happened."""
+        """Put text into a field, and — with ``submit`` — post the Return that commits it."""
         def run() -> dict:
             entry = self._entry(state, element)
             handle = self._live_handle(entry)
@@ -579,13 +511,7 @@ class NativeSurface(Surface):
         return self.guard(run)
 
     def glance(self, target: str) -> Glance:
-        """Title, focus and selection, plus which elements are present — from one walk.
-
-        No url and no network here, because a window has neither. The keys a surface cannot fill
-        are absent rather than null, so the model learns one shape and reads whatever is present.
-        The element ids ride along from the same snapshot rather than costing a second read, and
-        deliberately do not go through ``documents``: that rebuilds the id-to-element map, so merely
-        looking at a window used to re-point every id a script was already holding."""
+        """Title, focus and selection, plus which elements are present — from one walk."""
         try:
             state = self._windows.get(target)
             pid = state.pid if state is not None else self._state_for(target).pid
@@ -601,15 +527,7 @@ class NativeSurface(Surface):
         )
 
     def _primitive_focus(self, state: _WindowState, element: Optional[str] = None, **_: Any) -> dict:
-        """Give keyboard focus to this window, or to one control inside it.
-
-        It sets ``AXFocused`` and nothing else. It used to call
-        ``activateWithOptions_(NSApplicationActivateIgnoringOtherApps)``, which raises the
-        application over whatever the user is doing — and directly contradicts the promise the
-        rest of the input layer makes and keeps: *we never warp the real cursor and never
-        force-activate the target*. It was also redundant, since typing already focuses the field
-        it is about to type into. Input reaches an unfocused, off-screen, other-Space window
-        perfectly well; every event goes to the process, not to the screen."""
+        """Give keyboard focus to this window, or to one control inside it."""
         def run() -> dict:
             if element:
                 entry = self._entry(state, element)
@@ -629,12 +547,7 @@ class NativeSurface(Surface):
         return self.guard(run)
 
     def _primitive_shortcuts(self, state: _WindowState, **_: Any) -> dict:
-        """Every keyboard shortcut this application publishes, from its own menu bar.
-
-        A shortcut recalled from memory is a guess about a version of an application you are not
-        looking at, and the cost of a wrong one is not nothing: `Control+3` selected RStudio's
-        Environment pane instead of Help, changing the user's workspace on the way to a task that
-        never needed it. The application already publishes the answer; nothing asked it."""
+        """Every keyboard shortcut this application publishes, from its own menu bar."""
         def run() -> dict:
             found = accessibility.shortcuts_of(state.pid)
             if not found:
@@ -645,15 +558,7 @@ class NativeSurface(Surface):
         return self.guard(run)
 
     def _primitive_read(self, state: _WindowState, element: Optional[str] = None, **_: Any) -> dict:
-        """Read one element's text.
-
-        `element` is optional here because it is optional on the browser surface, and a script is
-        written against `read()` — not against whichever surface happens to be answering. It
-        used to be required, so `read()` on this surface raised a bare
-        `TypeError: missing 1 required positional argument` out of the primitive dispatcher and
-        into the transcript: a Python signature shown to someone who never called a Python
-        function. A surface that cannot do something says so in words.
-        """
+        """Read one element's text."""
         def run() -> dict:
             if not element:
                 # The whole target's text, which is what `read()` means on the browser.

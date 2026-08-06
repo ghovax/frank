@@ -1,18 +1,4 @@
-"""Candidate ways of turning an element into the text an embedding ranks.
-
-A strategy here is a **composition of fields**, named after the fields it contains and nothing
-else. There is deliberately no "current" or "previous" strategy: which composition a surface
-happens to use is a fact about today, and a harness that encodes today's choice in its vocabulary
-stops being able to measure tomorrow's. Tests accordingly assert things about *fields* — that
-adding a section label costs accuracy, that a link's destination earns its place — which stay
-true and stay checkable however the product is put together.
-
-The live key is measured too, under :data:`LIVE_KEY_NAME`, by calling the product's own function.
-That is a reference rather than a baseline: it tracks whatever the surface currently builds, so a
-change to the product shows up here as a moved number instead of a stale copy.
-
-Adding a candidate means adding a tuple to :data:`COMPOSITIONS`; nothing else needs to change.
-"""
+"""Candidate ways of turning an element into the text an embedding ranks."""
 
 from __future__ import annotations
 
@@ -50,11 +36,7 @@ FIELD_SOURCES: dict[str, FieldSource] = {
 
 
 def compose(field_names: Iterable[str]) -> EncodingStrategy:
-    """Build a strategy that joins the named fields, in order, dropping repeated words.
-
-    Deduplication is part of the composition rather than a variant of it because a repeated word
-    is weight in the embedding without being information, and no measurement has ever favoured
-    keeping the repeats."""
+    """Build a strategy that joins the named fields, in order, dropping repeated words."""
     sources = [FIELD_SOURCES[field_name] for field_name in field_names]
 
     def strategy(element: RecordedElement) -> str:
@@ -99,21 +81,13 @@ LIVE_NATIVE_KEY_NAME = "live native key"
 
 
 def live_browser_key(element: RecordedElement) -> str:
-    """Whatever :func:`frank.computer.retrieval.web_element_text` currently produces.
-
-    The `value` argument matters and was missing here: without it this measured the browser key
-    as though it had no fallback, which is not what the surface builds."""
+    """Whatever :func:`frank.computer.retrieval.web_element_text` currently produces."""
     return web_element_text(name=element.name, url=element.url, title=element.title,
                             value=element.value)
 
 
 def live_native_key(element: RecordedElement) -> str:
-    """What :meth:`frank.computer.engine.NativeSurface.documents` currently builds.
-
-    Three tiers, most specific first: what an element is called, then what it says, then what the
-    system calls its kind. Present because a composition of `("name",)` is *not* the native key,
-    and measuring that as though it were reported six native elements in ten as carrying an empty
-    key — a property of the harness rather than of the product."""
+    """What :meth:`frank.computer.engine.NativeSurface.documents` currently builds."""
     return text_or_fallback(
         text_or_fallback(element_text(name=element.name), element.value),
         element.role_description,

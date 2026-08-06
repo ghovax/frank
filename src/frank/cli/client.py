@@ -1,10 +1,4 @@
-"""Talking to the daemon, and starting it if it is not there.
-
-The CLI finds the daemon the way anything else does: a socket, a port, and a token in the
-runtime directory. If none of that is there it starts the daemon and waits — the same
-autostart a container runtime does, so the first command a user types works without a
-separate "start the service" step.
-"""
+"""Talking to the daemon, and starting it if it is not there."""
 
 from __future__ import annotations
 
@@ -32,10 +26,7 @@ def _read_token() -> str:
 
 
 def daemon_is_up() -> bool:
-    """Whether something is actually listening, rather than whether a socket file exists.
-
-    A daemon that was killed leaves its socket behind, so existence proves nothing; only a
-    connection does."""
+    """Whether something is actually listening, rather than whether a socket file exists."""
     path = daemon_socket_path()
     if not path.exists() or not _read_token():
         return False
@@ -53,12 +44,7 @@ def _daemon_command() -> list[str]:
 
 
 def ensure_daemon() -> None:
-    """Start the daemon if it is not already up, and wait until it answers.
-
-    Readiness is read from the daemon itself: it writes one line to stdout the moment both of
-    its listeners are accepting connections, and closes the stream. Waiting on that line means
-    the first command after an autostart proceeds exactly when the daemon is usable, rather
-    than at whatever interval a poll happened to choose."""
+    """Start the daemon if it is not already up, and wait until it answers."""
     if daemon_is_up():
         return
     try:
@@ -84,10 +70,7 @@ def ensure_daemon() -> None:
 
 
 def _await_announcement(daemon: subprocess.Popen) -> Optional[dict]:
-    """The daemon's one-line readiness announcement, or ``None`` if it never arrives.
-
-    The read runs on a worker thread so the timeout is real: a blocking `readline` on a daemon
-    that wedged before announcing would otherwise hang the command with no way out."""
+    """The daemon's one-line readiness announcement, or ``None`` if it never arrives."""
     if daemon.stdout is None:
         return None
     with ThreadPoolExecutor(max_workers=1) as pool:

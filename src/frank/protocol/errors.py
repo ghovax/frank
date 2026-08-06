@@ -1,9 +1,4 @@
-"""Turn failures, classified into something a client can act on.
-
-A provider's raw error text is never shown to the user: it leaks request internals and is
-usually unactionable. Each failure is mapped to a stable code, a title, and a sentence that
-says what to actually do about it.
-"""
+"""Turn failures, classified into something a client can act on."""
 
 from __future__ import annotations
 
@@ -45,11 +40,7 @@ def _provider_status_code(error: object) -> int | None:
 
 
 def _safe_turn_error(error: object, had_images: bool = False) -> dict[str, object]:
-    """Classify a turn-level failure without exposing raw provider/tool text.
-
-    ``had_images`` marks a turn that carried an attached image, so a provider's
-    generic 400 is reframed into the real cause the user can act on: a text-only
-    model cannot read images."""
+    """Classify a turn-level failure without exposing raw provider/tool text."""
     status_code = _provider_status_code(error)
     provider_code = _provider_error_code(error)
     fields: dict[str, object] = {}

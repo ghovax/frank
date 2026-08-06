@@ -14,15 +14,7 @@ router = APIRouter()
 
 @router.get("/mcp/tools")
 async def mcp_tools(server: str = "", working_directory: str = ""):
-    """List configured MCP servers with their enabled flag. Enabled servers carry
-    their advertised tools; disabled ones are still returned (with no tools) so the
-    UI can show them greyed out rather than hiding them.
-
-    Scoped to the selected folder when ``working_directory`` is given: only the
-    servers that folder declares (its own ``mcp.json`` plus the home globals) and
-    the global Composio integration are listed — the launch directory's servers do
-    not leak in. The folder's servers are ensured running first so their tools
-    actually appear (the subprocess pool is shared and grows as a union)."""
+    """List configured MCP servers with their enabled flag."""
     assert state.global_configuration is not None
     # Servers declared by the working directory's own mcp.json are project-specific; everything else (home globals and the Composio integration) is global.
     project_server_names: set[str] = set()

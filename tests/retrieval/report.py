@@ -1,19 +1,4 @@
-"""Measure every composition and save the result as data you can query.
-
-    uv run python -m tests.retrieval.report
-
-The tests assert that particular findings still hold. This produces the whole picture, and writes
-it to ``tests/retrieval/results/`` as one row per query per strategy, so a question nobody
-anticipated can be answered by loading the frame instead of by re-running everything:
-
-    import pandas
-    outcomes = pandas.read_parquet("tests/retrieval/results/query_outcomes.parquet")
-    outcomes[outcomes.family_name == "slug"].groupby("strategy_name").found_first.mean()
-    outcomes[~outcomes.found_first & (outcomes.site_name == "arxiv")].query_text.head(20)
-
-The summaries printed below are pivots of that same frame, so nothing shown here is computed by a
-path the saved data cannot reproduce.
-"""
+"""Measure every composition and save the result as data you can query."""
 
 from __future__ import annotations
 
@@ -42,15 +27,7 @@ RESULTS_DIRECTORY = Path(__file__).parent / "results"
 
 def measure_everything(recall_depths: tuple[int, ...] = DEFAULT_RECALL_DEPTHS,
                        surface_name: str = "web") -> pandas.DataFrame:
-    """One row per query per strategy, with the derived per-query columns already attached.
-
-    A column is added per depth in ``recall_depths`` rather than one at a fixed depth, so the
-    saved frame answers "did the strategy miss this element or merely mis-order it" without
-    anyone re-running the sweep.
-
-    One surface at a time. A browser page supplies link destinations and tooltips that no native
-    window has, so pooling them would credit a composition on one surface for a field the other
-    cannot provide."""
+    """One row per query per strategy, with the derived per-query columns already attached."""
     corpora = load_all_corpora(surface_name=surface_name)
     if not corpora:
         raise SystemExit(f"no {surface_name} corpora recorded; run "
@@ -80,10 +57,7 @@ def corpus_summary(outcomes: pandas.DataFrame) -> pandas.DataFrame:
 
 def accuracy_by_family(outcomes: pandas.DataFrame,
                        candidate_depth: int = DEFAULT_CANDIDATE_DEPTH) -> pandas.DataFrame:
-    """Top-1 accuracy per strategy per family, with recall and mean reciprocal rank beside it.
-
-    A cell whose family scores its strategy circularly is suffixed, because the number there is a
-    property of the construction rather than evidence of retrieval."""
+    """Top-1 accuracy per strategy per family, with recall and mean reciprocal rank beside it."""
     accuracy = outcomes.pivot_table(index="strategy_name", columns="family_name",
                                     values="found_first", aggfunc="mean")
     circular = outcomes.pivot_table(index="strategy_name", columns="family_name",
@@ -100,11 +74,7 @@ def accuracy_by_family(outcomes: pandas.DataFrame,
 
 
 def comparisons_against(outcomes: pandas.DataFrame, reference_name: str) -> pandas.DataFrame:
-    """Every strategy's paired difference from one reference, with bootstrap intervals.
-
-    The reference is an argument rather than a constant: which composition is interesting to
-    compare against depends on the question being asked, and fixing one here would make the
-    harness quietly about that choice."""
+    """Every strategy's paired difference from one reference, with bootstrap intervals."""
     ordered = outcomes.sort_values(["site_name", "family_name", "query_text"])
     hits_by_strategy = {
         strategy_name: group.found_first.to_numpy(dtype=float)

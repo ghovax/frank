@@ -1,15 +1,4 @@
-"""Every environment variable Frank defines or reads, named once, so there is a single source of
-truth and a typo is an ``ImportError`` rather than a silent miss. Import the constant, never the
-raw string::
-
-    from frank.base import environment_variables
-
-    key = os.environ.get(environment_variables.EXA_API_KEY)
-
-Most are read from the process environment the host or user provides. The few Frank *sets* say so
-where they are defined, and each names the child that reads it — a variable a process sets for
-itself is a message to something, and the something is worth naming. Grouped by origin.
-"""
+"""Every environment variable Frank defines or reads, named once, so there is a single source of truth and a typo is an ``ImportError`` rather than a silent miss."""
 from __future__ import annotations
 
 # Frank-defined.

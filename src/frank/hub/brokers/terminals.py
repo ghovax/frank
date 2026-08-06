@@ -1,5 +1,4 @@
-"""Terminal domain: the PTY-backed TerminalSession and its manager, plus terminal-state
-persistence."""
+"""Terminal domain: the PTY-backed TerminalSession and its manager, plus terminal-state persistence."""
 
 from __future__ import annotations
 
@@ -153,8 +152,7 @@ def _save_terminal_state(terminal_context: str, terminal_key: str, directory: Pa
 
 
 def _list_terminal_states(terminal_context: str) -> list[dict[str, str]]:
-    """Persisted terminals for a context, ordered by creation so the client can rebuild
-    a stable set of tabs. Runs off the event loop (synchronous history.db read)."""
+    """Persisted terminals for a context, ordered by creation so the client can rebuild a stable set of tabs."""
     if state.session_factory is None:
         return []
     database_session = state.session_factory()
@@ -429,10 +427,7 @@ class TerminalSessionManager:
 
 
 async def _terminal_context_for_request(session_id: str, working_directory: str) -> str:
-    """Resolve the identifier a context's terminals are stored under. For a persisted
-    session the identifier is the context id itself, so we can answer even when the
-    working directory no longer exists; otherwise it is derived from the resolved
-    directory (which must exist)."""
+    """Resolve the identifier a context's terminals are stored under."""
     try:
         directory = await asyncio.to_thread(_terminal_directory, session_id, working_directory)
     except ValueError:

@@ -1,13 +1,4 @@
-"""A session's own endpoint: the socket everything talks to once it holds the address.
-
-The surface is small on purpose — send a message, answer a gate, cancel a turn, read the
-card. Anything that is not driving *this* session is the daemon's business, not a session's.
-
-Every request must carry the session's capability token. The socket file is already
-restricted to the user, so this guards the boundary that matters here: one session reaching
-another it was never handed. A peer that was given an address and a token can drive it; a
-process that merely guessed an id cannot.
-"""
+"""A session's own endpoint: the socket everything talks to once it holds the address."""
 
 from __future__ import annotations
 
@@ -26,8 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def build_app(session) -> FastAPI:
-    """The ASGI app a worker serves on its unix socket. ``session`` is the live
-    :class:`SessionExecutor` this process is."""
+    """The ASGI app a worker serves on its unix socket."""
 
     app = FastAPI(title=f"frank-session-{session.session_id}")
 
@@ -39,12 +29,7 @@ def build_app(session) -> FastAPI:
 
     @app.get("/.well-known/agent-card.json")
     async def agent_card() -> JSONResponse:
-        """Discovery stays open: a card says what this session is, and a peer has to be able
-        to read it before it has been handed anything. It carries no conversation content.
-
-        This is the only well-known card Frank serves. The daemon does not have one, because
-        the daemon is not an agent — answering there would mean electing some profile to
-        speak for it, which is a default agent by another name."""
+        """Discovery stays open: a card says what this session is, and a peer has to be able to read it before it has been handed anything."""
         return JSONResponse(session.card_payload())
 
     @app.post("/rpc")
@@ -77,8 +62,7 @@ def build_app(session) -> FastAPI:
 
 
 def _message_parts(params: dict) -> list[Part]:
-    """Build the message's parts from either prose or an explicit part list, so a caller can
-    send plain text without constructing the A2A shape by hand."""
+    """Build the message's parts from either prose or an explicit part list, so a caller can send plain text without constructing the A2A shape by hand."""
     explicit = params.get("parts")
     if isinstance(explicit, list) and explicit:
         parts: list[Part] = []
@@ -97,11 +81,7 @@ def _message_parts(params: dict) -> list[Part]:
 
 
 async def _send(session, params: dict) -> dict:
-    """Drive a turn with this message.
-
-    A message that arrives while the session is mid-turn is injected at the turn's next safe
-    point rather than starting a second one — that is what makes a peer's question reach a
-    working session instead of waiting for it to go idle."""
+    """Drive a turn with this message."""
     # A session parked on a human decision takes no new turn.
     parked = await session.pending_decision()
     if parked and not session.is_running:
@@ -156,8 +136,7 @@ async def _abort_input(session, _params: dict) -> dict:
 
 
 async def _clear_goal(session, _params: dict) -> dict:
-    """The person called the goal off. Dropping it is what stops the session opening further
-    turns for itself — see :meth:`SessionExecutor.clear_goal`."""
+    """The person called the goal off."""
     return {"cleared": session.clear_goal(session.session_id)}
 
 
@@ -174,24 +153,18 @@ async def _detach_job(session, params: dict) -> dict:
 
 
 async def _set_locations(session, params: dict) -> dict:
-    """The workspace's environments were edited under a live session. The daemon re-resolved
-    them and sends the whole set, because an edit can rename or repoint one as easily as add
-    one."""
+    """The workspace's environments were edited under a live session."""
     entries = params.get("locations")
     return {"locations": session.set_locations(entries if isinstance(entries, list) else None)}
 
 
 async def _set_permission_mode(session, params: dict) -> dict:
-    """The person changed this session's approval policy while it runs. The daemon has already
-    clamped it and written it to the record; this is what makes it true for the turn currently
-    in flight rather than only for the next one."""
+    """The person changed this session's approval policy while it runs."""
     return {"permission_mode": await session.set_permission_mode(str(params.get("permission_mode") or ""))}
 
 
 async def _reset(session, _params: dict) -> dict:
-    """Settings changed under a live session. Drop the cached runtime so the next turn rebuilds
-    it against the new configuration, rather than the session keeping the model and tool set it
-    happened to start with."""
+    """Settings changed under a live session."""
     session.reset_runtimes()
     return {"ok": True}
 

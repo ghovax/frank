@@ -1,23 +1,4 @@
-"""The one typed value for a turn's durable control-state.
-
-A turn's control-state — is it a user turn or a harness-initiated one, is it paused on a human
-gate, which parent tasks it references — used to live as
-bare string keys poked into the A2A ``Task.metadata`` dict and read back with ``metadata.get(...)``
-three calls deep. :class:`TurnRecord` is where that state lives as one validated object: every
-backend site reads ``record.pending.gates[0].request_id`` rather than
-``metadata["pendingInteraction"]["gates"][0]["request_id"]``, and a missing or misshapen field is a
-validation error at the boundary rather than a ``KeyError`` at the point of use.
-
-Serialization puts the whole record under one URI-namespaced key in ``Task.metadata``, which is
-the convention A2A defines for an extension and the one a message's turn metadata already
-followed. The keys inside it are plain — ``kind``, ``peerSender`` — because the namespace has
-already said whose they are. Spelling the harness's name into each field as well
-(``frankTurnKind`` beside an unprefixed ``pendingInteraction``) named the owner twice in one
-place and not at all in the next, which is the shape of a convention nobody is applying.
-
-The large, write-hot conversation checkpoint stays out of this record — it lives in its own table,
-keyed by context — so a ``TurnRecord`` is small and cheap to rewrite on every turn.
-"""
+"""The one typed value for a turn's durable control-state."""
 
 from __future__ import annotations
 
@@ -40,8 +21,7 @@ PEER_SENDER_FIELD = "peerSender"
 
 
 class TurnKind(StrEnum):
-    """What opened a turn: a person, another session, a background result waking this one, or
-    compaction."""
+    """What opened a turn: a person, another session, a background result waking this one, or compaction."""
 
     USER = "user"
     # A message from another session — a peer reporting its result, or a parent following up.
@@ -51,36 +31,21 @@ class TurnKind(StrEnum):
 
 
 class ReconcileAction(StrEnum):
-    """What restart reconciliation does with a non-terminal task it finds — the two outcomes a
-    total decision over ``(turn kind, task state)`` produces."""
+    """What restart reconciliation does with a non-terminal task it finds — the two outcomes a total decision over ``(turn kind, task state)`` produces."""
 
     PRESERVE = "preserve"  # a durable pause; leave it for a later answer to resume
     FAIL = "fail"          # interrupted; mark it failed so nothing stale replays as active
 
 
 def reconcile_action(kind: Optional[TurnKind], state: str, *, input_required: str) -> ReconcileAction:
-    """What to do with a non-terminal task found after a restart, as one total function.
-
-    * an ``input-required`` pause is durable — its checkpoint and pending interactions survive,
-      so a later answer resumes it, which is :attr:`ReconcileAction.PRESERVE`;
-    * every other non-terminal task was caught mid-execution, and resume is at-most-once, so its
-      in-flight tools did not complete, which is :attr:`ReconcileAction.FAIL`.
-
-    The turn kind no longer changes the answer: it did when a delegated turn was an in-process
-    continuation of its parent's, which a restart could not restore. A delegated turn is a
-    separate session now, reaped with the daemon and reconciled on its own terms."""
+    """What to do with a non-terminal task found after a restart, as one total function."""
     if state == input_required:
         return ReconcileAction.PRESERVE
     return ReconcileAction.FAIL
 
 
 class ToolGate(BaseModel):
-    """One human decision a turn is blocked on: a permission request for a tool call, or a
-    question posed to the user. ``kind`` discriminates (``"permission"`` | ``"question"``); the
-    permission fields (``command``/``explanation``/``reason``) and the question field
-    (``questions``) are populated per kind. Every field is declared and typed — the durable
-    twin of the in-process :class:`~frank.runtime.turn_events.SuspensionGate`, so a suspend
-    round-trips through it with no ``extra="allow"`` catch-all."""
+    """One human decision a turn is blocked on: a permission request for a tool call, or a question posed to the user."""
 
     request_id: str = ""
     kind: Literal["permission", "question"] = "permission"
@@ -106,9 +71,7 @@ class ToolGate(BaseModel):
 
 
 class PendingInteraction(BaseModel):
-    """The durable record of a paused turn: the gates awaiting a human, the full preflight plans a
-    resume rebuilds the tool batch from, the answers gathered so far, and which agent handler owns
-    the resume. This is the source of truth an input-required task survives a restart on."""
+    """The durable record of a paused turn: the gates awaiting a human, the full preflight plans a resume rebuilds the tool batch from, the answers gathered so far, and which agent handler owns the resume."""
 
     gates: list[ToolGate] = Field(default_factory=list)
     plans: dict[str, Any] = Field(default_factory=dict)
@@ -124,9 +87,7 @@ class PendingInteraction(BaseModel):
 
 
 class TurnRecord(BaseModel):
-    """A turn's durable control-state, as one typed value. Constructed from (and serialized back
-    into) an A2A ``Task.metadata`` dict via :meth:`from_metadata` / :meth:`apply_to`, preserving
-    any non-turn keys the dict happens to carry."""
+    """A turn's durable control-state, as one typed value."""
 
     kind: Optional[TurnKind] = None
     # Set only on a PEER turn: the session that sent the message.
@@ -136,8 +97,7 @@ class TurnRecord(BaseModel):
 
     @classmethod
     def from_metadata(cls, metadata: dict[str, Any] | None) -> TurnRecord:
-        """Read the turn-state out of a task's metadata. Absent or malformed pieces yield an empty
-        record rather than raising, so a task carrying no state at all still loads."""
+        """Read the turn-state out of a task's metadata."""
         data = (metadata or {}).get(TURN_STATE_KEY)
         if not isinstance(data, dict):
             return cls()
@@ -157,10 +117,7 @@ class TurnRecord(BaseModel):
         return cls(kind=kind, peer_sender=peer_sender, pending=pending, reference_task_ids=reference_task_ids)
 
     def apply_to(self, metadata: dict[str, Any] | None) -> dict[str, Any]:
-        """A new metadata dict: a copy of ``metadata`` whose turn-state key holds this record.
-
-        Everything outside that one key passes through untouched, so this owns exactly its own
-        slice — and an empty record removes the key rather than leaving an empty object behind."""
+        """A new metadata dict: a copy of ``metadata`` whose turn-state key holds this record."""
         result = {key: value for key, value in (metadata or {}).items() if key != TURN_STATE_KEY}
         state: dict[str, Any] = {}
         if self.kind is not None:

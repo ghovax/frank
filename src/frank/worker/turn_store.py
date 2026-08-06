@@ -1,14 +1,4 @@
-"""The worker's view of the store: a client that forwards writes to the daemon.
-
-The daemon is the sole writer. That is not an arbitrary split — the append-only store was
-built around one process holding one lock across an await, and it keeps that property only
-while exactly one process writes. So a worker never opens the database; it speaks the same
-store interface and sends every write down a socket to the daemon, which performs it.
-
-Reads go the same way, with one consequence worth stating: a worker must never read back
-something it has just written and assume it is there. It already holds the newer copy in
-memory, so nothing here needs to.
-"""
+"""The worker's view of the store: a client that forwards writes to the daemon."""
 
 from __future__ import annotations
 
@@ -95,24 +85,16 @@ class DaemonTurnStore(TaskStore):
         return [Task.model_validate(entry) for entry in raw]
 
     async def claim_work_habits(self, session_id: str) -> bool:
-        """Claim the once-per-session work-habits acknowledgement, through the daemon.
-
-        Durable because a worker is per activation: a session that slept between turns must not
-        re-acknowledge every time it wakes."""
+        """Claim the once-per-session work-habits acknowledgement, through the daemon."""
         result = await self._call("session.claim_work_habits", session_id=session_id)
         return bool((result or {}).get("claimed"))
 
     async def publish_event(self, event: dict) -> None:
-        """Hand a live turn event to the daemon so whoever is attached sees it now, rather
-        than after the turn's next persistence point."""
+        """Hand a live turn event to the daemon so whoever is attached sees it now, rather than after the turn's next persistence point."""
         await self._call("session.event", event=event)
 
     async def publish_usage(self, usage: dict) -> None:
-        """Hand the daemon the account's rate-limit snapshot, read from a reply's headers.
-
-        It is captured in this process and read by the daemon, which serves the settings
-        surface — two processes, so a module global in one is invisible to the other. It
-        travels the same road as every other thing a worker knows and the daemon owns."""
+        """Hand the daemon the account's rate-limit snapshot, read from a reply's headers."""
         await self._call("session.usage", usage=usage)
 
     async def publish_title(self, title: str) -> None:

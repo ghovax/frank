@@ -1,25 +1,4 @@
-"""`frank serve`: serve the interface over HTTP, so a browser is a client like any other.
-
-The desktop app is a window around a static site that talks to the daemon. Nothing about that
-site needs a window — but until now the only way to see it was to install a Tauri application,
-which is a strange requirement for a harness whose whole point is that a session is addressable.
-On a headless box, or over an SSH tunnel, or simply on a machine where you would rather not
-install an app, there was no interface at all.
-
-So this serves the same static export the app embeds, and does one thing more, which is the
-part that actually matters: it **proxies** the daemon rather than pointing the browser at it.
-
-Pointing would have been less code. It would also mean handing the daemon's capability token to
-a page — a page in a browser full of extensions, whose storage survives the tab — and it would
-mean the page had to learn the daemon's port, which is ephemeral and chosen per boot. Proxying
-removes both problems at once: the browser talks to this server's own origin, the token is
-attached here and never leaves the process, and the ephemeral port is nobody's business but
-this file's. It also sidesteps CORS entirely, because there is only one origin involved.
-
-What is proxied is everything that is not a file: ordinary requests, server-sent event streams
-(the session transcript), and the terminal's websocket. All three are the interface working
-rather than optional extras, so all three are here.
-"""
+"""`frank serve`: serve the interface over HTTP, so a browser is a client like any other."""
 
 from __future__ import annotations
 
@@ -52,12 +31,7 @@ _REPLAYABLE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "DELETE"})
 
 
 def interface_directory() -> Optional[Path]:
-    """Where the built interface is, or ``None`` if it has not been built.
-
-    Two places, because there are two ways to be running. A frozen build carries the export
-    inside itself, next to the other bundled data. A checkout has it wherever `bun run build`
-    put it, which is `web/out` relative to the repository root — found by walking up from this
-    file rather than by assuming a working directory, so `frank serve` works from anywhere."""
+    """Where the built interface is, or ``None`` if it has not been built."""
     if getattr(sys, "frozen", False):
         bundled = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent)) / "web"
         return bundled if (bundled / "index.html").is_file() else None
@@ -85,23 +59,7 @@ def build_application(
     daemon_url: str, token: str, directory: Optional[Path], interface_url: str = "",
     rediscover: Optional[Callable[[], tuple[str, str]]] = None,
 ):
-    """The ASGI application: the interface at the root, the daemon behind everything else.
-
-    `directory` may be ``None``, which means serve no interface and proxy everything.
-
-    `rediscover` is how this survives the daemon restarting under it. The daemon takes a fresh
-    ephemeral port and mints a fresh token on every boot, and a proxy that resolved both once at
-    startup goes on forwarding to a port nobody is listening on — answering 502 to everything,
-    with the daemon up and healthy beside it. Given a callable that re-reads the runtime files,
-    this asks it again the moment a connection is refused, so the next request finds the daemon
-    where it moved to. Left as ``None`` the behaviour is what it was: resolved once, and wrong
-    from the moment the daemon restarts.
-
-    `interface_url` replaces the directory with a **running dev server**, which is what makes
-    iterating on the interface from a phone bearable: a static export has to be rebuilt for every
-    change, and `next build` is forty seconds whether the change was a component or a colour. With
-    a dev server the phone gets hot reload over the same door it was already using, and the same
-    cookie, because it is still one origin."""
+    """The ASGI application: the interface at the root, the daemon behind everything else."""
     import httpx
     from starlette.applications import Starlette
     from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
@@ -139,11 +97,7 @@ def build_application(
         return JSONResponse({"apiBase": "", "proxied": True})
 
     def static_file(path: str) -> Optional[Path]:
-        """The exported file a request path names, or ``None`` if it names none.
-
-        Resolved and then checked to be inside the export, so `..` in a URL cannot reach out of
-        it. A directory means its `index.html`, which is how a static export serves routes; a
-        bare route with no file is not an error here, it is the daemon's."""
+        """The exported file a request path names, or ``None`` if it names none."""
         if root is None:
             return None
         candidate = (root / path.lstrip("/")).resolve()
@@ -154,13 +108,7 @@ def build_application(
         return candidate if candidate.is_file() else None
 
     async def serve_or_proxy(request) -> Response:
-        """A real file wins; everything else is the daemon's.
-
-        These cannot be two routes. Mounting a static handler at the root makes it answer every
-        path — including the daemon's, which it does not have and would 404 — while putting a
-        catch-all proxy first does the same in reverse, which is what it did on the first
-        attempt: the interface itself came back as a proxied 404. One handler that looks before
-        it forwards is the only ordering that serves both."""
+        """A real file wins; everything else is the daemon's."""
         if interface is not None and _wants_interface(request.url.path):
             return await proxy(request, interface, authorise=False)
         if request.method in {"GET", "HEAD"}:
@@ -234,21 +182,14 @@ def build_application(
         return BackgroundTask(response.aclose)
 
     async def proxy_interface_websocket(websocket) -> None:
-        """The dev server's hot-reload socket.
-
-        Same relay as the terminal's, minus the token: this is the bundler telling the page a
-        file changed, and the bundler is not the daemon."""
+        """The dev server's hot-reload socket."""
         if interface is None:
             await websocket.close(code=1008)
             return
         await _relay(websocket, interface_url, append_token=False)
 
     async def proxy_websocket(websocket) -> None:
-        """Relay a websocket both ways.
-
-        The terminal is a websocket, and a handshake cannot carry an Authorization header —
-        which is why the daemon also accepts the token as a query parameter. That is the form
-        used here, and it never leaves this process either."""
+        """Relay a websocket both ways."""
 
         # Read at connect time, not captured at build time: a terminal opened after the daemon moved should reach the daemon, not the port it used to be on.
         await _relay(websocket, upstream_daemon["url"], append_token=True)
@@ -405,12 +346,7 @@ def run(arguments) -> int:
 
 
 def _open_when_listening(address: str) -> None:
-    """Open the browser once the server is actually accepting connections.
-
-    Not before: `uvicorn.run` blocks, so opening first races the bind and lands the browser on
-    a connection error often enough to matter. A thread that waits for the socket and then
-    opens is the smallest thing that is not a race — and it is a daemon thread, so a server
-    that never binds does not leave the process unable to exit."""
+    """Open the browser once the server is actually accepting connections."""
     import socket
     import threading
     import time

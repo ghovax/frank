@@ -1,22 +1,4 @@
-"""The location execution primitive: run shell commands and move files against a
-location, whether it is the home server's own filesystem or a remote reached over SSH.
-
-The remote executor shells out to the system ``ssh`` with a per-host **ControlMaster**
-socket, so the first connection is reused (multiplexed) by every later command and file
-transfer — matching the "multiplexed OpenSSH, nothing installed on the remote" model.
-Commands run through a login shell (``bash -lc``) in the location's base directory, so
-the remote's own environment (PATH, tool shims) is in effect — the same reasoning as the
-local terminal login-env work.
-
-Beyond raw command execution, the executor is the *filesystem abstraction* the file
-tools (``read_file``, ``edit_file``, ``write_file``, ``bash``)
-are written against: path resolution, text IO, glob matching (mtime-sorted), and regex
-search all go through it, so local and remote tool calls share one result-building code
-path in ``file_tools`` and differ only in which executor carries the primitives.
-
-These are synchronous primitives; the async runtime calls them off-loop (``to_thread``),
-consistent with the rest of the server's blocking-work discipline.
-"""
+"""The location execution primitive: run shell commands and move files against a location, whether it is the home server's own filesystem or a remote reached over SSH."""
 
 from __future__ import annotations
 
@@ -55,8 +37,7 @@ class CommandResult:
 
 
 def _login_script(command: str, cwd: str, env: dict[str, str] | None) -> str:
-    """A single shell script: cd into the base dir, export any extra env, run the
-    command. Shell-quoted so it is safe to hand to ``bash -lc`` on either side."""
+    """A single shell script: cd into the base dir, export any extra env, run the command."""
     prefix = ""
     if env:
         prefix = "".join(f"export {name}={shlex.quote(str(value))}; " for name, value in env.items())
@@ -64,9 +45,7 @@ def _login_script(command: str, cwd: str, env: dict[str, str] | None) -> str:
 
 
 def glob_to_regex(pattern: str) -> str:
-    """Translate a ``Path.glob``-style pattern (``**``, ``*``, ``?``) to a regex over
-    ``/``-separated relative paths, so remote glob matching mirrors the local
-    ``Path.glob`` semantics: ``**`` crosses directory boundaries, ``*``/``?`` do not."""
+    """Translate a ``Path.glob``-style pattern (``**``, ``*``, ``?``) to a regex over ``/``-separated relative paths, so remote glob matching mirrors the local ``Path.glob`` semantics: ``**`` crosses directory boundaries, ``*``/``?`` do not."""
     parts: list[str] = []
     index = 0
     while index < len(pattern):
@@ -90,8 +69,7 @@ def glob_to_regex(pattern: str) -> str:
 
 
 def _include_glob_to_regex(pattern: str) -> str:
-    """Translate a simple *filename* glob (``*`` and ``?`` only) to a regex — the
-    ``include`` filter matches file names, never paths."""
+    """Translate a simple *filename* glob (``*`` and ``?`` only) to a regex — the ``include`` filter matches file names, never paths."""
     translated = []
     for char in pattern:
         if char == "*":
@@ -104,10 +82,7 @@ def _include_glob_to_regex(pattern: str) -> str:
 
 
 def _prune_gitignored(base: Path, paths: list[Path]) -> list[Path]:
-    """Drop the paths excluded by ``base``'s ``.gitignore`` chain, asking ``git`` itself
-    so the answer matches what the user sees. Only the non-ripgrep fallback needs this —
-    ripgrep applies the ignore rules while it walks. A no-op outside a git repo or when
-    ``git`` is unavailable, so a plain directory still globs normally."""
+    """Drop the paths excluded by ``base``'s ``.gitignore`` chain, asking ``git`` itself so the answer matches what the user sees."""
     if not paths:
         return paths
     try:
@@ -142,9 +117,7 @@ class LocationExecutor(abc.ABC):
 
     @abc.abstractmethod
     def run_bytes(self, command: str, cwd: str, *, timeout: float = DEFAULT_TIMEOUT) -> bytes:
-        """Run a command and return its raw (undecoded) stdout bytes, raising ``OSError``
-        on a non-zero exit. Needed for binary output like ``git cat-file blob`` that the
-        text-decoding ``run`` would corrupt."""
+        """Run a command and return its raw (undecoded) stdout bytes, raising ``OSError`` on a non-zero exit."""
 
     @abc.abstractmethod
     def write_bytes(self, path: str, data: bytes) -> None: ...
@@ -160,20 +133,15 @@ class LocationExecutor(abc.ABC):
 
     @abc.abstractmethod
     def resolve(self, base_directory: str, file_path: str) -> str:
-        """Resolve a tool's possibly-relative ``file_path`` against the location's
-        base directory, expanding ``~``, and return the absolute path string."""
+        """Resolve a tool's possibly-relative ``file_path`` against the location's base directory, expanding ``~``, and return the absolute path string."""
 
     @abc.abstractmethod
     def glob_files(self, base_directory: str, pattern: str, limit: int, include_ignored: bool = False) -> list[str]:
-        """Absolute paths of files under ``base_directory`` matching the glob
-        ``pattern``, newest (by mtime) first, capped at ``limit``. Honors the
-        location's ``.gitignore`` unless ``include_ignored`` is set."""
+        """Absolute paths of files under ``base_directory`` matching the glob ``pattern``, newest (by mtime) first, capped at ``limit``."""
 
     @abc.abstractmethod
     def grep(self, pattern: str, target: str, include: str | None, maximum_results: int, include_ignored: bool = False) -> list[str]:
-        """``path:line:content`` matches of regex ``pattern`` under the absolute
-        ``target`` path, optionally filtered by an ``include`` filename glob. Honors
-        the location's ``.gitignore`` unless ``include_ignored`` is set."""
+        """``path:line:content`` matches of regex ``pattern`` under the absolute ``target`` path, optionally filtered by an ``include`` filename glob."""
 
     def read_text(self, path: str) -> str:
         return self.read_bytes(path).decode("utf-8", errors="replace")
@@ -329,8 +297,7 @@ class LocalExecutor(LocationExecutor):
 
 
 class SshExecutor(LocationExecutor):
-    """Executes on a remote host over a multiplexed SSH connection. ``alias`` is the
-    ``~/.ssh/config`` Host alias (so the connection inherits that host's full config)."""
+    """Executes on a remote host over a multiplexed SSH connection."""
 
     is_local = False
 
@@ -362,9 +329,7 @@ class SshExecutor(LocationExecutor):
         )
 
     def ssh_argv(self, command: str, cwd: str, env: dict[str, str] | None = None) -> list[str]:
-        """The exact ssh argv a ``run`` would execute — the runtime wraps a remote
-        ``bash`` tool call in this so the normal local bash machinery (sync ceiling,
-        backgrounding, output capping) drives the remote command."""
+        """The exact ssh argv a ``run`` would execute — the runtime wraps a remote ``bash`` tool call in this so the normal local bash machinery (sync ceiling, backgrounding, output capping) drives the remote command."""
         remote = f"bash -lc {shlex.quote(_login_script(command, cwd, env))}"
         return ["ssh", *self._mux_options(), self.alias, remote]
 
@@ -430,8 +395,7 @@ class SshExecutor(LocationExecutor):
         return posixpath.normpath(path)
 
     def _has_ripgrep(self) -> bool:
-        """Whether ripgrep is on the remote (memoized). Both glob and grep prefer it so a
-        remote location honors its .gitignore chain exactly as the local one does."""
+        """Whether ripgrep is on the remote (memoized)."""
         if self._ripgrep_available is None:
             probe = self._ssh("command -v rg", timeout=DEFAULT_CONNECT_TIMEOUT)
             self._ripgrep_available = probe.returncode == 0
@@ -510,10 +474,7 @@ class SshExecutor(LocationExecutor):
         return stdout.splitlines()[:maximum_results]
 
     def connect(self, *, timeout: float = DEFAULT_CONNECT_TIMEOUT) -> CommandResult:
-        """Establish (or reuse) the ControlMaster and confirm the host is reachable and
-        authenticated — the pre-flight run when a project is opened. Interactive auth is
-        allowed to surface here (no BatchMode); a failure returns a non-zero result whose
-        stderr explains why (unreachable, auth required, …)."""
+        """Establish (or reuse) the ControlMaster and confirm the host is reachable and authenticated — the pre-flight run when a project is opened."""
         completed = self._ssh("true", timeout=timeout, extra_options=["-o", f"ConnectTimeout={int(timeout)}"])
         return CommandResult(
             completed.returncode,
@@ -541,8 +502,6 @@ class SshExecutor(LocationExecutor):
         )
 
     def terminal_argv(self, base_directory: str) -> list[str]:
-        """The ssh argv for an interactive login shell on the remote, in ``base_directory``,
-        over the shared multiplexed connection (`-tt` forces a PTY). Reuses this host's
-        ControlMaster, so it shares the connection with tool execution."""
+        """The ssh argv for an interactive login shell on the remote, in ``base_directory``, over the shared multiplexed connection (`-tt` forces a PTY)."""
         remote_command = f"cd {shlex.quote(base_directory)} 2>/dev/null; exec ${{SHELL:-/bin/bash}} -l"
         return ["ssh", "-tt", *self._mux_options(), self.alias, remote_command]

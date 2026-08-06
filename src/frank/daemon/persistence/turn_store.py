@@ -1,30 +1,4 @@
-"""An append-only A2A :class:`TaskStore`.
-
-Why this exists.
-A2A streams a turn as many small events (text-chunk flushes, thinking labels,
-tool calls/results, and — for the chat agent — every relayed agent event).
-The SDK's :class:`~a2a.server.tasks.TaskManager` appends each event's message to
-``task.history`` *in memory* and then calls ``turn_store.save(task)`` for every
-event. The bundled :class:`~a2a.server.tasks.DatabaseTaskStore` persists a task
-by ``session.merge`` of the whole row — i.e. it re-serializes and rewrites the
-*entire, ever-growing* ``history`` JSON blob on every event.
-
-For a turn that emits *N* events that is ``1 + 2 + … + N = O(N²)`` bytes written,
-and with a chat agent relaying agent activity (plus large web/MCP tool
-results) the blob reaches megabytes and is rewritten ~20×/second — multiple
-megabytes per second of disk I/O, and each write holds SQLite's single write
-lock long enough to stall the concurrent agent turns.
-
-The fix is to normalize the history into append-only rows: the task's small,
-mutable head (status + metadata) is upserted, and each new history message /
-artifact is inserted exactly once. ``history`` only ever grows (the TaskManager
-appends), so ``save`` writes just the new suffix — O(delta) per event, O(N) per
-turn, with per-event cost independent of how long the turn has been running.
-
-The live transport is unchanged: the SDK still streams incremental
-``TaskStatusUpdateEvent``/``TaskArtifactUpdateEvent`` objects over SSE. Only the
-persistence layer changes.
-"""
+"""An append-only A2A :class:`TaskStore`."""
 
 from __future__ import annotations
 
@@ -60,8 +34,7 @@ from frank.protocol.turn_record import ReconcileAction, TurnRecord, reconcile_ac
 
 
 def _dump(model) -> str:
-    """Serialize a pydantic model to a JSON string using field names, mirroring
-    how the SDK's DatabaseTaskStore round-trips (field names, not aliases)."""
+    """Serialize a pydantic model to a JSON string using field names, mirroring how the SDK's DatabaseTaskStore round-trips (field names, not aliases)."""
     return json.dumps(model.model_dump(mode="json"))
 
 
@@ -103,15 +76,13 @@ def _sole_data(message: object, kind: str) -> dict | None:
 
 
 def _path_key(data: dict) -> tuple:
-    """A hashable identity for the agent that produced an event, from its ``path``
-    (empty for the root agent). Adjacent same-kind events merge only within one agent."""
+    """A hashable identity for the agent that produced an event, from its ``path`` (empty for the root agent)."""
     path = data.get("path") or []
     return tuple((segment.get("group_id"), segment.get("step_id")) for segment in path)
 
 
 def _compact_history(messages: list) -> list:
-    """Merge adjacent same-kind single-part agent messages (plain text, sub-task
-    text in the same step, and reasoning) into one message each."""
+    """Merge adjacent same-kind single-part agent messages (plain text, sub-task text in the same step, and reasoning) into one message each."""
     compacted: list = []
     for message in messages:
         text = _agent_text(message)
@@ -189,18 +160,7 @@ def _is_terminal_task(task: Task) -> bool:
 
 
 class AppendOnlyTaskStore(TaskStore):
-    """A2A task store that persists history/artifacts incrementally.
-
-    Drop-in replacement for ``DatabaseTaskStore``: implements the same
-    ``save``/``get``/``delete`` contract, but stores a task across three tables
-    so a save is O(new messages) rather than O(whole history).
-
-    Charter: this is the single durable surface for a turn — its wire history/artifacts, its
-    control-state (the :class:`~frank.protocol.turn_record.TurnRecord` on the task head), and its
-    conversation checkpoint (``save_turn_state``/``load_checkpoint``). Background jobs are the one
-    thing it does NOT own; those live in the separate
-    :class:`~frank.base.background_store.BackgroundJobStore`.
-    """
+    """A2A task store that persists history/artifacts incrementally."""
 
     def __init__(self, engine: AsyncEngine):
         self._engine = engine
@@ -296,20 +256,7 @@ class AppendOnlyTaskStore(TaskStore):
             await self.initialize()
 
     async def reconcile_orphaned_turns(self) -> list[str]:
-        """Restart reconciliation, driven by each turn's own durable record.
-
-        A session's process does not survive its daemon, so every task left non-terminal by a
-        restart is reconciled against one rule:
-
-        * an ``input-required`` pause is durable — its checkpoint and pending interactions
-          survive — and is preserved for a later answer to resume;
-        * every **other non-terminal** task was caught mid-execution and is failed: resume is
-          at-most-once, so its in-flight tools did not complete and there is nothing safe to
-          resume into.
-
-        Returns the ids that were failed. Failing an interrupted turn persists an explicit
-        error status so stale approvals, tools, and agent lanes cannot replay as active.
-        """
+        """Restart reconciliation, driven by each turn's own durable record."""
         await self._ensure_initialized()
         write_lock = await acquire_sqlite_write_lock()
         failed_task_ids: list[str] = []
@@ -360,17 +307,7 @@ class AppendOnlyTaskStore(TaskStore):
         messages: list,
         session_state: dict | None = None,
     ) -> None:
-        """Atomically snapshot a context's model-facing conversation checkpoint and — when it
-        changed this turn — its durable goal/task session state, in one transaction under one
-        write lock. Both ride the running turn's safe points (a few times per turn, never per
-        stream event), so the whole-row writes are cheap relative to the turn. Doing them
-        together is what keeps them consistent: a crash can never leave the conversation newer
-        than the objective, or lose one while writing the other. ``session_state`` is ``None``
-        when the goal/tasks did not change since the last save (dirty-gated by the caller), and
-        the caller clears its dirty flag only after this returns — so a failed write loses
-        nothing. The conversation snapshot is whole-row upserted per context: it accumulates
-        across turns and compaction rewrites it in place, so a whole snapshot is the only
-        representation that stays correct."""
+        """Atomically snapshot a context's model-facing conversation checkpoint and — when it changed this turn — its durable goal/task session state, in one transaction under one write lock."""
         await self._ensure_initialized()
         if not session_id:
             return
@@ -410,14 +347,7 @@ class AppendOnlyTaskStore(TaskStore):
             release_sqlite_write_lock(write_lock)
 
     async def save_session_state(self, session_id: str, session_state: dict) -> None:
-        """Write a context's durable goal/task state on its own, without touching the
-        conversation checkpoint.
-
-        The pair is written together by :meth:`save_turn_state` because a turn changes both and
-        they must not diverge. This exists for the changes that happen *between* turns — a person
-        calling off a goal — where there is no conversation to write and no turn to hang the
-        write on, and where borrowing the paired path would mean sending the whole checkpoint
-        back to have it written over itself."""
+        """Write a context's durable goal/task state on its own, without touching the conversation checkpoint."""
         await self._ensure_initialized()
         if not session_id:
             return
@@ -440,9 +370,7 @@ class AppendOnlyTaskStore(TaskStore):
             release_sqlite_write_lock(write_lock)
 
     async def load_checkpoint(self, session_id: str) -> list:
-        """The context's model-facing conversation snapshot (``messages_to_dict`` form),
-        or ``[]`` when there is none. The caller rehydrates it with ``messages_from_dict``
-        and repairs any dangling tool-call left by a mid-execution interruption."""
+        """The context's model-facing conversation snapshot (``messages_to_dict`` form), or ``[]`` when there is none."""
         await self._ensure_initialized()
         if not session_id:
             return []
@@ -461,8 +389,7 @@ class AppendOnlyTaskStore(TaskStore):
             return []
 
     async def load_session_state(self, session_id: str) -> dict:
-        """The context's persisted goal/task state (:meth:`save_turn_state` form), or an
-        empty dict when there is none — a fresh context or a pre-persistence session."""
+        """The context's persisted goal/task state (:meth:`save_turn_state` form), or an empty dict when there is none — a fresh context or a pre-persistence session."""
         await self._ensure_initialized()
         if not session_id:
             return {}
@@ -482,11 +409,7 @@ class AppendOnlyTaskStore(TaskStore):
 
 
     async def _persisted_count(self, connection, turn_id: str) -> int:
-        """How many history rows are already persisted for a task, so ``save`` appends only
-        the suffix of the (only-ever-growing) ``task.history`` not yet stored. Authoritative
-        in memory (guarded by the store's write lock, which admits one writer at a time),
-        seeded once from a single COUNT the first time this process saves the task and kept
-        current by every write thereafter — so a save is O(delta), never a COUNT-per-event."""
+        """How many history rows are already persisted for a task, so ``save`` appends only the suffix of the (only-ever-growing) ``task.history`` not yet stored."""
         cached = self._persisted_counts.get(turn_id)
         if cached is not None:
             return cached
@@ -498,15 +421,7 @@ class AppendOnlyTaskStore(TaskStore):
         return seeded
 
     async def _compact_persisted_history(self, connection, turn_id: str) -> int:
-        """Rewrite a task's *already-persisted* history in place with its compacted form,
-        ordered by ``row_id``: overwrite the first M rows' messages (their row_ids — and so
-        their global order — unchanged) and delete the tail rows the compaction dropped. It
-        never inserts: ``_compact_history`` only merges adjacent messages, so the compacted
-        count is always ≤ the persisted count, and minting fresh (higher) row_ids here would
-        reorder this task's tail after a concurrently-persisted task when a context is paged
-        by global ``row_id``. The caller appends any unpersisted suffix *before* calling this,
-        so ``task.history`` is already fully in the table and the compaction is pure
-        update-and-delete."""
+        """Rewrite a task's *already-persisted* history in place with its compacted form, ordered by ``row_id``: overwrite the first M rows' messages (their row_ids — and so their global order — unchanged) and delete the tail rows the compaction dropped."""
         existing_rows = (
             await connection.execute(
                 select(self._history.c.row_id, self._history.c.message)
@@ -632,13 +547,7 @@ class AppendOnlyTaskStore(TaskStore):
         return Task.model_validate(data)
 
     async def turns_for_session(self, session_id: str) -> list[Task]:
-        """All tasks in a context, loaded with one head/history/artifact pass.
-
-        Session replay asks for every task in a context at once. Calling ``get``
-        per task fans that into three queries per task; this keeps the same Task
-        shape but batches those reads so opening a local session is not gated by
-        request count.
-        """
+        """All tasks in a context, loaded with one head/history/artifact pass."""
         await self._ensure_initialized()
         async with self._engine.connect() as connection:
             head_rows = (
@@ -703,16 +612,7 @@ class AppendOnlyTaskStore(TaskStore):
         before_row_id: int | None = None,
         limit: int = 400,
     ) -> dict:
-        """A newest-first page of persisted task history for fast session replay.
-
-        The returned tasks are fragments: each has the normal A2A task shape but
-        only the history rows that fall in this page. Pages are queried newest
-        first by append-only ``row_id`` and returned oldest-to-newest within the
-        page so the client can prepend older pages and replay in chronological
-        order. The terminal ``status.message`` and artifacts are included only
-        when a fragment contains that task's newest persisted history row, which
-        prevents duplicated failed/status messages when a long task spans pages.
-        """
+        """A newest-first page of persisted task history for fast session replay."""
         await self._ensure_initialized()
         page_limit = max(1, min(limit, 1000))
         async with self._engine.connect() as connection:
@@ -833,10 +733,7 @@ class AppendOnlyTaskStore(TaskStore):
             release_sqlite_write_lock(write_lock)
 
     async def delete_session(self, session_id: str) -> None:
-        """Drop every durable trace of a context — its tasks (head/history/artifacts), its
-        conversation checkpoint, and its goal/task session state — when a session is
-        deleted. The single place that knows the turn store's tables, so session deletion
-        does not reach into them."""
+        """Drop every durable trace of a context — its tasks (head/history/artifacts), its conversation checkpoint, and its goal/task session state — when a session is deleted."""
         await self._ensure_initialized()
         write_lock = await acquire_sqlite_write_lock()
         try:
@@ -859,8 +756,7 @@ class AppendOnlyTaskStore(TaskStore):
             release_sqlite_write_lock(write_lock)
 
     async def input_required_session_ids(self) -> list[str]:
-        """Context ids whose persisted task is input-required, so the sidebar's
-        awaiting-input marker can be restored after a restart (the pause is durable)."""
+        """Context ids whose persisted task is input-required, so the sidebar's awaiting-input marker can be restored after a restart (the pause is durable)."""
         await self._ensure_initialized()
         async with self._engine.connect() as connection:
             rows = (
@@ -888,9 +784,7 @@ class AppendOnlyTaskStore(TaskStore):
         return list(rows)
 
     async def session_message_texts(self, session_id: str) -> list[str]:
-        """Raw history-message JSON for every task in a context. Used to find the upload
-        files a session references (attachment paths live in the message metadata) so they
-        can be reclaimed when the session is deleted."""
+        """Raw history-message JSON for every task in a context."""
         await self._ensure_initialized()
         async with self._engine.connect() as connection:
             rows = (
@@ -903,9 +797,7 @@ class AppendOnlyTaskStore(TaskStore):
         return list(rows)
 
     async def any_history_references(self, needle: str) -> bool:
-        """Whether any persisted history message contains ``needle`` (a file path). Used
-        after a session delete to keep a content-addressed upload that is still referenced
-        by another surviving session."""
+        """Whether any persisted history message contains ``needle`` (a file path)."""
         await self._ensure_initialized()
         escaped = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         async with self._engine.connect() as connection:

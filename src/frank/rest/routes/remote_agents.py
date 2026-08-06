@@ -1,9 +1,4 @@
-"""Remote-agent routes: peers on other hosts, registered by their A2A card.
-
-The home ``~/.agents/remote-agents.json`` is the source of truth; these endpoints let the
-app read the registered agents (with live health resolved from the outbound client
-manager) and edit that file. A write reloads the manager immediately (the file watcher
-also reloads, so the two are idempotent)."""
+"""Remote-agent routes: peers on other hosts, registered by their A2A card."""
 
 from __future__ import annotations
 
@@ -68,9 +63,7 @@ def _write_file(data: dict) -> None:
 
 
 def _entry_from_input(payload: RemoteAgentInput) -> dict:
-    """The ``remote-agents.json`` entry (snake_case, the loader's schema) for one agent.
-    Auth fields that are empty are dropped so the file stays tidy; secrets may be written
-    as ``${ENV_VAR}`` references, which the loader expands."""
+    """The ``remote-agents.json`` entry (snake_case, the loader's schema) for one agent."""
     auth = {"type": payload.auth.type}
     if payload.auth.type in {"bearer", "api_key"}:
         auth["token"] = payload.auth.token

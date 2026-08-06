@@ -1,5 +1,4 @@
-"""Session domain: session listing and drafts, permission-mode resolution, pending-input
-handling, title generation, and workspace setup."""
+"""Session domain: session listing and drafts, permission-mode resolution, pending-input handling, title generation, and workspace setup."""
 
 from __future__ import annotations
 
@@ -15,10 +14,7 @@ from frank.hub.services.broadcast import _publish_broadcast
 
 
 def claim_work_habits_acknowledgement(session_id: str) -> bool:
-    """Claim the one-time work-habits acknowledgement for a session.
-
-    Durable, and it has to be: a worker is per activation now, so a session that slept and woke
-    would show the acknowledgement again on every wake if the flag lived in the worker."""
+    """Claim the one-time work-habits acknowledgement for a session."""
     if state.session_store is None:
         return False
     return state.session_store.claim_work_habits_acknowledgement(session_id)
@@ -31,8 +27,7 @@ def _reset_work_habits_acknowledgements() -> None:
 
 
 def _normalize_permission_mode(mode: str) -> str:
-    """A stored mode, as the enum reads it. The enum is the one place the modes are named, so a
-    spelling it does not know falls back to the interactive default rather than to a guess."""
+    """A stored mode, as the enum reads it."""
     from frank.base.permission_mode import PermissionMode
 
     return str(PermissionMode.coerce(mode))
@@ -64,12 +59,7 @@ def _ensure_session_workspace(
     permission_mode: str,
     workspace_id: str = "",
 ) -> SessionWorktree:
-    """Give a session its durable row and the directory its tools will actually run in.
-
-    Called when the session is created, not on its first turn: the workspace decides where
-    every tool runs, and a session that exists but has not yet resolved where it lives is a
-    session nobody can address properly. Idempotent — a row that already has a runtime
-    directory is returned as it stands."""
+    """Give a session its durable row and the directory its tools will actually run in."""
     assert state.session_factory is not None
     source_directory = working_directory or str(Path.home())
 
@@ -161,13 +151,7 @@ def _set_session_title(session_id: str, title: str) -> bool:
 
 
 def _activity_of(session_id: str, lifecycle: str) -> str:
-    """What a session is doing, in the order of interest.
-
-    A session parked on a person is the fact worth surfacing even though a turn is technically
-    still open, so `waiting` outranks `working`. A session with no process is asleep rather
-    than idle — but that is the daemon's knowledge, so an unreachable-from-here distinction
-    collapses to `idle`, which is what the interface already showed for it.
-    """
+    """What a session is doing, in the order of interest."""
     if lifecycle == "ended":
         return "ended"
     if session_id in state._awaiting_input_contexts:
@@ -234,10 +218,7 @@ def _session_draft(session_id: str) -> str:
 
 
 def _update_session_draft(session_id: str, input_draft: str) -> None:
-    """Synchronous draft write — MUST run off the event loop (dispatched via
-    ``asyncio.to_thread``). It takes the synchronous history.db write lock, which the
-    async task store holds across its transaction's ``await``; acquiring it on the loop
-    thread would deadlock the whole server."""
+    """Synchronous draft write — MUST run off the event loop (dispatched via ``asyncio.to_thread``)."""
     assert state.session_factory is not None
     with sqlite_write_lock():
         database_session = state.session_factory()

@@ -1,16 +1,4 @@
-"""The daemon's process-wide singletons, and the one place a command is relayed to a session.
-
-Everything the control plane touches hangs off this module: the session registry, the
-prototype the daemon forks sessions out of, the lifecycle, the sole-writer stores, and the two
-fan-out buses. It is a module of
-globals because there is exactly one daemon per user and these are its parts, not something
-that could sensibly exist twice.
-
-The relay lives here too. A session's commands belong to its own socket, but the desktop
-client cannot open one, so the daemon forwards on its behalf. That is a deliberate exception
-for clients, not a general routing layer: sessions talking to each other never come through
-here.
-"""
+"""The daemon's process-wide singletons, and the one place a command is relayed to a session."""
 
 from __future__ import annotations
 
@@ -26,13 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class SessionEventBus:
-    """Per-session fan-out of the events a turn emits, so several watchers can follow one
-    session without any of them polling.
-
-    A worker streams its turn events to the daemon as they are persisted; this is where they
-    reach whoever is attached. Nothing is journaled here: an attaching client reads the
-    persisted snapshot first and then joins the live tail, so there is no gap to replay.
-    """
+    """Per-session fan-out of the events a turn emits, so several watchers can follow one session without any of them polling."""
 
     def __init__(self) -> None:
         self._subscribers: dict[str, list[asyncio.Queue]] = {}
@@ -61,9 +43,7 @@ class SessionEventBus:
             queue.put_nowait(None)
 
     def complete_all(self) -> None:
-        """Close every watcher of every session, for the same reason `Broadcaster.close`
-        exists: the daemon cannot finish shutting down while a stream is still open, and the
-        stream will not end until something tells it to."""
+        """Close every watcher of every session, for the same reason `Broadcaster.close` exists: the daemon cannot finish shutting down while a stream is still open, and the stream will not end until something tells it to."""
         for session_id in list(self._subscribers):
             self.complete(session_id)
 
@@ -80,12 +60,7 @@ event_bus = SessionEventBus()
 
 
 def __getattr__(name: str) -> Any:
-    """Read a workspace singleton through this module.
-
-    Deliberately `__getattr__` rather than an import at load time: these are set *after* this
-    module is imported, so a bound name would capture `None` and keep it forever. A module-level
-    `__getattr__` (PEP 562) resolves on each access, which is the behaviour every reader already
-    assumes `state.session_factory` has."""
+    """Read a workspace singleton through this module."""
     from frank.hub import state as hub_state
 
     if hasattr(hub_state, name):
@@ -107,15 +82,7 @@ daemon_token: str = ""
 
 
 async def reset_live_session_runtimes() -> None:
-    """Tell every running session to rebuild its runtime on the next turn.
-
-    Configuration that a session already read — its model, its tool tuning, its MCP servers —
-    is cached inside the session's process, so a change made in Settings would otherwise only
-    reach sessions started afterwards. This used to be a loop over in-process executors; with
-    a session being a process, it is a message to each of them.
-
-    Best effort by design: a session that has died or is mid-teardown simply misses it, and a
-    settings save must not fail because one session was unreachable."""
+    """Tell every running session to rebuild its runtime on the next turn."""
     if registry is None:
         return
     live = list(registry.live())
@@ -128,19 +95,7 @@ async def reset_live_session_runtimes() -> None:
 
 
 async def refresh_workspace_locations(workspace_id: str) -> None:
-    """Tell every live session in a workspace that its environments have changed.
-
-    The set a session may address is resolved once, at `session.create`, and travels in the
-    assignment — which is right, but it left a workspace edit reaching only the sessions
-    created after it. Adding a folder to the workspace you were already talking in did nothing
-    the conversation could see.
-
-    Only sessions with a worker are told. A sleeping one has nothing to inform: its next worker
-    is forked with a freshly resolved set, so it already wakes up current.
-
-    Best effort by design, exactly like the runtime reset beside it: a session mid-teardown
-    misses the push and re-reads the workspace on its next fork, and saving a workspace must
-    not fail because one session was unreachable."""
+    """Tell every live session in a workspace that its environments have changed."""
     if registry is None or not workspace_id:
         return
     from frank.hub.services.locations import _resolve_session_locations
@@ -160,22 +115,7 @@ async def refresh_workspace_locations(workspace_id: str) -> None:
 
 
 async def wake_then_relay(record, method: str, params: dict) -> dict:
-    """Forward a command to a session, forking it a worker first if it has none.
-
-    **This is the whole of "a session is a record, not a process", and it is one function.**
-    Every command that needs a live session already funnels through the relay — `session.send`,
-    `respond`, `compact`, `jobs.*`, `turn.cancel` — so putting the wake in front of it is what
-    makes sleeping safe everywhere at once, rather than in each caller.
-
-    Reads deliberately do not come through here. `get`, `list`, `tree`, `history` and `attach`
-    are answered from the registry and the turn store, so looking at a sleeping session does
-    not wake it — which is what makes sleeping worth doing at all.
-
-    The wake is serialised per session by a lock, because two clients messaging a sleeping
-    session at the same moment must produce one worker, not two. That is not a nicety: two
-    workers on one session id would both bind the same socket path and both believe they own
-    the conversation.
-    """
+    """Forward a command to a session, forking it a worker first if it has none."""
     if record.asleep:
         await _wake(record)
     try:
@@ -189,24 +129,14 @@ async def wake_then_relay(record, method: str, params: dict) -> dict:
 
 
 class SessionUnreachable(RuntimeError):
-    """No worker answered on the session's socket.
-
-    Distinct from a worker that answered and refused: this one is recoverable by waking.
-    """
+    """No worker answered on the session's socket."""
 
 
 _wake_locks: dict[str, asyncio.Lock] = {}
 
 
 async def _wake(record) -> None:
-    """Give a sleeping session a worker again.
-
-    The record already holds everything the assignment needs — agent, directories, permission
-    mode, sandbox, parent — because all of it was fixed when the session was created and none
-    of it has been re-derived since. That is what makes waking a replay rather than a
-    reconstruction: the woken worker is handed exactly what the original was handed, including
-    the same capability token, which is derivable precisely so that this works.
-    """
+    """Give a sleeping session a worker again."""
     lock = _wake_locks.setdefault(record.id, asyncio.Lock())
     async with lock:
         # Re-checked inside the lock: the client that waited on it may have been the second of two, and the first has already done this.
@@ -221,15 +151,7 @@ async def _wake(record) -> None:
 
 
 async def relay_to_session(record, method: str, params: dict) -> dict:
-    """Forward a client's command to the session that owns it.
-
-    Only clients come through here — a session addressing a peer opens that peer's socket
-    itself. The session's capability token is derived from its id, so a client that has already
-    proved itself to the daemon does not need to hold every session's token as well.
-
-    Prefer :func:`wake_then_relay` for anything that needs the session to *act*. This is the
-    bare relay, for the one caller that already knows a worker is there.
-    """
+    """Forward a client's command to the session that owns it."""
     transport = httpx.AsyncHTTPTransport(uds=str(record.socket_path))
     payload = {"method": method, "params": {key: value for key, value in params.items() if key != "id"}}
     try:

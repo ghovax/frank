@@ -1,25 +1,4 @@
-"""What the hub layer shares: the database, the configuration, and the shared clients.
-
-This is the half of the daemon's singletons that has nothing to do with supervising agents.
-Projects, locations, settings, agent profiles, terminals and the MCP and remote-agent
-connections all need a database handle and the machine's configuration; none of them needs the
-session registry, the lifecycle or the prototype.
-
-Splitting them apart is what lets the browser surface stop importing the daemon. `rest` reached
-into `daemon.services` and `daemon.brokers` twenty-six times, and every one of those was a
-*workspace* concern that happened to live in the daemon because that is where it was written.
-Moving them out means the dependency disappears rather than being routed around.
-
-A module of globals for the same reason the daemon's is: there is one of each per process, and
-they are its parts rather than something that could sensibly exist twice. The composition root
-sets them — `daemon/__main__.py` today, and `frank web` in its own process if that split is
-ever taken, which is now a deployment choice rather than an architectural one.
-
-The two hooks at the bottom are the seam's remaining edge. A workspace operation occasionally
-has a supervision consequence — deleting a session should stop it — and rather than import the
-control plane to say so, it calls a hook the composition root filled in. Absent, the workspace
-still works; it simply has no control plane to tell.
-"""
+"""What the hub layer shares: the database, the configuration, and the shared clients."""
 
 from __future__ import annotations
 
@@ -82,10 +61,7 @@ refresh_live_session_locations: Optional[Callable[[str], Awaitable[Any]]] = None
 
 
 async def session_deleted(session_id: str) -> None:
-    """Tell the control plane a session's record has been deleted, if there is one.
-
-    The session should stop, and only the control plane can stop it — but the workspace must
-    not import the control plane to say so, or the severing would be cosmetic."""
+    """Tell the control plane a session's record has been deleted, if there is one."""
     if on_session_deleted is None:
         return
     await on_session_deleted(session_id)
@@ -99,8 +75,7 @@ async def reset_runtimes() -> None:
 
 
 async def workspace_locations_changed(workspace_id: str) -> None:
-    """Tell the sessions running in a workspace that its environments were edited, so the
-    change reaches the conversations already open in it rather than only the next one."""
+    """Tell the sessions running in a workspace that its environments were edited, so the change reaches the conversations already open in it rather than only the next one."""
     if refresh_live_session_locations is None or not workspace_id:
         return
     await refresh_live_session_locations(workspace_id)

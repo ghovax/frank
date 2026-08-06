@@ -110,9 +110,7 @@ _BROWSER_APP_NAMES = {"chrome": "Google Chrome", "edge": "Microsoft Edge", "brav
 
 @router.post("/browser/enable-remote-debugging")
 async def open_browser_remote_debugging(browser_name: str = "chrome"):
-    """Open the browser's remote-debugging settings page (chrome://inspect/#remote-debugging) so the
-    user can turn the switch on, when the browser tool reports it is off. Opens a page in their
-    browser — nothing else."""
+    """Open the browser's remote-debugging settings page (chrome://inspect/#remote-debugging) so the user can turn the switch on, when the browser tool reports it is off."""
     from frank.computer.web import REMOTE_DEBUGGING_URL
 
     app_name = _BROWSER_APP_NAMES.get(browser_name, _BROWSER_APP_NAMES["chrome"])

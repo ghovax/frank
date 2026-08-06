@@ -1,19 +1,4 @@
-"""Starting sessions, watching them, and reaping them together.
-
-Three things live here because they are the same concern seen from different ends: asking the
-prototype to fork a session into being, noticing when a session's process dies without telling
-anyone, and taking a session down along with everything it created.
-
-Reaping is depth-first over the tree and always kills children before the parent, so a child
-is never briefly orphaned onto a dead parent. Each session leads its own process session, so a
-session that started a dev server takes that dev server with it.
-
-Noticing a death is the part that changed shape. The daemon used to `await process.wait()` on
-a worker it had spawned itself; it does not spawn them any more, and a process cannot be
-waited on by anything but its parent. The parent is the prototype, so deaths arrive here as
-reports rather than as returns — one handler for every session instead of one supervisor task
-each, which is the same information through a different door.
-"""
+"""Starting sessions, watching them, and reaping them together."""
 
 from __future__ import annotations
 
@@ -43,11 +28,7 @@ def _daemon_token() -> str:
 
 
 def _resolve_locations(session_id: str):
-    """The workspace's locations, in the shape the runtime builds executors from.
-
-    Best effort: a session with no project has none, and a lookup that fails must not stop the
-    session from starting — the runtime falls back to a single local location at its working
-    directory, which is exactly right for a session that has no project."""
+    """The workspace's locations, in the shape the runtime builds executors from."""
     from frank.hub.services.locations import _resolve_session_locations
 
     try:
@@ -62,11 +43,7 @@ def _now() -> str:
 
 
 def _close_subscribers(session_id: str) -> None:
-    """Tell every subscriber of this session's stream that it has ended.
-
-    Without it an `frank attach` on a session that is killed — or that dies on its own — sits
-    on a stream that will never produce another frame, because the only thing that ever closed
-    it was the session speaking. A subscriber must learn about the deaths too."""
+    """Tell every subscriber of this session's stream that it has ended."""
     from frank.daemon import state
 
     with contextlib.suppress(Exception):
@@ -99,11 +76,7 @@ class SessionLifecycle:
                 self._on_change()
 
     async def start(self, record: SessionRecord) -> bool:
-        """Turn a minted record into a running session.
-
-        Asks the prototype to fork, and answers only once the child reports that its socket is
-        accepting connections. Waiting for that acknowledgement is what lets a client `send`
-        immediately after `create` without racing the bind."""
+        """Turn a minted record into a running session."""
         assignment = {
             "session_id": record.id,
             "agent": record.agent,
@@ -136,21 +109,7 @@ class SessionLifecycle:
         return True
 
     async def on_prototype_lost(self) -> None:
-        """The prototype died, so every session it forked died with it.
-
-        Each holds a lifeline to the prototype and stops when it breaks, which is what keeps a
-        dead prototype from leaving a set of unreachable workers behind. The cost is that their
-        deaths arrive with nobody to report them: the prototype is the only process that could,
-        being the only one that forked them, and it is what has just gone.
-
-        Left there, every record would claim to be running for as long as the daemon lived —
-        the process gone, the socket gone, the session still listed as live and answering
-        nothing. So the deaths are accounted for here instead, through the same path an ordinary
-        exit takes, so that a record is ended, children are reaped and subscribers are told in
-        exactly one way rather than two.
-
-        The status is reported as a signal rather than a clean exit because that is what it was:
-        nothing about this was a session finishing its work."""
+        """The prototype died, so every session it forked died with it."""
         losses = list(self._processes.items())
         if not losses:
             return
@@ -163,17 +122,7 @@ class SessionLifecycle:
             )
 
     async def on_session_exit(self, report: SessionExit) -> None:
-        """A session's process has ended, however it ended.
-
-        This is what the per-session supervisor task used to be. A session that exits on its
-        own — a crash, an unhandled error, an OOM kill — would otherwise leave a record
-        claiming to be running and a socket nothing is listening on, and the daemon cannot
-        watch for that itself: it did not fork the process, so it cannot wait on it. The
-        prototype did, and reports here.
-
-        Reached for every death, including the ones this file caused. A reaped session was
-        already marked terminal before it was signalled, so the `is_live` check is what tells
-        the two apart."""
+        """A session's process has ended, however it ended."""
         session_id = report.session_id
         if not session_id:
             return
@@ -208,17 +157,7 @@ class SessionLifecycle:
         self._changed()
 
     async def _tell_parent(self, record) -> None:
-        """Tell a session that one of its children is over.
-
-        A peer reports its own result by messaging the session that created it, which is the
-        whole return path — so a peer that crashes, is killed, or exits mid-turn leaves its
-        caller waiting for a message that will never be sent. Only the daemon can close that
-        gap, because a session cannot report its own death.
-
-        Deliberately the only message the harness writes on a session's behalf. Everything a
-        peer *can* say, it says itself; this covers exactly the case where it cannot. Best
-        effort, and quiet on failure: a parent that has itself gone is the common reason this
-        does not land, and it is not an error."""
+        """Tell a session that one of its children is over."""
         parent = self._registry.get(record.parent) if record.parent else None
         if parent is None or not parent.is_live:
             return
@@ -237,10 +176,7 @@ class SessionLifecycle:
             logger.debug("could not tell %s that %s ended", parent.id, record.id, exc_info=True)
 
     async def reap(self, session_id: str, *, reason: str = "", skip_self: bool = False) -> int:
-        """Take a session and everything under it down.
-
-        Children first, so a child never observes a dead parent, and the whole process group
-        is signalled so a session's shell subtree dies with it."""
+        """Take a session and everything under it down."""
         record = self._registry.get(session_id)
         if record is None:
             return 0
@@ -271,17 +207,7 @@ class SessionLifecycle:
         return reaped
 
     async def sleep(self, session_id: str) -> bool:
-        """Take a live session's process away, leaving the session itself intact.
-
-        The difference from :meth:`reap` is the whole of Part III: reaping ends the session,
-        this ends only its process. The record stays `live`, its activity becomes `asleep`, and
-        the next command routed through `wake_then_relay` forks it a new worker from the
-        prototype — a fresh copy, never a reused one, so the isolation invariant is untouched.
-
-        Everything the woken worker needs is already on the record, because all of it was fixed
-        at `create` and none of it is re-derived; the conversation itself comes back from the
-        turn store's checkpoint, which is the same path a restart already used.
-        """
+        """Take a live session's process away, leaving the session itself intact."""
         record = self._registry.get(session_id)
         if record is None or not record.is_live:
             return False
@@ -311,24 +237,7 @@ class SessionLifecycle:
         self._unlink_socket(session_id)
 
     async def _terminate(self, session_id: str, pid: int) -> None:
-        """SIGTERM everything in the session's process session, then SIGKILL what is left.
-
-        The unit here has to be the process *session*, not the process group. A session leads
-        its own — `setsid` in the forked child — and everything it runs inherits that session
-        id, but the bash tool puts each command in a group of its own, deliberately, so one job
-        can be cancelled with its whole subtree. Signalling only the session's own group
-        therefore missed every command it ran: end a session that started a dev server and the
-        port stayed held.
-
-        So the groups are enumerated by session membership and each is signalled. The
-        enumeration happens once, before anything is signalled, because a session's children
-        are reparented the moment it dies — they keep the session id, so a later sweep would
-        still find them, but there is no reason to make correctness depend on that.
-
-        Waiting for the death is a report from the prototype rather than a `waitpid`, because
-        the daemon is not the parent. Polling the pid would be the alternative and would be
-        wrong in a specific way: a reaped-but-not-yet-collected process still answers
-        `kill(pid, 0)`, so a poll would either race or need a timeout where this needs none."""
+        """SIGTERM everything in the session's process session, then SIGKILL what is left."""
         departure: asyncio.Future = asyncio.get_running_loop().create_future()
         self._departures[session_id] = departure
 
@@ -370,11 +279,7 @@ class SessionLifecycle:
             session_socket_path(session_id).unlink(missing_ok=True)
 
     async def sleep_all(self) -> int:
-        """Stop every session's process, keeping every session.
-
-        What a daemon shutdown actually needs to do now that the registry is durable. A worker
-        cannot outlive its supervisor — it persists through the daemon, so an orphan would
-        silently lose work — but the *session* has no reason to end with it."""
+        """Stop every session's process, keeping every session."""
         running = self._registry.running()
         await asyncio.gather(
             *(self.sleep(record.id) for record in running), return_exceptions=True,
@@ -382,9 +287,5 @@ class SessionLifecycle:
         return len(running)
 
     async def aclose(self) -> None:
-        """Put every running session to sleep. Called when the daemon itself is going down.
-
-        Deliberately sleeping rather than reaping. A session used to end here because its
-        record lived in this process and would not survive; the record is durable now, so
-        ending it would be discarding something the next daemon can pick straight back up."""
+        """Put every running session to sleep. Called when the daemon itself is going down."""
         await self.sleep_all()

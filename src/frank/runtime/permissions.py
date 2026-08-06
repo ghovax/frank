@@ -1,13 +1,4 @@
-"""The AgentRuntime permission concern (a mixin composed into AgentRuntime).
-
-One question, asked the same way for every tool: does this call reach past the box the session
-runs in? :mod:`frank.runtime.boundary` answers it; this module carries the answer out — raising
-a gate for a person, putting it to the reviewer where nobody is watching, remembering what was
-approved, and offering a second run of a command the operating system refused.
-
-A call runs inside its confinement or it asks to leave it, and those two sentences are the whole
-policy.
-"""
+"""The AgentRuntime permission concern (a mixin composed into AgentRuntime)."""
 from __future__ import annotations
 
 from frank.runtime.internals import (
@@ -46,8 +37,7 @@ MUTATING_SCREEN_PRIMITIVES = frozenset({
 
 
 def _screen_primitive(func: ast.expr) -> str:
-    """The primitive a call node names, however the script spells it. ``screen.click(...)`` and a
-    bare ``click(...)`` are the same act, so both forms are read."""
+    """The primitive a call node names, however the script spells it."""
     if isinstance(func, ast.Attribute):
         return func.attr
     if isinstance(func, ast.Name):
@@ -56,13 +46,7 @@ def _screen_primitive(func: ast.expr) -> str:
 
 
 def _screen_mutations(script: str) -> tuple[str, ...]:
-    """The state-changing primitives a script calls, in the order they first appear.
-
-    A reading of the script's own call names, and nothing more, because nothing more is needed:
-    the child holds only the primitives it was sent, so a mutation hidden inside an imported
-    module is refused at the bridge whether or not anything read that module. What this answers
-    is whether somebody is asked, never whether the primitive is available.
-    """
+    """The state-changing primitives a script calls, in the order they first appear."""
     try:
         tree = ast.parse(script)
     except SyntaxError:
@@ -78,22 +62,12 @@ def _screen_mutations(script: str) -> tuple[str, ...]:
 
 
 class _DecidesPermissions:
-    """Whether a call runs, is asked about, or is refused.
-
-    Composed into :class:`AgentRuntime` beside the dispatcher it answers for."""
+    """Whether a call runs, is asked about, or is refused."""
 
     # ---- the reviewer -------------------------------------------------------------------
 
     def _reviewer_model(self):
-        """The model that reviews a request: the session's own, thinking less.
-
-        The same model as the agent, because a judge that knows a different world than the thing
-        it judges is a judge arguing from somewhere else — and the same reason it gets the
-        session's own prompt fragments. What differs is effort: the agent's setting was chosen
-        for the work, and this is one request weighed against a page of rules.
-
-        Built once and kept: a client per call would rebuild the provider's transport for a
-        question that takes a second to answer."""
+        """The model that reviews a request: the session's own, thinking less."""
         if self._reviewer_llm is not None:
             return self._reviewer_llm
         # A caller that handed this runtime a model object rather than naming one — the library front door does exactly that — has no identifier to rebuild from, so the judge is that same object at whatever effort it was built with.
@@ -114,17 +88,7 @@ class _DecidesPermissions:
         return self._reviewer_llm
 
     async def _review(self, gate: _PreflightGate) -> PermissionDecision:
-        """The reviewer's verdict on one gate.
-
-        It takes a gate, so it can only answer a question that was going to be put to somebody:
-        where a person would have been asked and there is no person, this is who answers instead.
-        It cannot reach a call that raised no gate, and so cannot become a second policy running
-        beside the rules.
-
-        Fails closed, after bounded attempts. A judge that cannot be reached is not a verdict,
-        and one dropped request should not cost the work; but once the attempts are spent there
-        is nobody to hand the question to, so the answer is no.
-        """
+        """The reviewer's verdict on one gate."""
         context = compact({
             "tool": gate.tool_name,
             "working_directory": self._working_directory,
@@ -194,13 +158,7 @@ class _DecidesPermissions:
     # ---- grants -------------------------------------------------------------------------
 
     def _record_grant(self, grant: Grant) -> None:
-        """Remember an approved widening for the rest of the session.
-
-        A grant persists, so a build that writes eleven files under one granted directory raises
-        one gate and not eleven. That is not a convenience: how often a person is asked is a
-        security property, and it points the opposite way to intuition. An approval put in front
-        of somebody every few seconds stops being read, and a prompt nobody reads approves
-        everything."""
+        """Remember an approved widening for the rest of the session."""
         self._access_grants.append(grant)
         self._record_event("access_granted", {
             "reads": list(grant.reads), "writes": list(grant.writes),
@@ -209,12 +167,7 @@ class _DecidesPermissions:
         })
 
     def _granted_profile(self):
-        """The session's confinement with every standing grant folded in.
-
-        What :func:`~frank.runtime.boundary.escape_of` is measured against, so a path approved
-        earlier in the session is not an escape any more. One derivation, used by the planner
-        and by the tool context alike, because two would disagree about what had been approved.
-        """
+        """The session's confinement with every standing grant folded in."""
         profile = self._sandbox
         for grant in self._access_grants:
             profile = profile.with_grant(grant, workspace=self._working_directory or "")
@@ -223,13 +176,7 @@ class _DecidesPermissions:
     # ---- ids ----------------------------------------------------------------------------
 
     def _new_permission_request_id(self, tool_call_id: str = "") -> str:
-        """The id a person's answer is filed under. Derived from the call, not minted fresh.
-
-        Preflight runs again when a suspended turn resumes — the batch has not executed, so it
-        is planned again — and a random id meant the resumed plan asked under a *new* name while
-        the answer sat under the old one. Nothing matched, so the turn re-gated and ended without
-        running the tool, and the person who had just clicked Allow was told their request was no
-        longer active. Deriving it from the tool call makes the second ask the same ask."""
+        """The id a person's answer is filed under. Derived from the call, not minted fresh."""
         return f"perm-{self._session_id}-{tool_call_id or uuid.uuid4()}"
 
     def _new_question_request_id(self, tool_call_id: str = "") -> str:
@@ -237,9 +184,7 @@ class _DecidesPermissions:
         return f"q-{self._session_id}-{tool_call_id or uuid.uuid4()}"
 
     def _new_retry_request_id(self, tool_call_id: str) -> str:
-        """The id for a second run of a command the operating system refused. Distinct from the
-        preflight id for the same call, because both can exist in one turn: the call was
-        approved to run, ran, and hit the wall."""
+        """The id for a second run of a command the operating system refused."""
         return f"retry-{self._session_id}-{tool_call_id}"
 
     # ---- the planner --------------------------------------------------------------------
@@ -247,11 +192,7 @@ class _DecidesPermissions:
     async def _preflight_permissions(
         self, tool_calls: list[dict]
     ) -> tuple[dict[str, _ToolPlan], list[_PreflightGate]]:
-        """Resolve the verdict for every tool call in a batch BEFORE any tool runs, so a pause
-        can be checkpointed durably (concurrent tools cannot be re-run on resume without
-        re-doing their side effects). Returns the per-call plans keyed by tool_call_id and the
-        flat list of gates that need an answer. When that list is non-empty the turn suspends;
-        otherwise the batch executes with every decision already in hand."""
+        """Resolve the verdict for every tool call in a batch BEFORE any tool runs, so a pause can be checkpointed durably (concurrent tools cannot be re-run on resume without re-doing their side effects)."""
         plans: dict[str, _ToolPlan] = {}
         pending: list[_PreflightGate] = []
         for tool_call_data in tool_calls:
@@ -269,13 +210,7 @@ class _DecidesPermissions:
     async def _plan_call(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
     ) -> _ToolPlan:
-        """The verdict for one tool call: refused, gated, or cleared to run.
-
-        One path for every tool. What differs between them is two lines — which rule table
-        names this kind of call, and what the call is asking to reach — and everything after
-        that is shared, so there is no tool whose permission story can drift away from the
-        others'.
-        """
+        """The verdict for one tool call: refused, gated, or cleared to run."""
         plan = _ToolPlan(tool_call_id=tool_call_identifier)
         schema = self._tool_schemas.get(tool_name)
         if schema is not None:
@@ -365,14 +300,7 @@ class _DecidesPermissions:
         return plan
 
     def _rule_for(self, tool_name: str, tool_arguments: dict) -> tuple[str, str]:
-        """What the person's configuration says about this call: ``(subject, decision)``.
-
-        The subject is the thing a rule is written *about*, and it differs by tool because the
-        calls do: a shell command is matched against its segments, an MCP call is `server.tool`,
-        and a screen script is the primitive it reaches for. Unmatched is ``allow`` everywhere
-        the confinement is the real boundary, and ``ask`` where it is not — an MCP server runs
-        outside this machine's sandbox entirely, so nothing but the rules stands in front of it.
-        """
+        """What the person's configuration says about this call: ``(subject, decision)``."""
         tools = self._agent_configuration.tools
         if tool_name == "bash":
             command = str(tool_arguments.get("command", "") or "")
@@ -418,10 +346,7 @@ class _DecidesPermissions:
         }
 
     def _approve(self, gate: _PreflightGate, *, by: str, plan: Optional[_ToolPlan] = None) -> None:
-        """Carry out what approving this gate means.
-
-        One place, because a gate can grant two different things and a call site that handled
-        one of them would silently drop the other."""
+        """Carry out what approving this gate means."""
         if gate.escape or gate.whole_disk:
             self._record_grant(confinement.approved(
                 confinement.AccessRequest(
@@ -440,10 +365,7 @@ class _DecidesPermissions:
     def _resolve_tool_decisions(
         self, plans: dict[str, _ToolPlan], answers: dict[str, Any]
     ) -> dict[str, _ResolvedToolDecision]:
-        """Collapse the preflight plans plus any answers into one verdict per tool.
-        Used on both paths: the fresh path passes empty ``answers`` (plans with no gates), and
-        the resumed path passes the answers keyed by ``request_id``. A tool runs only if every
-        one of its gates was approved; any refusal turns it into that gate's denial."""
+        """Collapse the preflight plans plus any answers into one verdict per tool."""
         decisions: dict[str, _ResolvedToolDecision] = {}
         for tool_call_id, plan in plans.items():
             decision = _ResolvedToolDecision(tool_call_id=tool_call_id)
@@ -491,18 +413,7 @@ class _DecidesPermissions:
     def retry_gate(
         self, *, tool_call_id: str, command: str, denial: confinement.Denial, explanation: str,
     ) -> _PreflightGate:
-        """The gate a command raises after the operating system refused it.
-
-        This is the whole of what a person is offered, and the offer is narrow on purpose. The
-        refusal names no path — neither backend reports one — so there is nothing to widen
-        precisely, and inventing a path from the command text would be guessing at exactly the
-        thing this harness stopped guessing at. What is offered instead is: let this one command
-        reach past the workspace.
-
-        Safe to offer because the first run was confined and could not have been otherwise:
-        :func:`~frank.base.confinement.first_attempt` takes no grant. Whatever the command did
-        before the wall, it did inside the box.
-        """
+        """The gate a command raises after the operating system refused it."""
         return _PreflightGate(
             request_id=self._new_retry_request_id(tool_call_id),
             tool_call_id=tool_call_id, kind="permission", command=command,
@@ -513,16 +424,7 @@ class _DecidesPermissions:
         )
 
     async def reconsider_gate(self, gate) -> str:
-        """Decide a gate the session is *already parked on*, under the mode it is under now.
-
-        A gate is a question that has been asked, and changing the policy does not unask it: the
-        turn that raised it has ended, its verdict sits in the task record, and nothing re-reads
-        that record. So somebody who switches to `automatic` precisely because they are tired of being
-        asked watches the same card go on asking.
-
-        Answers ``"allow"``, ``"deny"``, or ``""`` for "still a question". The same reviewer the
-        preflight would have used, rather than a second policy that could drift from the first.
-        """
+        """Decide a gate the session is *already parked on*, under the mode it is under now."""
         if self._call_policy(None).asks:
             # Interactive: a question is exactly what a person is for.
             return ""
@@ -535,13 +437,7 @@ class _DecidesPermissions:
         return "allow" if decision.action == "allow" else "deny"
 
     async def decide_retry(self, gate: _PreflightGate) -> tuple[str, Optional[Grant]]:
-        """What to do with a retry gate: ``("ask", None)``, ``("run", grant)`` or
-        ``("refuse", None)``.
-
-        Three answers rather than an optional grant, because "put this to a person" and "the
-        reviewer said no" are different outcomes that a ``None`` would have merged — and merging
-        them is how an unattended session ends up parked on a question nobody will answer.
-        """
+        """What to do with a retry gate: ``("ask", None)``, ``("run", grant)`` or ``("refuse", None)``."""
         if self._call_policy(None).asks:
             return "ask", None
         decision = await self._review(gate)

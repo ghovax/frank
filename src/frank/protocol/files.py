@@ -1,11 +1,4 @@
-"""A2A ``FilePart`` interchange over Frank's own HTTP.
-
-Ingest materializes an inbound ``FilePart`` (base64 bytes, or a URI) into the
-content-addressed upload store and returns the attachment dict the harness already
-understands. Emit turns a stored file into a ``FilePart{FileWithUri}`` whose URI is a
-short-lived JWT-signed link to the file-serving endpoint, so bytes are served on demand
-and the link cannot be altered or outlive its window.
-"""
+"""A2A ``FilePart`` interchange over Frank's own HTTP."""
 
 from __future__ import annotations
 
@@ -63,16 +56,7 @@ def _attachment(path: Path, name: str, mime_type: str, size: int) -> dict[str, A
 
 
 def attachment_from_path(path: Path | str) -> dict[str, Any]:
-    """The attachment record for a local file the user handed over, referenced in place.
-
-    One implementation for the two front doors. The HTTP route serves the desktop app; the
-    library calls it directly, because a program embedding this harness has no HTTP to post
-    to and should not have to invent the record's shape to attach a file. Two spellings of one
-    record is how the two drift, and the model reads whichever it is given.
-
-    Raises ``FileNotFoundError`` when the path is not a regular file, which is the honest
-    answer for something the caller named.
-    """
+    """The attachment record for a local file the user handed over, referenced in place."""
     resolved = Path(path).expanduser().resolve(strict=True)
     if not resolved.is_file():
         raise FileNotFoundError(f"{resolved} is not a regular file.")
@@ -97,12 +81,7 @@ async def ingest_file_part(
     allow_private: bool = False,
     client: Optional[httpx.AsyncClient] = None,
 ) -> Optional[dict[str, Any]]:
-    """Materialize an inbound ``FilePart`` into the upload store and return its attachment
-    dict, or ``None`` if it is too large or unfetchable. Bytes are decoded; a URI is fetched
-    over http(s) only, and only after its host passes the anti-SSRF trust guard — a peer
-    cannot make the server fetch an internal/loopback address. The body is streamed against
-    the size ceiling and aborted the moment it is exceeded, so a hostile multi-GB response
-    cannot exhaust memory before the cap is seen."""
+    """Materialize an inbound ``FilePart`` into the upload store and return its attachment dict, or ``None`` if it is too large or unfetchable."""
     file = part.root.file if hasattr(part, "root") else part.file
     name = file.name or "file"
     suffix = Path(name).suffix
@@ -150,8 +129,7 @@ async def ingest_file_part(
 
 
 class PathNotServableError(Exception):
-    """A path outside the servable root was handed to the signer — it will not be minted
-    into a fetchable URL."""
+    """A path outside the servable root was handed to the signer — it will not be minted into a fetchable URL."""
 
 
 # Who a signed file link is for.
@@ -159,14 +137,7 @@ _FILE_TOKEN_AUDIENCE = "urn:frank:a2a:file:v1"
 
 
 class FileUrlSigner:
-    """Mints and verifies short-lived signed URLs for the file-serving endpoint. The JWT
-    binds the absolute file path, an audience, and an expiry, so a link cannot be altered to
-    reach a different file or outlive its window. Signing is *scoped*: only paths under the
-    servable root (the content-addressed upload store) can be minted into a URL, so an
-    arbitrary absolute path (``/etc/passwd``, a user's in-place-referenced local file) can
-    never be handed out — even though egress consent already gates the send, the signer
-    imposes the boundary structurally. ``verify`` re-checks the root, so a token can never
-    authorize a path outside it regardless of how it was produced."""
+    """Mints and verifies short-lived signed URLs for the file-serving endpoint."""
 
     def __init__(self, secret: bytes | str, base_url: str, allowed_root: Path | str | None = None, route: str = "/a2a/files"):
         self._secret = secret
@@ -206,10 +177,7 @@ class FileUrlSigner:
         return f"{self._base_url}{self._route}/{quote(token, safe='')}"
 
     def verify(self, token: str, *, consume: bool = False) -> Optional[str]:
-        """The file path a token authorizes, or ``None`` if it is malformed, tampered, expired,
-        wrong-audience, names a path outside the servable root, or (when ``consume``) has already
-        been redeemed. ``consume=True`` marks the token spent, making the link single-use — the
-        file-serving route passes it so a signed URL cannot be replayed."""
+        """The file path a token authorizes, or ``None`` if it is malformed, tampered, expired, wrong-audience, names a path outside the servable root, or (when ``consume``) has already been redeemed."""
         try:
             payload = jwt.decode(token, self._secret, algorithms=["HS256"], audience=_FILE_TOKEN_AUDIENCE)
         except jwt.InvalidTokenError:
