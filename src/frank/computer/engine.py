@@ -1,16 +1,4 @@
-"""The native macOS automation surface: any running app, driven through its accessibility tree.
-
-The model drives it through one tool, ``control_screen``, whose script both reads and acts:
-**``find_one``/``find_many``** read the app into a flat set of elements (via
-:meth:`NativeSurface.documents`), each keyed by its position in the accessibility tree, and
-retrieval ranks them against the model's plain-language query; the acting primitives then drive the
-chosen elements (via :meth:`NativeSurface.perform`) with trusted input — semantic AX actions where
-the element exposes them, synthesized mouse and keyboard where it does not.
-
-Reading and acting through the accessibility tree is the accurate way to drive native UI; this
-module keeps the tree walk, the AX actions, the synthesized input, and the permission gate, and
-leaves perceiving (retrieval) and composing (the control sandbox) to their own layers.
-"""
+"""The native macOS surface: any running app, read and driven through its accessibility tree."""
 from __future__ import annotations
 
 import time
@@ -28,15 +16,12 @@ from frank.base.tuning import Tunable, active_tuning
 
 message = message_loader("computer")
 
-# Subroles of the standard window title-bar controls. When a read finds only these (or nothing),
-# the app — typically a backgrounded Chromium/Electron app — has not built its real tree yet, so
-# the read is not trustworthy and we wait for it to fill.
+# The standard window title-bar controls; a read finding only these has met a tree that has not built yet.
 _WINDOW_CHROME_SUBROLES = frozenset({
     "AXCloseButton", "AXMinimizeButton", "AXFullScreenButton", "AXZoomButton",
 })
 
-# Semantic AX actions, tried before any synthesized input, split by the click count so a click maps
-# to the macOS convention: one click activates (AXPress), a double click opens (AXOpen).
+# Semantic actions tried before any synthesized input, split so one click activates and two open.
 _ACTIVATE_ACTIONS = ("AXPress",)
 _OPEN_ACTIONS = ("AXOpen", "AXConfirm", "AXPick")
 
@@ -58,10 +43,7 @@ class RegistryEntry:
 
 @dataclass
 class _WindowState:
-    """Everything the surface knows about one target window, keyed by that target's id.
-
-    Per target rather than per surface. The elements map is rebuilt by a ``documents`` read of
-    *this* window, so a read of another window cannot silently re-point ids a script is holding."""
+    """Everything the surface knows about one target window, keyed by that target so reads cannot re-point each other."""
 
     pid: int
     window_id: int
@@ -69,22 +51,7 @@ class _WindowState:
 
 
 def _name_containers_from_their_contents(documents: list[Document]) -> None:
-    """Give a container the text of what it contains, when it has none of its own.
-
-    A Finder row carries no title, description or help: the file name lives in the static text
-    inside it. So a listing came back as a wall of `{'id': ..., 'role': 'AXRow'}` with nothing to
-    tell one row from another, and an agent asked to list a folder could see that there were
-    eleven things and not what any of them were.
-
-    What a row contains is a record, not a sentence: a file name, a date, a size, a kind. They
-    stay separate in ``contains``, and the first becomes the row's ``name``, because that is the
-    one a person would call it. Flattening them into one string would ask every caller to guess
-    where a file name ends and its modification date begins.
-
-    This walks ``parent``, which every document carries. It used to take ids apart and match on a
-    shared prefix — the same answer, but read out of how ids happen to be spelled rather than out
-    of the thing they describe.
-    """
+    """Give a container the text of what it contains when it has none of its own, as a Finder row does."""
     children: dict[str, list[Document]] = {}
     for document in documents:
         if document.parent:
@@ -107,14 +74,11 @@ def _name_containers_from_their_contents(documents: list[Document]) -> None:
             continue
         document.payload["name"] = parts[0]
         document.payload["contains"] = parts
-        # Ranking searches `text`, so it holds every part; the structure above is what a caller
-        # reads. The two serve different readers and neither has to compromise for the other.
+        # Ranking searches `text` so it holds every part, while the structure above is what a caller reads.
         document.text = " ".join(parts)
 
 
-# Roles that name a *region* rather than a control: the thing a person points at when they say
-# "the one in the sidebar" or "under Help". A control's own name is not context for itself, and a
-# row's name is not context for its cells, so only these contribute.
+# Roles that name a region rather than a control, which is what a person means by "in the sidebar".
 _SECTION_ROLES = frozenset({
     "AXWindow", "AXGroup", "AXToolbar", "AXTabGroup", "AXSplitGroup", "AXScrollArea",
     "AXOutline", "AXTable", "AXList", "AXHeading", "AXRadioGroup", "AXDrawer", "AXSheet",
@@ -123,12 +87,7 @@ _SECTION_ROLES = frozenset({
 
 
 def _sections_in(snapshot: accessibility.Snapshot) -> dict[tuple[int, ...], str]:
-    """Every element in this tree that names a region, by its path.
-
-    Read from the accessibility names the application actually publishes, before
-    ``_name_containers_from_their_contents`` gives unnamed containers the words of what they hold:
-    a Finder row borrowing its first cell's filename is a useful *name* for that row and a
-    nonsense *context* for the cells inside it."""
+    """Every element that names a region, by its path, read before unnamed containers borrow their contents' words."""
     named: dict[tuple[int, ...], str] = {}
     for element in snapshot.elements:
         if element.role not in _SECTION_ROLES:
@@ -140,11 +99,7 @@ def _sections_in(snapshot: accessibility.Snapshot) -> dict[tuple[int, ...], str]
 
 
 def _context_for(path: tuple[int, ...], sections: dict[tuple[int, ...], str]) -> str:
-    """The nearest named region enclosing this element, or ``""``.
-
-    Nearest rather than a whole trail: the browser reports one label for the same reason, and a
-    section's name repeated down every descendant is what makes those descendants
-    indistinguishable to a cosine."""
+    """The nearest named region enclosing this element, rather than a whole trail that would blur its descendants."""
     for depth in range(len(path) - 1, 0, -1):
         label = sections.get(tuple(path[:depth]))
         if label:
@@ -153,20 +108,14 @@ def _context_for(path: tuple[int, ...], sections: dict[tuple[int, ...], str]) ->
 
 
 def _element_name(element: accessibility.Element) -> str:
-    # The raw role (`AXButton`) is the last resort and a poor one — the embedding has never
-    # usefully seen it — so the system's own prose for the role comes first.
+    # The system's own prose for the role comes before the raw role, which the embedding has never usefully seen.
     value = element.value if isinstance(element.value, str) else ""
     return (element.title or element.description or element.help or element.placeholder
             or value or element.role_description or element.role)
 
 
 def _displayed_window(pid: int) -> Optional[tuple[int, int]]:
-    """The size of a real window this process is showing, or ``None`` if it is showing none.
-
-    Asked of the window server rather than of accessibility, because the whole point is to tell
-    those two apart: an app can draw a window and publish nothing about it, and only the window
-    server can say so. Menu-bar strips and other chrome are excluded by size.
-    """
+    """The size of a real window this process is showing, asked of the window server rather than of accessibility."""
     import Quartz
 
     try:
@@ -187,8 +136,7 @@ def _displayed_window(pid: int) -> Optional[tuple[int, int]]:
 
 
 def _is_incomplete(snapshot: accessibility.Snapshot) -> bool:
-    """Whether a read produced nothing usable: an empty tree, or only window-chrome controls (a
-    Chromium/Electron app whose real tree has not built yet). Such a read is not acted on."""
+    """Whether a read produced nothing usable: an empty tree, or only window chrome."""
     if not snapshot.elements:
         return True
     return all(accessible.subrole in _WINDOW_CHROME_SUBROLES for accessible in snapshot.elements)
@@ -206,16 +154,7 @@ def _to_element(accessible: accessibility.Element, token: RegistryEntry) -> Elem
         flags["role_description"] = accessible.role_description
     return Element(
         role=accessible.role,
-        # The role description last, because it is what the system calls this *kind* of control
-        # rather than this one — "increment arrow button", "close button". It is prose, it is
-        # present on every element, and for the controls that publish no title, description or
-        # help it is the only words they have. Without it those elements carry an empty key, and
-        # an empty key cannot be reached by any query at any depth.
-        # Only the labels that name *this* element. The role description is deliberately absent:
-        # it names the element's *kind* ("text", "button"), and putting it here made it shadow the
-        # element's own content — every Finder sidebar row became "text" while "Recents",
-        # "Desktop" and "Documents" sat unused in `value`. It is applied in `documents()` as the
-        # last resort, after the value, where it can only fill a key that would be empty.
+        # The role description last, because it names the kind of control rather than this one, but is present on every element.
         name=accessible.title or accessible.description or accessible.help or accessible.placeholder,
         value=accessible.value,
         clickable=bool(accessible.actions),
@@ -227,15 +166,11 @@ def _to_element(accessible: accessibility.Element, token: RegistryEntry) -> Elem
 
 
 class NativeSurface(Surface):
-    """The macOS accessibility implementation of the shared ``Surface``. Snapshots an app into
-    ranked-elsewhere documents, and performs trusted actions on the elements a search returned."""
+    """The macOS accessibility implementation of the shared `Surface`."""
 
     def __init__(self) -> None:
         super().__init__("frank-accessibility", message)
-        # One entry per target, not one slot for whichever was read last. The id-to-element map is
-        # the element's path in the tree (``0.3.1``) — the platform's own address, stable within a
-        # snapshot and re-resolvable afterwards — so ``control_screen`` acts on exactly what a
-        # ``find`` returned, in the window it was found in.
+        # One entry per target, keyed by the element's path in the tree, which is the platform's own re-resolvable address.
         self._windows: dict[str, _WindowState] = {}
 
     def recover(self, detail: str) -> dict:
@@ -245,13 +180,7 @@ class NativeSurface(Surface):
     # Target and element resolution.
 
     def _state_for(self, target: str) -> _WindowState:
-        """The live state of one window, resolving the target if this is the first touch.
-
-        There is no "current" window and no fallback to the last one. A single ``_last_pid``
-        lived here, set by whichever read ran last anywhere in the process, and everything that
-        did not take a ref read it: ``press`` sent keys to it, ``focus`` raised it, ``read()``
-        refused with "nothing to read yet" when it happened to be unset. Two scripts running
-        concurrently shared it. A target is an argument now, all the way down."""
+        """The live state of one window, resolved on first touch, with no current window and no fallback to the last."""
         from frank.computer import targets as target_registry
 
         state = self._windows.get(target)
@@ -290,12 +219,7 @@ class NativeSurface(Surface):
         return None
 
     def _ready_snapshot(self, pid: int, window: str) -> accessibility.Snapshot:
-        """Read the app's tree, waiting out the asynchronous build a Chromium/Electron app does the
-        first time its accessibility is switched on. The pre-warm watcher means the front app's tree
-        is usually already up, so the common path is a single full read. When it is not — an app just
-        launched, or one targeted by name that was never frontmost — a shallow readiness probe polls
-        with a widening backoff until content appears past the window chrome, then the full read is
-        taken. On timeout the last (possibly incomplete) read is returned for the caller to report."""
+        """Read the app's tree, waiting out the asynchronous build an Electron app does when accessibility is first switched on."""
         accessibility.start_prewarm()
         kwargs: dict[str, Any] = {"window": window}
         snapshot = accessibility.snapshot_app(pid, **kwargs)
@@ -311,10 +235,7 @@ class NativeSurface(Surface):
         return accessibility.snapshot_app(pid, **kwargs)
 
     def _tree_ready(self, pid: int, window: str) -> bool:
-        """A cheap read that answers one question: has the app's real tree built, or is only window
-        chrome up? Bounded by a short budget rather than a shallow depth — the poll wants to be
-        quick, and time is what "quick" means. Readiness is judged by exactly the rule a full read
-        uses (``_is_incomplete``)."""
+        """A cheap read answering whether the real tree has built, bounded by a short time budget rather than a shallow depth."""
         probe = accessibility.snapshot_app(
             pid, window=window,
             budget_seconds=active_tuning().duration(Tunable.accessibility_ready_probe_seconds),
@@ -322,8 +243,7 @@ class NativeSurface(Surface):
         return not _is_incomplete(probe)
 
     def _environment(self, pid: int) -> dict:
-        """The situational awareness a person gets from a glance: this app's other windows, and
-        what else is open to switch to."""
+        """The situational awareness a glance gives: this app's other windows, and what else is open to switch to."""
         env: dict[str, Any] = {}
         windows = accessibility.window_titles(pid)
         if len(windows) > 1:
@@ -346,8 +266,7 @@ class NativeSurface(Surface):
         return None
 
     def documents(self, target: str = "") -> dict:
-        """Read the app into retrieval documents: one per element, keyed by its tree path, its text
-        the element's own words. Rebuilds the id-to-element map that ``perform`` acts through."""
+        """Read the app into retrieval documents, one per element keyed by its tree path, rebuilding the map `perform` acts through."""
 
         def run() -> dict:
             state = self._state_for(target)
@@ -355,11 +274,7 @@ class NativeSurface(Surface):
             snapshot = self._ready_snapshot(pid, "focused")
             if _is_incomplete(snapshot):
                 name = snapshot.app_name or target or "the app"
-                # "Not ready" and "will never be ready" are different facts and want different
-                # answers. The window server knows which: if it is showing a real window while
-                # accessibility reports nothing, the app is withholding its interface rather
-                # than still building it, and no amount of waiting or re-observing will help.
-                # Reported as "starting up", this cost three wrong theories about one app.
+                # Not ready and never going to be ready are different facts, and the window server is what tells them apart.
                 displayed = _displayed_window(pid)
                 if displayed is not None:
                     width, height = displayed
@@ -375,45 +290,14 @@ class NativeSurface(Surface):
                 ref = ".".join(str(step) for step in accessible.path) or "root"
                 state.elements[ref] = entry
                 element = _to_element(accessible, entry)
-                # Two strings, deliberately. `shown` is the element's own words, which is what a
-                # reader is given; `key` is what is embedded. Putting the kind into what is shown
-                # would have the model reading "text label Shared" as an element's text. As on the
-                # browser surface: what the model reads is generous, what the embedding ranks is
-                # not.
+                # `shown` is the element's own words for a reader, while `key` is what is embedded.
                 shown = element_text(name=element.name or "", value=element.value)
-                # What the element is called, falling back to what it says. Two thirds of native
-                # elements have no name and would otherwise carry an empty key, which no query can
-                # reach; most of those are static text whose words are in `value`. The order is
-                # the whole of it — with the kind ahead of the value, 47 Finder rows were all keyed
-                # "text" while their real labels went unread.
+                # What the element is called, falling back to what it says, since two thirds of native elements have no name.
                 said = text_or_fallback(
                     element_text(name=element.name or ""),
                     element.value if isinstance(element.value, str) else "",
                 )
-                # And then the kind of control, in the application's own words.
-                #
-                # This reverses a finding, on the evidence that finding asked for. The key was the
-                # name alone because name-with-role-and-value measured 2.5% [0.8%, 4.2%] better
-                # that way — but the caveat recorded beside it was that no query in that harness
-                # ever named a kind of control, which is the one thing a role is for, so the
-                # measurement was taken on queries that could never have rewarded it. What settles
-                # it is what real queries ask by, and 137 of them logged from live sessions say
-                # **56% name a kind** ("Help search text field", "Plots tab in the sidebar").
-                #
-                # Measured against that: on 1,972 queries scored on the specific element rather
-                # than the kind, prepending `role_description` is +9.6 points on queries that name
-                # a kind and −2.3 on queries that name only a label — +5.4 overall, and it wins or
-                # ties on eleven of the twelve applications sampled. Weighted by the real 56/44
-                # split it is +4.4.
-                #
-                # `role_description` rather than a role-to-words table of our own: it is the prose the
-                # application already publishes ("text entry area", "switch"), so it says what that
-                # application calls the thing, and it costs half the dilution of a synonym table
-                # (−2.3 against −5.3) for nearly all of the gain.
-                #
-                # It is appended rather than led with, and only where the element already says
-                # something, because a bare kind is not an identity: keying an unnamed control on
-                # "switch" alone is what leaves ten of them indistinguishable.
+                # And then the kind of control in the application's own words, which is what makes a nameless control reachable.
                 kind = str(element.flags.get("role_description") or "")
                 key = f"{said} {kind}".strip() if said and kind else text_or_fallback(said, kind)
                 payload: dict[str, Any] = {"role": element.role}
@@ -431,10 +315,7 @@ class NativeSurface(Surface):
                     payload["clickable"] = True
                 if shown:
                     payload["text"] = shown
-                # Which region of the window this sits in, from the nearest ancestor that names
-                # one. The browser has always reported this and a window never did, so a caller
-                # who narrowed with `context=` on a window matched nothing and the search silently
-                # widened to the whole tree — a facet that looked like it worked and did not.
+                # Which region of the window this sits in, so a caller can narrow with `context=` here as on a page.
                 context = _context_for(accessible.path, sections)
                 if context:
                     payload["context"] = context
@@ -442,23 +323,7 @@ class NativeSurface(Surface):
                 parent = ".".join(str(step) for step in accessible.path[:-1]) if len(accessible.path) > 1 else ""
                 if parent:
                     payload["parent"] = parent
-                # Where it is. Computed for every element already — it is how a click knows where
-                # to land — and then dropped before the model saw any of it.
-                #
-                # It is here because it disambiguates, and it is the same `bounds` a window
-                # carries in the target listing — one fact, one name, at both scales. Of the
-                # elements no query can separate, position tells 87% of them apart and `parent`
-                # tells apart a different 87%: measured across twelve applications the two agree
-                # on 87% and each resolves a further 13% the other cannot, so neither replaces the
-                # other. Which one answers depends on how the application is built rather than on
-                # anything a caller can predict — a list laid out down the screen is separated by
-                # position and not by structure, while repeated controls an application collapses
-                # to a single point are separated by structure and not by position. Carrying both
-                # is what makes the pair reliable when neither alone is.
-                #
-                # Reported, never ranked. Fusing a second signal into the score is the experiment
-                # this module already ran and lost, and geometry is not what a query says. It is
-                # here for the model to *read* when two candidates look alike.
+                # Where it is, from the same rectangle a click already uses and the target listing already reports.
                 where = accessibility.rectangle(accessible.frame)
                 if where is not None:
                     payload["bounds"] = where
@@ -517,13 +382,7 @@ class NativeSurface(Surface):
 
     def _primitive_type(self, state: _WindowState, element: str, text: str, *, submit: bool = False,
                         mode: str = "replace", **_: Any) -> dict:
-        """Put text into a field, and — with ``submit`` — post the Return that commits it.
-
-        ``submit`` exists here because it exists on a page, and a script is written against
-        ``type``, not against whichever surface happens to be answering. It used to be accepted
-        and silently dropped into ``**_``: the call returned ``ok`` with a cheerful ``did``, the
-        form was never submitted, and nothing anywhere said so. The model that hit this diagnosed
-        a focus race that had never happened."""
+        """Put text into a field and, with `submit`, post the Return that commits it."""
         def run() -> dict:
             entry = self._entry(state, element)
             handle = self._live_handle(entry)
@@ -531,8 +390,7 @@ class NativeSurface(Surface):
                 return {"ok": False, "error": f"Element {entry.name!r} is no longer available; search again."}
             result = self._enter_text(entry, handle, text, mode=mode)
             if result.get("ok") and submit:
-                # Return goes to the process, not to the element: a form is committed by the
-                # focused control, which typing has just made this one.
+                # Return goes to the process rather than the element, since a form is committed by the focused control.
                 AS.AXUIElementSetAttributeValue(handle, accessibility.FOCUSED, True)
                 time.sleep(active_tuning().duration(Tunable.focus_settle_seconds))
                 if input_synthesis.press_key(entry.pid, "return", []):
@@ -653,13 +511,7 @@ class NativeSurface(Surface):
         return self.guard(run)
 
     def glance(self, target: str) -> Glance:
-        """Title, focus and selection, plus which elements are present — from one walk.
-
-        No url and no network here, because a window has neither. The keys a surface cannot fill
-        are absent rather than null, so the model learns one shape and reads whatever is present.
-        The element ids ride along from the same snapshot rather than costing a second read, and
-        deliberately do not go through ``documents``: that rebuilds the id-to-element map, so merely
-        looking at a window used to re-point every id a script was already holding."""
+        """Title, focus, selection and the elements present, from one walk, with the keys a window cannot fill absent."""
         try:
             state = self._windows.get(target)
             pid = state.pid if state is not None else self._state_for(target).pid
@@ -675,15 +527,7 @@ class NativeSurface(Surface):
         )
 
     def _primitive_focus(self, state: _WindowState, element: Optional[str] = None, **_: Any) -> dict:
-        """Give keyboard focus to this window, or to one control inside it.
-
-        It sets ``AXFocused`` and nothing else. It used to call
-        ``activateWithOptions_(NSApplicationActivateIgnoringOtherApps)``, which raises the
-        application over whatever the user is doing — and directly contradicts the promise the
-        rest of the input layer makes and keeps: *we never warp the real cursor and never
-        force-activate the target*. It was also redundant, since typing already focuses the field
-        it is about to type into. Input reaches an unfocused, off-screen, other-Space window
-        perfectly well; every event goes to the process, not to the screen."""
+        """Give keyboard focus to this window or one control inside it, without raising the app over what the user is doing."""
         def run() -> dict:
             if element:
                 entry = self._entry(state, element)
