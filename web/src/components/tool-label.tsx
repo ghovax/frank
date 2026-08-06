@@ -1,14 +1,6 @@
 "use client";
 
-// The inline label shown in a tool-call heading. Three cases, decided by
-// getToolCallDisplay:
-//   • an unrecognized tool with no explanation shows its raw name in monospace
-//     (it is an identifier, so it reads as code);
-//   • a tool with an explanation shows the explanation as inline Markdown
-//     (code spans, `file:line` refs, emphasis all render);
-//   • otherwise, the plain fallback label (a raw command/path), kept literal so
-//     Markdown never mangles it.
-// Returns inline nodes only — the caller owns sizing, truncation, and shimmer.
+// The inline label in a tool-call heading: a raw name, an explanation, or a translated one.
 
 import { Code } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";

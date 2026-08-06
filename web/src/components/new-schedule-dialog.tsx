@@ -1,11 +1,6 @@
 "use client";
 
-// Creating a schedule without going through Settings.
-//
-// A schedule is a thing you *make*, like a workspace or a conversation, so it belongs beside
-// them in the sidebar rather than only three screens into a settings dialog — where it was
-// reachable but only by somebody who already knew it existed. The form itself is shared with
-// the settings panel; this is the frame around it.
+// Creating a schedule from the sidebar, beside the other things you make, rather than inside Settings.
 
 import { Dialog, Portal, Text } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";

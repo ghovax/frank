@@ -1,5 +1,4 @@
-// Type-safe messages: `useTranslations`/`translation()` keys are checked against en.json (the source
-// of truth), so a typo or a key missing from the catalog is a compile error across the app.
+// Catalogue keys checked against en.json, so a typo or a missing key is a compile error.
 import type en from "../../shared/messages/en.json";
 
 declare module "next-intl" {

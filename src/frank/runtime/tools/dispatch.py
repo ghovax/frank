@@ -1210,8 +1210,7 @@ class _DispatchesTools:
         """Every peer-session verb, in one handler: they differ only in which call they make."""
         from frank.runtime.tools import sessions
 
-        # The create tool is built per-runtime, with the installed profiles baked into its
-        # schema, so it is found among this runtime's tools rather than imported.
+        # The create tool is built per-runtime with the installed profiles in its schema, so it is found, not imported.
         create_tool = next((tool for tool in self._tools if tool.name == "create_session"), None)
         background_token = bind_background_jobs(self._background)
         try:
@@ -1233,8 +1232,7 @@ class _DispatchesTools:
             unbind_background_jobs(background_token)
         result_data = _maybe_json(result)
         if isinstance(result_data, dict) and result_data.get("code") == "web_search_started":
-            # Attach the "don't poll/read_turn this" guidance from a prompt
-            # template, keeping user-facing wording out of the tool code.
+            # The "do not poll this" guidance comes from a template, keeping user-facing wording out of the code.
             result_data["note"] = self._prompt_loader.load("web_search_started_note", {})
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
 
