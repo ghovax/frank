@@ -27,6 +27,7 @@ from langmesh.base.instructions import instructions_payload
 from langmesh.base.memories import memories_payload
 from langmesh.base.message_content import message_content_deltas, message_text
 from langmesh.base.model_errors import ContextWindowExceeded, over_context_window
+from langchain_core.utils.json import parse_partial_json
 from langmesh.base.skills import enabled_skills, skills_for_agent, skills_payload
 from langmesh.base.confinement import Denial
 from langmesh.runtime.turn_events import (
@@ -36,6 +37,7 @@ from langmesh.runtime.turn_events import (
     Steering,
     Suspended,
     SuspensionGate,
+    Status,
     TextChunk,
     Thinking,
     ThinkingDone,
@@ -522,6 +524,13 @@ class _RunsTurns:
         response_chunks: list[AIMessageChunk] = []
         # Calls already announced from the stream, so the completed message does not announce them twice.
         announced_tool_calls: set[str] = set()
+        # What each call looks like so far: its id by stream index, its name, its raw argument text, and what was shown.
+        streaming_call_ids: dict[Any, str] = {}
+        streaming_call_names: dict[str, str] = {}
+        streaming_call_args: dict[str, str] = {}
+        streaming_call_shown: dict[str, dict] = {}
+        # When each call last redrew, so a fast provider cannot redraw a row faster than a screen can show it.
+        streaming_call_drawn_at: dict[str, float] = {}
         aborted_for_steering = False
         # A generation span, started rather than made current so it is safe to hold across yields.
         generation_span = _telemetry.start_span(
@@ -531,6 +540,8 @@ class _RunsTurns:
         if not self._hooks.empty:
             messages = await self._hooks.before_model(messages)
         self._refuse_if_over_window(messages)
+        # Said out loud, because the wait that follows is the provider's and the turn would otherwise look idle.
+        yield Status(code="awaiting_model")
         model_stream = self._bound_model.astream(messages)
         abort_waiter = asyncio.ensure_future(self._abort_event.wait())
         try:
@@ -555,18 +566,35 @@ class _RunsTurns:
                 if chunk is _STREAM_EXHAUSTED:
                     break
                 response_chunks.append(chunk)
-                # A call is announced the moment the model names it, not when its arguments finish: writing a
-                # large argument is seconds during which the turn would otherwise show nothing at all.
+                # A call is announced the moment the model names it, and again as each argument finishes:
+                # writing a large one is seconds, and the turn would otherwise show nothing for all of them.
                 for named in getattr(chunk, "tool_call_chunks", None) or []:
-                    name = (named or {}).get("name") or ""
-                    identifier = (named or {}).get("id") or ""
-                    if not name or not identifier or identifier in announced_tool_calls:
+                    identifier = (named or {}).get("id") or streaming_call_ids.get((named or {}).get("index"))
+                    name = (named or {}).get("name") or streaming_call_names.get(identifier, "")
+                    if not identifier:
                         continue
-                    announced_tool_calls.add(identifier)
-                    if not thinking_done_emitted:
-                        thinking_done_emitted = True
-                        yield ThinkingDone(duration_ms=int((time.monotonic() - thinking_started_at) * 1000))
-                    yield ToolCall(name=name, arguments=None, id=identifier)
+                    streaming_call_ids[(named or {}).get("index")] = identifier
+                    if name:
+                        streaming_call_names[identifier] = name
+                    if name and identifier not in announced_tool_calls:
+                        announced_tool_calls.add(identifier)
+                        if not thinking_done_emitted:
+                            thinking_done_emitted = True
+                            yield ThinkingDone(duration_ms=int((time.monotonic() - thinking_started_at) * 1000))
+                        yield ToolCall(name=name, arguments=None, id=identifier)
+                    fragment = (named or {}).get("args") or ""
+                    if not fragment or identifier not in announced_tool_calls:
+                        continue
+                    streaming_call_args[identifier] = streaming_call_args.get(identifier, "") + fragment
+                    settled = parse_partial_json(streaming_call_args[identifier]) or {}
+                    if isinstance(settled, dict) and settled and settled != streaming_call_shown.get(identifier):
+                        # Redrawn on the same clock the text uses, since both end as one row on one screen.
+                        drawn = time.monotonic()
+                        if drawn - streaming_call_drawn_at.get(identifier, 0.0) < 0.016667:
+                            continue
+                        streaming_call_drawn_at[identifier] = drawn
+                        streaming_call_shown[identifier] = settled
+                        yield ToolCall(name=streaming_call_names.get(identifier, ""), arguments=settled, id=identifier)
                 for content_delta in message_content_deltas(chunk):
                     if content_delta.kind == "text":
                         if not thinking_done_emitted:

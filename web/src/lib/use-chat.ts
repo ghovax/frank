@@ -634,6 +634,9 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
     case "status": {
       // Paused on tool execution: tools surface their own status, so just close the thinking indicator.
       if (event.code === "waiting_for_tools") finishRunningThinking(state);
+      // The request is with the provider, and its first token is a second or two away. Opening the row now
+      // is the difference between a turn that looks started and one that looks stuck; reasoning appends to it.
+      if (event.code === "awaiting_model") applyThinking(state, "");
       // Anything else a status says is shown by its own row; this arm stops it reaching the unknown path.
       break;
     }
