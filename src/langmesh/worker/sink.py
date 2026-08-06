@@ -45,7 +45,7 @@ from langmesh.runtime.turn_events import (
 )
 
 class _TextPartBuffer:
-    """Coalesce adjacent text chunks before publishing, at the semantic layer rather than the transport one."""
+    """Coalesce adjacent text chunks onto a frame clock, so what is emitted follows time rather than arrivals."""
 
     def __init__(
         self,
@@ -60,7 +60,10 @@ class _TextPartBuffer:
         self._key: tuple[str, ...] | None = None
         self._chunks: list[str] = []
         self._length = 0
-        self._last_flush = 0.0
+        # The block whose opening chunk has already been drawn, so only the first of each is sent at once.
+        self._opened: tuple[str, ...] | None = None
+        # The pending trailing flush. Its existence is what makes a pause end in an emission rather than a wait.
+        self._timer: asyncio.Task | None = None
 
     async def push(self, text: str, key: tuple[str, ...] = ()) -> None:
         if not text:
@@ -69,24 +72,56 @@ class _TextPartBuffer:
             await self.flush(force=True)
         if not self._chunks:
             self._key = key
-            self._last_flush = asyncio.get_running_loop().time()
         self._chunks.append(text)
         self._length += len(text)
-        await self.flush()
+        # A block's first chunk is drawn at once, so a reply appears on its first token rather than a frame later.
+        if key != self._opened:
+            self._opened = key
+            await self.flush(force=True)
+            return
+        if self._length >= self._flush_size:
+            await self.flush(force=True)
+            return
+        self._schedule()
+
+    def _schedule(self) -> None:
+        """Promise a flush one frame from now, so text buffered before a pause is not held by the pause."""
+        if self._timer is not None and not self._timer.done():
+            return
+
+        async def later() -> None:
+            try:
+                await asyncio.sleep(self._flush_interval)
+                await self.flush(force=True)
+            except asyncio.CancelledError:
+                raise
+
+        self._timer = asyncio.get_running_loop().create_task(later())
+
+    def _cancel_timer(self) -> None:
+        if self._timer is not None and not self._timer.done():
+            self._timer.cancel()
+        self._timer = None
 
     async def flush(self, force: bool = False) -> None:
         if not self._chunks or self._key is None:
             return
-        now = asyncio.get_running_loop().time()
-        if not force and self._length < self._flush_size and now - self._last_flush < self._flush_interval:
+        if not force and self._length < self._flush_size:
+            self._schedule()
             return
+        self._cancel_timer()
         key = self._key
         text = "".join(self._chunks)
         self._key = None
         self._chunks = []
         self._length = 0
-        self._last_flush = now
         await self._emit(key, text)
+
+    async def aclose(self) -> None:
+        """Emit whatever is held and stop promising more, for a turn that is over."""
+        self._cancel_timer()
+        await self.flush(force=True)
+        self._opened = None
 
 
 class _TurnEventSink:
@@ -122,8 +157,13 @@ class _TurnEventSink:
 
     async def flush(self, force: bool = True) -> None:
         # Each buffer is drained in the order its content was produced, so a turn ending mid-thought is not reordered.
-        await self._text.flush(force=force)
-        await self._thinking.flush(force=force)
+        if force:
+            # A turn that is over promises nothing further, so the timers stop with it.
+            await self._text.aclose()
+            await self._thinking.aclose()
+            return
+        await self._text.flush(force=False)
+        await self._thinking.flush(force=False)
 
     async def emit_compaction(self, event: CompactionStarted | CompactionDone) -> None:
         """Map a compaction event to its part, so a manual pass and an automatic one render identically."""
