@@ -21,12 +21,7 @@ async def read_preferences():
 
 @router.post("/preferences")
 async def write_preferences(request: InterfacePreferencesUpdateRequest):
-    """Change one or more of them, and answer with all of them.
-
-    The broadcast is what makes a preference shared rather than merely central: switch to dark
-    in the desktop app and the browser window beside it follows, because both are looking at
-    the row that just changed rather than at their own copy of it.
-    """
+    """Change one or more of them and answer with all of them, broadcasting so every client follows."""
     try:
         stored = await asyncio.to_thread(update_preferences, request.model_dump(exclude_none=True))
     except ValueError as error:

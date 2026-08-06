@@ -1,14 +1,4 @@
-/**
- * The primitives every screen is built from.
- *
- * The desktop gets these from Chakra, where a component names a semantic token and the cascade
- * resolves it. RN has neither, so each primitive reads the theme itself and the screens above
- * never touch a colour. That is the same discipline by different means: if a hex appears in a
- * screen file here, something has gone wrong.
- *
- * Sizes come from `tokens.ts`, with one deliberate divergence — anything you tap is at least 40
- * points high, where the desktop uses 32. A mouse hits a 32px target; a thumb does not.
- */
+/** The primitives every screen is built from, since React Native has no cascade to resolve tokens through. */
 
 import { CircleCheck, Info, TriangleAlert, type LucideIcon } from "lucide-react-native";
 import type { ReactNode } from "react";
@@ -83,10 +73,7 @@ export function Button({
     : tone === "accent" ? theme.colors.blueFg : theme.colors.fg;
 
   const background = variant === "solid" ? accent : variant === "subtle" ? subtleBackground : "transparent";
-  // Every variant carries a border; only its colour changes. A `borderWidth` that switched
-  // between 1 and 0 made selecting a segmented button *move* it — the box lost two points of
-  // width and one of height, and everything inside shifted to match. Matching each variant's
-  // border to its own background keeps the geometry identical and the appearance unchanged.
+  // Every variant carries a border and only its colour changes, so selecting one never moves it.
   const border = variant === "outline" ? theme.colors.border
     : variant === "solid" ? accent
     : variant === "subtle" ? subtleBackground
@@ -162,20 +149,7 @@ export function Pill({ label, tone = "neutral", icon: Icon }: {
   );
 }
 
-/**
- * Something the person needs to read before carrying on.
- *
- * The same shape the desktop's Settings panel uses — Chakra's `Alert.Root` with an
- * `Alert.Indicator`, subtle fill, `md` corner — down to which glyph goes with which status, so
- * that a warning here and a warning there are recognisably the same object. Chakra maps `error`
- * and `warning` to the one triangle and `info` to the circle, and this follows it rather than
- * improving on it: a screen where the danger sign is a triangle in one place and a circle in
- * another is a screen that has to be read rather than glanced at.
- *
- * The icon is aligned to the first line rather than to the box, because these run to two and
- * three lines on a phone and an indicator centred against a paragraph reads as floating loose
- * of the sentence it belongs to.
- */
+/** Something the person needs to read before carrying on, in the same shape the desktop uses. */
 export function Alert({ status = "error", children }: {
   status?: "info" | "warning" | "success" | "error";
   children: ReactNode;
@@ -304,8 +278,7 @@ export function EmptyState({ icon: Icon, title, description }: {
 
 const styles = StyleSheet.create({
   button: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
-  // Clipped to the icon's box so the intrinsically larger indicator cannot change the row's
-  // height, and centred within it so it turns about the middle of the button.
+  // Clipped to the icon's box so the indicator cannot change the row's height, and centred within it.
   busy: { alignItems: "center", justifyContent: "center", overflow: "hidden" },
   pill: { flexDirection: "row", alignItems: "center", paddingHorizontal: 6, paddingVertical: 2 },
   alert: { flexDirection: "row", alignItems: "flex-start", borderWidth: 1 },
