@@ -441,7 +441,7 @@ class SessionExecutor(AgentExecutor):
             state = self._contexts.get(session_id)
             if state is not None and state.resume_pump is asyncio.current_task():
                 state.resume_pump = None
-        # The context is idle, so a reset deferred while it had work in flight can finally take effect.
+            # The context is idle, so a reset deferred while it had work in flight can finally take effect.
             self._maybe_evict(session_id)
 
     async def _run_autonomous_turn(self, session_id: str) -> None:
@@ -516,7 +516,7 @@ class SessionExecutor(AgentExecutor):
         state = self._context(session_id)
         runtime = state.runtime
         if runtime is None:
-        # Restore a persisted conversation the first time a context is seen, so the agent resumes with its history.
+            # Restore a persisted conversation the first time a context is seen, so the agent resumes with its history.
             if session_id not in self._conversations:
                 # The model-facing conversation is the store's per-context checkpoint, the one durable turn surface.
                 checkpoint = await self._turn_store.load_checkpoint(session_id)
@@ -525,7 +525,7 @@ class SessionExecutor(AgentExecutor):
                 restored = messages_from_dict(checkpoint.get("messages") or [])
                 if restored:
                     self._conversations[session_id] = restored
-        # Bound to the process-wide history for this context, so a turn picks up where the last left off.
+            # Bound to the process-wide history for this context, so a turn picks up where the last left off.
             conversation = self._conversations.setdefault(session_id, [])
             locations = None
             locations = self._locations
@@ -536,14 +536,14 @@ class SessionExecutor(AgentExecutor):
                 conversation=conversation,
                 locations=locations,
             )
-        # Restore the durable objective alongside the conversation, so a marathon run never loses what it was for.
+            # Restore the durable objective alongside the conversation, so a marathon run never loses what it was for.
             session_state = await self._turn_store.load_session_state(session_id)
             if session_state:
                 runtime.restore_session(session_state)
-            # Announce the restored goal here: `restore_session` deliberately does not, being the write that changes nothing.
+                # Announce the restored goal here: `restore_session` deliberately does not, being the write that changes nothing.
                 self._notify_goal_state(session_id, runtime.goal)
             state.runtime = runtime
-        # Replay background results the store holds but never delivered, so the model sees them at once.
+            # Replay background results the store holds but never delivered, so the model sees them at once.
             self._replay_stored_background_results(session_id, runtime)
         # A context's working directory is fixed at creation, so later turns never repoint it.
         return runtime
@@ -756,7 +756,7 @@ class SessionExecutor(AgentExecutor):
                 SystemMessage(content=prompt.load("session_title", {})),
                 HumanMessage(content=first_message),
             ]
-        # The tool is offered and the prompt insists on it: forcing it, a thinking model behind a gateway refuses.
+            # The tool is offered and the prompt insists on it: forcing it, a thinking model behind a gateway refuses.
             attempts = active_tuning().amount(Tunable.session_title_attempts)
             for attempt in range(1, attempts + 1):
                 try:
@@ -783,7 +783,7 @@ class SessionExecutor(AgentExecutor):
                 )
             logger.warning("gave up naming session %s after %d attempts", self._session_id, attempts)
         except Exception:  # noqa: BLE001 — a session is not worth failing over its own name
-        # Not `debug`: failing to name one session is cosmetic, failing to name every session is a fault.
+            # Not `debug`: failing to name one session is cosmetic, failing to name every session is a fault.
             logger.warning(
                 "could not generate a title for session %s", self._session_id, exc_info=True
             )

@@ -37,7 +37,7 @@ async def mcp_tools(server: str = "", working_directory: str = ""):
         configured = state.global_configuration.mcp.servers
     tools_by_server: dict[str, list] = {}
     if state.mcp_manager is not None:
-    # List the enabled servers and filter below: the manager raises for a name it does not hold.
+        # List the enabled servers and filter below: the manager raises for a name it does not hold.
         listing = await state.mcp_manager.list_tools("")
         tools_by_server = {entry["name"]: entry["tools"] for entry in listing["servers"]}
     servers = [

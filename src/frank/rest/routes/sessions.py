@@ -71,7 +71,7 @@ async def delete_session(session_id: str):
         referenced_uploads: set[str] = set()
         for text in await state.turn_store.session_message_texts(session_id):
             referenced_uploads.update(upload_pattern.findall(text))
-    # One call drops the context's tasks and its conversation checkpoint.
+        # One call drops the context's tasks and its conversation checkpoint.
         await state.turn_store.delete_session(session_id)
         for path_string in referenced_uploads:
             if not await state.turn_store.any_history_references(path_string):
@@ -85,7 +85,7 @@ async def delete_session(session_id: str):
             if record is None:
                 database_session.commit()
                 return False
-    # Clear the workspace pointer, or the next client to open it looks for a session nothing can serve.
+            # Clear the workspace pointer, or the next client to open it looks for a session nothing can serve.
             database_session.query(WorkspaceRecord).filter(
                 WorkspaceRecord.last_session_id == session_id
             ).update({WorkspaceRecord.last_session_id: ""})

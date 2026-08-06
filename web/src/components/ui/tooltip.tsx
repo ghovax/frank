@@ -16,7 +16,7 @@ const RICH_CONTENT_PROPS = {
   boxShadow: "lg",
   border: "1px solid",
   borderColor: "border",
-    // Bound the card, or a nowrap content box grows to its widest line and spills past the border.
+  // Bound the card, or a nowrap content box grows to its widest line and spills past the border.
   maxW: "20rem",
   overflow: "hidden",
   overflowWrap: "anywhere",
@@ -47,7 +47,7 @@ export const Tooltip = React.forwardRef<HTMLDivElement, TooltipProps>(
       ...rest
     } = props
 
-  // Tap to open, since the tooltip machine opens on hover and a touch device has none.
+    // Tap to open, since the tooltip machine opens on hover and a touch device has none.
     const coarsePointer = useCoarsePointer()
     const [tapped, setTapped] = React.useState(false)
 
@@ -67,7 +67,7 @@ export const Tooltip = React.forwardRef<HTMLDivElement, TooltipProps>(
       : {}
 
     return (
-    // Two defaults overturned, both because this app streams into a pane that scrolls itself.
+      // Two defaults overturned, both because this app streams into a pane that scrolls itself.
       <ChakraTooltip.Root closeOnScroll={false} interactive {...rest} {...touch}>
         <ChakraTooltip.Trigger
           asChild

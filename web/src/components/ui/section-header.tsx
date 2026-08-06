@@ -27,7 +27,7 @@ export function SectionHeader({
           display="flex"
           alignItems="center"
           justifyContent="center"
-        // The glyph fills its square, so a 14px icon and a 16px one centre on the same axis.
+          // The glyph fills its square, so a 14px icon and a 16px one centre on the same axis.
           css={{ "& > svg": { width: "100%", height: "100%" } }}
         >
           {icon}

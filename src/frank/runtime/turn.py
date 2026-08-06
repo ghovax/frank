@@ -85,7 +85,7 @@ class _RunsTurns:
             worktree_root, is_git_repo = _detect_workspace(self._working_directory)
             context_json = compact({
                 "session": self._session_id,
-            # Present only where another session created this one: somebody is waiting for an answer.
+                # Present only where another session created this one: somebody is waiting for an answer.
                 **({"parent_session": self._parent_session} if self._parent_session else {}),
                 "working_directory": self._working_directory,
                 "project_directory": self._project_directory,
@@ -94,9 +94,9 @@ class _RunsTurns:
                 "session_worktree_strategy": self._global_configuration.workspace.strategy,
                 "platform": platform.system(),
                 "today_date": datetime.now().strftime("%Y-%m-%d"),
-        # `locations` is absent: it can change mid-session, and anything changeable rewrites every request.
+                # `locations` is absent: it can change mid-session, and anything changeable rewrites every request.
             })
-        # Conditional, since it asserts "you are running as a session", which a library runtime is not.
+            # Conditional, since it asserts "you are running as a session", which a library runtime is not.
             parent_report = (
                 self._prompt_loader.load("parent_report", {"parent": self._parent_session})
                 if self._parent_session else ""
@@ -105,15 +105,15 @@ class _RunsTurns:
                 self._prompt_loader.load("agent_context", {"parent_report": parent_report})
                 if "message_session" in {tool.name for tool in self._tools} else ""
             )
-        # The user-context section is its own template, so it is simply absent when the setting is off.
+            # The user-context section is its own template, so it is simply absent when the setting is off.
             user_environment = ""
             if self._user_context_enabled():
                 user_environment = self._prompt_loader.load("user_context", {})
-        # The screen tools are opt-in, so their guidance enters the prompt only when they do.
+            # The screen tools are opt-in, so their guidance enters the prompt only when they do.
             computer_control_guidance = ""
             if self._global_configuration.computer_control.enabled:
                 computer_control_guidance = self._prompt_loader.load("computer_control_guidance", {})
-        # Guidance for tools this session lacks is guidance to call something that is not there.
+            # Guidance for tools this session lacks is guidance to call something that is not there.
             toolbox = (
                 self._prompt_loader.load("toolbox", {})
                 if self._tool_context.toolbox is not None else ""
@@ -127,10 +127,10 @@ class _RunsTurns:
                 self._prompt_loader.load("mcp_servers", {})
                 if "call_mcp_tool" in available else ""
             )
-        # Whole documents, each laid out by its own template: metadata as JSON, the document as itself.
+            # Whole documents, each laid out by its own template: metadata as JSON, the document as itself.
             instruction_files = "".join(
                 self._prompt_loader.load("instruction_file", {
-                # Whatever the payload carries and nothing invented: `scope` is absent for a non-file document.
+                    # Whatever the payload carries and nothing invented: `scope` is absent for a non-file document.
                     "metadata": compact({key: entry[key] for key in ("source", "scope") if key in entry}),
                     "content": entry["content"].strip(),
                 })
@@ -140,7 +140,7 @@ class _RunsTurns:
                 self._prompt_loader.load("instructions", {"files": instruction_files})
                 if instruction_files else ""
             )
-        # One statement of how to think, rendered into this prompt and the reviewer's, so they cannot drift.
+            # One statement of how to think, rendered into this prompt and the reviewer's, so they cannot drift.
             thinking_language = self._prompt_loader.load("thinking_language", {}).strip()
             self._cached_system_prompt = self._prompt_loader.load("system_prompt", {
                 "system_prompt": self._system_prompt,
@@ -406,7 +406,7 @@ class _RunsTurns:
             self._conversation.append(turn_message)
             # The event-log recorder only wants prose from LangChain's standard blocks.
             recorded_user_message = message_text(turn_message)
-            # After the turn's message, so the freshest picture is read last, and once per turn rather than per hop.
+        # After the turn's message, so the freshest picture is read last, and once per turn rather than per hop.
         self._append_turn_context()
         self._turn_started_at = datetime.now(timezone.utc)
 
@@ -426,11 +426,11 @@ class _RunsTurns:
                     yield background_event
                 continue
 
-                # Background work no longer holds the turn open: the resume pump wakes the agent when it lands.
+            # Background work no longer holds the turn open: the resume pump wakes the agent when it lands.
             for steering_event in await self._drain_steering_messages():
                 yield steering_event
 
-                # Folding is the whole of keeping inside the window: an unbounded head becomes a fixed-size log.
+            # Folding is the whole of keeping inside the window: an unbounded head becomes a fixed-size log.
             if self._should_compact():
                 async for compaction_event in self.compact(reason="auto"):
                     yield compaction_event

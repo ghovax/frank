@@ -71,7 +71,7 @@ async def terminal_websocket(
     try:
         remote_alias = location_host_alias.strip() if location_kind == "remote" else ""
         if remote_alias and location_base_directory.strip():
-    # The remote base directory is used verbatim in the ssh `cd`, never resolved locally.
+            # The remote base directory is used verbatim in the ssh `cd`, never resolved locally.
             directory = Path(location_base_directory.strip())
         elif location_base_directory.strip():
             directory = Path(location_base_directory.strip()).expanduser()
@@ -111,7 +111,7 @@ async def terminal_websocket(
                 elif message_type == "resize":
                     session.resize(int(message.get("rows", 24) or 24), int(message.get("columns", 80) or 80))
 
-    # Three racers: a websocket the daemon cannot end holds its shutdown open like a stream would.
+        # Three racers: a websocket the daemon cannot end holds its shutdown open like a stream would.
         tasks = [
             asyncio.create_task(output_loop()),
             asyncio.create_task(input_loop()),
@@ -134,7 +134,7 @@ async def terminal_websocket(
                 "recoverable": False,
             })
     except Exception as exception:
-    # Logged, since the socket that failed is the only other way anything this handler knows would leave.
+        # Logged, since the socket that failed is the only other way anything this handler knows would leave.
         logger.exception("terminal websocket failed (key=%s, directory=%s)", terminal_key, working_directory)
         with suppress(Exception):
             await websocket.send_json({

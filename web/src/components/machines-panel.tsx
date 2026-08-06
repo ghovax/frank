@@ -31,7 +31,7 @@ export function MachinesPanel() {
 
   useEffect(() => {
     refresh();
-  // Another window adding a machine changes the same set, and this panel is where somebody is looking.
+    // Another window adding a machine changes the same set, and this panel is where somebody is looking.
     return subscribeEvents((event) => {
       if (event.type === "machines_changed") refresh();
     });
@@ -54,7 +54,7 @@ export function MachinesPanel() {
 
   async function open(machine: Machine) {
     try {
-  // Fetched now rather than held since the list rendered: it is the one thing here carrying a token.
+      // Fetched now rather than held since the list rendered: it is the one thing here carrying a token.
       window.location.assign(await machineAddress(machine.id));
     } catch (caught) {
       toaster.create({ type: "error", title: translation("couldNotReach", { name: machine.name }), description: errorMessage(caught), closable: true });
@@ -90,7 +90,7 @@ export function MachinesPanel() {
                   <Text fontSize="xs" color="fg.subtle" truncate>{machine.endpoint.replace(/^https:\/\//, "")}</Text>
                 </Box>
                 {machine.endpoint === origin ? (
-      // Not a disabled button: a greyed control invites working out why, and a state does not.
+                  // Not a disabled button: a greyed control invites working out why, and a state does not.
                   <Flex align="center" gap={1.5} color="green.fg" flexShrink={0}>
                     <Box boxSize="1.5" borderRadius="full" bg="green.solid" />
                     <Text fontSize="xs">{translation("connected")}</Text>
@@ -105,7 +105,7 @@ export function MachinesPanel() {
                   size="xs"
                   variant="ghost"
                   colorPalette="red"
-      // Forgetting the machine you are using discards the token for the page you are reading.
+                  // Forgetting the machine you are using discards the token for the page you are reading.
                   disabled={machine.endpoint === origin}
                   aria-label={translation("deleteConnection", { url: machine.endpoint })}
                   onClick={() => {

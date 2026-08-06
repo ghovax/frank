@@ -13,7 +13,7 @@ import { ToolLocationBadge } from "./tool-call";
 
 import { Pre } from "./ui/semantic";
 
-  // The only runtime decisions: deny, or allow this one call. Policy is edited where policy lives.
+// The only runtime decisions: deny, or allow this one call. Policy is edited where policy lives.
 type RuntimeDecision = "deny" | "allow_once";
 
 interface PermissionOverlayProps {
@@ -103,7 +103,7 @@ export function PermissionOverlay({ permission, title, detail, detailPaths, comm
                 p={2}
                 m={0}
                 flexShrink={0}
-            // Sideways only: a long command scrolls rather than wrapping into something unlike what will run.
+                // Sideways only: a long command scrolls rather than wrapping into something unlike what will run.
                 overflowX="auto"
                 whiteSpace="pre"
               >

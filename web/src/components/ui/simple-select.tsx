@@ -19,7 +19,7 @@ export function SimpleSelect({
 }) {
   const collection = useMemo(() => createListCollection({ items }), [items]);
   return (
-      // The recipe size rather than an `h` override, which would lose to the recipe's `minH`.
+    // The recipe size rather than an `h` override, which would lose to the recipe's `minH`.
     <Select.Root
       collection={collection}
       value={value ? [value] : []}

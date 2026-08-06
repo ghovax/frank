@@ -120,7 +120,7 @@ export function useSchemaSettingsPage(renderRow: (row: SettingRowDef) => React.R
 
   useEffect(() => {
     load();
-  // The same event every settings surface listens to, so a change elsewhere lands without a reload.
+    // The same event every settings surface listens to, so a change elsewhere lands without a reload.
     const unsubscribe = subscribeEvents((event) => { if (event.type === "settings_changed") load(); });
     return unsubscribe;
   }, [load]);
@@ -152,7 +152,7 @@ export function useSchemaSettingsPage(renderRow: (row: SettingRowDef) => React.R
       key: entry.path,
       title: textAt(names, entry.path),
       description: textAt(about, entry.path) || undefined,
-    // A list is as tall as its entries and a path as wide as the path, so both drop to their own line.
+      // A list is as tall as its entries and a path as wide as the path, so both drop to their own line.
       layout: entry.kind === "list" || entry.kind === "string" ? "stacked" : "row",
       control: (
         <SettingControl

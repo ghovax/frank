@@ -315,7 +315,7 @@ class _TurnRunner:
             await self._executor._turn_store.save(task)
             self._is_resume = True
         elif ingested.from_outside and self._executor._on_permission_state is not None:
-        # A fresh user turn supersedes a prior pause, so drop the awaiting-input marker.
+            # A fresh user turn supersedes a prior pause, so drop the awaiting-input marker.
             self._executor._on_permission_state(task.context_id, False)
         return _Resolved(
             ingested=ingested,
@@ -522,7 +522,7 @@ class _TurnRunner:
 
     async def _fail(self, exception: Exception) -> None:
         await self._save_runtime_conversation()
-            # Log the real exception, but show the user a safe category rather than raw exception text.
+        # Log the real exception, but show the user a safe category rather than raw exception text.
         logger.exception("agent turn failed: %s", exception)
         await self._updater.failed(self._updater.new_agent_message(
             [_event_part(ErrorEvent(**_safe_turn_error(exception, had_images=self._turn_has_images)))]
@@ -548,7 +548,7 @@ class _TurnRunner:
             )
             if session_state is not None and self._runtime is not None:
                 self._runtime.clear_session_dirty()
-        # The rate-limit reading, captured here because the headers only ride on a model call in this process.
+            # The rate-limit reading, captured here because the headers only ride on a model call in this process.
             await self._publish_usage_snapshot()
         # Stop accepting steering, then discard what arrived too late: the client re-delivers it as a fresh turn.
         if self._track_steerable_turn and state is not None:

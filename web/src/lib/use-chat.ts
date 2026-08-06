@@ -173,7 +173,7 @@ function friendlyErrorFromData(data: Record<string, unknown>): FriendlyError {
         return { title: "Connection interrupted", message: "The model connection dropped before the turn finished. Check the connection and retry." };
       case "server_error":
         return { title: "Server request failed", message: "Frank could not start the turn. Check the daemon log and try again." };
-    // The fallback for when the daemon could not name the window and the model. Its own case, since an overlong conversation is worth saying plainly.
+      // The fallback for when the daemon could not name the window and the model. Its own case, since an overlong conversation is worth saying plainly.
       case "context_window_exceeded":
       case "request_too_large":
         return { title: "Conversation is too long for this model", message: "The request was larger than this model's context window. Compact the conversation, start a new one, or switch to a model with a larger window. A single tool result — a long file or a screen listing — is the usual cause." };
@@ -288,7 +288,7 @@ function toolCallMessageId(toolCallId: string | undefined): string {
 
 function stableMessageId(state: ReduceState, prefix: string, sourceId: string | undefined): string {
   if (!sourceId) {
-  // A monotonic counter, not the array length, or inserting a row earlier renumbers every row after it.
+    // A monotonic counter, not the array length, or inserting a row earlier renumbers every row after it.
     const issued = state.keyCounts.get("") ?? 0;
     state.keyCounts.set("", issued + 1);
     return `${prefix}-anon-${issued}`;
@@ -298,7 +298,7 @@ function stableMessageId(state: ReduceState, prefix: string, sourceId: string | 
 }
 
 function upsertMessage(state: ReduceState, message: ChatMessage): void {
-// Replace in place when the row exists, append when it does not, so a message arriving twice converges.
+  // Replace in place when the row exists, append when it does not, so a message arriving twice converges.
   const index = state.messages.findIndex((existing) => existing.id === message.id);
   if (index === -1) {
     state.messages = [...state.messages, message];
@@ -374,7 +374,7 @@ function applyThinking(state: ReduceState, text: string): void {
     ];
     index = state.messages.length - 1;
   }
-    // The session is reasoning, so a row opened optimistically stops being provisional.
+  // The session is reasoning, so a row opened optimistically stops being provisional.
   state.messages = state.messages.map((message, messageIndex) =>
     messageIndex === index
       ? { ...message, content: message.content + text }
@@ -416,7 +416,7 @@ function appendAssistantContentBlock(
     throw new Error("Assistant messages require structured content blocks.");
   }
   const existingContentBlocks = message.contentBlocks;
-    // Merged by identity, not position: a later delta belongs in its block wherever that has ended up.
+  // Merged by identity, not position: a later delta belongs in its block wherever that has ended up.
   const existingIndex = existingContentBlocks.findIndex(
     (contentBlock) => contentBlock.identifier === blockIdentifier
   );
@@ -533,7 +533,7 @@ function reduceAgentMessage(state: ReduceState, message: A2AMessage): void {
 
 
 function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourceId?: string): void {
-    // Every event here belongs to this session, and is read through the generated union's discriminant.
+  // Every event here belongs to this session, and is read through the generated union's discriminant.
   const event = data as unknown as WireEvent;
   switch (event.kind) {
     case "steering": {
@@ -658,7 +658,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
             ? {
                 ...message,
                 content: event.tool_name || message.content,
-          // The second announcement is the call running for real: keep what the prompt attached to it.
+                // The second announcement is the call running for real: keep what the prompt attached to it.
                 meta: { ...message.meta, arguments: event.arguments ?? message.meta?.arguments, status: "running" },
               }
             : message,
@@ -739,7 +739,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
             : message
         );
       } else {
-      // No card yet, and that is ordinary: approval is decided in preflight, before the call is announced.
+        // No card yet, and that is ordinary: approval is decided in preflight, before the call is announced.
         const raised: ChatMessage = {
           id: toolCallMessageId(toolCallId),
           role: "tool_call",
@@ -776,7 +776,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       const toolName = event.tool_name ?? "";
       const toolCallId = event.tool_call_id ?? "";
       if (toolCallId) {
-      // Mark the call failed generically: the raw text is model-facing and must not leak to the UI.
+        // Mark the call failed generically: the raw text is model-facing and must not leak to the UI.
         let matched = false;
         state.messages = state.messages.map((message) =>
           messageMatchesToolEvent(message, toolName, toolCallId)
@@ -1082,7 +1082,7 @@ export function useChat(
       // Leave what loaded and resume from the last cursor. Still reported: a permanent failure looks the same otherwise.
       swallowed({ component: "transcript", operation: "load older history" }, caught);
     } finally {
-    // Skip the apply if a local turn began mid-drain: the fragments stay unused rather than clobbering it.
+      // Skip the apply if a local turn began mid-drain: the fragments stay unused rather than clobbering it.
       if (fetchedAny && sessionIdRef.current === context && !streamedLocallyRef.current && !isStreamingRef.current) {
         setHasOlderHistory(hasOlderHistoryRef.current);
         // One replay + render for the whole accumulated transcript.
@@ -1109,7 +1109,7 @@ export function useChat(
 
     const applySnapshot = (turns: A2ATurn[]) => {
       const replayed = replayTurns(turns);
-        // Already showing this: keeping the array reference means `setMessages` bails and nothing re-renders.
+      // Already showing this: keeping the array reference means `setMessages` bails and nothing re-renders.
       if (rendersIdentically(stateRef.current.messages, replayed.messages)) {
         stateRef.current.tasks = replayed.tasks;
         stateRef.current.tokenUsage = replayed.tokenUsage;
@@ -1143,24 +1143,24 @@ export function useChat(
             reduceAgentPart(stateRef.current, frame.part);
             flush();
           } else if (frame.kind === "turn" && !frame.running) {
-          // The turn ended, said by the session on the stream we already hold, before the polled listing learns it.
+            // The turn ended, said by the session on the stream we already hold, before the polled listing learns it.
             void (async () => {
               try {
                 const tasks = await fetchSessionTurns(initialSessionId, controller.signal);
                 if (!cancelled && !isStreamingRef.current && !streamedLocallyRef.current) applySnapshot(tasks);
               } catch (caught) {
-              // Recoverable, since the `sessionRunning` path captures the same state, but not silent.
+                // Recoverable, since the `sessionRunning` path captures the same state, but not silent.
                 swallowed({ component: "transcript", operation: "read the finished turn" }, caught);
               }
             })();
           }
         },
         () => {
-      // Stream closed. The `sessionRunning` flip re-runs this effect and captures the final state.
+          // Stream closed. The `sessionRunning` flip re-runs this effect and captures the final state.
         },
       );
     } else if (!sessionRunning && wasRunningRef.current) {
-    // The turn just finished: capture its terminal state once, which the live tail misses.
+      // The turn just finished: capture its terminal state once, which the live tail misses.
       wasRunningRef.current = false;
       void (async () => {
         try {
@@ -1244,12 +1244,12 @@ export function useChat(
         attachRef.current = attachSession(
           sessionIdentifier,
           (frame) => {
-          // The one frame that says the turn ended. The stream does not close: it belongs to the session.
+            // The one frame that says the turn ended. The stream does not close: it belongs to the session.
             if (frame.kind === "turn") {
               if (!frame.running) finishTurn();
               return;
             }
-          // A snapshot is catch-up for a viewer. We are driving, so replacing state would drop the sent message.
+            // A snapshot is catch-up for a viewer. We are driving, so replacing state would drop the sent message.
             if (frame.kind !== "live") return;
             notifyTurnError(frame.part);
             reduceAgentPart(stateRef.current, frame.part);
@@ -1274,7 +1274,7 @@ export function useChat(
             sessionIdentifier = created.id;
             sessionIdRef.current = created.id;
             setSessionId(created.id);
-          // The mode the session actually got, which a profile ceiling or a parent clamp may have tightened.
+            // The mode the session actually got, which a profile ceiling or a parent clamp may have tightened.
             if (created.permission_mode && created.permission_mode !== permissionMode) {
               setGrantedPermissionMode(created.permission_mode);
             }
@@ -1523,7 +1523,7 @@ export function useChat(
       );
       flush();
     }
-      // Say so if the stop never reached the server: the turn may still be running.
+    // Say so if the stop never reached the server: the turn may still be running.
     return cancelTurn(context).then((ok) => {
       if (!ok) {
         toaster.create({

@@ -61,7 +61,7 @@ export function WorkspaceLocationsPanel({ workspaceId }: { workspaceId: string }
         setFailedWorkspaceId(workspaceId);
         setLoadedWorkspaceId(workspaceId);
       });
-      // Only re-read hosts live, so a workspaces_changed event never clobbers an in-progress edit.
+    // Only re-read hosts live, so a workspaces_changed event never clobbers an in-progress edit.
     const unsubscribe = subscribeEvents((event) => {
       if (event.type === "hosts_changed") {
         listSshHosts().then((nextHosts) => { if (!cancelled) setHosts(nextHosts); }).catch((caught) => swallowed({ component: "workspace-locations", operation: "list the SSH hosts" }, caught));

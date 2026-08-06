@@ -29,7 +29,7 @@ def instructions_payload(instructions: Sequence[Instruction]) -> list[dict[str, 
     payload = [
         {
             "source": instruction.source,
-        # Absent rather than filled: an instruction supplied in code has no directory to invent one for.
+            # Absent rather than filled: an instruction supplied in code has no directory to invent one for.
             **({"scope": instruction.scope} if instruction.scope else {}),
             "content": instruction.content,
         }

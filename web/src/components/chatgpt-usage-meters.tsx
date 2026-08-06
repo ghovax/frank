@@ -53,7 +53,7 @@ export function ChatGPTUsageMeters({ usage }: { usage: ChatGPTUsage | null }) {
       <Stack gap={2.5}>
         {windows.map((window) => {
           const percent = Math.min(Math.max(window.used_percent, 0), 100);
-      // `resets_at` is unix seconds: show the countdown only while it is still in the future.
+          // `resets_at` is unix seconds: show the countdown only while it is still in the future.
           const resetsAt = window.resets_at ? new Date(window.resets_at * 1000) : null;
           const resets = resetsAt && resetsAt.getTime() > now.getTime()
             ? format.relativeTime(resetsAt, now)

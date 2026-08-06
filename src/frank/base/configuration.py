@@ -1005,7 +1005,7 @@ def _agent_paths(agents_directories: str | Path | Iterable[str | Path], include_
     for directory in _as_directories(agents_directories):
         if not directory.is_dir():
             continue
-    # `AGENT.md`, in that spelling, exactly as a skill is `SKILL.md`.
+        # `AGENT.md`, in that spelling, exactly as a skill is `SKILL.md`.
         candidates = [
             *sorted(directory.glob("*.md")),
             *sorted(directory.glob("*/AGENT.md")),
@@ -1062,7 +1062,7 @@ def list_agents(agents_directory: str | Path | Iterable[str | Path]) -> list[dic
                 "title": config.display_name,
                 # What the agent is for — surfaced as the subtitle in the UI's agent picker.
                 "description": config.description,
-            # The resolved `provider/model`; empty means no runnable model is configured.
+                # The resolved `provider/model`; empty means no runnable model is configured.
                 "model": config.model_identifier or "",
             })
         except Exception:

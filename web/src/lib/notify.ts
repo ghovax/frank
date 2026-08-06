@@ -45,7 +45,7 @@ async function swRegistration(): Promise<ServiceWorkerRegistration | null> {
         if (payload?.type !== "frank-notification-click") return;
         const requestId = payload.data?.requestId;
         if (payload.action === APPROVE_ACTION && requestId) actionHandler?.(requestId);
-  // A body click just focuses the app: the overlay is on screen with the full context and both choices.
+        // A body click just focuses the app: the overlay is on screen with the full context and both choices.
       });
     }
     return registration;

@@ -26,7 +26,7 @@ let daemonEndpointPromise: Promise<void> | null = null;
 
 async function resolveDaemonEndpoint(): Promise<void> {
   if (!runningInTauri()) {
-  // Served by `frank web`? That proxies the daemon at its own origin, so the base is the empty string.
+    // Served by `frank web`? That proxies the daemon at its own origin, so the base is the empty string.
     try {
       const response = await fetch("/__frank/runtime.json", { cache: "no-store" });
       if (response.ok) {
@@ -874,7 +874,7 @@ export async function transcribeDictation(samples: Float32Array): Promise<string
     body: samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength) as ArrayBuffer,
   });
   if (!response.ok) {
-  // Lift the reason out: the server knows whether it was a failed download or a missing package.
+    // Lift the reason out: the server knows whether it was a failed download or a missing package.
     let detail = "";
     try {
       detail = String((await response.json())?.detail ?? "");
@@ -1212,7 +1212,7 @@ function ensureEventStream(): void {
   }, (connected) => {
     if (connected === lastReportedConnection) return;
     lastReportedConnection = connected;
-  // What comes back may be a different daemon, so forgetting the endpoint is what reaches it.
+    // What comes back may be a different daemon, so forgetting the endpoint is what reaches it.
     if (!connected) forgetDaemonEndpoint();
     connectionListeners.forEach((listener) => listener(connected));
   });

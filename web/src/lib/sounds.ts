@@ -32,7 +32,7 @@ function audioContext(): AudioContext | null {
     // Audio is blocked until the page has been interacted with.
     return null;
   }
-    // Autoplay policy refuses this until the page is interacted with, and the result is silence, not a fault.
+  // Autoplay policy refuses this until the page is interacted with, and the result is silence, not a fault.
   if (context.state === "suspended") {
     void context.resume().catch((caught) => expected("a suspended audio context may refuse to resume", caught));
   }

@@ -8,7 +8,7 @@ import { ActivityIcon } from "./activity-icon";
 
 // The one collapsible line across the app: a clickable header whose body hangs off a hairline left rule.
 
-  // The header's settled colour: `muted` brightens on hover, `active` stays lit, `attention` warns.
+// The header's settled colour: `muted` brightens on hover, `active` stays lit, `attention` warns.
 export type DisclosureTone = "muted" | "active" | "attention";
 
 export interface DisclosureRowProps {
@@ -181,7 +181,7 @@ export function DisclosureRow({
             {...(actionsOverlay
               ? { position: "absolute" as const, right: 0, top: "50%", transform: "translateY(-50%)" }
               : {})}
-        // Centred here, or an inline-flex button inside a block box sits on the text baseline and rides low.
+            // Centred here, or an inline-flex button inside a block box sits on the text baseline and rides low.
             css={{ "& > *": { display: "flex", alignItems: "center" } }}
           >
             {actions}

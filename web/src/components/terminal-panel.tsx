@@ -85,14 +85,14 @@ export function TerminalSurface({
     const host = hostRef.current;
     if (!host) return;
 
-  // A terminal on a touch screen is a different instrument: no hover, no wheel, and a wider cell.
+    // A terminal on a touch screen is a different instrument: no hover, no wheel, and a wider cell.
     const coarse = typeof window !== "undefined"
       && window.matchMedia?.("(pointer: coarse)").matches === true;
 
     const terminal = new Terminal({
       cursorBlink: true,
       fontSize: coarse ? 14 : 12,
-  // Momentum scrolling moves far more rows per gesture, so three lines a tick makes a flick feel dead.
+      // Momentum scrolling moves far more rows per gesture, so three lines a tick makes a flick feel dead.
       ...(coarse ? { scrollSensitivity: 1, fastScrollSensitivity: 3 } : {}),
       fontWeight: "normal",
       fontWeightBold: "bold",

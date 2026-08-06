@@ -34,7 +34,7 @@ class PersistentPushNotificationConfigurationStore(PushNotificationConfigStore):
 
     def __init__(self, engine: AsyncEngine, *, allow_private_webhooks: bool = False):
         self._engine = engine
-    # Refused at registration: a loopback webhook would make the daemon a durable exfiltration channel.
+        # Refused at registration: a loopback webhook would make the daemon a durable exfiltration channel.
         self._allow_private_webhooks = allow_private_webhooks
         self._metadata = MetaData()
         self._table = Table(

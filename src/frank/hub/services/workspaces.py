@@ -208,7 +208,7 @@ def _update_location(location_id: str, request: LocationInput) -> dict[str, Any]
             record.host_alias = next_host_alias
             record.base_directory = next_base_directory
             record.permission_mode = request.permission_mode or "ask"
-        # The name follows the connection, so re-derive it whenever the connection changes.
+            # The name follows the connection, so re-derive it whenever the connection changes.
             record.name = _derive_location_name(
                 database_session, record.workspace_id, record.kind, record.base_directory, record.host_alias, exclude_id=record.id
             )

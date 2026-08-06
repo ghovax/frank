@@ -12,11 +12,11 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-    # Linux hands back (pid, uid, gid); macOS exposes the peer's pid on its own option under SOL_LOCAL.
+# Linux hands back (pid, uid, gid); macOS exposes the peer's pid on its own option under SOL_LOCAL.
 _SOL_LOCAL = 0
 _LOCAL_PEERPID = 2
 
-    # What `scope["client"]` carries for a unix socket, in place of a TCP connection's host and port.
+# What `scope["client"]` carries for a unix socket, in place of a TCP connection's host and port.
 UNIX_PEER = "unix"
 
 

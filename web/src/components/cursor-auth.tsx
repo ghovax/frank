@@ -63,7 +63,7 @@ export function CursorAuthControl({
       setAwaiting(true);
       const startedAt = Date.now();
       stopPolling();
-    // Give up watching where the server's own poll window ends, rather than spinning against a dead flow.
+      // Give up watching where the server's own poll window ends, rather than spinning against a dead flow.
       pollRef.current = window.setInterval(async () => {
         const next = await refresh().catch(() => null);
         if (next?.signed_in || Date.now() - startedAt > 300_000) {

@@ -11,7 +11,7 @@ import { PreferencesProvider } from "@/lib/preferences"
 // The app's design language as theme-level defaults, so call sites pass a size only to deviate.
 const config = defineConfig({
   theme: {
-      // Named typography roles, written once and used as `textStyle` rather than repeated per call site.
+    // Named typography roles, written once and used as `textStyle` rather than repeated per call site.
     textStyles: {
       fieldLabel: { value: { fontSize: "xs", fontWeight: "medium" } },
       sectionLabel: { value: { fontSize: "xs", fontWeight: "semibold", color: "fg.muted" } },
@@ -44,7 +44,7 @@ const config = defineConfig({
       },
     },
     slotRecipes: {
-        // Tab triggers clamped to the app's 32px, so every tab list stays in one control family.
+      // Tab triggers clamped to the app's 32px, so every tab list stays in one control family.
       tabs: {
         slots: ["root", "list", "trigger", "content", "indicator"],
         base: {
@@ -54,7 +54,7 @@ const config = defineConfig({
       dialog: {
         slots: ["backdrop", "positioner", "content", "title", "description", "header", "body", "footer", "closeTrigger"],
         base: {
-        // A dialog is a card on a wide screen and a screen on a narrow one.
+          // A dialog is a card on a wide screen and a screen on a narrow one.
           positioner: {
             padding: { base: "0", sm: "4" },
             alignItems: { base: "stretch", sm: "center" },
@@ -68,7 +68,7 @@ const config = defineConfig({
             display: "flex",
             flexDirection: "column",
           },
-        // Header and footer stay put while the body scrolls, so the title never leaves with the content.
+          // Header and footer stay put while the body scrolls, so the title never leaves with the content.
           header: {
             px: "4",
             pt: { base: "calc(env(safe-area-inset-top) + 1rem)", sm: "4" },
@@ -86,7 +86,7 @@ const config = defineConfig({
           },
         },
       },
-        // One dropdown row for the whole app, since menus and selects read the same to a user.
+      // One dropdown row for the whole app, since menus and selects read the same to a user.
       menu: {
         slots: ["arrow", "arrowTip", "content", "contextTrigger", "indicator", "item", "itemGroup", "itemGroupLabel", "itemIndicator", "itemText", "positioner", "separator", "trigger", "triggerItem", "itemCommand"],
         variants: {

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Mapping, Optional, Protocol, S
 if TYPE_CHECKING:  # pragma: no cover - import only for typing; `base` stays free of langchain
     from langchain_core.language_models.chat_models import BaseChatModel
 
-# The model seam as a type: every provider and every mock in that ecosystem already implements it.
+    # The model seam as a type: every provider and every mock in that ecosystem already implements it.
     ChatModel = BaseChatModel
 
 

@@ -283,7 +283,7 @@ class _DispatchesTools:
                 accepted = ", ".join(sorted(fields))
                 rejected = ", ".join(unknown_arguments)
                 return ("invalid_tool_arguments", f"The tool {tool_name} does not accept the following argument(s) with which it was invoked: {rejected}. Accepted arguments by it are only: {accepted}.")
-        # Models often emit an MCP call's `arguments` as a JSON string; coerce before validating it.
+            # Models often emit an MCP call's `arguments` as a JSON string; coerce before validating it.
             if tool_name == "call_mcp_tool" and isinstance(arguments.get("arguments"), str):
                 arguments = {**arguments, "arguments": _coerce_mcp_arguments(arguments.get("arguments"))}
             try:
@@ -935,7 +935,7 @@ class _DispatchesTools:
                     if isinstance(content, str):
                         self._read_files[file_key] = file_tools.content_sha256(content)
                 else:
-            # Not a commit: discard the stale hash so the model must re-read before editing again.
+                    # Not a commit: discard the stale hash so the model must re-read before editing again.
                     self._read_files.pop(file_key, None)
             yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
         finally:
@@ -1069,7 +1069,7 @@ class _DispatchesTools:
                         event=get_task.result(),
                     )
                 else:
-                # Cancel only the getter; the loop re-checks `call_task`.
+                    # Cancel only the getter; the loop re-checks `call_task`.
                     get_task.cancel()
             result_data = await call_task
         except Exception as exception:
@@ -1152,7 +1152,7 @@ class _DispatchesTools:
             return {"code": "goal_update_error", "status": ToolStatus.ERROR.value, "message": message}
 
         if status == "active":
-        # Both halves demanded at once: this is the only moment the goal meets a fresh reading of the request.
+            # Both halves demanded at once: this is the only moment the goal meets a fresh reading of the request.
             if not goal:
                 result = refuse("Say what the goal is: the end state, in one sentence.")
             elif not requirements:
@@ -1161,7 +1161,7 @@ class _DispatchesTools:
                     "each one something you can check."
                 )
             else:
-        # The allowance carries across a replacement, or restating the goal would buy an unbounded run.
+                # The allowance carries across a replacement, or restating the goal would buy an unbounded run.
                 self.write_goal(Goal(
                     text=goal,
                     requirements=requirements,
@@ -1173,7 +1173,7 @@ class _DispatchesTools:
             if current is None:
                 result = refuse("There is no goal to satisfy.")
             elif not evidence:
-        # The audit made structural, so "satisfied" cannot be asserted on memory alone.
+                # The audit made structural, so "satisfied" cannot be asserted on memory alone.
                 result = refuse(
                     "Say what proves it: for each requirement, what you looked at and what it showed."
                 )
@@ -1395,7 +1395,7 @@ class _DispatchesTools:
             # One call, one meaning, both surfaces: the target says where to read.
             raw = surface.documents(target_id)
             if not raw.get("ok"):
-            # The script sees a raisable error and the structure survives to the result, target list included.
+                # The script sees a raisable error and the structure survives to the result, target list included.
                 read_failures.append({key: value for key, value in raw.items() if key != "ok"})
                 raise RuntimeError(raw.get("error", "Could not read the screen."))
             documents = raw.get("documents", [])
@@ -1462,10 +1462,10 @@ class _DispatchesTools:
             elif appeared:
                 record.update(_hydrate(appeared))
             if not moved and not appeared:
-            # The honest answer when nothing observable happened: the click missed, or the pane had not loaded.
+                # The honest answer when nothing observable happened: the click missed, or the pane had not loaded.
                 record["changed"] = []
             if not target.visible:
-            # Acting off-screen works, but a person deserves to be told their other desktop just moved.
+                # Acting off-screen works, but a person deserves to be told their other desktop just moved.
                 record["visible"] = False
             return record
 
@@ -1600,7 +1600,7 @@ class _DispatchesTools:
                         changed.append(record)
                         step.update({key: value for key, value in record.items() if key != "action"})
                 ran.append(step)
-            # Hand the script the useful value: a result or text directly, an action its confirmation.
+                # Hand the script the useful value: a result or text directly, an action its confirmation.
                 if "result" in outcome:
                     return outcome["result"]
                 if "lines" in outcome:
@@ -1628,7 +1628,7 @@ class _DispatchesTools:
             moved = target_registry.difference(targets_before, target_registry.list_targets())
             if moved:
                 result.setdefault("targets", moved)
-        # Whatever a failed read knew, carried alongside the message. The last one wins: it is where the script ended.
+            # Whatever a failed read knew, carried alongside the message. The last one wins: it is where the script ended.
             for failure in read_failures[-1:]:
                 for key, value in failure.items():
                     result.setdefault(key, value)

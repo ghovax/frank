@@ -98,7 +98,7 @@ async def _send(session, params: dict) -> dict:
         peer_sender = str((params.get("metadata") or {}).get(Metadata.PEER_SENDER) or "")
         if session.inject(text, message_id, peer_sender):
             return {"accepted": True, "injected": True}
-        # The turn ended between the check and the injection, so start a fresh one rather than dropping the message.
+    # The turn ended between the check and the injection, so start a fresh one rather than dropping the message.
     turn_id = await session.start_turn(_message_parts(params), dict(params.get("metadata") or {}))
     return {"accepted": True, "injected": False, "turn_id": turn_id}
 

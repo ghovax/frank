@@ -99,7 +99,7 @@ async def transcribe(request: Request):
     transcriber = await _ensure_transcriber()
 
     def run() -> str:
-    # A copy, not a view: the buffer is the request body, and the samples cross a process boundary after it.
+        # A copy, not a view: the buffer is the request body, and the samples cross a process boundary after it.
         import numpy
 
         samples = numpy.frombuffer(body, dtype="<f4").astype("float32")

@@ -250,7 +250,7 @@ def _all_available_tools(
         available.extend(
             session_tools(_installed_agent_names(global_configuration, working_directory))
         )
-    # Remote agents are a different bargain, so they are separate verbs and appear only when registered.
+        # Remote agents are a different bargain, so they are separate verbs and appear only when registered.
         if global_configuration.remote_agents.agents:
             available.extend(remote_agent_tools())
     # The caller's tools last, so a name collision resolves to ours rather than replacing a built-in.
@@ -1026,7 +1026,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
                 duration_milliseconds=duration_milliseconds,
                 background_job_id=completion.identifier,
             )
-        # Append-only: the placeholder stays and the result lands as a new user-role reminder, keeping the prefix.
+            # Append-only: the placeholder stays and the result lands as a new user-role reminder, keeping the prefix.
             background_status, background_code = _model_result_status(
                 capped_result, ok=True, backgrounded=False,
             )

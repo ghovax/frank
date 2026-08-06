@@ -119,14 +119,14 @@ export function PanelTiles({ panels, gap = 8 }: { panels: TilePanel[]; gap?: num
           {column.map((panel, rowIndex) => (
             <Box
               key={panel.key}
-      // A joining panel fades in; the split itself stays instant so drag-resizing never fights it.
+              // A joining panel fades in; the split itself stays instant so drag-resizing never fights it.
               className="reveal-enter"
               minW={0}
               minH={0}
               position="relative"
               onPointerDownCapture={panel.onActivate}
               onFocusCapture={panel.onActivate}
-      // No overflow clip: each panel clips its own content, so this would only cut the card's shadow.
+              // No overflow clip: each panel clips its own content, so this would only cut the card's shadow.
               style={{ flex: `${rowFlex[colIndex]?.[rowIndex] ?? 1} 1 0` }}
             >
               {panel.content}

@@ -178,7 +178,7 @@ async def _session_create(params: dict) -> dict:
             parent.permission_mode if parent is not None else None,
             requested=params.get("permission_mode"),
             fallback=configured,
-        # The agent's ceiling, applied here too, so the record cannot claim a mode the session will not run under.
+            # The agent's ceiling, applied here too, so the record cannot claim a mode the session will not run under.
             ceiling=_agent_permission_ceiling(agent, working_directory),
         )
     except ValueError as conflict:
@@ -533,7 +533,7 @@ async def _daemon_status(_params: dict) -> dict:
         "prototype": prototype,
         "socket": str(state.daemon_socket),
         "port": state.daemon_port,
-    # Which image is serving, since two `frank` can share a runtime directory and the first one owns it.
+        # Which image is serving, since two `frank` can share a runtime directory and the first one owns it.
         "image": {"executable": sys.executable, "frozen": bool(getattr(sys, "frozen", False))},
     }
 
@@ -544,10 +544,10 @@ async def _daemon_restart(_params: dict) -> dict:
     running = len(state.registry.running())
 
     async def replace() -> None:
-    # `execv` rather than spawn-and-exit: it keeps the pid, so no successor races the lock file.
+        # `execv` rather than spawn-and-exit: it keeps the pid, so no successor races the lock file.
         await asyncio.sleep(0.5)
         if state.lifecycle is not None:
-        # Sleep them rather than reap them: their records are durable, and the successor picks each back up.
+            # Sleep them rather than reap them: their records are durable, and the successor picks each back up.
             with contextlib.suppress(Exception):
                 await state.lifecycle.sleep_all()
         os.execv(sys.executable, [sys.executable, *_daemon_argv()])
@@ -808,14 +808,14 @@ async def attach(session_id: str, request: Request) -> EventSourceResponse:
                 try:
                     event = await asyncio.wait_for(subscription.get(), timeout=15)
                 except asyncio.TimeoutError:
-                # A comment keeps the connection warm through proxies without inventing an event to ignore.
+                    # A comment keeps the connection warm through proxies without inventing an event to ignore.
                     yield {"comment": "keepalive"}
                     continue
                 if event is None:
                     yield {"data": compact({"kind": "done"})}
                     break
                 if "turn" in event:
-                # A turn started or ended — distinct from `done`, which is the session itself ending.
+                    # A turn started or ended — distinct from `done`, which is the session itself ending.
                     yield {"data": compact({
                         "kind": "turn",
                         "seq": event.get("seq", 0),
@@ -846,7 +846,7 @@ async def events(request: Request) -> EventSourceResponse:
                     yield {"comment": "keepalive"}
                     continue
                 if event is None:
-                # The bus is closed and the daemon is going down: a draining server cannot outwait this stream.
+                    # The bus is closed and the daemon is going down: a draining server cannot outwait this stream.
                     break
                 yield {"data": compact(event)}
         finally:
