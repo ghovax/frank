@@ -5,10 +5,7 @@ import { useMemo } from "react";
 
 export type SelectOption = { value: string; label: string };
 
-// The plain single-value dropdown used across the app (host, permission mode, agent,
-// provider…): a rounded trigger with a value + chevron, and a portalled list of
-// medium-weight items with a check on the selected one. Item rendering that needs more
-// than a label (badges, custom rows) should use Chakra's `Select` directly.
+// The plain single-value dropdown used across the app: a trigger, and a portalled list with a check.
 export function SimpleSelect({
   items,
   value,
@@ -22,9 +19,7 @@ export function SimpleSelect({
 }) {
   const collection = useMemo(() => createListCollection({ items }), [items]);
   return (
-    // `size="xs"` is the native 32px trigger — the app's standard control height. Using the
-    // recipe size (not an h override) keeps it exactly in line with xs buttons and inputs;
-    // an h override loses to the recipe's `minH`, which is what made this select taller.
+      // The recipe size rather than an `h` override, which would lose to the recipe's `minH`.
     <Select.Root
       collection={collection}
       value={value ? [value] : []}

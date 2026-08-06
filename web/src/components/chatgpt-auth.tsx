@@ -13,15 +13,7 @@ import {
 } from "@/lib/api";
 import { ChatGPTUsageMeters } from "./chatgpt-usage-meters";
 
-/**
- * Sign-in control for the experimental `chatgpt` subscription provider. Shared by
- * the Settings dialog and the model picker (the "both" surfaces).
- *
- * A single button carries the state: signed out shows "Sign in with ChatGPT";
- * signed in shows "Sign out" (with the account) and reverses it. Sign-in opens
- * OpenAI's authorize URL in a browser; the frank daemon catches the loopback
- * redirect and persists the token, which we then observe by polling.
- */
+/** Sign-in control for the `chatgpt` provider, one button carrying the state. */
 export function ChatGPTAuthControl({
   onStatusChange,
 }: {
@@ -63,10 +55,7 @@ export function ChatGPTAuthControl({
     };
   }, [onStatusChange, stopPolling]);
 
-  // Keep the usage meters fresh while the viewer is open. The server re-snapshots the
-  // account's limits from the headers on every turn, so a turn's send/receive is
-  // always captured server-side; this light re-poll is only so an open viewer reflects
-  // it without a dedicated event channel. Runs only while signed in; unmount stops it.
+  // Keep the meters fresh while the viewer is open; the server re-snapshots on every turn anyway.
   useEffect(() => {
     if (!status?.signed_in) return;
     const id = window.setInterval(() => {

@@ -39,9 +39,7 @@ export function SchedulesPanel({ workspaceId, agents }: { workspaceId: string; a
   const [busy, setBusy] = useState("");
   const [failed, setFailed] = useState(false);
 
-  // Reloading after something changed: a click, or the daemon saying the schedules moved. Both
-  // of those already happen after the panel is on screen, so neither needs the care the first
-  // read below does.
+  // Reloading after a click or a daemon event, both of which happen once the panel is on screen.
   const reload = useCallback(async () => {
     try {
       setSchedules(await listSchedules(workspaceId));
@@ -52,10 +50,7 @@ export function SchedulesPanel({ workspaceId, agents }: { workspaceId: string; a
     }
   }, [workspaceId]);
 
-  // Read the list once, then follow the daemon. The first read is awaited here rather than
-  // handed to `reload`, and the difference is `cancelled`: this panel lives inside the settings
-  // dialog, so it is regularly closed while the daemon is still answering, and the version that
-  // fired `reload` and forgot about it would set state on a panel that no longer exists.
+  // Read once, then follow the daemon. Awaited here so a closed dialog can drop the answer.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
