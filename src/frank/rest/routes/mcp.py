@@ -14,18 +14,9 @@ router = APIRouter()
 
 @router.get("/mcp/tools")
 async def mcp_tools(server: str = "", working_directory: str = ""):
-    """List configured MCP servers with their enabled flag. Enabled servers carry
-    their advertised tools; disabled ones are still returned (with no tools) so the
-    UI can show them greyed out rather than hiding them.
-
-    Scoped to the selected folder when ``working_directory`` is given: only the
-    servers that folder declares (its own ``mcp.json`` plus the home globals) and
-    the global Composio integration are listed — the launch directory's servers do
-    not leak in. The folder's servers are ensured running first so their tools
-    actually appear (the subprocess pool is shared and grows as a union)."""
+    """The configured MCP servers with their tools; disabled ones are returned empty rather than hidden."""
     assert state.global_configuration is not None
-    # Servers declared by the working directory's own mcp.json are project-specific;
-    # everything else (home globals and the Composio integration) is global.
+    # Servers from the folder's own mcp.json are project-specific; home and Composio are global.
     project_server_names: set[str] = set()
     if working_directory:
         await _ensure_mcp_servers_for(working_directory)
@@ -46,8 +37,7 @@ async def mcp_tools(server: str = "", working_directory: str = ""):
         configured = state.global_configuration.mcp.servers
     tools_by_server: dict[str, list] = {}
     if state.mcp_manager is not None:
-        # List every enabled server, then filter below — querying the manager for a
-        # disabled server name would raise, since it only holds enabled ones.
+    # List the enabled servers and filter below: the manager raises for a name it does not hold.
         listing = await state.mcp_manager.list_tools("")
         tools_by_server = {entry["name"]: entry["tools"] for entry in listing["servers"]}
     servers = [
