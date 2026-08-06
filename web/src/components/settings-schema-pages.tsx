@@ -90,9 +90,7 @@ function ConfigurationSection({
         {sentence ? <Text fontSize="xs" color="fg.muted">{sentence}</Text> : null}
         {[...rowsByGroup.entries()].map(([group, rows]) => (
           <Box key={group}>
-            {/* A sub-object of the section — `sandbox.filesystem`, `telemetry.exporter` — gets
-                its own heading only where the section has more than one, so a section with a
-                single group is not a heading over a heading. */}
+            {/* A sub-object gets its own heading only where the section has more than one. */}
             {rowsByGroup.size > 1 ? (
               <Text textStyle="sectionLabel" mb={1}>{textAt(names, group)}</Text>
             ) : null}

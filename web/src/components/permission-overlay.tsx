@@ -87,19 +87,8 @@ export function PermissionOverlay({ permission, title, detail, detailPaths, comm
             </Flex>
           </Flex>
 
-          {/* Three things, and each answers a different question a person has before deciding:
-              what the agent is trying to do (the title — its own explanation of the call),
-              exactly what will run (the command), and what made this stop for approval (the
-              detail). These used to be an either/or, so a call with a command never showed
-              the reason for it and the prompt was a bare line of shell with no case for it. */}
-          {/* One scroll region, and it is this one. Each part used to carry its own `overflow:
-              auto`, so a card taller than its 50vh cap resolved into three independent
-              scrollers stacked on top of each other — and the worst of them was the file list,
-              which a person reads to decide *what* is being granted: the reason said the
-              command reads files outside the working directory, and the files themselves
-              arrived in a two-line window with a scrollbar in it. Nothing below sets a height
-              now, so every path renders; when the whole card runs out of room the body scrolls
-              as one and the header and the two buttons stay where they are. */}
+          {/* Three things, each answering a different question: what the agent wants, exactly what will run, and why this stopped. */}
+          {/* One scroll region, so the whole body scrolls together and nothing below sets a height of its own. */}
           <Flex direction="column" gap={1.5} mb={3} minH={0} overflowY="auto">
             <Text fontSize="sm" fontWeight="medium">{title}</Text>
             {command && (

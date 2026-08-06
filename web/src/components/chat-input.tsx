@@ -166,15 +166,7 @@ function ContextUsageChip({
         <InlineField label={translation("input")}><Text>{tokenUsage.inputTokens.toLocaleString()}</Text></InlineField>
         <InlineField label={translation("output")}><Text>{tokenUsage.outputTokens.toLocaleString()}</Text></InlineField>
         <InlineField label={translation("total")}><Text>{tokenUsage.totalTokens.toLocaleString()}</Text></InlineField>
-        {/* Always shown, unlike the rest, because zero cache reads is the reading worth having:
-            hiding the row at zero made a session that cached nothing look identical to one where
-            the figure was never reported.
-
-            The share is of what a cache *could* have returned, not of total input. Against total
-            input even a flawless session reads about 70%, because every token is paid for once
-            before it can ever be served from cache — so that number looked like a failure and was
-            not one. This one is 100% when nothing cacheable was missed, which is what somebody
-            reading it wants to know. */}
+        {/* Always shown, because zero cache reads is the reading worth having, and the share is of what was reachable. */}
         <InlineField label={translation("cacheReads")}>
           <Text>
             {tokenUsage.cacheReadTokens.toLocaleString()}
@@ -633,8 +625,7 @@ export function ChatInput({
 
       {/* Message input */}
       <Box px={0} mt={2} pb={1.5}>
-        {/* Pending attachments sit ABOVE the composer box, not inside it, so the enlarged
-            media cards have room and the input stays uncluttered. */}
+        {/* Pending attachments sit above the composer box, so the media cards have room and the input stays clear. */}
         {attachments.length > 0 || uploadingCount > 0 ? (
           <Flex gap={2} pb={2} flexWrap="wrap">
             {attachments.map((attachment) => (
@@ -657,20 +648,7 @@ export function ChatInput({
             ) : null}
           </Flex>
         ) : null}
-        {/*
-          `flex-end`, not `stretch`, and the difference is where the composer's text sits.
-
-          Stretched, the text box takes the height of whatever is tallest in this row — the send
-          and attach buttons beside it. A `textarea` lays its text along the top of its content
-          box and has no way to centre it, so every pixel by which those buttons out-measure one
-          line of text became empty space *under* the text, and the text read as sitting high.
-          Which engine you looked in decided whether you saw it: buttons do not come out to the
-          same intrinsic height in WebKit as in Blink, and neither does a line box.
-
-          Aligned to the bottom instead, the text box is exactly as tall as what it holds, so a
-          single line fills it and is centred by construction. The buttons sit on its bottom edge,
-          which is also where they belong as it grows.
-        */}
+        {/* Aligned to the bottom rather than stretched, so a single line of text is centred by construction. */}
         <Flex align="flex-end" gap={2}>
           <Box
             ref={dropZoneRef}
@@ -731,9 +709,7 @@ export function ChatInput({
               resize="none"
             />
           </Box>
-          {/* The same gap as the row of controls below this one. Dictate, attach and send sat at
-              1.5 while everything beneath them sat at 2, so the composer had two rhythms stacked
-              on top of each other and the closer one read as a mistake rather than as a group. */}
+          {/* The same gap as the row of controls below, so the composer has one rhythm rather than two. */}
           <Flex align="flex-end" gap={2} flexShrink={0}>
             <Input
               ref={fileInputRef}
@@ -832,18 +808,7 @@ export function ChatInput({
         </Flex>
       </Box>
 
-      {/* Selectors row (below the input): what this turn will run as, and what it has spent.
-          One line, and it stays one line by being *measured* rather than guessed at — see
-          `useFittedRow`. Every control here is its natural width and cannot shrink, which is what
-          lets the row see that it does not fit; when it does not, labels are given up in
-          `COMPOSER_FIT_ORDER` until it does, each control falling back to its icon.
-
-          `overflow="clip"` is not the mechanism, it is the guarantee. The fit runs before paint,
-          but a first render, a late-loading font or a control nobody told this row about would
-          each be a frame where the arithmetic is stale — and a stale frame must be a clipped edge
-          rather than two controls drawn on top of each other. `clip` rather than `hidden` because
-          `hidden` would make this a scroll container, and focusing a clipped control would then
-          scroll the row sideways. */}
+      {/* One line, kept one line by measurement: labels are given up in order until the row fits, with a clipped edge as the guarantee. */}
       <Flex
         ref={selectorsRowRef}
         align="center"
@@ -877,17 +842,14 @@ export function ChatInput({
           capabilitiesHidden={hiddenLabels.has("model-capabilities")}
           labelHidden={hiddenLabels.has("model")}
         />
-        {/* Adjustable at any point in a session's life, not only before it starts: a
-            conversation that begins under manual approvals and earns trust should not have
-            to be restarted to run under a looser one. */}
+        {/* Adjustable at any point in a session's life, so a conversation need not restart to run under a looser mode. */}
         <PermissionModeControl
           value={permissionMode}
           onChange={(mode) => { if (mode) onPermissionModeChange?.(mode); }}
           fitted
           labelHidden={hiddenLabels.has("permission")}
         />
-        {/* The same control Settings shows, not a second rendering of the same fact: one
-            component means the two can never disagree about what "restricted" looks like. */}
+        {/* The same control Settings shows, so the two can never disagree about what a mode looks like. */}
         <SandboxToggleControl
           enforce={sandboxEnforce}
           backend={sandboxBackend}
@@ -895,13 +857,9 @@ export function ChatInput({
           fitted
           labelHidden={hiddenLabels.has("sandbox")}
         />
-        {/* What the turn has spent, pushed to the far end. `auto` rather than a spacer element,
-            because a spacer would be a child of the row with a width of its own and the fit would
-            have to be taught to ignore it. A margin is not a child. */}
+        {/* What the turn has spent, pushed to the far end by a margin rather than by a spacer the fit would have to ignore. */}
         <Flex ms="auto" align="center" gap={2} flexShrink={0}>
-          {/* Offered from half the threshold the server reclaims at, so there is a window in
-              which compacting is your call before it becomes the harness's. Measured against how
-              full the context actually is — the one fact that says whether folding would help. */}
+          {/* Offered from half the threshold the server reclaims at, measured against how full the context actually is. */}
           {onCompact && !!sessionId && !!tokenUsage && tokenUsage.contextWindow > 0
             && (isCompacting
               || tokenUsage.contextTokens / tokenUsage.contextWindow >= compactionReclaimAtFraction / 2) && (

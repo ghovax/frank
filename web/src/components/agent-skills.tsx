@@ -101,9 +101,7 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
             description={translation("skillsDescription")}
           />
           <Flex direction="column" gap={2}>
-            {/* One list, not two. Where a skill is defined is how it got here, not something
-                anyone picks it by — splitting on it made every capability one level deeper
-                and asked the reader to care about the filesystem. */}
+            {/* One list rather than two, since where a skill is defined is how it got here rather than what it is. */}
             {[...globalSkills, ...workspaceSkills].map((skill) => <SkillCard key={skill.id} skill={skill} />)}
           </Flex>
         </>

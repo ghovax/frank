@@ -620,9 +620,7 @@ export function SettingsDialog({
             overflow="hidden"
             p={0}
           >
-            {/* Left nav spans the dialog's full height (flush to the rounded top/bottom edges),
-                beside a column that carries the header, the scrolling content, and the footer —
-                so its tint never gets cut off between a separate header and footer. */}
+            {/* The left nav spans the dialog's full height, beside the column carrying the header, content and footer. */}
                 <Flex
                   data-layout="settings-navigation"
                   direction="column"
@@ -684,10 +682,7 @@ export function SettingsDialog({
             <Flex data-layout="settings-content" direction="column" flex={1} minW={0} minH={0}>
               <Dialog.Body px={0} py={2} flex={1} minH={0}>
                 {/* Right content: search results across all sections, or the active page's sections. */}
-                {/* One horizontal inset for the whole column. Stacked at `base` — the nav sits
-                    above this and the footer below it — three different paddings read as the
-                    panel's edge moving as you scroll down it. 24px is also a sixth of a 390pt
-                    screen, spent on margin. */}
+                {/* One horizontal inset for the whole column, so the panel's edge does not move as you scroll. */}
                 <Box ref={contentScrollRef} onScroll={onContentScroll} css={contentFade} h="100%" overflowY="auto" px={{ base: 4, md: 6 }} py={4}>
                   {searching ? (
                     searchSections.length === 0 ? (
@@ -721,8 +716,7 @@ export function SettingsDialog({
                             {pageSection.rows.map((row) => (
                               <SettingRow key={row.key} title={row.title} description={row.description} layout={row.layout}>{row.control}</SettingRow>
                             ))}
-                            {/* A block after rows is separated from the last row's divider by top
-                                padding; a standalone block (no rows) sits flush under the heading. */}
+                            {/* A block after rows is separated by top padding; a standalone block sits flush under the heading. */}
                             {pageSection.block ? (
                               // Settings owns the content width and every panel fills it, so the measure does not change between panes.
                               <Box pt={pageSection.rows.length > 0 ? 4 : 0} w="100%" maxW="640px">
@@ -906,9 +900,7 @@ function AgentPermissionsEditor({
             </Box>
           </SettingField>
           <SettingField label={translation("permissionMode")}>
-            {/* The one picker that may answer "none". A card names a mode to declare a
-                *ceiling*, and most cards mean to declare nothing — which the control could not
-                say, so opening this panel pinned one. */}
+            {/* The one picker that may answer none, since most cards mean to declare no ceiling at all. */}
             <PermissionModeControl
               value={configuration.permission_mode}
               unsetLabel={translation("permissionNoCeiling")}

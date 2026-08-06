@@ -205,8 +205,7 @@ export function LocationForm({
       {showPermission && (
         <Flex direction="column" gap={1}>
           <Text textStyle="fieldLabel">{translation("permissionMode")}</Text>
-          {/* The same control the composer carries, in its field layout — one picker, one set
-              of icons and one set of descriptions wherever a permission mode is chosen. */}
+          {/* The same control the composer carries, so one picker serves wherever a permission mode is chosen. */}
           <PermissionModeControl
             layout="field"
             value={(value.permission_mode as PermissionMode) ?? "ask"}

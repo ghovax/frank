@@ -39,9 +39,7 @@ function WorkspaceHoverCard({
         <Text fontWeight="semibold" truncate>{label}</Text>
       </Flex>
       <Flex direction="column" ps={2} gap={1}>
-        {/* Every location, not just the first. A workspace that reaches two machines is
-            precisely the one whose card is worth opening, and showing only the head of the
-            list made those indistinguishable from a plain local folder. */}
+        {/* Every location, since a workspace reaching two machines is precisely the one whose card is worth opening. */}
         {locations.map((location, index) => (
           <InlineField key={index} label={index === 0 ? translation("fieldLocation") : ""}>
             <Text fontFamily="mono" wordBreak="break-all">{locationTargetAddress(location)}</Text>
@@ -179,9 +177,7 @@ export function SessionsSidebar({
         <Text fontFamily="var(--font-display)" fontSize="2xl" lineHeight="1" fontWeight="bold" letterSpacing="tight">Frank</Text>
       </Flex>
 
-      {/* "New session" reads as the first row of the list, not a separate button — a
-          circle-plus leading glyph on the shared row grid, with a ⌘N hint that surfaces on
-          hover. Disabled when we're already in a fresh, un-started conversation. */}
+      {/* New session reads as the first row of the list rather than a separate button, with its shortcut on hover. */}
       <Box px={2} pt={1} flexShrink={0} pb={1}>
         <Button
           type="button"
@@ -201,8 +197,7 @@ export function SessionsSidebar({
             <LuSquarePen size={14} />
           </Flex>
           <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">{translation("newConversation")}</Text>
-          {/* Chakra's semantic keyboard-key component, in its `plain` variant so it reads as a
-              subtle shortcut hint rather than a raised keycap chip. */}
+          {/* The semantic keyboard-key component in its plain variant, so it reads as a hint rather than a keycap. */}
           <Kbd data-kbd-hint variant="plain" fontFamily="var(--app-font-sans)" fontSize="xs" color="blue.fg" transition="opacity 0.12s" flexShrink={0}>⌘N</Kbd>
         </Button>
       </Box>
@@ -226,10 +221,7 @@ export function SessionsSidebar({
         </Button>
       </Box>
 
-      {/* A schedule is something you make, like a workspace or a conversation, so it sits with
-          them rather than three screens into Settings — where it was reachable only by somebody
-          who already knew it was there. It belongs to a workspace, so it is offered only once
-          one is selected. */}
+      {/* A schedule is something you make, so it sits with the workspaces and conversations rather than in Settings. */}
       {currentWorkspaceId ? (
         <Box px={2} flexShrink={0} pb={1}>
           <Button
@@ -377,11 +369,7 @@ export function SessionsSidebar({
                   }
                   actions={workspaceActions}
                 >
-                  {/* Nothing at all for a workspace with no conversations, rather than an empty
-                      list. A workspace created a moment ago is exactly that case, and it is
-                      also the case where the row is selected and therefore open — so it opened
-                      onto a bare strip of indent rail. `TreeRow` takes the absence of children
-                      as the absence of a disclosure, so the chevron goes with it. */}
+                  {/* Nothing at all for a workspace with no conversations, so the chevron goes with the absent children. */}
                   {workspaceSessions.length > 0 ? (
                     <VStack gap={1} align="stretch">
                       {workspaceSessions.map((entry) => (

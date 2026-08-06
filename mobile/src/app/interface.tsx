@@ -161,19 +161,7 @@ function Waiting({ status, machine, onRetry, endpoint }: {
       ) : (
         <>
           <Button label={translation("tryAgain")} icon={RotateCw} onPress={onRetry} />
-          {/*
-            The addresses actually being tried, and the way out when none of them are right.
-
-            The address itself is stable — a tailnet name outlives the machine's leases — so this
-            is a machine that really is asleep, off the tailnet, or not running `frank reach`.
-            Showing the address anyway is what turns "not answering" from a verdict into
-            something a person can check.
-
-            Showing what is being tried turns that into something a person can recognise on
-            sight, and pairing again is the only thing that fixes it — which until now was
-            unreachable from here, because this screen is what a phone with a stale address is
-            stuck on and nothing on it led anywhere.
-          */}
+          {/* The addresses being tried, and the way out, so "not answering" is something a person can check. */}
           {endpoint ? (
             <Text variant="small" tone="subtle" align="center">
               {translation("tried", { address: endpoint })}

@@ -155,12 +155,7 @@ export const ToolGroup = memo(function ToolGroup({
       position="relative"
       className={active ? "running-title-shimmer" : undefined}
     >
-      {/* No cross-fade. This was keyed on the heading text, so every change of the running
-          tool's explanation faded the whole line out and a new one in — and during a burst of
-          tool calls the explanation changes every second or two, which read as the line
-          flickering rather than as anything meaning something. A label that is simply replaced
-          is easier to read, and the shimmer on the container above already says work is under
-          way, which is the only thing the animation was really communicating. */}
+      {/* No cross-fade: a label that is simply replaced is easier to read while the explanation changes every second. */}
       <Box gridArea="1 / 1" minW={0} display="flex" alignItems="center">
         <Text
           textStyle="sm"
@@ -180,10 +175,7 @@ export const ToolGroup = memo(function ToolGroup({
     || fileChanges.length > 0 || !!groupLocation || !!soleTool;
   const badgeSlot = (
     <>
-      {/* The write/risk markers of a lone call, which used to ride on its own line. That line
-          is gone for a one-call group, and these are the one thing on it the heading did not
-          already say — so they move up rather than disappearing. They are safety markers; a
-          simplification that quietly drops them is not a simplification. */}
+      {/* The write and access markers of a lone call move up to the heading rather than disappearing with its line. */}
       {soleTool ? <ToolAccessBadges name={soleTool.name} arguments={soleTool.arguments} /> : null}
       <AnimatePresence initial={false}>
         {tally.order.map((name) => {

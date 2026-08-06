@@ -346,9 +346,7 @@ export function ModelSelect({
         <Portal>
           <Dialog.Backdrop />
           <Dialog.Positioner>
-            {/* An explicit `maxW` overrides the base recipe's responsive one, so it has to
-                say both: full width where the recipe would have gone full-bleed, and the card
-                width above that. */}
+            {/* An explicit maximum overrides the recipe's responsive one, so both widths have to be stated. */}
             <Dialog.Content maxW={{ base: "100%", sm: "520px" }}>
               <Dialog.Header>
                 <Dialog.Title fontSize="sm">{translation("dialogTitle")}</Dialog.Title>

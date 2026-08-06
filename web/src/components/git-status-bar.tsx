@@ -31,8 +31,7 @@ export function GitStatusBar({ status }: { status: DirectoryStatus }) {
 
   const detail = (
     <Box whiteSpace="nowrap">
-      {/* The same glyph the bar wears, at the same size and gap, so the card reads as that
-          branch rather than as a heading that happens to be a branch name. */}
+      {/* The same glyph the bar wears, so the card reads as that branch rather than as a heading about one. */}
       <Flex align="center" gap={1} mb={1} color="fg">
         <LuGitBranch size={12} />
         <Text fontWeight="semibold">{branchLabel}</Text>

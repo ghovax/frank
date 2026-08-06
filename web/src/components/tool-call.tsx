@@ -124,8 +124,7 @@ export function ToolCallDetail({ name, arguments: toolArguments, result, status 
   return (
     // The gap matches the field list's own spacing, so the call's last field and the result's first read as one list.
     <Flex direction="column" gap={2} align="stretch">
-      {/* One scope around both halves: a field the arguments already showed does not render
-          again in the result. See `FieldScope` — the guard is the primitive, not the view. */}
+      {/* One scope around both halves, so a field the arguments showed does not render again in the result. */}
       <FieldScope>
         {showArguments && <ToolCallView name={name} args={toolArguments} />}
         {showResult && <ToolResultView name={name} content={resultContent ?? ""} status={status} />}

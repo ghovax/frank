@@ -30,8 +30,7 @@ export function NewScheduleDialog({
               <Text fontSize="xs" color="fg.muted">{translation("empty")}</Text>
             </Dialog.Header>
             <Dialog.Body>
-              {/* Mounted only while open, so each visit starts from an empty draft rather than
-                  from whatever was half-typed the last time the dialog was dismissed. */}
+              {/* Mounted only while open, so each visit starts from an empty draft. */}
               {open && (
                 <ScheduleForm
                   workspaceId={workspaceId}
