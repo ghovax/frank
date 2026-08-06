@@ -177,7 +177,7 @@ The shipped defaults keep credential and configuration directories readable. To 
 
 **Asking for more.** An agent that needs a path outside these lists asks for it, on the call that needs it, with `access_request`. That request is the *only* thing that raises a prompt: work inside the confinement runs without interrupting anybody, because the boundary is already drawn and the operating system holds it. An approval holds for the rest of that session, and it never reaches a peer: a session it creates clamps against the *configured* profile, not the granted one.
 
-**When a command hits the wall.** A command the operating system refuses is not simply failed. Its first run was confined and could not have been otherwise, so whatever it managed before the refusal it did inside the box — which makes it safe to offer a second run with more reach. Under `ask` you are shown the command and what the refusal looked like; under `auto` the reviewer answers. The offer is "let this one command reach past the workspace", because neither backend reports *which* path it refused, and there is nothing narrower to honestly offer. Your `deny` list still holds through it.
+**When a command hits the wall.** A command the operating system refuses is not simply failed. Its first run was confined and could not have been otherwise, so whatever it managed before the refusal it did inside the box — which makes it safe to offer a second run with more reach. Under `ask` you are shown the command and what the refusal looked like; under `automatic` the reviewer answers. The offer is "let this one command reach past the workspace", because neither backend reports *which* path it refused, and there is nothing narrower to honestly offer. Your `deny` list still holds through it.
 
 `grantable` lists the paths an agent may be given without a prompt. It is empty by default, so every request is asked about. A path under `deny` is never grantable, whatever `grantable` says — that list is what you declared off-limits before the session started, and nothing decided at runtime reaches past it.
 
@@ -207,7 +207,7 @@ A session's mode says **who answers** when a call asks to reach past its confine
 | Mode | Behaviour |
 |------|-----------|
 | `ask` | The person running the session answers. The turn parks until they do. |
-| `auto` | A reviewer answers: it allows the request or refuses it, and never asks. For work nobody is watching. A refusal reaches the agent as a refused tool call, with a reason it can work around. |
+| `automatic` | A reviewer answers: it allows the request or refuses it, and never asks. For work nobody is watching. A refusal reaches the agent as a refused tool call, with a reason it can work around. |
 
 There is **no bypass mode**, and no standing "always allow": the only runtime decisions are allow-once and deny. A session's mode is chosen when the harness creates it and can be changed afterwards by the person running it; a session can never change its own. A session created by another is never looser than its parent, and tightening a session tightens the subtree it created.
 

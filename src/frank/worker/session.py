@@ -392,7 +392,7 @@ class SessionExecutor(AgentExecutor):
 
         The mode reaching the live runtime settles every call the turn has yet to make; a turn
         that hit a gate has already ended — `input_required`, final — with its verdict in the
-        task record, which nothing re-reads. Switching to `auto` because the fourth approval card
+        task record, which nothing re-reads. Switching to `automatic` because the fourth approval card
         was one too many would otherwise leave the fourth card on screen.
 
         Each gate is put back through the same reviewer the preflight uses, and only the ones
@@ -920,12 +920,12 @@ class SessionExecutor(AgentExecutor):
         The schema is bound as a tool, the same shape the agent's own turns use, and the choice
         is **required**. Producing that object is the entire purpose of the call, so a call that
         may decline it is a call that can fail without failing — which is exactly what happened:
-        the choice was `auto`, a model that answered in prose instead left `tool_calls` empty,
+        the choice was `automatic`, a model that answered in prose instead left `tool_calls` empty,
         the method returned on the spot, and the only trace was a sidebar full of "Untitled
         conversation" with nothing anywhere saying why. A schema the model cannot refuse removes
         that outcome by construction rather than detecting it.
 
-        (`auto` had been chosen on the belief that reasoning models reject a forced tool choice.
+        (`automatic` had been chosen on the belief that reasoning models reject a forced tool choice.
         They do reject a `json_schema` response format, which is why this is a tool at all, but
         the forcing is fine — the compaction pass has required its own tool all along.)
 

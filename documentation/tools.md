@@ -1,6 +1,6 @@
 # Tools
 
-A session acts through tools, and every tool call runs inside the session's [confinement](configuration.md#the-sandbox). A call that stays inside it runs without asking anybody. A call that asks to reach past it pauses under `ask` and reaches you as a prompt in the app, or as `frank allow` / `frank deny` in the terminal; under `auto` it never pauses, and the reviewer allows or refuses it. The description the model reads is in the repo: a docstring in `src/frank/runtime/tools/registry.py` for most tools, a template in `src/frank/runtime/prompts/tool_*.md` for the peer-session ones.
+A session acts through tools, and every tool call runs inside the session's [confinement](configuration.md#the-sandbox). A call that stays inside it runs without asking anybody. A call that asks to reach past it pauses under `ask` and reaches you as a prompt in the app, or as `frank allow` / `frank deny` in the terminal; under `automatic` it never pauses, and the reviewer allows or refuses it. The description the model reads is in the repo: a docstring in `src/frank/runtime/tools/registry.py` for most tools, a template in `src/frank/runtime/prompts/tool_*.md` for the peer-session ones.
 
 There is no delegation tool and no in-process sub-agent. A session that needs a peer creates one with `create_session`, which reaches the same control plane your terminal does. See [Composing with other sessions](#composing-with-other-sessions).
 

@@ -21,7 +21,7 @@ What a session runs under when its creator does not say.
 
 | Setting | Type | Default | What it is for |
 |---|---|---|---|
-| `agent.permission_mode` | `ask` / `auto` | `ask` | Who answers when a session asks to reach past its confinement, unless its agent profile caps it lower. |
+| `agent.permission_mode` | `ask` / `automatic` | `ask` | Who answers when a session asks to reach past its confinement, unless its agent profile caps it lower. |
 
 
 ## Workspaces

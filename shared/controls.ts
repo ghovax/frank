@@ -27,7 +27,7 @@ export interface ChoiceSet<Value extends string = string> {
   choices: ChoiceDefinition<Value>[];
 }
 
-export type PermissionModeValue = "ask" | "auto";
+export type PermissionModeValue = "ask" | "automatic";
 export type SandboxEnforceValue = "required" | "off";
 export type WorktreeStrategyValue = "none" | "branch" | "worktree";
 export type BooleanValue = "on" | "off";
@@ -46,10 +46,10 @@ export const PERMISSION_MODES: ChoiceSet<PermissionModeValue> = {
       glyph: "hand",
     },
     {
-      value: "auto",
-      labelKey: "permissionAutoLabel",
-      nameKey: "permissionAutoName",
-      descriptionKey: "permissionAutoDescription",
+      value: "automatic",
+      labelKey: "permissionAutomaticLabel",
+      nameKey: "permissionAutomaticName",
+      descriptionKey: "permissionAutomaticDescription",
       glyph: "badge-check",
       palette: "blue",
     },

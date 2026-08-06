@@ -45,7 +45,7 @@ function permissionAppearance(permissionMode: PermissionMode) {
       borderColor: "border",
       colorPalette: undefined,
     },
-    auto: {
+    automatic: {
       icon: <LuBadgeCheck size={13} />,
       color: "blue.fg",
       background: "blue.subtle",
@@ -195,7 +195,7 @@ export function PermissionModeControl({
   const translation = useTranslations("SessionControls");
   const permissionChoices: { value: PermissionMode; label: string; description: string; icon: ReactNode; colorPalette?: "blue" | "green" | "orange" }[] = [
     { value: "ask", label: translation("permissionAskLabel"), description: translation("permissionAskDescription"), icon: <LuHand size={13} /> },
-    { value: "auto", label: translation("permissionAutoLabel"), description: translation("permissionAutoDescription"), icon: <LuBadgeCheck size={13} />, colorPalette: "blue" },
+    { value: "automatic", label: translation("permissionAutomaticLabel"), description: translation("permissionAutomaticDescription"), icon: <LuBadgeCheck size={13} />, colorPalette: "blue" },
   ];
   const UNSET = "__unset__";
   const permissionItems = [

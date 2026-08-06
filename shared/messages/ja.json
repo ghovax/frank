@@ -484,9 +484,9 @@
     "permissionAskLabel": "先に確認する",
     "permissionAskName": "都度確認",
     "permissionAskDescription": "セッションの制限範囲を超える要求は、すべてあなたに確認します",
-    "permissionAutoLabel": "自分で判断する",
-    "permissionAutoName": "自律",
-    "permissionAutoDescription": "レビュアーがその要求を自ら判断し、許可または拒否します。あなたに確認することはありません"
+    "permissionAutomaticLabel": "自分で判断する",
+    "permissionAutomaticName": "自律",
+    "permissionAutomaticDescription": "レビュアーがその要求を自ら判断し、許可または拒否します。あなたに確認することはありません"
   },
   "SessionsSidebar": {
     "activeFirst": "アクティブ順",
@@ -957,7 +957,7 @@
     "agent": {
       "permission_mode": {
         "ask": "先に確認する",
-        "auto": "自分で判断する"
+        "automatic": "自分で判断する"
       }
     },
     "workspace": {
