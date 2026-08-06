@@ -20,20 +20,16 @@ ICON_COMPOSER_TOOL = Path(
 MACOS_CANVAS_SIZE = 1024
 MACOS_ICON_SIZES = (16, 32, 64, 128, 256, 512, 1024)
 
-# The two surfaces `cargo tauri icon` does not know about, and which therefore kept the old
-# artwork through a rename until someone noticed by eye. Derived here so they cannot drift.
+# The two surfaces the icon tool does not know about, derived here so they cannot fall behind.
 MONO_ARTWORK = COMPOSER_DOCUMENT / "Assets" / "face-mono.png"
 TRAY_ICON = WEB_ROOT / "src-tauri" / "icons" / "tray-icon.png"
 TRAY_ICON_SIZE = 88
-# Browser-tab icons: the mark alone on transparency, like the in-interface logo. A tab strip
-# already frames what it shows, so a tile inside it is a second frame — the icon pasted into a
-# space that did not need one.
+# Browser-tab icons: the mark alone on transparency, since a tab strip already frames what it shows.
 TAB_ICONS = (
     (WEB_ROOT / "src" / "app" / "icon.png", 512),
     (WEB_ROOT / "src" / "app" / "favicon.ico", 256),
 )
-# The iOS home-screen icon is the exception and keeps its tile: iOS composites this onto the
-# home screen and fills transparency with black, so a bare mark would arrive in a black square.
+# The iOS home-screen icon keeps its tile, because iOS fills transparency with black.
 APPLE_TOUCH_ICON = (WEB_ROOT / "src" / "app" / "apple-icon.png", 512)
 WEB_CORNER_RADIUS_RATIO = 0.22
 
@@ -153,13 +149,7 @@ def create_macos_icon() -> None:
 
 
 def create_tray_icon() -> None:
-    """Write the menu-bar icon: the mark in black, at the size the tray expects.
-
-    A template image, not a picture — macOS asks for pure black plus alpha and tints it
-    itself, so that one icon reads on a light menu bar, a dark one, and a coloured
-    wallpaper behind a translucent bar. Taking the alpha from the mono artwork and
-    discarding its colour is what makes it a template rather than something that merely
-    happens to be dark today."""
+    """Write the menu-bar icon as a template image: pure black plus alpha, which macOS tints itself."""
     with Image.open(MONO_ARTWORK) as artwork_image:
         alpha_channel = artwork_image.convert("RGBA").getchannel("A")
     tray_icon = Image.new("RGBA", alpha_channel.size, (0, 0, 0, 0))
@@ -170,9 +160,7 @@ def create_tray_icon() -> None:
 
 
 def _rounded_mask(size: int) -> Image.Image:
-    """A squircle-ish corner mask. Approximated with a rounded rectangle, because the
-    browser surfaces this serves show it at 32 pixels or less, where the difference
-    between Apple's continuous curvature and a plain radius is below one pixel."""
+    """A squircle-ish corner mask, approximated because these surfaces show it at 32 pixels or less."""
     mask = Image.new("L", (size, size), 0)
     ImageDraw.Draw(mask).rounded_rectangle(
         (0, 0, size - 1, size - 1), radius=round(size * WEB_CORNER_RADIUS_RATIO), fill=255
@@ -181,16 +169,7 @@ def _rounded_mask(size: int) -> Image.Image:
 
 
 def create_web_icons() -> None:
-    """Write the browser favicons from the same artwork as everything else.
-
-    These were the last place the old mark survived a rename, because nothing regenerated
-    them: they are Next.js file-convention assets picked up by filename, so no import ever
-    breaks to say they are stale. Deriving them here means the interface cannot disagree
-    with the app about what the product looks like.
-
-    Tab icons get the mark on its own, in the brand colour rather than in white — a tab strip
-    may be light or dark and the icon has to survive both, and one coloured mark does that
-    where a white one would vanish against a light strip."""
+    """Write the browser favicons from the same artwork as everything else."""
     fill_configuration = json.loads((COMPOSER_DOCUMENT / "icon.json").read_text())
     brand_red, brand_green, brand_blue, _ = _extended_srgb_fill(
         fill_configuration["fill"]["automatic-gradient"]
