@@ -1,11 +1,9 @@
 """What a tool's child process is actually allowed to do, enforced by the operating system.
 
 The harness spawns two kinds of child that run code nobody wrote in advance: the shell command a
-`bash` call asks for, and the Python a `control_screen` script is made of. Both used to be
-"protected" by something that was not a boundary — the first by a scan of the command text for
-path-shaped arguments, the second by ``RLIMIT_CPU`` and ``RLIMIT_AS``. A heuristic over source is
-not confinement, and bounding runaway resource use is not bounding authority. This module is the
-boundary both of them get instead.
+`bash` call asks for, and the Python a `control_screen` script is made of. This module is the
+boundary both of them run inside. A heuristic over source is not confinement, and bounding
+runaway resource use is not bounding authority, so neither stands in for what is here.
 
 Almost all of a confined child is POSIX and needs no platform code: resource limits are
 ``setrlimit(2)`` under their own constant names, the file-creation mask is ``umask(2)``, priority
@@ -114,7 +112,7 @@ class Filesystem:
 class AccessRequest:
     """What one call says it needs beyond the confinement it already has.
 
-    ``mutates`` is the claim that used to be the separate ``read_only`` argument, and it is
+    ``mutates`` is
     three-valued on purpose. ``False`` says the call changes nothing; ``True`` says it does;
     ``None`` says the model made no claim, because it omitted the request entirely. The third
     case has to stay distinguishable from the second — treating "said nothing" as "said it
@@ -184,7 +182,7 @@ def parse_access_request(value: object) -> tuple[Optional[AccessRequest], str]:
 
 @dataclass(frozen=True)
 class Grant:
-    """One widening a person approved, and what it was approved for.
+    """One widening that was approved, what it was approved for, and who approved it.
 
     Held by the session rather than by the call, because a grant re-asked on every command in a
     build produces a row of gates nobody reads by the fourth. How often somebody is asked is
@@ -193,19 +191,85 @@ class Grant:
 
     ``purpose`` is the explanation the call carried when the grant was approved. It is kept so
     the person can see, in the listing, what they said yes to — a path with no reason beside it
-    is a permission nobody can audit later."""
+    is a permission nobody can audit later.
+
+    ``approved_by`` names the authority behind the widening — a person at the keyboard, a rule
+    they wrote in advance, or the reviewer a session runs under when nobody is there. A grant is
+    the only thing that widens a confinement, so every one of them says who said yes.
+
+    ``whole_disk`` is the answer to a command the operating system refused. It cannot name the
+    path it wanted — a Seatbelt denial is an ``EPERM`` with no file in it — so the only honest
+    thing to offer is "let this one command reach past the workspace". It widens to the root and
+    **does not** turn confinement off: the deny list is applied after every allowance on both
+    backends, so what a person declared off-limits stays off-limits through a grant that names
+    everything. There is deliberately no way to spell "run this unconfined"."""
 
     reads: tuple[str, ...] = ()
     writes: tuple[str, ...] = ()
     network: bool = False
+    whole_disk: bool = False
     purpose: str = ""
     granted_at: str = ""
+    approved_by: str = ""
 
     def as_dict(self) -> dict:
         return {
             "reads": list(self.reads), "writes": list(self.writes),
-            "network": self.network, "purpose": self.purpose, "granted_at": self.granted_at,
+            "network": self.network, "whole_disk": self.whole_disk,
+            "purpose": self.purpose, "granted_at": self.granted_at,
+            "approved_by": self.approved_by,
         }
+
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "Grant":
+        data = data or {}
+        return cls(
+            reads=tuple(data.get("reads") or ()),
+            writes=tuple(data.get("writes") or ()),
+            network=bool(data.get("network", False)),
+            whole_disk=bool(data.get("whole_disk", False)),
+            purpose=str(data.get("purpose") or ""),
+            granted_at=str(data.get("granted_at") or ""),
+            approved_by=str(data.get("approved_by") or ""),
+        )
+
+
+#: Who approved a grant. Not an enum, because it crosses the wire and a session record written
+#: by one release is read by the next; the three spellings are the whole of it.
+APPROVED_BY_PERSON = "person"
+APPROVED_BY_RULE = "rule"
+APPROVED_BY_REVIEWER = "reviewer"
+
+
+def approved(
+    request: "AccessRequest | None" = None,
+    *,
+    by: str,
+    purpose: str = "",
+    whole_disk: bool = False,
+) -> Grant:
+    """Mint a grant. The one place a :class:`Grant` is built outside deserialization.
+
+    Every widening in the harness comes through here, so "who said yes" is asked once, and a
+    site that cannot answer it cannot widen anything.
+    """
+    if by not in (APPROVED_BY_PERSON, APPROVED_BY_RULE, APPROVED_BY_REVIEWER):
+        raise ValueError(f"a grant must name its authority, not {by!r}")
+    return Grant(
+        reads=tuple(request.reads) if request is not None else (),
+        writes=tuple(request.writes) if request is not None else (),
+        network=bool(request.network) if request is not None else False,
+        whole_disk=whole_disk,
+        purpose=purpose,
+        granted_at=_now(),
+        approved_by=by,
+    )
+
+
+def _now() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 @dataclass(frozen=True)
@@ -213,7 +277,11 @@ class Profile:
     """One child's confinement, whole. Frozen because it is resolved once and then only narrowed."""
 
     filesystem: Filesystem = field(default_factory=Filesystem)
-    network: bool = True
+    # Closed, like the filesystem it sits beside. A box with a hole in it is not a box: a command
+    # that can reach the network can post the contents of the workspace anywhere, and every
+    # argument for confining the disk applies unchanged to the wire. It opens the way the disk
+    # opens — a call asks for it, and somebody or something says yes.
+    network: bool = False
     limits: dict[str, int] = field(default_factory=dict)
     umask: Optional[int] = None
     nice: int = 0
@@ -267,26 +335,39 @@ class Profile:
             network=self.network and network,
         )
 
-    def widened(
-        self, *, reads: Iterable[str] = (), writes: Iterable[str] = (),
-        network: bool = False, workspace: str = "",
-    ) -> "Profile":
-        """This profile plus what a person approved for one call. The mirror of :meth:`narrowed`.
+    def with_grant(self, grant: Grant, *, workspace: str = "") -> "Profile":
+        """This profile plus one approved widening. The mirror of :meth:`narrowed`, and the only
+        method that makes a profile wider than it was.
 
         A grant is the answer to the question the confinement could not previously be asked. The
         profile says a session may write to four directories; the work in front of it needs a
-        fifth; and until now the only way to say so was to edit the configuration, which is not
+        fifth; and the only other way to say so is to edit the configuration, which is not
         something that can happen inside a turn.
+
+        It takes a :class:`Grant` rather than loose paths on purpose. A grant is minted in one
+        place and has to name who approved it, so there is no spelling of "widen this profile"
+        that does not carry an authority — the check cannot be skipped by a caller that passes
+        paths directly, because there is no such caller.
 
         **The deny list wins, unconditionally.** A path under `deny` is not widenable by any
         grant, however it was approved — that list is what a person declared never-negotiable
         before any of this started, and a runtime decision must not be able to reach past a
-        standing one. Everything else a person approves is allowed, because the person is the
-        authority the gate exists to consult.
+        standing one. This holds for ``whole_disk`` too: it widens to the root, and both backends
+        apply the denials over the top of every allowance.
 
         Nothing here narrows. A grant that names a path already writable is a no-op rather than a
         replacement, which is what makes applying several in sequence safe.
         """
+        if grant.whole_disk:
+            return replace(
+                self,
+                filesystem=replace(
+                    self.filesystem,
+                    readable=tuple(dict.fromkeys(self.filesystem.readable + ("/",))),
+                    writable=tuple(dict.fromkeys(self.filesystem.writable + ("/",))),
+                ),
+                network=True,
+            )
         denied = [Path(resolved) for entry in self.filesystem.deny if (resolved := expand(entry, workspace=workspace))]
 
         def permitted(paths: Iterable[str]) -> tuple[str, ...]:
@@ -301,8 +382,8 @@ class Profile:
                 kept.append(entry)
             return tuple(kept)
 
-        granted_reads = permitted(reads)
-        granted_writes = permitted(writes)
+        granted_reads = permitted(grant.reads)
+        granted_writes = permitted(grant.writes)
         return replace(
             self,
             filesystem=Filesystem(
@@ -318,7 +399,7 @@ class Profile:
                 # applying one must not quietly revoke the other.
                 attached=self.filesystem.attached,
             ),
-            network=self.network or network,
+            network=self.network or grant.network,
         )
 
     def with_attachments(self, paths: Iterable[str]) -> "Profile":
@@ -343,6 +424,56 @@ class Profile:
                 self.filesystem,
                 attached=tuple(dict.fromkeys(self.filesystem.attached + files)),
             ),
+        )
+
+    def may_read(self, path: str, *, workspace: str = "") -> bool:
+        """Whether a child of this profile could read ``path``.
+
+        The harness writes and reads files two ways: through a shell command, which runs in a
+        confined child, and through its own file tools, which run in the worker process where no
+        sandbox applies. Both are the session reaching the disk, so both answer to this.
+
+        The order matches what the backends emit — allowances, then denials, then the files a
+        person attached by hand, which beat the denials because a person named them one by one.
+        """
+        resolved = expand(path, workspace=workspace)
+        if not resolved:
+            return False
+        if self._is_attached(resolved, workspace=workspace):
+            return True
+        if self._is_denied(resolved, workspace=workspace):
+            return False
+        # The workspace is readable whatever else is configured: a session pointed at a
+        # directory to work in must be able to read it, or it is not restricted but broken.
+        if workspace and _within(resolved, expand("$WORKSPACE", workspace=workspace)):
+            return True
+        if _outside_home(resolved):
+            return True
+        return any(
+            _within(resolved, expand(entry, workspace=workspace))
+            for entry in self.filesystem.readable + self.filesystem.writable
+        )
+
+    def may_write(self, path: str, *, workspace: str = "") -> bool:
+        """Whether a child of this profile could write ``path``. Writes are denied wholesale and
+        granted back, so only the writable list — never the system, never an attachment."""
+        resolved = expand(path, workspace=workspace)
+        if not resolved or self._is_denied(resolved, workspace=workspace):
+            return False
+        return any(
+            _within(resolved, expand(entry, workspace=workspace))
+            for entry in self.filesystem.writable
+        )
+
+    def _is_denied(self, resolved: str, *, workspace: str) -> bool:
+        return any(
+            _within(resolved, expand(entry, workspace=workspace))
+            for entry in self.filesystem.deny
+        )
+
+    def _is_attached(self, resolved: str, *, workspace: str) -> bool:
+        return any(
+            expand(entry, workspace=workspace) == resolved for entry in self.filesystem.attached
         )
 
     def grants_without_asking(self, paths: Iterable[str], *, workspace: str = "") -> bool:
@@ -432,7 +563,7 @@ class Profile:
                 deny=tuple(filesystem.get("deny") or ()),
                 grantable=tuple(filesystem.get("grantable") or ()),
             ),
-            network=bool(data.get("network", True)),
+            network=bool(data.get("network", False)),
             limits={str(key): int(value) for key, value in (data.get("limits") or {}).items()},
             umask=int(umask) if umask is not None else None,
             nice=int(data.get("nice") or 0),
@@ -474,6 +605,24 @@ def expand_for_display(path: str, *, workspace: str = "") -> str:
     if not text or "$" in text:
         return ""
     return str(Path(text))
+
+
+def _within(path: str, root: str) -> bool:
+    """Whether ``path`` is ``root`` or lies under it. Both already expanded."""
+    if not path or not root:
+        return False
+    if root == "/":
+        return True
+    candidate, parent = Path(path), Path(root)
+    return candidate == parent or candidate.is_relative_to(parent)
+
+
+def _outside_home(resolved: str) -> bool:
+    """Whether a path lies outside the user's home directory, which both backends leave
+    readable: `/usr` and `/etc` are not secrets, and denying them breaks every toolchain while
+    protecting nothing."""
+    home = os.path.expanduser("~")
+    return not home or home == "/" or not _within(resolved, home)
 
 
 def _contained_in(paths: Iterable[str], allowed: Iterable[str], *, workspace: str = "") -> tuple[str, ...]:
@@ -778,10 +927,12 @@ def _apply_landlock(profile: Profile, workspace: str) -> None:
     if ruleset < 0:
         return
 
-    def allow(path: str, access: int) -> None:
-        resolved = expand(path, workspace=workspace)
-        if not resolved or not os.path.exists(resolved):
-            return
+    denied = tuple(
+        resolved for entry in profile.filesystem.deny
+        if (resolved := expand(entry, workspace=workspace))
+    )
+
+    def add(resolved: str, access: int) -> None:
         descriptor = os.open(resolved, os.O_PATH | os.O_CLOEXEC)
         try:
             rule = PathBeneathAttribute(allowed_access=access, parent_fd=descriptor)
@@ -792,6 +943,53 @@ def _apply_landlock(profile: Profile, workspace: str) -> None:
         finally:
             os.close(descriptor)
 
+    def allow(path: str, access: int) -> None:
+        """Grant a subtree, minus anything the profile denies inside it.
+
+        Landlock has no denial: a ruleset is allowances, and everything unnamed is already
+        refused. That is not enough on its own here, because a denied path can sit inside a
+        granted one — `~/.config` is readable by default and `~/.config/something-private` is
+        exactly the kind of entry `deny` is for — and a whole-disk grant names the root, under
+        which every denied path lies.
+
+        So a granted root that contains a denial is expanded: walk down towards each denial,
+        granting the siblings at every level and never granting the denied entry itself. The
+        walk is bounded by the number of denied paths, not by the size of the tree.
+        """
+        resolved = expand(path, workspace=workspace)
+        if not resolved or not os.path.exists(resolved):
+            return
+        root = Path(resolved)
+        inside = [Path(entry) for entry in denied if Path(entry).is_relative_to(root)]
+        if not inside:
+            # The ordinary case, and the one worth keeping cheap: no denial lies under this
+            # allowance, so it is granted whole with one rule.
+            if any(root.is_relative_to(Path(entry)) for entry in denied):
+                return  # the allowance is itself inside a denial
+            add(resolved, access)
+            return
+        # Grant every sibling along the way down, so the subtree is covered except for the
+        # denied branches. `frontier` holds directories still to be split.
+        frontier = [root]
+        while frontier:
+            current = frontier.pop()
+            blocking = [entry for entry in inside if entry.is_relative_to(current) and entry != current]
+            if not blocking:
+                if current not in inside and os.path.exists(current):
+                    add(str(current), access)
+                continue
+            try:
+                children = sorted(current.iterdir())
+            except OSError:
+                continue
+            for child in children:
+                if child in inside:
+                    continue
+                if any(entry.is_relative_to(child) for entry in inside):
+                    frontier.append(child)
+                elif os.path.exists(child):
+                    add(str(child), access)
+
     # The system is readable; the home directory is not named here at all, because Landlock grants
     # rather than denies — anything not granted is already refused.
     for root in ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/opt", "/proc", "/dev", "/var"):
@@ -800,6 +998,12 @@ def _apply_landlock(profile: Profile, workspace: str) -> None:
         allow(entry, _LANDLOCK_FS_READ | _LANDLOCK_FS_READ_DIR)
     for entry in profile.filesystem.writable:
         allow(entry, _LANDLOCK_FS_READ | _LANDLOCK_FS_READ_DIR | _LANDLOCK_FS_WRITE)
+    # After the denials, and therefore beating them, exactly as on macOS: a person handed this
+    # session one named file, and that is not a path the model went looking for.
+    for entry in profile.filesystem.attached:
+        resolved = expand(entry, workspace=workspace)
+        if resolved and os.path.exists(resolved):
+            add(resolved, _LANDLOCK_FS_READ)
     # landlock_restrict_self refuses without this: a process may only narrow itself if it cannot
     # then regain privilege through a setuid binary.
     libc.prctl(_PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
@@ -852,17 +1056,115 @@ class Spawn:
     confined: bool
 
 
+@dataclass(frozen=True)
+class Attempt:
+    """What one child is about to be run with. The only thing :func:`spawn_recipe` accepts.
+
+    A profile alone cannot say whether it has been widened, which leaves every spawn site to
+    remember to fold the session's grants in. Making the attempt the argument moves that from
+    something each site remembers to something the type states.
+
+    ``grant`` is empty on a first attempt and cannot be otherwise: :func:`first_attempt` takes no
+    grant, and it is the only way to build one. That is what makes the retry safe to offer — the
+    first run of any command happened inside the box, so whatever it managed to do before the
+    operating system stopped it, it did in there."""
+
+    profile: Optional[Profile]
+    grant: Optional[Grant] = None
+    workspace: str = ""
+
+    @property
+    def confined_profile(self) -> Optional[Profile]:
+        """The profile actually applied: the session's, with the attempt's grant folded in."""
+        if self.profile is None or self.grant is None:
+            return self.profile
+        return self.profile.with_grant(self.grant, workspace=self.workspace)
+
+
+def first_attempt(profile: Optional[Profile], *, workspace: str = "") -> Attempt:
+    """The way every command starts: inside the session's own box, widened by nothing.
+
+    Takes no grant, so there is no call site that can start a command outside its confinement.
+    The session's standing grants are folded into ``profile`` before it gets here — those are
+    approvals that already happened, not an escape from this one."""
+    return Attempt(profile=profile, grant=None, workspace=workspace)
+
+
+def retry_attempt(profile: Optional[Profile], grant: Grant, *, workspace: str = "") -> Attempt:
+    """A second run of a command the operating system refused, with an approved widening."""
+    return Attempt(profile=profile, grant=grant, workspace=workspace)
+
+
+#: What the two backends say when they refuse. Neither names the path — a Seatbelt denial is an
+#: `EPERM` and a Landlock one is an `EACCES` — so this is a reading of the wreckage rather than a
+#: report from the enforcer, and it is allowed to be: a false positive costs one needless
+#: question, and a false negative leaves today's behaviour, which is the error reaching the model.
+_DENIAL_MARKERS = (
+    "operation not permitted",
+    "permission denied",
+    "read-only file system",
+    "sandbox",
+    "landlock",
+    "seatbelt",
+)
+#: Network refusals, which read differently: no route, no resolver, nothing listening.
+_NETWORK_DENIAL_MARKERS = (
+    "network is unreachable",
+    "could not resolve host",
+    "temporary failure in name resolution",
+    "name or service not known",
+    "nodename nor servname provided",
+    "connection refused",
+    "no address associated with hostname",
+)
+
+@dataclass(frozen=True)
+class Denial:
+    """The operating system refused this child, as far as can be told from what it left behind."""
+
+    kind: str  # "filesystem" | "network"
+    evidence: str
+
+
+def denial_in(*, exit_code: int, output: str, attempt: Attempt) -> Optional[Denial]:
+    """Whether a finished child looks like it hit the boundary, and which half of it.
+
+    Deliberately a reading of exit code and output rather than a report from the enforcer,
+    because neither backend gives one. What keeps that honest is where the answer is used: it
+    decides whether to *ask*, never whether to allow. Being wrong in one direction spends a
+    question nobody needed; being wrong in the other returns the error to the model exactly as
+    it does today.
+
+    An unconfined attempt is never a denial: if there was no boundary, nothing was refused by it.
+    """
+    profile = attempt.profile
+    if profile is None or profile.enforce == ENFORCE_OFF or exit_code == 0:
+        return None
+    lowered = output.lower()
+    for marker in _NETWORK_DENIAL_MARKERS:
+        if marker in lowered:
+            # Only where the box is what closed the network. With the network open, an unreachable
+            # host is an unreachable host, and offering to widen a permission the command already
+            # holds is an offer that fixes nothing.
+            return None if profile.network else Denial(kind="network", evidence=marker)
+    for marker in _DENIAL_MARKERS:
+        if marker in lowered:
+            return Denial(kind="filesystem", evidence=marker)
+    return None
+
+
 def spawn_recipe(
-    profile: Optional[Profile],
+    attempt: Attempt,
     *,
     workspace: str = "",
     extra_environment: Optional[dict] = None,
 ) -> Spawn:
-    """Turn a profile into the arguments a spawn needs.
+    """Turn an attempt into the arguments a spawn needs.
 
     Raises :class:`ConfinementUnavailable` when the profile demands enforcement this machine cannot
     provide. That is deliberately noisy: the defect this module exists to correct was a setting
     that claimed to confine and quietly did not."""
+    profile = attempt.confined_profile
     if profile is None or profile.enforce == ENFORCE_OFF:
         return Spawn(prefix=[], preexec=lambda: None, environment=dict(os.environ), confined=False)
 

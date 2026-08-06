@@ -213,7 +213,7 @@ class Tunable(Enum):
     # The control plane and the processes it supervises.
     warm_workers = Default(2, Scaling.NONE)
     session_title_attempts = Default(3, Scaling.NONE)
-    permission_classifier_attempts = Default(3, Scaling.NONE)
+    permission_reviewer_attempts = Default(3, Scaling.NONE)
     prototype_start_seconds = Default(120.0, Scaling.TIME)
     prototype_restart_seconds = Default(5.0, Scaling.TIME)
     session_idle_sleep_seconds = Default(18000.0, Scaling.TIME)

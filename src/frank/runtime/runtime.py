@@ -195,7 +195,7 @@ def _build_tools(
     *,
     can_reach_peers: bool = False,
     extra_tools: Sequence[BaseTool] = (),
-    permission_mode: PermissionMode = PermissionMode.DEFAULT,
+    permission_mode: PermissionMode = PermissionMode.ASK,
 ) -> list[BaseTool]:
     tools = _all_available_tools(
         agent_configuration, global_configuration, working_directory,
@@ -260,7 +260,7 @@ def _all_available_tools(
     *,
     can_reach_peers: bool = False,
     extra_tools: Sequence[BaseTool] = (),
-    permission_mode: PermissionMode = PermissionMode.DEFAULT,
+    permission_mode: PermissionMode = PermissionMode.ASK,
 ) -> list[BaseTool]:
     available = [
         bash_tool,
@@ -284,7 +284,7 @@ def _all_available_tools(
     # in front of anyone. A session that could still call this would have a way to stop dead and
     # wait forever — the exact failure the mode is meant to remove — so it does not have one.
     # Withheld rather than forbidden in prose, because a tool that is absent cannot be called.
-    if not permission_mode.is_classifying:
+    if permission_mode.asks:
         available.append(ask_user_tool)
     # Searching and controlling the live screen (the browser and native apps) drives the whole
     # machine, so it is opt-in: added only when the user has enabled it in Settings (which also
@@ -381,7 +381,16 @@ def _build_tool_context(
     toolbox = toolbox_for(session_id, enabled=global_configuration.toolbox.enabled)
     if toolbox is not None:
         toolbox.prepare()
-        sandbox = sandbox.widened(writes=[str(toolbox.root)], workspace=workspace)
+        from frank.base import confinement as _confinement
+
+        sandbox = sandbox.with_grant(
+            _confinement.approved(
+                _confinement.AccessRequest(mutates=True, writes=(str(toolbox.root),)),
+                by=_confinement.APPROVED_BY_RULE,
+                purpose="the session's own toolbox directory",
+            ),
+            workspace=workspace,
+        )
 
     exa_client = None
     exa_key = global_configuration.exa.effective_api_key
@@ -572,7 +581,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         catalogue: Any = None,
         transcript: Any = None,
         tools: Sequence[BaseTool] = (),
-        tool_risk: str = "medium",
+        supplied_tool_gate: str = "ask",
         permissions: Any = None,
         hooks: Sequence[Any] = (),
         pipeline: Sequence[Any] = (),
@@ -600,7 +609,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         # them worked. The worker converts a dict first, the library passed whatever it was
         # given straight through, and a person reaching for the documented `SandboxConfiguration`
         # got a pydantic model installed as the confinement — where every later `.describe()`,
-        # `.widened()` and `spawn_recipe()` raises `AttributeError` deep inside a turn rather
+        # `.with_grant()` and `spawn_recipe()` raises `AttributeError` deep inside a turn rather
         # than at the call that made the mistake. One conversion here settles it for every path.
         self._sandbox = _as_profile(sandbox)
         self._agent_configuration = agent_configuration
@@ -652,7 +661,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         # What a caller's tool is gated at. The permission engine classifies by tool *name* and
         # has never heard of this one, so there is no honest way to infer it; defaulting to a
         # mode that asks means adding a tool cannot silently widen what a session may do.
-        self._tool_risk = tool_risk
+        self._supplied_tool_gate = supplied_tool_gate
         # Resolved before the tools are assembled, because which tools exist depends on it: an
         # autonomous session is not given the one that waits for a person.
         self._permission_mode: PermissionMode = PermissionMode.more_restrictive(
@@ -743,8 +752,8 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         self._cached_system_prompt: str | None = None
         self._task_manager = TaskManager()
         # The judge behind `classify`, built on first use and kept for the session's life. It is
-        # the session's own model at its own configured effort — see `_classifier_model`.
-        self._classifier_llm: Optional[BaseChatModel] = None
+        # the session's own model at its own configured effort — see `_reviewer_model`.
+        self._reviewer_llm: Optional[BaseChatModel] = None
         self._goal: Optional[Goal] = None
         # Called whenever the goal changes, so the layer above can tell the daemon (and through
         # it the interface, which shows the goal with a control to call it off). Installed by the
@@ -754,10 +763,8 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         # session state only on mutation rather than on every checkpoint.
         self._session_dirty = False
         self._execution_history: list[dict] = []
-        # The session's permission policy is ONE typed value, fixed for its whole life: the
-        # mode is chosen at `create` (clamped against the parent's, and against the agent
-        # card's own ceiling) and nothing can loosen it afterwards. The read_only/auto
-        # booleans the call sites read are derived views of it, never separate state.
+        # The session's permission policy is one typed value: the mode is chosen at `create`,
+        # clamped against the parent's and against the agent card's own ceiling.
         # `more_restrictive` ignores absent inputs and falls back to the interactive default
         # with none, which is what a session with neither a requested mode nor a card ceiling
         # should get.
@@ -907,17 +914,14 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         raise ToolLocationError(f"Unknown location {location_value!r}. Available: {names}.")
 
     def _call_policy(self, location: ResolvedLocation | None) -> CallExecutionPolicy:
-        """The execution policy for one tool call. The session's own mode governs, except
-        that a location carrying its own explicit mode governs calls against that location —
-        and a read-only session is a floor no location can lift. Returned as a value and
-        threaded through the call, never written to shared state, so concurrent calls to
-        different locations cannot cross policies."""
-        if location is None or location.permission_mode is PermissionMode.DEFAULT:
-            mode = self._permission_mode
-        elif self._permission_mode is PermissionMode.READ_ONLY:
-            mode = PermissionMode.READ_ONLY
-        else:
-            mode = PermissionMode.more_restrictive(self._permission_mode, location.permission_mode)
+        """The execution policy for one tool call. The session's own mode governs, and a
+        location carrying its own mode can only tighten it. Returned as a value and threaded
+        through the call, never written to shared state, so concurrent calls to different
+        locations cannot cross policies."""
+        mode = (
+            self._permission_mode if location is None
+            else PermissionMode.more_restrictive(self._permission_mode, location.permission_mode)
+        )
         working_directory = (
             self._working_directory
             if location is None or location.is_remote
@@ -1069,19 +1073,11 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         return self._project_directory
 
     @property
-    def is_read_only(self) -> bool:
-        return self._read_only
-
-    # Derived views of the single `_permission_mode`, so the many call sites that ask a plain
-    # boolean keep working while there is exactly one source of truth behind them.
-    @property
-    def _read_only(self) -> bool:
-        return self._permission_mode.is_read_only
-
-
-    @property
-    def _self_classifies(self) -> bool:
-        return self._permission_mode.is_classifying
+    def writes_anywhere(self) -> bool:
+        """Whether this session's confinement permits writing at all — the honest reading of
+        what used to be a mode. A profile with nowhere writable is a session that can look and
+        not touch, and the operating system is what holds it to that."""
+        return bool(self._sandbox.filesystem.writable)
 
     def abort(self) -> None:
         # Stop tears down only the live turn: signal the loop to end and kill every
@@ -1152,12 +1148,8 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         can only ever be as loose as the profile itself allows.
 
         The model is told about the change through the turn context, which is rebuilt on every
-        turn, so the next one already describes the policy now in force. It used to be told
-        through the system prompt, which meant this had to discard the cached prompt — and the
-        prompt is the front of every request, so a person toggling the mode threw away the
-        provider's cache for the entire conversation and paid to re-read all of it. Enforcement
-        was never the thing that lagged: `_call_policy` reads this field at call time, so the
-        very next tool call is judged by the new mode either way."""
+        turn, so the next one already describes the policy now in force — and enforcement never
+        waits on that, since `_call_policy` reads this field at call time."""
         resolved = PermissionMode.more_restrictive(mode, self._agent_configuration.permission_policy)
         if resolved is self._permission_mode:
             return resolved
@@ -1260,14 +1252,6 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         """Mark the durable session state as persisted — called only after the atomic
         checkpoint+session-state write succeeds, so the dirty flag is a write-then-clear."""
         self._session_dirty = False
-
-    @property
-    def _interactive_manual_mode(self) -> bool:
-        """The interactive ("manual") permission policy: neither classifying nor read-only.
-        Under it, a command the card does not explicitly allow is put to the user rather than
-        run. `classify` decides for itself and `read_only` hard-blocks mutations, so neither of
-        those asks about an unmatched command — neither of them asks about anything."""
-        return self._permission_mode.is_interactive
 
     def _record_event(self, event_type: str, data: dict) -> None:
         record = {"type": event_type, "timestamp": _utc_timestamp(datetime.now(timezone.utc)), **data}

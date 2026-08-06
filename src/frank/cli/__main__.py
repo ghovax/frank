@@ -85,6 +85,7 @@ def _command_create(arguments: argparse.Namespace) -> int:
         # person may already have exported for their own purposes, and this is the one place a
         # value from the environment decides whose child a session is.
         parent=arguments.parent or _session_from_environment(),
+        read_only=bool(getattr(arguments, "read_only", False)),
         title=arguments.title or "",
     )
     # The bare id, because the answer is one value: this is what makes `id=$(frank create …)`
@@ -682,10 +683,12 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("-a", "--agent", required=True,
                         help="agent profile to run; required, because nothing can guess it for you")
     create.add_argument("-C", "--directory", help="working directory")
-    create.add_argument("-m", "--mode", choices=["default", "permissive", "classify", "read_only"],
+    create.add_argument("-m", "--mode", choices=["ask", "auto"],
                         help="the permission mode this session starts under; it can be changed later, and the change reaches the turn in flight")
     create.add_argument("-w", "--workspace", help="workspace the session belongs to — the set of locations it may act in")
     create.add_argument("-P", "--parent", help="parent session; the child is clamped to no looser a mode")
+    create.add_argument("--read-only", action="store_true",
+                        help="give the session a confinement with nowhere writable, so the operating system refuses every write")
     create.add_argument("-t", "--title", help="a human label for the session list")
     create.set_defaults(handler=_command_create)
 
@@ -701,7 +704,7 @@ def build_parser() -> argparse.ArgumentParser:
     schedule_create.add_argument("-w", "--workspace", required=True,
                                  help="workspace id, or a path inside one")
     schedule_create.add_argument("-m", "--mode", required=True,
-                                 choices=["default", "permissive", "classify", "read_only"],
+                                 choices=["ask", "auto"],
                                  help="permission mode; required, because nobody is watching when "
                                       "this runs and an unstated mode is one nobody chose")
     schedule_create.add_argument("--timezone", default=_local_timezone(),
@@ -761,9 +764,8 @@ def build_parser() -> argparse.ArgumentParser:
     tree.set_defaults(handler=_command_tree)
 
     # Two verbs, because there are two answers and they are the two words used everywhere else:
-    # the decision on the wire is `allow_once` or `deny`, the classifier answers `allow` or
-    # `deny`, and the app's buttons say the same. One verb with a `--deny` flag made denying a
-    # modifier on approving, which is neither how it reads nor how it is recorded.
+    # the decision on the wire is `allow_once` or `deny`, the reviewer answers `allow` or `deny`,
+    # and the app's buttons say the same.
     allow = add("allow", help="allow a session's pending permission request")
     allow.add_argument("session")
     allow.add_argument("request")
@@ -837,7 +839,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("-C", "--directory", default=".", help="where the agent works (default: here)")
     run.add_argument(
         "--permission-mode", default="",
-        help="the permission policy for this turn; the default gates risky tool calls",
+        help="who answers when a call asks to reach past its confinement: ask, or auto",
     )
     run.add_argument(
         "--allow", action="store_true",

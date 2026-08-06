@@ -12,6 +12,7 @@ import statistics
 from dataclasses import replace
 from datetime import datetime, timezone
 from frank.base import telemetry as _telemetry
+from frank.base import confinement as _confinement
 from frank.base.confinement import parse_access_request
 from frank.runtime.internals import (
     _background_handle_kind,
@@ -44,7 +45,9 @@ from frank.runtime.locations import (
     ToolLocationError,
 )
 from frank.base.tuning import active_tuning, current_context_window, Tunable
-from frank.runtime.turn_events import DeniedInjection, Error, Mcp, ToolCall, ToolResult, TurnEvent
+from frank.runtime.turn_events import (
+    DeniedInjection, Error, Mcp, RetryRequested, ToolCall, ToolResult, TurnEvent,
+)
 from frank.runtime.tools.registry import (
     bash as bash_tool,
     call_mcp_tool_with_events,
@@ -347,10 +350,6 @@ class _DispatchesTools:
             # validated purely for its exception, so every default the schema declared was
             # invisible to the handler, which read the raw arguments and invented its own
             # fallback: `read_file` documented "defaults to 2048 lines" and returned whole files.
-        if tool_name in ("bash", "call_mcp_tool"):
-            risk = arguments.get("risk", "low")
-            if risk not in ("low", "medium", "high"):
-                return ("invalid_risk", f"risk must be one of 'low', 'medium', 'high', got '{risk}'.")
         # Every tool that spawns a child or reaches outside the process may carry one. Validated
         # here, once, rather than at each handler: a malformed request must fail as a tool error
         # the model can correct, never as a grant nobody wrote.
@@ -389,7 +388,7 @@ class _DispatchesTools:
         Not a boundary and no longer pretending to be one. Writes are enforced by the operating
         system now (see :mod:`frank.base.confinement`); reads outside the workspace remain allowed
         by design, because agents legitimately read system headers, sibling repositories and
-        toolchain configuration. What this does is *notice* them, so the permission classifier and
+        toolchain configuration. What this does is notice them, so the permission reviewer and
         the person reading a prompt can see what a command reaches for — a prompt-injection
         tripwire rather than the thing standing between a session and the disk.
 
@@ -525,7 +524,15 @@ class _DispatchesTools:
         denied (with the exact error the gate would have produced), or — for ``ask_user``
         — carries the answers. This path never prompts and never awaits a decision future;
         the preflight pass made every human decision before the batch began."""
-        # A tool the preflight denied never runs: surface the recorded denial (and the
+        # A call that already ran before the turn suspended is not run again: its result is
+        # replayed. Whatever side effects it had, it had once.
+        if decision.completed is not None:
+            yield ToolResult(
+                id=tool_call_identifier, name=tool_name, result=decision.completed.get("result"),
+            )
+            return
+
+        # A tool the preflight refused never runs: surface the recorded refusal (and the
         # denied-command injection where the inline gate would have), then stop.
         if decision.denial is not None:
             error_kwargs: dict[str, Any] = {"id": tool_call_identifier, "tool": tool_name, "message": decision.denial.get("message", "")}
@@ -709,11 +716,8 @@ class _DispatchesTools:
         # reading, and the one the lease below depends on.
         declared_read_only = requested is not None and requested.mutates is False
 
-        # An agent may be forbidden from backgrounding work — a long-lived shell subtree
-        # outlives the turn that started it, which is exactly what some agents should not be
-        # able to do. The check existed and had no caller, so the setting has never done
-        # anything; refusing here turns the model's request into a tool error it can adapt to,
-        # rather than silently running the command in the foreground it did not ask for.
+        # An agent may be forbidden from backgrounding work: a long-lived shell subtree outlives
+        # the turn that started it, which is exactly what some agents should not be able to do.
         wants_background = tool_arguments.get("background", False)
         if isinstance(wants_background, str):
             wants_background = wants_background.lower() == "true"
@@ -727,9 +731,8 @@ class _DispatchesTools:
                 )
                 return
 
-        # Permission (sandbox reads, read-only enforcement, risk approval) was
-        # resolved by the preflight pass and applied above; an approved bash call
-        # reaches here and runs.
+        # Permission was resolved by the preflight pass; an approved bash call reaches here and
+        # runs, inside the confinement the session holds.
         lease_token = ""
         # Filesystem leases guard this machine's working trees; a remote command
         # mutates the remote host, so no local lease applies.
@@ -754,14 +757,37 @@ class _DispatchesTools:
                 return
 
         try:
-            background_token = bind_background_jobs(self._background)
-            tool_call_token = bind_tool_call_id(tool_call_identifier)
-            try:
-                result = await bash_tool.ainvoke(tool_arguments)
-            finally:
-                unbind_tool_call_id(tool_call_token)
-                unbind_background_jobs(background_token)
-            result_data = _maybe_json(result)
+            if decision.retry_grant is not None:
+                # A second run somebody already approved: it goes out with the widening and is
+                # not offered again, because the question has been answered.
+                result_data = await self._run_bash(
+                    tool_arguments, tool_call_identifier, retry_grant=decision.retry_grant,
+                )
+                yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
+                return
+            result_data = await self._run_bash(tool_arguments, tool_call_identifier)
+            # A command the operating system refused is not a finished command. The first run was
+            # confined and could not have been otherwise, so whatever it managed before the wall
+            # it did inside the box, and offering to run it again with more reach is safe to put
+            # to whoever decides for this session.
+            denial = self._sandbox_denial(result_data, policy)
+            if denial is not None:
+                verdict, grant = await self.decide_retry(self.retry_gate(
+                    tool_call_id=tool_call_identifier, command=raw_command, denial=denial,
+                    explanation=str(tool_arguments.get("explanation", "") or ""),
+                ))
+                if verdict == "run" and grant is not None:
+                    result_data = await self._run_bash(
+                        tool_arguments, tool_call_identifier, retry_grant=grant,
+                    )
+                elif verdict == "ask":
+                    yield RetryRequested(
+                        id=tool_call_identifier, command=raw_command, denial_kind=denial.kind,
+                        denial_evidence=denial.evidence,
+                        explanation=str(tool_arguments.get("explanation", "") or ""),
+                        result=result_data,
+                    )
+                    return
             yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
             if isinstance(result_data, dict) and result_data.get("code") == "bash_started":
                 job_id = result_data.get("job_id", "")
@@ -776,6 +802,73 @@ class _DispatchesTools:
             self._release_filesystem_lease(lease_token)
 
 
+    async def _run_bash(
+        self, tool_arguments: dict, tool_call_identifier: str, *, retry_grant=None,
+    ) -> Any:
+        """One run of the bash tool, inside whatever confinement this attempt carries."""
+        if retry_grant is not None:
+            tool_context.bind(tool_context.current().for_retry(retry_grant))
+        background_token = bind_background_jobs(self._background)
+        tool_call_token = bind_tool_call_id(tool_call_identifier)
+        try:
+            result = await bash_tool.ainvoke(tool_arguments)
+        finally:
+            unbind_tool_call_id(tool_call_token)
+            unbind_background_jobs(background_token)
+        return _maybe_json(result)
+
+    def _sandbox_denial(self, result_data: Any, policy: CallExecutionPolicy):
+        """Whether a finished command looks like the operating system stopped it.
+
+        Never for a remote command: that ran on another machine, where this machine's
+        confinement had no say, so an `Operation not permitted` there is the remote host's
+        answer and widening anything here would not change it. Never for a backgrounded one
+        either, which has not finished and has no exit code yet."""
+        if policy.is_remote or not isinstance(result_data, dict):
+            return None
+        if result_data.get("code") == "bash_started":
+            return None
+        exit_code = result_data.get("exit_code")
+        if not isinstance(exit_code, int):
+            return None
+        output = " ".join(
+            str(result_data.get(key, "")) for key in ("stdout", "stderr", "output", "error")
+        )
+        return _confinement.denial_in(
+            exit_code=exit_code, output=output,
+            attempt=_confinement.first_attempt(
+                tool_context.current().sandbox, workspace=policy.working_directory,
+            ),
+        )
+
+    def _confinement_refusal(
+        self, resolved: str, policy: CallExecutionPolicy, *, writing: bool,
+    ) -> str:
+        """Why the confinement refuses this path, or "" when it does not.
+
+        The file tools run in the worker process, where no operating-system sandbox applies, so
+        the profile that confines a shell command is applied here by hand. Without it the box
+        would hold for `bash` and not for `write_file`, which is a boundary with a door in it.
+
+        A remote location is somebody else's machine and this profile says nothing about it.
+        """
+        if policy.is_remote or not resolved:
+            return ""
+        profile = tool_context.current().sandbox
+        if profile is None:
+            return ""
+        workspace = policy.working_directory
+        permitted = (
+            profile.may_write(resolved, workspace=workspace) if writing
+            else profile.may_read(resolved, workspace=workspace)
+        )
+        if permitted:
+            return ""
+        return self._prompt_loader.load("outside_confinement", {
+            "path": resolved,
+            "action": "write" if writing else "read",
+        })
+
     async def _tool_read_file(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
         decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
@@ -783,6 +876,13 @@ class _DispatchesTools:
     ) -> AsyncIterator[TurnEvent]:
         assert resolved_location is not None
         file_path = str(tool_arguments.get("file_path", ""))
+        resolved_target = await asyncio.to_thread(
+            resolved_location.executor.resolve, resolved_location.base_directory, file_path,
+        )
+        refusal = self._confinement_refusal(resolved_target, policy, writing=False)
+        if refusal:
+            yield Error(id=tool_call_identifier, code="outside_confinement", message=refusal, tool=tool_name)
+            return
         # Image files are ingested natively: the tool result carries structured
         # metadata (mime, dimensions, size), and when the model has vision the
         # pixels ride along as a data URI on the event under `model_image` —
@@ -895,11 +995,6 @@ class _DispatchesTools:
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         assert resolved_location is not None
-        if policy.read_only:
-            deny_message = self._prompt_loader.load("read_only_denied", {"violation": "a file download"})
-            yield Error(id=tool_call_identifier, message=deny_message, tool=tool_name,
-            )
-            return
         executor = resolved_location.executor
         url = str(tool_arguments.get("url", ""))
         destination = str(tool_arguments.get("path", ""))
@@ -907,6 +1002,10 @@ class _DispatchesTools:
         hard_deadline = int(tool_arguments.get("hard_deadline", 120) or 120)
         background = bool(tool_arguments.get("background", False))
         resolved = await asyncio.to_thread(executor.resolve, resolved_location.base_directory, destination)
+        refusal = self._confinement_refusal(resolved, policy, writing=True)
+        if refusal:
+            yield Error(id=tool_call_identifier, code="outside_confinement", message=refusal, tool=tool_name)
+            return
         # A download is a tracked-tree write, so it takes the same filesystem lease as an
         # edit — even when it backgrounds. The lease is held until the write completes: on an
         # inline finish the `finally` releases it; on a background finish it is transferred to
@@ -951,14 +1050,13 @@ class _DispatchesTools:
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         assert resolved_location is not None
-        if policy.read_only:
-            deny_message = self._prompt_loader.load("read_only_denied", {"violation": "a file modification"})
-            yield Error(id=tool_call_identifier, message=deny_message, tool=tool_name,
-            )
-            return
         executor = resolved_location.executor
         file_path = str(tool_arguments.get("file_path", ""))
         resolved = await asyncio.to_thread(executor.resolve, resolved_location.base_directory, file_path)
+        refusal = self._confinement_refusal(resolved, policy, writing=True)
+        if refusal:
+            yield Error(id=tool_call_identifier, code="outside_confinement", message=refusal, tool=tool_name)
+            return
         file_key = (resolved_location.uri, resolved)
         lease_token = ""
         # Filesystem leases guard this machine's files; a remote edit mutates
@@ -1132,8 +1230,8 @@ class _DispatchesTools:
         decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
-        # Read-only enforcement and risk approval were resolved by the preflight
-        # pass and applied above; an approved MCP call reaches here and runs.
+        # Permission was resolved by the preflight pass; an approved MCP call reaches here and
+        # runs.
         event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
         async def on_mcp_event(event: dict[str, Any]) -> None:
@@ -1409,7 +1507,7 @@ class _DispatchesTools:
         # on the chosen surface. Reading and acting are one program: find_one/find_many rank the live
         # surface into elements, and an acting primitive targets an element by the id a find returned
         # or by a fresh query resolved the same way. The surface does its own OS-permission preflight;
-        # danger is gated at the tool call by the permission classifier, not here.
+        # what the script may change is decided at the tool call, not here.
         from frank.computer import control, retrieval, surface as surface_module
         from frank.computer.surface import message_loader
 
@@ -1463,14 +1561,13 @@ class _DispatchesTools:
             return
 
         control_message = message_loader("control")
-        # The vocabulary this call may actually use: what the surface implements, less the
-        # state-changing half when the session is read-only. Computed once, used both to tell the
-        # script what exists and to refuse anything else at the bridge — one set, so the two can
-        # never disagree about what "read-only" meant.
+        # The vocabulary this call may use: what the surface implements, less the state-changing
+        # half unless this call was approved to change something. One set, used both to tell the
+        # script what exists and to refuse anything else at the bridge.
         from frank.runtime.permissions import MUTATING_SCREEN_PRIMITIVES
 
         permitted_primitives = set(surface.primitives())
-        if policy.read_only:
+        if not decision.screen_mutations:
             permitted_primitives -= MUTATING_SCREEN_PRIMITIVES
         known_ids: dict[str, dict[str, str]] = {}   # id -> {id, name, role, context}, from find_* results
         changed: list[dict[str, Any]] = []

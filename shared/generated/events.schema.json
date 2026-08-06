@@ -326,10 +326,6 @@
         "request_id": {
           "type": "string"
         },
-        "risk": {
-          "default": "",
-          "type": "string"
-        },
         "timestamp": {
           "type": "string"
         },

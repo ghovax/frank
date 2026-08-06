@@ -17,11 +17,10 @@ export interface PermissionReason {
 
 export interface ToolPermission {
   requestId: string;
-  // Prose the harness did not author — a classifier's verdict, or the model's own account of
+  // Prose the harness did not author — the reviewer's verdict, or the model's own account of
   // itself. Untranslatable by construction, and shown as it came.
   explanation?: string;
   reason?: PermissionReason;
-  risk?: string;
   decision?: PermissionDecision;
 }
 

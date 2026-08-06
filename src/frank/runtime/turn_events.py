@@ -40,6 +40,7 @@ class EventType(str, Enum):
     CHECKPOINT = "checkpoint"
     ERROR = "error"
     DENIED_INJECTION = "denied_injection"
+    RETRY_REQUESTED = "retry_requested"
     GROUP_STARTED = "group_started"
     RELAYED = "relayed"
     STEERING = "steering"
@@ -187,6 +188,24 @@ class DeniedInjection(TurnEvent):
     TYPE = EventType.DENIED_INJECTION
     command: str = ""
     id: str = ""
+
+
+@dataclass(frozen=True)
+class RetryRequested(TurnEvent):
+    """A command the operating system refused, which somebody could let out of the box.
+
+    Internal to the turn loop: it never reaches a client. The batch runner turns it into a gate
+    and the turn suspends, so the answer arrives the same way every other answer does. The
+    result of the confined run rides along, because a refused retry means that result is what
+    the model is told."""
+
+    TYPE = EventType.RETRY_REQUESTED
+    id: str = ""
+    command: str = ""
+    denial_kind: str = ""
+    denial_evidence: str = ""
+    explanation: str = ""
+    result: Any = None
 
 
 @dataclass(frozen=True)

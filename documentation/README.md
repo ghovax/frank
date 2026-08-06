@@ -39,12 +39,12 @@ Then the rest, in the order they build on each other. [Architecture](architectur
 
 ```python
 import asyncio
-from frank import AgentConfiguration, Catalogue, Session
+from frank import AgentConfiguration, Catalogue, FilesystemConfiguration, SandboxConfiguration, Session
 
 reviewer = AgentConfiguration(
     name="reviewer",
     system_prompt="You review changes. Name the risk, or say there is none.",
-    permission_mode="read_only",
+    sandbox=SandboxConfiguration(filesystem=FilesystemConfiguration(writable=[])),
     provider="anthropic",
     model="claude-opus-4-5",
 )

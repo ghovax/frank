@@ -421,17 +421,13 @@ class SessionExecutor(AgentExecutor):
     async def _reconsider_parked_gates(self) -> None:
         """Re-decide the approvals this session is already stopped on.
 
-        The mode reaching the live runtime settles every call the turn has *yet* to make, and
-        that was taken to be the whole job. It is not: a turn that hit a gate has already ended
-        — `input_required`, final — with its verdict written into the task record, and nothing
-        re-reads that record. So the two moments a person is most likely to reach for this
-        control were the two it did not serve. Switching to `auto` because the fourth approval
-        card was one too many left the fourth card on screen. Switching to `read_only` to stop a
-        write left the write waiting for the approval that would run it.
+        The mode reaching the live runtime settles every call the turn has yet to make; a turn
+        that hit a gate has already ended — `input_required`, final — with its verdict in the
+        task record, which nothing re-reads. Switching to `auto` because the fourth approval card
+        was one too many would otherwise leave the fourth card on screen.
 
-        Each gate is put back through the same rule, barrier and classifier the preflight uses,
-        and only the ones the new mode *settles* are answered; anything still genuinely a
-        question stays a question. Answering through `resolve_pending_input` rather than
+        Each gate is put back through the same reviewer the preflight uses, and only the ones
+        the new mode settles are answered; anything still genuinely a question stays a question. Answering through `resolve_pending_input` rather than
         rewriting the record, because that is the one path that also resumes the turn once the
         last gate is answered — a released gate that left the turn parked would be worse than
         the card it replaced.
@@ -450,7 +446,7 @@ class SessionExecutor(AgentExecutor):
             for gate in list(pending.gates):
                 if gate.request_id in pending.answers:
                     continue
-                verdict = await runtime.reconsider_gate(gate.command, gate.risk, gate.is_bash)
+                verdict = await runtime.reconsider_gate(gate)
                 if not verdict:
                     continue
                 await self.resolve_pending_input({"request_id": gate.request_id, "decision": verdict})

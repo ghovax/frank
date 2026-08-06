@@ -50,15 +50,6 @@ function BashCallView({ args }: { args: Record<string, unknown> }) {
   const command = asString(args.command);
   const readOnly = declaredNonMutating(args);
   const access = requestedAccess(args);
-  const risk = asString(args.risk) || "low";
-  // Display label for each bash risk level. Falls back to the raw value when
-  // unmapped so an unexpected level still renders something readable.
-  const riskLabels: Record<string, string> = {
-    low: translation("riskLow"),
-    medium: translation("riskMedium"),
-    high: translation("riskHigh"),
-  };
-  const riskText = riskLabels[risk] ?? risk;
   return (
     <FieldList>
       <Field label={translation("command")}>
@@ -78,7 +69,6 @@ function BashCallView({ args }: { args: Record<string, unknown> }) {
       {access.network && (
         <InlineField label={translation("accessNetwork")}>{translation("yes")}</InlineField>
       )}
-      <InlineField label={translation("risk")}>{riskText}</InlineField>
     </FieldList>
   );
 }
@@ -274,7 +264,6 @@ const FIELD_LABEL_KEYS: Record<string, string> = {
   arguments: "fieldArguments",
   access_request: "accessRequested",
   explanation: "explanation",
-  risk: "risk",
   uri: "fieldUri",
   query: "query",
   result_count: "results",

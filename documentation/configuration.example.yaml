@@ -52,9 +52,10 @@ web_fetch:
 # What a session may do
 
 agent:
-  # default | plan | accept_edits | read_only | bypass. A session can be started with its own;
+  # ask | auto — who answers when a call asks to reach past the confinement. A session can be
+  # started with its own;
   # this is what it gets when nobody says.
-  permission_mode: "default"
+  permission_mode: "ask"
 
 # The operating system's answer to "what can this process reach", enforced before the process
 # starts rather than checked as it runs. `required` refuses to start a session it cannot confine.

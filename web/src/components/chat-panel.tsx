@@ -247,7 +247,7 @@ export function ChatPanel({
   onOpenSidePanelsChange,
   sidePanelWidth,
   onSidePanelWidthChange,
-  initialPermissionMode = "default",
+  initialPermissionMode = "ask",
   onPermissionModeChange,
   sessionRunning = false,
   onSessionCreated,

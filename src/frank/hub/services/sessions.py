@@ -31,12 +31,8 @@ def _reset_work_habits_acknowledgements() -> None:
 
 
 def _normalize_permission_mode(mode: str) -> str:
-    """A stored mode, as the enum reads it.
-
-    A hardcoded set of the valid strings lived here, which meant this had to be edited every
-    time the modes changed and quietly disagreed with them until somebody did — a session stored
-    under a spelling the enum had renamed came back as `default`, tightening it without saying
-    so. `coerce` knows the modes, knows the renames, and falls back the same way."""
+    """A stored mode, as the enum reads it. The enum is the one place the modes are named, so a
+    spelling it does not know falls back to the interactive default rather than to a guess."""
     from frank.base.permission_mode import PermissionMode
 
     return str(PermissionMode.coerce(mode))
@@ -205,7 +201,7 @@ def _sessions_payload() -> dict[str, list[dict[str, Any]]]:
                     "runtime_repository_root": row.runtime_repository_root or "",
                     "worktree_head": row.worktree_head or "",
                     "worktree_error": row.worktree_error or "",
-                    "permission_mode": _normalize_permission_mode(row.permission_mode or "default"),
+                    "permission_mode": _normalize_permission_mode(row.permission_mode or "ask"),
                     "input_draft": row.input_draft or "",
                     "filesystem_leases": (
                         state.file_lease_manager.active_for_session(row.id)

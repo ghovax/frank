@@ -81,7 +81,7 @@ export function SettingsDialog({
   agents = [],
   selectedAgent = "",
   onAgentChange,
-  livePermissionMode = "default",
+  livePermissionMode = "ask",
   liveSandboxEnforce = "required" as SandboxEnforce,
   sandboxBackend = { backend: "", detail: "" },
   liveWorktreeStrategy = "none",

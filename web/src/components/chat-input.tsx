@@ -315,7 +315,7 @@ export function ChatInput({
   recentModels = [],
   agentModel = "",
   onAgentModelChange,
-  permissionMode = "default",
+  permissionMode = "ask",
   onPermissionModeChange,
   sandboxEnforce = "required",
   sandboxBackend = "",

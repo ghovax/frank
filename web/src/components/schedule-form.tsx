@@ -38,7 +38,7 @@ type Draft = {
 };
 
 function emptyDraft(agent: string): Draft {
-  return { name: "", cron: "", prompt: "", agent, permissionMode: "default", timezone: currentZone() };
+  return { name: "", cron: "", prompt: "", agent, permissionMode: "ask", timezone: currentZone() };
 }
 
 // What a cron expression actually says, in the reader's own language.

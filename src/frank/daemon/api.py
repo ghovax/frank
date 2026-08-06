@@ -124,7 +124,7 @@ def _public(record: SessionRecord) -> dict:
     return {**record.public(), "goal": state._session_goals.get(record.id)}
 
 
-def _resolve_sandbox(agent: str, working_directory: str, parent, mode=None) -> dict:
+def _resolve_sandbox(agent: str, working_directory: str, parent, read_only: bool = False) -> dict:
     """The confinement a new session gets: the machine's, narrowed by the agent's, clamped by its
     creator's.
 
@@ -147,21 +147,14 @@ def _resolve_sandbox(agent: str, working_directory: str, parent, mode=None) -> d
         profile = agent_profile.to_profile().clamp(profile)
     if parent is not None:
         profile = profile.clamp(confinement.Profile.from_dict(parent.sandbox))
-    # A read-only session is read-only at the kernel, not only in a scan of the command text.
-    #
-    # It was only ever the latter. `permission_mode` never reached this function, so the profile
-    # a read-only session ran under was the ordinary one and every enforcement rested on
-    # `read_only_assessment` guessing right from a command string. Where that guess is wrong —
-    # a script, a build step writing its own cache, a write the shell computes — the write
-    # landed, in a session somebody had explicitly set read-only.
-    #
-    # The text scan stays, and is still the first thing to refuse: it refuses before anything
-    # runs and explains itself in words, where the kernel refuses late and says EACCES. This is
-    # the floor underneath it, not its replacement.
-    if mode is not None and getattr(mode, "is_read_only", False):
+    # A session asked for read-only is read-only at the kernel: a profile with nowhere writable.
+    # Nothing about a command's text decides it, so there is no spelling of a write that gets
+    # past — the operating system refuses it, and a grant cannot widen what was never offered.
+    if read_only:
         profile = dataclasses.replace(
             profile,
             filesystem=dataclasses.replace(profile.filesystem, writable=(), grantable=()),
+            network=False,
         )
     if profile.enforce == confinement.ENFORCE_REQUIRED and not confinement.backend_name():
         raise RpcError(
@@ -231,12 +224,17 @@ async def _session_create(params: dict) -> dict:
             ceiling=_agent_permission_ceiling(agent, working_directory),
         )
     except ValueError as conflict:
-        # An agent whose profile caps it at a mode that asks, asked for by a session that cannot
-        # answer. Refused at creation, where it can be reported to whoever asked, rather than
-        # minting a peer that would park on its first gate and be waited on forever.
+        # A session that cannot answer a gate, asking for a peer that raises them. Refused at
+        # creation, where it can be reported to whoever asked, rather than minting a peer that
+        # would park on its first gate and be waited on forever.
         raise RpcError(str(conflict), status_code=409, code="unattended_conflict") from conflict
-
-    sandbox = _resolve_sandbox(agent, working_directory, parent, mode)
+    # Read-only is a confinement, not a policy: a session that may look and not touch is one
+    # whose profile has nowhere writable. A child inherits it, because a session that cannot
+    # write must not be able to create a peer that can.
+    read_only = bool(params.get("read_only")) or bool(
+        parent is not None and not (parent.sandbox or {}).get("filesystem", {}).get("writable")
+    )
+    sandbox = _resolve_sandbox(agent, working_directory, parent, read_only)
 
     # `create` registers the session in memory; the durable write is awaited here, off the
     # loop, because the worker about to be started will look this row up.
@@ -404,7 +402,7 @@ async def _session_permission_mode(params: dict) -> dict:
     requested = PermissionMode.parse(params.get("permission_mode"))
     if requested is None:
         raise RpcError(
-            "permission_mode must be one of: default, permissive, classify, read_only.",
+            "permission_mode must be one of: ask, auto.",
             status_code=400,
             code="invalid_permission_mode",
         )

@@ -44,15 +44,15 @@ export interface ChoiceSet<Value extends string = string> {
   choices: ChoiceDefinition<Value>[];
 }
 
-export type PermissionModeValue = "default" | "permissive" | "classify" | "read_only";
+export type PermissionModeValue = "ask" | "auto";
 export type SandboxEnforceValue = "required" | "off";
 export type WorktreeStrategyValue = "none" | "branch" | "worktree";
 export type BooleanValue = "on" | "off";
 
 /**
- * How much the agent asks before acting. The one control here with a real spectrum, ordered from
- * the most asking to the least — which is also the order somebody moves along as a session earns
- * trust, so the list reads the way the decision does.
+ * Who answers when a call asks to reach past the box the session runs in. Everything inside that
+ * box runs without asking anybody, so this is not a spectrum of how much the agent may do — it is
+ * one question: when it wants out, are you the one who says yes.
  */
 export const PERMISSION_MODES: ChoiceSet<PermissionModeValue> = {
   namespace: "SessionControls",
@@ -60,35 +60,19 @@ export const PERMISSION_MODES: ChoiceSet<PermissionModeValue> = {
   titleKey: "approvalMode",
   choices: [
     {
-      value: "default",
-      labelKey: "permissionDefaultLabel",
-      nameKey: "permissionDefaultName",
-      descriptionKey: "permissionDefaultDescription",
+      value: "ask",
+      labelKey: "permissionAskLabel",
+      nameKey: "permissionAskName",
+      descriptionKey: "permissionAskDescription",
       glyph: "hand",
     },
     {
-      value: "permissive",
-      labelKey: "permissionPermissiveLabel",
-      nameKey: "permissionPermissiveName",
-      descriptionKey: "permissionPermissiveDescription",
-      glyph: "zap",
-      palette: "orange",
-    },
-    {
-      value: "classify",
-      labelKey: "permissionClassifyLabel",
-      nameKey: "permissionClassifyName",
-      descriptionKey: "permissionClassifyDescription",
+      value: "auto",
+      labelKey: "permissionAutoLabel",
+      nameKey: "permissionAutoName",
+      descriptionKey: "permissionAutoDescription",
       glyph: "badge-check",
       palette: "blue",
-    },
-    {
-      value: "read_only",
-      labelKey: "permissionReadOnlyLabel",
-      nameKey: "permissionReadOnlyName",
-      descriptionKey: "permissionReadOnlyDescription",
-      glyph: "eye",
-      palette: "green",
     },
   ],
 };

@@ -272,13 +272,12 @@ class PermissionRequestEvent(_EventBase):
     arguments: dict[str, Any] = Field(default_factory=dict)
     command: str = ""
     # Why approval is needed, in the client's own words. Absent where the reason is prose the
-    # harness did not author — a classifier's verdict, or the model's own account of itself.
+    # harness did not author — the reviewer's verdict, or the model's own account of itself.
     reason: Optional[PermissionReason] = None
     # Why approval is needed, where the text is somebody's prose rather than a fact about the
     # call. The model's own reason for wanting the call lives in ``arguments["explanation"]``;
     # both are shown.
     explanation: str = ""
-    risk: str = ""
 
 
 class QuestionEvent(_EventBase):

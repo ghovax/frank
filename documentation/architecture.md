@@ -156,7 +156,7 @@ A session's permission mode is chosen when the session is created and can be cha
 
 1. You send a message to a session. Every client posts to the daemon, which relays it to the session that owns it. A session mid-turn takes the message *into* that turn at its next safe point; one parked on a decision takes nothing and says so, because starting a turn would discard the parked one.
 2. The agent loop calls the model, which may request tool calls.
-3. Each tool call is classified for risk and checked against the session's permission mode. If it needs approval, the session streams a permission request; the CLI prints it and `frank allow` or `frank deny` answers, or the app shows an overlay.
+3. Each tool call is measured against the session's confinement. One that stays inside it runs. One that asks to reach past it is decided by the session's permission mode: under `ask` the session streams a permission request, which the CLI prints and `frank allow` or `frank deny` answers, or the app shows as an overlay; under `auto` the reviewer answers it.
 4. Approved tools then run:
 - **Shell**, inside an OS-enforced confinement: `sandbox-exec` on macOS, Landlock on Linux. The harness resolves it when the session is created, and clamps it against the creator.
 - **Files**, on the active location.

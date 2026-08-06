@@ -224,7 +224,7 @@ def _update_location(location_id: str, request: LocationInput) -> dict[str, Any]
             record.kind = next_kind
             record.host_alias = next_host_alias
             record.base_directory = next_base_directory
-            record.permission_mode = request.permission_mode or "default"
+            record.permission_mode = request.permission_mode or "ask"
             # The name follows the connection, so re-derive it (deduped, excluding this row)
             # whenever the connection changes.
             record.name = _derive_location_name(

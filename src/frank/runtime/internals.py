@@ -376,28 +376,25 @@ def _coerce_structured_arguments(schema: Any, arguments: dict) -> dict:
     return coerced
 
 
-def _access_request_to_dict(request: Any) -> Optional[dict]:
-    """An :class:`AccessRequest` as plain data, or ``None``. Its tuples become lists, because
-    this is about to be JSON."""
-    if request is None:
-        return None
+def _escape_to_dict(escape: Any) -> dict:
+    """An :class:`~frank.runtime.boundary.Escape` as plain data. Its tuples become lists,
+    because this is about to be JSON."""
     return {
-        "mutates": request.mutates,
-        "reads": list(request.reads),
-        "writes": list(request.writes),
-        "network": request.network,
+        "reads": list(escape.reads),
+        "writes": list(escape.writes),
+        "network": escape.network,
     }
 
 
-def _access_request_from_dict(data: Any) -> Any:
-    """The inverse. A value that is already an :class:`AccessRequest` is passed through, so this
-    is safe on a gate that never left the process."""
-    if data is None or not isinstance(data, dict):
-        return data
-    from frank.base.confinement import AccessRequest
+def _escape_from_dict(data: Any) -> Any:
+    """The inverse. A value that is already an ``Escape`` is passed through, so this is safe on
+    a gate that never left the process."""
+    from frank.runtime.boundary import Escape
 
-    return AccessRequest(
-        mutates=data.get("mutates"),
+    if isinstance(data, Escape):
+        return data
+    data = data or {}
+    return Escape(
         reads=tuple(data.get("reads") or ()),
         writes=tuple(data.get("writes") or ()),
         network=bool(data.get("network", False)),
@@ -421,28 +418,38 @@ class _PreflightGate:
     tool_name: str = ""
     arguments: dict = field(default_factory=dict)
     command: str = ""
-    # Why *approval* is needed, from the rules or the classifier. Distinct from
+    # Why approval is needed, from the rules or the boundary. Distinct from
     # ``arguments["explanation"]``, which is why the model wants the call at all. A person
     # deciding wants both: what is being attempted, and what made it stop here.
     explanation: str = ""
     # Why approval is needed, as facts rather than as a sentence, so the client writes the
     # prose in its own language. Set where the harness itself is the reason; left unset where
-    # the reason is somebody's prose — a classifier's verdict or the model's own words — which
+    # the reason is somebody's prose — the reviewer's verdict or the model's own words — which
     # no catalogue could translate anyway.
     reason: Any = None
-    risk: str = ""
     questions: list = field(default_factory=list)
     # A bash command approval remembers an "always allow" as a session rule.
     is_bash: bool = False
-    # The model-facing error if the user denies this specific gate.
+    # The model-facing error if the gate is answered no.
     deny_message: str = ""
     # For an egress gate, the remote agent name (an "always allow" is remembered).
     egress_agent: str = ""
-    # For an access gate, the widening being asked for. Carried on the gate so that approving it
-    # records the grant, rather than the resolver having to reconstruct from the arguments what
-    # the preflight already parsed — two parses of one request is two chances to disagree about
-    # what the person actually approved.
-    access_request: Any = None
+    # The widening being asked for. Carried on the gate so that approving it records the grant,
+    # rather than the resolver having to reconstruct from the arguments what the planner already
+    # worked out — two derivations of one request is two chances to disagree about what somebody
+    # actually approved.
+    escape: Any = field(default_factory=lambda: _escape_from_dict(None))
+    # Whether approving this means "let this one command reach past the workspace". Set only by
+    # a retry gate, where the operating system refused a command and named no path.
+    whole_disk: bool = False
+    # What the refusal looked like, for a retry gate. Shown to the reviewer so it is judging a
+    # command that hit a wall rather than one that merely failed.
+    denial_evidence: str = ""
+    # What the confined run produced. A retry that is refused still owes the model this, which is
+    # the account of why the command failed.
+    refused_result: Any = None
+    # Whether approving this lets a screen script call the primitives that change something.
+    grants_screen_mutations: bool = False
 
     def to_dict(self) -> dict:
         """Every field, as plain JSON-safe data.
@@ -451,21 +458,23 @@ class _PreflightGate:
         crosses two boundaries — the suspension event a client draws the prompt from, and the
         durable plan a resumed turn is rebuilt out of — so a field omitted here does not degrade,
         it disappears. `reason` was missing and the sink read it off the other side, which
-        crashed every turn that raised a permission gate; `access_request` was missing and an
+        crashed every turn that raised a permission gate; the widening was missing and an
         approval that arrived after the suspension recorded no grant, because the gate it came
         back to had forgotten what was being asked for.
 
-        The two absentees are the two fields that are not already plain data, which is what made
-        omitting them look reasonable. They are flattened here instead: a reason is a Pydantic
-        model, and an access request is a dataclass of tuples."""
+        The two that are not already plain data are flattened here: a reason is a Pydantic
+        model, and an escape is a frozen dataclass of tuples."""
         return {
             "request_id": self.request_id, "tool_call_id": self.tool_call_id, "kind": self.kind,
             "tool_name": self.tool_name, "arguments": self.arguments,
-            "command": self.command, "explanation": self.explanation, "risk": self.risk,
+            "command": self.command, "explanation": self.explanation,
             "reason": self.reason.model_dump() if hasattr(self.reason, "model_dump") else self.reason,
             "questions": self.questions, "is_bash": self.is_bash,
             "deny_message": self.deny_message, "egress_agent": self.egress_agent,
-            "access_request": _access_request_to_dict(self.access_request),
+            "escape": _escape_to_dict(self.escape),
+            "whole_disk": self.whole_disk, "denial_evidence": self.denial_evidence,
+            "refused_result": self.refused_result,
+            "grants_screen_mutations": self.grants_screen_mutations,
         }
 
     @classmethod
@@ -475,27 +484,39 @@ class _PreflightGate:
             kind=str(data.get("kind", "permission")),
             tool_name=str(data.get("tool_name", "")), arguments=dict(data.get("arguments") or {}),
             command=str(data.get("command", "")),
-            explanation=str(data.get("explanation", "")), risk=str(data.get("risk", "")),
+            explanation=str(data.get("explanation", "")),
             reason=data.get("reason"),
             questions=list(data.get("questions", []) or []), is_bash=bool(data.get("is_bash", False)),
             deny_message=str(data.get("deny_message", "")), egress_agent=str(data.get("egress_agent", "")),
             # Rebuilt as the real thing rather than left as a dict: what reads it on the way back
-            # is `_record_grant`, which takes `.reads`, `.writes` and `.network` off it.
-            access_request=_access_request_from_dict(data.get("access_request")),
+            # is `_approve`, which takes `.reads`, `.writes` and `.network` off it.
+            escape=_escape_from_dict(data.get("escape")),
+            whole_disk=bool(data.get("whole_disk", False)),
+            denial_evidence=str(data.get("denial_evidence", "")),
+            refused_result=data.get("refused_result"),
+            grants_screen_mutations=bool(data.get("grants_screen_mutations", False)),
         )
 
 
 @dataclass
 class _ToolPlan:
-    """The preflight verdict for one tool call. Exactly one shape holds: a hard
-    ``denial`` (a policy block — the tool never runs and the model gets this error),
-    one or more pending ``gates`` (needs a human), or neither (auto-approved: run it).
-    The decision logic is computed once, here, so ``_execute_tool`` only ever carries
-    out a verdict and can no longer approve anything itself."""
+    """The preflight verdict for one tool call. Exactly one shape holds: a hard ``refusal``
+    (the tool never runs and the model gets this error), one or more pending ``gates`` (needs
+    an answer), or neither (cleared: run it). The decision is computed once, here, so
+    ``_execute_tool`` only ever carries out a verdict and can no longer approve anything
+    itself."""
 
     tool_call_id: str
-    denial: Optional[dict] = None  # {"code", "message", "denied_injection", "raw_command"}
+    refusal: Optional[dict] = None  # {"code", "message", "denied_injection", "raw_command", "reason"}
     gates: list[_PreflightGate] = field(default_factory=list)
+    # Whether a screen script may call the primitives that change something. Default False, so
+    # the narrow set is what a call gets unless something widened it deliberately.
+    screen_mutations: bool = False
+    # Set when this call is a second run of a command the operating system refused.
+    retry_grant: Any = None
+    # The outcome of a call that already ran, held across a suspension so the resumed batch
+    # replays it instead of running the tool a second time. Only a call that finished has one.
+    completed: Optional[dict] = None
 
     @property
     def needs_human(self) -> bool:
@@ -503,21 +524,32 @@ class _ToolPlan:
 
     @property
     def approved(self) -> bool:
-        return self.denial is None and not self.gates
+        return self.refusal is None and not self.gates
 
     def to_dict(self) -> dict:
-        return {"tool_call_id": self.tool_call_id, "denial": self.denial, "gates": [gate.to_dict() for gate in self.gates]}
+        return {
+            "tool_call_id": self.tool_call_id, "refusal": self.refusal,
+            "gates": [gate.to_dict() for gate in self.gates],
+            "screen_mutations": self.screen_mutations,
+            "retry_grant": self.retry_grant.as_dict() if self.retry_grant is not None else None,
+            "completed": self.completed,
+        }
 
     @classmethod
     def from_dict(cls, data: dict) -> _ToolPlan:
+        from frank.base.confinement import Grant
+
+        retry = data.get("retry_grant")
         return cls(
             tool_call_id=str(data.get("tool_call_id", "")),
-            denial=data.get("denial"),
+            refusal=data.get("refusal"),
             gates=[_PreflightGate.from_dict(gate) for gate in (data.get("gates") or [])],
+            screen_mutations=bool(data.get("screen_mutations", False)),
+            retry_grant=Grant.from_dict(retry) if retry else None,
+            completed=data.get("completed"),
         )
 
 
-@dataclass
 @dataclass
 class _ToolCall:
     """One call, as middleware sees it.
@@ -539,8 +571,18 @@ class _ResolvedToolDecision:
 
     tool_call_id: str
     approved: bool = True
-    denial: Optional[dict] = None  # {"code", "message", "denied_injection", "raw_command"}
+    denial: Optional[dict] = None  # {"code", "message", "denied_injection", "raw_command", "reason"}
     answers: Any = None  # ask_user: the answers list, or the decline sentinel
+    # Whether a screen script may call the primitives that change something. False unless the
+    # rules or somebody's answer said otherwise, so the default is the narrow set.
+    screen_mutations: bool = False
+    # The widening a second run of this command was approved to use, when the first was refused
+    # by the operating system.
+    retry_grant: Any = None
+    # The outcome of a call that already ran before the turn suspended. When present the tool is
+    # not run again: this is replayed, which is what keeps a suspension from repeating side
+    # effects a concurrent call in the same batch already had.
+    completed: Optional[dict] = None
 
 
 # How a turn-loop phase tells the driver what to do next. A phase is an async generator

@@ -80,7 +80,7 @@ async def serve(assignment: dict, ready_fd: int = -1, lifeline_fd: int = -1) -> 
         agent_name=agent_name,
         working_directory=str(assignment.get("working_directory") or ""),
         runtime_working_directory=str(assignment.get("runtime_working_directory") or ""),
-        permission_mode=str(assignment.get("permission_mode") or "default"),
+        permission_mode=str(assignment.get("permission_mode") or "ask"),
         sandbox=assignment.get("sandbox") or {},
         workspace_id=str(assignment.get("workspace_id") or ""),
         locations=assignment.get("locations") or None,

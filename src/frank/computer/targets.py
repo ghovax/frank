@@ -328,35 +328,18 @@ def _browser_targets() -> list[Target]:
     return targets
 
 
-def vocabularies(mutating_allowed: bool = True) -> dict[str, dict[str, str]]:
+def vocabularies() -> dict[str, dict[str, str]]:
     """What each kind of place can be told to do, with the shape of every call, read off the
     surfaces themselves.
 
     Computed rather than written down, because a written list is a second statement of a fact the
-    code already holds, and the two drift: the model was handed a description promising ``hover``
-    on every target while a window implemented eleven primitives, and promising
-    ``evaluate(javascript, …)`` where the code took ``expression``. The only things that knew
-    better used the difference to raise. One source, so the promise and the enforcement cannot
-    disagree.
-
-    A read-only session is shown only what it may actually run. Offering a primitive that the
-    permission layer will refuse is the same defect one level up — a capability advertised and
-    then denied — and it had a real cost: the guidance recommends ``evaluate`` as the efficient
-    way to read a page, while the classifier treats it as mutating, so the investigating agents
-    the system prompt tells you to create with ``read_only`` were being pointed at the one
-    technique they cannot use."""
+    code already holds, and the two drift. One source, so the promise and the enforcement cannot
+    disagree."""
     from frank.computer import engine, web
-    from frank.runtime.permissions import MUTATING_SCREEN_PRIMITIVES
-
-    def offered(surface) -> dict[str, str]:
-        signatures = surface.signatures()
-        if mutating_allowed:
-            return signatures
-        return {name: shape for name, shape in signatures.items() if name not in MUTATING_SCREEN_PRIMITIVES}
 
     return {
-        WINDOW_VOCABULARY: offered(engine.SURFACE),
-        PAGE_VOCABULARY: offered(web.SURFACE),
+        WINDOW_VOCABULARY: engine.SURFACE.signatures(),
+        PAGE_VOCABULARY: web.SURFACE.signatures(),
     }
 
 
@@ -486,7 +469,7 @@ def prewarm() -> None:
     _warmed = True
 
 
-def context_block(mutating_allowed: bool = True) -> dict[str, Any]:
+def context_block() -> dict[str, Any]:
     """What the model is told about the screen, once per turn.
 
     Structured rather than prose, and carrying the vocabularies beside the places, because those
@@ -509,7 +492,7 @@ def context_block(mutating_allowed: bool = True) -> dict[str, Any]:
     targets = list_targets()
     block: dict[str, Any] = {
         "targets": describe_all(targets),
-        "primitives": vocabularies(mutating_allowed),
+        "primitives": vocabularies(),
         "legend": legend(),
     }
     # Said once, as a condition, at the top. It used to be said only as a note repeated on every

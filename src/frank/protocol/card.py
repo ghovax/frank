@@ -36,11 +36,13 @@ def build_agent_card(
     the agent's role is synthesised so the card always carries at least one skill.
     """
     display_name = configuration.display_name
+    # What the profile's own confinement permits. A card with no sandbox of its own has not
+    # said, which is not the same as saying it may not write.
+    sandbox = getattr(configuration, "sandbox", None)
+    writes = sandbox is None or bool(sandbox.filesystem.writable)
     capability = (
-        "Investigates and reports read-only — cannot modify the system."
-        # A card with no ceiling is not read-only; it simply has not said.
-        if configuration.permission_policy is not None and configuration.permission_policy.is_read_only
-        else "Can read and modify the system."
+        "Can read and modify the system." if writes
+        else "Investigates and reports — its confinement permits no writes."
     )
     skills = [
         AgentSkill(

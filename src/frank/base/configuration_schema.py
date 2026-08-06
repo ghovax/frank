@@ -214,7 +214,7 @@ def _walk(model: type[BaseModel], prefix: str) -> list[Setting]:
 #: list exists.
 SECTION_ORDER = (
     # What the agent may do, and where.
-    "agent", "workspace", "sandbox", "toolbox", "permission_classifier",
+    "agent", "workspace", "sandbox", "toolbox", "permission_reviewer",
     # What it carries between turns, and what it knows about you.
     "compaction", "user_context",
     # The surfaces it can reach for.

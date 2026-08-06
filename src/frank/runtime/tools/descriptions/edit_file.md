@@ -11,4 +11,3 @@ Arguments:
   - location: Which workspace location holds the file — its URI or its name, from the locations in your context. Defaults to the local filesystem. Pass it only to reach a different, remote location.
   - replace_all: Replace every occurrence, instead of requiring one unique match.
   - explanation: A short reason for the edit, in the words the user reads.
-  - risk: "low" for a targeted edit, "medium" for a broad one, "high" for one that is hard to reverse.

@@ -1,4 +1,4 @@
-This call was not allowed.
+This request was not allowed.
 
 **Why:**
 

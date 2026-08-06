@@ -16,7 +16,7 @@ export function emptyLocation(): LocationInput {
     kind: "local",
     base_directory: "",
     host_alias: "",
-    permission_mode: "default",
+    permission_mode: "ask",
   };
 }
 
@@ -237,7 +237,7 @@ export function LocationForm({
               of icons and one set of descriptions wherever a permission mode is chosen. */}
           <PermissionModeControl
             layout="field"
-            value={(value.permission_mode as PermissionMode) ?? "default"}
+            value={(value.permission_mode as PermissionMode) ?? "ask"}
             onChange={(next) => { if (next) set({ permission_mode: next }); }}
           />
         </Flex>
