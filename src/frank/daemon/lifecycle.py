@@ -122,7 +122,7 @@ class SessionLifecycle:
             )
 
     async def on_session_exit(self, report: SessionExit) -> None:
-        """A session's process has ended, however it ended, which is what the per-session supervisor used to notice."""
+        """A session's process has ended, however it ended, which is the whole of supervising one."""
         session_id = report.session_id
         if not session_id:
             return

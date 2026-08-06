@@ -175,7 +175,7 @@ def build_app() -> FastAPI:
             self.application = application
 
         async def __call__(self, scope, receive, send):
-            # Websockets are checked here too, which is the policy finally being applied where it was always meant to.
+            # Websockets are checked here too, since a handshake reaches the same routes a request does.
             if scope["type"] not in {"http", "websocket"}:
                 return await self.application(scope, receive, send)
 

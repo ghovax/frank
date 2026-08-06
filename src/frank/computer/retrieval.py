@@ -96,7 +96,7 @@ _ROLE_IN_WORDS = {
 
 def element_text(name: str = "", description: str = "", value: Any = None, context: str = "",
                  role: str = "") -> str:
-    """Join an element's words for the text the model reads, which is no longer what either surface embeds."""
+    """Join an element's words for the text the model reads, which is not what either surface embeds."""
     value_text = value if isinstance(value, str) else ("" if value is None else str(value))
     spoken = _ROLE_IN_WORDS.get(role, _ROLE_IN_WORDS.get(role.lower(), ""))
     return " ".join(part for part in (spoken, name, description, value_text, context) if part).strip()

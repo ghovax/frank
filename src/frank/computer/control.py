@@ -74,7 +74,7 @@ async def run_control_script(
         "dependency_roots": list(dependency_roots or ()),
         # Directories of shared libraries, sent as paths because macOS strips every `DYLD_*` variable from a signed child.
         "library_roots": list(library_roots or ()),
-        # CPU seconds only; address space belongs to the confinement profile, so two mechanisms no longer race for one limit.
+        # CPU seconds only: address space is the confinement profile's, so one mechanism owns each limit.
         "limits": {"cpu_seconds": int(timeout) + 5},
     }
 

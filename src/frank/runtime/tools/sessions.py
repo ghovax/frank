@@ -55,7 +55,7 @@ async def _create_session(
     working_directory: Optional[str] = None,
     explanation: str = "",
 ) -> str:
-    """Make a peer, and nothing else, so a call can no longer half succeed."""
+    """Make a peer, and nothing else, so the call cannot half succeed."""
     access = tool_context.current().session_access
     if access is None:
         return _unavailable("create_session_error")
