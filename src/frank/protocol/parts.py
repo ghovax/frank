@@ -1,11 +1,4 @@
-"""Turning messages into what the model reads, and runtime events into what the client renders.
-
-Two directions meet here. Inbound: an A2A message's parts are unpacked into the turn's
-inputs — prose, structured attachments, and images inlined only when
-the model can actually see them. Outbound: every runtime event becomes a validated wire
-part, constructed as its Pydantic model at the emit site so a misnamed field is an error
-here rather than invisible drift the schema generation can never catch.
-"""
+"""Turning inbound messages into what the model reads, and runtime events into what the client renders."""
 
 from __future__ import annotations
 
@@ -47,9 +40,7 @@ def _input_response_payload(message) -> Optional[dict]:
 
 
 async def _ingest_incoming_file_parts(message) -> list[dict]:
-    """Materialize every ``FilePart`` an inbound message carries into the upload store,
-    returning attachment dicts so a file another agent sends reaches the model exactly like
-    a local attachment."""
+    """Materialize every inbound file part into the upload store, so a peer's file arrives like a local attachment."""
     attachments: list[dict] = []
     for part in (message.parts or []):
         root = getattr(part, "root", part)
@@ -71,13 +62,9 @@ def _structured_data_payloads(message) -> list[dict]:
     return payloads
 
 
-# Attachments whose mime type starts with this are viewable by a vision model, so
-# they are inlined into the turn as image content blocks. Everything else stays a
-# text-only reference (path + metadata) the model opens with its file tools.
+# Attachments with this mime prefix are viewable by a vision model and so are inlined as image blocks.
 _INLINE_IMAGE_MIME_PREFIX = "image/"
-# A generous ceiling on an inlined image so a huge upload cannot blow up the
-# request (and the persisted conversation it becomes part of). Larger images are
-# left as text references rather than inlined.
+# A generous ceiling on an inlined image, since a huge one would blow up the persisted conversation.
 _MAXIMUM_INLINE_IMAGE_BYTES = 20 * 1024 * 1024
 
 
@@ -130,9 +117,7 @@ def _attachment_warning_event(image_count: int, model_identifier: str) -> Warnin
 
 
 def _image_content_block(attachment: dict) -> Optional[dict]:
-    """Build an OpenAI-shaped ``image_url`` content block from an attachment by
-    reading the stored file and base64-encoding it as a data URI. Returns ``None``
-    when the file is missing, unreadable, or too large to inline."""
+    """An image content block built from a stored attachment, or `None` when it is missing or too large."""
     path = str(attachment.get("path") or "")
     if not path:
         return None
@@ -152,20 +137,8 @@ def _image_content_block(attachment: dict) -> Optional[dict]:
 def compose_turn_input(
     user_text: str, structured_payloads: list[dict], model_identifier: str,
 ) -> tuple[object, int]:
-    """What the model reads for a turn that carries attachments, and how many images were
-    left out.
-
-    Returns the turn input — a JSON string, or a list of content blocks when images are
-    inlined — and the number of images that could not be inlined because the model does not
-    advertise vision. The caller decides what to do about that count; the daemon raises a
-    warning event, and a library caller may not have anywhere to raise one.
-
-    Extracted from the worker because a library session composes exactly the same thing. Left
-    where it was, attaching a file was reachable only by posting to the daemon's socket, and
-    the harness's own front door could not do what its client could.
-    """
-    # The metadata always rides along as text, so the model can act on the attachments with
-    # its file tools whether or not it can see them.
+    """What the model reads for a turn carrying attachments, and how many images were left out."""
+    # The metadata always rides along as text, so the model can act on the files whether or not it can see them.
     text_payload = compact({"text": user_text, "data_parts": structured_payloads})
     images = _image_attachments(structured_payloads)
     if not images:
@@ -191,10 +164,7 @@ def _text_part(text: str, block_identifier: str) -> Part:
 
 
 def _event_part(event: _EventBase) -> Part:
-    """A validated wire-event ``Part``. Every client-facing event is constructed as its
-    Pydantic model here, so a misnamed or missing field is a ``ValidationError`` at the emit
-    site rather than an invisible wire drift the schema/TypeScript generation can never see
-    (the emitter-to-contract edge, which raw-dict ``{kind, **fields}`` construction left on faith)."""
+    """A validated wire-event part, so a misnamed field fails at the emit site rather than in a client."""
     return Part(root=DataPart(data=wrap_part_payload(event.model_dump(mode="json"))))
 
 
@@ -220,13 +190,10 @@ def _work_habits_acknowledgement_parts(job_id: str) -> tuple[Part, Part]:
     )
 
 
-# Fields in a tool result that are guidance addressed to the model, or bulk payload it
-# reads from the conversation — never something the transcript should render. They are
-# stripped from `display` so the wire (live and on replay) carries only what the UI shows.
+# Fields addressed to the model rather than to the transcript, stripped from what the client renders.
 _MODEL_ONLY_RESULT_KEYS = frozenset({"hint", "note"})
 
-# Per-tool heavy payloads the UI summarizes (a count, a range) rather than dumping: the
-# model still reads them from the conversation; the client never needs the raw blob.
+# Per-tool heavy payloads the interface summarizes, which the model still reads from the conversation.
 _HEAVY_RESULT_KEYS: dict[str, frozenset[str]] = {
     "search_code": frozenset({"matches"}),
     "read_file": frozenset({"content"}),
@@ -234,9 +201,7 @@ _HEAVY_RESULT_KEYS: dict[str, frozenset[str]] = {
 
 
 def _project_display(tool_name: str, result: object) -> object:
-    """Trim a tool result down to the UI-facing view. The model reads the untrimmed
-    result from the conversation; only this projection reaches the client, so
-    model-directed guidance and bulk payloads never leak into the transcript."""
+    """Trim a tool result down to the view the client renders."""
     if not isinstance(result, dict):
         return result
     drop = _MODEL_ONLY_RESULT_KEYS | _HEAVY_RESULT_KEYS.get(tool_name, frozenset())
@@ -244,10 +209,7 @@ def _project_display(tool_name: str, result: object) -> object:
 
 
 def _tool_result_part(tool_name: str, tool_call_id: str, result: object, status: str) -> Part:
-    """The unified ``tool_result`` wire event for a root-agent tool. Lifecycle is the
-    explicit ``status``; ``display`` is the projected payload the UI renders (the
-    model-facing view travels only in the conversation). ``metadata`` here is the minimal
-    display correlation — full timing rides the model envelope."""
+    """The unified tool-result wire event, whose `display` is the projected payload the interface renders."""
     record = result if isinstance(result, dict) else {}
     return _event_part(ToolResultEvent(
         tool_name=tool_name,
