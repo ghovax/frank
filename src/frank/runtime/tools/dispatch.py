@@ -1,8 +1,4 @@
-"""The AgentRuntime tool-execution concern (a mixin composed into AgentRuntime).
-
-The ``_tool_*`` handlers, the ``_execute_tool`` permission/location/dispatch pipeline, concurrent
-batch draining, argument validation, and the backgroundable-tool runner. Imports its dependencies
-from the leaf ``agent_internals`` module and stable modules, so the graph stays a clean DAG."""
+"""Executing a tool call: the handlers, the dispatch pipeline, batch draining, and the background runner."""
 from __future__ import annotations
 
 import logging
@@ -69,22 +65,12 @@ from frank.base.errors import summary
 
 logger = logging.getLogger(__name__)
 
-# What an element id looks like, across both surfaces, so one can be told from a description of an
-# element. A browser addresses by aria-ref (``e12``, or ``f1e3`` inside the first iframe) and by a
-# capture's own handle (``req41``, ``ws2``); a native window addresses by the element's path through
-# the tree (``1.4.2``). None of these is anything a person would ever write as a query, which is
-# what makes the test safe: the cost of reading a description as an id is a failed lookup a caller
-# can see, where the cost of reading an id as a description was a semantic search for "e1594".
+# What an element id looks like on both surfaces, so one can be told from a description of an element.
 _ELEMENT_ID = re.compile(r"(?:f\d+)?e\d+|req\d+|ws\d+|\d+(?:\.\d+)+")
 
 
 def _goal_lines(value: Any) -> list[str]:
-    """A goal's requirements or evidence, as a list of non-empty lines.
-
-    Models write a list of conditions three ways — a real list, one string with newlines in it,
-    or one string — and all three mean the same thing to the person reading them back. Accepting
-    the shape is not the same as accepting the content: an empty list still fails the check at
-    the call site, which is what makes the field mandatory in practice."""
+    """A goal's requirements as a list of lines, however the model spelled them: a list, or one string."""
     if isinstance(value, str):
         value = value.splitlines()
     if not isinstance(value, (list, tuple)):
@@ -93,15 +79,7 @@ def _goal_lines(value: Any) -> list[str]:
 
 
 def _with_schema_defaults(schema: Any, arguments: dict) -> dict:
-    """The call's arguments, with every omitted key filled from the schema's own default.
-
-    Only *omitted* keys: a key the model passed explicitly is left exactly as it sent it, including
-    an explicit ``None``, because "I mean nothing here" and "I said nothing here" are different
-    statements and a tool is entitled to tell them apart.
-
-    Defaults declared on a schema and never applied are worse than no defaults, because everything
-    downstream — the signature, the description, the JSON schema the model reads — advertises them.
-    """
+    """The arguments with every omitted key filled from the schema. Only omitted: an explicit ``None`` stands."""
     fields = getattr(schema, "model_fields", None)
     if not fields:
         return arguments
@@ -116,12 +94,7 @@ def _with_schema_defaults(schema: Any, arguments: dict) -> dict:
 
 
 class _DispatchesTools:
-    """Everything the runtime does with a tool call: resolve it, gate it, run it, report it.
-
-    One of the four halves of :class:`AgentRuntime`, kept in its own file because a turn loop and
-    a tool dispatcher are separate concerns that happen to share state. It was called
-    ``_ToolsMixin``, which named the Python mechanism rather than the work — and the mechanism is
-    the least interesting thing about it."""
+    """Everything the runtime does with a tool call: resolve it, gate it, run it, report it."""
 
     async def _run_one_tool(
         self,
@@ -131,15 +104,7 @@ class _DispatchesTools:
         outcomes: dict[str, dict],
         decision: _ResolvedToolDecision,
     ) -> AsyncIterator[TurnEvent]:
-        """Run a single tool call, yielding its events and recording its outcome
-        in ``outcomes`` (keyed by tool_call_id). The caller appends ToolMessages
-        afterward so the conversation stays consistent even on abort.
-
-        Self-contained so it can run concurrently with other tools: each owns its
-        TOOL_CALL emit, result collection, and outcome record. ``decision`` is the
-        preflight verdict — approve, deny, or (ask_user) the answers — so this path
-        never prompts; the human decision was resolved before the batch started.
-        """
+        """Run one call and record its outcome. Self-contained, so it can run concurrently with other tools."""
         tool_name = tool_call_data["name"]
         tool_arguments = tool_call_data["args"]
         tool_call_identifier = tool_call_data["id"]
@@ -166,17 +131,14 @@ class _DispatchesTools:
         tool_span = _telemetry.start_span("tool.execute", {"tool.name": tool_name})
         try:
             async for event in self._execute_tool(tool_name, tool_arguments, tool_call_identifier, decision):
-                # An image read carries its pixels on a model-facing side channel;
-                # strip it here so the base64 never reaches the UI or the event
-                # log — the turn loop attaches it to the conversation instead.
+                # An image read carries its pixels on a side channel; strip it so the base64 never reaches the UI.
                 if isinstance(event, ToolResult) and "model_image" in event.extra:
                     result_payload = event.result
                     image_followups.append({
                         "path": str((result_payload or {}).get("path", "")) if isinstance(result_payload, dict) else "",
                         "data_uri": str(event.extra["model_image"]),
                     })
-                    # Strip the model-facing image off the event before it goes downstream, so the
-                    # base64 never reaches the UI or the event log.
+                    # Strip the model-facing image before the event goes downstream.
                     event = replace(event, extra={key: value for key, value in event.extra.items() if key != "model_image"})
                 yield event
                 if isinstance(event, ToolResult):
@@ -196,15 +158,10 @@ class _DispatchesTools:
                         turn_tool_results_log.append({"name": tool_name, "result": compact(result_str)})
                     else:
                         if isinstance(result_str, dict):
-                            # A structured result that reports an error status marks the
-                            # call failed for the model and the UI alike.
+                            # A result reporting an error status marks the call failed, for the model and the UI alike.
                             if event.status == ToolStatus.ERROR.value:
                                 tool_failed = True
-                            # Minified for the model — no spaces, and non-ASCII kept verbatim
-                            # (window titles, emoji) rather than \uXXXX-escaped. This is the one
-                            # place every structured tool result (e.g. the computer tool's element
-                            # list) is serialized for the model; the UI receives the dict on a
-                            # separate path and prettifies it there, so this never affects display.
+                            # Minified for the model, non-ASCII verbatim. The UI gets the dict on a separate path.
                             result_str = compact(result_str)
                         result_content = _cap_model_result_payload(str(result_str))
                         turn_tool_results_log.append({"name": tool_name, "result": result_content})
@@ -255,11 +212,7 @@ class _DispatchesTools:
         outcomes: dict[str, dict],
         decisions: dict[str, _ResolvedToolDecision],
     ) -> AsyncIterator[TurnEvent]:
-        """Run independent tool calls concurrently, yielding their events as they
-        arrive (interleaved). The model emits several tool calls in one response
-        when work is parallel; they run concurrently so multiple peer sessions
-        and other independent tools progress together. ``decisions`` carries the
-        preflight verdict for each call, so no tool prompts mid-batch."""
+        """Run independent calls concurrently, yielding events as they arrive, with every decision already in hand."""
         if not tool_calls:
             return
 
@@ -293,11 +246,7 @@ class _DispatchesTools:
             while True:
                 if self._abort_event.is_set():
                     break
-                # Race the next tool event against the abort so a Stop is honored even
-                # when every tool is parked (a slow network/MCP call, a thread that
-                # can't be cancelled) and nothing is arriving on the queue. The
-                # `finally` cancels the runners; the turn loop then records "(interrupted)"
-                # for any tool that never produced a result.
+                # Race the next event against the abort, so a Stop is honoured even when every tool is parked.
                 get_future = asyncio.ensure_future(queue.get())
                 await asyncio.wait(
                     {get_future, abort_waiter}, return_when=asyncio.FIRST_COMPLETED
@@ -334,10 +283,7 @@ class _DispatchesTools:
                 accepted = ", ".join(sorted(fields))
                 rejected = ", ".join(unknown_arguments)
                 return ("invalid_tool_arguments", f"The tool {tool_name} does not accept the following argument(s) with which it was invoked: {rejected}. Accepted arguments by it are only: {accepted}.")
-            # `call_mcp_tool.arguments` is frequently emitted by models as a JSON *string*
-            # rather than an object. Coerce it to a dict for validation (dispatch coerces it
-            # the same way via _coerce_mcp_arguments), so a stringified-but-valid arguments
-            # object is accepted instead of being rejected by the dict-typed schema field.
+        # Models often emit an MCP call's `arguments` as a JSON string; coerce before validating it.
             if tool_name == "call_mcp_tool" and isinstance(arguments.get("arguments"), str):
                 arguments = {**arguments, "arguments": _coerce_mcp_arguments(arguments.get("arguments"))}
             try:
@@ -346,13 +292,8 @@ class _DispatchesTools:
                     schema_validator(arguments)
             except ValidationError as exception:
                 return ("invalid_tool_arguments", str(exception))
-            # The validated model is not thrown away — see `_with_schema_defaults`. It used to be
-            # validated purely for its exception, so every default the schema declared was
-            # invisible to the handler, which read the raw arguments and invented its own
-            # fallback: `read_file` documented "defaults to 2048 lines" and returned whole files.
-        # Every tool that spawns a child or reaches outside the process may carry one. Validated
-        # here, once, rather than at each handler: a malformed request must fail as a tool error
-        # the model can correct, never as a grant nobody wrote.
+            # The validated model is kept — see `_with_schema_defaults` — so a documented default actually applies.
+        # Validated once here, so a malformed request fails as a tool error rather than becoming a grant.
         if "access_request" in arguments:
             _, complaint = parse_access_request(arguments.get("access_request"))
             if complaint:
@@ -383,18 +324,7 @@ class _DispatchesTools:
         return ""
 
     def _outside_working_directory_reads(self, command: str, working_directory: str | None = None) -> list[str]:
-        """Reads this command names that leave the session's working directory.
-
-        Not a boundary and no longer pretending to be one. Writes are enforced by the operating
-        system now (see :mod:`frank.base.confinement`); reads outside the workspace remain allowed
-        by design, because agents legitimately read system headers, sibling repositories and
-        toolchain configuration. What this does is notice them, so the permission reviewer and
-        the person reading a prompt can see what a command reaches for — a prompt-injection
-        tripwire rather than the thing standing between a session and the disk.
-
-        It sees only literal path-shaped arguments. A path the shell computes is invisible to it,
-        which was the fatal objection when this was load-bearing and is merely a limitation now.
-        """
+        """Reads this command names outside the working directory. A signal about intent, not a boundary."""
         if self._global_configuration.sandbox.enforce == "off":
             return []
         root = Path(working_directory or self._working_directory or Path.home()).expanduser()
@@ -430,12 +360,7 @@ class _DispatchesTools:
         return outside
 
     def _append_tool_results(self, response, outcomes: dict[str, dict]) -> None:
-        """Append a ToolMessage for every tool_call of ``response`` (the AIMessage is
-        already at the tail of the conversation), plus the image/denied reminders.
-        The ToolMessage block stays contiguous: providers require every tool_call's
-        result in the immediately-following turn, so notes come after the whole block.
-        An aborted or un-run tool records ``(interrupted)`` so every call still gets a
-        ToolMessage and the conversation stays valid."""
+        """A ToolMessage per tool_call, contiguous, since providers require every result in the block that follows."""
         denied_command_notes: list[str] = []
         image_followup_notes: list[dict[str, str]] = []
         for tool_call_data in cast(list[dict], response.tool_calls):
@@ -476,9 +401,7 @@ class _DispatchesTools:
                     self._prompt_loader.load("command_denied", {"commands": commands_list})
                 )
             image_followup_notes.extend(outcome.get("image_followups") or [])
-        # Images read this round attach right after the tool block, as image-bearing
-        # reminders — the append-only, every-provider way for a vision model to see
-        # pixels a tool produced.
+        # Images attach right after the tool block, the append-only way a vision model sees them.
         for followup in image_followup_notes:
             note_text = self._prompt_loader.load("image_read_note", {"path": followup.get("path", "")})
             self._conversation.append(self._reminder_message(
@@ -488,26 +411,14 @@ class _DispatchesTools:
         for denied_message in denied_command_notes:
             self._conversation.append(self._reminder_message(denied_message))
 
-        # Malformed tool calls serialized alongside valid ones: correct them with a
-        # reminder (not a ToolMessage — invalid calls aren't in the serialized
-        # tool_calls, so a ToolMessage would be orphaned and rejected by strict
-        # providers). Model-facing; not surfaced to the user.
+        # Malformed calls are corrected by a reminder: a ToolMessage would be orphaned and rejected.
         for invalid in response.invalid_tool_calls:
             self._conversation.append(self._reminder_message(
                 self._invalid_tool_call_content(cast(dict, invalid)),
             ))
 
     async def _through_pipeline(self, tool_name: str, tool_arguments: dict, invoke) -> Any:
-        """Run one tool call through the middleware the caller supplied.
-
-        Wraps the invocation rather than `_execute_tool`, which is an async generator of
-        events: middleware asks a plain question — did this call happen, and what came back —
-        and a generator cannot answer it without the middleware learning the event protocol.
-
-        A raising middleware is *not* absorbed. It is in the call path and decides whether the
-        call happens, so swallowing here would turn a retry layer's bug into a tool that
-        silently never ran.
-        """
+        """Run one call through the caller's middleware, which asks a plain question a generator cannot answer."""
         if self._pipeline.empty:
             return await invoke(tool_arguments)
         call = _ToolCall(name=tool_name, arguments=tool_arguments)
@@ -517,23 +428,15 @@ class _DispatchesTools:
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
         decision: _ResolvedToolDecision,
     ) -> AsyncIterator[TurnEvent]:
-        """Execute a single tool call, yielding events. The caller collects results from
-        TOOL_RESULT, ERROR, and BACKGROUND_STARTED events.
-
-        Permission is already resolved: ``decision`` says whether this call may run, was
-        denied (with the exact error the gate would have produced), or — for ``ask_user``
-        — carries the answers. This path never prompts and never awaits a decision future;
-        the preflight pass made every human decision before the batch began."""
-        # A call that already ran before the turn suspended is not run again: its result is
-        # replayed. Whatever side effects it had, it had once.
+        """Execute one call, yielding events. Permission is already resolved, so this path never prompts."""
+        # A call that already ran is replayed: whatever side effects it had, it had once.
         if decision.completed is not None:
             yield ToolResult(
                 id=tool_call_identifier, name=tool_name, result=decision.completed.get("result"),
             )
             return
 
-        # A tool the preflight refused never runs: surface the recorded refusal (and the
-        # denied-command injection where the inline gate would have), then stop.
+        # A refused call never runs: surface the recorded refusal and stop.
         if decision.denial is not None:
             error_kwargs: dict[str, Any] = {"id": tool_call_identifier, "tool": tool_name, "message": decision.denial.get("message", "")}
             if decision.denial.get("code"):
@@ -545,37 +448,19 @@ class _DispatchesTools:
                 )
             return
 
-        # Thread this agent's live context window into the tool call, so every window-scaled tool
-        # cap (a page's element listing, a read window, a truncation ceiling) is sized for the
-        # model actually running. Each tool call runs in its own asyncio task (see
-        # _drain_tools_concurrently), so this contextvar is isolated per call and copied into the
-        # worker threads the automation surfaces run on; it stays 0 (the turn-0 seed) until the
-        # first model call reports usage.
+        # This agent's live window, so every window-scaled cap is sized for the model actually running.
         current_context_window.set(self._context_window)
 
-        # The session-shaped state the module-level tools read at call time: confinement,
-        # capability clients, and this session's view of its peers. Bound per call rather than
-        # installed per process, so two turns open at once — a compaction alongside a user's —
-        # cannot see each other's.
-        #
-        # The grants approved so far are folded in here, at the one point every tool passes
-        # through, rather than at each tool that spawns a child. A widening applied in five
-        # places is a widening that will be forgotten in one of them, and the one it is forgotten
-        # in is a tool that fails on a permission the user already granted.
+        # The session state tools read at call time, bound per call so two open turns cannot see each other's.
         tool_context.bind(
             self._tool_context.with_grants(self._access_grants).with_attachments(self._attached_files)
         )
 
-        # Coerce any list/dict argument the model passed as a JSON string into its native
-        # value up front, so validation and dispatch both see the real container.
+        # Coerce JSON-string arguments up front, so validation and dispatch see the real container.
         schema = self._tool_schemas.get(tool_name)
         if schema is not None:
             tool_arguments = _coerce_structured_arguments(schema, tool_arguments)
-            # And fill in whatever the schema declares a default for, so a documented default is
-            # the one that actually applies. A schema whose defaults never reach the handler is a
-            # contract nobody honours: `read_file(limit=2048)` said 2048 in its signature, in its
-            # description, and in the tool schema the model was shown — and returned the whole
-            # file, because the omitted key arrived as `None` and the handler read that.
+            # And fill the schema's defaults, so a documented default is the one that applies.
             tool_arguments = _with_schema_defaults(schema, tool_arguments)
 
         try:
@@ -593,12 +478,7 @@ class _DispatchesTools:
             yield Error(id=tool_call_identifier, code=error_code, message=error_message, tool=tool_name)
             return
 
-        # Filesystem/shell tools run against a specific workspace location. Resolve it
-        # here and derive this call's execution policy as a value — the location's
-        # executor carries the IO (local subprocess or multiplexed SSH) through one
-        # shared code path. Nothing location-specific is written to runtime state, so
-        # tool calls running concurrently against different locations cannot cross
-        # policies or working directories.
+        # Resolve the location and derive the policy as a value, so concurrent calls cannot cross them.
         resolved_location: ResolvedLocation | None = None
         if tool_name in _LOCATION_TOOLS:
             tool_arguments = dict(tool_arguments)
@@ -612,10 +492,7 @@ class _DispatchesTools:
 
         handler_name = self._TOOL_HANDLERS.get(tool_name)
         if handler_name is None:
-            # Not one of ours. A caller-supplied tool arrives here, and it reaches this point
-            # having gone through the identical preamble every built-in does — permission
-            # resolved, location resolved, policy applied — because the extension point is the
-            # *handler*, not the pipeline.
+            # A supplied tool reaches this point through the identical preamble: the handler is the extension point.
             if tool_name in self._extra_tools:
                 async for event in self._tool_supplied(
                     tool_name, tool_arguments, tool_call_identifier,
@@ -634,13 +511,7 @@ class _DispatchesTools:
     async def _tool_supplied(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
     ):
-        """Run a tool the caller brought, through LangChain's own invocation.
-
-        `ainvoke` rather than an interface of ours: `BaseTool` already defines how a tool is
-        called, what it may raise, and how it reports, so every tool written for that ecosystem
-        works here unchanged. A tool that raises becomes a tool *error* rather than a turn
-        error — the model sees what went wrong and can adapt, which is what it does with every
-        built-in failure too."""
+        """Run a caller's tool through LangChain's own invocation, so anything written for it works here."""
         tool = self._extra_tools[tool_name]
         try:
             result = await self._through_pipeline(tool_name, tool_arguments, tool.ainvoke)
@@ -666,12 +537,7 @@ class _DispatchesTools:
     ) -> AsyncIterator[TurnEvent]:
         raw_command = tool_arguments.get("command", "")
         if policy.is_remote:
-            # A remote command runs as a local `ssh …` invocation over the
-            # location's multiplexed connection, so the ordinary bash machinery
-            # below — sync ceiling, backgrounding, output capping + overflow
-            # file, cancellation — drives it unchanged. All permission analysis
-            # (static read-only classification, allow rules, prompts) runs on
-            # the raw remote command, never on the ssh wrapper.
+            # A remote command is a local `ssh …`, so the bash machinery drives it unchanged; permission read the raw one.
             from frank.locations.executor import SshExecutor
 
             assert resolved_location is not None
@@ -700,24 +566,16 @@ class _DispatchesTools:
                         tool=tool_name,
                     )
                     return
-                # The directory reaches the command as the process's own `cwd`, set through the
-                # confinement recipe. It used to be prepended as `cd <dir> && …`, which made the
-                # working directory shell text inside a command the model wrote — and therefore
-                # something the same command could `cd` straight back out of.
-                # A derived context, not a mutation: this used to rewrite the process-wide
-                # confinement profile, so a `bash` call naming its own directory narrowed the
-                # sandbox of every other turn open in the same worker.
+                # The directory is the process's own `cwd`, not shell text a command could `cd` out of.
                 tool_context.bind(
                     self._tool_context.for_directory(str(directory_path))
                     .with_grants(self._access_grants).with_attachments(self._attached_files)
                 )
         requested, _ = parse_access_request(tool_arguments.get("access_request"))
-        # Absent or silent means no claim, and no claim is treated as mutating — the conservative
-        # reading, and the one the lease below depends on.
+        # No claim is treated as mutating, which is what the lease below depends on.
         declared_read_only = requested is not None and requested.mutates is False
 
-        # An agent may be forbidden from backgrounding work: a long-lived shell subtree outlives
-        # the turn that started it, which is exactly what some agents should not be able to do.
+        # Backgrounding can be forbidden: a shell subtree outlives the turn that started it.
         wants_background = tool_arguments.get("background", False)
         if isinstance(wants_background, str):
             wants_background = wants_background.lower() == "true"
@@ -731,20 +589,15 @@ class _DispatchesTools:
                 )
                 return
 
-        # Permission was resolved by the preflight pass; an approved bash call reaches here and
-        # runs, inside the confinement the session holds.
+        # Permission is resolved; an approved call runs inside the confinement the session holds.
         lease_token = ""
-        # Filesystem leases guard this machine's working trees; a remote command
-        # mutates the remote host, so no local lease applies.
+        # Leases guard this machine's trees, so a remote command takes none.
         if not declared_read_only and not policy.is_remote:
             try:
                 lease_token = await self._acquire_filesystem_lease(
                     scope="worktree",
                     path=self._canonical_working_directory(policy.working_directory),
-                    # Whole. This said `raw_command[:160]`, and the description is what another
-                    # session is shown when it collides with this lease — so the one thing it is
-                    # for is telling somebody what is holding their path, and a command cut at
-                    # 160 characters is one whose interesting half is a pipeline away.
+                    # Whole, since this is what another session is shown when it collides with the lease.
                     description=f"mutating bash: {raw_command}",
                     working_directory=policy.working_directory,
                 )
@@ -758,18 +611,14 @@ class _DispatchesTools:
 
         try:
             if decision.retry_grant is not None:
-                # A second run somebody already approved: it goes out with the widening and is
-                # not offered again, because the question has been answered.
+                # An approved second run goes out with the widening and is not offered again.
                 result_data = await self._run_bash(
                     tool_arguments, tool_call_identifier, retry_grant=decision.retry_grant,
                 )
                 yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
                 return
             result_data = await self._run_bash(tool_arguments, tool_call_identifier)
-            # A command the operating system refused is not a finished command. The first run was
-            # confined and could not have been otherwise, so whatever it managed before the wall
-            # it did inside the box, and offering to run it again with more reach is safe to put
-            # to whoever decides for this session.
+            # A refused command is not a finished one, and its first run was confined, so a retry is safe to offer.
             denial = self._sandbox_denial(result_data, policy)
             if denial is not None:
                 verdict, grant = await self.decide_retry(self.retry_gate(
@@ -818,12 +667,7 @@ class _DispatchesTools:
         return _maybe_json(result)
 
     def _sandbox_denial(self, result_data: Any, policy: CallExecutionPolicy):
-        """Whether a finished command looks like the operating system stopped it.
-
-        Never for a remote command: that ran on another machine, where this machine's
-        confinement had no say, so an `Operation not permitted` there is the remote host's
-        answer and widening anything here would not change it. Never for a backgrounded one
-        either, which has not finished and has no exit code yet."""
+        """Whether a finished command looks like the operating system stopped it. Never remote, never backgrounded."""
         if policy.is_remote or not isinstance(result_data, dict):
             return None
         if result_data.get("code") == "bash_started":
@@ -844,14 +688,7 @@ class _DispatchesTools:
     def _confinement_refusal(
         self, resolved: str, policy: CallExecutionPolicy, *, writing: bool,
     ) -> str:
-        """Why the confinement refuses this path, or "" when it does not.
-
-        The file tools run in the worker process, where no operating-system sandbox applies, so
-        the profile that confines a shell command is applied here by hand. Without it the box
-        would hold for `bash` and not for `write_file`, which is a boundary with a door in it.
-
-        A remote location is somebody else's machine and this profile says nothing about it.
-        """
+        """Why the confinement refuses this path. The file tools run in-process, so the profile is applied by hand."""
         if policy.is_remote or not resolved:
             return ""
         profile = tool_context.current().sandbox
@@ -883,12 +720,7 @@ class _DispatchesTools:
         if refusal:
             yield Error(id=tool_call_identifier, code="outside_confinement", message=refusal, tool=tool_name)
             return
-        # Image files are ingested natively: the tool result carries structured
-        # metadata (mime, dimensions, size), and when the model has vision the
-        # pixels ride along as a data URI on the event under `model_image` —
-        # a model-facing side channel _run_one_tool strips before the event
-        # reaches the UI, then attaches to the conversation after the tool
-        # block as an image-bearing reminder.
+        # Images are ingested natively, their pixels riding a side channel the UI never sees.
         if Path(file_path).suffix.lower() in file_tools.IMAGE_FILE_SUFFIXES:
             result, image_data_uri = await asyncio.to_thread(
                 file_tools.read_image_file,
@@ -913,9 +745,7 @@ class _DispatchesTools:
             limit,
         )
         result_data = _maybe_json(result)
-        # Record the resolved path and hash — keyed by location so the same
-        # path on two hosts never collides — so edit_file/write_file can
-        # reject stale edits.
+        # Record path and hash, keyed by location, so an edit against a stale read is rejected.
         if isinstance(result_data, dict):
             sha256 = result_data.get("sha256")
             resolved_path = result_data.get("path")
@@ -935,8 +765,7 @@ class _DispatchesTools:
         query = str(tool_arguments.get("query", ""))
         top_k = int(tool_arguments.get("top_k", 10) or 10)
         reindex = bool(tool_arguments.get("reindex", False))
-        # search_code indexes a local directory; a remote location has no local root to index, so
-        # it reports that rather than pretending. The default (local) location is the working tree.
+        # search_code indexes a local directory, so a remote location reports that rather than pretending.
         root = resolved_location.base_directory if resolved_location is not None else "."
         if resolved_location is not None and resolved_location.is_remote:
             result: dict = {"ok": False, "error": "search_code runs only on the local codebase; use bash with ripgrep on a remote location."}
@@ -949,14 +778,7 @@ class _DispatchesTools:
         self, tool_name: str, tool_call_identifier: str, coroutine, *, started_code: str,
         sync_window: float, background: bool,
     ) -> AsyncIterator[TurnEvent]:
-        """Run an expectedly-slow tool's work as a background job with a synchronous window
-        (the proven bash/web_search pattern). A call that finishes within ``sync_window``
-        seconds returns its result inline — the common, fast case; one still running past it
-        (or ``background=True``, which skips the wait entirely) backgrounds and its result is
-        delivered later via the resume pump, so the turn is never blocked. ``sync_window`` is
-        the model's ``timeout`` tool parameter — a non-killing inline-wait window, the same
-        meaning bash gives ``timeout`` — scaled by the tuning knob here. The coroutine must
-        return the tool-result payload as a string (JSON or plain text)."""
+        """Run a slow tool as a background job with a synchronous window, so the fast case returns inline."""
         job_id = self._background.spawn(
             tool_name, coroutine, tool_call_identifier=tool_call_identifier,
         )
@@ -1006,11 +828,7 @@ class _DispatchesTools:
         if refusal:
             yield Error(id=tool_call_identifier, code="outside_confinement", message=refusal, tool=tool_name)
             return
-        # A download is a tracked-tree write, so it takes the same filesystem lease as an
-        # edit — even when it backgrounds. The lease is held until the write completes: on an
-        # inline finish the `finally` releases it; on a background finish it is transferred to
-        # the job's done-callback (the local token is cleared so `finally` does not double
-        # release). A remote destination mutates the remote host, so no local lease applies.
+        # A download is a tracked-tree write, so it holds the lease until it completes, background or not.
         lease_token = ""
         if not policy.is_remote:
             try:
@@ -1059,8 +877,7 @@ class _DispatchesTools:
             return
         file_key = (resolved_location.uri, resolved)
         lease_token = ""
-        # Filesystem leases guard this machine's files; a remote edit mutates
-        # the remote host, so no local lease applies there.
+        # Leases guard this machine's files, so a remote edit takes none.
         if not policy.is_remote:
             try:
                 lease_token = await self._acquire_filesystem_lease(
@@ -1118,8 +935,7 @@ class _DispatchesTools:
                     if isinstance(content, str):
                         self._read_files[file_key] = file_tools.content_sha256(content)
                 else:
-                    # edit_failed_validation or other non-commit codes:
-                    # discard stale hash so model must re-read before next edit
+            # Not a commit: discard the stale hash so the model must re-read before editing again.
                     self._read_files.pop(file_key, None)
             yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
         finally:
@@ -1158,15 +974,7 @@ class _DispatchesTools:
         decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
-        """A cancellable inline wait: the model's own polling primitive. It waits up to
-        ``seconds`` but wakes the instant the turn is asked to stop, so a Stop is never
-        blocked. No model round-trip happens during the wait, so polling is cheap.
-
-        Non-blocking by construction: it awaits *this runtime's own* ``_abort_event`` with a
-        timeout — a cooperative suspension that yields the event loop back to every other
-        session and background job. It must never become a blocking ``time.sleep`` (which
-        would freeze the whole server) or a threaded sleep: only this one session's turn
-        pauses; the harness and all other sessions keep running."""
+        """A cancellable inline wait: the model's polling primitive, which wakes the instant a Stop arrives."""
         raw_seconds = tool_arguments.get("seconds", 0)
         try:
             seconds = max(0.0, float(raw_seconds))
@@ -1199,15 +1007,9 @@ class _DispatchesTools:
         decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
-        # ask_user's answers are the preflight "decision" — the question was
-        # surfaced as a gate before the batch ran, and the human answered it (or
-        # declined) as an input-required response.
+        # ask_user's answers are its preflight decision: the question was gated before the batch ran.
         answers = decision.answers
-        # The user dismissed the whole prompt without answering (the decline
-        # sentinel from resolve_question). Report it to the model and end the
-        # turn cleanly — do not proceed on a guess. Setting the abort event lets
-        # the tool finish recording its result first, then the stream loop stops
-        # the turn; background work the user chose to keep running is untouched.
+        # Dismissed without answering: tell the model and end the turn rather than proceed on a guess.
         if isinstance(answers, dict) and answers.get("__declined__"):
             result = compact({
                 "code": "user_declined",
@@ -1230,8 +1032,7 @@ class _DispatchesTools:
         decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
-        # Permission was resolved by the preflight pass; an approved MCP call reaches here and
-        # runs.
+        # Permission is resolved; an approved MCP call runs.
         event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
         async def on_mcp_event(event: dict[str, Any]) -> None:
@@ -1245,13 +1046,7 @@ class _DispatchesTools:
         ))
         try:
             while True:
-                # Once the MCP call has finished, flush any events still buffered
-                # on the queue and stop. Draining synchronously with get_nowait()
-                # — rather than racing a fresh getter against the already-done
-                # call_task — is what avoids a busy-spin: asyncio.wait returns
-                # instantly on the completed call_task, so a queued getter would be
-                # cancelled before it could drain the item, leaving the queue
-                # non-empty and the loop re-arming a getter forever, pinning a core.
+                # Once the call is done, drain what is buffered with `get_nowait` rather than racing a fresh getter.
                 if call_task.done():
                     while not event_queue.empty():
                         yield Mcp(id=tool_call_identifier,
@@ -1274,8 +1069,7 @@ class _DispatchesTools:
                         event=get_task.result(),
                     )
                 else:
-                    # get_task is still pending (call_task completed first); cancel
-                    # only the getter — never call_task, which the loop re-checks.
+                # Cancel only the getter; the loop re-checks `call_task`.
                     get_task.cancel()
             result_data = await call_task
         except Exception as exception:
@@ -1307,10 +1101,7 @@ class _DispatchesTools:
         identifiers = self._task_manager.add_tasks(task_definitions)
         self._session_dirty = True
         result_message = f"Created {len(identifiers)} task{'s' if len(identifiers) != 1 else ''}."
-        # A normal tool_result — the task list is the model's own bookkeeping, so it
-        # completes through the one universal completion path like any other tool. The
-        # full task snapshot goes to both the model (it should see the authoritative
-        # plan inline) and the UI task panel.
+        # An ordinary tool result: the task list is the model's own bookkeeping, and both sides see it.
         yield ToolResult(id=tool_call_identifier,
             name=tool_name,
             result={
@@ -1338,9 +1129,7 @@ class _DispatchesTools:
             "message": result_message,
             "tasks": self._task_manager.to_dict_list(),
         }
-        # What went wrong, per update, rather than one sentence about the task list. An update
-        # naming a key this does not read used to be indistinguishable from one naming a task that
-        # does not exist, and both read as "No matching tasks found."
+        # What went wrong per update, so a bad key is distinguishable from a task that does not exist.
         if complaints:
             result["rejected"] = complaints
             result["status"] = ToolStatus.ERROR.value if not updated_ids else result.get("status", "")
@@ -1363,10 +1152,7 @@ class _DispatchesTools:
             return {"code": "goal_update_error", "status": ToolStatus.ERROR.value, "message": message}
 
         if status == "active":
-            # Both halves are demanded at the point of setting, because this is the only moment
-            # the goal can be stated against a fresh reading of the request. An outcome recorded
-            # without the conditions that would prove it is one that gets audited later against
-            # whatever was built in the meantime, which is how a goal quietly shrinks to fit.
+        # Both halves demanded at once: this is the only moment the goal meets a fresh reading of the request.
             if not goal:
                 result = refuse("Say what the goal is: the end state, in one sentence.")
             elif not requirements:
@@ -1375,11 +1161,7 @@ class _DispatchesTools:
                     "each one something you can check."
                 )
             else:
-                # The allowance carries across a replacement. It bounds how long the session
-                # runs without anybody looking at it, which is a fact about the stretch and not
-                # about any one wording of the goal — otherwise restating the goal each time
-                # would buy an unbounded run, and the ceiling would bind only an agent that had
-                # not thought to restate it.
+        # The allowance carries across a replacement, or restating the goal would buy an unbounded run.
                 self.write_goal(Goal(
                     text=goal,
                     requirements=requirements,
@@ -1391,8 +1173,7 @@ class _DispatchesTools:
             if current is None:
                 result = refuse("There is no goal to satisfy.")
             elif not evidence:
-                # The audit, made structural. The prompt has always asked for it; asking for it
-                # here is what stops "satisfied" from being assertable on memory alone.
+        # The audit made structural, so "satisfied" cannot be asserted on memory alone.
                 result = refuse(
                     "Say what proves it: for each requirement, what you looked at and what it showed."
                 )
@@ -1426,12 +1207,7 @@ class _DispatchesTools:
         decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
-        """Every peer-session and remote-agent verb.
-
-        One handler because they differ only in which call they make: there is no permission
-        gate to resolve and no location to apply. A peer cannot hold authority this session
-        lacks — the daemon clamps a child against its parent — so creating one grants nothing
-        that asking for it would not, and gating it would be ceremony rather than control."""
+        """Every peer-session verb, in one handler: they differ only in which call they make."""
         from frank.runtime.tools import sessions
 
         # The create tool is built per-runtime, with the installed profiles baked into its
@@ -1469,10 +1245,7 @@ class _DispatchesTools:
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         requested_turn_id = tool_arguments.get("turn_id", "")
-        # A web_search/background-bash handle ("search-…"/"bg-…") is not an A2A
-        # task — its results are delivered automatically, never read. Catch the
-        # mistake with a redirect instead of a bare "task_not_found" that just
-        # invites the model to retry the same wrong poll.
+        # A search or background-bash handle is not an A2A task, so redirect rather than answer task_not_found.
         background_kind = _background_handle_kind(requested_turn_id)
         if self._turn_reader is None:
             result = {"code": "read_turn_unavailable", "message": "Reading turns is not available in this session."}
@@ -1503,11 +1276,7 @@ class _DispatchesTools:
         decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
-        # Run the model's Python in the killable sandbox, bridging each primitive to a trusted action
-        # on the chosen surface. Reading and acting are one program: find_one/find_many rank the live
-        # surface into elements, and an acting primitive targets an element by the id a find returned
-        # or by a fresh query resolved the same way. The surface does its own OS-permission preflight;
-        # what the script may change is decided at the tool call, not here.
+        # Run the model's Python in the killable sandbox, bridging each primitive to the chosen surface.
         from frank.computer import control, retrieval, surface as surface_module
         from frank.computer.surface import message_loader
 
@@ -1517,10 +1286,7 @@ class _DispatchesTools:
         if not script.strip():
             yield ToolResult(id=tool_call_identifier, name=tool_name, result={"ok": False, "error": "control_screen needs a script to run."})
             return
-        # A target is a window or a tab, named by the identifier its platform minted. It replaces
-        # the old `surface` + `app` pair: `surface` made the model choose an implementation, and an
-        # application's display name is not an identity — with two copies open it resolved to
-        # whichever was found first, which is a bug the model could not even describe.
+        # A target is a window or tab by the identifier its platform minted, since a display name is not an identity.
         target_id = str(tool_arguments.get("target", "") or "").strip()
         if not target_id:
             yield ToolResult(id=tool_call_identifier, name=tool_name, result={
@@ -1531,15 +1297,7 @@ class _DispatchesTools:
             return
         target = target_registry.find_target(target_id)
         if target is None:
-            # What is *not* said here matters. This used to assert "it was closed, or it never
-            # opened" about any target it could not find — and the enumeration behind it only saw
-            # the current Space, so on an ordinary machine fifty-six of seventy-four open windows
-            # were pronounced dead. A cause nobody checked is worse than no cause: the model
-            # passed it on to the user as fact.
-            # When the name is an application's rather than a window's, say which windows that
-            # application has instead of leaving the whole list to be re-read. A model that asked
-            # for "RStudio" is one word away from the right answer, and handing back twenty rows
-            # invites it to guess again.
+            # Say what is known rather than assert a cause: an unfound target may simply be on another Space.
             listing = target_registry.list_targets()
             same_app = [place for place in listing if place.app.lower() == target_id.strip().lower()]
             if same_app:
@@ -1561,9 +1319,7 @@ class _DispatchesTools:
             return
 
         control_message = message_loader("control")
-        # The vocabulary this call may use: what the surface implements, less the state-changing
-        # half unless this call was approved to change something. One set, used both to tell the
-        # script what exists and to refuse anything else at the bridge.
+        # What this call may use: the surface's primitives, less the mutating half unless it was approved.
         from frank.runtime.permissions import MUTATING_SCREEN_PRIMITIVES
 
         permitted_primitives = set(surface.primitives())
@@ -1572,40 +1328,19 @@ class _DispatchesTools:
         known_ids: dict[str, dict[str, str]] = {}   # id -> {id, name, role, context}, from find_* results
         changed: list[dict[str, Any]] = []
         read_failures: list[dict[str, Any]] = []    # structured payloads a failed read produced
-        # Everything the script actually did, in order. A script that fails on its fourth line
-        # used to come back with one error and nothing else, so the model could not tell which of
-        # the first three had happened — and rewrote from the top, re-typing into a field it had
-        # already filled. The dispatcher watches every call go past to compute `changed`; it was
-        # keeping the last entry and discarding the rest.
+        # Everything the script did, in order, so a failure on line four says which of the first three happened.
         ran: list[dict[str, Any]] = []
-        # One place, three questions, so they cannot disagree. They used to be three literals, and
-        # they did disagree: `caret` was listed as needing focus and never listed as watched, so
-        # the branch that would have focused it was unreachable from the day it was written.
-        # Verbs that take an element as their first argument and change it. `evaluate`, `navigate`
-        # and the tab verbs change state without naming an element, so they are not here.
+        # One place, three questions, so the verb sets cannot disagree about what needs focus or watching.
         element_mutating_verbs = frozenset({"click", "type", "choose", "upload", "drag"})
         # Verbs whose first argument is an element to resolve, changed or not.
         targeting_verbs = element_mutating_verbs | frozenset({"read", "hover", "scroll", "caret", "select", "focus"})
-        # Verbs worth bracketing with a glance, because they can change what is on screen.
-        #
-        # Three that the permission layer gates are deliberately absent, and it is worth saying
-        # why rather than leaving the two lists looking like a mistake. `new_tab` and `close_tab`
-        # change the set of tabs, which is already reported: the dispatcher diffs the target list
-        # around the whole script and attaches what moved. `evaluate` returns the value of the
-        # expression it ran, which is a better account of what it did than a glance could give,
-        # and it is the primitive most often used simply to *read* a page — bracketing it would
-        # put two extra surface reads around every one of those.
+        # Verbs worth bracketing with a glance. The tab verbs and `evaluate` report themselves, so they stay out.
         watched_verbs = element_mutating_verbs | frozenset({"press", "navigate", "caret", "select"})
         # Verbs that replace the document wholesale, whose diff is a summary rather than a list.
         navigating_verbs = frozenset({"navigate"})
 
         def _facets(clickable: Any, name: str, context: str) -> dict:
-            """The narrowing a caller asked for. Omitted means *no opinion*, never `False`.
-
-            `clickable` is deliberately tri-state. `True` keeps only what can be activated,
-            `False` keeps only what cannot, and leaving it out searches everything — which is the
-            right thing to do when you are unsure, and is why it defaults to `None` rather than to
-            either boolean."""
+            """The narrowing a caller asked for. `clickable` is tri-state: omitted means no opinion, never `False`."""
             facets: dict = {}
             if clickable is not None:
                 facets["clickable"] = bool(clickable)
@@ -1616,45 +1351,7 @@ class _DispatchesTools:
             return facets
 
         def _matching(documents: list, facets: dict) -> list:
-            """The documents a facet admits, narrowed before anything is ranked.
-
-            Narrowing first rather than filtering a shortlist afterwards is the whole point.
-            Ranking inside the facet is worth 12.9% of top-1 accuracy on the browser surface
-            (95% interval [12.0%, 13.7%]) against not narrowing at all, and 2.0% [1.7%, 2.4%]
-            against narrowing a shortlist — which could report "no match" on a page of six
-            hundred buttons whenever none of them reached the top eight.
-
-            The embedding cannot do this itself. Same-role elements sit 0.134 closer in cosine
-            than different-role ones — real, and far too weak to isolate one kind of control from
-            the 222 others a median browser element shares its role with. Hence a set operation
-            rather than words appended to the query.
-
-            There used to be a `role` facet here, and it was withdrawn on evidence. It compared
-            against the platform's raw spelling (`AXRadioButton`) while everything the model is
-            *shown* says "tab" — so a caller who wrote `role="tab"`, having read exactly that off
-            a previous result, matched nothing. In one recorded session six consecutive faceted
-            lookups failed that way, and the model, given only "Nothing on the current surface
-            matched", concluded that the application's accessibility labels were unstable.
-
-            `clickable` replaces it, and it is worth +4.7% [+2.7%, +7.1%] across six applications
-            and 338 queries — 84% of what an oracle-perfect role facet achieves, from a single
-            yes or no. It asks about the caller's own intent rather than about a vocabulary they
-            were never given, and it is a fact the platform reports rather than a taxonomy anyone
-            invented. **It is deliberately the only facet of its kind, and a role-shaped one is
-            not to be reintroduced.**
-
-            What `clickable` does not do is name a control. This docstring used to claim it asks
-            "am I after something I can press, or after text", and on a native window that is
-            untrue: a text area reports `clickable: true` exactly like a button, so `True` admits
-            both and `False` admits neither — it selects static labels. That gap is real and is
-            accepted rather than patched. A `kind`/`role` facet was tried again here and removed
-            again: it is a hard set-membership filter that runs *before* the ranker and never
-            reaches the embedding, so a caller who spells the taxonomy wrong is told the screen
-            does not contain the thing it is plainly showing — the exact failure that withdrew
-            `role`, and one a synonym table postpones rather than fixes. When a query cannot
-            reach an element, the answer is a better key or a better ranker, not a filter in
-            front of them.
-            """
+            """The documents a facet admits, narrowed before ranking, which is worth 12.9% of top-1 accuracy."""
             if not facets:
                 return documents
 
@@ -1674,35 +1371,13 @@ class _DispatchesTools:
 
             return [document for document in documents if admits(document)]
 
-        # What has already been asked of the screen and what each ask turned up, as (intent
-        # vector, element id). Kept on the runtime rather than in this call, because the behaviour
-        # it catches happens *between* calls.
+        # What has been asked of the screen and what it turned up, kept on the runtime since this spans calls.
         asked: list[tuple[Any, str]] = getattr(self, "_screen_queries_asked", [])
         setattr(self, "_screen_queries_asked", asked)
         rephrased: list[str] = []
 
         def _note_if_rephrasing(query: str, hits: list) -> None:
-            """Notice a search going in circles, and say so once.
-
-            The failure this exists for is not a retrieval failure. In one recorded session, eight
-            screen calls to draw a single plot, four of them the same request in other words — "R
-            console input", "R prompt input area", "Cursor at row", "text entry area" — each
-            landing on the element the one before it had already found. The guidance said not to
-            do this and the guidance did not reach it, so the observation is made where the
-            behaviour happens rather than in a paragraph read once at the start.
-
-            Two conditions, and it took measuring to learn that neither alone will do. **Likeness
-            of intent** is necessary — comparing the words themselves catches nothing, because a
-            rephrasing is by definition new words, while in the model's own space one intent
-            restated scores well clear of two different steps. It is also nowhere near sufficient:
-            on 113 sequences that were simply a task moving from one control to the next, likeness
-            alone fired on 76% of them, and no threshold repairs that. **Landing on the same
-            element** is what makes it true rather than plausible: the same answer from two
-            wordings is the model demonstrating that its wordings were interchangeable, not a
-            guess about what it meant.
-
-            Together, across 127 rephrasing sequences and 113 honest ones: everything caught, 4%
-            false, and noticed by the second query rather than the fourth."""
+            """Notice a search going in circles and say so once, since rephrasing the same query is not retrieval failing."""
             top = hits[0].id if hits else ""
             if not top or rephrased:
                 return
@@ -1722,18 +1397,12 @@ class _DispatchesTools:
             # One call, one meaning, both surfaces: the target says where to read.
             raw = surface.documents(target_id)
             if not raw.get("ok"):
-                # The script sees a raisable error, and the *structure* survives to the result.
-                # This used to be `RuntimeError(raw["error"])`, which threw away everything but
-                # the sentence — including, when a window had gone, the current target list that
-                # was the one thing the model needed in order to recover.
+            # The script sees a raisable error and the structure survives to the result, target list included.
                 read_failures.append({key: value for key, value in raw.items() if key != "ok"})
                 raise RuntimeError(raw.get("error", "Could not read the screen."))
             documents = raw.get("documents", [])
             candidates = _matching(documents, facets or {})
-            # A facet that admits nothing falls back to the whole surface. Narrowing is a
-            # preference, not a precondition: the alternative is what the withdrawn `role` facet
-            # did, which was to answer "nothing matched" about a surface that plainly held the
-            # thing being asked for, and to do it four times in a row.
+            # A facet admitting nothing falls back to the whole surface: narrowing is a preference, not a precondition.
             if not candidates and documents:
                 logger.info("screen find: facets %r admitted nothing; ranking the whole surface", facets)
                 candidates = documents
@@ -1752,13 +1421,7 @@ class _DispatchesTools:
                     )) from None
             else:
                 hits = index.search(query, top_k=limit, floor=floor)
-            # What the model actually asks for, recorded so the index can be tuned against real
-            # queries instead of invented ones. Every encoding decision in
-            # ``the-input-is-the-ceiling`` rests on a guess about how often a query names a
-            # visible label, a fragment of one, or where a link goes — and that guess is the one
-            # assumption in the whole investigation with no measurement behind it. The winning
-            # element's own words are logged beside the query, because a query is only
-            # interpretable next to what it found.
+            # What the model actually asks for, so the index can be tuned against real queries rather than invented ones.
             logger.info(
                 "screen find: surface=%s query=%r results=%d top=%r",
                 surface_name, query, len(hits), (hits[0].payload.get("name", "") if hits else ""),
@@ -1766,10 +1429,7 @@ class _DispatchesTools:
             _note_if_rephrasing(query, hits)
             return hits
 
-        # How much of what appeared is spelled out. Everything new is the most useful thing a
-        # model can learn, and "everything new, in full" is a whole document when the action
-        # happened to navigate — one Enter key returned an entire help page, truncated mid-payload.
-        # The count is always exact; this is only how many are described.
+        # How much of what appeared is spelled out, since a navigation makes "everything new" a whole document.
         appeared_detail_limit = 12
 
         def _hydrate(ids: frozenset[str]) -> dict:
@@ -1784,16 +1444,7 @@ class _DispatchesTools:
             return report
 
         async def _record_change(name: str, args: list, before: surface_module.Glance):
-            """What one action changed. It observes and it does not act.
-
-            It used to do both. An action that reported no change was silently retried — after
-            force-activating the application, stealing the user's screen — with `keywords` dropped
-            on the floor, so a retried `type(mode="insert")` became a *replace* and a retried
-            `press` lost its modifiers. Then it deleted the `changed: []` it had just written,
-            whether or not the retry accomplished anything, because the test was `isinstance(
-            retried, dict)` and `perform` always returns a dict. A failed fallback reported as
-            success. Focus now lives in the primitive that needs it, where it can be honest about
-            what it did, and this function's only job is to say what moved."""
+            """What one action changed. It observes and does not act, so nothing is retried behind the caller's back."""
             after = await asyncio.to_thread(surface.glance, target_id)
             moved = surface_module.changes_between(before.facts, after.facts)
             appeared = surface_module.appeared_between(before, after)
@@ -1803,9 +1454,7 @@ class _DispatchesTools:
             record.update(moved)
             navigated = name in navigating_verbs or "url" in moved
             if navigated:
-                # The document was replaced, so "everything new" is the whole of it. Reporting the
-                # new place and its size is what a person would say; listing every element in it
-                # is what the general rule would do, and it is absurd here.
+                # The document was replaced, so the new place and its size is what a person would say.
                 record["navigated"] = {
                     "title": after.facts.get("title", ""),
                     "url": after.facts.get("url", ""),
@@ -1815,13 +1464,10 @@ class _DispatchesTools:
             elif appeared:
                 record.update(_hydrate(appeared))
             if not moved and not appeared:
-                # The one honest answer when nothing observable happened, and the signal the model
-                # needs: the click missed, or the pane had not loaded — rather than the element
-                # being named something else.
+            # The honest answer when nothing observable happened: the click missed, or the pane had not loaded.
                 record["changed"] = []
             if not target.visible:
-                # Acting off-screen works (every event is posted to the process, not the screen),
-                # but a person deserves to be told their other desktop just moved.
+            # Acting off-screen works, but a person deserves to be told their other desktop just moved.
                 record["visible"] = False
             return record
 
@@ -1838,21 +1484,7 @@ class _DispatchesTools:
             return (record.get("name", ""), record.get("role", ""), record.get("context", ""))
 
         def _candidates(records: list) -> str:
-            """The competing elements, as data rather than as a sentence about data.
-
-            This used to hand-build `  - id=e12, name='Save', role='button'` — a format invented
-            here and nowhere else, which the model then had to parse back into fields by reading
-            punctuation. Everything else it receives from this tool is JSON through `compact`,
-            including the very `find_*` results these records came from, so the one place that
-            described elements in prose was the one place it could not simply read them.
-
-            Same key order and same field names as a `find_*` hit, so the answer to "which of
-            these did you mean" is written in the vocabulary the question arrived in.
-
-            `parent` and `bounds` are carried because they are the fields that actually separate these
-            candidates. Elements reach this function precisely when their *words* do not tell them
-            apart, so answering with name and role alone poses the question in the one vocabulary
-            already known to be useless here."""
+            """The competing elements as data rather than as a sentence about data, so nothing is parsed back out."""
             return compact([
                 {field: record.get(field) for field in ("id", "name", "role", "context", "parent", "bounds")
                  if record.get(field)}
@@ -1861,11 +1493,7 @@ class _DispatchesTools:
 
         def find_many(query: Any, limit: int = 8, clickable: Any = None,
                       near: str = "", name: str = "", context: str = "", **_: Any) -> list:
-            # The limit is the caller's, bounded by what any caller may ask for. There used to be
-            # an `all=True` beside it that returned the entire ranking and ignored the limit
-            # outright: `find_many("Search", limit=20, all=True)` answered with 590 elements and
-            # 1.5MB, which overran the model's context window and ended the turn. Two parameters
-            # that contradict each other are not two features.
+            # The caller's limit, bounded by what any caller may ask for.
             tuning = active_tuning()
             wanted = max(1, min(int(limit), tuning.amount(Tunable.find_many_ceiling)))
             floor = tuning.ratio(Tunable.find_relevance_floor)
@@ -1873,15 +1501,7 @@ class _DispatchesTools:
             records = [_record(hit) for hit in _rank(str(query), wanted, floor, facets, str(near))]
             for record in records:
                 _register(record)
-            # Recorded whether or not the script does anything with the return value. A model that
-            # wanted these in its result had to wrap the call in `print`, which stringifies a list
-            # of dicts into a Python repr it then has to parse back out of stdout — records handed
-            # to it as records, returned to it as prose.
-            #
-            # Only what was *found* is recorded, not what was returned: the script already holds
-            # the records, and `ran` is a trace of the work rather than a second copy of it. The
-            # copy is what the trace used to be, and one script's `ran` reached 1.6MB — 81% of the
-            # result that killed a turn — restating elements the same result carried already.
+            # Recorded whether or not the script keeps the value, so nothing has to be parsed back out of stdout.
             ran.append({"find_many": str(query), "matched": len(records),
                         "ids": [record["id"] for record in records]})
             return records
@@ -1889,50 +1509,20 @@ class _DispatchesTools:
         def find_one(query: Any, clickable: Any = None, near: str = "", name: str = "",
                      context: str = "", **_: Any) -> dict:
             facets = _facets(clickable, name, context)
-            # No floor: this method's own abstention is the margin between first and second, fitted
-            # over 2,263 queries against the *full* ranking, and a floor applied underneath it
-            # would silently change what that margin is measured on.
+            # No floor: the abstention below is a margin fitted over the full ranking, which a floor would change.
             scored = [(_record(hit), float(hit.score or 0.0))
                       for hit in _rank(str(query), 8, 0.0, facets, str(near))]
             if not scored:
                 raise RuntimeError(control_message("no_match", query=str(query)))
             top, top_score = scored[0]
-            # How many rivals the top match is weighed against, and how many come back when it
-            # cannot be chosen between them. One number, because they are one question — the
-            # shortlist a caller would have to read — and it was written as a bare 5 in two places
-            # that had no way to disagree yet.
+            # How many rivals the top match is weighed against, and how many come back when it cannot be chosen.
             shortlist = active_tuning().amount(Tunable.find_candidates)
-            # Score-competitive: within the shortlist and at least 90% of the top score. Among those,
-            # a twin of the top by (name, role, context) means the query cannot pick one — raise.
+            # Score-competitive: within the shortlist and at least 90% of the top. A twin there means raise.
             competitive = [record for record, score in scored[:shortlist] if top_score <= 0 or score >= 0.9 * top_score]
             twins = [record for record in competitive[1:] if _identity(record) == _identity(top)]
             if twins:
                 raise RuntimeError(control_message("ambiguous_match", query=str(query), candidates=_candidates([top, *twins])))
-            # Twins caught the case where two elements are *written* the same. This catches the
-            # larger one: the ranker had no real preference and the answer is a coin toss the
-            # caller would never hear about. The signal is the gap between first and second as a
-            # fraction of the first — measured over 2,263 queries on twelve live applications, a
-            # gap below the margin catches 65% of all wrong answers while costing 5.4% of the
-            # right ones, taking precision from 76.3% to 89.8%. The absolute score is the weaker
-            # test: at the same cost it catches a third as many, because what a score means varies
-            # by surface while a margin does not.
-            #
-            # It answers with the candidates rather than a sentence, because the answer is almost
-            # always among them: recall at eight is 95–99% on every degraded query family, so the
-            # element wanted is nearly certainly in this list and the caller has only to say which.
-            # Reaching for a different wording instead is the one wrong move here, which is why the
-            # message says so.
-            #
-            # The gap between first and second, in units of the shortlist's own spread.
-            #
-            # It used to be the gap as a *fraction of the top score*, which was a sound reading
-            # while the score was a cosine: positive, bounded, and meaning the same thing from one
-            # call to the next. The ranking now adds several standardised signals, so the score is
-            # comparable within one ranking and arbitrary between two, and a fraction of it is not
-            # a quantity. Dividing by the spread of the candidates being weighed keeps the test
-            # inside a single ranking, where it is well defined however the signals are combined.
-            #
-            # Refitted with the ranker rather than carried across, as the tunable's own note asks.
+            # Where the ranker had no real preference: the gap to second, as a fraction of the spread, abstains.
             runner_up = scored[1][1] if len(scored) > 1 else 0.0
             spread = statistics.pstdev([score for _record, score in scored]) if len(scored) > 1 else 0.0
             margin = (top_score - runner_up) / spread if spread > 1e-9 else 1.0
@@ -1942,45 +1532,18 @@ class _DispatchesTools:
                     candidates=_candidates([record for record, _ in scored[:shortlist]]),
                 ))
             _register(top)
-            # The element it settled on, named rather than reproduced — the script has the record
-            # itself, and a single one of these can run to tens of thousands of characters when the
-            # surface is a page of articles.
+            # The element it settled on, named rather than reproduced: one record can run to tens of thousands of characters.
             ran.append({"find_one": str(query),
                         "matched": {key: top.get(key) for key in ("id", "role", "name") if top.get(key)}})
             return top
 
         async def wait_for(query: Any, seconds: float = 5.0, clickable: Any = None, near: str = "",
                            name: str = "", context: str = "", **_: Any) -> dict:
-            """Poll a find until it matches, and return the element. Raise if it never does.
-
-            A screen is not a data structure — it builds, it animates, a pane arrives a beat after
-            the click that asked for it. Every real script needs to say "once this exists", and
-            until now none could: `import time` falls outside the safe module set, so any script
-            that polled was classified `unknown` and refused. The shape had to be split across
-            tool calls, which is why scripts were three lines long.
-
-            **This can now wait at all, and that is a weaker claim than it sounds.** It polls a
-            find and returns the first non-empty answer, so it waits exactly as well as
-            `find_many` refuses. Before the relevance floor, `find_many` refused nothing — the
-            ranker always ranked *something* — so the first poll always won and `waited_in_vain`
-            could only fire on a surface with no elements at all. One recorded script asked for
-            `"OpenAI"` on a page that had never heard of it, was handed a link reading "Your Home
-            Timeline", and carried straight on as though its wait had succeeded.
-
-            The floor fixes that case and does not fix the general one. Measured on 596 elements
-            of a real page, paraphrased queries for present things scored 0.48–0.75 while queries
-            for plainly absent things reached 0.59: the distributions overlap, so a wait for
-            something that never arrives can still be satisfied by a confident wrong match. What
-            this reliably does now is not return *noise*; what it still cannot do is prove absence.
-            A script that must be certain should check a property of what it found — its role, its
-            text, where it sits — rather than trusting that the wait succeeding means the thing
-            arrived."""
+            """Poll a find until it matches and return the element, since a screen builds and animates."""
             deadline = time.monotonic() + max(0.0, float(seconds))
             interval = active_tuning().settle_poll()
             while True:
-                # By keyword, because these are the caller's facets and the order they sit in is
-                # `find_many`'s business, not this function's. Passed positionally, adding one
-                # parameter there silently re-aimed every one of them here.
+                # By keyword: the facet order is `find_many`'s business, and positional would re-aim every call.
                 hits = await asyncio.to_thread(find_many, query, 1, clickable=clickable,
                                                near=near, name=name, context=context)
                 if hits:
@@ -1993,22 +1556,12 @@ class _DispatchesTools:
             if not args:
                 return args
             target = args[0]
-            # The element a find returned, passed whole. The most reliable way to act on a result,
-            # because it cannot be mistaken for anything else — and the reason the tool description
-            # now says so, since a model that did not know this reached for the id string instead.
+            # The element a find returned, passed whole — the most reliable way to act on a result.
             if isinstance(target, dict) and "id" in target:
                 return [target["id"], *args[1:]]
             if not isinstance(target, str) or target in known_ids:
                 return args
-            # An id is an id even when this call has not seen it, so it goes to the surface
-            # untouched — the surface is what resolves ids, and an aria-ref survives re-reading a
-            # page that has not changed. `known_ids` is built per control_screen call, so an id
-            # from an earlier call, or one the script filtered out of a find's results in Python,
-            # was not in it and fell through to the branch below — where it was handed to
-            # `find_one` as a *description*. A model that wrote `screen.click("e1594")` got a
-            # semantic search for the literal text "e1594", which matched several unrelated
-            # elements and refused as ambiguous. It read as the ids being unstable; the ids were
-            # fine, the string was being asked the wrong question.
+            # An id is an id even unseen here, so it goes to the surface, which is what resolves ids.
             if _ELEMENT_ID.fullmatch(target):
                 return args
             if verb in element_mutating_verbs:
@@ -2023,11 +1576,7 @@ class _DispatchesTools:
             return [resolved, *args[1:]]
 
         async def dispatch(name: str, args: list, keywords: dict) -> Any:
-            # What this session may do is enforced by `run_control_script`, which is handed
-            # `permitted_primitives` below and refuses anything outside it before this is
-            # reached. It lives there rather than here because a check in this closure would be
-            # a check every caller had to remember to write, and this is the only one — the
-            # guarantee belongs with the runner that owns the pipe.
+            # What this session may do is enforced by `run_control_script`, which refuses before this is reached.
             if name == "find_many":
                 return await asyncio.to_thread(find_many, *args, **keywords)
             if name == "find_one":
@@ -2036,15 +1585,9 @@ class _DispatchesTools:
                 return await wait_for(*args, **keywords)
             if name in targeting_verbs:
                 args = await asyncio.to_thread(_resolve_target, name, list(args))
-            # An action is bracketed by two cheap observations, so the result can say what
-            # *changed* rather than only what was touched. `acted_on` answered "what did I aim at",
-            # which is the one thing a script already knew; it never answered "did anything
-            # happen", and a script that clicks a tab and then cannot find the field inside it
-            # could not tell a failed click from a slow pane from a differently-named field.
+            # An action is bracketed by two cheap observations, so the result says what changed, not what was touched.
             watched = name in watched_verbs
-            # One glance on each side, not two full reads. Bracketing an action used to cost four
-            # accessibility walks, two of which went through `documents` — which rebuilds the
-            # id-to-element map, so merely observing re-pointed every id the script was holding.
+            # A glance on each side, not a full read: reading rebuilds the id map and re-points every held id.
             before = await asyncio.to_thread(surface.glance, target_id) if watched else surface_module.Glance()
             outcome = await asyncio.to_thread(surface.perform, target_id, name, list(args), keywords)
             if isinstance(outcome, dict):
@@ -2059,8 +1602,7 @@ class _DispatchesTools:
                         changed.append(record)
                         step.update({key: value for key, value in record.items() if key != "action"})
                 ran.append(step)
-                # Hand the script the useful value directly: evaluate's result or read's text is the
-                # value itself (structured and queryable), an action is its confirmation minus `ok`.
+            # Hand the script the useful value: a result or text directly, an action its confirmation.
                 if "result" in outcome:
                     return outcome["result"]
                 if "lines" in outcome:
@@ -2069,21 +1611,17 @@ class _DispatchesTools:
             return outcome
 
         active = tool_context.current()
-        # The baseline the target diff is reported against, taken before the script runs so the
-        # model is told what its own actions did to the world rather than a fresh full listing.
+        # The baseline the target diff is reported against, so the model is told what its own actions did.
         targets_before = target_registry.list_targets()
         result = await control.run_control_script(
             script, dispatch, profile=active.sandbox, workspace=active.workspace,
-            # Only what this surface implements *and* this session may run, so a name it does not
-            # have fails against the surface — which can say what it does have — rather than
-            # silently doing nothing.
+            # Only what this surface implements and this session may run, so a missing name fails against the surface.
             primitives=tuple(sorted(permitted_primitives)),
             # The place the script drives, so the child binds a `screen` already pointed at it.
             target=target_id,
             # Where saved workflows live, so `from workflows.x import y` reaches them.
             import_roots=workflow_registry.import_roots(self._project_directory or active.workspace or ""),
-            # And what those skills' own projects were installed into, so a package that has
-            # dependencies works rather than failing on a name the script never mentioned.
+            # And what those skills installed into, so a package with dependencies works.
             dependency_roots=workflow_registry.dependency_roots(self._project_directory or active.workspace or ""),
             # And where those dependencies keep the shared libraries they were built against.
             library_roots=workflow_registry.library_roots(self._project_directory or active.workspace or ""),
@@ -2092,20 +1630,16 @@ class _DispatchesTools:
             moved = target_registry.difference(targets_before, target_registry.list_targets())
             if moved:
                 result.setdefault("targets", moved)
-            # Whatever a failed read knew, carried out alongside the message the script saw. The
-            # last one wins: it is the state the script actually ended in.
+        # Whatever a failed read knew, carried alongside the message. The last one wins: it is where the script ended.
             for failure in read_failures[-1:]:
                 for key, value in failure.items():
                     result.setdefault(key, value)
         if changed and isinstance(result, dict):
             result.setdefault("changed", changed)
-        # What ran, in order, whether the script finished or stopped part-way. On a failure this
-        # is the difference between "start over and hope" and "carry on from here".
+        # What ran, in order, finished or not: on a failure this is the difference from starting over.
         if ran and isinstance(result, dict):
             result.setdefault("ran", ran)
-        # Said once per call, however many times it was noticed, and only alongside whatever the
-        # script actually returned — this is an observation about how the work is going, not a
-        # failure, and it must not read like one.
+        # Said once per call, and beside what the script returned: this is an observation, not a failure.
         if rephrased and isinstance(result, dict):
             result.setdefault("note", rephrased[0])
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
