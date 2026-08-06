@@ -62,18 +62,14 @@ async def git_status_stream(directory: str, request: Request):
 
         watch_paths = _git_status_watch_paths(directory, payload)
         if not watch_paths:
-            # Waits on the client going away *or* the daemon going down, whichever comes first.
-            # Sleeping only on the client meant a directory with nothing to watch still held the
-            # connection open for up to half a minute past a stop.
+            # Waits on the client going away or the daemon going down, whichever comes first.
             while not await request.is_disconnected():
                 if await _idle(30):
                     return
             return
 
         try:
-            # `stop_event` is why this can be shut down at all: without it the loop is parked in
-            # Rust waiting for a filesystem change that may never come, and no amount of asking
-            # the server to drain reaches it.
+            # The stop event is why this can be shut down at all, since the watch is parked waiting for a change.
             async for changes in awatch(
                 *watch_paths, watch_filter=_GIT_STATUS_WATCH_FILTER, debounce=500,
                 stop_event=state.shutting_down,
@@ -114,9 +110,7 @@ _BROWSER_APP_NAMES = {"chrome": "Google Chrome", "edge": "Microsoft Edge", "brav
 
 @router.post("/browser/enable-remote-debugging")
 async def open_browser_remote_debugging(browser_name: str = "chrome"):
-    """Open the browser's remote-debugging settings page (chrome://inspect/#remote-debugging) so the
-    user can turn the switch on, when the browser tool reports it is off. Opens a page in their
-    browser — nothing else."""
+    """Open the browser's remote-debugging settings page so the user can turn the switch on."""
     from frank.computer.web import REMOTE_DEBUGGING_URL
 
     app_name = _BROWSER_APP_NAMES.get(browser_name, _BROWSER_APP_NAMES["chrome"])
@@ -130,9 +124,7 @@ async def open_browser_remote_debugging(browser_name: str = "chrome"):
 @router.post("/directory/browse")
 async def browse_directory():
     """Open a native folder picker on the local server machine and return an absolute path."""
-    # The native picker blocks until the user chooses or cancels — up to five minutes.
-    # It MUST run off the event loop: on the loop thread it would freeze the entire
-    # server (every request hanging) for as long as the dialog stays open.
+    # The native picker blocks until the user chooses, so it must run off the event loop.
     return await asyncio.to_thread(_open_folder_picker)
 
 
