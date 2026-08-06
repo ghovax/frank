@@ -1,27 +1,4 @@
-"""Per-agent background job runner.
-
-Every agent owns one :class:`BackgroundJobs`. A background job is just an
-``asyncio.Task`` wrapping a coroutine that returns a result string; completion is
-*pushed* onto a queue by the task's done-callback, so the turn loop waits on an
-event rather than polling. This replaces the old poll-driven, process-global
-``TaskRegistry`` machinery.
-
-Two properties this guarantees, both required by the runtime:
-
-* **Isolation.** Each agent owns its jobs. A job that hangs is an unresolved
-  ``asyncio.Task`` belonging to one agent — it cannot block another session, and
-  it never blocks the event loop (nothing awaits it except an abort-responsive,
-  timeout-bounded wait). A job that raises is captured when its result is drained
-  and turned into an error payload, so an exception never propagates into the
-  turn loop or crashes the harness.
-* **Extensibility.** Adding a new kind of background work is one row in
-  :data:`BACKGROUND_PRESENTATION` plus a single ``spawn`` call — no new registry,
-  manager, or dispatch layer.
-
-Producers (``bash``, ``web_search``, and similar long-running tools) reach the
-current agent's runner through :func:`current_background_jobs`, bound for the
-narrow window of the producing call via :func:`bind_background_jobs`.
-"""
+"""Per-agent background job runner, where completion is pushed onto a queue by the task's own callback rather than polled."""
 
 from __future__ import annotations
 
@@ -40,9 +17,7 @@ from frank.base.background_store import STATUS_COMPLETED, STATUS_DELIVERED
 from frank.base.ports import JobStore, MemoryJobStore
 
 
-# Per-kind *presentation* — how a completed job is announced to the model and how
-# in-flight jobs are grouped in the turn context. This is data, not machinery:
-# the concurrency handling below is identical for every kind.
+# Per-kind presentation: how a completed job is announced and how in-flight ones are grouped in the turn context.
 BACKGROUND_PRESENTATION: dict[str, dict[str, Any]] = {
     "bash": {
         "active_context_key": "pending_bash_commands",
@@ -81,13 +56,9 @@ class _BackgroundJobRecord:
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     tool_call_identifier: str = ""
     arguments: dict[str, Any] = field(default_factory=dict)
-    # A detached job has an independent lifecycle (bash with background=true, a web search):
-    # it outlives the turn that started it and Stop must NOT cancel it. A
-    # non-detached job backs a foreground/synchronous call still tied to the turn.
+    # A detached job outlives the turn that started it and Stop must not cancel it.
     detached: bool = False
-    # Fires when the user manually pushes a still-blocking foreground command to the
-    # background: it releases the inline settle wait so the command keeps running
-    # detached instead of holding the turn open (see :meth:`settle_inline`).
+    # Fires when the user pushes a still-blocking command to the background, releasing the inline settle wait.
     detach_requested: asyncio.Event = field(default_factory=asyncio.Event)
 
 
@@ -104,9 +75,7 @@ class BackgroundCompletion:
     output_path: Path | None
 
 
-# Weak references to every live runner, purely so the process-exit / signal
-# handlers can cancel outstanding work without reintroducing a global registry
-# that owns the tasks. Ownership stays with each agent.
+# Weak references to every live runner, so exit handlers can cancel outstanding work without owning the tasks.
 _active_job_runners: weakref.WeakSet[BackgroundJobs] = weakref.WeakSet()
 
 
@@ -120,19 +89,12 @@ class BackgroundJobs:
         store: JobStore | None = None,
     ) -> None:
         self._jobs: dict[str, _BackgroundJobRecord] = {}
-        # Ids of jobs whose task has finished, pushed by the done-callback. This is
-        # what makes completion event-driven instead of polled.
+        # Ids of jobs whose task has finished, pushed by the done-callback, which is what makes completion event-driven.
         self._completed_identifiers: asyncio.Queue[str] = asyncio.Queue()
-        # Identity for the durable mirror. When a context is set, every job's
-        # lifecycle is written to the durable store so a restart can deliver or
-        # recover it; without one (e.g. in a test) durability is simply skipped.
+        # Identity for the durable mirror; without a context, durability is simply skipped.
         self._session_id = session_id
         self._agent_name = agent_name
-        # Where durability goes, supplied rather than found. This used to be a module-level
-        # singleton over a fixed SQLite path, which meant a library session running one
-        # backgrounded command wrote a database into the caller's data directory with no way
-        # to say otherwise. In memory unless someone with a real one says so — and the daemon
-        # is the thing restarts happen to, so the daemon is what says so.
+        # Where durability goes, supplied rather than found, so a library session writes no database of its own.
         self._store: JobStore = store if store is not None else MemoryJobStore()
         _active_job_runners.add(self)
 
@@ -153,12 +115,7 @@ class BackgroundJobs:
         tool_call_identifier: str = "",
         detached: bool = False,
     ) -> str:
-        """Start ``coroutine`` as a background job and return its identifier.
-
-        ``arguments`` carries what a restart needs to re-issue an idempotent job (e.g.
-        a search query or a parse target); it is persisted, never used live.
-        ``detached`` marks work with an independent lifecycle, which a Stop must
-        leave running (see :meth:`cancel_foreground`)."""
+        """Start `coroutine` as a background job and return its identifier."""
         if identifier is None:
             identifier = new_id(_KIND_IDENTIFIER_PREFIX.get(kind, kind))
         task = asyncio.create_task(coroutine)
@@ -187,9 +144,7 @@ class BackgroundJobs:
         return identifier
 
     def _on_task_done(self, identifier: str) -> None:
-        """Runs the instant a job's task finishes. Persist the result immediately —
-        before it is delivered — so a crash between completion and delivery cannot
-        lose it; then signal the (event-driven) waiters."""
+        """Runs the instant a job's task finishes: persist the result before delivering it, then signal the waiters."""
         record = self._jobs.get(identifier)
         if record is not None and self._session_id:
             result = self._result_string(record)
@@ -197,15 +152,13 @@ class BackgroundJobs:
         self._completed_identifiers.put_nowait(identifier)
 
     def bind_tool_call(self, identifier: str, tool_call_identifier: str) -> None:
-        """Correlate a job with the tool call that started it, so its eventual
-        completion message can reference the originating call."""
+        """Correlate a job with the tool call that started it, so its completion can reference that call."""
         record = self._jobs.get(identifier)
         if record is not None:
             record.tool_call_identifier = tool_call_identifier
 
     def add_done_callback(self, identifier: str, callback: Callable[[str], None]) -> bool:
-        """Attach a side-effect callback (e.g. releasing a filesystem lease) that
-        fires with the job identifier when its task finishes."""
+        """Attach a side-effect callback that fires with the job identifier when its task finishes."""
         record = self._jobs.get(identifier)
         if record is None:
             return False
@@ -219,8 +172,7 @@ class BackgroundJobs:
         return bool(self._jobs)
 
     def has_completed_undelivered(self) -> bool:
-        """True when at least one job has finished but its result has not yet been
-        drained — i.e. there is something for an autonomous wake to deliver."""
+        """True when a job has finished but its result has not been drained, so an autonomous wake has something to deliver."""
         return any(record.task.done() for record in self._jobs.values())
 
     def active_count(self) -> int:
@@ -243,8 +195,7 @@ class BackgroundJobs:
         return snapshots
 
     def active_by_context_key(self) -> dict[str, list[str]]:
-        """In-flight job identifiers grouped by their turn-context key, e.g.
-        ``{"pending_bash_commands": ["bg-…"]}``. Empty groups are omitted."""
+        """In-flight job identifiers grouped by their turn-context key, with empty groups omitted."""
         grouped: dict[str, list[str]] = {}
         for record in self._jobs.values():
             if record.task.done():
@@ -260,10 +211,7 @@ class BackgroundJobs:
         *wake_events: asyncio.Event,
         timeout: float | None = None,
     ) -> None:
-        """Block until at least one job finishes or a wake event fires. Event-driven
-        (awaits the completion queue) — never polls. With no ``timeout`` it blocks
-        indefinitely, which is what the autonomous-resume pump wants: sleep at zero
-        cost until a result lands, then deliver it."""
+        """Block until at least one job finishes or a wake event fires, awaiting the completion queue rather than polling."""
         if not self._jobs or not self._completed_identifiers.empty():
             return
         completion_getter: asyncio.Future = asyncio.ensure_future(self._completed_identifiers.get())
@@ -275,31 +223,16 @@ class BackgroundJobs:
         finally:
             for waiter in waiters:
                 waiter.cancel()
-        # If we pulled an id off the queue, put it back so drain_completed sees it;
-        # if we merely woke for abort/steering/timeout, the getter is cancelled and
-        # no id is lost.
+        # Put a pulled id back so `drain_completed` sees it; a wake for anything else cancels the getter and loses nothing.
         if completion_getter.done() and not completion_getter.cancelled() and completion_getter.exception() is None:
             self._completed_identifiers.put_nowait(completion_getter.result())
 
     async def settle_inline(self, identifier: str, timeout: float) -> BackgroundCompletion | None:
-        """Give a just-spawned job a brief window to finish *inline*.
-
-        If it completes within ``timeout`` it is drained here — removed from tracking
-        and marked delivered in the durable store — and its completion is returned so
-        the caller can hand the result straight back (this is the "fast commands
-        return directly" path for bash). Crucially, a job settled this way never
-        becomes an orphaned pending job, so it can never trigger a spurious autonomous
-        wake once the model has already moved on. If the window closes with the job
-        still running, ``None`` is returned and it stays backgrounded exactly as
-        before, to be delivered by the usual completion path.
-        """
+        """Give a just-spawned job a brief window to finish inline, draining and returning it if it does."""
         record = self._jobs.get(identifier)
         if record is None:
             return None
-        # Race the job's completion against the ceiling and a manual background
-        # request. Whichever fires first wins: a finished job is drained and returned
-        # inline; a timeout or a user backgrounding leaves the job running (the latter
-        # marks it detached below) so the turn continues with a "started" placeholder.
+        # Race the job against the ceiling and a manual background request, whichever fires first.
         task_waiter = asyncio.ensure_future(asyncio.shield(record.task))
         detach_waiter = asyncio.ensure_future(record.detach_requested.wait())
         try:
@@ -313,13 +246,10 @@ class BackgroundJobs:
             if not task_waiter.done():
                 task_waiter.cancel()
             elif not task_waiter.cancelled():
-                # The task finished by raising; consume the exception here so it is not
-                # reported as never-retrieved. It is re-captured into an error payload
-                # when the completion is built below.
+                # The task finished by raising, so consume the exception here and re-capture it into the completion below.
                 task_waiter.exception()
         if record.detach_requested.is_set():
-            # Backgrounded by the user: mark it detached so a Stop leaves it running,
-            # and hand back None so bash returns the "started" placeholder.
+            # Backgrounded by the user: mark it detached so a Stop leaves it running, and hand back the started placeholder.
             record.detached = True
             return None
         if not record.task.done():
@@ -327,11 +257,7 @@ class BackgroundJobs:
         record = self._jobs.pop(identifier, None)
         if record is None:
             return None
-        # The done-callback already enqueued this id on `_completed_identifiers`; we
-        # leave it there because `drain_completed` skips ids no longer in `_jobs`
-        # (its own dedup), so the stale signal is harmless. Removing from `_jobs` is
-        # what makes `has_pending()`/`has_completed_undelivered()` forget the job, so
-        # no resume pump wakes for it.
+        # The stale queued id is harmless because `drain_completed` skips ids no longer tracked.
         if self._session_id:
             self._store.mark_delivered(identifier)
         return self._build_completion(record)
@@ -362,10 +288,7 @@ class BackgroundJobs:
         self._jobs.clear()
 
     def cancel_foreground(self) -> None:
-        """Cancel only jobs tied to the current turn (a synchronous bash still
-        running, an inline command). Detached jobs the model explicitly
-        backgrounded are left running — a Stop ends the turn, not the work the
-        user deliberately sent to the background."""
+        """Cancel only jobs tied to the current turn, leaving detached ones running."""
         for identifier, record in list(self._jobs.items()):
             if record.detached:
                 continue
@@ -401,11 +324,7 @@ class BackgroundJobs:
         return False
 
     def cancel_by_identifier(self, identifier: str, *, kind: str | None = None) -> bool:
-        """Cancel one live job by its public handle.
-
-        ``kind`` optionally constrains the match so a caller that owns one class of
-        handle cannot accidentally cancel another background-work type.
-        """
+        """Cancel one live job by its handle, optionally constrained by kind so one class cannot cancel another."""
         record = self._jobs.get(identifier)
         if record is None or record.task.done() or (kind is not None and record.kind != kind):
             return False
@@ -422,12 +341,7 @@ class BackgroundJobs:
         return True
 
     def request_background(self, tool_call_identifier: str) -> bool:
-        """Push a still-running foreground job to the background on the user's behalf.
-
-        Finds the live, not-yet-detached job started by ``tool_call_identifier`` and
-        signals it: its inline settle wait releases at once (the command keeps running
-        detached, so a Stop no longer kills it and the turn continues with a "started"
-        placeholder). Returns True when such a job was found and signalled."""
+        """Push a still-running foreground job to the background on the user's behalf."""
         for record in self._jobs.values():
             if record.tool_call_identifier != tool_call_identifier:
                 continue
@@ -438,9 +352,7 @@ class BackgroundJobs:
         return False
 
     def _result_string(self, record: _BackgroundJobRecord) -> str:
-        """The finished task's result as a string. A cancelled or failed job becomes
-        an error payload rather than a raised exception, so it is delivered like any
-        other result and never escapes into the caller."""
+        """The finished task's result as a string, with a cancelled or failed job becoming an error payload."""
         try:
             result: Any = record.task.result()
         except asyncio.CancelledError:
@@ -468,18 +380,12 @@ class BackgroundJobs:
 
 
 def cancel_all_background_jobs() -> None:
-    """Cancel outstanding jobs across every live runner. Used only by the
-    process-exit and termination-signal handlers — normal teardown is per-agent
-    via :meth:`BackgroundJobs.cancel_all`."""
+    """Cancel outstanding jobs across every live runner, used only by the exit and signal handlers."""
     for runner in list(_active_job_runners):
         runner.cancel_all()
 
 
-# Ambient binding for background-producing tools: bind the current runner during dispatch.
-# Background-producing tools (bash, web_search, …) are module-level functions
-# with LLM-facing signatures, so they cannot take the runner as a parameter. The
-# dispatcher binds the current agent's runner for the narrow duration of the
-# producing call; the producer reads it through current_background_jobs().
+# Bind the current runner during dispatch, since background-producing tools cannot take it as a parameter.
 
 _current_background_jobs: contextvars.ContextVar[BackgroundJobs | None] = contextvars.ContextVar(
     "current_background_jobs", default=None
@@ -501,11 +407,7 @@ def current_background_jobs() -> BackgroundJobs:
     return jobs
 
 
-# The tool call currently executing, bound by the dispatcher alongside the job
-# runner. A background-producing tool reads it so the job it spawns is correlated
-# with its originating tool call from the very start — which is what lets a user
-# background a still-blocking foreground command by that tool-call id, before the
-# post-return bind_tool_call would otherwise set it.
+# The tool call currently executing, so a spawned job is correlated with it from the start.
 _current_tool_call_id: contextvars.ContextVar[str] = contextvars.ContextVar(
     "current_tool_call_id", default=""
 )
