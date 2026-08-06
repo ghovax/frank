@@ -55,17 +55,20 @@ A profile pinned to a provider you have no credentials for fails on its first ca
 
 ## Permission modes
 
-Permission behaviour is one of **three** modes, defaulted per-agent in frontmatter (`permission_mode:`) and fixed for a session when it is created:
+A session's mode says **who answers** when a call asks to reach past its confinement, defaulted per-agent in frontmatter (`permission_mode:`). It says nothing about what the session may do — that is `sandbox:` below, and the operating system enforces it. There are **two**:
 
-- `default` — the user-configured per-command rules (allow / ask / deny) from the bash allow-rules.
-- `auto` — those rules **plus** a classifier that auto-approves bash calls it judges safe and escalates the rest. It is rule-aware (a configured `deny` stays a hard deny; `read_only` stays a hard block) and conservative — a classifier failure falls back to escalation. Its prompt is `src/frank/runtime/prompts/permission_classifier.md`.
-- `read_only` — hard-block every write (investigation and review sessions).
+- `ask` — the person running the session answers, and the turn parks until they do.
+- `automatic` — a reviewer answers, allowing or refusing and never asking. For work nobody is watching. A refusal reaches the agent as a refused tool call, with a reason it can work around. Its prompt is `src/frank/runtime/prompts/permission_reviewer.md`.
 
-There is **no bypass mode** and no standing "always allow": the only runtime decisions are allow-once and deny. A session's mode cannot be changed after creation, and a session created by another is clamped to no looser a mode than its parent — so a peer can never be used to escape the mode you are in.
+**A read-only session is not a mode.** It is a confinement with nowhere writable — `frank create --read-only`, or a `sandbox:` block that lists no `writable` paths. Nothing about a command's text decides it, so there is no spelling of a write that gets past.
+
+Per-command rules (allow / ask / deny) hold in both modes, and a `deny` refuses the call outright in either: a reviewer may not overrule a rule you wrote.
+
+There is **no bypass mode** and no standing "always allow": the only runtime decisions are allow-once and deny. A session's mode can be changed by the person running it, and the change reaches the turn already in flight; a session can never change its own. A session created by another is never looser than its parent, and tightening a session tightens the subtree it created — so a peer can never be used to escape the mode you are in.
 
 ## Sandbox
 
-`sandbox:` is what a session's tool children may actually do, enforced by the OS (`sandbox-exec` on macOS, Landlock plus a network namespace on Linux) rather than guessed from the text of a command. `enforce` is `required` (refuse to create a session where no backend can enforce it), `preferred` (POSIX limits only) or `off`; `filesystem.readable`/`writable`/`deny` govern the home directory, which is closed by default while the system stays readable; `limits` are `setrlimit(2)` constants under their own names. Set it from the UI, with `frank configure sandbox.enforce off`, or in the YAML. Unlike most settings this is **not** live: a session's confinement is fixed when it is created and clamped against its creator, so a change reaches the next session rather than a running one — the same guarantee the permission mode carries.
+`sandbox:` is what a session's tool children may actually do, enforced by the OS (`sandbox-exec` on macOS, Landlock plus a network namespace on Linux) rather than guessed from the text of a command. `enforce` is `required` (refuse to create a session where no backend can enforce it), `preferred` (POSIX limits only) or `off`; `filesystem.readable`/`writable`/`deny` govern the home directory, which is closed by default while the system stays readable; `limits` are `setrlimit(2)` constants under their own names. Set it from the UI, with `frank configure sandbox.enforce off`, or in the YAML. Unlike most settings this is **not** live: a session's confinement is fixed when it is created and clamped against its creator, so a change reaches the next session rather than a running one. The permission mode is the opposite — it can be changed on a session already running.
 
 ## Agents
 
@@ -160,7 +163,7 @@ Durable project/user context: `.agents/memories/*.md` and `~/.agents/memories/*.
 
 The daemon watches the configuration file and the `.agents` roots, so **everything reloads live** — agents, skills, memories, `mcp.json`, `remote-agents.json`, credentials, and the sandbox, computer-control and user-context toggles, whether changed through `frank configure`, the Settings dialog, or a hand edit. A change that affects a session's runtime asks live sessions to rebuild it on their next turn.
 
-Two things are deliberately **not** live, because they are fixed when a session is created and cannot be widened afterwards: its **permission mode** and its **working directory**. Changing the configured defaults affects the next session, never a running one. That is the guarantee, not a limitation — a session's authority is decided once, in the open, at `frank create`.
+Two things are deliberately **not** live, because they are fixed when a session is created and cannot be widened afterwards: its **confinement** and its **working directory**. Changing the configured defaults affects the next session, never a running one. That is the guarantee, not a limitation — a session's reach is decided once, in the open, at `frank create`. The configured **permission mode** is a default in the same way and reaches only the next session; the mode of a session already running is changed directly by the person running it, never by editing configuration.
 
 ## Verifying a change
 

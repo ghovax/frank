@@ -563,7 +563,7 @@
       "enabled": "Let a session install its own tools"
     },
     "permission_reviewer": {
-      "_": "Permission classifier",
+      "_": "Permission reviewer",
       "reasoning_effort": "Reasoning effort"
     },
     "compaction": {
