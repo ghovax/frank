@@ -1,14 +1,14 @@
 # The desktop app
 
-A native macOS window over the same control plane the `frank` command uses. It holds no harness of its own: it finds a daemon, talks to it, and shows you what it says. Anything the app can do, the command can do, and the reverse.
+A native macOS window over the same control plane the `langmesh` command uses. It holds no harness of its own: it finds a daemon, talks to it, and shows you what it says. Anything the app can do, the command can do, and the reverse.
 
 Start it with the daemon in one step:
 
 ```shell
-frank app
+langmesh app
 ```
 
-That brings the daemon up if it is not running, then opens the window. `frank app --no-daemon` opens only the window, for when a daemon is already up or lives on another machine.
+That brings the daemon up if it is not running, then opens the window. `langmesh app --no-daemon` opens only the window, for when a daemon is already up or lives on another machine.
 
 ## What the window shows
 
@@ -58,5 +58,5 @@ The app does not start a harness of its own. With nothing listening it says so a
 ## Where to go next
 
 - Every setting the app exposes: [Configuration](configuration.md).
-- The same operations from a terminal: [The `frank` command](cli.md).
+- The same operations from a terminal: [The `langmesh` command](cli.md).
 - Writing your own agents and skills: [Agents and skills](agents-and-skills.md).

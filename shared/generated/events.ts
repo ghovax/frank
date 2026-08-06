@@ -6,12 +6,12 @@
  */
 
 /**
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "ToolStatus".
  */
 export type ToolStatus = "running" | "ok" | "error";
 /**
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "WireEvent".
  */
 export type WireEvent =
@@ -31,9 +31,9 @@ export type WireEvent =
   | WarningEvent
   | ErrorEvent;
 
-export interface FrankEvents {}
+export interface LangMeshEvents {}
 /**
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "CompactionEvent".
  */
 export interface CompactionEvent {
@@ -51,7 +51,7 @@ export interface CompactionEvent {
 /**
  * Session-lifetime running totals, distinct from the per-call figures that describe only the latest call.
  *
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "CumulativeUsage".
  */
 export interface CumulativeUsage {
@@ -64,7 +64,7 @@ export interface CumulativeUsage {
   total_tokens?: number;
 }
 /**
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "DoneEvent".
  */
 export interface DoneEvent {
@@ -73,7 +73,7 @@ export interface DoneEvent {
   timestamp?: string;
 }
 /**
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "ErrorEvent".
  */
 export interface ErrorEvent {
@@ -87,7 +87,7 @@ export interface ErrorEvent {
   tool_name?: string;
 }
 /**
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "McpEvent".
  */
 export interface McpEvent {
@@ -101,7 +101,7 @@ export interface McpEvent {
 /**
  * The one-line JSON header prepended to every tool result the model reads.
  *
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "ModelToolResult".
  */
 export interface ModelToolResult {
@@ -118,7 +118,7 @@ export interface ModelToolResult {
 /**
  * Why approval is needed, as data rather than a sentence, so a client can say it in its own language.
  *
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "PermissionReason".
  */
 export interface PermissionReason {
@@ -126,7 +126,7 @@ export interface PermissionReason {
   paths?: string[];
 }
 /**
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "PermissionRequestEvent".
  */
 export interface PermissionRequestEvent {
@@ -143,7 +143,7 @@ export interface PermissionRequestEvent {
 /**
  * Where a request stopped matching the one before it.
  *
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "PrefixDivergence".
  */
 export interface PrefixDivergence {
@@ -155,7 +155,7 @@ export interface PrefixDivergence {
 /**
  * Which piece of a request a cache measurement is about, as fields rather than a formatted label.
  *
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "TracedSegment".
  */
 export interface TracedSegment {
@@ -164,7 +164,7 @@ export interface TracedSegment {
   role?: string;
 }
 /**
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "QuestionEvent".
  */
 export interface QuestionEvent {
@@ -175,7 +175,7 @@ export interface QuestionEvent {
   tool_call_id?: string;
 }
 /**
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "StatusEvent".
  */
 export interface StatusEvent {
@@ -184,7 +184,7 @@ export interface StatusEvent {
   timestamp?: string;
 }
 /**
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "SteeringEvent".
  */
 export interface SteeringEvent {
@@ -195,7 +195,7 @@ export interface SteeringEvent {
   timestamp?: string;
 }
 /**
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "TextEvent".
  */
 export interface TextEvent {
@@ -204,7 +204,7 @@ export interface TextEvent {
   timestamp?: string;
 }
 /**
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "ThinkingDoneEvent".
  */
 export interface ThinkingDoneEvent {
@@ -213,7 +213,7 @@ export interface ThinkingDoneEvent {
   timestamp?: string;
 }
 /**
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "ThinkingEvent".
  */
 export interface ThinkingEvent {
@@ -223,7 +223,7 @@ export interface ThinkingEvent {
   timestamp?: string;
 }
 /**
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "TokenUsageEvent".
  */
 export interface TokenUsageEvent {
@@ -242,7 +242,7 @@ export interface TokenUsageEvent {
   timestamp?: string;
 }
 /**
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "ToolCallEvent".
  */
 export interface ToolCallEvent {
@@ -255,7 +255,7 @@ export interface ToolCallEvent {
 /**
  * Correlational and timing facts about a tool call, kept visible to the model as well as the interface.
  *
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "ToolMetadata".
  */
 export interface ToolMetadata {
@@ -267,7 +267,7 @@ export interface ToolMetadata {
   tool_name: string;
 }
 /**
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "ToolResultEvent".
  */
 export interface ToolResultEvent {
@@ -283,7 +283,7 @@ export interface ToolResultEvent {
 /**
  * The per-turn context injected at the end of the message list: the time, the place, the goal, the tasks, the work.
  *
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "TurnContext".
  */
 export interface TurnContext {
@@ -297,7 +297,7 @@ export interface TurnContext {
   tasks?: Record<string, unknown>[];
 }
 /**
- * This interface was referenced by `FrankEvents`'s JSON-Schema
+ * This interface was referenced by `LangMeshEvents`'s JSON-Schema
  * via the `definition` "WarningEvent".
  */
 export interface WarningEvent {

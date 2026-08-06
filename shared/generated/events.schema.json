@@ -895,6 +895,6 @@
   },
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
-  "title": "FrankEvents",
+  "title": "LangMeshEvents",
   "type": "object"
 }

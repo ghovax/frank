@@ -1,6 +1,6 @@
 # Tools
 
-A session acts through tools, and every tool call runs inside the session's [confinement](configuration.md#the-sandbox). A call that stays inside it runs without asking anybody. A call that asks to reach past it pauses under `ask` and reaches you as a prompt in the app, or as `frank allow` / `frank deny` in the terminal; under `automatic` it never pauses, and the reviewer allows or refuses it. The description the model reads is in the repo: a docstring in `src/frank/runtime/tools/registry.py` for most tools, a template in `src/frank/runtime/prompts/tool_*.md` for the peer-session ones.
+A session acts through tools, and every tool call runs inside the session's [confinement](configuration.md#the-sandbox). A call that stays inside it runs without asking anybody. A call that asks to reach past it pauses under `ask` and reaches you as a prompt in the app, or as `langmesh allow` / `langmesh deny` in the terminal; under `automatic` it never pauses, and the reviewer allows or refuses it. The description the model reads is in the repo: a docstring in `src/langmesh/runtime/tools/registry.py` for most tools, a template in `src/langmesh/runtime/prompts/tool_*.md` for the peer-session ones.
 
 There is no delegation tool and no in-process sub-agent. A session that needs a peer creates one with `create_session`, which reaches the same control plane your terminal does. See [Composing with other sessions](#composing-with-other-sessions).
 
@@ -61,7 +61,7 @@ The peer starts with a copy of its parent's model-facing conversation, while kee
 
 Nothing reconstructs a result. The peer decides its own answer, in its own words, at the moment it knows. A caller starts the work, carries on with whatever does not depend on it, and ends its turn — the reply wakes it.
 
-That message arrives as a **peer turn**, not a user turn. The wire carries the distinction under the harness's one extension key, `urn:frank:ext:turn:v1`. It sends `kind` plus `peerSender` to name the sender.
+That message arrives as a **peer turn**, not a user turn. The wire carries the distinction under the harness's one extension key, `urn:langmesh:ext:turn:v1`. It sends `kind` plus `peerSender` to name the sender.
 
 Without that, a peer's report reaches the model as an instruction from the person it works for. It also appears in the transcript as words the user never wrote.
 
@@ -77,7 +77,7 @@ A peer that dies before it reports cannot say so. That is the one thing the harn
 
 ## Screen control (`control_screen`)
 
-Frank drives the live screen through one tool, `control_screen`, covering native macOS apps and **your own Chrome**. Its Python script both finds elements and acts on them. It is **macOS-only** and **opt-in**: gated by `computer_control.enabled` (off by default; see [Configuration guide](configuration.md#execution-and-permissions)).
+LangMesh drives the live screen through one tool, `control_screen`, covering native macOS apps and **your own Chrome**. Its Python script both finds elements and acts on them. It is **macOS-only** and **opt-in**: gated by `computer_control.enabled` (off by default; see [Configuration guide](configuration.md#execution-and-permissions)).
 
 **Finding — read the live surface.** Inside the script, `find_many(query)` and `find_one(query)` take a plain-language query. They return the matching UI as **ranked elements** to act on, not as pixels. Each element carries a stable `id`, its role, its text, and its context. On native apps this reads the **accessibility tree**. On Chrome it reads the page's real semantic structure, roles and names, iframes included. It uses the Chrome DevTools Protocol through Playwright.
 
@@ -104,14 +104,14 @@ Nothing stops an agent from closing a tab it did not open. It has an instruction
 
 **Frames.** An `iframe` is its own document with its own origin and its own session — the embedded checkout, the OAuth consent screen, the document viewer. Element ids are already frame-scoped, so `f1e3` is the third element of frame `f1` and clicking or typing into it needs no extra step. `frames()` lists them as `{id, url, name, parent, element}`. Then `evaluate(..., frame="f1")` and `read(frame="f1")` run **inside** that document. That is the only way to reach one through the credentials it holds.
 
-Frank attaches to **the Chrome you already use**, with your real logins and sessions, not a throwaway profile. It therefore only ever *connects* to the browser. It never launches it, quits it, or copies it.
+LangMesh attaches to **the Chrome you already use**, with your real logins and sessions, not a throwaway profile. It therefore only ever *connects* to the browser. It never launches it, quits it, or copies it.
 
-Frank reads structure, not pixels: there is no screenshot path for computer use. A drawn surface, such as a canvas or WebGL, exposes nothing to find. A structured visual fallback is planned, but it does not exist yet.
+LangMesh reads structure, not pixels: there is no screenshot path for computer use. A drawn surface, such as a canvas or WebGL, exposes nothing to find. A structured visual fallback is planned, but it does not exist yet.
 
 **Enable it:**
 
-- Grant **Accessibility** permission to Frank for native apps (System Settings, then Privacy & Security, then Accessibility). The app prompts you and links directly to the pane. macOS matches the permission to the app's code identity. The packaged build therefore carries a stable identity, which keeps the grant across updates. See the [Development guide](development.md#building-and-signing).
-- Turn on Chrome's remote-debugging toggle once for the browser surface. Open `chrome://inspect` and enable it under the remote-debugging option (Frank provides a one-click prompt that opens the page).
+- Grant **Accessibility** permission to LangMesh for native apps (System Settings, then Privacy & Security, then Accessibility). The app prompts you and links directly to the pane. macOS matches the permission to the app's code identity. The packaged build therefore carries a stable identity, which keeps the grant across updates. See the [Development guide](development.md#building-and-signing).
+- Turn on Chrome's remote-debugging toggle once for the browser surface. Open `chrome://inspect` and enable it under the remote-debugging option (LangMesh provides a one-click prompt that opens the page).
 - Set `computer_control.enabled: true` in the config (off by default).
 
 > [!NOTE]
@@ -123,9 +123,9 @@ Finding, reading, listing tabs and frames, and switching between tabs are all re
 
 ## Where the definitions live
 
-- Descriptions the model reads: the tool docstrings in `src/frank/runtime/tools/registry.py`, and `src/frank/runtime/prompts/tool_*.md` for the peer-session tools
-- Implementations: `src/frank/runtime/tools/` and `src/frank/computer/`
-- Model-facing message templates: `src/frank/runtime/prompts/` and `src/frank/computer/messages/`
-- The guidance a session gets for screen control: `src/frank/runtime/prompts/computer_control_guidance.md`
+- Descriptions the model reads: the tool docstrings in `src/langmesh/runtime/tools/registry.py`, and `src/langmesh/runtime/prompts/tool_*.md` for the peer-session tools
+- Implementations: `src/langmesh/runtime/tools/` and `src/langmesh/computer/`
+- Model-facing message templates: `src/langmesh/runtime/prompts/` and `src/langmesh/computer/messages/`
+- The guidance a session gets for screen control: `src/langmesh/runtime/prompts/computer_control_guidance.md`
 
 A tool runs inside the session's own process, so its blast radius is that session. That means its working directory, its permission mode, and its own MCP connections. Under the `worktree` strategy the working directory is the session's own git worktree.

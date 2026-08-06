@@ -1,15 +1,15 @@
 # Configuration
 
-Runtime configuration lives in **`$XDG_CONFIG_HOME/frank/configuration.yaml`** (`~/.config/frank/configuration.yaml` unless you have set `XDG_CONFIG_HOME`). It is created on first run from a built-in template and is the source of truth for credentials, permissions, and feature toggles. The repository never contains a filled-in copy.
+Runtime configuration lives in **`$XDG_CONFIG_HOME/langmesh/configuration.yaml`** (`~/.config/langmesh/configuration.yaml` unless you have set `XDG_CONFIG_HOME`). It is created on first run from a built-in template and is the source of truth for credentials, permissions, and feature toggles. The repository never contains a filled-in copy.
 
 Three ways to change it, all writing the same file:
 
-- `frank configure` from the terminal:
+- `langmesh configure` from the terminal:
 
-- `frank configure --all` lists every setting that exists, with what it ships at and what this machine runs on.
-- `frank configure` alone lists only what you changed.
-- `frank configure <setting>` reads one setting.
-- `frank configure <setting> <value>` sets it, and `--unset` removes it. A name the schema does not define, or a value it would reject, is refused with the reason rather than written;
+- `langmesh configure --all` lists every setting that exists, with what it ships at and what this machine runs on.
+- `langmesh configure` alone lists only what you changed.
+- `langmesh configure <setting>` reads one setting.
+- `langmesh configure <setting> <value>` sets it, and `--unset` removes it. A name the schema does not define, or a value it would reject, is refused with the reason rather than written;
 - **Settings** in the desktop app;
 - editing the file directly, which the next thing to start reads.
 
@@ -20,21 +20,21 @@ This document is the reference for the file itself.
 
 A change applies to whatever starts **next**. A running session keeps the configuration it was built with. That is the same guarantee its permission mode carries. Some settings are the exception: the daemon pushes them out, and the sandbox, computer control, and the user-context snapshot each ask live sessions to rebuild.
 
-Three places say something about a setting, and each says a different thing. **This document** is the narrative: what the settings mean and how they relate, for the ones worth explaining at length. The **[configuration reference](configuration-reference.md)** is the list: every setting there is, its type, what it ships at, and what it is for, in one row each. **`frank configure`** reads the running code, so it is the only one that can tell you what *this machine* is set to.
+Three places say something about a setting, and each says a different thing. **This document** is the narrative: what the settings mean and how they relate, for the ones worth explaining at length. The **[configuration reference](configuration-reference.md)** is the list: every setting there is, its type, what it ships at, and what it is for, in one row each. **`langmesh configure`** reads the running code, so it is the only one that can tell you what *this machine* is set to.
 
 Names the schema does not define are **refused**, not ignored. A setting that cannot take effect should say so where it is written, rather than being discovered when the behaviour never changes.
 
 ## Where everything lives
 
-Frank follows the XDG Base Directory convention rather than one dot-directory:
+LangMesh follows the XDG Base Directory convention rather than one dot-directory:
 
 | Path | What is there |
 |------|---------------|
-| `$XDG_CONFIG_HOME/frank/` | `configuration.yaml` |
-| `$XDG_DATA_HOME/frank/` | `history.db`, uploads, the file-URL signing secret |
-| `$XDG_STATE_HOME/frank/` | logs |
-| `$XDG_CACHE_HOME/frank/` | caches |
-| `$XDG_RUNTIME_DIR/frank/` | the daemon's socket, port and token, and one socket per session |
+| `$XDG_CONFIG_HOME/langmesh/` | `configuration.yaml` |
+| `$XDG_DATA_HOME/langmesh/` | `history.db`, uploads, the file-URL signing secret |
+| `$XDG_STATE_HOME/langmesh/` | logs |
+| `$XDG_CACHE_HOME/langmesh/` | caches |
+| `$XDG_RUNTIME_DIR/langmesh/` | the daemon's socket, port and token, and one socket per session |
 
 The runtime directory is `0700`, and the token files inside it are `0600`. On a shared machine, file permissions keep another user out of your sessions. When `XDG_RUNTIME_DIR` is unset — as on macOS — the fallback is a per-user directory under the system temporary directory.
 
@@ -71,7 +71,7 @@ Each provider also reads an environment variable, which takes precedence over th
 
 `custom` takes any OpenAI-compatible endpoint, which is why it needs a `base_url` as well.
 
-Around forty providers are registered. They include Cerebras, Together, Fireworks, Perplexity, Moonshot, Nebius, Cloudflare and GitHub Copilot. The registry in `src/frank/base/providers.py` is the full list, with the environment variable each one reads.
+Around forty providers are registered. They include Cerebras, Together, Fireworks, Perplexity, Moonshot, Nebius, Cloudflare and GitHub Copilot. The registry in `src/langmesh/base/providers.py` is the full list, with the environment variable each one reads.
 
 You can also **sign in with a ChatGPT or a Cursor subscription** instead of pasting a key (in Settings, under Providers). Neither is a LiteLLM route, and neither appears in the block above, because neither has a key to store. `chatgpt` calls Codex's Responses endpoint with an OAuth token. `cursor` calls Cursor's agent service with one. Both live in the data directory's `oauths/` folder, one file per provider: `oauths/chatgpt.json` and `oauths/cursor.json`. They are written mode 0600, inside a 0700 directory.
 
@@ -140,7 +140,7 @@ toolbox:
   enabled: true
 ```
 
-With it on, each session gets a package profile of its own at the front of its `PATH`, and `nix profile add nixpkgs#jq` installs into that profile with no flag and no path. Nothing reaches your machine: the packages come from the shared read-only store, what the session owns is a directory of symlinks under `~/.local/state/frank/sessions/<id>`, and that directory is deleted when the session is reaped. Your own profile is never written to, and the confinement is unchanged — a tool a session installed is still refused every path the sandbox refuses.
+With it on, each session gets a package profile of its own at the front of its `PATH`, and `nix profile add nixpkgs#jq` installs into that profile with no flag and no path. Nothing reaches your machine: the packages come from the shared read-only store, what the session owns is a directory of symlinks under `~/.local/state/langmesh/sessions/<id>`, and that directory is deleted when the session is reaped. Your own profile is never written to, and the confinement is unchanged — a tool a session installed is still refused every path the sandbox refuses.
 
 It needs [Nix](https://nixos.org). On a machine without it there is no toolbox, and the agent is told nothing about installing anything rather than being told about a capability it does not have.
 
@@ -181,7 +181,7 @@ The shipped defaults keep credential and configuration directories readable. To 
 
 `grantable` lists the paths an agent may be given without a prompt. It is empty by default, so every request is asked about. A path under `deny` is never grantable, whatever `grantable` says — that list is what you declared off-limits before the session started, and nothing decided at runtime reaches past it.
 
-**The backend.** macOS uses [`sandbox-exec`](https://keith.github.io/xcode-man-pages/sandbox-exec.1.html) with a generated Seatbelt profile; Linux uses [Landlock](https://docs.kernel.org/userspace-api/landlock.html) plus a network namespace. Apple has **deprecated `sandbox-exec` since 10.15**, and Frank depends on it anyway. Nothing else on macOS confines a single child process:
+**The backend.** macOS uses [`sandbox-exec`](https://keith.github.io/xcode-man-pages/sandbox-exec.1.html) with a generated Seatbelt profile; Linux uses [Landlock](https://docs.kernel.org/userspace-api/landlock.html) plus a network namespace. Apple has **deprecated `sandbox-exec` since 10.15**, and LangMesh depends on it anyway. Nothing else on macOS confines a single child process:
 
 - App Sandbox applies to a whole signed application. It would confine the harness out of the files it exists to reach.
 - Endpoint Security observes; it does not bound.
@@ -198,7 +198,7 @@ It also clamps the confinement against the session that created it. Path sets in
 
 `workspace.strategy` is one of `none`, `branch`, or `worktree`. The harness resolves it once, when it creates the session. A `worktree` session runs its tools in its own git worktree, so parallel sessions on one repository do not tread on each other.
 
-`agent.permission_mode` is the mode a session gets when none is asked for. It is a default, not a ceiling — `frank create --mode` overrides it, and a child is clamped against its parent either way.
+`agent.permission_mode` is the mode a session gets when none is asked for. It is a default, not a ceiling — `langmesh create --mode` overrides it, and a child is clamped against its parent either way.
 
 ### Permission modes
 
@@ -211,7 +211,7 @@ A session's mode says **who answers** when a call asks to reach past its confine
 
 There is **no bypass mode**, and no standing "always allow": the only runtime decisions are allow-once and deny. A session's mode is chosen when the harness creates it and can be changed afterwards by the person running it; a session can never change its own. A session created by another is never looser than its parent, and tightening a session tightens the subtree it created.
 
-**A read-only session** is not a mode. It is a confinement with nowhere writable — `frank create --read-only`, or a `sandbox:` block on the agent profile that lists no `writable` paths. Nothing about a command's text decides it, so there is no spelling of a write that gets past.
+**A read-only session** is not a mode. It is a confinement with nowhere writable — `langmesh create --read-only`, or a `sandbox:` block on the agent profile that lists no `writable` paths. Nothing about a command's text decides it, so there is no spelling of a write that gets past.
 
 Three tools take per-call rules on each agent, and they are the three whose calls can be named: `bash` by its command (`sudo *: deny`, `rm -rf *: ask`, …), `mcp` by `server.tool` (`*.delete_*: deny`), and `screen` by the primitive a script reaches for (`evaluate: deny`). The longest matching pattern wins. A `deny` refuses the call outright in both modes — a reviewer may not overrule a rule you wrote. See [Agents and skills](agents-and-skills.md).
 
@@ -257,11 +257,11 @@ tuning:
 | `timeout_multiplier` | `2.0` doubles every wait, for a slow machine. `1.0` is neutral |
 | `defaults` | Overrides one value, by its own name and in its own unit |
 
-Those three move whole families. `defaults` is the escape hatch for a single value. Its keys are the names in `frank.base.tuning.Tunable`, which is the same idea as `sandbox.limits` using `setrlimit` constant names. An unknown name is an error at load. It is not a line that looks applied and is not. An override replaces the value the code *ships with*, so `context_share` and `timeout_multiplier` still apply on top: `action_timeout_ms: 10000` under `timeout_multiplier: 2.0` resolves to twenty seconds.
+Those three move whole families. `defaults` is the escape hatch for a single value. Its keys are the names in `langmesh.base.tuning.Tunable`, which is the same idea as `sandbox.limits` using `setrlimit` constant names. An unknown name is an error at load. It is not a line that looks applied and is not. An override replaces the value the code *ships with*, so `context_share` and `timeout_multiplier` still apply on top: `action_timeout_ms: 10000` under `timeout_multiplier: 2.0` resolves to twenty seconds.
 
 The names are lowercase because they are not constants. Each one is a default the file may replace, and the casing is the first thing that says so.
 
-`frank configure --all` lists every setting with what it ships at and what this machine runs on; what each one is *for* is in the [configuration reference](configuration-reference.md), which also carries the longer reasoning behind the eleven tunables that need it. [`configuration.example.yaml`](configuration.example.yaml) is the same surface as a file — every setting that exists, grouped and annotated, at its shipped value. Read it; do not copy it over your own configuration. Everything in it is already the default, so a copy changes nothing now and pins all of it later, which is exactly why the file you get on first run is nearly empty.
+`langmesh configure --all` lists every setting with what it ships at and what this machine runs on; what each one is *for* is in the [configuration reference](configuration-reference.md), which also carries the longer reasoning behind the eleven tunables that need it. [`configuration.example.yaml`](configuration.example.yaml) is the same surface as a file — every setting that exists, grouped and annotated, at its shipped value. Read it; do not copy it over your own configuration. Everything in it is already the default, so a copy changes nothing now and pins all of it later, which is exactly why the file you get on first run is nearly empty.
 
 Settling — how long a screen surface is given to stop changing after an action — lives with the surface rather than here, under [`computer_control.settle`](#screen-control).
 
@@ -312,11 +312,11 @@ remote_agents:
   agents: {}
 ```
 
-Agents on other hosts, resolved by their A2A card and reached with `frank remote`. Normally registered in `~/.agents/remote-agents.json` or from Settings rather than written here. A remote agent is not a session. Frank does not own its lifecycle, cannot set its permission mode, and keeps no transcript of it. It therefore has its own verb, and does not share `send`.
+Agents on other hosts, resolved by their A2A card and reached with `langmesh remote`. Normally registered in `~/.agents/remote-agents.json` or from Settings rather than written here. A remote agent is not a session. LangMesh does not own its lifecycle, cannot set its permission mode, and keeps no transcript of it. It therefore has its own verb, and does not share `send`.
 
 ## Telemetry
 
-Off by default. When enabled, spans and token usage are exported over OTLP to an endpoint you choose — Frank ships nothing anywhere on its own.
+Off by default. When enabled, spans and token usage are exported over OTLP to an endpoint you choose — LangMesh ships nothing anywhere on its own.
 
 ```yaml
 telemetry:
@@ -325,4 +325,4 @@ telemetry:
   sample_ratio: 1.0
 ```
 
-**There is no default agent setting**, here or anywhere. `frank create --agent` is required, and no profile is the one to fall back to. A default would run work under an agent nobody chose. It would also make every other profile's behaviour depend on that one. Which agent runs is always stated. Add your own under `~/.agents/agents/<id>/` or `.agents/agents/<id>/` in a working directory — see [Agents and skills](agents-and-skills.md).
+**There is no default agent setting**, here or anywhere. `langmesh create --agent` is required, and no profile is the one to fall back to. A default would run work under an agent nobody chose. It would also make every other profile's behaviour depend on that one. Which agent runs is always stated. Add your own under `~/.agents/agents/<id>/` or `.agents/agents/<id>/` in a working directory — see [Agents and skills](agents-and-skills.md).

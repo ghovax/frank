@@ -284,7 +284,7 @@ export function TerminalSurface({
   return (
     <Box
       ref={containerRef}
-      className="frank-terminal-surface"
+      className="langmesh-terminal-surface"
       h="100%"
       w="100%"
       bg="bg"

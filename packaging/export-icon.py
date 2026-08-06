@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 WEB_ROOT = REPOSITORY_ROOT / "web"
-COMPOSER_DOCUMENT = WEB_ROOT / "src-tauri" / "Frank.icon"
+COMPOSER_DOCUMENT = WEB_ROOT / "src-tauri" / "LangMesh.icon"
 TAURI_MASTER = WEB_ROOT / "src-tauri" / "app-icon.png"
 MACOS_ICON = WEB_ROOT / "src-tauri" / "icons" / "icon.icns"
 ICON_COMPOSER_TOOL = Path(

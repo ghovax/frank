@@ -1,6 +1,6 @@
-# Every setting Frank has, at the value it ships with.
+# Every setting LangMesh has, at the value it ships with.
 #
-# Do not copy this over ~/.config/frank/configuration.yaml.
+# Do not copy this over ~/.config/langmesh/configuration.yaml.
 #
 # Everything here is already the default, so a copy changes nothing today and pins all of it
 # tomorrow: a release that improves one of these values would find your file overriding it with
@@ -10,13 +10,13 @@
 #
 # What exists, what it ships at, and what this machine currently runs:
 #
-#     frank configure --all
+#     langmesh configure --all
 #
 # Set one, read one, put one back:
 #
-#     frank configure workspace.strategy worktree
-#     frank configure workspace.strategy
-#     frank configure workspace.strategy --unset
+#     langmesh configure workspace.strategy worktree
+#     langmesh configure workspace.strategy
+#     langmesh configure workspace.strategy --unset
 #
 # A name that is not in the schema is refused at load rather than written and ignored.
 
@@ -25,7 +25,7 @@
 
 # Each provider also resolves from its own conventional environment variable, which wins over
 # anything written here. Which model a session runs is chosen by its agent profile, not here.
-# The full list is in frank.base.providers.
+# The full list is in langmesh.base.providers.
 
 providers: {}
   # anthropic:
@@ -237,12 +237,12 @@ tuning:
   timeout_multiplier: 1.0
 
   # `defaults` overrides one value by its own name, in its own unit. The names are the members of
-  # frank.base.tuning.Tunable; an unknown one is an error at load rather than a line that looks
+  # langmesh.base.tuning.Tunable; an unknown one is an error at load rather than a line that looks
   # applied and is not. An override replaces what the code *ships* with, so the two knobs above
   # still apply on top of it.
   #
-  # `frank configure --all` prints what each is for. The long explanations live as markdown under
-  # src/frank/base/tuning_notes/ and are read at runtime, so the code and the reference cannot
+  # `langmesh configure --all` prints what each is for. The long explanations live as markdown under
+  # src/langmesh/base/tuning_notes/ and are read at runtime, so the code and the reference cannot
   # drift apart.
   defaults:
 

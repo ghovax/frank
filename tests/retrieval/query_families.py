@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from frank.computer.retrieval import url_in_words
+from langmesh.computer.retrieval import url_in_words
 
 from tests.retrieval.corpus import Corpus, RecordedElement
 

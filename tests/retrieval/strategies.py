@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Callable, Iterable
 
-from frank.computer.retrieval import (
+from langmesh.computer.retrieval import (
     _ROLE_IN_WORDS,
     _without_repeated_words,
     element_text,
@@ -81,13 +81,13 @@ LIVE_NATIVE_KEY_NAME = "live native key"
 
 
 def live_browser_key(element: RecordedElement) -> str:
-    """Whatever :func:`frank.computer.retrieval.web_element_text` currently produces."""
+    """Whatever :func:`langmesh.computer.retrieval.web_element_text` currently produces."""
     return web_element_text(name=element.name, url=element.url, title=element.title,
                             value=element.value)
 
 
 def live_native_key(element: RecordedElement) -> str:
-    """What :meth:`frank.computer.engine.NativeSurface.documents` currently builds."""
+    """What :meth:`langmesh.computer.engine.NativeSurface.documents` currently builds."""
     return text_or_fallback(
         text_or_fallback(element_text(name=element.name), element.value),
         element.role_description,

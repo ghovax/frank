@@ -226,7 +226,7 @@
   },
   {
    "role": "AXButton",
-   "name": "Idle Frank rename implementation",
+   "name": "Idle LangMesh rename implementation",
    "value": "",
    "context": "",
    "url": "",
@@ -253,7 +253,7 @@
   {
    "role": "AXStaticText",
    "name": "",
-   "value": "Frank rename implementation",
+   "value": "LangMesh rename implementation",
    "context": "",
    "url": "",
    "title": "",
@@ -265,7 +265,7 @@
   },
   {
    "role": "AXPopUpButton",
-   "name": "More options for Frank rename implementation",
+   "name": "More options for LangMesh rename implementation",
    "value": "",
    "context": "",
    "url": "",
@@ -1240,7 +1240,7 @@
   },
   {
    "role": "AXPopUpButton",
-   "name": "frank",
+   "name": "langmesh",
    "value": "",
    "context": "",
    "url": "",
@@ -3568,7 +3568,7 @@
   {
    "role": "AXStaticText",
    "name": "",
-   "value": " works when frank runs as a library from a source checkout. The model called it three times and every call died opening ",
+   "value": " works when langmesh runs as a library from a source checkout. The model called it three times and every call died opening ",
    "context": "",
    "url": "",
    "title": "",
@@ -4243,7 +4243,7 @@
   },
   {
    "role": "AXPopUpButton",
-   "name": "frank",
+   "name": "langmesh",
    "value": "",
    "context": "",
    "url": "",
@@ -4360,7 +4360,7 @@
   },
   {
    "role": "AXPopUpButton",
-   "name": "frank",
+   "name": "langmesh",
    "value": "",
    "context": "",
    "url": "",
@@ -4373,7 +4373,7 @@
   },
   {
    "role": "AXPopUpButton",
-   "name": "claude/cursor-subscription-on-frank",
+   "name": "claude/cursor-subscription-on-langmesh",
    "value": "",
    "context": "",
    "url": "",

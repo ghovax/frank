@@ -1,4 +1,4 @@
-/** Frank on a phone: the desktop interface, in a window, with no second interface here. */
+/** LangMesh on a phone: the desktop interface, in a window, with no second interface here. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "use-intl";
@@ -7,7 +7,7 @@ import { WebView } from "react-native-webview";
 
 import { ExternalLink, RotateCw, ScanLine } from "lucide-react-native";
 
-import { FrankMark } from "../components/frank-mark";
+import { LangMeshMark } from "../components/langmesh-mark";
 import { Button, Text } from "../components/ui";
 import { useConnection } from "../lib/connection";
 import { goBack } from "../lib/navigation";
@@ -100,10 +100,10 @@ function HandOver({ machine, url }: { machine: string; url: string }) {
         },
       ]}
     >
-      <FrankMark size={40} color={theme.colors.fgSubtle} />
+      <LangMeshMark size={40} color={theme.colors.fgSubtle} />
       <Text variant="body" tone="muted" align="center">{translation("pairedWith", { machine })}</Text>
       <Button
-        label={translation("openFrank")} icon={ExternalLink} variant="solid" tone="accent"
+        label={translation("openLangMesh")} icon={ExternalLink} variant="solid" tone="accent"
         // Replacing rather than opening, since a browser would treat a new window as a popup.
         onPress={() => { window.location.replace(url); }}
       />
@@ -154,7 +154,7 @@ function Waiting({ status, machine, onRetry, endpoint }: {
         />
       }
     >
-      <FrankMark size={40} color={theme.colors.fgSubtle} />
+      <LangMeshMark size={40} color={theme.colors.fgSubtle} />
       <Text variant="body" tone="muted" align="center">{message}</Text>
       {status === "connecting" ? (
         <ActivityIndicator color={theme.colors.fgMuted} />

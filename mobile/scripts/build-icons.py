@@ -7,7 +7,7 @@ from pathlib import Path
 from PIL import Image
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-MARK = REPOSITORY_ROOT / "web" / "src-tauri" / "Frank.icon" / "Assets" / "face.png"
+MARK = REPOSITORY_ROOT / "web" / "src-tauri" / "LangMesh.icon" / "Assets" / "face.png"
 IMAGES = REPOSITORY_ROOT / "mobile" / "assets" / "images"
 
 # The tile blue, sampled from the desktop icon rather than guessed, so the two match.

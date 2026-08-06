@@ -1,6 +1,6 @@
 "use client";
 
-/** The other Franks this one can reach, so "which Frank" has the same answer on every surface. */
+/** The other machines this one can reach, so "which machine" has the same answer on every surface. */
 
 import { Box, Button, Flex, IconButton, Input, Text } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";

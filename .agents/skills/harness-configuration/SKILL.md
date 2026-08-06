@@ -7,18 +7,18 @@ enabled: true
 
 # Configure the Agentic Harness
 
-Use this skill when the user wants to change how the harness itself is set up. There are **three surfaces onto one file** (`~/.config/frank/configuration.yaml`): `frank configure` from the terminal, Settings in the desktop app, and editing the file directly — the daemon watches it and picks up a hand edit live. Always read the relevant existing file before editing.
+Use this skill when the user wants to change how the harness itself is set up. There are **three surfaces onto one file** (`~/.config/langmesh/configuration.yaml`): `langmesh configure` from the terminal, Settings in the desktop app, and editing the file directly — the daemon watches it and picks up a hand edit live. Always read the relevant existing file before editing.
 
-**Start with `frank configure --all`.** It walks the schema, not the file, so it lists every setting that exists — including the ones nobody has written down — each with what it is for, what it ships at, and what this machine currently runs on. Reading the file only ever shows the part already known about. A name the schema does not define is refused rather than written and ignored, so a typo fails where it is made.
+**Start with `langmesh configure --all`.** It walks the schema, not the file, so it lists every setting that exists — including the ones nobody has written down — each with what it is for, what it ships at, and what this machine currently runs on. Reading the file only ever shows the part already known about. A name the schema does not define is refused rather than written and ignored, so a typo fails where it is made.
 
-The authoritative models live in `src/frank/base/configuration.py` (`GlobalConfiguration`, `AgentConfiguration`) and `src/frank/base/providers.py` (the provider registry and key/base-url resolution). Each setting's explanation is the `Field(description=...)` beside it, and each tunable's is the `Default(...)` beside it in `src/frank/base/tuning.py` — those strings are exactly what `frank configure` prints, so a new setting is documented by writing one and needs nothing else. There is no reference file to regenerate and no listing to add it to. The daemon's composition root — where the shared resources are wired up — is `src/frank/daemon/composition.py`.
+The authoritative models live in `src/langmesh/base/configuration.py` (`GlobalConfiguration`, `AgentConfiguration`) and `src/langmesh/base/providers.py` (the provider registry and key/base-url resolution). Each setting's explanation is the `Field(description=...)` beside it, and each tunable's is the `Default(...)` beside it in `src/langmesh/base/tuning.py` — those strings are exactly what `langmesh configure` prints, so a new setting is documented by writing one and needs nothing else. There is no reference file to regenerate and no listing to add it to. The daemon's composition root — where the shared resources are wired up — is `src/langmesh/daemon/composition.py`.
 
 ## Where things live
 
-- `~/.config/frank/configuration.yaml` — provider credentials, Exa, sandbox, Composio, permissions, tuning, telemetry. Seeded on first run from the packaged `src/frank/base/configuration.yaml`, which is deliberately almost empty: everything has a default in the code, and a seed restating those defaults would freeze them, so an installation would keep overriding an improved default with a copy of the old value. Note what is *not* there: no default agent. Naming the profile is required — `--agent` from the CLI, the `agent` argument of a session's `create_session` tool — and no profile is nominated to stand in for an unstated one.
-- There is no checked-in reference file. `frank configure --all` is the complete list, read from the running code, so it cannot describe a setting the code does not have or miss one it does.
-- `~/.local/share/frank/history.db` — session transcripts (SQLite, WAL). Not configuration; never edit by hand, and never open it from a session: the daemon is the sole writer, and workers persist by posting to it. If the schema ever goes stale after an upgrade, `frank daemon stop` and delete it — it rebuilds (transcripts are replayable, not irreplaceable).
-- The rest is XDG too: logs in `~/.local/state/frank/`, caches in `~/.cache/frank/`, and sockets, the daemon's port and its token in the runtime directory.
+- `~/.config/langmesh/configuration.yaml` — provider credentials, Exa, sandbox, Composio, permissions, tuning, telemetry. Seeded on first run from the packaged `src/langmesh/base/configuration.yaml`, which is deliberately almost empty: everything has a default in the code, and a seed restating those defaults would freeze them, so an installation would keep overriding an improved default with a copy of the old value. Note what is *not* there: no default agent. Naming the profile is required — `--agent` from the CLI, the `agent` argument of a session's `create_session` tool — and no profile is nominated to stand in for an unstated one.
+- There is no checked-in reference file. `langmesh configure --all` is the complete list, read from the running code, so it cannot describe a setting the code does not have or miss one it does.
+- `~/.local/share/langmesh/history.db` — session transcripts (SQLite, WAL). Not configuration; never edit by hand, and never open it from a session: the daemon is the sole writer, and workers persist by posting to it. If the schema ever goes stale after an upgrade, `langmesh daemon stop` and delete it — it rebuilds (transcripts are replayable, not irreplaceable).
+- The rest is XDG too: logs in `~/.local/state/langmesh/`, caches in `~/.cache/langmesh/`, and sockets, the daemon's port and its token in the runtime directory.
 - `.agents/` (project) and `~/.agents/` (global) — agents, skills, MCP servers, and memories. Project entries override global entries with the same name.
 
 ## Providers, credentials, and the model
@@ -49,7 +49,7 @@ One `opencode` key unlocks both OpenCode Zen and OpenCode Go; `opencode_go` carr
 
 **Key/base-url resolution** (`providers.py`): an explicit configured value (file or UI) **wins**; otherwise the provider's conventional env var is read (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`/`GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `XAI_API_KEY`, `DEEPSEEK_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`). OpenCode Zen and Go share the `opencode` key but keep separate endpoints. First-party clouds ignore `base_url`; custom OpenAI-compatible providers use it.
 
-**Three ways to change this, all live:** `frank configure providers.anthropic.api_key <key>`, the Settings dialog, or editing the file — the daemon watches it and reloads. A credential change asks running sessions to rebuild their runtime on the next turn, so it takes effect without restarting anything.
+**Three ways to change this, all live:** `langmesh configure providers.anthropic.api_key <key>`, the Settings dialog, or editing the file — the daemon watches it and reloads. A credential change asks running sessions to rebuild their runtime on the next turn, so it takes effect without restarting anything.
 
 A profile pinned to a provider you have no credentials for fails on its first call. It does not borrow another profile's model: an agent is defined by its own configuration, and nothing else's.
 
@@ -58,9 +58,9 @@ A profile pinned to a provider you have no credentials for fails on its first ca
 A session's mode says **who answers** when a call asks to reach past its confinement, defaulted per-agent in frontmatter (`permission_mode:`). It says nothing about what the session may do — that is `sandbox:` below, and the operating system enforces it. There are **two**:
 
 - `ask` — the person running the session answers, and the turn parks until they do.
-- `automatic` — a reviewer answers, allowing or refusing and never asking. For work nobody is watching. A refusal reaches the agent as a refused tool call, with a reason it can work around. Its prompt is `src/frank/runtime/prompts/permission_reviewer.md`.
+- `automatic` — a reviewer answers, allowing or refusing and never asking. For work nobody is watching. A refusal reaches the agent as a refused tool call, with a reason it can work around. Its prompt is `src/langmesh/runtime/prompts/permission_reviewer.md`.
 
-**A read-only session is not a mode.** It is a confinement with nowhere writable — `frank create --read-only`, or a `sandbox:` block that lists no `writable` paths. Nothing about a command's text decides it, so there is no spelling of a write that gets past.
+**A read-only session is not a mode.** It is a confinement with nowhere writable — `langmesh create --read-only`, or a `sandbox:` block that lists no `writable` paths. Nothing about a command's text decides it, so there is no spelling of a write that gets past.
 
 Per-command rules (allow / ask / deny) hold in both modes, and a `deny` refuses the call outright in either: a reviewer may not overrule a rule you wrote.
 
@@ -68,7 +68,7 @@ There is **no bypass mode** and no standing "always allow": the only runtime dec
 
 ## Sandbox
 
-`sandbox:` is what a session's tool children may actually do, enforced by the OS (`sandbox-exec` on macOS, Landlock plus a network namespace on Linux) rather than guessed from the text of a command. `enforce` is `required` (refuse to create a session where no backend can enforce it), `preferred` (POSIX limits only) or `off`; `filesystem.readable`/`writable`/`deny` govern the home directory, which is closed by default while the system stays readable; `limits` are `setrlimit(2)` constants under their own names. Set it from the UI, with `frank configure sandbox.enforce off`, or in the YAML. Unlike most settings this is **not** live: a session's confinement is fixed when it is created and clamped against its creator, so a change reaches the next session rather than a running one. The permission mode is the opposite — it can be changed on a session already running.
+`sandbox:` is what a session's tool children may actually do, enforced by the OS (`sandbox-exec` on macOS, Landlock plus a network namespace on Linux) rather than guessed from the text of a command. `enforce` is `required` (refuse to create a session where no backend can enforce it), `preferred` (POSIX limits only) or `off`; `filesystem.readable`/`writable`/`deny` govern the home directory, which is closed by default while the system stays readable; `limits` are `setrlimit(2)` constants under their own names. Set it from the UI, with `langmesh configure sandbox.enforce off`, or in the YAML. Unlike most settings this is **not** live: a session's confinement is fixed when it is created and clamped against its creator, so a change reaches the next session rather than a running one. The permission mode is the opposite — it can be changed on a session already running.
 
 ## Agents
 
@@ -141,7 +141,7 @@ Remote (HTTP):
 }
 ```
 
-`enabled: false` keeps an entry but turns it off; `"type"` is accepted as an alias for `"transport"`. Servers default to `stateful: true`: for `stdio` the subprocess stays alive across calls; for `streamable_http` the MCP session id is preserved and the server's GET SSE stream is listened to. MCP progress/notification events are forwarded into the active A2A stream. Set `stateful: false` only for servers that require one fresh session per operation. **`mcp.json` is watched and reloads live** — the daemon watches the `.agents` roots recursively, so adding or changing a server takes effect without restarting anything. Discovery and connection live in `src/frank/base/mcp_client.py`. Note that the daemon keeps its own pool for the GUI's server browser while each session connects its own for its tool calls: connections are stateful, and a stdio server cannot be shared across processes.
+`enabled: false` keeps an entry but turns it off; `"type"` is accepted as an alias for `"transport"`. Servers default to `stateful: true`: for `stdio` the subprocess stays alive across calls; for `streamable_http` the MCP session id is preserved and the server's GET SSE stream is listened to. MCP progress/notification events are forwarded into the active A2A stream. Set `stateful: false` only for servers that require one fresh session per operation. **`mcp.json` is watched and reloads live** — the daemon watches the `.agents` roots recursively, so adding or changing a server takes effect without restarting anything. Discovery and connection live in `src/langmesh/base/mcp_client.py`. Note that the daemon keeps its own pool for the GUI's server browser while each session connects its own for its tool calls: connections are stateful, and a stdio server cannot be shared across processes.
 
 ## Composio (optional)
 
@@ -161,14 +161,14 @@ Durable project/user context: `.agents/memories/*.md` and `~/.agents/memories/*.
 
 ## What reaches a running session, and what does not
 
-The daemon watches the configuration file and the `.agents` roots, so **everything reloads live** — agents, skills, memories, `mcp.json`, `remote-agents.json`, credentials, and the sandbox, computer-control and user-context toggles, whether changed through `frank configure`, the Settings dialog, or a hand edit. A change that affects a session's runtime asks live sessions to rebuild it on their next turn.
+The daemon watches the configuration file and the `.agents` roots, so **everything reloads live** — agents, skills, memories, `mcp.json`, `remote-agents.json`, credentials, and the sandbox, computer-control and user-context toggles, whether changed through `langmesh configure`, the Settings dialog, or a hand edit. A change that affects a session's runtime asks live sessions to rebuild it on their next turn.
 
-Two things are deliberately **not** live, because they are fixed when a session is created and cannot be widened afterwards: its **confinement** and its **working directory**. Changing the configured defaults affects the next session, never a running one. That is the guarantee, not a limitation — a session's reach is decided once, in the open, at `frank create`. The configured **permission mode** is a default in the same way and reaches only the next session; the mode of a session already running is changed directly by the person running it, never by editing configuration.
+Two things are deliberately **not** live, because they are fixed when a session is created and cannot be widened afterwards: its **confinement** and its **working directory**. Changing the configured defaults affects the next session, never a running one. That is the guarantee, not a limitation — a session's reach is decided once, in the open, at `langmesh create`. The configured **permission mode** is a default in the same way and reaches only the next session; the mode of a session already running is changed directly by the person running it, never by editing configuration.
 
 ## Verifying a change
 
-- Agents and skills: `frank create --agent <name>` refuses an unknown profile and lists the ones that exist. A session's `create_session` tool enumerates the same catalogue in its schema, so an unknown name cannot be asked for at all. The GUI reads it from `GET /agents/cards`.
-- Configuration: `frank configure --all` prints every setting the schema defines as a JSON object of dotted path to `{about, default, current}`; `frank configure` alone prints only what has been changed. Credentials are included in both — it reads a file the user owns.
+- Agents and skills: `langmesh create --agent <name>` refuses an unknown profile and lists the ones that exist. A session's `create_session` tool enumerates the same catalogue in its schema, so an unknown name cannot be asked for at all. The GUI reads it from `GET /agents/cards`.
+- Configuration: `langmesh configure --all` prints every setting the schema defines as a JSON object of dotted path to `{about, default, current}`; `langmesh configure` alone prints only what has been changed. Credentials are included in both — it reads a file the user owns.
 - Providers and models: `GET /models` lists them grouped by provider; a provider's models unlock once its key resolves.
 - MCP: `GET /mcp/tools?working_directory=<path>` lists the servers and tools that folder sees. An unreachable server is listed with no tools and an `error` rather than failing the call.
-- End to end: `frank create`, then `frank send <id> "…" --wait`. A missing key fails the turn with a credentials error rather than hanging.
+- End to end: `langmesh create`, then `langmesh send <id> "…" --wait`. A missing key fails the turn with a credentials error rather than hanging.

@@ -1280,7 +1280,7 @@
   {
    "role": "AXStaticText",
    "name": "",
-   "value": "frank",
+   "value": "langmesh",
    "context": "",
    "url": "",
    "title": "",
@@ -2905,7 +2905,7 @@
   {
    "role": "AXStaticText",
    "name": "",
-   "value": "frank",
+   "value": "langmesh",
    "context": "",
    "url": "",
    "title": "",
@@ -3710,7 +3710,7 @@
   },
   {
    "role": "AXButton",
-   "name": "frank (Git) - main, Checkout Branch/Tag...",
+   "name": "langmesh (Git) - main, Checkout Branch/Tag...",
    "value": "",
    "context": "",
    "url": "",
@@ -3749,7 +3749,7 @@
   },
   {
    "role": "AXButton",
-   "name": "frank (Git) - Push 8 commits to origin/main",
+   "name": "langmesh (Git) - Push 8 commits to origin/main",
    "value": "",
    "context": "",
    "url": "",

@@ -128,12 +128,12 @@ export const controlHeight = 40;
 
 /** The three families, by the names `expo-font` will register them under. */
 export const fonts = {
-  sans: "FrankSans",
-  sansMedium: "FrankSans-Medium",
-  sansSemibold: "FrankSans-Semibold",
-  sansBold: "FrankSans-Bold",
-  display: "FrankDisplay-Bold",
-  mono: "FrankMono",
+  sans: "LangMeshSans",
+  sansMedium: "LangMeshSans-Medium",
+  sansSemibold: "LangMeshSans-Semibold",
+  sansBold: "LangMeshSans-Bold",
+  display: "LangMeshDisplay-Bold",
+  mono: "LangMeshMono",
 } as const;
 
 /** The desktop's text styles, which are the only typographic decisions a component should make. */

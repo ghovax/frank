@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from pydantic import TypeAdapter  # noqa: E402
 from pydantic.json_schema import models_json_schema  # noqa: E402
 
-from frank.protocol import events  # noqa: E402
+from langmesh.protocol import events  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,7 @@ def _render_schema() -> str:
     cleaned = {name: _require_discriminant(_readable_types(_strip_titles(definition))) for name, definition in definitions.items()}
     schema = {
         "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "FrankEvents",
+        "title": "LangMeshEvents",
         # The root document only exists to carry its definitions, so closing it keeps a stray wrapper out.
         "type": "object",
         "additionalProperties": False,

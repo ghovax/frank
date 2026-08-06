@@ -9,7 +9,7 @@ import { useLocale } from "@/lib/i18n/locale-provider";
 import { useCallback, useEffect, useState } from "react";
 import { LuArrowDownUp, LuChevronDown, LuClock, LuEllipsis, LuFolderOpen, LuFolderPlus, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { FrankMark } from "@/components/ui/frank-mark";
+import { LangMeshMark } from "@/components/ui/langmesh-mark";
 import { DropdownMenu, MenuOption } from "@/components/ui/menu";
 import { PanelBody, PanelCard } from "@/components/ui/panel";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -173,8 +173,8 @@ export function SessionsSidebar({
   return (
     <PanelCard flex={1}>
       <Flex align="center" gap={2} px={3} pt={3} pb={2} flexShrink={0}>
-        <FrankMark size="26px" style={{ flexShrink: 0 }} />
-        <Text fontFamily="var(--font-display)" fontSize="2xl" lineHeight="1" fontWeight="bold" letterSpacing="tight">Frank</Text>
+        <LangMeshMark size="26px" style={{ flexShrink: 0 }} />
+        <Text fontFamily="var(--font-display)" fontSize="2xl" lineHeight="1" fontWeight="bold" letterSpacing="tight">LangMesh</Text>
       </Flex>
 
       {/* New session reads as the first row of the list rather than a separate button, with its shortcut on hover. */}

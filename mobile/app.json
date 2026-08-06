@@ -1,25 +1,25 @@
 {
   "expo": {
-    "name": "Frank",
-    "slug": "frank",
+    "name": "LangMesh",
+    "slug": "langmesh",
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frank",
+    "scheme": "langmesh",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.ghovax.frank.mobile",
+      "bundleIdentifier": "com.ghovax.langmesh.mobile",
       "infoPlist": {
-        "NSCameraUsageDescription": "Frank reads the pairing code your Mac shows, so this phone can reach it.",
-        "NSMicrophoneUsageDescription": "Frank records what you say and sends it to your own Mac to be transcribed. Nothing is sent anywhere else.",
+        "NSCameraUsageDescription": "LangMesh reads the pairing code your Mac shows, so this phone can reach it.",
+        "NSMicrophoneUsageDescription": "LangMesh records what you say and sends it to your own Mac to be transcribed. Nothing is sent anywhere else.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         }
       }
     },
     "android": {
-      "package": "com.ghovax.frank.mobile",
+      "package": "com.ghovax.langmesh.mobile",
       "adaptiveIcon": {
         "backgroundColor": "#000000",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -50,7 +50,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Frank reads the pairing code your Mac shows, so this phone can reach it."
+          "cameraPermission": "LangMesh reads the pairing code your Mac shows, so this phone can reach it."
         }
       ]
     ],

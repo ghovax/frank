@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from frank.computer.engine import NativeSurface
+from langmesh.computer.engine import NativeSurface
 
 from tests.retrieval.corpus import Corpus, RecordedElement, write_corpus
 

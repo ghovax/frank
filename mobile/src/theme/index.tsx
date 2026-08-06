@@ -13,7 +13,7 @@ export * from "./tokens";
 
 export type ThemePreference = ColorScheme | "system";
 
-const STORAGE_KEY = "frank:colorScheme";
+const STORAGE_KEY = "langmesh:colorScheme";
 
 interface ThemeValue {
   scheme: ColorScheme;

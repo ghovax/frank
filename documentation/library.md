@@ -1,4 +1,4 @@
-# Frank as a library
+# LangMesh as a library
 
 **The library is the bottom of the stack, and everything else is built on it** — see the [documentation index](README.md) for the four layers and what each knows about your machine.
 
@@ -8,7 +8,7 @@ Everything a session needs can be built in code:
 
 ```python
 import asyncio
-from frank import AgentConfiguration, Catalogue, FilesystemConfiguration, SandboxConfiguration, Session
+from langmesh import AgentConfiguration, Catalogue, FilesystemConfiguration, SandboxConfiguration, Session
 
 reviewer = AgentConfiguration(
     name="reviewer",
@@ -44,8 +44,8 @@ Use it for three things:
 A program that *is* running on someone's machine — a CLI, a scheduled job — can ask for the machine's agents deliberately. The import says what it is doing:
 
 ```python
-from frank import Session
-from frank.daemon.machine import load_agent, load_catalogue, load_configuration
+from langmesh import Session
+from langmesh.daemon.machine import load_agent, load_catalogue, load_configuration
 
 configuration = load_configuration(seed=False)
 directory = "/Users/you/code/project"
@@ -59,15 +59,15 @@ async with Session(
     print(await session.ask("What does this project do?"))
 ```
 
-Four lines that touch the machine, each one written by you. `frank.daemon.machine` is the only module that knows XDG exists, and `frank.Session` never imports it.
+Four lines that touch the machine, each one written by you. `langmesh.daemon.machine` is the only module that knows XDG exists, and `langmesh.Session` never imports it.
 
 ## What you give up
 
-A library session is an object, not a process. It has none of the three properties `frankd` exists to provide:
+A library session is an object, not a process. It has none of the three properties `langmeshd` exists to provide:
 
 | Property | Library | Daemon |
 |---|---|---|
-| Addressable from outside | No | Yes — a socket, a token, `frank send` |
+| Addressable from outside | No | Yes — a socket, a token, `langmesh send` |
 | Outlives the program that made it | No | Yes |
 | Crash-isolated | No — a tool that exhausts memory takes you with it | Yes — one process per session |
 | Peers (`create_session` and friends) | Only if you supply `peers` | Yes |
@@ -82,13 +82,13 @@ Everything durable is a constructor argument with an interface behind it. The de
 | Argument | Interface | Default | What it decides |
 |---|---|---|---|
 | `model` | LangChain [`BaseChatModel`](https://python.langchain.com/docs/concepts/chat_models/) | Built from configuration | Which model runs, and everything wrapped around it — tracing, rate limiting, a stub in tests |
-| `checkpoints` | `frank.Checkpoints` | `MemoryCheckpoints` | Where the conversation is saved, and therefore whether a session can resume |
-| `jobs` | `frank.JobStore` | `MemoryJobStore` | Where background jobs are recorded, and therefore whether one survives a restart |
-| `observer` | `frank.Observer` | None (dropped) | Where the audit trail goes — auto-approvals, goal changes, messages |
-| `approvals` | `frank.Approvals` | None (gates suspend) | Who answers a gated tool call when there is no human |
+| `checkpoints` | `langmesh.Checkpoints` | `MemoryCheckpoints` | Where the conversation is saved, and therefore whether a session can resume |
+| `jobs` | `langmesh.JobStore` | `MemoryJobStore` | Where background jobs are recorded, and therefore whether one survives a restart |
+| `observer` | `langmesh.Observer` | None (dropped) | Where the audit trail goes — auto-approvals, goal changes, messages |
+| `approvals` | `langmesh.Approvals` | None (gates suspend) | Who answers a gated tool call when there is no human |
 | `peers` | `SessionAccess` | None (composition tools absent) | How this session reaches other sessions |
-| `sandbox` | `frank.base.confinement.Profile` | Unconfined profile | What a tool's children may do |
-| `catalogue` | `frank.Catalogue` | The working directory's `.agents` plus the packaged base layer — **and nothing of `$HOME`** | Where agents, skills, memories, instructions and prompt templates come from |
+| `sandbox` | `langmesh.base.confinement.Profile` | Unconfined profile | What a tool's children may do |
+| `catalogue` | `langmesh.Catalogue` | The working directory's `.agents` plus the packaged base layer — **and nothing of `$HOME`** | Where agents, skills, memories, instructions and prompt templates come from |
 | `providers` | `{"anthropic": "sk-..."}` or `{"custom": {"api_key": ..., "base_url": ...}}` | Whatever the machine is configured with | Provider credentials, in code |
 | `model_identifier` | `"provider/model"` | The agent profile's own | Which model this session runs, overriding the profile |
 | `configuration` | `Configuration` | Read from XDG, **without creating it** | Providers, tuning, agent directories |
@@ -96,15 +96,15 @@ Everything durable is a constructor argument with an interface behind it. The de
 | `tools` | LangChain [`BaseTool`](https://python.langchain.com/docs/concepts/tools/) | None | Tools the agent gains, on top of the harness's |
 | `permissions` | A `PermissionEvaluator`-shaped object | The built-in rule engine | Whether a call is gated at all |
 | `supplied_tool_gate` | `"ask"` / `"none"` | `"ask"` | Whether a supplied tool raises a gate before it runs |
-| `transcript` | `frank.Transcript` | `MemoryTranscript` | Where the record of completed turns goes |
-| `credentials` | `frank.Credentials` | A `0600` file under XDG | Where account tokens live (bypassed entirely by `model=`) |
+| `transcript` | `langmesh.Transcript` | `MemoryTranscript` | Where the record of completed turns goes |
+| `credentials` | `langmesh.Credentials` | A `0600` file under XDG | Where account tokens live (bypassed entirely by `model=`) |
 | `locations` | `LocationExecutor` records | Local, at `directory` | Where tools may run — SSH, containers |
 | `workspace` | `SessionWorkspaceManager` | None — **opt in via `prepare_workspace()`** | A git worktree per session |
 | `tracer_provider` | OpenTelemetry `TracerProvider` | The process-wide one, if configured | Where spans go, per session |
 
 Two of these are interfaces we did not write. `BaseChatModel` is LangChain's, and the a2a `TaskStore` behind the daemon's turn record is a2a's. Where the ecosystem already has an interface, wrapping it would only add a second vocabulary for the same thing.
 
-The rest are `typing.Protocol`s, which is the part that matters for you: they are *structural*. Your object satisfies one by having the right methods. There is no base class to inherit, no registry to join, and no import of Frank in your type.
+The rest are `typing.Protocol`s, which is the part that matters for you: they are *structural*. Your object satisfies one by having the right methods. There is no base class to inherit, no registry to join, and no import of LangMesh in your type.
 
 ```python
 class RedisCheckpoints:
@@ -112,10 +112,10 @@ class RedisCheckpoints:
         self._client = client
 
     async def save(self, session_id, state):
-        await self._client.set(f"frank:{session_id}", json.dumps(state))
+        await self._client.set(f"langmesh:{session_id}", json.dumps(state))
 
     async def load(self, session_id):
-        raw = await self._client.get(f"frank:{session_id}")
+        raw = await self._client.get(f"langmesh:{session_id}")
         return json.loads(raw) if raw else None
 
 session = Session(reviewer, directory="/srv/checkout", checkpoints=RedisCheckpoints(redis))
@@ -135,7 +135,7 @@ The one thing configuration cannot do is *extend*. `tools=` takes LangChain `Bas
 
 ```python
 from langchain_core.tools import tool
-from frank import Session
+from langmesh import Session
 
 @tool
 def open_incidents(service: str) -> str:
@@ -157,7 +157,7 @@ A supplied tool goes through the *same* preamble as every built-in: permission r
 `agent=` takes a name to load from disk *or* an `AgentConfiguration` you construct. With a constructed one, nothing on the machine is consulted — the agent is a value your program owns:
 
 ```python
-from frank import AgentConfiguration, BashToolConfiguration, FilesystemConfiguration, SandboxConfiguration, Session, ToolsConfiguration
+from langmesh import AgentConfiguration, BashToolConfiguration, FilesystemConfiguration, SandboxConfiguration, Session, ToolsConfiguration
 
 reviewer = AgentConfiguration(
     name="reviewer",
@@ -180,7 +180,7 @@ Under-specify it and the error says what to do rather than failing obscurely:
 
 ```text
 ValueError: Agent 'reviewer' names no model. Set `provider` and `model` in its profile, pass
-`model_identifier="provider/model"` to `frank.Session`, or hand the runtime a `model=` of your own.
+`model_identifier="provider/model"` to `langmesh.Session`, or hand the runtime a `model=` of your own.
 ```
 
 **Narrowing the built-in tools** has two complementary forms. `tools_enabled` is an allow-list, so naming one tool means naming all of them — right for an agent defined by a small capability set. `tools.disabled` is a deny-list — right when an agent should have everything *except* shell access. Both are enforced twice.
@@ -230,12 +230,12 @@ One interface supplies everything the prompt is assembled from: the agent profil
 
 The default matters more here than anywhere else. A library must not read another product's configuration out of your home directory, and must not walk hardcoded paths to find prompt material.
 
-A library session's default catalogue therefore reads the working directory and the packaged agents, and nothing of `$HOME`. `frankd` and the CLI use `machine_catalogue`, which does read all of it, because there the person running it is the person those files describe.
+A library session's default catalogue therefore reads the working directory and the packaged agents, and nothing of `$HOME`. `langmeshd` and the CLI use `machine_catalogue`, which does read all of it, because there the person running it is the person those files describe.
 
 Build one entirely in code when you want the prompt fully under your control:
 
 ```python
-from frank import Catalogue, Session, Skill
+from langmesh import Catalogue, Session, Skill
 
 catalogue = Catalogue(
     agents={"reviewer": reviewer},
@@ -257,7 +257,7 @@ session = Session(reviewer, directory="/srv/checkout", catalogue=catalogue)
 
 Unlisted prompt templates fall back to the packaged ones. You therefore opt in to replace the system prompt. You do not have to reproduce it to get started.
 
-`FileCatalogue` is the other shipped implementation, and it reads a machine. It lives behind [`frank.daemon.machine`](#taking-what-the-machine-has), which is where machine-shaped things belong.
+`FileCatalogue` is the other shipped implementation, and it reads a machine. It lives behind [`langmesh.daemon.machine`](#taking-what-the-machine-has), which is where machine-shaped things belong.
 
 ### Approvals
 
@@ -266,7 +266,7 @@ By default a gated tool call does what it does under the daemon: the turn emits 
 An approver decides gates in code. Answer `None` to give *no opinion*; that gate then suspends as before. You can therefore auto-approve what you understand, and still escalate the rest:
 
 ```python
-from frank import Approval, Session
+from langmesh import Approval, Session
 
 class AllowReads:
     async def decide(self, gate):
@@ -315,7 +315,7 @@ Three seams sit around a turn rather than inside it. Each defaults to what the h
 A **hook** sees a turn as it runs, and may narrow it. It has three optional methods, and you implement only the one you need.
 
 ```python
-from frank import MaximumToolCalls, Session
+from langmesh import MaximumToolCalls, Session
 
 class AuditPrompts:
     async def before_model(self, messages):
@@ -351,7 +351,7 @@ class Timed:
         try:
             return await proceed(call)
         finally:
-            metrics.timing("frank.tool", time.monotonic() - started, tags={"tool": call.name})
+            metrics.timing("langmesh.tool", time.monotonic() - started, tags={"tool": call.name})
 
 class RetryTransient:
     async def run(self, call, proceed):
@@ -376,7 +376,7 @@ Middleware is **not** absorbed on failure, unlike a hook. A hook watches. Middle
 The default folds older turns into an observation log and condenses that log as it grows. It preserves long-horizon memory and costs two model calls each time it runs. That is right for a conversation someone returns to over days, and wrong for a scripted agent with a budget.
 
 ```python
-from frank import KeepRecentTurns
+from langmesh import KeepRecentTurns
 
 async with Session(reviewer, directory="/srv/checkout", compaction=KeepRecentTurns(20)) as session:
     ...
@@ -409,7 +409,7 @@ class KeepDecisions:
 `ask()` is the convenience. `stream()` is the whole vocabulary — text chunks, tool calls, tool results, usage, suspensions, the same events a session sends a client over its socket:
 
 ```python
-from frank.runtime.turn_events import TextChunk, ToolCall, Suspended
+from langmesh.runtime.turn_events import TextChunk, ToolCall, Suspended
 
 async for event in session.stream("Refactor the parser to use the streaming reader."):
     match event:
@@ -442,7 +442,7 @@ async with Session(reviewer, directory="/srv/checkout", session_id=review, check
 
 ## When to use the daemon instead
 
-Reach for `frankd` when you want one of these:
+Reach for `langmeshd` when you want one of these:
 
 - A session that outlives the terminal that started it.
 - A harness you can reach from another machine.

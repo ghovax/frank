@@ -1,16 +1,16 @@
 # Configuration reference
 
-Every setting Frank has, in the order the settings panel presents them: what you decide first at the top, the numbers underneath everything at the bottom.
+Every setting LangMesh has, in the order the settings panel presents them: what you decide first at the top, the numbers underneath everything at the bottom.
 
-A setting is addressed by its dotted path, and the same path works everywhere — in `~/.config/frank/configuration.yaml`, in `frank configure`, and as the key the interface writes. Nothing is written to that file until you change it: a setting you have never touched follows the default, including when a release moves it.
+A setting is addressed by its dotted path, and the same path works everywhere — in `~/.config/langmesh/configuration.yaml`, in `langmesh configure`, and as the key the interface writes. Nothing is written to that file until you change it: a setting you have never touched follows the default, including when a release moves it.
 
-Everything `frank configure` does:
+Everything `langmesh configure` does:
 
-- `frank configure` — what this machine has been set to, as one object.
-- `frank configure --all` — every setting there is, each with what it ships at and what it currently runs on.
-- `frank configure sandbox.enforce` — read one, printing the value and nothing else.
-- `frank configure sandbox.enforce off` — change one, and print how it was stored.
-- `frank configure sandbox.enforce --unset` — put it back, which removes it from the file rather than writing the default into it.
+- `langmesh configure` — what this machine has been set to, as one object.
+- `langmesh configure --all` — every setting there is, each with what it ships at and what it currently runs on.
+- `langmesh configure sandbox.enforce` — read one, printing the value and nothing else.
+- `langmesh configure sandbox.enforce off` — change one, and print how it was stored.
+- `langmesh configure sandbox.enforce --unset` — put it back, which removes it from the file rather than writing the default into it.
 
 The settings panel shows the same set, with the name and the explanation in the language the interface is set to. The words there and the words here are the same words: they live in `shared/messages/`, keyed by these paths.
 
@@ -219,7 +219,7 @@ How large, how many, and how patient the tools are.
 | `tuning.context_share.text` | number | `0.25` | Share one result's text may fill — output, fetched pages. |
 | `tuning.context_share.results` | number | `0.15` | Share a set of results may fill — matches, lines, records. |
 | `tuning.timeout_multiplier` | number | `1.0` | Multiplier on every wait. 2.0 doubles them for a slow machine; 1.0 is neutral. |
-| `tuning.defaults` | section | — | Override one tunable by its own name, in its own unit — see frank configure --all. An override replaces the shipped default, so context_share and timeout_multiplier still apply on top. |
+| `tuning.defaults` | section | — | Override one tunable by its own name, in its own unit — see langmesh configure --all. An override replaces the shipped default, so context_share and timeout_multiplier still apply on top. |
 | `tuning.defaults.output_tokens` | integer | `16000` | Tokens of inline output one tool may return before the rest overflows to a file. |
 | `tuning.defaults.fetch_tokens` | integer | `24000` | Tokens of a fetched web page's text kept inline. |
 | `tuning.defaults.maximum_line_chars` | integer | `2048` | Characters of a single over-long line kept before it is clipped, so one minified blob cannot fill a result on its own. |

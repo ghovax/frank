@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from frank.computer.retrieval import Document, Index
+from langmesh.computer.retrieval import Document, Index
 
 from tests.retrieval.corpus import Corpus
 from tests.retrieval.query_families import QUERY_FAMILIES, Query

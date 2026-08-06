@@ -35,7 +35,7 @@ if __name__ == "__main__":
     role = sys.argv[1] if len(sys.argv) > 1 else ""
     # The `control_screen` child, stdlib-only by design and thrown away when the script ends.
     if role == "control-child":
-        sys.exit(_run_bundled_script("frank/computer/control_child.py", sys.argv[2:]))
+        sys.exit(_run_bundled_script("langmesh/computer/control_child.py", sys.argv[2:]))
     # The system's proxy configuration, read out of process so the parent never loads SystemConfiguration.
     if role == "read-proxies":
         import json
@@ -44,6 +44,6 @@ if __name__ == "__main__":
         print(json.dumps(urllib.request.getproxies()))
         sys.exit(0)
 
-    from frank.__main__ import main
+    from langmesh.__main__ import main
 
     sys.exit(main())

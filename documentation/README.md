@@ -1,24 +1,24 @@
-# Frank — Documentation
+# LangMesh — Documentation
 
-Detailed guides for installing, configuring, understanding, and developing Frank. For a high-level overview, start with the [project README](../README.md).
+Detailed guides for installing, configuring, understanding, and developing LangMesh. For a high-level overview, start with the [project README](../README.md).
 
 **They are a stack, not separate products.** The library is the bottom of it, and everything else is built on top:
 
 | Layer | What it is | What it knows about your machine |
 |---|---|---|
-| `frank.Session` | The harness: turn loop, tools, prompts, permissions | Nothing. Every value is one you passed |
-| `frank.daemon.machine` | Turns a home directory into what `Session` takes | The XDG paths, and your `.agents` |
-| `frankd` | Supervision: a process per session, a socket each, the databases | Everything, and it is the right place to |
-| `frank`, and the app | Clients of the daemon | Where the daemon is |
+| `langmesh.Session` | The harness: turn loop, tools, prompts, permissions | Nothing. Every value is one you passed |
+| `langmesh.daemon.machine` | Turns a home directory into what `Session` takes | The XDG paths, and your `.agents` |
+| `langmeshd` | Supervision: a process per session, a socket each, the databases | Everything, and it is the right place to |
+| `langmesh`, and the app | Clients of the daemon | Where the daemon is |
 
 Start with the layer you are actually using.
 
 | If you want to… | Read |
 |---|---|
-| **Embed the harness in your own program** — `import frank`, no daemon, no socket | [As a library](library.md) |
-| **Drive it from a terminal** — create, send, attach, approve | [The `frank` command](cli.md) |
+| **Embed the harness in your own program** — `import langmesh`, no daemon, no socket | [As a library](library.md) |
+| **Drive it from a terminal** — create, send, attach, approve | [The `langmesh` command](cli.md) |
 | **Use the macOS app** | [The desktop app](app.md) |
-| **Reach it from your phone** | [`frank reach`](cli.md#reaching-it-from-a-phone) |
+| **Reach it from your phone** | [`langmesh reach`](cli.md#reaching-it-from-a-phone) |
 
 Then the rest, in the order they build on each other. [Architecture](architecture.md) defines the words the others use, so it comes first:
 
@@ -26,8 +26,8 @@ Then the rest, in the order they build on each other. [Architecture](architectur
 |-------|--------------|
 | [Architecture](architecture.md) | The vocabulary, the four layers, how a message becomes work, and [what is recorded about prompt caching](architecture.md#prompt-caching-and-what-is-recorded-about-it) |
 | [Installation](installation.md) | Download and Gatekeeper, or building from source |
-| [As a library](library.md) | `frank.Session` in your own process, and every seam you can replace |
-| [The `frank` command](cli.md) | Every verb, the session states, JSON and exit codes |
+| [As a library](library.md) | `langmesh.Session` in your own process, and every seam you can replace |
+| [The `langmesh` command](cli.md) | Every verb, the session states, JSON and exit codes |
 | [The desktop app](app.md) | The window, decisions, environments, and screen control |
 | [Agents and skills](agents-and-skills.md) | Authoring agents, skills, memory, and MCP servers |
 | [Configuration](configuration.md) | Providers, keys, permissions, MCP, and every config key |
@@ -39,7 +39,7 @@ Then the rest, in the order they build on each other. [Architecture](architectur
 
 ```python
 import asyncio
-from frank import AgentConfiguration, Catalogue, FilesystemConfiguration, SandboxConfiguration, Session
+from langmesh import AgentConfiguration, Catalogue, FilesystemConfiguration, SandboxConfiguration, Session
 
 reviewer = AgentConfiguration(
     name="reviewer",
@@ -63,17 +63,17 @@ asyncio.run(main())
 
 That reads nothing from your home directory, writes nothing to it, and starts no daemon. A library that installs a database because you imported it is a library you cannot embed, so every durable seam defaults to memory.
 
-To swap one, pass an object with the right methods. Each seam is a `typing.Protocol`: no base class to inherit, and no import of Frank in your type. [As a library](library.md) has the full table and a worked Redis checkpoint store.
+To swap one, pass an object with the right methods. Each seam is a `typing.Protocol`: no base class to inherit, and no import of LangMesh in your type. [As a library](library.md) has the full table and a worked Redis checkpoint store.
 
 
-## Where Frank keeps your things
+## Where LangMesh keeps your things
 
-Runtime state never lives in the repository. Frank follows the XDG convention:
+Runtime state never lives in the repository. LangMesh follows the XDG convention:
 
-- Configuration in **`~/.config/frank/`**
-- Durable state, including `history.db`, in **`~/.local/share/frank/`**
+- Configuration in **`~/.config/langmesh/`**
+- Durable state, including `history.db`, in **`~/.local/share/langmesh/`**
 - Sockets in the runtime directory
-- Logs in **`~/.local/state/frank/`**
-- Caches in **`~/.cache/frank/`**
+- Logs in **`~/.local/state/langmesh/`**
+- Caches in **`~/.cache/langmesh/`**
 
 The [Configuration guide](configuration.md) explains the settings worth explaining, and the [configuration reference](configuration-reference.md) lists every one of them.

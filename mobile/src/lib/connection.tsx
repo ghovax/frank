@@ -8,7 +8,7 @@ import { AppState, Platform } from "react-native";
 
 import { configure, probe } from "./api";
 
-/** What `frank reach pair` encodes into its link. */
+/** What `langmesh reach pair` encodes into its link. */
 export interface Pairing {
   version: number;
   name: string;
@@ -49,7 +49,7 @@ interface ConnectionValue {
   rename: (endpoint: string, name: string) => Promise<void>;
 }
 
-const STORAGE_KEY = "frank.pairings";
+const STORAGE_KEY = "langmesh.pairings";
 
 const ConnectionContext = createContext<ConnectionValue | null>(null);
 
@@ -84,7 +84,7 @@ export function parsePairing(input: string): Pairing {
   }
   return {
     version: Number(payload.version ?? 1),
-    name: String(payload.name ?? "Frank"),
+    name: String(payload.name ?? "LangMesh"),
     token: String(payload.token),
     endpoint: String(payload.endpoint),
   };

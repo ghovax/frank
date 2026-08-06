@@ -49,8 +49,8 @@ const monoFont = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Frank",
-  description: "Frank GUI",
+  title: "LangMesh",
+  description: "LangMesh GUI",
 // The favicon comes from the file conventions, so the browser tab matches the app icon.
 };
 

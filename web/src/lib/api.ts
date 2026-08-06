@@ -26,9 +26,9 @@ let daemonEndpointPromise: Promise<void> | null = null;
 
 async function resolveDaemonEndpoint(): Promise<void> {
   if (!runningInTauri()) {
-    // Served by `frank web`? That proxies the daemon at its own origin, so the base is the empty string.
+    // Served by `langmesh web`? That proxies the daemon at its own origin, so the base is the empty string.
     try {
-      const response = await fetch("/__frank/runtime.json", { cache: "no-store" });
+      const response = await fetch("/__langmesh/runtime.json", { cache: "no-store" });
       if (response.ok) {
         const runtime = await response.json();
         if (runtime?.proxied) API_BASE = "";
@@ -313,7 +313,7 @@ export interface WorkspaceCreateInput {
   locations: LocationInput[];
 }
 
-/** Another Frank this one can reach, without its token, so a rendered list carries no credential. */
+/** Another LangMesh this one can reach, without its token, so a rendered list carries no credential. */
 export interface Machine {
   id: string;
   name: string;
@@ -328,7 +328,7 @@ export async function listMachines(): Promise<Machine[]> {
   return Array.isArray(data.machines) ? (data.machines as Machine[]) : [];
 }
 
-/** Remember a machine from the `frank://pair#…` link `frank reach` prints. */
+/** Remember a machine from the `langmesh://pair#…` link `langmesh reach` prints. */
 export async function addMachine(link: string): Promise<Machine> {
   const response = await apiFetch(`/machines`, {
     method: "POST",
@@ -574,8 +574,8 @@ export async function refreshRemoteAgent(name: string): Promise<{ health: string
 }
 
 // The A2A convention: an extension's attributes sit under one URI-namespaced metadata key.
-export const METADATA_KEY = "urn:frank:ext:turn:v1";
-export const CONTENT_BLOCK_METADATA_KEY = "urn:frank:ext:content-block:v1";
+export const METADATA_KEY = "urn:langmesh:ext:turn:v1";
+export const CONTENT_BLOCK_METADATA_KEY = "urn:langmesh:ext:content-block:v1";
 
 export type PermissionMode = "ask" | "automatic";
 export type WorktreeStrategy = "none" | "branch" | "worktree";
@@ -899,7 +899,7 @@ export async function fetchFullDiskAccess(): Promise<boolean> {
   }
 }
 
-// Open System Settings to the Full Disk Access pane so the user can add Frank in one hop.
+// Open System Settings to the Full Disk Access pane so the user can add LangMesh in one hop.
 export async function openFullDiskAccessSettings(): Promise<void> {
   await apiFetch(`/system/full-disk-access/open`, { method: "POST" })
     .catch((caught) => swallowed({ component: "api", operation: "open the Full Disk Access pane" }, caught));
@@ -917,7 +917,7 @@ export async function fetchAccessibility(): Promise<boolean> {
   }
 }
 
-// Trigger the system Accessibility prompt and open its pane so the user can grant Frank.
+// Trigger the system Accessibility prompt and open its pane so the user can grant LangMesh.
 export async function openAccessibilitySettings(): Promise<void> {
   await apiFetch(`/system/accessibility/open`, { method: "POST" })
     .catch((caught) => swallowed({ component: "api", operation: "open the Accessibility pane" }, caught));
@@ -964,7 +964,7 @@ export interface ModelsResponse {
   providers: ProviderOption[];
 }
 
-// How the interface looks and where it opens, held by the daemon so every client is one Frank.
+// How the interface looks and where it opens, held by the daemon so every client is one LangMesh.
 export interface InterfacePreferences {
   color_mode: "system" | "light" | "dark";
   locale: string;
@@ -997,7 +997,7 @@ export async function savePreferences(changes: Partial<InterfacePreferences>): P
   return (await response.json()) as InterfacePreferences;
 }
 
-// API credentials stored in the daemon's configuration.yaml (under $XDG_CONFIG_HOME/frank).
+// API credentials stored in the daemon's configuration.yaml (under $XDG_CONFIG_HOME/langmesh).
 export async function fetchSettings(): Promise<Settings> {
   const response = await apiFetch(`/settings`);
   if (!response.ok) {
@@ -1710,7 +1710,7 @@ export interface A2APart {
 }
 
 // A turn's control-state under one URI-namespaced key, which is A2A's convention for an extension.
-export const TURN_STATE_KEY = "urn:frank:ext:turn:v1";
+export const TURN_STATE_KEY = "urn:langmesh:ext:turn:v1";
 
 // What opened a turn. `peer` is another session speaking, and emphatically not the user.
 export type TurnKind = "user" | "peer" | "autonomous" | "compaction";
@@ -1861,7 +1861,7 @@ export function attachSession(
     .then(async (response) => {
       if (!response.ok || !response.body) {
         // Silence here reads exactly like a session with nothing to say, so say it.
-        console.error("[frank] attach stream refused:", sessionId, response.status);
+        console.error("[langmesh] attach stream refused:", sessionId, response.status);
         return;
       }
       await pumpEventStream(response.body, (raw) => {

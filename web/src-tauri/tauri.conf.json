@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Frank",
+  "productName": "LangMesh",
   "version": "0.1.0",
-  "identifier": "com.ghovax.frank",
+  "identifier": "com.ghovax.langmesh",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:3000",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Frank",
+        "title": "LangMesh",
         "width": 1320,
         "height": 860,
         "minWidth": 840,

@@ -172,7 +172,7 @@ function friendlyErrorFromData(data: Record<string, unknown>): FriendlyError {
       case "network_error":
         return { title: "Connection interrupted", message: "The model connection dropped before the turn finished. Check the connection and retry." };
       case "server_error":
-        return { title: "Server request failed", message: "Frank could not start the turn. Check the daemon log and try again." };
+        return { title: "Server request failed", message: "LangMesh could not start the turn. Check the daemon log and try again." };
       // The fallback for when the daemon could not name the window and the model. Its own case, since an overlong conversation is worth saying plainly.
       case "context_window_exceeded":
       case "request_too_large":
@@ -1295,11 +1295,11 @@ export function useChat(
         } catch (caught) {
           // The reason, not just the fact: which call and which failure, rather than advice to read a log.
           const detail = errorMessage(caught);
-          console.error("[frank] could not start the turn:", caught);
+          console.error("[langmesh] could not start the turn:", caught);
           pushErrorMessage(stateRef.current, {
             code: "server_error",
             title: "Server request failed",
-            message: `Frank could not start the turn: ${detail}`,
+            message: `LangMesh could not start the turn: ${detail}`,
           });
           // One wind-down for every ending. `finishTurn` closes the stream if one was opened.
           finishTurn();

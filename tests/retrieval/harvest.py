@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from frank.computer.web import _folded_label, _parse_snapshot, _snapshot, _titles_by_label
+from langmesh.computer.web import _folded_label, _parse_snapshot, _snapshot, _titles_by_label
 
 from tests.retrieval.corpus import Corpus, RecordedElement, write_corpus
 

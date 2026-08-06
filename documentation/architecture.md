@@ -2,13 +2,13 @@
 
 ## The words this uses
 
-Six terms carry most of the meaning here, and four of them are Frank's own.
+Six terms carry most of the meaning here, and four of them are LangMesh's own.
 
 | Term | What it means |
 |---|---|
 | **Session** | One conversation with an agent. It is a durable record, and it has an OS process only while it is working. |
 | **Turn** | One exchange within a session: a message in, the model's work, and everything it said and did before it stopped. A session has many turns over its life. |
-| **Harness** | The code between the model and your machine — the turn loop, the tools, the prompts, the permissions. `frank.Session` is the harness, and everything else here is built on it. |
+| **Harness** | The code between the model and your machine — the turn loop, the tools, the prompts, the permissions. `langmesh.Session` is the harness, and everything else here is built on it. |
 | **Control plane** | The daemon's API. Every client reaches a session through it, so a caller is identified and scoped in exactly one place. |
 | **Location** | Where a session's tools actually run: this machine, or an SSH host. Distinct from its working directory, which is *where* on that location. |
 | **Peer** | A session created by another session. Not a special kind of thing — an ordinary session, addressed the way you address any session. |
@@ -21,19 +21,19 @@ Each layer uses the one below it and adds a single thing — the [documentation 
 
 The bottom layer is the whole of the harness. A program can embed it and never start a daemon; see [As a library](library.md). Everything below in this document is what the three layers above add.
 
-Frank is one executable entered four ways. `frank` is the command a person runs and `frankd` is the daemon. `prototype` is the process the daemon forks sessions from, and `session` is one session worker.
+LangMesh is one executable entered four ways. `langmesh` is the command a person runs and `langmeshd` is the daemon. `prototype` is the process the daemon forks sessions from, and `session` is one session worker.
 
 They are the same image, not four binaries, for two reasons. Packaging stays a single specification. A worker launched as a re-exec also carries the same code identity as the signed application bundle. One macOS Accessibility grant therefore covers every session, instead of prompting once per worker.
 
 ```mermaid
 flowchart BT
     subgraph Clients
-        Cli["frank (CLI)"]
+        Cli["langmesh (CLI)"]
         App["Desktop app<br/>(Tauri + Next.js)"]
         Peer["Another session"]
     end
 
-    subgraph Daemon["frankd — the control plane"]
+    subgraph Daemon["langmeshd — the control plane"]
         Registry["Session registry"]
         Lifecycle["Lifecycle + reaper"]
         Stores["Sole writer:<br/>history.db"]
@@ -74,7 +74,7 @@ Two consequences follow. A daemon restart ends every session's *process* and no 
 
 Each session serves [A2A](https://github.com/google/A2A) (JSON-RPC) on **its own unix socket** in the runtime directory, and the daemon is what talks to it. Every client reaches the daemon, and the daemon relays: the terminal, the desktop app, another session. There is therefore one place that identifies a caller, scopes it to its own subtree, and records it. A session's socket being real and addressable is what makes that relay a thin hop rather than a reimplementation, but nothing bypasses it today.
 
-There is no in-process delegation: a session that needs a peer creates an ordinary session and messages it. See [Tools](tools.md#composing-with-other-sessions). A child appears in `frank ps`, can be attached to, and is reaped when its parent ends.
+There is no in-process delegation: a session that needs a peer creates an ordinary session and messages it. See [Tools](tools.md#composing-with-other-sessions). A child appears in `langmesh ps`, can be attached to, and is reaped when its parent ends.
 
 Isolation is a property of the process. A process becomes one session and stays that session for the rest of its life.
 
@@ -82,7 +82,7 @@ Nothing reuses it, and it never serves a second session. No path exists by which
 
 ## The daemon
 
-`frankd` is deliberately thin — it runs no agents, and it never imports the runtime. It owns:
+`langmeshd` is deliberately thin — it runs no agents, and it never imports the runtime. It owns:
 
 - the **registry** of sessions (identity, parent, permission mode, status);
 - the **lifecycle**: asking the prototype to fork a session, hearing about crashes, and reaping a subtree parent-last so a child never outlives its parent;
@@ -97,17 +97,17 @@ It serves one API two ways:
 
 A token says a caller may drive the daemon; it does not say *who* is calling, and on the unix socket that distinction is load-bearing. A session's own `bash` tool runs as the same user, and it can read that `0600` file. Attribution on tokens alone would therefore let a session present the daemon's token. It would then get a peer with no parent and no permission clamp.
 
-The unix listener asks the kernel instead. `SO_PEERCRED` on Linux, or `LOCAL_PEERPID` on macOS, names the process that opened the connection. Every worker starts as a process-session leader, so `getsid` on that pid names the session it belongs to. That covers the worker itself, and every shell command and `frank` invocation underneath it.
+The unix listener asks the kernel instead. `SO_PEERCRED` on Linux, or `LOCAL_PEERPID` on macOS, names the process that opened the connection. Every worker starts as a process-session leader, so `getsid` on that pid names the session it belongs to. That covers the worker itself, and every shell command and `langmesh` invocation underneath it.
 
-That answer wins over the token. A session is therefore itself, whatever token it holds. A caller that the kernel places in no session stays unattributed, as it should: a person's terminal, or the desktop client. `frank kill` signals that same session id.
+That answer wins over the token. A session is therefore itself, whatever token it holds. A caller that the kernel places in no session stays unattributed, as it should: a person's terminal, or the desktop client. `langmesh kill` signals that same session id.
 
 The two answers are one fact, read in two directions. What the kernel calls a session is what the harness attributes to it, and what it reaps with it. A caller can `setsid` itself, which leaves the session entirely. It stops being the session; it does not escape as the session. It is then no longer identified, no longer scoped, and no longer reaped.
 
 ## The CLI
 
-`frank` adds nothing the control plane does not have — it is the ergonomic face of it. `create` a session and `send` it work. `ps` what runs, `attach` to watch, and `tree` to see what created what. `approve` a pending tool call, and `kill` a subtree. `remote` reaches an agent on another host, and `configure` sets what the next session starts with. The [CLI guide](cli.md) is the reference.
+`langmesh` adds nothing the control plane does not have — it is the ergonomic face of it. `create` a session and `send` it work. `ps` what runs, `attach` to watch, and `tree` to see what created what. `approve` a pending tool call, and `kill` a subtree. `remote` reaches an agent on another host, and `configure` sets what the next session starts with. The [CLI guide](cli.md) is the reference.
 
-Everything goes to the daemon, `send` included — `frank` opens the daemon's unix socket and posts to `/rpc`, and the daemon relays to the owning session. One path, so a call is attributed and scoped in exactly one place whoever made it.
+Everything goes to the daemon, `send` included — `langmesh` opens the daemon's unix socket and posts to `/rpc`, and the daemon relays to the owning session. One path, so a call is attributed and scoped in exactly one place whoever made it.
 
 ## The app
 
@@ -117,13 +117,13 @@ It also holds no state of its own. Which workspace you were last in, the colour 
 
 Because a webview cannot open a unix socket, the app uses the daemon's loopback listener and the daemon relays data-plane commands to the owning session.
 
-The app does not contain a daemon and does not start one. It finds one by reading the port and token that `frankd` publishes into the runtime directory. When there is none it is powerless, exactly as it is when a remote host does not answer.
+The app does not contain a daemon and does not start one. It finds one by reading the port and token that `langmeshd` publishes into the runtime directory. When there is none it is powerless, exactly as it is when a remote host does not answer.
 
-"Local" labels the daemon on this machine; it is not a different mechanism. To connect to it is the same act as connecting over a tunnel, without the tunnel. The daemon is a separate installable (`packaging/build-daemon.sh`), signed with the same identity as the app so the two share one macOS Accessibility grant. `frank app` brings the daemon up and launches the window in one command. The dependency therefore runs from the command line to the app, not the other way round.
+"Local" labels the daemon on this machine; it is not a different mechanism. To connect to it is the same act as connecting over a tunnel, without the tunnel. The daemon is a separate installable (`packaging/build-daemon.sh`), signed with the same identity as the app so the two share one macOS Accessibility grant. `langmesh app` brings the daemon up and launches the window in one command. The dependency therefore runs from the command line to the app, not the other way round.
 
 ## Connections: local, remote, SSH
 
-A daemon's address and its token belong together. Each `frankd` mints its own token at boot, so a remote daemon does not accept the local one. A saved connection profile therefore carries both. The client resolves, in order:
+A daemon's address and its token belong together. Each `langmeshd` mints its own token at boot, so a remote daemon does not accept the local one. A saved connection profile therefore carries both. The client resolves, in order:
 
 1. a connection you activated in **Settings**, under **Connections** (its URL and its token), then
 2. the endpoint the desktop shell reports for the local daemon, then
@@ -132,11 +132,11 @@ A daemon's address and its token belong together. Each `frankd` mints its own to
 
 That yields three ways to run:
 
-- **Local (default).** The app reads the port and token that `frankd` published into the runtime directory. It does not start it; `frank app` does, before it opens the window.
-- **Remote URL.** Run `frankd` on another host, expose its loopback port behind your own transport security, and add the URL plus the token. The app becomes a native front-end to a remote backend — the agent's shell, files, and network all live on that host.
-- **Over SSH.** Add an SSH host. Frank forwards a local port to the daemon's port on the remote machine. The harness can therefore live on a machine you reach only over SSH, with nothing exposed.
+- **Local (default).** The app reads the port and token that `langmeshd` published into the runtime directory. It does not start it; `langmesh app` does, before it opens the window.
+- **Remote URL.** Run `langmeshd` on another host, expose its loopback port behind your own transport security, and add the URL plus the token. The app becomes a native front-end to a remote backend — the agent's shell, files, and network all live on that host.
+- **Over SSH.** Add an SSH host. LangMesh forwards a local port to the daemon's port on the remote machine. The harness can therefore live on a machine you reach only over SSH, with nothing exposed.
 
-For the last two, run `frank daemon endpoint` on that host: it reports the port and the token the connection needs.
+For the last two, run `langmesh daemon endpoint` on that host: it reports the port and the token the connection needs.
 
 Keeping the halves apart serves one goal: **put the compute, the files, and the credentials wherever they belong, and keep the interface native and local.**
 
@@ -156,7 +156,7 @@ A session's permission mode is chosen when the session is created and can be cha
 
 1. You send a message to a session. Every client posts to the daemon, which relays it to the session that owns it. A session mid-turn takes the message *into* that turn at its next safe point; one parked on a decision takes nothing and says so, because starting a turn would discard the parked one.
 2. The agent loop calls the model, which may request tool calls.
-3. Each tool call is measured against the session's confinement. One that stays inside it runs. One that asks to reach past it is decided by the session's permission mode: under `ask` the session streams a permission request, which the CLI prints and `frank allow` or `frank deny` answers, or the app shows as an overlay; under `automatic` the reviewer answers it.
+3. Each tool call is measured against the session's confinement. One that stays inside it runs. One that asks to reach past it is decided by the session's permission mode: under `ask` the session streams a permission request, which the CLI prints and `langmesh allow` or `langmesh deny` answers, or the app shows as an overlay; under `automatic` the reviewer answers it.
 4. Approved tools then run:
 - **Shell**, inside an OS-enforced confinement: `sandbox-exec` on macOS, Landlock on Linux. The harness resolves it when the session is created, and clamps it against the creator.
 - **Files**, on the active location.
@@ -189,7 +189,7 @@ The only thing that ever invalidates a prefix is compaction, which replaces the 
 
 That still leaves the question a bill cannot answer. A provider serves the longest prefix it recognises, so a low cache read is either a request that stopped matching — in which case something here moved it — or one that matched and was not served, which nothing here can fix. Those want opposite responses and look identical from the outside.
 
-So every model call records how it compared to the one before it. The request is cut into the segments the wire is built from — the instructions, the tool schemas, then one per conversation item — and each is digested and counted; the next call's segments are compared against them. `frank.runtime.cache_trace` does the measuring and both model adapters carry it.
+So every model call records how it compared to the one before it. The request is cut into the segments the wire is built from — the instructions, the tool schemas, then one per conversation item — and each is digested and counted; the next call's segments are compared against them. `langmesh.runtime.cache_trace` does the measuring and both model adapters carry it.
 
 | Recorded on each `token_usage` event | What it says |
 |---|---|

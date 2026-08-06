@@ -176,7 +176,7 @@ def test_the_role_signal_in_the_embedding_stays_too_weak_to_act_on(corpora):
 
 def test_no_element_carrying_words_is_left_unreachable(corpora):
     """An element with words to offer must produce a non-empty key."""
-    from frank.computer.retrieval import web_element_text
+    from langmesh.computer.retrieval import web_element_text
 
     unreachable = []
     for corpus in corpora:

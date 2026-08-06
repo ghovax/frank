@@ -44,10 +44,10 @@ export function useTray(handlers: TrayHandlers): void {
     (async () => {
       const { listen } = await import("@tauri-apps/api/event");
       unlisteners.push(
-        await listen("frank://new-chat", () => handlersRef.current.onNewChat())
+        await listen("langmesh://new-chat", () => handlersRef.current.onNewChat())
       );
       unlisteners.push(
-        await listen<string>("frank://open-session", (event) =>
+        await listen<string>("langmesh://open-session", (event) =>
           handlersRef.current.onOpenSession(event.payload)
         )
       );

@@ -17,7 +17,7 @@
 #
 # Run this from an ordinary shell, NOT from inside `nix develop`. The devshell rewrites
 # `TMPDIR`, and the runtime directory hangs off it, so a daemon started outside the devshell is
-# invisible to anything started inside it — `frank ps` included. The handoff to bun below enters
+# invisible to anything started inside it — `langmesh ps` included. The handoff to bun below enters
 # the devshell itself, for exactly that reason.
 set -euo pipefail
 
@@ -26,14 +26,14 @@ repository="$(cd "$(dirname "$0")/.." && pwd)"
 # Asked of the daemon rather than read off a path this script works out for itself: the CLI
 # already owns where the runtime directory is, and one source of truth for that is the point.
 if [[ -x "$repository/.venv/bin/python" ]]; then
-  frank=("$repository/.venv/bin/python" -m frank)
+  langmesh=("$repository/.venv/bin/python" -m langmesh)
 else
-  frank=(uv run --project "$repository" python -m frank)
+  langmesh=(uv run --project "$repository" python -m langmesh)
 fi
 
-if ! endpoint="$("${frank[@]}" daemon endpoint 2>&1)"; then
+if ! endpoint="$("${langmesh[@]}" daemon endpoint 2>&1)"; then
   echo "Could not reach a daemon: $endpoint" >&2
-  echo "Start one first, from an ordinary shell:  uv run python -m frank frankd" >&2
+  echo "Start one first, from an ordinary shell:  uv run python -m langmesh langmeshd" >&2
   exit 1
 fi
 

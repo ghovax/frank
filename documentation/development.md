@@ -1,8 +1,8 @@
 # Development
 
-Frank has three parts:
+LangMesh has three parts:
 
-- The **Python image**: one executable, entered as `frank`, `frankd`, `prototype`, or `session`. It carries the harness.
+- The **Python image**: one executable, entered as `langmesh`, `langmeshd`, `prototype`, or `session`. It carries the harness.
 - The **Next.js web UI**.
 - The **Tauri desktop shell**. In development you run the daemon and the UI directly. The packaged app is built only for releases.
 
@@ -25,29 +25,29 @@ The Python harness runs from a local virtualenv managed with [uv](https://docs.a
 The CLI starts the daemon on its first command, so usually there is nothing to launch:
 
 ```shell
-uv run frank create --agent general-assistant --directory ~/code/project
-uv run frank send "$id" "What does this project do?" --wait
+uv run langmesh create --agent general-assistant --directory ~/code/project
+uv run langmesh send "$id" "What does this project do?" --wait
 ```
 
-The [`frank` command](cli.md) is the full surface. To run the daemon in the foreground instead — the fastest way to watch a traceback — start it by name:
+The [`langmesh` command](cli.md) is the full surface. To run the daemon in the foreground instead — the fastest way to watch a traceback — start it by name:
 
 ```shell
-uv run python -m frank frankd
+uv run python -m langmesh langmeshd
 ```
 
-One image, three entry points, chosen by the first argument: `frank` (the CLI), `frankd` (the daemon), `prototype` (the process sessions are forked out of). A bare launch lands in the CLI, which is why the daemon has to be asked for. `frank daemon stop` takes down a foreground daemon and its sessions with it.
+One image, three entry points, chosen by the first argument: `langmesh` (the CLI), `langmeshd` (the daemon), `prototype` (the process sessions are forked out of). A bare launch lands in the CLI, which is why the daemon has to be asked for. `langmesh daemon stop` takes down a foreground daemon and its sessions with it.
 
 A session is `fork()` **and then** `exec()` back into the same image, through the `session` entry point. The fork is what makes it cheap; the exec is what makes it safe. On macOS, a forked child that has not exec'd cannot use Network.framework or the Objective-C runtime. A session without the exec cannot reach a model at all.
 
-It listens on a unix socket in your runtime directory. For GUI clients it also listens on an ephemeral loopback port. `frank daemon endpoint` reports the port and the capability token.
+It listens on a unix socket in your runtime directory. For GUI clients it also listens on an ephemeral loopback port. `langmesh daemon endpoint` reports the port and the capability token.
 
 State follows the XDG convention, and all of it is created on first run:
 
-- Configuration in `~/.config/frank/`
-- Durable state in `~/.local/share/frank/`
-- Logs in `~/.local/state/frank/`
+- Configuration in `~/.config/langmesh/`
+- Durable state in `~/.local/share/langmesh/`
+- Logs in `~/.local/state/langmesh/`
 
-Add provider keys with `frank configure`, in the configuration file, or through environment variables. See the [Configuration guide](configuration.md).
+Add provider keys with `langmesh configure`, in the configuration file, or through environment variables. See the [Configuration guide](configuration.md).
 
 ## Running the web UI
 
@@ -60,7 +60,7 @@ Start the daemon first; the script asks it for its endpoint and passes that to t
 
 The token reaches the page as `NEXT_PUBLIC_TOKEN`, which the client ignores unless `NODE_ENV` is not production — Next eliminates that branch from a production build, so a token cannot end up inside a shipped export even if the variable is set on the machine that builds it.
 
-Run the script from an **ordinary shell, not from inside `nix develop`**. The devshell rewrites `TMPDIR`, the runtime directory hangs off it, and a daemon started outside the devshell is therefore invisible to anything started inside it — `frank ps` and `frank daemon endpoint` included. The script enters the devshell itself for the bun half, after it has already resolved the endpoint.
+Run the script from an **ordinary shell, not from inside `nix develop`**. The devshell rewrites `TMPDIR`, the runtime directory hangs off it, and a daemon started outside the devshell is therefore invisible to anything started inside it — `langmesh ps` and `langmesh daemon endpoint` included. The script enters the devshell itself for the bun half, after it has already resolved the endpoint.
 
 Useful scripts (in `web/`):
 
@@ -77,13 +77,13 @@ Outside `web/` the package layering runs `base`, then `protocol`, then `computer
 `threading.enumerate()` cannot see those threads; only the kernel's count can. The prototype therefore measures with mach `task_threads`, and refuses to fork when the answer is not 1.
 - **The runtime keeps no process-wide state.** Nothing under `runtime/` parks a caller's argument in a module global. Nothing installs a signal handler or registers an exit hook. The runtime is a library now, and one process may host more than one session.
 
-A new setting is a field on the configuration model, and then three things that are not in the code with it. The schema walk finds the field on its own, so `frank configure` and the settings panel both have it from the moment it exists — but the panel draws it with **a label and a sentence from `shared/messages/*.json`**, in every locale, and the [configuration reference](configuration-reference.md) needs **a row**. What a setting is called and what it is for are words to translate, so they live where the rest of the interface's words live; the schema carries only what a setting *is*.
+A new setting is a field on the configuration model, and then three things that are not in the code with it. The schema walk finds the field on its own, so `langmesh configure` and the settings panel both have it from the moment it exists — but the panel draws it with **a label and a sentence from `shared/messages/*.json`**, in every locale, and the [configuration reference](configuration-reference.md) needs **a row**. What a setting is called and what it is for are words to translate, so they live where the rest of the interface's words live; the schema carries only what a setting *is*.
 
 ## Running the desktop app in dev
 
 | Command | What it does |
 |---|---|
-| `frank serve` | The app connects to a daemon; it does not start one |
+| `langmesh serve` | The app connects to a daemon; it does not start one |
 | `cd web` |  |
 | `bun run tauri:dev` | Launches the Tauri window against the dev UI |
 
@@ -97,7 +97,7 @@ Two vocabularies, and they are not the same thing.
 
 **Human copy is prose.** The interface catalog, an `HTTPException` `detail`, an `RpcError`, CLI output: sentence case with terminal punctuation, because a person reads it as a sentence. A fragment used as a label or a chip — `high risk`, `waiting`, `write` — stays lowercase; it is not a sentence.
 
-**Never interpolate an exception into a log message.** An exception's message is human copy, so `logger.error("could not start session %s: %s", identifier, error)` staples a sentence — often one wrapping a JSON document — onto the end of an event. Pass the traceback with `exc_info=True`, or the fields with `frank.base.errors.describe`, and leave the message an event.
+**Never interpolate an exception into a log message.** An exception's message is human copy, so `logger.error("could not start session %s: %s", identifier, error)` staples a sentence — often one wrapping a JSON document — onto the end of an event. Pass the traceback with `exc_info=True`, or the fields with `langmesh.base.errors.describe`, and leave the message an event.
 
 The interface follows the same split: `swallowed({ component, operation }, error)` carries the place and the attempt as fields, and `serialize-error` parses whatever was thrown — JavaScript lets you throw a string, so a caught value may have no `message` at all.
 
@@ -117,7 +117,7 @@ Then the desktop app, which is a Tauri shell with no Python in it at all:
 cd web && bun run tauri:build
 ```
 
-The first freezes the harness with PyInstaller into `packaging/dist/Frank Computer Use.app`, smoke-tests it, and is a no-op when nothing that goes into it has changed. The second produces `web/src-tauri/target/release/bundle/macos/Frank.app`.
+The first freezes the harness with PyInstaller into `packaging/dist/LangMesh Computer Use.app`, smoke-tests it, and is a no-op when nothing that goes into it has changed. The second produces `web/src-tauri/target/release/bundle/macos/LangMesh.app`.
 
 It does **not** build a disk image. Installing locally is a `ditto` of the `.app`, and creating, mounting and converting a `.dmg` took about a quarter of every build to produce a file nothing here reads. Use `bun run tauri:dmg` when you actually want one to hand out.
 
@@ -131,7 +131,7 @@ For the full step-by-step with expected output, see [Installation](installation.
 
 ### Stable code-signing (recommended)
 
-The screen-control tools (`control_screen`) need the macOS **Accessibility** grant, which is tied to code identity. Every session worker is a re-exec of the daemon binary for exactly this reason — one grant covers the fleet. Both artifacts carry the same `CFBundleName` and identifier, so signing both with one persistent identity keeps them a single **Frank** row that survives rebuilds:
+The screen-control tools (`control_screen`) need the macOS **Accessibility** grant, which is tied to code identity. Every session worker is a re-exec of the daemon binary for exactly this reason — one grant covers the fleet. Both artifacts carry the same `CFBundleName` and identifier, so signing both with one persistent identity keeps them a single **LangMesh** row that survives rebuilds:
 
 Create the self-signed identity in your login keychain once:
 
@@ -142,8 +142,8 @@ packaging/create-signing-cert.sh
 Then sign after each build, either artifact or both:
 
 ```shell
-packaging/sign-app.sh "packaging/dist/Frank Computer Use.app"
-packaging/sign-app.sh web/src-tauri/target/release/bundle/macos/Frank.app
+packaging/sign-app.sh "packaging/dist/LangMesh Computer Use.app"
+packaging/sign-app.sh web/src-tauri/target/release/bundle/macos/LangMesh.app
 ```
 
 The daemon is signed `--deep` with `packaging/Entitlements.plist`. It sends Apple Events for its login-items and running-apps probes. It also loads PyInstaller's dylibs without library validation. The app needs neither entitlement, so it signs plain. The identity is self-signed, so Gatekeeper still warns on other machines until a build is Apple-notarized.
@@ -151,11 +151,11 @@ The daemon is signed `--deep` with `packaging/Entitlements.plist`. It sends Appl
 ### Installing the daemon
 
 ```shell
-ditto "packaging/dist/Frank Computer Use.app" "/Applications/Frank Computer Use.app"
-ln -sf "/Applications/Frank Computer Use.app/Contents/MacOS/frank" /usr/local/bin/frank
+ditto "packaging/dist/LangMesh Computer Use.app" "/Applications/LangMesh Computer Use.app"
+ln -sf "/Applications/LangMesh Computer Use.app/Contents/MacOS/langmesh" /usr/local/bin/langmesh
 ```
 
-The symlink is what puts `frank` and `frankd` on your `PATH`, both entering the same signed image. Running from a checkout (`uv run frank …`) works for everything except a stable Accessibility grant, since the interpreter is then the code identity.
+The symlink is what puts `langmesh` and `langmeshd` on your `PATH`, both entering the same signed image. Running from a checkout (`uv run langmesh …`) works for everything except a stable Accessibility grant, since the interpreter is then the code identity.
 
 ## Tests
 
@@ -182,7 +182,7 @@ Beyond the battery: lint with `uv run ruff check`, and drive the affected path t
 
 ## Project layout
 
-**`src/frank/`** — the Python image, in the import order stated below:
+**`src/langmesh/`** — the Python image, in the import order stated below:
 
 | Module | What lives there |
 |---|---|
@@ -192,12 +192,12 @@ Beyond the battery: lint with `uv run ruff check`, and drive the affected path t
 | `locations/` | Where files live: local, SSH, containers |
 | `runtime/` | The agent loop, prompts, tools, models |
 | `worker/` | A session process, and the prototype it is forked from |
-| `__init__.py` | The library surface: `frank.Session` and its seams |
+| `__init__.py` | The library surface: `langmesh.Session` and its seams |
 | `workspace/` | Projects, locations, settings, terminals — beside the rest, not above |
-| `daemon/` | `frankd`: registry, lifecycle, prototype client, machine loaders |
+| `daemon/` | `langmeshd`: registry, lifecycle, prototype client, machine loaders |
 | `rest/` | The REST surface the browser uses; never imports `daemon` |
-| `cli/` | The `frank` command and its renderers |
-| `__main__.py` | argv dispatch: `frank`, `frankd`, `prototype`, `session` |
+| `cli/` | The `langmesh` command and its renderers |
+| `__main__.py` | argv dispatch: `langmesh`, `langmeshd`, `prototype`, `session` |
 
 **Everything else:**
 

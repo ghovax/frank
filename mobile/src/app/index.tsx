@@ -6,7 +6,7 @@ import { useState } from "react";
 import { Alert as SystemAlert, ScrollView, StyleSheet, View } from "react-native";
 import { useTranslations } from "use-intl";
 
-import { FrankMark } from "../components/frank-mark";
+import { LangMeshMark } from "../components/langmesh-mark";
 import { Button, EmptyState, Row, StatusDot, Text } from "../components/ui";
 import { useConnection, type Pairing } from "../lib/connection";
 import { useTheme } from "../theme";
@@ -42,7 +42,7 @@ export default function MachinesScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
       <View style={[styles.header, { paddingTop: insets.top + theme.space[4], paddingHorizontal: theme.space[4], paddingBottom: theme.space[3], gap: theme.space[3] }]}>
-        <FrankMark size={26} color={theme.colors.fg} />
+        <LangMeshMark size={26} color={theme.colors.fg} />
         <Text variant="heading" style={{ flex: 1 }}>{translation("title")}</Text>
       </View>
 

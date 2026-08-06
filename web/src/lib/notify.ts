@@ -5,7 +5,7 @@ import { swallowed } from "@/lib/swallowed";
 
 // System notifications for calls awaiting a decision, degrading gracefully by platform capability.
 
-const PERMISSION_TAG_PREFIX = "frank-permission-";
+const PERMISSION_TAG_PREFIX = "langmesh-permission-";
 const APPROVE_ACTION = "approve";
 
 type PermissionActionHandler = (requestId: string) => void;
@@ -42,7 +42,7 @@ async function swRegistration(): Promise<ServiceWorkerRegistration | null> {
       listenerAttached = true;
       navigator.serviceWorker.addEventListener("message", (event) => {
         const payload = event.data as { type?: string; action?: string; data?: { requestId?: string } } | null;
-        if (payload?.type !== "frank-notification-click") return;
+        if (payload?.type !== "langmesh-notification-click") return;
         const requestId = payload.data?.requestId;
         if (payload.action === APPROVE_ACTION && requestId) actionHandler?.(requestId);
         // A body click just focuses the app: the overlay is on screen with the full context and both choices.

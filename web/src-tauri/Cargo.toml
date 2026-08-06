@@ -1,24 +1,24 @@
 [package]
-name = "frank"
+name = "langmesh"
 version = "0.1.0"
-description = "Frank desktop app — native shell for the Frank session UI"
+description = "LangMesh desktop app — native shell for the LangMesh session UI"
 authors = ["ghovax"]
 edition = "2021"
-default-run = "Frank"
+default-run = "LangMesh"
 rust-version = "1.77.2"
 
-# The binary is named "Frank" (capitalized) so the built executable — and therefore
-# CFBundleExecutable — reads "Frank". The macOS Automation / Apple-Events permission prompt
-# shows the sending process's executable name, so a lowercase "frank" there would not match
-# the "Frank" the Accessibility pane shows; naming the binary properly keeps both consistent.
+# The binary is named "LangMesh" (capitalized) so the built executable — and therefore
+# CFBundleExecutable — reads "LangMesh". The macOS Automation / Apple-Events permission prompt
+# shows the sending process's executable name, so a lowercase "langmesh" there would not match
+# the "LangMesh" the Accessibility pane shows; naming the binary properly keeps both consistent.
 [[bin]]
-name = "Frank"
+name = "LangMesh"
 path = "src/main.rs"
 
 # The Rust code compiles to a library so the same `run()` entry point is shared by
 # the desktop binary (main.rs) and mobile builds.
 [lib]
-name = "frank_lib"
+name = "langmesh_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

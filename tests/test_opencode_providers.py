@@ -5,9 +5,9 @@ from typing import Any
 
 import pytest
 
-import frank.base.models as model_catalog
-from frank.base.models import ModelDefinition, available_models, resolve_litellm
-from frank.base.providers import PROVIDERS, resolve_api_key
+import langmesh.base.models as model_catalog
+from langmesh.base.models import ModelDefinition, available_models, resolve_litellm
+from langmesh.base.providers import PROVIDERS, resolve_api_key
 
 
 class CatalogResponse:

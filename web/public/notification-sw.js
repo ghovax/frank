@@ -9,7 +9,7 @@ self.addEventListener("notificationclick", (event) => {
       const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       for (const client of clients) {
         client.postMessage({
-          type: "frank-notification-click",
+          type: "langmesh-notification-click",
           action: event.action || "",
           data: event.notification.data || {},
         });

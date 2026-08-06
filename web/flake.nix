@@ -1,5 +1,5 @@
 {
-  description = "Harness web UI + Frank desktop app (Tauri)";
+  description = "Harness web UI + LangMesh desktop app (Tauri)";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 

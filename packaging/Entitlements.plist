@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <!-- Entitlements for the DAEMON bundle ("Frank Computer Use.app"), not the desktop app.
+  <!-- Entitlements for the DAEMON bundle ("LangMesh Computer Use.app"), not the desktop app.
        Both used to sit on the app because the app spawned the daemon and TCC attributed the
        daemon's actions to it as responsible parent; the app no longer launches anything, so
        they belong where the need actually is. Apple Events are for the login-items and
