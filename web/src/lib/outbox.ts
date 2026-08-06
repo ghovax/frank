@@ -1,30 +1,4 @@
 // Messages the session has not taken yet, and the one thing allowed to hand them over.
-//
-// A session refuses a message for exactly one reason: it is parked on a decision only a person can
-// make, and taking a message would mean starting a turn, which would discard the parked one. So a
-// message that cannot be delivered is *held*, and the interface shows it as held rather than
-// pretending it was sent.
-//
-// The shape of this file is a reaction to how the previous version failed. Delivery used to be
-// attempted from five places — the composer, the end of a locally-driven turn, two branches of the
-// read-only attach effect, and a `sessionRunning` edge — and each of them read state that delivery
-// itself changed. Sending set `isStreaming`, `isStreaming` was a dependency of the effect that
-// triggered sending, and a refused message was put back in the queue. That is a cycle with no
-// bottom: refuse, re-queue, re-trigger, refuse. A person who denied a permission and then typed
-// something watched their message be retried forever and delivered never.
-//
-// Two rules keep it from coming back, and they are the whole design:
-//
-//   1. **One owner.** Nothing else may deliver. There is no second path to keep in step with this
-//      one, so there is no pair of paths that can disagree.
-//   2. **A trigger this cannot produce.** Delivery is attempted when a person does something: they
-//      type a message, or they answer the decision that was blocking it. Delivery changes the
-//      queue, the in-flight flag and the session's turn state — and *none of those is a trigger*.
-//      A refusal therefore ends the attempt instead of scheduling the next one. Retrying is
-//      something a person causes, not something the failure causes.
-//
-// Nothing here polls, retries on a timer, or listens to the session's own activity. Those are the
-// mechanisms that made the loop possible, and their absence is what makes another one impossible.
 
 /** What became of one attempt to hand a message over. */
 export type Delivery =
@@ -41,14 +15,7 @@ export interface OutboxMessage {
   dataParts: Record<string, unknown>[];
 }
 
-/**
- * Why the queue is not moving, which is a different question from whether it is empty.
- *
- * Named rather than a boolean because the two reasons need different words on screen and have
- * different ways out. "Waiting on a decision" is somebody's turn to act and resolves itself the
- * moment they do. "Could not reach the session" is a fault, and saying "queued" about it is the
- * same lie as saying "sent" about a message nobody took.
- */
+/** Why the queue is not moving, which is a different question from whether it is empty. */
 export type OutboxHold =
   /** The session is parked on a decision. Answering it releases these. */
   | "decision"
@@ -61,26 +28,14 @@ export interface OutboxState {
   /** In the order they were typed. Every one of these is undelivered — that is what being here means. */
   messages: OutboxMessage[];
   hold: OutboxHold;
-  /**
-   * The message being handed over right now.
-   *
-   * It is in the list, because it has not been taken yet, but it is not *waiting* for anything —
-   * it is going. A view that labels it "queued" tells somebody their message is stuck for the
-   * few milliseconds before it lands, which reads as a fault every single time a message is sent
-   * normally.
-   */
+  /** The message being handed over right now: in the list, but going rather than waiting. */
   delivering: string | null;
 }
 
 export interface OutboxPorts {
   /** Hand one message to the session. Must not throw; a thrown error is treated as `failed`. */
   deliver: (message: OutboxMessage) => Promise<Delivery>;
-  /**
-   * Whether the session is parked on a decision right now, as the transcript sees it.
-   *
-   * An optimisation and not the authority: it saves a round trip that would be refused anyway,
-   * and when it is wrong the refusal still governs. The authority is always the session's answer.
-   */
+  /** Whether the session is parked right now as the transcript sees it, an optimisation rather than the authority. */
   parked: () => boolean;
   /** Called whenever the queue or the blocked flag changes, so a view can re-render. */
   changed: (state: OutboxState) => void;
@@ -90,8 +45,7 @@ export class Outbox {
   private messages: OutboxMessage[] = [];
   private held: OutboxHold = null;
   private handing: string | null = null;
-  // One attempt at a time. Two overlapping pumps would deliver the same head twice, which is the
-  // one error a queue must never make.
+  // One attempt at a time, since two overlapping pumps would deliver the same head twice.
   private pumping = false;
   // The conversation these messages were typed into. Empty until one exists.
   private session = "";
@@ -102,20 +56,7 @@ export class Outbox {
     return { messages: [...this.messages], hold: this.held, delivering: this.handing };
   }
 
-  /**
-   * Point the queue at a conversation.
-   *
-   * Two different events look identical to an effect keyed on the session id, and only one of
-   * them may throw messages away. A session that did not exist yet *becoming* known is what
-   * happens the moment a first message creates one — and those messages are the reason it
-   * exists, so dropping them there deletes exactly the thing the person was doing. Moving
-   * between two conversations that both already exist is the other event, and there the queue
-   * really does belong to the one being left.
-   *
-   * This lived in a React effect's cleanup, which sees only "the id changed" and cleared for
-   * both. Sending a first message into a new conversation and immediately typing a second one
-   * destroyed the second, silently, every time.
-   */
+  /** Point the queue at a conversation, keeping the messages when the session is only now coming into being. */
   retarget(session: string): void {
     if (session === this.session) return;
     const leavingRealConversation = this.session !== "";
@@ -127,19 +68,11 @@ export class Outbox {
   add(message: OutboxMessage): void {
     this.messages = [...this.messages, message];
     this.announce();
-    // Not while a decision is outstanding: the answer is known, and asking again would produce a
-    // second refusal and a second thing to tell them about. It goes when the decision is made.
-    // An unreachable hold is different — typing again is a perfectly good moment to find out
-    // whether the session can be reached now.
+    // Not while a decision is outstanding, since the answer is known and asking again only refuses twice.
     if (this.held !== "decision") void this.pump();
   }
 
-  /**
-   * The decision that was blocking delivery has been answered.
-   *
-   * One of the two retry triggers, and both are caused by a person. Neither can be caused by a
-   * delivery, which is what stops a refusal from feeding itself.
-   */
+  /** The decision that was blocking delivery has been answered, which is one of the two retry triggers. */
   released(): void {
     if (this.held !== "decision") return;
     this.held = null;
@@ -181,16 +114,13 @@ export class Outbox {
     this.pumping = true;
     try {
       while (this.messages.length > 0) {
-        // Asked before each message rather than once: answering one decision can leave another
-        // open, and the second message must not be thrown at a session that is parked again.
+        // Asked before each message, since answering one decision can leave another open.
         if (this.ports.parked()) {
           this.hold("decision");
           return;
         }
         const head = this.messages[0];
-        // Marked before the await, so a view never draws it as waiting. Announced in the same
-        // tick as the `add` that started this, so the two settle into one render rather than a
-        // frame of "Queued" flashing past on a message that was about to be sent anyway.
+        // Marked before the await, so a view never draws it as waiting, and announced in the same tick.
         this.handing = head.id;
         this.announce();
         let outcome: Delivery;
@@ -205,15 +135,11 @@ export class Outbox {
           return;
         }
         if (outcome === "failed") {
-          // It never reached the session, so it keeps its place *and says so*. Leaving it
-          // labelled "queued" would be the same lie as the one this class exists to stop: a
-          // message that looks handled and is not. No timer either — a retry is something a
-          // person asks for, here as everywhere else.
+          // It never reached the session, so it keeps its place and says so.
           this.hold("unreachable");
           return;
         }
-        // Delivered. It leaves the queue only now, on the session's own word — never on a guess
-        // about what probably happened to it.
+        // Delivered: it leaves the queue only now, on the session's own word.
         this.messages = this.messages.filter((message) => message.id !== head.id);
         this.held = null;
         this.announce();
@@ -224,12 +150,7 @@ export class Outbox {
   }
 
   private hold(reason: OutboxHold): void {
-    // Always announced, even when the reason is the one already showing. This used to return
-    // early on an unchanged reason, which was true of the reason and false of the state: the
-    // message that had been in flight was no longer in flight, and skipping the announcement
-    // left a view saying it was. Two failures in a row and the composer showed a message being
-    // delivered forever. A state with more than one field cannot be announced conditionally on
-    // one of them.
+    // Always announced, even when the reason is unchanged, because the state around it is not.
     this.held = reason;
     this.announce();
   }

@@ -15,11 +15,7 @@ import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
 import { STATUS_PALETTE, toolStatusKind } from "@/lib/status";
 import { asRecord } from "@/lib/coerce";
 
-// The location a filesystem/shell tool ran against, as a compact badge — but only when it
-// is *remote*. Local runs (`file://…`) get no badge: the absence of a badge already reads as
-// "here", so a "Local" tag would be pure noise, and a remote badge only ever appears in a
-// workspace that actually spans machines. A remote (`ssh://host/path`) shows just the host
-// authority (everything after `ssh://` up to the path) — enough to name the machine.
+// The location a tool ran against, badged only when it is remote, since no badge already reads as here.
 function toolLocationBadge(value: unknown): { label: string; palette: "blue" } | null {
   if (typeof value !== "string" || !value.startsWith("ssh://")) return null;
   const authority = value.slice("ssh://".length).split("/")[0];
@@ -32,8 +28,7 @@ function ToolLocationBadge({ arguments: args }: { arguments?: Record<string, unk
   return <Pill colorPalette={info.palette}>{info.label}</Pill>;
 }
 
-// A tool call's live status as a pill (colour from the shared status palette). A
-// completed call carries no badge — its settled line speaks for itself.
+// A tool call's live status as a pill; a completed call carries none because its settled line speaks for itself.
 export function ToolStatusBadge({ status }: { status: ToolEventStatus }) {
   const translation = useTranslations("ToolCard");
   if (status === "completed" || status === "done") return null;
@@ -41,9 +36,7 @@ export function ToolStatusBadge({ status }: { status: ToolEventStatus }) {
   return <Pill colorPalette={STATUS_PALETTE[toolStatusKind(status)]}>{translation(labelKey)}</Pill>;
 }
 
-// Always-visible markers for a tool call: a write badge when the call can change something, and
-// an access badge when it asked to reach past its confinement. A call that stays inside the box
-// stays bare — which is most of them, and is what makes the badges worth reading.
+// Always-visible markers: a write badge when the call can change something, and an access badge when it reaches out.
 export function ToolAccessBadges({ name, arguments: toolArguments }: { name?: string; arguments?: Record<string, unknown> }) {
   const translation = useTranslations("ToolCard");
   if (!toolArguments) return null;
@@ -56,11 +49,7 @@ export function ToolAccessBadges({ name, arguments: toolArguments }: { name?: st
   return <>{badges}</>;
 }
 
-// The location to badge on a collapsed heading that summarizes several calls. A remote is
-// the notable case (local is the implied default), so surface it: if the batch touched
-// exactly one remote place, badge that — even when local calls sit alongside it. A purely
-// local batch needs no heading badge; multiple distinct remotes defer to the expanded
-// per-call badges.
+// The location to badge on a collapsed heading, surfaced when the batch touched exactly one remote place.
 export function collapsedHeadingLocation(argumentsList: (Record<string, unknown> | undefined)[]): Record<string, unknown> | undefined {
   const remotes = new Map<string, Record<string, unknown>>();
   for (const args of argumentsList) {
@@ -87,11 +76,7 @@ function isToolErrorResult(content: string | null): boolean {
   }
 }
 
-// Whether ToolResultView will actually render something inline for this result.
-// It mirrors the null-return paths in ToolResultView so an expanded line never
-// shows an empty bordered rail (which otherwise leaves a gap below the line):
-// a few tool names render nothing inline, and background/started/empty results
-// carry no body to show.
+// Whether the result view will render anything inline, mirroring its own null paths so no empty rail is drawn.
 function resultRendersInside(name: string, content: string, status: ToolEventStatus | undefined): boolean {
   if (name === "list_mcp_tools" || name === "list_mcp_resources") return false;
   let parsed: unknown;
@@ -108,12 +93,7 @@ function resultRendersInside(name: string, content: string, status: ToolEventSta
   return true;
 }
 
-// The single source of truth for what a tool line expands into: whether its call
-// arguments and/or its result have anything to show inside the collapsible, and thus
-// whether the line is collapsible at all. A line with no showable detail must NOT be
-// made expandable — otherwise the chevron opens onto an empty bordered rail. Exported
-// so every surface that renders a tool line (the transcript ToolCall, a grouped run)
-// makes the same decision rather than each re-deriving it and drifting.
+// The single source of truth for what a tool line expands into, and so whether it is collapsible at all.
 export interface ToolCallDetail {
   showArguments: boolean;
   showResult: boolean;
@@ -126,29 +106,23 @@ export function toolCallDetail(
   result: unknown,
   status?: ToolEventStatus,
 ): ToolCallDetail {
-  // `explanation` is rendered as the line's label, and `location` as a trailing
-  // badge — neither is body content, so a call carrying only those has nothing to
-  // expand into.
+  // The explanation is the line's label and the location a trailing badge, so neither is body content.
   const showArguments = !!args && Object.keys(args).some((key) => key !== "explanation" && key !== "location");
   const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
   // A tool_error is surfaced on the line itself and leaves nothing for the body.
   const showResult =
     resultContent != null && !isToolErrorResult(resultContent) && resultRendersInside(name, resultContent, status);
-  // The task list is the model's own internal bookkeeping — its line never exposes
-  // the raw task entries, so it is never collapsible regardless of its arguments.
+  // The task list is the model's own bookkeeping, so its line never expands regardless of its arguments.
   const isInternalPlanning = name === "set_tasks" || name === "update_tasks";
   return { showArguments, showResult, collapsible: !isInternalPlanning && (showArguments || showResult) };
 }
 
-// What a tool line expands into: the call's arguments, then its result. Its own component
-// because two surfaces show it — the tool line here, and a group that holds exactly one call
-// and therefore skips the line entirely and shows this in its place.
+// What a tool line expands into: the call's arguments, then its result.
 export function ToolCallDetail({ name, arguments: toolArguments, result, status }: ToolEvent) {
   const { showArguments, showResult } = toolCallDetail(name, toolArguments, result, status);
   const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
   return (
-    // gap matches FieldList's own field spacing so the call's last field (e.g. Risk)
-    // and the result's first (e.g. PID) read as one list.
+    // The gap matches the field list's own spacing, so the call's last field and the result's first read as one list.
     <Flex direction="column" gap={2} align="stretch">
       {/* One scope around both halves: a field the arguments already showed does not render
           again in the result. See `FieldScope` — the guard is the primitive, not the view. */}
@@ -160,16 +134,10 @@ export function ToolCallDetail({ name, arguments: toolArguments, result, status 
   );
 }
 
-// A tool call is a line of activity, not a card: icon + label at the same type
-// scale as the surrounding markdown, with its badges hugging the text. Expanding
-// hangs the structured detail off a hairline left rule — the same visual grammar
-// as a blockquote — so a run of calls reads as an annotated ledger inside the
-// prose rather than a stack of boxes interrupting it.
+// A tool call is a line of activity rather than a card, with its structured detail hanging off a hairline rail.
 export function ToolCall({ name, arguments: toolArguments, result, status, actions }: ToolCallProps) {
   const translation = useTranslations("ToolCall");
-  // One decision, shared with every other tool-line surface: what (if anything) this
-  // line expands into. A line with nothing to show is not collapsible (DisclosureRow
-  // enforces that from the presence of body children), so it never opens an empty rail.
+  // One decision shared with every other tool-line surface: what, if anything, this line expands into.
   const { collapsible } = toolCallDetail(name, toolArguments, result, status);
   // A running call whose interim result says the work moved to the background.
   const background = status === "running" && hasBackgroundJobId(result);
@@ -178,8 +146,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, actio
 
   return (
     <DisclosureRow
-      // input_required tints the whole line; otherwise it settles muted and brightens
-      // on open/hover — the one colour rule DisclosureRow owns.
+      // Input-required tints the whole line; otherwise it settles muted and brightens on open or hover.
       tone={status === "input_required" ? "attention" : "muted"}
       maxH="480px"
       icon={<Box color={iconColor} display="flex" alignItems="center"><Icon /></Box>}

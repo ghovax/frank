@@ -1,62 +1,25 @@
 "use client";
 
-// One row of a tree, and the only one. The workspaces in the sidebar, the conversations under
-// them, and the delegated work in its panel are all this component — so a chevron, a glyph and
-// a label sit at the same three x positions everywhere, and a list reads as one column rather
-// than as several that nearly line up.
-//
-// It exists because they did not. `DisclosureRow` — the app's general collapsible line — puts
-// its chevron *after* the label, at the trailing edge, which is right for a tool call in the
-// transcript, where the row is a fit-content line and the chevron closes the sentence. A tree
-// needs the opposite: the disclosure belongs at the leading edge, on the indent rail, because
-// that is the column the eye follows down a hierarchy. Rendering a session tree out of the
-// transcript's row meant one arrow on the left of a session and another on the right of the
-// workspace above it, which is exactly as confusing as it sounds.
-//
-// The two rules that make a tree line up:
-//
-//   • A column exists only for a row that has something to put in it. A chevron for a row that
-//     can expand, a glyph for a row that has one — and nothing at all otherwise, so a title
-//     starts at the row's own edge rather than behind an indent held open for a mark that will
-//     never come. Depth is said by the indent rail, which is the one thing that does say it.
-//   • Anything that comes and goes — a status dot, a count — rides the trailing edge, where its
-//     arrival cannot move the label. The leading edge is for what a row permanently is.
+// One row of a tree, and the only one, shared by the sidebar, its conversations, and the delegated panel.
 
 import { Box, Button, Flex } from "@chakra-ui/react";
 import type { ReactNode } from "react";
 import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 
-// A row that can expand. One that cannot passes nothing and spends no width on the column:
-// depth is already said by the indent rail, and holding the slot open on every leaf put a
-// second empty column in front of every title that had nothing to put there.
+// A row that can expand; one that cannot passes nothing and spends no width on the column.
 export type TreeRowDisclosure = "open" | "closed";
 
-// The row's own height, and the width of each leading slot. Fixed rather than content-driven:
-// that is what makes the columns exact, and what lets a nested list indent by a whole slot.
+// The row's height and each leading slot's width, fixed so the columns are exact and nesting indents by a slot.
 const ROW_HEIGHT = 7;
 const SLOT_WIDTH = 4;
 
-// The geometry the rail is derived from, in pixels, because the rail has to land on a half-slot
-// and the spacing scale has no such step. The row insets its content by 6px and the disclosure
-// slot is 16px wide, so a chevron's centre line sits 14px from the row's left edge. The rail
-// under it is 2px wide, so its left edge belongs at 13px — otherwise the line that is supposed
-// to descend *from* the arrow starts three pixels beside it, which is exactly what it looked
-// like. The children then start one step further in.
+// The geometry the rail is derived from, in pixels, because it lands on a half-slot the spacing scale has no step for.
 const ROW_INSET = 6;
 const RAIL_WIDTH = 2;
 const RAIL_OFFSET = ROW_INSET + 16 / 2 - RAIL_WIDTH / 2;
 const CHILD_INSET = 9;
 
-// Where the trailing mark sits, and why it is arithmetic rather than a nudge.
-//
-// The status dot is a 6px circle in a 28px row, so it clears the top and bottom by 11px. Left
-// at the row's own 6px padding it cleared the right edge by 6, which is what made it look
-// pressed against the corner: the same dot with two different gaps around it. So the slot pads
-// out to the same 11px, and the dot has equal air on the three sides that meet at that corner.
-//
-// The ⋯ takes the dot's place on hover, so it centres on the same point rather than merely near
-// it: 11px of gap plus the dot's own 3px radius puts that centre 14px in, and the button is
-// 20px wide.
+// Where the trailing mark sits, computed rather than nudged so the dot is centred in the row.
 const DOT_SIZE = 6;
 const TRAILING_GAP = (28 - DOT_SIZE) / 2;
 const TRAILING_INSET = TRAILING_GAP - ROW_INSET;
@@ -77,15 +40,10 @@ export function TreeRow({
   disclosure?: TreeRowDisclosure;
   onDisclosureChange?: (open: boolean) => void;
   disclosureLabel?: string;
-  // A leading glyph, and its column, for a list where every row has one — the workspaces and
-  // their folder. A list whose rows have nothing to put there passes nothing and spends no
-  // width on it, which is what kept the conversation titles pinned a column to the right of
-  // where they belonged.
+  // A leading glyph and its column, for a list where every row has one.
   glyph?: ReactNode;
   label: ReactNode;
-  // The trailing slot: a count, a status dot. It sits at the row's right edge, where it cannot
-  // push the label around as it comes and goes, and it yields that spot to the actions while
-  // the row is hovered.
+  // The trailing slot at the row's right edge, which yields its spot to the actions on hover.
   badges?: ReactNode;
   actions?: ReactNode;
   selected?: boolean;
@@ -94,10 +52,6 @@ export function TreeRow({
   children?: ReactNode;
 }) {
   // A row is collapsible because it has something to collapse, never because a caller said so.
-  // The two can disagree — a workspace with no conversations passed an empty list container,
-  // which is a truthy child — and what that looked like was a chevron that opened onto a strip
-  // of padding with a hairline down the side of it. Deriving both the chevron and the rail from
-  // the same fact is what keeps an empty row from claiming it holds anything.
   const collapsible = children != null;
   const expanded = collapsible && disclosure === "open";
   return (
@@ -115,11 +69,7 @@ export function TreeRow({
         _hover={{ bg: selected ? "blue.muted" : "bg.subtle" }}
         transition="background-color 0.12s"
         css={{
-          // The trailing controls appear on hover, and are taken out of layout when they do not
-          // — an invisible button still occupies its width, which pushed everything left of it
-          // inward on every quiet row. Gated on there being a pointer at all: on a touch screen
-          // there is no hover, so a control revealed by it is a control that does not exist,
-          // and WebKit spends the first tap on the hover state rather than on the row.
+          // The trailing controls appear on hover and are taken out of layout when they do not.
           "@media (hover: hover)": {
             "& [data-row-actions]": { display: "none" },
             "&:hover > [data-row-actions]": { display: "flex" },
@@ -173,19 +123,14 @@ export function TreeRow({
           _hover={{ bg: "transparent" }}
           _focusVisible={{ outline: "none", boxShadow: "none" }}
           onClick={onActivate}
-          // The label fills the button, and this is what makes it do so. A Chakra button is an
-          // inline-flex box, so a child left to itself is only as wide as its text — and the
-          // title's hover mask, which dissolves the last ~68px so a long title passes under the
-          // ⋯ rather than through it, was then measured against the text's own width. On a short
-          // title that is most of the title, which is why hovering a row appeared to erase it.
+          // The label fills the button, which a Chakra button's inline-flex child would otherwise not do.
           css={{ "& > *": { flex: 1, minWidth: 0, maxWidth: "100%" } }}
         >
           {label}
         </Button>
 
         {badges ? (
-          // Hidden rather than removed while the actions are up: the ⋯ takes exactly this spot,
-          // and dropping the slot out of layout would shift everything left of it on hover.
+          // Hidden rather than removed while the actions are up, so nothing shifts left of it on hover.
           <Flex data-row-badges align="center" gap={1.5} flexShrink={0} pr={`${TRAILING_INSET}px`}>
             {badges}
           </Flex>
@@ -198,14 +143,11 @@ export function TreeRow({
             gap={0.5}
             flexShrink={0}
             position="absolute"
-            // Centred on the same point the trailing slot occupies, so the ⋯ appears exactly
-            // where the status dot was rather than a few pixels beside it.
+            // Centred on the same point the trailing slot occupies, so the menu appears exactly where the dot was.
             right={`${ACTIONS_INSET}px`}
             top="50%"
             transform="translateY(-50%)"
-            // Callers wrap their controls in a plain Box, which is a block box — so an
-            // inline-flex button inside it sits on the text baseline, a couple of pixels below
-            // the centre. Centring belongs to the slot, not to each caller.
+            // Callers wrap their controls in a block box, so the centring belongs here rather than to each caller.
             css={{ "& > *": { display: "flex", alignItems: "center" } }}
           >
             {actions}
