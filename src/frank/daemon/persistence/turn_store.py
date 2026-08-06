@@ -29,6 +29,7 @@ from a2a.server.tasks import TaskStore
 from a2a.types import DataPart, Message, Part, Role, Task, TaskState, TaskStatus
 
 from frank.base.message_content import content_block_identifier
+from frank.base.serialization import compact, conversation_snapshot_id
 from frank.base.sqlite_lock import acquire_sqlite_write_lock, release_sqlite_write_lock
 from frank.protocol.turn_record import ReconcileAction, TurnRecord, reconcile_action
 
@@ -203,6 +204,19 @@ class AppendOnlyTaskStore(TaskStore):
             Column("messages", Text),
             Column("updated_at", String),
         )
+        # An inherited prefix is content-addressed so identical forks share one row, and the checkpoint above holds only what the child wrote after the fork.
+        self._conversation_snapshot = Table(
+            "conversation_snapshot",
+            self._metadata,
+            Column("snapshot_id", String, primary_key=True),
+            Column("messages", Text),
+        )
+        self._conversation_inheritance = Table(
+            "conversation_inheritance",
+            self._metadata,
+            Column("session_id", String, primary_key=True),
+            Column("snapshot_id", String),
+        )
         # A context's durable goal and task list, beside the checkpoint so a restart restores the objective too.
         self._session_state = Table(
             "session_state",
@@ -242,6 +256,10 @@ class AppendOnlyTaskStore(TaskStore):
                 await connection.exec_driver_sql(
                     "CREATE INDEX IF NOT EXISTS idx_turn_artifacts_turn_id_row_id "
                     "ON turn_artifacts(turn_id, row_id)"
+                )
+                await connection.exec_driver_sql(
+                    "CREATE INDEX IF NOT EXISTS idx_conversation_inheritance_snapshot_id "
+                    "ON conversation_inheritance(snapshot_id)"
                 )
                 await connection.exec_driver_sql(
                     "CREATE INDEX IF NOT EXISTS idx_user_message_history_working_directory_created_at "
@@ -306,8 +324,9 @@ class AppendOnlyTaskStore(TaskStore):
         turn_id: str,
         messages: list,
         session_state: dict | None = None,
+        inherited_snapshot_id: str = "",
     ) -> None:
-        """Atomically snapshot a context's conversation checkpoint and, when it changed, its goal and task state."""
+        """Atomically snapshot a context's conversation checkpoint and, when it changed, its goal and task state — a child writing only the suffix beyond ``inherited_snapshot_id``, and omitting that pointer detaching the prefix into a whole snapshot."""
         await self._ensure_initialized()
         if not session_id:
             return
@@ -331,6 +350,34 @@ class AppendOnlyTaskStore(TaskStore):
                         },
                     )
                 )
+                detached = False
+                if inherited_snapshot_id:
+                    snapshot_exists = (
+                        await connection.execute(
+                            select(self._conversation_snapshot.c.snapshot_id).where(
+                                self._conversation_snapshot.c.snapshot_id == inherited_snapshot_id
+                            )
+                        )
+                    ).scalar()
+                    if snapshot_exists is None:
+                        raise ValueError(f"Unknown inherited conversation snapshot {inherited_snapshot_id!r}")
+                    inheritance_insert = sqlite_insert(self._conversation_inheritance).values(
+                        session_id=session_id,
+                        snapshot_id=inherited_snapshot_id,
+                    )
+                    await connection.execute(
+                        inheritance_insert.on_conflict_do_update(
+                            index_elements=[self._conversation_inheritance.c.session_id],
+                            set_={"snapshot_id": inheritance_insert.excluded.snapshot_id},
+                        )
+                    )
+                else:
+                    result = await connection.execute(
+                        delete(self._conversation_inheritance).where(
+                            self._conversation_inheritance.c.session_id == session_id
+                        )
+                    )
+                    detached = bool(result.rowcount)
                 if session_state is not None:
                     state_insert = sqlite_insert(self._session_state).values(
                         session_id=session_id,
@@ -343,8 +390,55 @@ class AppendOnlyTaskStore(TaskStore):
                             set_={"state": state_insert.excluded.state, "updated_at": now},
                         )
                     )
+                if detached:
+                    await self._delete_unreferenced_conversation_snapshots(connection)
         finally:
             release_sqlite_write_lock(write_lock)
+
+    async def seed_inherited_conversation(self, session_id: str, messages: list[dict]) -> str:
+        """Point a new child at a shared snapshot and start its local checkpoint empty."""
+        await self._ensure_initialized()
+        if not session_id or not messages:
+            return ""
+        snapshot_id = conversation_snapshot_id(messages)
+        now = datetime.now(timezone.utc).isoformat()
+        write_lock = await acquire_sqlite_write_lock()
+        try:
+            async with self._engine.begin() as connection:
+                await connection.execute(
+                    sqlite_insert(self._conversation_snapshot)
+                    .values(snapshot_id=snapshot_id, messages=compact(messages))
+                    .on_conflict_do_nothing(index_elements=[self._conversation_snapshot.c.snapshot_id])
+                )
+                checkpoint_insert = sqlite_insert(self._checkpoint).values(
+                    session_id=session_id, turn_id="", messages="[]", updated_at=now,
+                )
+                await connection.execute(
+                    checkpoint_insert.on_conflict_do_update(
+                        index_elements=[self._checkpoint.c.session_id],
+                        set_={"turn_id": "", "messages": "[]", "updated_at": now},
+                    )
+                )
+                inheritance_insert = sqlite_insert(self._conversation_inheritance).values(
+                    session_id=session_id, snapshot_id=snapshot_id,
+                )
+                await connection.execute(
+                    inheritance_insert.on_conflict_do_update(
+                        index_elements=[self._conversation_inheritance.c.session_id],
+                        set_={"snapshot_id": snapshot_id},
+                    )
+                )
+        finally:
+            release_sqlite_write_lock(write_lock)
+        return snapshot_id
+
+    async def _delete_unreferenced_conversation_snapshots(self, connection) -> None:
+        referenced = select(self._conversation_inheritance.c.snapshot_id)
+        await connection.execute(
+            delete(self._conversation_snapshot).where(
+                self._conversation_snapshot.c.snapshot_id.not_in(referenced)
+            )
+        )
 
     async def save_session_state(self, session_id: str, session_state: dict) -> None:
         """Write a context's goal and task state alone, for the changes that happen outside a turn."""
@@ -369,24 +463,47 @@ class AppendOnlyTaskStore(TaskStore):
         finally:
             release_sqlite_write_lock(write_lock)
 
-    async def load_checkpoint(self, session_id: str) -> list:
-        """The context's conversation snapshot, or `[]` when there is none, for the caller to rehydrate and repair."""
+    async def load_checkpoint(self, session_id: str) -> dict:
+        """The context's whole conversation and its shared-prefix boundary, for the caller to rehydrate and repair."""
         await self._ensure_initialized()
         if not session_id:
-            return []
+            return {"messages": [], "inherited_snapshot_id": "", "inherited_message_count": 0}
         async with self._engine.connect() as connection:
             row = (
                 await connection.execute(
-                    select(self._checkpoint.c.messages).where(self._checkpoint.c.session_id == session_id)
+                    select(
+                        self._checkpoint.c.messages,
+                        self._conversation_inheritance.c.snapshot_id,
+                        self._conversation_snapshot.c.messages,
+                    )
+                    .select_from(
+                        self._checkpoint
+                        .outerjoin(
+                            self._conversation_inheritance,
+                            self._conversation_inheritance.c.session_id == self._checkpoint.c.session_id,
+                        )
+                        .outerjoin(
+                            self._conversation_snapshot,
+                            self._conversation_snapshot.c.snapshot_id == self._conversation_inheritance.c.snapshot_id,
+                        )
+                    )
+                    .where(self._checkpoint.c.session_id == session_id)
                 )
-            ).scalar()
+            ).first()
         if not row:
-            return []
+            return {"messages": [], "inherited_snapshot_id": "", "inherited_message_count": 0}
         try:
-            data = json.loads(row)
-            return data if isinstance(data, list) else []
+            local_messages = json.loads(row[0])
+            inherited_messages = json.loads(row[2]) if row[1] and row[2] else []
+            if not isinstance(local_messages, list) or not isinstance(inherited_messages, list):
+                raise TypeError("Conversation checkpoints must contain message lists")
+            return {
+                "messages": [*inherited_messages, *local_messages],
+                "inherited_snapshot_id": str(row[1] or ""),
+                "inherited_message_count": len(inherited_messages),
+            }
         except (json.JSONDecodeError, TypeError):
-            return []
+            return {"messages": [], "inherited_snapshot_id": "", "inherited_message_count": 0}
 
     async def load_session_state(self, session_id: str) -> dict:
         """The context's persisted goal and task state, or an empty dict for a fresh context."""
@@ -748,6 +865,12 @@ class AppendOnlyTaskStore(TaskStore):
                     await connection.execute(delete(self._artifacts).where(self._artifacts.c.turn_id == turn_id))
                 await connection.execute(delete(self._head).where(self._head.c.session_id == session_id))
                 await connection.execute(delete(self._checkpoint).where(self._checkpoint.c.session_id == session_id))
+                await connection.execute(
+                    delete(self._conversation_inheritance).where(
+                        self._conversation_inheritance.c.session_id == session_id
+                    )
+                )
+                await self._delete_unreferenced_conversation_snapshots(connection)
                 await connection.execute(delete(self._session_state).where(self._session_state.c.session_id == session_id))
             for turn_id in turn_ids:
                 self._persisted_counts.pop(str(turn_id), None)

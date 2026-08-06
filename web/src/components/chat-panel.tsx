@@ -8,6 +8,7 @@ import {
   Heading,
   IconButton,
   Menu,
+  Separator,
   Text,
   VStack,
 } from "@chakra-ui/react";
@@ -501,6 +502,9 @@ export function ChatPanel({
 
   const currentFolderName = folderDisplayName(workingDirectory) || translation("thisFolder");
   const renderedTimeline = useMemo(() => timelineItems(messages), [messages]);
+  const hasInheritedContext = Boolean(
+    initialSessionId && sessions.some((entry) => entry.sessionId === initialSessionId && entry.parentSessionId),
+  );
   // Entrance animation is reserved for rows a live turn just appended at the bottom, by a purely positional rule.
   const timelineKeys = renderedTimeline.map((item) => (item.kind === "tool_group" ? item.id : item.message.id));
   const timelineSessionKey = initialSessionId ?? "__new__";
@@ -809,7 +813,7 @@ export function ChatPanel({
           ) : (
             // The welcome and the timeline cross-fade out of flow, so sending the first message never flashes.
             <AnimatePresence mode="popLayout" initial={false}>
-              {messages.length === 0 ? (
+              {messages.length === 0 && !hasInheritedContext ? (
                 <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15, ease: "easeOut" }} style={{ width: "100%", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
                   {/* The same centred column as the transcript, sitting in the middle of whatever room there is. */}
                   {/* One rhythm for the sections, matching the gap the capability sections keep between themselves. */}
@@ -842,6 +846,13 @@ export function ChatPanel({
                 <motion.div key="timeline" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15, ease: "easeOut" }} style={{ width: "100%" }}>
                   {/* Tight enough that a tool line and the prose around it read as one document, with bubbles marking turns. */}
                   <VStack ref={scrollContentRef} gap={2.5} align="stretch" w="full" maxW="80rem" mx="auto">
+                    {hasInheritedContext ? (
+                      <Flex align="center" gap={3} py={2} color="fg.muted">
+                        <Separator flex={1} />
+                        <Text fontSize="xs" whiteSpace="nowrap">{translation("inheritedContextBoundary")}</Text>
+                        <Separator flex={1} />
+                      </Flex>
+                    ) : null}
                     {/* No presence wrapper, deliberately: a transcript row appears when it exists and is gone when it does not. */}
                     {renderedTimeline.map((item, itemIndex) => {
                         const isLastItem = itemIndex === renderedTimeline.length - 1;
@@ -1109,4 +1120,3 @@ export function ChatPanel({
     </AgentNamesProvider>
   );
 }
-

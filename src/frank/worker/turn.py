@@ -20,6 +20,7 @@ from langchain_core.messages import messages_to_dict
 from frank.base import telemetry as _telemetry
 from frank.base.background_tasks import spawn_background_task
 from frank.base.configuration import PromptLoader
+from frank.base.serialization import conversation_snapshot_id
 from frank.base.tuning import Tunable, active_tuning
 from frank.protocol.errors import _safe_turn_error
 from frank.protocol.events import ErrorEvent, StatusEvent
@@ -71,6 +72,10 @@ class _ContextState:
     aborted: bool = False
     # A reset asked to drop the runtime while work was in flight, so the drop waits for idle.
     pending_reset: bool = False
+    # A fork keeps its inherited prefix in an immutable daemon snapshot and persists only the
+    # suffix it writes. Compaction that changes the prefix clears these fields and detaches it.
+    inherited_snapshot_id: str = ""
+    inherited_message_count: int = 0
 
 @dataclass(frozen=True)
 class _Ingested:
@@ -186,14 +191,28 @@ class _TurnRunner:
         if self._executor._on_stream_event is not None and publish_stream_event:
             self._executor._on_stream_event(self._task.context_id, part)
 
+    def _checkpoint_messages(self, messages: list) -> tuple[list[dict[str, Any]], str]:
+        serialized = messages_to_dict(messages)
+        state = self._executor._contexts.get(self._task.context_id)
+        if state is None or not state.inherited_snapshot_id:
+            return serialized, ""
+        boundary = state.inherited_message_count
+        prefix = serialized[:boundary]
+        if len(prefix) == boundary and conversation_snapshot_id(prefix) == state.inherited_snapshot_id:
+            return serialized[boundary:], state.inherited_snapshot_id
+        state.inherited_snapshot_id = ""
+        state.inherited_message_count = 0
+        return serialized, ""
+
     async def _save_runtime_conversation(self) -> None:
         # A safe-point snapshot of the conversation. A delegated turn keeps its throwaway one in memory.
         if self._runtime is not None:
             # Goal and tasks ride the same safe points, written atomically and only when they changed.
             session_state = self._runtime.dirty_session_snapshot()
+            messages, inherited_snapshot_id = self._checkpoint_messages(self._runtime.conversation)
             await self._executor._turn_store.save_turn_state(
                 self._task.context_id, self._task.id,
-                messages_to_dict(self._runtime.conversation), session_state,
+                messages, session_state, inherited_snapshot_id,
             )
             if session_state is not None:
                 self._runtime.clear_session_dirty()
@@ -523,8 +542,9 @@ class _TurnRunner:
             messages = self._runtime.conversation if self._runtime is not None else self._executor._conversations.get(task.context_id, [])
             # Goal and tasks persist atomically beside the checkpoint, so the two can never drift apart.
             session_state = self._runtime.dirty_session_snapshot() if self._runtime is not None else None
+            checkpoint_messages, inherited_snapshot_id = self._checkpoint_messages(messages)
             await self._executor._turn_store.save_turn_state(
-                task.context_id, task.id, messages_to_dict(messages), session_state,
+                task.context_id, task.id, checkpoint_messages, session_state, inherited_snapshot_id,
             )
             if session_state is not None and self._runtime is not None:
                 self._runtime.clear_session_dirty()
