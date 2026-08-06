@@ -24,12 +24,9 @@ from frank.base.permission_mode import PermissionMode
 logger = logging.getLogger(__name__)
 
 
-# Where state lives is the placement layer's business, not this module's: it follows the
-# XDG convention and is resolved in `frank.base.paths`.
+# Where state lives is the placement layer's business, resolved in `frank.base.paths`.
 
-# The packaged configuration lives in a sibling YAML file so editing the template
-# is a data change, not a code change. Used to seed the XDG configuration file
-# on first run and as the base when persisting settings before any file exists.
+# The packaged configuration is a sibling YAML file, so editing the template is a data change.
 PACKAGED_CONFIGURATION_PATH = Path(__file__).resolve().parent / "configuration.yaml"
 
 
@@ -38,19 +35,7 @@ def packaged_configuration_yaml() -> str:
 
 
 def _bundled_dotagents_root() -> Path:
-    """The ``.agents`` directory shipped with the harness itself. The bundled
-    agents under it are always available as a base layer, so every working
-    directory sees at least the shipped profiles even when it has no ``.agents``
-    of its own. Located by walking up from this file to the nearest ancestor
-    that contains ``.agents/agents`` (an editable install points back at the
-    source tree); falls back to the expected ``src/frank/core -> repo root``
-    layout when the directory is absent, so a build that ships the agents
-    elsewhere contributes nothing rather than erroring.
-
-    In the frozen desktop app the package tree lives inside PyInstaller's
-    ``_MEIPASS`` bundle root, where the walk from ``__file__`` never reaches the
-    repo layout — so the bundle root (where the spec places ``.agents``) is
-    checked first."""
+    """The ``.agents`` directory shipped with the harness, so every folder sees the base profiles."""
     if getattr(sys, "frozen", False):
         bundle_root = Path(getattr(sys, "_MEIPASS", sys.executable))
         if (bundle_root / ".agents" / "agents").is_dir():
@@ -66,16 +51,7 @@ BUNDLED_DOTAGENTS_ROOT = _bundled_dotagents_root()
 
 
 def seed_home_agents() -> list[str]:
-    """Non-destructively seed the home layer (``~/.agents``) with editable copies of the
-    server-shipped agents and skills, filling in ONLY what is missing so a user's own
-    edits are never overwritten.
-
-    The bundled base under :data:`BUNDLED_DOTAGENTS_ROOT` is read-only (inside the frozen
-    app), so a profile that exists only there cannot have its settings persisted — the
-    settings UI would try to write into the read-only bundle. Seeding gives every shipped
-    profile a writable home copy that overrides the base, which is what lets per-agent
-    model choices (and any other edit) actually save. Returns the relative paths seeded,
-    for logging. A no-op when the bundle ships no ``.agents``."""
+    """Seed ``~/.agents`` with editable copies, filling only what is missing so a person's edits survive."""
     home_root = Path(Configuration.HOME_AGENTS_ROOT_DIRECTORY).expanduser()
     seeded: list[str] = []
     for kind in ("agents", "skills"):
@@ -122,9 +98,7 @@ def save_api_keys(
     provider_keys: dict[str, str] | None = None,
     provider_base_urls: dict[str, str] | None = None,
 ) -> None:
-    """Persist settings into the XDG configuration file, preserving the rest
-    of the file. Only provided values are written. Creates the file from the
-    default template if it does not exist yet."""
+    """Persist settings into the configuration file, preserving the rest and writing only what was given."""
     path = configuration_file_path()
     if path.exists():
         data = yaml.safe_load(path.read_text()) or {}
@@ -174,16 +148,7 @@ def save_api_keys(
 
 
 class Section(BaseModel):
-    """A part of the configuration file.
-
-    Every section refuses a key it does not define. Without that, a typo — or a name that used
-    to work and no longer does — is accepted, written back, listed by `frank configure`, and
-    quietly does nothing, because a model ignores what it does not recognise. A setting that
-    cannot take effect should say so at the moment it is written, not months later when
-    somebody notices the behaviour never changed.
-
-    The two exceptions are :class:`MCPServerConfiguration` and
-    :class:`RemoteAgentServerConfiguration`, which parse files this project does not own."""
+    """A part of the configuration file, refusing every key it does not define so a typo is an error."""
 
     model_config = {"extra": "forbid"}
 
@@ -199,8 +164,7 @@ class ExaConfiguration(Section):
 
 
 class JinaConfiguration(Section):
-    """Jina Reader — the web-fetch tool's default engine. It works without a key at a lower
-    rate limit, so this is optional."""
+    """Jina Reader, the web-fetch tool's default engine. The key is optional: it works keyless, slower."""
 
     api_key: str = Field("", json_schema_extra={"secret": True})
 
@@ -210,8 +174,7 @@ class JinaConfiguration(Section):
 
 
 class FirecrawlConfiguration(Section):
-    """Firecrawl — the web-fetch tool's fallback engine, for pages Jina returns thin or
-    blocked. Without a key the fallback is simply skipped."""
+    """Firecrawl, the fallback for pages Jina returns thin. Without a key the fallback is skipped."""
 
     api_key: str = Field("", json_schema_extra={"secret": True})
     api_url: str = Field("")
@@ -236,35 +199,18 @@ class WebFetchConfiguration(Section):
 
 
 class FilesystemConfiguration(Section):
-    """Which paths a tool's child process may read and write.
-
-    The system is readable and is not listed here — `/usr` and `/etc` are not secrets, and denying
-    them breaks every command while protecting nothing. What these lists govern is the user's own
-    home, which is closed by default: ``readable`` is the allowlist that keeps toolchains working,
-    and ``deny`` wins over it. The defaults are chosen to protect what no toolchain touches and to
-    leave alone what every toolchain needs, so credential directories stay readable — breaking
-    `git push` to protect a key is a trade made by someone who does not have to use the result."""
+    """Which paths a tool's child may read and write. The system stays readable; the home is closed."""
 
     readable: list[str] = Field(
         default=[
-            # Where a person's own agents, skills and workflows live. Not a convenience: a
-            # `control_screen` script imports its workflows and its skills' script packages from
-            # here, and without the read those imports fail inside the sandbox with
-            # `PermissionError: Operation not permitted` — which names no file and reads as a
-            # broken tool rather than a missing permission. Everything under it is the person's
-            # own instructions to the harness, which the harness is the intended reader of.
+            # Where a person's own agents, skills and workflows live, which a screen script imports from.
             "~/.agents",
             "~/.config", "~/.local", "~/.ssh", "~/.gitconfig", "~/.gitignore_global",
             "~/.cargo", "~/.rustup", "~/.npmrc", "~/.nvm", "~/.pyenv", "~/.docker", "~/.netrc",
         ],
     )
     writable: list[str] = Field(default=["$WORKSPACE", "$TMPDIR", "/tmp", "$XDG_CACHE_HOME", "~/.cache"])
-    # `/tmp` is listed beside `$TMPDIR` because on macOS they are not the same place. `$TMPDIR`
-    # expands to a per-user directory under `/var/folders`, so a session whose writable set named
-    # only `$TMPDIR` was refused at `/tmp` — the one scratch path every convention points at, and
-    # the first one anything reaches for. What came back was `Operation not permitted`, naming no
-    # path, which reads as a broken tool rather than a boundary. Nothing of the user's lives in
-    # `/tmp`; it is world-writable already, and cleared by the system.
+    # `/tmp` beside `$TMPDIR` because on macOS they are not the same place, and nothing personal lives there.
     grantable: list[str] = Field(default=[])
     deny: list[str] = Field(default=[
             "~/Documents", "~/Desktop", "~/Downloads", "~/Pictures", "~/Movies", "~/Music",
@@ -273,14 +219,7 @@ class FilesystemConfiguration(Section):
 
 
 class SandboxConfiguration(Section):
-    """A session's confinement, enforced by the operating system rather than inferred from the
-    text of a command. Every field but the two path/network ones is POSIX under its own name:
-    ``limits`` are ``setrlimit(2)`` constants taking the integers that call takes, ``umask`` is
-    ``umask(2)``, ``nice`` is ``nice(2)``.
-
-    ``enforce`` decides what happens where no backend can enforce this. ``required`` refuses to
-    create the session and says what is missing, which is the direct answer to how this setting
-    came to exist: a key that claimed to confine and silently did not."""
+    """A session's confinement, enforced by the operating system. Every other field is POSIX under its own name."""
 
     enforce: Literal["required", "preferred", "off"] = Field("required")
     filesystem: FilesystemConfiguration = Field(default_factory=FilesystemConfiguration)
@@ -294,8 +233,7 @@ class SandboxConfiguration(Section):
     nice: int = Field(0)
 
     def to_profile(self):
-        """This configuration as the :class:`frank.base.confinement.Profile` the spawn path
-        applies. Imported inside the method because confinement reads this module's types back."""
+        """This configuration as the :class:`~frank.base.confinement.Profile` the spawn path applies."""
         from frank.base import confinement
 
         return confinement.Profile(
@@ -319,20 +257,14 @@ class WorkspaceConfiguration(Section):
     strategy: Literal["none", "branch", "worktree"] = Field("none")
 
 
-#: Compaction settings that were renamed, and the name that now carries their value. A section
-#: refuses keys it does not define, on purpose — so without this a rename does not merely ignore
-#: an old setting, it stops the whole configuration file from loading, and the daemon with it.
+#: Renamed compaction settings, since a section that refuses unknown keys would refuse the whole file.
 _COMPACTION_RENAMED = {
     "auto": "automatic",
     "observer_context_fraction": "reclaim_at_fraction",
     "reflector_observation_fraction": "condense_log_at_fraction",
 }
 
-#: Compaction settings that are gone with nothing standing in for them. `keep_recent_turns`
-#: counted user turns, which is the measure this section stopped using — an unattended run is one
-#: turn and hundreds of tool results — and the pruning pass beside it was removed once it was
-#: shown to be unreachable. Dropped rather than translated, and said out loud rather than
-#: silently, because a setting that can no longer take effect should be reported, not obeyed.
+#: Compaction settings that are gone with nothing standing in for them.
 _COMPACTION_REMOVED = (
     "keep_recent_turns", "preserve_recent_tokens", "prune", "prune_tool_results",
     "pruned_result_tokens",
@@ -340,18 +272,7 @@ _COMPACTION_REMOVED = (
 
 
 class CompactionConfiguration(Section):
-    """Conversation memory management, modelled on Mastra's Observational Memory: as raw
-    history grows, an Observer folds older turns into a dense, timestamped observation
-    log kept at the front of the context; a Reflector condenses that log when it grows
-    large. Fractions are of the model's context window.
-
-    ``automatic`` is on by default: a self-managing turn runs unbounded, so its context must be
-    kept within the window on its own rather than relying on a tool-call ceiling to stop it
-    first. Manual (button-triggered) compaction always works regardless of it.
-
-    Every fraction here is of the window a conversation may actually occupy — the model's window
-    less the room reserved for the answer — rather than of the raw number, so "85% full" is 85%
-    of what is really available to fill."""
+    """Conversation memory: an Observer folds older turns into a log, and a Reflector condenses that log."""
 
     @model_validator(mode="before")
     @classmethod
@@ -381,22 +302,14 @@ class CompactionConfiguration(Section):
 
 
 class ContextShareConfiguration(Section):
-    """What proportion of the live context window one result may fill.
-
-    The defaults are read from the scaling families rather than written again here. They are the
-    values every baseline in `tuning` is calibrated against — at exactly these fractions each
-    family's multiplier is 1.0 — so a copy typed out in this file is a copy that can disagree with
-    the arithmetic that assumes it, silently and in a direction nobody would think to check."""
+    """What proportion of the live window one result may fill, read from the scaling families."""
 
     text: float = Field(Scaling.TEXT.value.calibrated)
     results: float = Field(Scaling.RESULTS.value.calibrated)
 
 
 class TuningConfiguration(Section):
-    """How large, how many, and how patient the tools are — the single home for what used to be
-    dozens of scattered constants. Budgets are derived from the *live* model context window, so a
-    small model gets tight caps and a large one gets room; `context_share` says how much of that
-    window one result may take, and `timeout_multiplier` stretches every wait."""
+    """How large, how many and how patient the tools are, derived from the live context window."""
 
     context_share: ContextShareConfiguration = Field(default_factory=ContextShareConfiguration)
     timeout_multiplier: float = Field(1.0)
@@ -418,44 +331,20 @@ class TuningConfiguration(Section):
 
 
 class UserContextConfiguration(Section):
-    """Opt-in enrichment of the system prompt with a snapshot of *how the user works on
-    this machine* — their most-visited directories, the shape of their home folder, files
-    they have touched recently, the applications they have installed and are running, and
-    the websites they visit most. It gives the agent strong, immediate pointers to the
-    user's world so it aligns with their habits from the first turn.
-
-    Off by default and deliberately so: this is more personal than the neutral system
-    probe. Everything it reads is local metadata (filesystem timestamps, app bundles,
-    browser-history visit counts) and it never leaves the machine except into the model
-    prompt the user is already sending. Full URLs are reduced to hostnames and only
-    counts are kept, so browsing content is never included. Enable it only when the
-    behavioral boost is worth surfacing this data to the model."""
+    """Opt-in snapshot of how the user works on this machine, folded into the system prompt."""
 
     enabled: bool = Field(False)
 
 
 class SettleConfiguration(Section):
-    """After an action, how long to wait for a surface to stop changing before reading it. Polling
-    rather than a fixed sleep, so a fast page costs one interval and a slow one costs the ceiling."""
+    """How long to wait for a surface to stop changing, polled so a fast page costs one interval."""
 
     poll_seconds: float = Field(0.05)
     give_up_seconds: float = Field(1.5)
 
 
 class RetrievalConfiguration(Section):
-    """How a screen is ranked when a script asks for an element by name.
-
-    Two static embedding models score every element against the query, and a character similarity
-    scores it a third time; the three are standardised and added. The defaults are fitted, not
-    guessed — 108,710 labelled queries over 50 recorded windows and pages — but they are settings
-    rather than facts, because the right ones depend on what the queries look like, and that is a
-    property of the work rather than of the harness.
-
-    The models are named for what they read. A multilingual one handles a desktop whose labels are
-    not in English; an English one is markedly better at a query that describes a purpose instead
-    of quoting a label (27.4% against 20.7% top-1 on queries written that way). Neither replaces
-    the other — used alone the English model is 4.3 points worse on native windows — so both run,
-    and either can be turned off by clearing its name."""
+    """How a screen is ranked when a script asks for an element by name. The defaults are fitted, not chosen."""
 
     multilingual_rank_model: str = Field("minishlab/M2V_multilingual_output")
     english_rank_model: str = Field("minishlab/potion-base-32M")
@@ -464,10 +353,7 @@ class RetrievalConfiguration(Section):
 
 
 class ComputerControlConfiguration(Section):
-    """Opt-in ability for the agent to control macOS apps through the `computer` tool —
-    reading the accessibility tree and clicking/typing/navigating. Off by default because
-    it lets the agent drive the whole machine; enabling it also requires the user to grant
-    Accessibility access in System Settings."""
+    """Opt-in control of macOS apps through the screen tools. Off by default, and needs an Accessibility grant."""
 
     enabled: bool = Field(False)
     settle: SettleConfiguration = Field(default_factory=SettleConfiguration)
@@ -475,39 +361,19 @@ class ComputerControlConfiguration(Section):
 
 
 class PermissionReviewerConfiguration(Section):
-    """The model call that answers a gate where nobody is there to answer it.
-
-    It runs on the session's own model, so one judge knows the same world the agent does, but
-    not at the session's own reasoning effort: weighing one request against a page of rules is
-    not the work that setting was chosen for."""
+    """The model call that answers a gate where nobody is there, on the session's model at a lower effort."""
 
     reasoning_effort: Literal["minimal", "low", "medium", "high"] = Field("low")
 
 
 class ToolboxConfiguration(Section):
-    """Whether a session may install tools for itself.
-
-    On when the machine can do it, because the alternative is what it replaces: an agent that
-    meets a missing tool, reads the refusal as a boundary, and spends the turn looking for a way
-    round it. What it installs belongs to that session and is deleted with it; nothing reaches
-    the machine's own profile, and the sandbox is untouched — what a session may *reach* is still
-    decided entirely by the confinement."""
+    """Whether a session may install tools for itself, into a directory deleted when it ends."""
 
     enabled: bool = Field(True)
 
 
 class DictationTimingConfiguration(Section):
-    """How long dictation waits, and how hard it tries, before it gives up and says so.
-
-    Separated from the rest of the section because these are the numbers a slow machine needs to
-    move, and nothing else about dictation is.
-
-    There is deliberately no limit on *loading*. It takes as long as it takes — the first one
-    fetches about a gigabyte over a connection nobody can predict — so any number would
-    eventually declare a working download a failure. Loading is reported as a state instead, and
-    the microphone button shows it arriving. The sample rate is not here either: 16 kHz mono is
-    what the model takes, so it is a fact rather than a preference, and a setting for it would
-    only be a way to make transcription quietly wrong."""
+    """How long dictation waits before giving up, separated because these are what a slow machine must move."""
 
     minimum_transcription_timeout_seconds: float = Field(30.0)
     transcription_timeout_realtime_multiplier: float = Field(0.5)
@@ -516,16 +382,7 @@ class DictationTimingConfiguration(Section):
 
 
 class DictationConfiguration(Section):
-    """Opt-in speech-to-text for the composer, transcribed on this machine.
-
-    Off by default, and the default is the interesting part: nothing here talks to a network
-    service, but the first use downloads about a gigabyte of model weights, and a feature that
-    quietly spends a person's bandwidth the first time they touch a microphone button is a
-    feature that decided something on their behalf. Enabling it is that decision, made once.
-
-    The weights land in the standard Hugging Face cache (``~/.cache/huggingface``), shared with
-    every other tool on the machine that uses it — so turning this on twice, or reinstalling,
-    does not download them twice."""
+    """Opt-in speech-to-text, transcribed locally. Off by default: the first use downloads about a gigabyte."""
 
     enabled: bool = Field(False)
     model: str = Field("mlx-community/parakeet-tdt-0.6b-v3")
@@ -533,15 +390,7 @@ class DictationConfiguration(Section):
 
 
 class ComposioConfiguration(Section):
-    """Composio integration via its hosted MCP endpoint. When enabled, the harness
-    points at Composio's "connect" MCP URL and exposes it as a normal
-    streamable_http MCP server, so Composio's tools flow through the same
-    list_mcp_tools/call_mcp_tool path as any other MCP server — no new agent, no
-    SDK provisioning. Which toolkits (gmail, notion, …) are available is decided
-    by the MCP server you configure in the Composio dashboard; the agent then
-    discovers tools dynamically through COMPOSIO_SEARCH_TOOLS / COMPOSIO_GET_TOOL_SCHEMAS
-    and runs them with COMPOSIO_MULTI_EXECUTE_TOOL, authorizing accounts via
-    COMPOSIO_MANAGE_CONNECTIONS on first use."""
+    """Composio's hosted MCP endpoint, exposed as an ordinary streamable_http server."""
 
     enabled: bool = Field(False)
     url: str = Field("https://connect.composio.dev/mcp")
@@ -555,11 +404,7 @@ class ComposioConfiguration(Section):
 
 
 class MCPServerConfiguration(BaseModel):
-    """One MCP server, from an ``mcp.json`` entry.
-
-    Deliberately permissive about keys it does not model: ``mcp.json`` is a format this project
-    reads rather than owns, and a server declared for several tools carries whatever fields any
-    of them wanted. Refusing those would make a working file unloadable."""
+    """One MCP server from an ``mcp.json`` entry, permissive about keys it does not model."""
 
     enabled: bool = True
     transport: Literal["stdio", "streamable_http"] = "stdio"
@@ -574,9 +419,7 @@ class MCPServerConfiguration(BaseModel):
 
 
 class MCPConfiguration(Section):
-    """The MCP servers available to a session, loaded from ``mcp.json`` in the ``.agents`` roots
-    rather than from the configuration file — a list that changes on its own schedule and is
-    watched for live reload."""
+    """The MCP servers available to a session, from ``mcp.json`` rather than the configuration file."""
 
     servers: dict[str, MCPServerConfiguration] = Field(default={})
 
@@ -605,8 +448,7 @@ class MCPConfiguration(Section):
 
 
 class RemoteAgentAuthConfiguration(BaseModel):
-    """How to authenticate to one external A2A agent. ``${VAR}`` in any secret field is
-    expanded from the environment at load time, so tokens never live in the tracked file."""
+    """How to authenticate to one external agent. ``${VAR}`` expands at load, so tokens stay out of the file."""
 
     type: Literal["none", "bearer", "api_key", "oauth2"] = "none"
     token: str = ""
@@ -619,8 +461,7 @@ class RemoteAgentAuthConfiguration(BaseModel):
 
 
 class RemoteAgentServerConfiguration(BaseModel):
-    """One registered external A2A agent (a ``remote-agents.json`` entry). Permissive about
-    unmodelled keys for the same reason :class:`MCPServerConfiguration` is."""
+    """One registered external A2A agent, permissive about unmodelled keys for the same reason."""
 
     enabled: bool = True
     card_url: str = ""
@@ -635,8 +476,7 @@ class RemoteAgentServerConfiguration(BaseModel):
 
 
 class RemoteAgentsConfiguration(Section):
-    """The set of external A2A agents the harness may delegate to, loaded from
-    ``remote-agents.json`` in the ``.agents`` roots rather than from the configuration file."""
+    """The external agents the harness may delegate to, from ``remote-agents.json``."""
 
     agents: dict[str, RemoteAgentServerConfiguration] = Field(default={})
 
@@ -677,9 +517,7 @@ class TelemetryExporterConfiguration(Section):
 
 
 class TelemetryConfiguration(Section):
-    """OpenTelemetry export of agent traces to a user-chosen OTLP backend. Off until an
-    endpoint is set, so nothing leaves the machine by default. Only span structure and
-    usage/metadata are exported (no prompt or completion bodies)."""
+    """OTLP export of traces, off until an endpoint is set, and carrying no prompt or completion bodies."""
 
     enabled: bool = Field(False)
     exporter: TelemetryExporterConfiguration = Field(default_factory=TelemetryExporterConfiguration)
@@ -730,14 +568,7 @@ class Configuration(Section):
 
     @classmethod
     def load(cls, *, seed: bool = True) -> Configuration:
-        """Load the configuration from the XDG configuration file.
-
-        Seeds the file from the packaged template on first run, because a person who has just
-        installed Frank needs something to edit and something for `frank configure` to teach
-        from. `seed=False` reads without creating: a library embedded in someone else's program
-        should not leave a configuration file in their home directory as a side effect of being
-        imported, and a program that supplies its own configuration never wanted ours anyway.
-        """
+        """Load the configuration, seeding the file from the packaged template on first run."""
         path = configuration_file_path()
         if not path.exists():
             if not seed:
@@ -755,8 +586,7 @@ class Configuration(Section):
         return configuration
 
     def configured_provider_keys(self) -> dict[str, str]:
-        """Configured (non-empty) API keys per provider, for credential resolution
-        and for filtering the model picker to usable models."""
+        """The non-empty API keys per provider, for credential resolution and for filtering the model picker."""
         return {
             identifier: credential.api_key
             for identifier, credential in self.providers.items()
@@ -779,8 +609,7 @@ class Configuration(Section):
 
     def agent_directories(self) -> list[Path]:
         return _dedupe_paths([
-            # Bundled (server-shipped) agents are the always-present base layer;
-            # home and project agents override a bundled profile with the same id.
+            # Bundled agents are the base layer; home and project profiles override one of the same id.
             BUNDLED_DOTAGENTS_ROOT / "agents",
             Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "agents",
             Path(self.AGENTS_ROOT_DIRECTORY) / "agents",
@@ -789,8 +618,7 @@ class Configuration(Section):
 
     def skill_directories(self) -> list[Path]:
         return _dedupe_paths([
-            # Bundled (server-shipped) skills are the always-present base layer, exactly
-            # like agents — home and project skills override a bundled skill of the same id.
+            # Bundled skills are the base layer, exactly like agents.
             BUNDLED_DOTAGENTS_ROOT / "skills",
             Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "skills",
             Path(self.AGENTS_ROOT_DIRECTORY) / "skills",
@@ -803,20 +631,10 @@ class Configuration(Section):
             Path(self.AGENTS_ROOT_DIRECTORY) / "memories",
         ])
 
-    # Working-directory-scoped resolution.
-    #
-    # The home root (``~/.agents``) is always global. Project-relative roots
-    # (``.agents`` and friends) are resolved against the *session's working
-    # directory* rather than the harness's launch CWD, so a session working
-    # outside the directory the harness happens to have been started in is never
-    # advertised that directory's agents/skills/memories/MCP servers — and the
-    # paths it is handed are valid for where it actually runs. Each ``*_for``
-    # method mirrors its CWD-relative counterpart above; prefer these everywhere
-    # a working directory is known (every session and every UI folder selection).
+    # Project-relative roots resolve against the session's working directory, not the harness's CWD.
 
     def _local_base(self, working_directory: str) -> Path:
-        """The directory project-relative ``.agents`` roots resolve against — the
-        working directory, or the harness's CWD as a last resort when none is given."""
+        """What project-relative ``.agents`` roots resolve against, falling back to the harness's CWD."""
         return Path(working_directory).expanduser() if working_directory else Path.cwd()
 
     def _resolve_local(self, working_directory: str, directory: str) -> Path:
@@ -828,9 +646,7 @@ class Configuration(Section):
         return Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser()
 
     def project_agents_root_for(self, working_directory: str) -> Path:
-        """The working directory's own ``.agents`` root — the project-local scope.
-        Equals :meth:`home_agents_root` when the working directory is the home
-        directory (in which case nothing is project-specific)."""
+        """The working directory's own ``.agents`` root, which equals the home root when they are the same place."""
         return self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY)
 
     def agents_root_directories_for(self, working_directory: str) -> list[Path]:
@@ -841,8 +657,7 @@ class Configuration(Section):
 
     def agent_directories_for(self, working_directory: str) -> list[Path]:
         return _dedupe_paths([
-            # Bundled (server-shipped) agents are the always-present base layer;
-            # home and project agents override a bundled profile with the same id.
+            # Bundled agents are the base layer; home and project profiles override one of the same id.
             BUNDLED_DOTAGENTS_ROOT / "agents",
             Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "agents",
             self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY) / "agents",
@@ -851,8 +666,7 @@ class Configuration(Section):
 
     def skill_directories_for(self, working_directory: str) -> list[Path]:
         return _dedupe_paths([
-            # Bundled (server-shipped) skills are the always-present base layer, exactly
-            # like agents — home and project skills override a bundled skill of the same id.
+            # Bundled skills are the base layer, exactly like agents.
             BUNDLED_DOTAGENTS_ROOT / "skills",
             Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "skills",
             self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY) / "skills",
@@ -866,15 +680,11 @@ class Configuration(Section):
         ])
 
     def mcp_configuration_for(self, working_directory: str) -> MCPConfiguration:
-        """The MCP servers declared for a working directory: those in the home
-        ``mcp.json`` plus the working directory's own, deduped by name (the
-        working directory overriding home). Used to filter what the UI lists and
-        to grow the shared server pool, never to scope the launch directory in."""
+        """The MCP servers declared for a working directory: home plus its own, deduped, the folder winning."""
         return MCPConfiguration.from_dotagents_roots(self.agents_root_directories_for(working_directory))
 
     def remote_agents_configuration_for(self, working_directory: str) -> RemoteAgentsConfiguration:
-        """The external A2A agents declared for a working directory: those in the home
-        ``remote-agents.json`` plus the working directory's own."""
+        """The external agents declared for a working directory: home plus its own."""
         return RemoteAgentsConfiguration.from_dotagents_roots(self.agents_root_directories_for(working_directory))
 
 
@@ -1070,15 +880,10 @@ class AgentConfiguration(BaseModel):
     model: Optional[str] = None
     provider: Optional[str] = None
     reasoning_effort: str = "high"
-    # A ceiling: the loosest mode a session running this profile may ever have. `None` means the
-    # card has no opinion, which is the default and the same convention as `sandbox` below — a
-    # value here bounds every session that runs the profile, so silence must not be a bound.
+    # A ceiling: the loosest mode a session on this profile may have. `None` is the default, and bounds nothing.
     permission_mode: Optional[Literal["ask", "automatic"]] = None
 
-    # An agent's own confinement, narrowing the global one. An investigator and a build agent
-    # genuinely want different filesystems, and the harness already accepts that agents differ in
-    # what they may do. Unset means "whatever the machine's configuration says"; set, it is still
-    # clamped against the session that created this one, so it can only ever narrow.
+    # An agent's own confinement, narrowing the global one. Unset means whatever the machine says.
     sandbox: Optional[SandboxConfiguration] = None
     tools: ToolsConfiguration = ToolsConfiguration()
     tools_enabled: list[str] = []
@@ -1101,12 +906,7 @@ class AgentConfiguration(BaseModel):
 
     @property
     def permission_policy(self) -> Optional[PermissionMode]:
-        """The card's configured permission mode, or ``None`` where it declares none.
-
-        ``None`` is not a mode and must not be coerced into one: this is a *ceiling*, and every
-        caller passes it to `more_restrictive`, which ignores absent inputs. Coercing it to
-        `DEFAULT` — which is what this did — turned every silent card into a ceiling nobody
-        wrote."""
+        """The card's mode, or ``None`` where it declares none. A ceiling, so absent must not be coerced to a value."""
         return PermissionMode.parse(self.permission_mode) if self.permission_mode else None
 
     @classmethod
@@ -1127,11 +927,7 @@ class AgentConfiguration(BaseModel):
         frontmatter.setdefault("name", default_identifier)
         frontmatter.setdefault("title", frontmatter["name"])
 
-        # Everything the agent is, in one file. There used to be a `configuration.json` beside
-        # this one holding the model preset, the permission ceiling and the tool toggles — in
-        # camelCase, while the front matter above is snake_case — and loading meant merging the
-        # two, which is why the same fact had two spellings and two places to be wrong. A skill
-        # is one `SKILL.md`; an agent is one `AGENT.md`.
+        # Everything the agent is, in one file: front matter for the settings, body for the prompt.
         tools_data = frontmatter.pop("tools", {})
         tools_configuration = (
             ToolsConfiguration(**{name: value for name, value in tools_data.items()})
@@ -1147,24 +943,13 @@ class AgentConfiguration(BaseModel):
 
 
 def write_agent_markdown(path: str | Path, configuration: AgentConfiguration) -> None:
-    """Write a profile back to its `AGENT.md`, front matter and body together.
-
-    The body is the agent's system prompt and is written verbatim from
-    :attr:`AgentConfiguration.system_prompt`, so a round trip through the settings interface
-    cannot quietly reword an agent's instructions.
-
-    Only what differs from the defaults is written. A profile that says nothing about tools
-    should not grow a `tools:` block full of the values it would have had anyway — the file is
-    something a person reads and edits by hand, and every line in it should mean a decision
-    somebody made.
-    """
+    """Write a profile back to its `AGENT.md`, the body verbatim so a round trip cannot reword the prompt."""
     path = Path(path)
     body = configuration.system_prompt.strip()
     front = configuration.model_dump(
         mode="json", exclude_defaults=True, exclude_none=True, exclude={"system_prompt"},
     )
-    # `name` is the identity the rest of the harness addresses this agent by; it is worth
-    # stating even when it matches the directory it lives in.
+    # `name` is the identity the harness addresses this agent by, stated even when it matches the directory.
     front.setdefault("name", configuration.identifier)
     rendered = yaml.safe_dump(front, sort_keys=False, allow_unicode=True, default_flow_style=False).strip()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1176,11 +961,7 @@ class PermissionEvaluator:
         self._configuration = agent_configuration
 
     def check_tool_enabled(self, tool_name: str) -> None:
-        """Refuse a tool the agent's profile does not list.
-
-        Applies to whatever `tools_enabled` names, which is what the field always meant — an
-        agent that may not run shell commands must not be handed `bash` because the gate only
-        looked at one privileged tool."""
+        """Refuse a tool the profile does not list, whatever `tools_enabled` names."""
         if (
             self._configuration.tools_enabled
             and tool_name not in self._configuration.tools_enabled
@@ -1190,12 +971,7 @@ class PermissionEvaluator:
             )
 
     def check_tool_not_disabled(self, tool_name: str) -> None:
-        """Refuse a tool the agent's profile has switched off.
-
-        Checked at call time as well as when the roster is built, for the same reason
-        `check_tool_enabled` is: the roster decides what the model is *offered*, and a model
-        may call a tool it was never offered. A gate that only filtered the roster would be a
-        suggestion."""
+        """Refuse a tool the profile switched off, at call time too, since a model may call one it was never offered."""
         if not self._configuration.tools.is_enabled(tool_name):
             raise PermissionDenied(
                 f"Tool '{tool_name}' is disabled for agent '{self._configuration.identifier}'"
@@ -1209,25 +985,13 @@ class PermissionEvaluator:
             raise PermissionDenied("Background bash execution is not allowed")
 
     def check_tool(self, tool_name: str, /, **arguments) -> None:
-        # tool_name is positional-only so that a tool whose own arguments include a
-        # key named "tool_name" (e.g. call_mcp_tool) does not collide with it.
+        # Positional-only, so a tool whose own arguments include `tool_name` does not collide with it.
         self.check_tool_enabled(tool_name)
         self.check_tool_not_disabled(tool_name)
 
 
 class PermissionDenied(RuntimeError):
-    """A tool call refused by policy — not by the operating system.
-
-    Named apart from the builtin `PermissionError` deliberately, and this is not cosmetic. It
-    used to *be* called `PermissionError`, shadowing the builtin inside this module while
-    subclassing `RuntimeError` rather than it, so the two handlers written to catch a policy
-    denial — `except PermissionError` in the tool dispatcher, which resolved to the builtin —
-    caught nothing at all. A `tools_enabled` violation escaped as an unhandled error instead of
-    becoming the tool denial the model was supposed to see.
-
-    The builtin means EACCES: the kernel said no. This means the harness said no. Two different
-    facts deserve two different names.
-    """
+    """A tool call refused by policy rather than by the operating system, and named apart from the builtin."""
 
 
 class PromptLoader:
@@ -1244,31 +1008,12 @@ class PromptLoader:
 
     @classmethod
     def render(cls, template: str, variables: dict[str, str], template_name: str = "") -> str:
-        """Render a template that is already in hand rather than one on disk.
-
-        For a catalogue that carries its prompts in memory. The substitution and its strictness
-        are identical — it is the *source* of the text that differs, which is the whole point of
-        the catalogue seam."""
+        """Render a template already in hand, for a catalogue that carries its prompts in memory."""
         return cls._replace_variables(template, variables, template_name)
 
     @staticmethod
     def _replace_variables(template: str, variables: dict[str, str], template_name: str = "") -> str:
-        """Substitute ``{{ name }}`` placeholders (spaced or not) from ``variables``.
-
-        Rendering is strict: a placeholder with no matching variable, or any ``{{ … }}`` in the
-        template that is not a well-formed placeholder, raises rather than silently shipping raw
-        braces into a prompt the model would see. The strictness applies to the *template* only —
-        braces that appear inside a substituted value (a tool result echoing Handlebars, a file
-        of Jinja, AppleScript record syntax) are data, never placeholders, and pass through.
-
-        A placeholder that sits alone on its line and has nothing to put there takes the line
-        with it, along with the blank line that separated it from what follows. Most sections of
-        a prompt are optional — no agent context in a library run, no screen guidance unless the
-        tool is on, no instructions on a bare machine — and a template cannot say "and the gap
-        too", so every absent one used to leave the blank lines that were meant to surround it.
-        Five of them stacked up in the system prompt, one run reaching five blank lines. Doing it
-        here keeps the templates written the way they read, and touches only the template's own
-        whitespace: a value is substituted after this and is never rewritten."""
+        """Substitute ``{{ name }}`` placeholders strictly: a missing variable or a malformed brace raises."""
         where = f" in prompt '{template_name}'" if template_name else ""
         placeholder = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 
@@ -1281,19 +1026,14 @@ class PromptLoader:
         own_line = r"^[ \t]*\{\{\s*(\w+)\s*\}\}[ \t]*"
         template = re.sub(own_line + r"\n(?:[ \t]*\n)?", drop_if_empty, template, flags=re.M)
 
-        # What is left on a line of its own contributes its content and nothing else: the
-        # template's own newline already ends the line, so a value that ends in one — which every
-        # value read from a file does — would spend it on a blank line nobody asked for. The
-        # template decides the spacing; the value decides the words.
+        # A placeholder alone on a line contributes its content only, since the template's newline already ends it.
         sections = set(re.findall(own_line + r"$", template, flags=re.M))
         variables = {
             name: str(value).strip() if name in sections else value
             for name, value in variables.items()
         }
 
-        # A {{ … }} in the template that is not a well-formed {{ name }} (a dotted path, a space
-        # in the name, an unclosed brace) is a template bug — catch it before substitution so it
-        # can't be confused with stray output. Checked on the template, so injected values are safe.
+        # A malformed brace is a template bug, caught before substitution so it is not read as stray output.
         malformed = re.search(r"\{\{.*?\}\}", placeholder.sub("", template), re.DOTALL)
         if malformed is not None:
             raise ValueError(f"Malformed placeholder {malformed.group(0)!r}{where}.")
@@ -1304,13 +1044,7 @@ class PromptLoader:
                 raise ValueError(
                     f"Unresolved placeholder '{{{{ {variable_name} }}}}'{where}: no value was provided (given: {sorted(variables)})."
                 )
-            # Rendered rather than required to already be a string. A caller that passed a window's
-            # width as the `int` it is raised `TypeError: sequence item 2: expected str instance,
-            # int found` out of `re.sub` — which the surface guard then swallowed, so the model was
-            # handed "The action failed (sequence item 2: expected str instance, int found)" in
-            # place of the message explaining that the application withholds its interface. A
-            # message that cannot render is worse than one that says the wrong thing, because the
-            # failure looks like it came from the application rather than from the template.
+            # Rendered rather than required to be a string, so an `int` does not raise out of `re.sub`.
             return str(variables[variable_name])
 
         # Accept both the spaced ({{ name }}) and unspaced ({{name}}) forms.
@@ -1328,9 +1062,7 @@ def _agent_paths(agents_directories: str | Path | Iterable[str | Path], include_
     for directory in _as_directories(agents_directories):
         if not directory.is_dir():
             continue
-        # `AGENT.md`, in that spelling, exactly as a skill is `SKILL.md`. Accepting a lowercase
-        # variant as well meant two files could name the same agent and which one won depended
-        # on glob order, and it meant the convention had to be explained twice.
+    # `AGENT.md`, in that spelling, exactly as a skill is `SKILL.md`.
         candidates = [
             *sorted(directory.glob("*.md")),
             *sorted(directory.glob("*/AGENT.md")),
@@ -1387,8 +1119,7 @@ def list_agents(agents_directory: str | Path | Iterable[str | Path]) -> list[dic
                 "title": config.display_name,
                 # What the agent is for — surfaced as the subtitle in the UI's agent picker.
                 "description": config.description,
-                # The resolved ``provider/model`` identifier; empty means the
-                # agent has not configured a runnable model.
+            # The resolved `provider/model`; empty means no runnable model is configured.
                 "model": config.model_identifier or "",
             })
         except Exception:

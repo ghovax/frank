@@ -441,22 +441,14 @@ class SessionExecutor(AgentExecutor):
             state = self._contexts.get(session_id)
             if state is not None and state.resume_pump is asyncio.current_task():
                 state.resume_pump = None
-            # The context is idle now, so any reset deferred while it had work in
-            # flight can finally take effect (rebuilding with the new configuration).
+        # The context is idle, so a reset deferred while it had work in flight can finally take effect.
             self._maybe_evict(session_id)
 
     async def _run_autonomous_turn(self, session_id: str) -> None:
-        """Start a turn the user did not initiate, to deliver a completed background
-        result. It reuses the ordinary turn path via a self-sent A2A message, so the
-        wake is a real, persisted, replayable task streamed to viewers like any other
-        turn — the agent genuinely picks the work back up on its own."""
+        """Start a turn the user did not, to deliver a finished background result, through the ordinary turn path."""
         if self._agent_handler() is None:
             return
-        # Nothing left to deliver — a concurrent user turn already drained the result
-        # while the pump was scheduling this wake — so don't even mint a task. The
-        # executor re-checks this under the per-context lock (that's the authoritative
-        # guard against the race); short-circuiting here just avoids creating an empty,
-        # invisible wake task in the common case.
+        # Nothing left to deliver, so mint no task; the executor re-checks under the lock either way.
         state = self._contexts.get(session_id)
         runtime = state.runtime if state is not None else None
         has_live_result = runtime is not None and runtime.has_completed_undelivered_jobs()
