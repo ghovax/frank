@@ -1,15 +1,4 @@
-"""The loop that fires schedules: one task, waking each minute, starting whatever is due.
-
-One loop rather than a timer per schedule. A timer per schedule is more precise and buys
-nothing here — a job that runs at 09:00:00 rather than 09:00:37 is not a better job — while
-costing a set of tasks to cancel and rebuild every time a schedule is created, edited, paused
-or deleted, and a way for those tasks to disagree with the table. The loop reads the table.
-
-Firing creates an ordinary session and sends it the prompt, through the same calls a person's
-client makes. There is deliberately no unattended execution path: a second way to run a turn is
-a second thing to keep correct, and the one that runs unwatched is the one nobody would notice
-had drifted.
-"""
+"""The loop that fires schedules: one task, waking each minute, starting whatever is due."""
 
 from __future__ import annotations
 
@@ -22,8 +11,7 @@ from frank.base.serialization import compact
 
 logger = logging.getLogger(__name__)
 
-#: How often the loop looks. Cron's own resolution is a minute, so looking more often would
-#: only find the same work again, and looking less often would miss windows.
+#: How often the loop looks, matched to cron's own resolution of a minute.
 TICK_SECONDS = 30
 
 
@@ -42,8 +30,7 @@ async def _fire(record) -> None:
             "title": record.name,
         })
         session_id = str(created.get("id") or "")
-        # The same shape `frank send` uses — one wire format, so a scheduled turn and a typed
-        # one are the same thing arriving by different doors.
+        # The same shape `frank send` uses, so a scheduled turn and a typed one arrive the same way.
         await api._session_send({
             "id": session_id,
             "parts": [{"kind": "text", "text": record.prompt}],
@@ -60,11 +47,7 @@ async def _fire(record) -> None:
 
 
 async def run() -> None:
-    """Wake, fire what is due, sleep. Forever, until the daemon cancels it.
-
-    Every failure is caught and logged rather than raised. A scheduler that dies on one bad row
-    takes every other schedule with it silently, and the person who would notice is the one who
-    went to bed expecting a report in the morning."""
+    """Wake, fire what is due, sleep, catching every failure so one bad row cannot take the loop down."""
     logger.info("scheduler: watching for due schedules every %ds", TICK_SECONDS)
     while True:
         try:

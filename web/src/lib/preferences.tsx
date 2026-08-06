@@ -1,17 +1,6 @@
 "use client";
 
-// What the interface remembers about itself, held for the render.
-//
-// Nothing here persists anything. The daemon is the source of truth: this asks it once before
-// the first paint, hands the answer down, and asks again whenever the daemon says it changed.
-// A change goes the same way — post it, and use what comes back. That is why the colour mode
-// you pick in the desktop app arrives in the browser window beside it, and why clearing a
-// browser's storage no longer resets Frank to defaults.
-//
-// Children render only once the answer is in. The theme and the language are read from it, and
-// rendering the tree before it lands would paint the default and correct it a frame later: a
-// flash of white in a dark room, and a flash of English. The wait is one request to a daemon
-// on this machine, and a failed one resolves to the defaults rather than to a blank screen.
+// What the interface remembers about itself, held for the render, with the daemon as the source of truth.
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import {
@@ -25,8 +14,7 @@ import { swallowed } from "@/lib/swallowed";
 
 interface PreferencesContextValue {
   preferences: InterfacePreferences;
-  // Change one or more of them. The state is updated from the daemon's answer, so what is on
-  // screen is what is stored rather than what was asked for.
+  // Change one or more of them, updating from the daemon's answer rather than from the request.
   updatePreferences: (changes: Partial<InterfacePreferences>) => void;
 }
 
@@ -36,8 +24,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [preferences, setPreferences] = useState<InterfacePreferences | null>(null);
 
   useEffect(() => {
-    // Set by the teardown below, so a read that lands after this provider is gone is dropped
-    // rather than setting state on nothing.
+    // Set by the teardown below, so a read landing after this provider is gone is dropped.
     let cancelled = false;
     const read = () => fetchPreferences()
       .then((stored) => { if (!cancelled) setPreferences(stored); })
@@ -57,8 +44,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updatePreferences = useCallback((changes: Partial<InterfacePreferences>) => {
-    // Applied here first so the control the user just clicked responds now rather than after a
-    // round trip, then reconciled with what the daemon actually stored.
+    // Applied here first so the control responds now, then reconciled with what the daemon stored.
     setPreferences((current) => (current ? { ...current, ...changes } : current));
     void savePreferences(changes)
       .then(setPreferences)

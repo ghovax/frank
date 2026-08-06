@@ -1,25 +1,4 @@
-"""Why a request did or did not hit the provider's prompt cache.
-
-A cache hit is reported as one number — how many tokens of the prompt the provider already
-had — and that number cannot be argued with, only explained. Explaining it needs the thing
-nobody keeps: what the *previous* request looked like. A provider caches the longest prefix it
-recognises, so a hit of 5,632 tokens against a 51,000-token request is not "the cache is bad",
-it is "the request stopped matching 5,632 tokens in", and the only useful question is what sits
-at that offset.
-
-So each call is cut into the segments the wire is built from, each with its own digest and token
-count, and compared against the call before it. That yields two facts the raw figure cannot give:
-how much of the prefix was *reachable* — unchanged, and therefore cacheable — and, when it was
-not, exactly which segment moved.
-
-A segment is described by fields, never by a formatted label: its kind, its position, and the
-role it carries. Anything that wants a sentence can compose one; nothing that wants to count how
-often the tool schemas move, or which role tends to be rewritten, can parse one back out.
-
-All of it rides on the usage event, which is already recorded per model call and replayed with
-the transcript. That is deliberate: the question this answers ("what happened on call four of
-that session last week") is asked long afterwards and only stored data can answer it.
-"""
+"""Why a request did or did not hit the provider's prompt cache."""
 
 from __future__ import annotations
 
@@ -37,12 +16,7 @@ ITEM = "item"
 
 @dataclass(frozen=True)
 class Piece:
-    """One addressable part of a request, before it is measured.
-
-    ``position`` is the index within the conversation for an item and ``-1`` for the parts
-    there is only ever one of. ``role`` is whatever the wire calls that item — a message role,
-    or a Responses item type — and is empty where the part has none.
-    """
+    """One addressable part of a request, before it is measured."""
 
     kind: str
     text: str
@@ -89,17 +63,7 @@ def trace(pieces: Sequence[Piece]) -> RequestTrace:
 
 
 def diagnose(current: RequestTrace, previous: Optional[RequestTrace]) -> dict[str, object]:
-    """What this request kept from the last one, as fields to record beside the cache figure.
-
-    ``reachable_tokens`` is the ceiling: the tokens of prefix that did not change and could
-    therefore have been served from cache. Counted with this harness's tokenizer rather than
-    the provider's, so it is an estimate and named as one.
-
-    ``prefix_intact`` answers the question that decides who is at fault. True with a cache read
-    of zero means the bytes were identical and the provider missed anyway — routing, not
-    something a different request would fix. False carries a ``divergence`` naming the segment
-    that moved, on both sides, and whether it stayed in place and was rewritten.
-    """
+    """What this request kept from the last one, as fields to record beside the cache figure."""
     if previous is None:
         return {"prefix_intact": False, "reachable_tokens": 0, "segments": len(current.segments),
                 "shared_segments": 0, "divergence": None}
@@ -123,8 +87,7 @@ def diagnose(current: RequestTrace, previous: Optional[RequestTrace]) -> dict[st
             "index": shared,
             "current": here.identity() if here else None,
             "previous": there.identity(),
-            # Same place, same identity, different digest: the piece did not move, its contents
-            # changed. Distinguished because it is the only kind this harness can usually fix.
+            # Same place and identity, different digest: the piece did not move, its contents changed.
             "rewritten": bool(here and here.identity() == there.identity()),
         },
         **common,

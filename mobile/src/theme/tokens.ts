@@ -1,16 +1,4 @@
-/**
- * The desktop app's design tokens, as values React Native can use.
- *
- * The web client gets these from Chakra: a semantic token like `bg.muted` resolves to a CSS
- * variable that changes with the colour mode, and nothing in a component ever names a hex. RN
- * has no cascade and no variables, so the same idea has to be a plain object per scheme, read
- * through a hook. The names are kept exactly — `bg.subtle`, `border.emphasized`, `blue.solid` —
- * because the point of copying them is that a screen here and a panel there can be compared.
- *
- * Values are lifted from `web/src/components/ui/provider.tsx` and Chakra v3's own defaults, so
- * this is a transcription rather than a new palette. Where the desktop uses a rem, the number
- * here is the px it resolves to at the browser's 16px root.
- */
+/** The desktop app's design tokens, as values React Native can use. */
 
 import type { ViewStyle } from "react-native";
 
@@ -135,11 +123,7 @@ export const fontSizes = {
   "2xs": 10, xs: 12, sm: 14, md: 16, lg: 18, xl: 20, "2xl": 24, "3xl": 30,
 } as const;
 
-/**
- * The house control height. 32px on the desktop, where a control is clicked with a mouse; 40 on
- * a phone, which is Apple's and Google's floor for something a thumb has to hit. Everything that
- * reads `controlHeight` moves together, which is the only reason it is a constant.
- */
+/** The house control height: 32 on the desktop, 40 on a phone, which is the floor for a thumb. */
 export const controlHeight = 40;
 
 /** The three families, by the names `expo-font` will register them under. */
@@ -152,9 +136,7 @@ export const fonts = {
   mono: "FrankMono",
 } as const;
 
-/**
- * The desktop's `textStyle`s, which are the only typographic decisions a component should make.
- */
+/** The desktop's text styles, which are the only typographic decisions a component should make. */
 export const textStyles = {
   fieldLabel: { fontSize: fontSizes.xs, fontFamily: fonts.sansMedium },
   sectionLabel: { fontSize: fontSizes.xs, fontFamily: fonts.sansSemibold },
@@ -164,10 +146,7 @@ export const textStyles = {
   mono: { fontSize: fontSizes.xs, fontFamily: fonts.mono },
 } as const;
 
-/**
- * The `panel` shadow, deliberately ring-free on the desktop so it does not double the card's own
- * border. RN wants the two platforms' shadow models separately.
- */
+/** The panel shadow, ring-free so it does not double the card's own border. */
 export const panelShadow: Record<ColorScheme, ViewStyle> = {
   light: {
     shadowColor: "#000000", shadowOpacity: 0.08, shadowRadius: 12,
@@ -179,10 +158,7 @@ export const panelShadow: Record<ColorScheme, ViewStyle> = {
   },
 };
 
-/**
- * What a turn's state is called in colour. Copied from `web/src/lib/status.ts` so a running turn
- * is the same blue in both clients.
- */
+/** What a turn's state is called in colour, copied so a running turn is the same blue in both clients. */
 export const STATUS_PALETTE: Record<string, keyof Palette> = {
   running: "blueSolid",
   completed: "fgSubtle",

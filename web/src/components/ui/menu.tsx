@@ -1,17 +1,12 @@
 "use client";
 
-// Dropdown menu helpers that fold away the repeated Chakra Menu boilerplate. Every menu in
-// the app is a trigger plus a portalled, positioned Content of items; `DropdownMenu` owns
-// that wrapper so call sites pass only the trigger and the items, and `MenuOption` owns the
-// standard item shape (optional leading icon, label, optional subtitle, optional trailing
-// check or busy spinner, danger/accent style).
+// Dropdown helpers that fold away the repeated menu boilerplate.
 
 import { Box, Flex, Menu, Portal, Spinner } from "@chakra-ui/react";
 import type { ComponentProps, ReactNode } from "react";
 import { LuCheck } from "react-icons/lu";
 
-// One minimum width for every dropdown, so menus open to the same comfortable width instead
-// of each picking its own. A spacing-scale token (14rem / 224px) rather than a raw pixel string.
+// One minimum width for every dropdown, from the spacing scale rather than a bare number.
 const DROPDOWN_MINIMUM_W = "56";
 
 export function DropdownMenu({
@@ -28,8 +23,7 @@ export function DropdownMenu({
   onOpenChange?: ComponentProps<typeof Menu.Root>["onOpenChange"];
 }) {
   return (
-    // `size="sm"` is the app's one menu scale — set here so every dropdown's item height and
-    // font match instead of defaulting to Chakra's larger `md`.
+    // The app's one menu scale, set here so every dropdown's item height and font match.
     <Menu.Root size="sm" positioning={positioning} onOpenChange={onOpenChange}>
       <Menu.Trigger asChild>{trigger}</Menu.Trigger>
       <Portal>
@@ -41,9 +35,7 @@ export function DropdownMenu({
   );
 }
 
-// A divider between item groups, with vertical margin that matches the items' horizontal
-// inset — so it sits evenly within the menu's padding instead of crowding the rows around
-// it. Lives here (not per call site) so every menu's divider breathes the same way.
+// A divider between item groups, with margin matching the items' inset so it sits evenly.
 export function MenuSeparator() {
   return <Menu.Separator />;
 }

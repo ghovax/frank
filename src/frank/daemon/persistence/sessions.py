@@ -1,21 +1,4 @@
-"""The registry's durable half: session records that outlive the daemon that made them.
-
-The registry keeps sessions in a dictionary because `session_for_token` runs on every
-control-plane call and has to be a lookup. That dictionary dies with the process, which was
-fine while a session *was* its worker — both ended together — and is wrong now that a session
-is a record with a process only while it works. A daemon restart used to end every session;
-what it should end is every session's *process*.
-
-So the registry writes through to here, and reads back at boot. This is a `SessionStore` in
-the sense Part VII's ports use the word: `load_all`, `save`, `delete`, supplied to the registry
-rather than found by it, so a test can hand it nothing and get an in-memory registry with no
-special case inside the registry itself.
-
-Synchronous on purpose. Its callers are the registry's own `create`, `mark` and `end`, which
-are called from request handlers that are not otherwise async at that point, and making them
-async would turn one durable write into a colouring change across the daemon. The writes are
-small, single-row, and behind the same cross-process lock every other daemon write takes.
-"""
+"""The registry's durable half: session records that outlive the daemon that made them."""
 
 from __future__ import annotations
 
@@ -47,12 +30,7 @@ class SqliteSessionStore:
         self._session_factory = session_factory
 
     def load_all(self) -> list[SessionRecord]:
-        """Every session ever recorded, as the registry's own shape.
-
-        Live sessions come back with no process, which is exactly what they are: their workers
-        died with the previous daemon. The registry calls that `asleep`, and the first message
-        to one forks it a new worker.
-        """
+        """Every session ever recorded, with live ones coming back with no process, which is what they are."""
         database_session = self._session_factory()
         try:
             rows = database_session.query(SessionRow).all()
@@ -82,12 +60,7 @@ class SqliteSessionStore:
             database_session.close()
 
     def save(self, record: SessionRecord) -> None:
-        """Write one record, creating the row if this is its first save.
-
-        Deliberately upsert-shaped rather than insert-then-update: the browser surface creates
-        a row of its own when it prepares a workspace, so a session can already have one by the
-        time the registry first writes it.
-        """
+        """Write one record, upsert-shaped because another surface may have created the row first."""
         with sqlite_write_lock():
             database_session = self._session_factory()
             try:
@@ -130,12 +103,7 @@ class SqliteSessionStore:
                 database_session.close()
 
     def claim_work_habits_acknowledgement(self, session_id: str) -> bool:
-        """Claim the one-time work-habits acknowledgement, atomically.
-
-        Durable rather than a flag on the worker, because a worker is per *activation* now: a
-        session that slept and woke would show the acknowledgement again every time, which is
-        precisely the "once per session" promise being broken by an implementation detail.
-        """
+        """Claim the one-time work-habits acknowledgement atomically, durably because a worker is per activation."""
         from datetime import datetime, timezone
 
         if not session_id:

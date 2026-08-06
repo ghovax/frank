@@ -1,9 +1,4 @@
-"""The session's goal: one contract for completion, durable across turns.
-
-A leaf module, imported by the runtime that owns the goal, the tool concern that writes it, and
-the worker that decides whether the session keeps working — so all three name the same type
-rather than passing a dictionary between them and each guessing at its shape.
-"""
+"""The session's goal: one contract for completion, durable across turns."""
 
 from __future__ import annotations
 
@@ -13,20 +8,7 @@ from pydantic import BaseModel
 
 
 class Goal(BaseModel):
-    """The session's single contract for completion, and the one piece of durable state that
-    outlives the turn that set it.
-
-    It is written by the agent (``update_goal``) and read by two other parties: the model, which
-    is shown it whenever its situation changes, and the person, who sees it in the interface with
-    a control to call it off. What makes it more than a note to self is that a session with an
-    open goal does not go quiet when a turn ends — another turn is opened for it — so the goal,
-    rather than the end of a turn, is what decides when the work stops.
-
-    ``requirements`` is why this is a record and not a sentence. An outcome nobody wrote down as
-    checkable conditions cannot be audited at the end, and the audit is the whole point: without
-    it, "done" means the model's memory of having worked, which is exactly the failure a goal
-    exists to prevent.
-    """
+    """The session's single contract for completion, written by the agent and read by the runtime."""
 
     #: The end state, in the agent's own words.
     text: str
@@ -35,19 +17,14 @@ class Goal(BaseModel):
     status: str = "active"
     #: What is in the way, set when the agent reports the goal blocked.
     blocker: str = ""
-    #: How many turns have been opened for this goal since a person last spoke. Bookkeeping for
-    #: the allowance, and deliberately absent from :meth:`for_model`: what keeps the session
-    #: working is not the model's business, and one told it has "three passes left" starts
-    #: rationing its work against a number it should never have seen.
+    #: How many turns have been opened since a person last spoke, and deliberately not shown to the model.
     continuations: int = 0
 
     #: Being worked, so the session keeps going on its own.
     ACTIVE: ClassVar[str] = "active"
     #: The agent reported an impasse it cannot pass without the person. Nothing further is opened.
     BLOCKED: ClassVar[str] = "blocked"
-    #: Set when the goal used its whole allowance without a person saying anything. Distinct from
-    #: ``blocked``: nobody claimed the work is stuck, only that it has run long enough unattended
-    #: to be worth a look.
+    #: Set when the goal used its whole allowance, which is distinct from anyone claiming it is stuck.
     PARKED: ClassVar[str] = "parked"
 
     @property
