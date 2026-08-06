@@ -57,14 +57,7 @@ def _live_additions(
     routable,
     modalities: tuple[str, ...],
 ) -> list[ModelDefinition]:
-    """Catalog entries for live subscription models the static list does not name.
-
-    A subscription's real model list is an account fact discovered at runtime, and it
-    moves faster than any list checked into the tree — so whatever the account serves and
-    this version has never heard of still becomes pickable, with the live name and
-    context window rather than a guess. Capabilities are the provider's, not the model's:
-    the live lists carry no modality metadata, so what a route can carry at all is the
-    honest answer, and it is the conservative one."""
+    """Catalog entries for live subscription models the static list does not name."""
     known = {
         model.identifier.split("/", 1)[1]
         for model in catalog
@@ -86,12 +79,7 @@ def _live_additions(
 
 
 def _merged_sandbox(current, posted: dict):
-    """The stored confinement with a posted patch laid over it, validated as a whole.
-
-    The schema refuses a key it does not define, so a patch naming a setting that no longer
-    exists fails here rather than being dropped and reported as saved — which is the point of
-    refusing it at all. Answered as a bad request, because that is what it is: the caller sent
-    a name this version has no setting for."""
+    """The stored confinement with a posted patch laid over it, validated whole so an unknown key fails rather than vanishes."""
     try:
         return _configuration.SandboxConfiguration.model_validate({**current.model_dump(), **posted})
     except Exception as error:  # noqa: BLE001 — the validator's own message is the useful part
@@ -100,8 +88,7 @@ def _merged_sandbox(current, posted: dict):
 
 @router.get("/system/full-disk-access")
 async def full_disk_access_status():
-    """Whether the daemon process can read Full-Disk-Access-protected data (Screen Time,
-    Safari history). Drives the Settings banner + button for the user-context feature."""
+    """Whether the daemon can read Full-Disk-Access-protected data, which drives the Settings banner and button."""
     return {"granted": await asyncio.to_thread(_workspaces._full_disk_access_granted)}
 
 
@@ -114,8 +101,7 @@ async def open_full_disk_access_settings():
 
 @router.get("/system/accessibility")
 async def accessibility_status():
-    """Whether the daemon can control other apps (read the AX tree, synthesize input) —
-    the permission the computer-use tool needs. Drives the Settings banner/button."""
+    """Whether the daemon can control other apps, which is the permission the computer-use tool needs."""
     return {"granted": await asyncio.to_thread(_system._accessibility_granted)}
 
 
@@ -129,25 +115,17 @@ async def open_accessibility_settings():
 
 @router.get("/models")
 async def list_models_endpoint():
-    """The model catalog for the picker: every known model with its provider and
-    whether its provider has a resolvable credential (available), plus the provider
-    registry. Available models are fronted in the
-    picker; locked ones stay listed (greyed) so the user sees what a key unlocks."""
+    """The model catalog for the picker: every known model, whether its provider has a credential, and the provider registry."""
     assert state.global_configuration is not None
     configured_keys = state.global_configuration.configured_provider_keys()
     available_identifiers = {model.identifier for model in available_models(configured_keys)}
-    # The two subscription providers list a static superset but are only *available*
-    # per-model against the account's live catalog, so the picker can grey the ones a
-    # plan does not serve. Both are asked at once — they are independent network calls
-    # and this endpoint is polled.
+    # The subscription providers list a static superset, so both accounts' live catalogs are fetched at once to grey the rest.
     live_chatgpt, live_cursor = await asyncio.gather(
         fetch_subscription_models(),
         cursor_fetch_subscription_models(),
     )
     catalog = list_models()
-    # Live models the static list has not caught are appended so nothing a plan serves is
-    # missed. For chatgpt that means real gpt-* only, because the live Codex catalog also
-    # names models this harness does not route; for cursor every entry is routable.
+    # Live models the static list has not caught are appended, filtered to what this harness can actually route.
     catalog.extend(_live_additions(
         "chatgpt", live_chatgpt, catalog, lambda slug: slug.startswith("gpt-"), ("text", "image"),
     ))
@@ -192,19 +170,13 @@ async def list_models_endpoint():
 
 @router.get("/models/recent")
 async def recent_models():
-    """Recently selected models (newest first), mirroring the project history — a
-    user can quickly switch back to a model they used before without scrolling the
-    full catalog. Each entry is only recorded once it is actually selected."""
+    """Recently selected models, newest first, so a user can switch back without scrolling the whole catalog."""
     return {"models": await asyncio.to_thread(_recent_models)}
 
 
 @router.get("/auth/chatgpt")
 async def chatgpt_auth_status():
-    """Whether a ChatGPT subscription is signed in, and for which account — so the
-    settings dialog and the model picker can show sign-in state and unlock the
-    ``chatgpt`` provider's models. Also carries the latest rate-limit snapshot (the
-    5h + weekly usage windows) captured from turns, or ``None`` until the first turn
-    runs after sign-in."""
+    """Whether a ChatGPT subscription is signed in and for which account, with the latest rate-limit snapshot."""
     tokens = await asyncio.to_thread(load_tokens)
     return {
         "signed_in": tokens is not None,
@@ -215,11 +187,7 @@ async def chatgpt_auth_status():
 
 @router.post("/auth/chatgpt/start")
 async def chatgpt_auth_start():
-    """Begin an OAuth sign-in: bind the loopback callback server and return the
-    authorize URL for the client to open in a browser. The redirect is caught on
-    localhost:1455, tokens are persisted, and runtimes are reset in the background
-    task below; the UI learns of completion via the ``settings_changed`` broadcast
-    (or by polling GET /auth/chatgpt)."""
+    """Begin an OAuth sign-in: bind the loopback callback and return the authorize URL for the client to open."""
     previous = state.chatgpt_login_flow
     if previous is not None:
         await previous.close()
@@ -253,8 +221,7 @@ async def chatgpt_auth_start():
 
 @router.delete("/auth/chatgpt")
 async def chatgpt_auth_signout():
-    """Sign out: clear the stored tokens and reset runtimes so the ``chatgpt``
-    provider re-locks immediately."""
+    """Sign out: clear the stored tokens and reset runtimes so the provider re-locks immediately."""
     if state.chatgpt_login_flow is not None:
         await state.chatgpt_login_flow.close()
         state.chatgpt_login_flow = None
@@ -268,32 +235,17 @@ async def chatgpt_auth_signout():
 
 @router.get("/auth/cursor")
 async def cursor_auth_status():
-    """Whether a Cursor subscription is signed in, and for which account — so the settings
-    dialog and the model picker can show sign-in state and unlock the ``cursor``
-    provider's models.
-
-    No usage snapshot, unlike the ChatGPT status: Cursor's agent service does not report
-    the account's remaining allowance anywhere on the calls this makes, so there is
-    nothing to show. It surfaces when the allowance runs out, as a stream error, which is
-    the only signal the protocol gives."""
+    """Whether a Cursor subscription is signed in and for which account, with no usage snapshot to report."""
     tokens = await asyncio.to_thread(cursor_load_tokens)
     return {"signed_in": tokens is not None, "account": tokens.account if tokens else ""}
 
 
 @router.post("/auth/cursor/start")
 async def cursor_auth_start():
-    """Begin a Cursor sign-in: return the login URL for the client to open in a browser
-    and start polling for its completion in the background.
-
-    There is no callback server and no port to bind, because Cursor's flow has no
-    redirect — the daemon polls Cursor with the ``uuid`` and verifier it minted until the
-    browser side completes. So unlike the ChatGPT sign-in this cannot fail at the start;
-    it either completes, is superseded, or times out. The UI learns of completion via the
-    ``settings_changed`` broadcast (or by polling GET /auth/cursor)."""
+    """Begin a Cursor sign-in and poll for its completion, since its flow has no redirect to catch."""
     previous = state.cursor_login_flow
     if previous is not None:
-        # A second sign-in supersedes the first, and the first must stop polling rather
-        # than race to write a token the user has already replaced.
+        # A second sign-in supersedes the first, which must stop polling rather than race to write a replaced token.
         await previous.close()
     flow = CursorLoginFlow()
     state.cursor_login_flow = flow
@@ -316,10 +268,8 @@ async def cursor_auth_start():
 
 @router.delete("/auth/cursor")
 async def cursor_auth_signout():
-    """Sign out: clear the stored tokens and reset runtimes so the ``cursor`` provider
-    re-locks immediately."""
-    # Deferred: resumable conversation state is the model client's, and the REST layer does
-    # not import the runtime at module scope. Everything else here lives in ``base``.
+    """Sign out: clear the stored tokens and reset runtimes so the provider re-locks immediately."""
+    # Deferred, because resumable conversation state is the model client's and this layer does not import the runtime.
     from frank.runtime.models.cursor import clear_resumptions
 
     if state.cursor_login_flow is not None:
@@ -336,12 +286,9 @@ async def cursor_auth_signout():
 
 @router.get("/settings")
 async def get_settings():
-    """Return the API credentials stored in the XDG configuration file so the
-    settings dialog can pre-fill them, including per-provider keys."""
+    """The stored API credentials, so the settings dialog can pre-fill them."""
     assert state.global_configuration is not None
-    # The configured floor, not some agent's own setting: this is what a session gets when its
-    # creator does not say, and reading it off a nominated profile would make that profile a
-    # default agent in everything but name.
+    # The configured floor rather than some agent's own setting, which is what a session gets when its creator does not say.
     permission_mode = _normalize_permission_mode(state.global_configuration.agent.permission_mode)
     return {
         "permission_mode": permission_mode,
@@ -357,9 +304,7 @@ async def get_settings():
         "user_context_enabled": state.global_configuration.user_context.enabled,
         "computer_control_enabled": state.global_configuration.computer_control.enabled,
         "toolbox_enabled": state.global_configuration.toolbox.enabled,
-        # Whether this machine could offer one at all, which is not the same question: the
-        # switch can be on while the machine has no package manager to honour it, and an
-        # interface that showed only the setting would be describing something that is not there.
+        # Whether this machine could offer one at all, which the switch being on does not answer.
         "toolbox_available": _toolbox.available(),
         "dictation_enabled": state.global_configuration.dictation.enabled,
         "providers": {
@@ -371,10 +316,7 @@ async def get_settings():
 
 @router.post("/settings")
 async def update_settings(request: SettingsUpdateRequest):
-    """Persist API credentials to the XDG configuration file and apply them
-    live: refresh the in-memory configuration, the Exa client, restart the MCP
-    client manager so Composio tools appear/disappear with its key, and drop
-    cached agent runtimes so the next turn rebuilds with the new credentials."""
+    """Persist API credentials and apply them live, refreshing the clients and dropping cached runtimes."""
     assert state.global_configuration is not None
     configuration = state.global_configuration
     async with state.configuration_lock:
@@ -393,9 +335,7 @@ async def update_settings(request: SettingsUpdateRequest):
                 if request.permission_mode is not None else None
             ),
         )
-        # `agent.permission_mode` in the configuration file, which is where it is read from
-        # too. It used to be written onto a nominated profile's sidecar — which made that one
-        # profile the global default, and any agent's own setting a global setting.
+        # `agent.permission_mode` in the configuration file, which is where it is read from too.
         if request.permission_mode is not None:
             configuration.agent.permission_mode = _normalize_permission_mode(request.permission_mode)
             await state.reset_runtimes()
@@ -413,8 +353,7 @@ async def update_settings(request: SettingsUpdateRequest):
             configuration.sandbox = _merged_sandbox(configuration.sandbox, request.sandbox)
         if request.worktree_strategy is not None:
             configuration.workspace.strategy = request.worktree_strategy
-        # Rebuild the providers map from the posted keys/base URLs, merging so a
-        # provider the dialog did not render keeps its stored credential.
+        # Rebuild the providers map from the posted values, merging so an unrendered provider keeps its credential.
         merged_providers = {
             identifier: _configuration.ProviderCredential(
                 api_key=credential.api_key, base_url=credential.base_url
@@ -435,19 +374,7 @@ async def update_settings(request: SettingsUpdateRequest):
 
 @router.get("/settings/schema")
 async def settings_schema():
-    """Every setting there is, with what it holds and what it is set to.
-
-    One endpoint for the whole file rather than one per toggle. The endpoints it replaces each
-    named a single field in their signature, their request model, their persistence call and
-    their response — four statements of the same fact per setting, which is why only a dozen of
-    the hundred and thirty-three ever reached the interface: each one cost more than it was
-    worth. This costs nothing per setting, because it does not know their names.
-
-    **No words.** What a setting is called, and the sentence explaining it, are not here and are
-    not on the wire: they live in the message catalogue, keyed by the same dotted path, and are
-    translated there like everything else a person reads. Serving them from here made them
-    English for everyone — switching the interface to Japanese translated every label in the
-    panel and left these as they were, because a wire has no locale."""
+    """Every setting there is, with what it holds and what it is set to, as one endpoint for the whole file."""
     from frank.base import configuration_file
     from frank.base.configuration_schema import KIND_SECTION, settings as all_settings
 
@@ -475,8 +402,7 @@ async def settings_schema():
             "secret": setting.secret,
             "default": setting.default,
             "value": value,
-            # Whether the file says this, as opposed to the code shipping it. What a person
-            # changed is the question they actually ask of their own configuration.
+            # Whether the file says this, as opposed to the code shipping it.
             "configured": configured,
         })
     return {"sections": [section for section in sections.values() if section["settings"]]}
@@ -484,11 +410,7 @@ async def settings_schema():
 
 @router.post("/settings/value")
 async def update_setting(request: SettingValueRequest):
-    """Set one setting, addressed the way it is written in the file.
-
-    Validated against the schema before anything is written, because the daemon reads this file
-    at startup: a value it rejects does not fail the call that set it, it fails every start
-    after — including the one that would put it back."""
+    """Set one setting by its path, validated first, because the daemon reads this file at every start."""
     from frank.base import configuration_file
     from frank.base.configuration_schema import setting_for
 
@@ -498,8 +420,7 @@ async def update_setting(request: SettingValueRequest):
         document = await asyncio.to_thread(configuration_file.load)
         entry = setting_for(request.path)
         if request.value is None and entry is not None and not entry.optional:
-            # Nothing, for a setting that cannot hold nothing, means "put it back" rather than
-            # "write a null the schema will refuse at the next start".
+            # Nothing, for a setting that cannot hold nothing, means put it back rather than write a null.
             configuration_file.remove(document, request.path)
         else:
             configuration_file.write(document, request.path, request.value)
@@ -507,8 +428,7 @@ async def update_setting(request: SettingValueRequest):
         if invalid:
             raise HTTPException(status_code=400, detail=invalid)
         await asyncio.to_thread(configuration_file.save, document)
-        # Read back, applied live, and every session told to rebuild — the same three steps
-        # every bespoke endpoint performed for its own field, done once for all of them.
+        # Read back, applied live, and every session told to rebuild, done once for every setting.
         await _reload_configuration_from_disk()
         await state.reset_runtimes()
     return {"status": "saved", "path": request.path}
@@ -516,9 +436,7 @@ async def update_setting(request: SettingValueRequest):
 
 @router.delete("/settings/value")
 async def reset_setting(path: str):
-    """Put one setting back to what the code ships, by removing it from the file. A setting
-    that is not written is not a setting set to its default — it is one that follows the
-    default, including when a later release moves it."""
+    """Put one setting back to what the code ships by removing it, so it follows the default from here on."""
     from frank.base import configuration_file
     from frank.base.configuration_schema import setting_for
 
@@ -539,11 +457,7 @@ async def reset_setting(path: str):
 
 @router.post("/settings/sandbox")
 async def update_sandbox(request: SandboxUpdateRequest):
-    """Persist and apply confinement independently from credentials.
-
-    Only sessions created afterwards get the change. A running session keeps what it was built
-    with, exactly as its permission mode does, because a boundary that could be widened underneath
-    a live session would not be one."""
+    """Persist and apply confinement on its own; only sessions created afterwards get the change."""
     assert state.global_configuration is not None
     async with state.configuration_lock:
         state.global_configuration.sandbox = _merged_sandbox(
@@ -560,8 +474,7 @@ async def update_sandbox(request: SandboxUpdateRequest):
 
 @router.post("/settings/user-context")
 async def update_user_context(request: UserContextUpdateRequest):
-    """Persist and apply the opt-in user-context toggle. The snapshot is built into the
-    static system prompt, so cached runtimes are dropped to rebuild it on the next turn."""
+    """Persist and apply the user-context toggle, dropping cached runtimes since the snapshot is built into the prompt."""
     assert state.global_configuration is not None
     async with state.configuration_lock:
         setting_changed = state.global_configuration.user_context.enabled != request.enabled
@@ -576,8 +489,7 @@ async def update_user_context(request: UserContextUpdateRequest):
 
 @router.post("/settings/computer-control")
 async def update_computer_control(request: ComputerControlUpdateRequest):
-    """Persist and apply the opt-in computer-use toggle. The tool set is built per turn,
-    so cached runtimes are dropped to add or remove the `computer` tool on the next turn."""
+    """Persist and apply the computer-use toggle, dropping cached runtimes since the tool set is built per turn."""
     assert state.global_configuration is not None
     async with state.configuration_lock:
         await _persist_configuration(computer_control_enabled=request.enabled)
@@ -589,8 +501,7 @@ async def update_computer_control(request: ComputerControlUpdateRequest):
 
 @router.post("/settings/toolbox")
 async def update_toolbox(request: ToolboxUpdateRequest):
-    """Persist and apply whether sessions may install tools for themselves. The tool context is
-    built per runtime, so cached runtimes are dropped for the change to reach the next turn."""
+    """Persist and apply whether sessions may install tools, dropping cached runtimes so the change reaches the next turn."""
     assert state.global_configuration is not None
     async with state.configuration_lock:
         await _persist_configuration(toolbox_enabled=request.enabled)
@@ -602,9 +513,7 @@ async def update_toolbox(request: ToolboxUpdateRequest):
 
 @router.post("/settings/compaction")
 async def update_compaction(request: CompactionUpdateRequest):
-    """Persist and apply the Observational-Memory compaction settings (the auto on/off
-    trigger and thresholds), independently from credentials. The runtime reads the live
-    config each turn, so no runtime reset is needed for the trigger to take effect."""
+    """Persist and apply the compaction settings, which the runtime reads live and so needs no runtime reset."""
     assert state.global_configuration is not None
     changes = request.model_dump(exclude_none=True)
     if changes:

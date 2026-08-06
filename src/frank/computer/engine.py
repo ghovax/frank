@@ -547,12 +547,7 @@ class NativeSurface(Surface):
         return self.guard(run)
 
     def _primitive_shortcuts(self, state: _WindowState, **_: Any) -> dict:
-        """Every keyboard shortcut this application publishes, from its own menu bar.
-
-        A shortcut recalled from memory is a guess about a version of an application you are not
-        looking at, and the cost of a wrong one is not nothing: `Control+3` selected RStudio's
-        Environment pane instead of Help, changing the user's workspace on the way to a task that
-        never needed it. The application already publishes the answer; nothing asked it."""
+        """Every keyboard shortcut this application publishes, from its own menu bar rather than from memory."""
         def run() -> dict:
             found = accessibility.shortcuts_of(state.pid)
             if not found:
@@ -563,26 +558,12 @@ class NativeSurface(Surface):
         return self.guard(run)
 
     def _primitive_read(self, state: _WindowState, element: Optional[str] = None, **_: Any) -> dict:
-        """Read one element's text.
-
-        `element` is optional here because it is optional on the browser surface, and a script is
-        written against `read()` — not against whichever surface happens to be answering. It
-        used to be required, so `read()` on this surface raised a bare
-        `TypeError: missing 1 required positional argument` out of the primitive dispatcher and
-        into the transcript: a Python signature shown to someone who never called a Python
-        function. A surface that cannot do something says so in words.
-        """
+        """Read one element's text, or the whole target's when no element is named, as `read()` means on a page."""
         def run() -> dict:
             if not element:
-                # The whole target's text, which is what `read()` means on the browser. One name,
-                # one meaning: this used to be an error here and a page read there, so a script
-                # written against `read()` worked or failed depending on what was answering — the
-                # exact leak the single-vocabulary rule exists to close.
+                # The whole target's text, so one name means one thing whichever surface is answering.
                 snapshot = self._ready_snapshot(state.pid, "focused")
-                # Every line the window says, as a list. A window's text is not a document — it is
-                # a set of discrete labels, one per control — and joining them with newlines threw
-                # away the one piece of structure the tree actually gives you, leaving the script
-                # to split a blob back into the lines it was built from.
+                # Every line the window says, as a list, because a window's text is discrete labels rather than a document.
                 return {"ok": True, "lines": [
                     text for text in (_element_name(element) for element in snapshot.elements) if text
                 ]}
