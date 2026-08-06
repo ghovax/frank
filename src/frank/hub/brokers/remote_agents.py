@@ -1,5 +1,4 @@
-"""Remote-agent domain: loading the remote-agents configuration, reloading it, and polling
-remote-agent health."""
+"""Remote-agent domain: loading the configuration, reloading it, and polling health."""
 
 from __future__ import annotations
 
@@ -31,9 +30,7 @@ def _remote_agent_dataclasses() -> dict[str, RemoteAgentConfiguration]:
 
 
 async def _reload_remote_agents() -> None:
-    """Re-read remote-agents.json and apply the external-agent set live: reconcile the
-    outbound client manager and drop cached runtimes so the next turn's roster reflects
-    the change. No server restart required."""
+    """Re-read remote-agents.json and apply it live, with no server restart."""
     assert state.global_configuration is not None
     async with state.configuration_lock:
         state.global_configuration.remote_agents = Configuration.load().remote_agents

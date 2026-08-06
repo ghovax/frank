@@ -1,18 +1,6 @@
 import type { SVGProps } from "react";
 
-/**
- * The Frank mark, on its own.
- *
- * Distinct from the app icon deliberately. An icon needs a container — the blue tile, the
- * rounded corners — because the operating system needs something tappable with an edge. A
- * logo inside the interface needs the opposite: no tile, no gradient, no border radius, just
- * the mark. Pasting `app/icon.png` next to the wordmark, which is what this replaces, reads
- * as a screenshot of the icon rather than as branding.
- *
- * Drawn in `currentColor` so it takes the colour of whatever it sits in and stays legible in
- * both themes without a second asset. Inline rather than an SVG file for the same reason:
- * a file loaded through `<img>` cannot inherit colour.
- */
+/** The Frank mark on its own, without the container an app icon needs. */
 export function FrankMark({ size = "1em", ...props }: { size?: string | number } & SVGProps<SVGSVGElement>) {
   return (
     <svg

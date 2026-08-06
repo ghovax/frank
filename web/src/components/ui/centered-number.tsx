@@ -3,14 +3,7 @@
 import { Span } from "@chakra-ui/react";
 import type { ReactNode } from "react";
 
-// A number centered in its container by CSS constraints alone: an absolutely-positioned
-// flex layer fills the parent (which must be `position: relative`, or already positioned)
-// and centers the glyph with `align-items`/`justify-content`.
-// Flex alone centers the *line box*, which leaves a digit riding high because the line box
-// reserves descender space it never uses; `text-box: trim-both cap alphabetic` trims the box
-// down to the cap-height/baseline edges so the flex centering lands on the actual glyph. No
-// line-height, no transforms, no SVG, no nudging. Give the parent the size, background,
-// border and text color; `fontSize` is the real glyph size in px and `currentColor` inherits.
+// A number centred by CSS constraints alone, since flex alone centres the glyph's box and not its ink.
 export function CenteredNumber({
   children,
   fontSize = 12,
