@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from langmesh.base.permission_mode import PermissionMode
+from langmesh.base.tuning import Tunable, active_tuning
 from langmesh.base import telemetry
 from langmesh.daemon import state
 from langmesh.daemon.registry import SessionRecord
@@ -790,11 +791,21 @@ async def attach(session_id: str, request: Request) -> EventSourceResponse:
         assert state.turn_store is not None
         subscription = state.event_bus.subscribe(session_id)
         try:
-            turns = await state.turn_store.turns_for_session(session_id)
+            # The newest page, not the whole conversation: a long one costs most of a second to read,
+            # revalidate and re-encode, and the client asks for what came before it when somebody scrolls.
+            page = await state.turn_store.turn_page_for_session(
+                session_id, limit=active_tuning().amount(Tunable.attach_snapshot_rows)
+            )
             yield {
                 "data": compact({
                     "kind": "snapshot",
-                    "turns": [turn.model_dump(by_alias=True, exclude_none=True, mode="json") for turn in turns],
+                    "turns": [
+                        turn.model_dump(by_alias=True, exclude_none=True, mode="json")
+                        if hasattr(turn, "model_dump") else turn
+                        for turn in (page.get("turns") or [])
+                    ],
+                    "has_more": bool(page.get("has_more")),
+                    "next_before_row_id": page.get("next_before_row_id"),
                 })
             }
             while True:

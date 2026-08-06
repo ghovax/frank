@@ -738,7 +738,8 @@
         "web_search_maximum": "ウェブ検索の最大件数",
         "web_search_sync_window_seconds": "ウェブ検索を同期実行する時間（秒）",
         "web_websocket_frames": "WebSocket ごとに保持するフレーム数",
-        "web_websockets": "同時に追跡する WebSocket 数"
+        "web_websockets": "同時に追跡する WebSocket 数",
+        "attach_snapshot_rows": "会話を開いたときに読み込むメッセージ数"
       }
     }
   },
@@ -944,7 +945,8 @@
         "web_search_maximum": "ウェブ検索が要求できる結果件数の上限。",
         "web_search_sync_window_seconds": "ウェブ検索を同期実行する時間。",
         "web_websocket_frames": "追跡中の WebSocket ごとに保持するフレーム数。",
-        "web_websockets": "ブラウザセッションが同時に追跡する WebSocket の数。"
+        "web_websockets": "ブラウザセッションが同時に追跡する WebSocket の数。",
+        "attach_snapshot_rows": "会話を開いたときに送信される履歴の量。残りはスクロールに応じて取得されるため、長い履歴でも短い履歴と同じ速さで開きます。"
       }
     }
   },

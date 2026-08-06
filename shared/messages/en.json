@@ -738,7 +738,8 @@
         "web_search_maximum": "Web search maximum",
         "web_search_sync_window_seconds": "Web search sync window (seconds)",
         "web_websocket_frames": "Frames kept per WebSocket",
-        "web_websockets": "Tracked WebSockets"
+        "web_websockets": "Tracked WebSockets",
+        "attach_snapshot_rows": "Messages loaded when opening a chat"
       }
     }
   },
@@ -944,7 +945,8 @@
         "web_search_maximum": "Ceiling on the result count a web search may ask for, however many it requests.",
         "web_search_sync_window_seconds": "The same inline window for a web search.",
         "web_websocket_frames": "Frames retained per tracked websocket.",
-        "web_websockets": "Live websockets a browser session tracks at once."
+        "web_websockets": "Live websockets a browser session tracks at once.",
+        "attach_snapshot_rows": "How much of a conversation is sent when you open it. The rest is fetched as you scroll back, so a long history opens as fast as a short one."
       }
     }
   },

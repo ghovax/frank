@@ -251,6 +251,7 @@ How large, how many, and how patient the tools are.
 | `tuning.defaults.accessibility_messaging_seconds` | number | `2.0` | How long one accessibility message to an application waits, so a hung application costs a moment rather than the whole action. |
 | `tuning.defaults.goal_continuation_turns` | integer | `12` | How many turns in a row a session may open for its own goal before it stops and waits for the person. |
 | `tuning.defaults.goal_blocked_turns` | integer | `3` | How many times the same condition must stop a goal before the agent may report it blocked. One failure is not an impasse, and a goal abandoned on the first refusal is one nobody asked to abandon. |
+| `tuning.defaults.attach_snapshot_rows` | integer | `400` | How much of a conversation is sent when you open it. The rest is fetched as you scroll back, so a long history opens as fast as a short one. |
 | `tuning.defaults.session_title_attempts` | integer | `3` | How many times a session asks the model to name itself before giving up. |
 | `tuning.defaults.permission_reviewer_attempts` | integer | `3` | How many times the permission reviewer is asked before its silence counts as a refusal. |
 | `tuning.defaults.session_idle_sleep_seconds` | number | `18000.0` | How long a session keeps its process after its last turn before it sleeps. |
