@@ -83,18 +83,14 @@ class SessionExecutor(AgentExecutor):
         self._global_configuration = global_configuration
 
         # The worker never opens the database: every write goes to the daemon, which is the sole writer.
-        from langmesh.base.paths import daemon_socket_path
         from langmesh.worker.turn_store import DaemonTurnStore
 
-        self._turn_store = DaemonTurnStore(str(daemon_socket_path()), session_id, daemon_token or token)
+        self._turn_store = DaemonTurnStore(session_id)
 
         # The same daemon for composing with other sessions, carrying this session's identity.
         from langmesh.worker.peers import PeerSessions
 
         self._peers = PeerSessions(
-            socket_path=str(daemon_socket_path()),
-            # This session's own token, not the daemon's: it is what makes every peer a child of this one.
-            token=token or daemon_token,
             session_id=session_id,
             working_directory=runtime_working_directory or working_directory,
             permission_mode=permission_mode,

@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
-
-import httpx
+from typing import Any
 
 from langmesh.protocol.metadata import Metadata
-from langmesh.base.tuning import Tunable, active_tuning
 
 logger = logging.getLogger(__name__)
 
@@ -23,54 +20,40 @@ class PeerSessions:
     def __init__(
         self,
         *,
-        socket_path: str,
-        token: str,
         session_id: str,
         working_directory: str,
         permission_mode: str,
         parent_session: str = "",
     ) -> None:
-        self._socket_path = socket_path
-        self._token = token
         self.session_id = session_id
         self.working_directory = working_directory
         self.permission_mode = permission_mode
         self._parent_session = parent_session
         # Whether this session has answered its creator, tracked here because this is the only way out.
         self.reported_to_parent = False
-        self._client: Optional[httpx.AsyncClient] = None
-
-    def _http(self) -> httpx.AsyncClient:
-        if self._client is None:
-            self._client = httpx.AsyncClient(
-                transport=httpx.AsyncHTTPTransport(uds=self._socket_path),
-                base_url="http://daemon",
-                timeout=active_tuning().duration(Tunable.control_plane_call_seconds),
-                headers={"Authorization": f"Bearer {self._token}"},
-            )
-        return self._client
 
     async def aclose(self) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        """Nothing is held open: the control plane is the daemon this session runs inside."""
+        return None
 
     async def _call(self, method: str, **params: Any) -> dict:
+        """Run one control-plane verb, scoped to this session exactly as the socket would have scoped it."""
+        from langmesh.daemon.api import METHODS, _refuse_session_caller, RpcError
+
+        handler = METHODS.get(method)
+        if handler is None:
+            raise PeerSessionError(f"the daemon has no verb {method!r}")
+        # The same refusal the socket applies, kept here so a session's reach does not depend on its transport.
+        refusal = _refuse_session_caller(self.session_id, method, params)
+        if refusal is not None:
+            raise PeerSessionError(refusal.message)
         try:
-            response = await self._http().post(
-                "/rpc", json={"method": method, "params": params}
-            )
-        except (httpx.HTTPError, OSError) as error:
-            raise PeerSessionError(f"the daemon could not be reached: {error}") from error
-        try:
-            body = response.json()
-        except ValueError as error:
-            raise PeerSessionError(f"the daemon returned a malformed answer ({response.status_code})") from error
-        if "error" in body:
-            raise PeerSessionError(str(body["error"].get("message") or "the call failed"))
-        if response.status_code >= 400:
-            raise PeerSessionError(f"{method} was rejected ({response.status_code})")
-        return body.get("result") or {}
+            result = await handler({**params, "calling_session": self.session_id})
+        except RpcError as error:
+            raise PeerSessionError(error.message) from error
+        except Exception as error:  # noqa: BLE001 — surfaced to the model as a failed tool result
+            raise PeerSessionError(str(error)) from error
+        return result or {}
 
     # The SessionAccess surface the runtime's tools call.
 

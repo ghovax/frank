@@ -23,7 +23,10 @@ _SEQUENCE: dict[str, int] = {}
 
 
 async def _turn_save(params: dict) -> dict:
-    task = Task.model_validate(params.get("task") or {})
+    # The task arrives as itself, since the session that built it runs here; only a stranger would need JSON.
+    task = params.get("task")
+    if not isinstance(task, Task):
+        task = Task.model_validate(task or {})
     await state.turn_store.save(task)
     return {"saved": task.id}
 

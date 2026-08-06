@@ -1,57 +1,41 @@
-"""The worker's view of the store: a client that forwards writes to the daemon, which is the sole writer."""
+"""A session's view of the durable store: the daemon's own handlers, called where the session runs."""
 
 from __future__ import annotations
 
-from langmesh.base.serialization import upstream_detail
 import logging
 from typing import Any, Optional
 
-import httpx
 from a2a.server.tasks import TaskStore
 from a2a.types import Task
-from langmesh.base.errors import describe
-from langmesh.base.serialization import compact
 
 logger = logging.getLogger(__name__)
 
 
 class DaemonTurnStore(TaskStore):
-    """A :class:`TaskStore` whose writes are performed by the daemon."""
+    """A :class:`TaskStore` whose writes are performed by the daemon that hosts this session."""
 
-    def __init__(self, socket_path: str, session_id: str, token: str) -> None:
-        self._socket_path = socket_path
+    def __init__(self, session_id: str) -> None:
         self._session_id = session_id
-        self._token = token
-        self._client: Optional[httpx.AsyncClient] = None
-
-    def _http(self) -> httpx.AsyncClient:
-        if self._client is None:
-            self._client = httpx.AsyncClient(
-                transport=httpx.AsyncHTTPTransport(uds=self._socket_path),
-                base_url="http://daemon",
-                timeout=60.0,
-                headers={"Authorization": f"Bearer {self._token}"},
-            )
-        return self._client
 
     async def _call(self, method: str, **params: Any) -> Any:
-        payload = {"method": method, "params": {"session_id": self._session_id, **params}}
+        """Run one ingest verb directly: the daemon that would have answered over a socket is this process."""
+        from langmesh.daemon.ingest import _METHODS
+
+        handler = _METHODS.get(method)
+        if handler is None:
+            logger.warning("no ingest verb named %r", method)
+            return None
         try:
-            response = await self._http().post("/ingest", json=payload)
-        except (httpx.HTTPError, OSError) as error:
-            # Losing the daemon loses durability, not the turn: the next successful write catches up.
-            logger.warning("persistence call failed %s", compact({"method": method, **describe(error)}))
+            return await handler({"session_id": self._session_id, **params})
+        except Exception:  # noqa: BLE001 — losing durability must not lose the turn
+            logger.warning("persistence call %s failed", method, exc_info=True)
             return None
-        if response.status_code >= 400:
-            logger.warning("persistence call %s rejected: %s", method, upstream_detail(response.text))
-            return None
-        return response.json().get("result")
 
     # The TaskStore interface a2a expects.
 
     # Part of the interface the A2A handler calls through, and unused here.
     async def save(self, task: Task, context: Any = None) -> None:
-        await self._call("turn.save", task=task.model_dump(by_alias=True, exclude_none=True, mode="json"))
+        await self._call("turn.save", task=task)
 
     async def get(self, turn_id: str, context: Any = None) -> Optional[Task]:
         raw = await self._call("turn.get", turn_id=turn_id)
@@ -115,6 +99,5 @@ class DaemonTurnStore(TaskStore):
         await self._call("session.title", title=title)
 
     async def aclose(self) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        """Nothing is held open: the store is the daemon this session runs inside."""
+        return None
