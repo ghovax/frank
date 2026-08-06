@@ -10,11 +10,7 @@ export interface TilePanel {
   onActivate?: () => void;
 }
 
-// Balance N panels into columns, filling VERTICALLY first: panels stack down a column
-// before a new column is opened. The per-column height is capped at ceil(sqrt(n)) so the
-// layout only spreads horizontally once a column is "full", growing into a balanced grid
-// rather than a row. Earlier columns take the remainder (are taller): two panels stack as
-// [2] (one column of two), three read as [2][1] (a stack of two beside one), four as [2][2].
+// Balance panels into columns, filling vertically first and spreading only once a column is full.
 function columnCounts(count: number): number[] {
   if (count <= 0) return [];
   const maxColumnHeight = Math.ceil(Math.sqrt(count));
@@ -26,9 +22,7 @@ function columnCounts(count: number): number[] {
 
 const RESIZE_THICKNESS = 8; // px hit area for a handle (its visible line is 1px, centered)
 
-// A tiling container for the side panels. Panels flow into a balanced grid of columns,
-// each column a vertical stack; every boundary between siblings (columns, and rows within
-// a column) carries a drag handle that repartitions the two neighbours' flex weights.
+// A tiling container for the side panels, every boundary carrying a drag handle that repartitions.
 export function PanelTiles({ panels, gap = 8 }: { panels: TilePanel[]; gap?: number }) {
   const columns: TilePanel[][] = [];
   {
@@ -39,8 +33,7 @@ export function PanelTiles({ panels, gap = 8 }: { panels: TilePanel[]; gap?: num
     }
   }
 
-  // A signature of the current arrangement; when it changes (panel opened/closed) the
-  // stored flex weights are reset to an even split rather than carried across a reshape.
+  // A signature of the arrangement; when it changes the stored weights reset to an even split.
   const signature = columns.map((column) => column.map((panel) => panel.key).join(",")).join("|");
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -48,10 +41,7 @@ export function PanelTiles({ panels, gap = 8 }: { panels: TilePanel[]; gap?: num
   const [colFlex, setColFlex] = useState<number[]>(() => columns.map(() => 1));
   const [rowFlex, setRowFlex] = useState<number[][]>(() => columns.map((column) => column.map(() => 1)));
 
-  // Reset the weights to an even split whenever the arrangement itself changes (a panel
-  // opened/closed), using React's in-render state-adjustment pattern so the panel contents
-  // are NOT remounted (which would drop terminal state). A sentinel holds the
-  // signature the current weights belong to.
+  // Reset in render rather than in an effect, so panel contents are not remounted and terminal state survives.
   const [layoutSignature, setLayoutSignature] = useState(signature);
   if (layoutSignature !== signature) {
     setLayoutSignature(signature);
@@ -59,16 +49,13 @@ export function PanelTiles({ panels, gap = 8 }: { panels: TilePanel[]; gap?: num
     setRowFlex(columns.map((column) => column.map(() => 1)));
   }
 
-  // Mirror the latest weights into refs so a resize that starts later reads current values
-  // (the in-flight pointer-move math works off a snapshot taken at pointer-down, so a one-
-  // render lag here is harmless).
+  // Mirror the weights into refs, so a resize starting later reads current values.
   const colFlexRef = useRef(colFlex);
   const rowFlexRef = useRef(rowFlex);
   useEffect(() => { colFlexRef.current = colFlex; }, [colFlex]);
   useEffect(() => { rowFlexRef.current = rowFlex; }, [rowFlex]);
 
-  // Repartition weight between two adjacent siblings as the pointer drags. `axis` picks
-  // the measured dimension; `read`/`write` get and set the relevant flex array.
+  // Repartition weight between two adjacent siblings as the pointer drags.
   const startResize = useCallback(
     (
       event: PointerEvent<HTMLDivElement>,
@@ -132,17 +119,14 @@ export function PanelTiles({ panels, gap = 8 }: { panels: TilePanel[]; gap?: num
           {column.map((panel, rowIndex) => (
             <Box
               key={panel.key}
-              // A panel joining the grid fades in (mount-only), softening the reshape;
-              // the grid split itself stays instant so drag-resizing never fights it.
+      // A joining panel fades in; the split itself stays instant so drag-resizing never fights it.
               className="reveal-enter"
               minW={0}
               minH={0}
               position="relative"
               onPointerDownCapture={panel.onActivate}
               onFocusCapture={panel.onActivate}
-              // No overflow clip here: each panel already clips its own content to its
-              // rounded card shape, so the only thing this would cut is the card's own
-              // drop shadow. Leaving it visible lets the panel's boxShadow render.
+      // No overflow clip: each panel clips its own content, so this would only cut the card's shadow.
               style={{ flex: `${rowFlex[colIndex]?.[rowIndex] ?? 1} 1 0` }}
             >
               {panel.content}

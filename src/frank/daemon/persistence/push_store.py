@@ -1,17 +1,4 @@
-"""A persisted A2A push-notification configuration store and its sender.
-
-A client registers a webhook (``pushNotificationConfig/set``) to be told when a task
-updates. That registration is durable state — it must survive a server restart, or a
-client that registered a webhook would silently stop being notified — so it is persisted
-to the shared database rather than held in memory. This implements the A2A SDK's
-``PushNotificationConfigStore`` contract, backed by the same engine as the task store.
-
-The paired :class:`PinnedPushNotificationSender` is what actually POSTs a task update to a
-registered webhook. Both halves apply the same anti-SSRF guard: the store refuses a private
-host at registration, and the sender re-resolves and pins the connection at send time, so a
-webhook that was public when registered but rebinds to a loopback/metadata address before it
-fires cannot turn a durable config into a blind SSRF channel.
-"""
+"""A durable push-notification registration store and its sender, so a webhook survives a restart."""
 
 from __future__ import annotations
 
@@ -43,15 +30,11 @@ logger = logging.getLogger(__name__)
 
 
 class PersistentPushNotificationConfigurationStore(PushNotificationConfigStore):
-    """Persists push-notification configurations so a registered webhook survives a
-    restart. One row per (task, configuration), upserted by that pair."""
+    """Persists push configurations, one row per task and configuration, upserted by that pair."""
 
     def __init__(self, engine: AsyncEngine, *, allow_private_webhooks: bool = False):
         self._engine = engine
-        # A client registers the URL the daemon will POST task updates to. Without a guard a
-        # peer could register an internal/loopback webhook and turn the daemon into a blind
-        # SSRF + task-data exfiltration channel, durable across restarts. Registration is
-        # refused for a non-public host unless the operator explicitly opts in.
+    # Refused at registration: a loopback webhook would make the daemon a durable exfiltration channel.
         self._allow_private_webhooks = allow_private_webhooks
         self._metadata = MetaData()
         self._table = Table(
@@ -65,8 +48,7 @@ class PersistentPushNotificationConfigurationStore(PushNotificationConfigStore):
 
     @property
     def allow_private_webhooks(self) -> bool:
-        """Whether the operator opted into private/loopback webhook targets — read by the
-        paired sender so its send-time guard matches this store's registration-time guard."""
+        """Whether the operator opted into private webhook targets, read by the sender so both guards agree."""
         return self._allow_private_webhooks
 
     async def initialize(self) -> None:
@@ -84,8 +66,7 @@ class PersistentPushNotificationConfigurationStore(PushNotificationConfigStore):
 
     async def set_info(self, turn_id: str, notification_config: PushNotificationConfig) -> None:
         await self._ensure_initialized()
-        # Refuse a webhook the daemon must not be pointed at (internal/loopback) before it is
-        # ever persisted or POSTed — the anti-SSRF guard on inbound-influenced fetch targets.
+        # Refuse a webhook before it is persisted or POSTed: the anti-SSRF guard on inbound-influenced targets.
         try:
             assert_public_url(notification_config.url, allow_private=self._allow_private_webhooks)
         except UntrustedHostError as exception:
@@ -119,8 +100,7 @@ class PersistentPushNotificationConfigurationStore(PushNotificationConfigStore):
 
     async def delete_info(self, turn_id: str, config_id: Optional[str] = None) -> None:
         await self._ensure_initialized()
-        # The SDK defaults an unset configuration id to the task id (deleting that one),
-        # rather than every configuration for the task.
+        # The SDK defaults an unset configuration id to the task id, deleting that one rather than all.
         if config_id is None:
             config_id = turn_id
         write_lock = await acquire_sqlite_write_lock()
@@ -137,19 +117,7 @@ class PersistentPushNotificationConfigurationStore(PushNotificationConfigStore):
 
 
 class PinnedPushNotificationSender(BasePushNotificationSender):
-    """POSTs task updates to registered webhooks, re-validating and pinning each delivery.
-
-    The SDK's ``BasePushNotificationSender`` POSTs to the stored webhook URL directly. But a
-    registration is durable and outlives its DNS: a host that was public when the webhook was
-    registered can rebind to a loopback/metadata address before the notification actually
-    fires, so the one-time check in :meth:`PersistentPushNotificationConfigurationStore.set_info`
-    is not enough on its own. This sender re-resolves the host immediately before each POST,
-    refuses a non-public result, and pins the socket to the verified IP — ``Host`` header and
-    TLS ``sni_hostname`` preserved — so a same-request rebind cannot redirect the delivery to
-    an internal service. It is the outbound-webhook counterpart of the inbound file fetch's
-    guard, closing the seam the SDK left open. Pinning is skipped when an egress proxy is
-    configured (the proxy does its own DNS/connect), where the resolve-and-reject check still
-    runs."""
+    """POSTs task updates to registered webhooks, re-validating and pinning each delivery, since DNS outlives a registration."""
 
     def __init__(
         self,
@@ -171,10 +139,7 @@ class PinnedPushNotificationSender(BasePushNotificationSender):
                 task.id, url, exception,
             )
             return False
-        # Pin to the verified IP so a rebind between the check above and the socket connect
-        # cannot swap in a private target — unless an egress proxy is configured, which does
-        # its own DNS/connect (pinning to an IP would then be wrong, and the resolve check
-        # above already ran).
+        # Pin to the verified IP so a rebind cannot swap in a private target — unless a proxy does its own connect.
         proxied = bool(
             os.environ.get(environment_variables.HTTPS_PROXY) or os.environ.get("https_proxy")
             or os.environ.get(environment_variables.ALL_PROXY) or os.environ.get("all_proxy")
