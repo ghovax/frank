@@ -398,12 +398,7 @@ def _serve(arguments, payload: dict) -> int:
             "screens. Run `cd web && bun run build` in a checkout, or install the packaged build."
         )
     def where_is_the_daemon() -> tuple[str, str]:
-        """The daemon's address and token, read fresh.
-
-        The proxy calls this when a connection is refused. `frank reach` is meant to be left
-        running while daemons come and go beneath it — a phone that started a session and went in
-        a pocket should not need somebody at the Mac to restart a listener — and the daemon takes
-        a new ephemeral port and a new token on every boot."""
+        """The daemon's address and token, read fresh, so a daemon restarting beneath this proxy needs nothing re-paired."""
         return (
             f"http://127.0.0.1:{int(daemon_port_path().read_text().strip())}",
             daemon_token_path().read_text().strip(),
@@ -415,8 +410,7 @@ def _serve(arguments, payload: dict) -> int:
     )
     guarded = require_token(application, payload["token"])
 
-    # Put it on the tailnet before saying it is available, so that a failure here is reported
-    # instead of a QR code somebody would scan and wait on.
+    # Put it on the tailnet before saying it is available, so a failure is reported rather than scanned into.
     try:
         ensure_served(arguments.port)
     except TailscaleUnavailable as error:
@@ -426,9 +420,7 @@ def _serve(arguments, payload: dict) -> int:
     _describe(payload)
     logger.info(f"Serving on {payload['endpoint']}. Scan the code with Frank on your phone, or paste the link.")
 
-    # No TLS here. Tailscale terminates it, with a certificate issued for this machine's tailnet
-    # name — which is the one thing this process could not obtain for itself and the reason there
-    # is no `--tls-certificate` any more.
+    # No TLS here: Tailscale terminates it with a certificate issued for this machine's tailnet name.
     configuration = uvicorn.Config(
         guarded, host=host, port=arguments.port, log_level="warning",
     )
