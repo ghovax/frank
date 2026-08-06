@@ -1,6 +1,6 @@
 # Tools
 
-A session acts through tools, and every tool call runs inside the session's [confinement](configuration.md#the-sandbox). A call that stays inside it runs without asking anybody. A call that asks to reach past it pauses under `ask` and reaches you as a prompt in the app, or as `langmesh allow` / `langmesh deny` in the terminal; under `automatic` it never pauses, and the reviewer allows or refuses it. The description the model reads is in the repo: a docstring in `src/langmesh/runtime/tools/registry.py` for most tools, a template in `src/langmesh/runtime/prompts/tool_*.md` for the peer-session ones.
+A session acts through tools, and every tool call runs inside the session's [confinement](configuration.md#the-sandbox). A call that stays inside it runs without asking anybody. A call that asks to reach past it pauses under `ask` and reaches you as a prompt in the app, or as `langmesh allow` / `langmesh deny` in the terminal; under `automatic` it never pauses, and the reviewer allows or refuses it. The description the model reads is in the repo, one markdown file per tool in `src/langmesh/runtime/tools/descriptions/`.
 
 There is no delegation tool and no in-process sub-agent. A session that needs a peer creates one with `create_session`, which reaches the same control plane your terminal does. See [Composing with other sessions](#composing-with-other-sessions).
 
@@ -123,7 +123,7 @@ Finding, reading, listing tabs and frames, and switching between tabs are all re
 
 ## Where the definitions live
 
-- Descriptions the model reads: the tool docstrings in `src/langmesh/runtime/tools/registry.py`, and `src/langmesh/runtime/prompts/tool_*.md` for the peer-session tools
+- Descriptions the model reads: one markdown file per tool in `src/langmesh/runtime/tools/descriptions/`
 - Implementations: `src/langmesh/runtime/tools/` and `src/langmesh/computer/`
 - Model-facing message templates: `src/langmesh/runtime/prompts/` and `src/langmesh/computer/messages/`
 - The guidance a session gets for screen control: `src/langmesh/runtime/prompts/computer_control_guidance.md`
