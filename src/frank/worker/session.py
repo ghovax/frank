@@ -1,11 +1,4 @@
-"""One session's executor: the process-local half of a session that is alive.
-
-A session is one worker process running one agent, so this holds exactly one runtime, one
-turn lock, and one resume pump — where the monolith kept a dictionary of them keyed by
-context. It builds the runtime on the session's first turn, keeps it warm across turns,
-drives the autonomous wakes that deliver background results, and tears everything down when
-the session is reaped.
-"""
+"""One session's executor: the process-local half of a session that is alive."""
 
 from __future__ import annotations
 
@@ -53,11 +46,7 @@ from frank.base.serialization import compact
 logger = logging.getLogger(__name__)
 
 class SessionExecutor(AgentExecutor):
-    """The live half of one session.
-
-    The turn machinery underneath still speaks in contexts, because that is the A2A shape and
-    the resume/checkpoint logic is written against it; a worker simply only ever has one. The
-    facade at the bottom of this class is what the socket server calls."""
+    """The live half of one session. The machinery still speaks in contexts, but a worker only ever has one."""
 
     def __init__(
         self,
@@ -78,18 +67,13 @@ class SessionExecutor(AgentExecutor):
     ):
         self._session_id = session_id
         self._agent_name = agent_name
-        # A worker is a process a restart happens to, so its background jobs want the durable
-        # store rather than the in-memory default a library session gets. Injectable all the
-        # same: this is the layer that decides, not the runtime and not a module global.
+        # A worker is a process a restart happens to, so its jobs want the durable store. Injectable all the same.
         self._job_store: JobStore = job_store if job_store is not None else get_background_job_store()
         self._working_directory = working_directory
-        # Where tools actually run. The daemon resolves this when the session is created —
-        # a worktree workspace is not the project directory — and hands it over, so the
-        # session never has to work it out mid-turn.
+        # Where tools actually run, resolved by the daemon: a worktree workspace is not the project directory.
         self._runtime_working_directory = runtime_working_directory or working_directory
         self._permission_mode = permission_mode
-        # Resolved and clamped by the daemon before this worker existed. Held as the profile the
-        # tool layer applies to every child it spawns; the worker never widens it.
+        # Resolved and clamped by the daemon before this worker existed. The worker never widens it.
         from frank.base.confinement import Profile
 
         self._sandbox = Profile.from_dict(sandbox)
@@ -98,27 +82,18 @@ class SessionExecutor(AgentExecutor):
         self._token = token
         self._global_configuration = global_configuration
 
-        # The worker never opens the database. Every write goes to the daemon, which is the
-        # sole writer, so the append-only store keeps the single-writer property it was built
-        # around. Live turn events ride the same channel and reach whoever is attached.
+        # The worker never opens the database: every write goes to the daemon, which is the sole writer.
         from frank.base.paths import daemon_socket_path
         from frank.worker.turn_store import DaemonTurnStore
 
         self._turn_store = DaemonTurnStore(str(daemon_socket_path()), session_id, daemon_token or token)
 
-        # The same daemon, reached for a different purpose: composing with other sessions.
-        # It carries this session's identity so every peer it creates is a child of this one —
-        # not because a caller remembered to say so, but because there is no way to say
-        # otherwise.
+        # The same daemon for composing with other sessions, carrying this session's identity.
         from frank.worker.peers import PeerSessions
 
         self._peers = PeerSessions(
             socket_path=str(daemon_socket_path()),
-            # This session's own token, not the daemon's. The daemon token would work and say
-            # nothing about who is calling; this one identifies the session, which is what
-            # makes every peer it creates a child of this one and confines its reach to its
-            # own subtree. Falling back to the daemon token keeps a session with no token of
-            # its own (a bare worker in a test) able to compose at all.
+            # This session's own token, not the daemon's: it is what makes every peer a child of this one.
             token=token or daemon_token,
             session_id=session_id,
             working_directory=runtime_working_directory or working_directory,
@@ -126,34 +101,23 @@ class SessionExecutor(AgentExecutor):
             parent_session=parent,
         )
 
-        # A2A needs a handler to drive turns through; a worker serves exactly one session, so
-        # it builds its own rather than being handed a registry of them.
+        # A2A needs a handler to drive turns; a worker serves one session, so it builds its own.
         self._registry = None
         self._handler = None
 
-        # Where this session's tools may run, resolved by the daemon at `session.create` and
-        # carried in the assignment — the same once-and-immutable treatment the sandbox and the
-        # permission mode get, and for the same reason. `None` means no project, and the
-        # runtime synthesises a single local location at the working directory.
+        # Where this session's tools may run, resolved once at creation like the sandbox and the mode.
         self._locations = locations
         self._on_turn_state = self._notify_turn_state
         self._on_permission_state = self._notify_permission_state
-        # Structured turn parts are handed to the daemon as they are persisted, so an attached
-        # client sees the turn as it happens rather than on the next poll.
+        # Turn parts go to the daemon as they persist, so an attached client sees the turn as it happens.
         self._on_stream_event = self._publish_stream_event
-        # Advisory locks so two sessions editing the same file notice each other. Built here
-        # rather than injected: the manager was a `None` in every worker, so `_acquire_filesystem_lease`
-        # answered "" and no session has ever taken a lease. The cross-process `flock` under it
-        # is what actually does the work, so one per process is exactly right — the object was
-        # only ever the in-process fast path over it.
+        # Advisory locks so two sessions editing the same file notice each other.
         self._file_lease_manager = FileLeaseManager()
 
         self._contexts: dict[str, _ContextState] = {}
         # Maps an in-flight A2A task to its runtime, purely so `cancel` can abort it.
         self._aborts: dict[str, AgentRuntime] = {}
-        # One session, one conversation. The monolith shared this map across agents so a
-        # persona switch continued the same dialogue; a session is one agent for life now, so
-        # the map has exactly one entry and exists only because the turn machinery indexes it.
+        # One session, one conversation. The map has one entry, and exists because the machinery indexes it.
         self._conversations: dict[str, list] = {}
         self._startup_resume_tasks: set[asyncio.Task] = set()
         self._compaction_tasks: set[asyncio.Task] = set()
@@ -169,21 +133,12 @@ class SessionExecutor(AgentExecutor):
         self._screen_warm: Optional[asyncio.Task] = None
 
     def _publish_stream_event(self, session_id: str, part) -> None:
-        """Forward a turn part to the daemon for fan-out. Best effort and fire-and-forget: a
-        watcher missing a frame is a cosmetic loss, and the turn must not wait on it."""
+        """Forward a turn part to the daemon for fan-out. Fire-and-forget: the turn must not wait on a watcher."""
         payload = part.model_dump(by_alias=True, exclude_none=True, mode="json") if hasattr(part, "model_dump") else part
         spawn_background_task(self._turn_store.publish_event({"session_id": session_id, "part": payload}))
 
     def _notify_turn_state(self, session_id: str, running: bool) -> None:
-        """Tell the daemon whether a turn is in flight, and whether anything still holds this
-        process.
-
-        `running` drives what `ps` and the sidebar show — working rather than merely alive.
-        `retains` is what decides whether the worker may be put to sleep when the turn ends,
-        and it has to be answered here because only this process knows: a background job is an
-        in-process `asyncio.Task`, and sleeping the worker would kill it. Sent with the same
-        event rather than asked for afterwards, so the daemon never has to round-trip to a
-        session it is about to stop."""
+        """Tell the daemon whether a turn is in flight, and whether anything still holds this process."""
         spawn_background_task(self._turn_store.publish_event({
             "session_id": session_id,
             "running": running,
@@ -191,10 +146,7 @@ class SessionExecutor(AgentExecutor):
         }))
 
     def _has_live_background_work(self) -> bool:
-        """Whether any runtime in this worker still has background work in flight.
-
-        Deliberately includes results that finished but have not reached the model: sleeping
-        then would drop the autonomous wake that was about to deliver them."""
+        """Whether any runtime still has background work, including results that finished but never reached the model."""
         for context in self._contexts.values():
             runtime = getattr(context, "runtime", None)
             if runtime is None:
@@ -204,23 +156,13 @@ class SessionExecutor(AgentExecutor):
         return False
 
     def _notify_permission_state(self, session_id: str, awaiting: bool) -> None:
-        """Tell the daemon this session is parked on a human, so `ps` can show it as waiting
-        rather than working."""
+        """Tell the daemon this session is parked on a human, so `ps` shows waiting rather than working."""
         spawn_background_task(
             self._turn_store.publish_event({"session_id": session_id, "awaiting_input": awaiting})
         )
 
     def compact_context(self, session_id: str) -> bool:
-        """Trigger a manual compaction of a context's conversation (the user pressed
-        the compact button). Runs as a background turn — serialized behind any active
-        turn via the per-context lock — so the endpoint returns immediately while the
-        compaction streams to the UI.
-
-        A live runtime is not required: the compaction turn goes through the normal
-        turn path, which rehydrates a persisted conversation into a fresh runtime, so
-        a session reopened after a restart compacts without a warm-up message. The
-        caller is responsible for routing to the owning agent's executor. Returns
-        False only when there is no handler to drive the turn."""
+        """Compact a context's conversation on request, as a background turn behind the per-context lock."""
         if self._agent_handler() is None:
             return False
         task = asyncio.create_task(self._run_compaction_turn(session_id))
@@ -229,10 +171,7 @@ class SessionExecutor(AgentExecutor):
         return True
 
     def _agent_handler(self) -> Optional[RequestHandler]:
-        """The handler that drives this session's turns, built once on first use.
-
-        A worker serves one session, so there is no registry to look it up in — it is simply
-        this executor wrapped in the A2A request handler that knows how to stream a turn."""
+        """The handler that drives this session's turns, built once: there is no registry to look one up in."""
         if self._handler is None:
             from a2a.server.request_handlers import DefaultRequestHandler
 
@@ -243,10 +182,7 @@ class SessionExecutor(AgentExecutor):
     async def _drive_self_sent_turn(
         self, session_id: str, envelope_kind: str, *, metadata_flags: dict,
     ) -> None:
-        """Drive one harness-initiated turn through the ordinary turn path via a self-sent
-        agent-role message carrying only a prose-less envelope part, so it is a real,
-        persisted, replayable task streamed to viewers like any other turn. The single shared
-        driver behind the compaction and autonomous-wake turns — same shape, one place."""
+        """Drive one harness-initiated turn as a self-sent message, so it is real, persisted and replayable."""
         handler = self._agent_handler()
         if handler is None:
             return
@@ -261,14 +197,7 @@ class SessionExecutor(AgentExecutor):
             pass
 
     async def nudge_to_report(self, session_id: str) -> None:
-        """Drive one turn whose only purpose is to say "you have not answered yet".
-
-        Fired once per session, when a turn finishes and the session that created this one has
-        still heard nothing. Reporting back cannot be enforced — only the model can decide what
-        its answer is — so this is the one reminder, and the daemon's notice when the session is
-        finally reaped remains the backstop. Nudging on every turn would be worse than not
-        nudging at all: a peer legitimately mid-way through a long job would be told it is late
-        over and over."""
+        """Drive one turn saying the session has not answered yet. Once per session, and only the model can act on it."""
         if self._nudged_to_report:
             return
         self._nudged_to_report = True
@@ -277,24 +206,13 @@ class SessionExecutor(AgentExecutor):
         )
 
     async def continue_goal(self, session_id: str) -> None:
-        """Open one turn for a goal the session has not finished.
-
-        The mechanism behind a goal outliving the turn that set it: the session picks the work
-        back up by sending itself a prose-less envelope, so what a person sees in the transcript
-        is the agent carrying on — which is what actually happened — rather than a message they
-        never wrote. Whether another one is owed after this is decided in that turn's teardown,
-        the same as this one was."""
+        """Open one turn for an unfinished goal, so the transcript shows the agent carrying on rather than a mechanism."""
         await self._drive_self_sent_turn(
             session_id, GOAL_CONTINUATION_KIND, metadata_flags={Metadata.GOAL_CONTINUATION: True},
         )
 
     def clear_goal(self, session_id: str) -> bool:
-        """Call the session's goal off, because the person said so.
-
-        The stop button behind a goal that keeps opening turns for itself. It drops the goal
-        rather than parking it: a person who asks for this is not asking to be reminded later.
-        Nothing is interrupted here — a turn in flight runs to its end — but that turn's teardown
-        finds no goal and opens nothing after it. Returns False when the session has no goal."""
+        """Call the goal off because the person said so. It is dropped, not parked: they are not asking to be reminded."""
         state = self._contexts.get(session_id)
         runtime = state.runtime if state is not None else None
         if runtime is None or runtime.goal is None:
@@ -304,11 +222,7 @@ class SessionExecutor(AgentExecutor):
         return True
 
     async def _persist_session_state(self, session_id: str, runtime: AgentRuntime) -> None:
-        """Write the durable session state (goal, tasks) outside a turn.
-
-        Everything else writes it at a turn's safe points, because everything else changes it
-        during a turn. A person calling off a goal changes it between turns, and a change that
-        only exists in memory is one the next restart undoes."""
+        """Write the durable session state outside a turn, since calling off a goal changes it between turns."""
         snapshot = runtime.dirty_session_snapshot()
         if snapshot is None:
             return
@@ -320,27 +234,22 @@ class SessionExecutor(AgentExecutor):
         runtime.clear_session_dirty()
 
     def _notify_goal_state(self, session_id: str, goal) -> None:
-        """Tell the daemon what this session's goal is now, so the interface can show it and
-        offer to call it off. Fire-and-forget, like every other thing a worker reports."""
+        """Tell the daemon what the goal is now, so the interface can show it and offer to call it off."""
         spawn_background_task(self._turn_store.publish_event({
             "session_id": session_id,
             "goal": goal.public() if goal is not None else None,
         }))
 
     async def _run_compaction_turn(self, session_id: str) -> None:
-        """Drive one manual-compaction turn (a self-sent agent-role compaction message), so
-        it is a real, persisted, replayable task streamed to viewers like any other turn."""
+        """Drive one manual-compaction turn, so it is persisted and replayable like any other."""
         await self._drive_self_sent_turn(session_id, COMPACTION_KIND, metadata_flags={Metadata.COMPACTION: True})
 
     def abort_context(self, session_id: str) -> bool:
-        # Stop is broadcast to every executor (chat.py), but only the one that actually
-        # holds this context's state has anything to stop.
+        # Stop is broadcast to every executor, but only the one holding this context has anything to stop.
         state = self._contexts.get(session_id)
         if state is None or (state.runtime is None and state.resume_pump is None):
             return False
-        # Mark Stopped so the turn's finally (and any later completion) cannot re-arm a
-        # resume pump, then cancel the pump already watching it — the autonomous wake is
-        # what otherwise revived a fresh, abort-cleared turn seconds after Stop.
+        # Mark Stopped first, so no later completion can re-arm a pump that would wake the agent again.
         state.aborted = True
         handled = False
         if state.resume_pump is not None:
@@ -373,14 +282,7 @@ class SessionExecutor(AgentExecutor):
         return state.runtime.background_snapshots()
 
     def set_locations(self, locations: Optional[list[dict]]) -> int:
-        """Adopt the workspace's environments after somebody edited them.
-
-        The set travels in the assignment and used to be read exactly once, which made a
-        workspace edit invisible to every session already open in it — the folder was there in
-        Settings and the agent could not address it. The daemon re-resolves the workspace and
-        pushes the result here, so the change lands on the session that is open rather than
-        only on the next one. Answers with how many environments the session now has.
-        """
+        """Adopt the workspace's environments after an edit, so a session already open sees the new set."""
         self._locations = locations
         for state in self._contexts.values():
             if state.runtime is not None:
@@ -388,29 +290,14 @@ class SessionExecutor(AgentExecutor):
         return len(locations or [])
 
     async def set_permission_mode(self, mode: str) -> str:
-        """Adopt a new permission mode for this session, now.
-
-        Deliberately not a runtime reset. A reset takes effect on the *next* turn, and the
-        turn a person wants this to reach is usually the one that is running — they have just
-        watched it ask for the fourth time, or do something they want it to stop doing. So the
-        mode is written straight onto the live runtime, where every tool call reads it at call
-        time, and the cached system prompt is dropped so the next model call describes the
-        policy the session is actually under.
-
-        The mode arrives already clamped by the daemon (against the parent session and the
-        agent profile's own ceiling); the runtime applies the profile ceiling again, so a
-        widening this process should not honour cannot get through even if it is sent one.
-        """
+        """Adopt a new permission mode now rather than on the next turn, since the turn to reach is the running one."""
         from frank.base.permission_mode import PermissionMode
 
         resolved = PermissionMode.parse(mode)
         if resolved is None:
             return self._permission_mode
         self._permission_mode = str(resolved)
-        # What a runtime built later starts from, and what this session asks for when it
-        # creates a peer. The daemon clamps a child against the parent's record either way, so
-        # this cannot widen anything; leaving it stale would only mean asking for a mode this
-        # session has since moved off.
+        # What a later runtime starts from, and what this session asks for when it creates a peer.
         self._peers.permission_mode = self._permission_mode
         for state in self._contexts.values():
             if state.runtime is not None:
@@ -419,19 +306,7 @@ class SessionExecutor(AgentExecutor):
         return self._permission_mode
 
     async def _reconsider_parked_gates(self) -> None:
-        """Re-decide the approvals this session is already stopped on.
-
-        The mode reaching the live runtime settles every call the turn has yet to make; a turn
-        that hit a gate has already ended — `input_required`, final — with its verdict in the
-        task record, which nothing re-reads. Switching to `automatic` because the fourth approval card
-        was one too many would otherwise leave the fourth card on screen.
-
-        Each gate is put back through the same reviewer the preflight uses, and only the ones
-        the new mode settles are answered; anything still genuinely a question stays a question. Answering through `resolve_pending_input` rather than
-        rewriting the record, because that is the one path that also resumes the turn once the
-        last gate is answered — a released gate that left the turn parked would be worse than
-        the card it replaced.
-        """
+        """Re-decide the approvals this session is already stopped on, since changing the mode does not unask them."""
         tasks = await self._turn_store.turns_for_session(self._session_id)
         for task in tasks:
             pending = TurnRecord.from_metadata(task.metadata).pending
@@ -440,8 +315,7 @@ class SessionExecutor(AgentExecutor):
             state = self._contexts.get(task.context_id)
             runtime = state.runtime if state is not None else None
             if runtime is None:
-                # No live runtime to ask. The record already carries the new mode, so the gate
-                # is re-decided when the turn resumes and rebuilds one.
+                # No live runtime: the record carries the new mode, so the gate is re-decided on resume.
                 continue
             for gate in list(pending.gates):
                 if gate.request_id in pending.answers:
@@ -452,27 +326,14 @@ class SessionExecutor(AgentExecutor):
                 await self.resolve_pending_input({"request_id": gate.request_id, "decision": verdict})
 
     def reset_runtimes(self) -> None:
-        """Drop cached runtimes so the next turn rebuilds them — used after a
-        configuration change (e.g. new API credentials, an mcp.json edit) so it takes
-        effect without a restart. Eviction is deferred for any context that still has
-        background work in flight, so a reset in one session never strands another
-        session's in-flight result: the resume pump keys off the live runtime, and the
-        durable store is only replayed on startup / the next user turn, so dropping the
-        runtime mid-flight would silently hang that session. In-flight turns keep their
-        own runtime reference and are unaffected."""
+        """Drop cached runtimes so the next turn rebuilds them, deferring any context with work in flight."""
         for session_id, state in list(self._contexts.items()):
             if state.runtime is not None:
                 state.pending_reset = True
                 self._maybe_evict(session_id)
 
     async def _claim_work_habits_acknowledgement(self, session_id: str, **_flags) -> bool:
-        """Whether this turn should emit the once-per-session work-habits acknowledgement.
-
-        Claimed through the daemon rather than remembered here, and that is not fussiness: a
-        worker is created fresh per *activation* now, not per session, so a session that slept
-        between turns and woke again would show the acknowledgement every time it woke. The
-        in-memory flag is kept in front of it purely to save a round trip within one activation.
-        """
+        """Whether this turn emits the once-per-session work-habits acknowledgement, claimed through the daemon."""
         if not self._global_configuration.user_context.enabled:
             return False
         if self._work_habits_acknowledged:
@@ -483,12 +344,7 @@ class SessionExecutor(AgentExecutor):
 
 
     def _record_pending_answer(self, task, payload: dict) -> Optional[tuple[dict, dict]]:
-        """Record one human answer into the task's durable pending-interaction record and
-        report whether the batch is now fully answered. Returns ``(plans, answers)`` when
-        every gate has an answer (ready to resume), else ``None`` (a partial answer, or an
-        answer for a request this task is not waiting on). Mutates ``task.metadata`` in
-        place; the caller persists it. This is the single resolution path an external
-        ``input_response`` message and the native REST resolve both feed."""
+        """Record one answer durably and report whether the batch is now fully answered and ready to resume."""
         record = TurnRecord.from_metadata(task.metadata)
         pending = record.pending
         if pending is None:
@@ -514,11 +370,7 @@ class SessionExecutor(AgentExecutor):
         return state.runtime.enqueue_steering(message)
 
     def reset_runtime(self, session_id: str) -> None:
-        """Drop a single context's cached runtime so the next turn rebuilds it —
-        used when the session's model override changes, so the new model takes
-        effect without a server restart. Deferred while the context still has
-        background work in flight, so evicting the runtime never strands a completed
-        result the resume pump still needs to deliver (which would hang the session)."""
+        """Drop one context's cached runtime so the next turn rebuilds it, deferred while work is in flight."""
         state = self._contexts.get(session_id)
         if state is None:
             return
@@ -526,13 +378,7 @@ class SessionExecutor(AgentExecutor):
         self._maybe_evict(session_id)
 
     def _maybe_evict(self, session_id: str) -> None:
-        """Apply a deferred runtime reset once the runtime is idle. A reset requested
-        while the context still had background work in flight is held back (the live
-        resume pump must keep delivering results, since the durable store is only
-        replayed on startup / the next user turn). Dropping the runtime here, only
-        after its jobs have drained, lets the next turn rebuild with the new
-        configuration without ever orphaning an undelivered result. The state (and its
-        lock) survives — only the runtime slot is cleared."""
+        """Apply a deferred reset once the runtime is idle, so evicting one never strands another session's result."""
         state = self._contexts.get(session_id)
         if state is None or not state.pending_reset:
             return
@@ -542,9 +388,7 @@ class SessionExecutor(AgentExecutor):
         state.pending_reset = False
 
     def _context(self, session_id: str) -> _ContextState:
-        """The per-context state, created on first access. Use this when a turn is about
-        to establish state (acquire the lock, cache a runtime, set a flag); use
-        ``self._contexts.get`` when merely inspecting a context that may not exist."""
+        """The per-context state, created on first access. Use `_contexts.get` when merely inspecting."""
         state = self._contexts.get(session_id)
         if state is None:
             state = _ContextState()
@@ -552,11 +396,7 @@ class SessionExecutor(AgentExecutor):
         return state
 
     def teardown_context(self, session_id: str) -> None:
-        """Release every trace of a deleted session: cancel its resume pump, abort a
-        live runtime, drop its per-context state, and forget its shared conversation.
-        The single point where a session's live state is freed, so deleting sessions can
-        never accumulate orphaned runtimes, pumps, locks, or history. Idempotent and safe
-        to broadcast to every executor (only the owner holds any state)."""
+        """Release every trace of a deleted session, so deleting one can never accumulate live state."""
         state = self._contexts.pop(session_id, None)
         if state is not None:
             if state.resume_pump is not None and not state.resume_pump.done():
@@ -566,21 +406,9 @@ class SessionExecutor(AgentExecutor):
         self._conversations.pop(session_id, None)
 
     def _arm_resume_pump(self, session_id: str, runtime: Optional[AgentRuntime] = None) -> None:
-        """Ensure a resume pump watches this context while it has background work in
-        flight. Idempotent — a live pump is left running. ``runtime`` is the runtime
-        the just-finished turn actually used; it is passed explicitly rather than
-        re-read from the state so a concurrent reset that cleared the cached runtime
-        cannot strand the pending work between the turn ending and the pump arming. If
-        that runtime still has pending jobs but the state's runtime slot is empty (a
-        reset dropped it), restore it — marked for a deferred reset — so both the pump
-        and the autonomous delivery drain the very same ``BackgroundJobs``.
-
-        Only ever arms for a context that still has live state: a torn-down (deleted)
-        session has none, so a late call from an ending turn's finally is a clean no-op
-        that cannot resurrect a deleted session's pump."""
+        """Ensure a resume pump watches this context while it has work in flight. Idempotent."""
         state = self._contexts.get(session_id)
-        # A Stopped or torn-down context stays quiet: don't arm a pump that would
-        # autonomously wake the agent. Pending work is replayed on the next user turn.
+        # A Stopped context stays quiet; pending work is replayed on the next user turn.
         if state is None or state.aborted:
             return
         runtime = runtime or state.runtime
@@ -594,9 +422,7 @@ class SessionExecutor(AgentExecutor):
         state.resume_pump = asyncio.create_task(self._resume_pump(session_id))
 
     async def _resume_pump(self, session_id: str) -> None:
-        """Wait (event-driven, at zero cost) for each background result to land while
-        the context is otherwise idle, driving an autonomous turn to deliver each. It
-        loops until nothing is pending, then retires."""
+        """Wait for each background result while the context is idle, driving a turn to deliver it, then retire."""
         try:
             while True:
                 state = self._contexts.get(session_id)
@@ -604,16 +430,14 @@ class SessionExecutor(AgentExecutor):
                 if runtime is None or not runtime.has_pending_jobs():
                     return
                 await runtime.wait_for_jobs()
-                # A result landed — drive an autonomous turn to deliver it. If a
-                # concurrent user turn already drained it, that turn no-ops.
+                # A result landed: drive a turn to deliver it. A concurrent user turn that drained it makes this a no-op.
                 await self._run_autonomous_turn(session_id)
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("background-resume pump failed for context %s", session_id)
         finally:
-            # Clear the slot only if it still points at *this* pump — a freshly armed
-            # pump (the user resumed) must not be dropped by a late-finishing finally.
+            # Clear the slot only if it still points at this pump, so a freshly armed one is not dropped.
             state = self._contexts.get(session_id)
             if state is not None and state.resume_pump is asyncio.current_task():
                 state.resume_pump = None
@@ -639,11 +463,7 @@ class SessionExecutor(AgentExecutor):
         has_stored_result = self._job_store.has_undelivered_jobs(session_id, self._agent_name)
         if not has_live_result and not has_stored_result:
             return
-        # An agent-authored message (the agent resumed itself), carrying only the prose-less
-        # `autonomous_resume` part. Modelling it as `agent` rather than `user` keeps the
-        # persisted A2A task honest — no consumer sees a user message the user never sent —
-        # and the part renders as nothing. The framing note reaches only the model, injected
-        # as a system note in `execute`. Driven through the shared self-sent-turn path.
+        # An agent-authored resume, so no consumer sees a user message the user never sent.
         await self._drive_self_sent_turn(session_id, AUTONOMOUS_RESUME_KIND, metadata_flags={Metadata.AUTONOMOUS_RESUME: True})
 
     def _build_runtime(
@@ -654,9 +474,7 @@ class SessionExecutor(AgentExecutor):
         conversation: Optional[list] = None,
         locations: Optional[list[dict]] = None,
     ) -> AgentRuntime:
-        # A worker serves a person's machine, so it gets the machine's catalogue: `~/.agents`,
-        # the project's own, the packaged base layer, and the well-known instruction files. A
-        # library session gets a narrower one, which is the whole reason this is an argument.
+        # A worker serves a person's machine, so it gets the machine's catalogue; a library session gets less.
         catalogue = machine_catalogue(self._global_configuration, project_directory)
         configuration = catalogue.agent(self._agent_name)
         if configuration is None:
@@ -674,41 +492,20 @@ class SessionExecutor(AgentExecutor):
             project_directory=project_directory or working_directory or "",
             file_lease_manager=self._file_lease_manager,
             locations=locations,
-            # Who to answer. A session was already told another one might be waiting on its
-            # result and given no way to find out which; the return path is a message, and a
-            # message needs an address.
+            # Who to answer: the return path is a message, and a message needs an address.
             parent_session=self._parent,
-            # The mode this session was created with. It was not passed, and nothing failed
-            # loudly: the runtime's parameter defaults to empty, which it reads as "no session
-            # mode given" and falls back to the agent profile's own policy. So a session created
-            # `read_only` was recorded read-only, listed read-only and displayed read-only, and
-            # ran as whatever its agent profile said — `default`, for every profile that does not
-            # set one. Every permission decision in the session was made against the wrong mode:
-            # a read-only session could click, type and write.
+            # The mode this session was created with, passed explicitly rather than left to the profile's own policy.
             permission_mode=self._permission_mode,
             sandbox=self._sandbox,
-            # The two things the runtime cannot derive from configuration: how this session
-            # reaches its peers, and the MCP connections this worker owns.
+            # The two things the runtime cannot derive: how it reaches peers, and the MCP connections this worker owns.
             session_access=self._peers,
             mcp_manager=self._mcp_manager,
-            # The durable job store this worker already holds. Left unpassed, the runtime built
-            # its own `MemoryJobStore` — so a background job was written to a dictionary that
-            # died with the turn, while the worker went on querying SQLite for undelivered
-            # results (see `has_undelivered_jobs` above). A daemon is precisely the thing
-            # restarts happen to, which is why it supplies a store at all; not handing it over
-            # made every background job unrecoverable and every `bash` call a `TypeError`.
+            # The durable job store this worker holds, or a background job would be written to a dictionary that dies.
             jobs=self._job_store,
         )
-        # No agent-event sink is installed on the runtime any more: `AgentRuntime` stopped
-        # carrying one in the package restructure, and path-tagged activity now reaches the
-        # stream from `worker/turn.py`, which calls `_on_stream_event` itself. The call that
-        # used to be here survived the method it called, so *every* turn died on
-        # `AttributeError: 'AgentRuntime' object has no attribute 'set_agent_event_sink'`
-        # before it could start — reported to the interface as "the turn stopped unexpectedly".
+        # No event sink on the runtime: path-tagged activity reaches the stream from `worker/turn.py`.
         runtime.set_turn_reader(self._make_turn_reader())
-        # Every goal change reaches the daemon, and through it the interface — which is what
-        # makes a goal something the person can see and call off rather than something they
-        # infer from the session refusing to go quiet.
+        # Every goal change reaches the daemon, which is what makes a goal visible and callable-off.
         runtime.set_goal_listener(lambda goal: self._notify_goal_state(session_id, goal))
         return runtime
 
@@ -717,33 +514,23 @@ class SessionExecutor(AgentExecutor):
             if not turn_id:
                 return None
             task = await self._turn_store.get(turn_id)
-            # Exclude `history` for the same reason as the delegate's done payload:
-            # read_turn feeds a sibling/agent task straight into the caller's
-            # model context, and the full transcript (incl. raw web-search text)
-            # would overflow it. Only the status + deliverable are needed.
+            # No `history`: read_turn feeds a task into the caller's context, and a full transcript would overflow it.
             return task.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"}) if task else None
         return read_turn
 
     async def _runtime_for(self, session_id: str, workspace: SessionWorktree) -> AgentRuntime:
-        # Apply any reset that was deferred while this context had background work in
-        # flight: if the runtime has since gone idle, drop it now so this turn rebuilds
-        # it with the new configuration rather than reusing the stale one.
+        # Apply a reset deferred while work was in flight, so this turn rebuilds with the new configuration.
         self._maybe_evict(session_id)
         state = self._context(session_id)
         runtime = state.runtime
         if runtime is None:
-            # Restore a persisted conversation the first time a context is seen this
-            # process (e.g. a session reopened after a restart), so the agent resumes
-            # with the same history the UI is replaying rather than a blank slate.
+        # Restore a persisted conversation the first time a context is seen, so the agent resumes with its history.
             if session_id not in self._conversations:
-                # The model-facing conversation is the task store's per-context checkpoint
-                # (the single durable turn surface); a reopened session resumes from it.
+            # The model-facing conversation is the store's per-context checkpoint, the one durable turn surface.
                 restored = messages_from_dict(await self._turn_store.load_checkpoint(session_id))
                 if restored:
                     self._conversations[session_id] = restored
-            # Seed from (and bind to) the process-wide dialogue history for this
-            # context — the same list object another agent may have been writing
-            # to — so a persona switch picks up exactly where the last turn left off.
+        # Bound to the process-wide history for this context, so a turn picks up where the last left off.
             conversation = self._conversations.setdefault(session_id, [])
             locations = None
             locations = self._locations
@@ -754,26 +541,16 @@ class SessionExecutor(AgentExecutor):
                 conversation=conversation,
                 locations=locations,
             )
-            # Restore the agent's durable objective — its goal and task list — the first
-            # time this process builds a runtime for the context (e.g. a session reopened
-            # after a restart), alongside the conversation restored above, so a marathon run
-            # never loses what it was working toward.
+        # Restore the durable objective alongside the conversation, so a marathon run never loses what it was for.
             session_state = await self._turn_store.load_session_state(session_id)
             if session_state:
                 runtime.restore_session(session_state)
-                # Announce the restored goal, so a session reopened after a restart shows what
-                # it is working toward. `restore_session` deliberately does not announce: it is
-                # the one write that changes nothing, and routing it through the listener would
-                # have every rebuilt runtime republish a goal that never moved.
+            # Announce the restored goal here: `restore_session` deliberately does not, being the write that changes nothing.
                 self._notify_goal_state(session_id, runtime.goal)
             state.runtime = runtime
-            # First time this process builds a runtime for the context: replay any
-            # background results the durable store holds but never delivered (e.g.
-            # a parse that finished, or was interrupted, across a restart), so the
-            # model sees them as soon as this — or the autonomous wake — runs.
+        # Replay background results the store holds but never delivered, so the model sees them at once.
             self._replay_stored_background_results(session_id, runtime)
-        # A context's working directory is fixed at creation — a session stays
-        # bound to the folder it was started in, so later turns never repoint it.
+        # A context's working directory is fixed at creation, so later turns never repoint it.
         return runtime
 
     def _replay_stored_background_results(self, session_id: str, runtime: AgentRuntime) -> None:
@@ -788,10 +565,7 @@ class SessionExecutor(AgentExecutor):
             store.mark_delivered(job["job_id"])
 
     async def resume_pending_on_startup(self) -> None:
-        """After a restart, recover this agent's persisted background work. A job that
-        was still running cannot be resurrected as a live coroutine, so it is recorded
-        as interrupted (the model is told to re-run it if the result is still needed);
-        then every context that now has a deliverable result is woken autonomously."""
+        """After a restart, record interrupted jobs and replay the finished ones the model never saw."""
         store = self._job_store
         for job in store.running_jobs(self._agent_name):
             store.mark_abandoned(job["job_id"], compact({
@@ -809,13 +583,7 @@ class SessionExecutor(AgentExecutor):
             wake_task.add_done_callback(self._startup_resume_tasks.discard)
 
     def _workspace(self, requested_working_directory: str = "") -> SessionWorktree:
-        """Where this session's work happens.
-
-        The daemon resolved this when the session was created — a worktree strategy puts the
-        tools somewhere other than the project directory — and handed it over in the
-        assignment. It is not renegotiated per turn: where a session runs is part of what the
-        session *is*, fixed at creation alongside its agent — unlike its permission mode, which the
-        person running it can change while it runs."""
+        """Where this session's work happens, resolved once by the daemon rather than renegotiated per turn."""
         source = requested_working_directory or self._working_directory or ""
         runtime = self._runtime_working_directory or source
         return SessionWorktree(
@@ -825,9 +593,7 @@ class SessionExecutor(AgentExecutor):
         )
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
-        """Run one turn. The whole per-turn state machine — ingest, resolve, build the
-        runtime, stream, finalize, tear down — lives in :class:`_TurnRunner`; each request
-        gets a fresh single-use instance."""
+        """Run one turn. The per-turn state machine lives in :class:`_TurnRunner`, fresh for each request."""
         await _TurnRunner(self, context, event_queue).run()
 
     async def _suspend_durable_segment(
@@ -838,14 +604,7 @@ class SessionExecutor(AgentExecutor):
         plans: dict,
         save_conversation: Callable[[], Awaitable[None]],
     ) -> bool:
-        """Close a top-level turn's A2A segment as a durable suspend.
-
-        Records the pending interactions and the runtime checkpoint into task
-        metadata, flags the session as awaiting input, persists both the
-        conversation and the task, then reports ``input_required`` (final) so a
-        later answer rebuilds from the checkpoint and resumes. Returns ``True`` to
-        signal the stream loop to stop consuming this segment.
-        """
+        """Close a turn's segment as a durable suspend, recording its gates and checkpoint into task metadata."""
         suspended = TurnRecord.from_metadata(task.metadata)
         suspended.pending = PendingInteraction(
             gates=[ToolGate.model_validate(dataclasses.asdict(gate)) for gate in interactions],
@@ -874,11 +633,7 @@ class SessionExecutor(AgentExecutor):
             updater = TaskUpdater(event_queue, context.current_task.id, context.current_task.context_id)
             await updater.cancel()
 
-    # The facade the session's socket serves.
-    #
-    # Everything above is the turn machinery, which still speaks in contexts because that is
-    # the A2A shape. A worker only ever has one, so these methods bind that machinery to this
-    # session and are the whole surface the socket exposes.
+    # The facade the session's socket serves, binding the turn machinery to this one session.
 
     @property
     def session_id(self) -> str:
@@ -894,17 +649,7 @@ class SessionExecutor(AgentExecutor):
         return bool(state is not None and state.running)
 
     async def start(self) -> None:
-        """Prepare the session before its socket opens.
-
-        Deliberately does not build the runtime: that costs a model client and an MCP connect,
-        and a session created but never messaged should pay for neither.
-
-        What happens here is the two installations that are genuinely process-wide — telemetry,
-        which exports for the whole process, and the tuning policy, which every tool reads — plus
-        this session's own MCP connections, whose lifetime the worker owns. Everything else the
-        tools need travels with the runtime in its tool context, so a settings change cannot be
-        half-applied and two turns cannot see each other's confinement.
-        """
+        """Prepare the session before its socket opens, without building the runtime it may never need."""
         from frank.base.telemetry import configure as configure_telemetry
         from frank.base.tuning import set_tuning, tuning_from_policy
 
@@ -922,25 +667,16 @@ class SessionExecutor(AgentExecutor):
             sample_ratio=telemetry.sample_ratio,
         )
 
-        # Each session connects its own MCP servers. The daemon keeps a pool of its own for the
-        # browser's server list, but connections are stateful and a session's tool calls belong
-        # to the session's process — sharing one pool across processes is not something a stdio
-        # server can offer. The manager is handed to each runtime this session builds; the
-        # worker keeps it because the worker is what closes it.
+        # Each session connects its own MCP servers: connections are stateful and belong to this process.
         servers = configuration.mcp.enabled_servers()
         if servers:
             from frank.base.mcp_client import MCPClientManager
 
             self._mcp_manager = MCPClientManager(servers)
-            # Connected in the background: a hung server must not delay the session's socket,
-            # and tool gating keys on the manager existing rather than on live connections.
+            # Connected in the background, so a hung server does not delay the session's socket.
             self._mcp_connect = asyncio.create_task(self._mcp_manager.start())
 
-        # Every turn tells the model what is on the screen, and the first time a process asks
-        # for that listing it spends ~1.8s opening an accessibility connection to each running
-        # application — a cost that landed on the session's first turn, before the model had
-        # been called at all. It is paid here instead, off the loop and behind the socket, so it
-        # overlaps the fork acknowledgement and the trip the first message is still making.
+        # Warm the screen listing now: the first ask costs ~1.8s per running application.
         if self._global_configuration.computer_control.enabled:
             def warm_screen() -> None:
                 from frank.computer import targets
@@ -952,20 +688,7 @@ class SessionExecutor(AgentExecutor):
         self._context(self._session_id)
 
     async def start_turn(self, parts: list, metadata: dict) -> str:
-        """Start a turn from an inbound message and answer with its task id.
-
-        Answers as soon as the turn *has* an id, not when the turn is over. This used to drain
-        the whole event stream before returning, so `message/send` stayed open for the entire
-        turn — and the relay that carries it gives up after two minutes. A turn that ran longer
-        therefore looked to the daemon exactly like a session with no worker at all, and the
-        cure for that is to fork one: two workers on one session id, each with its own runtime
-        and its own copy of the conversation, both answering the same message. The person
-        watching saw their question answered twice, out of order.
-
-        The stream is still drained, because closing it early would cancel the turn — but in a
-        task of its own, held in `_startup_resume_tasks` so it is not collected mid-flight. The
-        events were never wanted here: they reach the client over its attach stream.
-        """
+        """Start a turn and answer with its task id as soon as it has one, rather than when the turn is over."""
         handler = self._agent_handler()
         if handler is None:
             raise RuntimeError("This session has no request handler.")
@@ -999,11 +722,7 @@ class SessionExecutor(AgentExecutor):
         return await identified
 
     def _title_from_first_message(self, parts: list) -> None:
-        """Name the session after what it was first asked to do.
-
-        Generated here rather than in the daemon because it means calling a model, and the
-        model machinery lives in the session's process. Fired once, in the background, so a
-        title never delays the turn it describes."""
+        """Name the session after what it was first asked to do, once, in the background."""
         if self._titled:
             return
         self._titled = True
@@ -1015,24 +734,7 @@ class SessionExecutor(AgentExecutor):
         spawn_background_task(self._generate_title(prose))
 
     async def _generate_title(self, first_message: str) -> None:
-        """Ask the configured model for a short title, and hand it to the daemon.
-
-        The schema is bound as a tool, the same shape the agent's own turns use, and the choice
-        is **required**. Producing that object is the entire purpose of the call, so a call that
-        may decline it is a call that can fail without failing — which is exactly what happened:
-        the choice was `automatic`, a model that answered in prose instead left `tool_calls` empty,
-        the method returned on the spot, and the only trace was a sidebar full of "Untitled
-        conversation" with nothing anywhere saying why. A schema the model cannot refuse removes
-        that outcome by construction rather than detecting it.
-
-        (`automatic` had been chosen on the belief that reasoning models reject a forced tool choice.
-        They do reject a `json_schema` response format, which is why this is a tool at all, but
-        the forcing is fine — the compaction pass has required its own tool all along.)
-
-        Attempts are bounded and each one is reported, because "could not name one session" is
-        cosmetic while "cannot name any session" is a fault, and at the old silence the two were
-        indistinguishable. Reasoning is dialled down because a title is trivial and must stay
-        cheap; the agent's configured effort is for the work, not for naming it."""
+        """Ask the model for a short title and hand it to the daemon, with the schema bound as a tool."""
         from langchain_core.messages import HumanMessage, SystemMessage
 
         from frank.base.configuration import PromptLoader
@@ -1059,19 +761,7 @@ class SessionExecutor(AgentExecutor):
                 SystemMessage(content=prompt.load("session_title", {})),
                 HumanMessage(content=first_message),
             ]
-            # The tool is offered, and the prompt is what insists on it.
-            #
-            # Forcing it is the obvious way to guarantee the object, and it cannot be used: a
-            # thinking model behind a gateway refuses the request outright — *400, Thinking mode
-            # does not support this tool_choice* — and refuses it whatever is sent for
-            # `reasoning_effort`, including nothing at all, because the model thinks by default
-            # and the incompatibility is with the forcing itself. Measured against the live
-            # provider on all three settings before giving up on it.
-            #
-            # `automatic` is accepted everywhere, so the guarantee moves into the instruction and the
-            # attempts below cover a model that ignores it. A tool call is what this wants: the
-            # answer arrives as a typed field rather than as text somebody has to guess the
-            # shape of.
+        # The tool is offered and the prompt insists on it: forcing it, a thinking model behind a gateway refuses.
             attempts = active_tuning().amount(Tunable.session_title_attempts)
             for attempt in range(1, attempts + 1):
                 try:
@@ -1098,27 +788,20 @@ class SessionExecutor(AgentExecutor):
                 )
             logger.warning("gave up naming session %s after %d attempts", self._session_id, attempts)
         except Exception:  # noqa: BLE001 — a session is not worth failing over its own name
-            # Not `debug`. Failing to name a session is cosmetic; failing to name *every*
-            # session is a fault, and at debug level the difference was invisible — a sidebar
-            # full of "Untitled conversation" with nothing anywhere saying why.
+        # Not `debug`: failing to name one session is cosmetic, failing to name every session is a fault.
             logger.warning(
                 "could not generate a title for session %s", self._session_id, exc_info=True
             )
 
     def inject(self, text: str, message_id: str = "", peer_sender: str = "") -> bool:
-        """Deliver a message into the turn that is already running, at its next safe point.
-
-        This is what makes a peer's question reach a session that is mid-tool rather than
-        waiting for it to finish. Returns False when the turn ended first, so the caller can
-        fall back to starting a fresh turn instead of dropping the message."""
+        """Deliver a message into the running turn at its next safe point, or answer False when it ended first."""
         state = self._contexts.get(self._session_id)
         if state is None or not state.running or state.runtime is None:
             return False
         return state.runtime.enqueue_steering(text, message_id, peer_sender)
 
     async def resolve_pending_input(self, payload: dict) -> bool:
-        """Record a human's answer to a parked gate and resume the turn once every gate in the
-        batch has one."""
+        """Record an answer to a parked gate and resume the turn once every gate in the batch has one."""
         handler = self._agent_handler()
         if handler is None:
             return False
@@ -1152,15 +835,7 @@ class SessionExecutor(AgentExecutor):
         return self.abort_tool(self._session_id, tool_call_identifier)
 
     async def pending_decision(self) -> str:
-        """What this session is parked on, as a sentence, or ``""`` when it is not parked.
-
-        A session waiting on a human is not idle and is not running, and until now nothing could
-        tell those apart from outside: `is_running` was false, so a message started a *new* turn
-        and the parked one was reconciled away — the work it had already done, and the decision
-        the person was being asked for, both discarded. A parent that re-briefed a peer it
-        believed had never started was in fact cancelling a peer that had been working for six
-        minutes and was waiting on an access request.
-        """
+        """What this session is parked on, as a sentence, or ``""`` when it is not parked."""
         tasks = await self._turn_store.turns_for_session(self._session_id)
         for task in tasks:
             pending = TurnRecord.from_metadata(task.metadata).pending
@@ -1177,11 +852,7 @@ class SessionExecutor(AgentExecutor):
         return ""
 
     async def abort_pending_input(self) -> bool:
-        """Deny every gate this session is parked on.
-
-        The last denial resumes the turn, which records a denial for each blocked call — that
-        is what keeps the conversation valid, since a tool call with no result is a message the
-        next turn cannot build on. Returns whether anything was actually pending."""
+        """Deny every gate this session is parked on; the last denial resumes the turn and records each refusal."""
         tasks = await self._turn_store.turns_for_session(self._session_id)
         for task in tasks:
             pending = TurnRecord.from_metadata(task.metadata).pending
@@ -1210,11 +881,7 @@ class SessionExecutor(AgentExecutor):
         return self.background_snapshots(self._session_id)
 
     def card_payload(self) -> dict:
-        """What this session advertises at its well-known path.
-
-        Degrades to a minimal card rather than failing: discovery is the first thing a peer
-        does, and answering it with a 500 hides whatever the real problem was behind a
-        transport error."""
+        """What this session advertises at its well-known path, degrading to a minimal card rather than failing."""
         try:
             return self._build_card_payload()
         except Exception:  # noqa: BLE001 — a card is descriptive, never load-bearing
@@ -1253,10 +920,7 @@ class SessionExecutor(AgentExecutor):
         }
 
     async def aclose(self) -> None:
-        """Stop cleanly: abort any turn in flight so its conversation is checkpointed, cancel
-        the background work it started, close this session's MCP connections, and release the
-        store. Ordered so nothing is torn down while something else still needs it, and each
-        step guarded so one failure cannot strand the rest."""
+        """Stop cleanly, in an order where nothing is torn down while something else still needs it."""
         import contextlib
 
         from frank.runtime.background import cancel_all_background_jobs
@@ -1264,10 +928,7 @@ class SessionExecutor(AgentExecutor):
         self.teardown_context(self._session_id)
         with contextlib.suppress(Exception):
             cancel_all_background_jobs()
-        # The browser surface holds a connection to the user's Chrome if a screen tool ever
-        # ran. Closed here, by the session that opened it, rather than from an `atexit` hook
-        # the module used to register on import — imported lazily, so a session that never
-        # touched the screen does not load PyObjC just to shut down.
+        # The browser surface is closed by the session that opened it, and only if a screen tool ever ran.
         if "frank.computer.web" in sys.modules:
             with contextlib.suppress(Exception):
                 sys.modules["frank.computer.web"].close()
