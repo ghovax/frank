@@ -24,9 +24,7 @@ async def _apply_live_credentials() -> None:
     else:
         configuration.mcp.servers.pop(configuration.composio.server_name, None)
     mcp_servers = configuration.mcp.enabled_servers()
-    # Only when the servers themselves changed. Every write used to close every connection and open
-    # it again — new subprocesses, new handshakes — so setting an unrelated number cost as much as
-    # editing the servers, and the cost was paid while the caller waited.
+    # Only when the servers changed: reconnecting means new subprocesses and handshakes, and the caller waits.
     fingerprint = _mcp_server_fingerprint(mcp_servers)
     if fingerprint == state.mcp_server_fingerprint and state.mcp_manager is not None:
         return

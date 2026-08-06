@@ -26,8 +26,7 @@ last_written_configuration_digest: Optional[str] = None
 mcp_manager: Any = None
 remote_agent_manager: Any = None
 composio_servers: dict = {}
-#: What `mcp_manager` was built from, so a configuration write that leaves MCP alone leaves its
-#: connections alone: restarting them means new subprocesses and new handshakes, which is seconds.
+#: What `mcp_manager` was built from, so a write that leaves MCP alone leaves its connections alone.
 mcp_server_fingerprint: Optional[str] = None
 # The agent profiles a session could be created with, rebuilt whenever their files change.
 agent_cards: dict = {}
