@@ -17,23 +17,10 @@ from frank.base.serialization import compact
 from frank.runtime.tools import context as tool_context
 
 from frank.base.configuration import PromptLoader
-#: Why a tool call is happening, in the words the person watching will read. Every tool takes
-#: one, because the transcript is the only place a call explains itself: a command and its
-#: arguments say what ran, never why, and a call that cannot say why is a call somebody has to
-#: reverse-engineer to trust. Written once here so the twenty-odd tools that ask for it cannot
-#: drift into asking for twenty slightly different things.
+#: Why a call is happening, in the words the person watching reads. Every tool takes one.
 EXPLANATION = "A concise, user-facing reason this action is needed for the current task. Always required."
 
-#: What a call reaches for beyond the confinement it already has, and whether it changes anything.
-#:
-#: It answers two things at once: whether the call writes, and where it reaches. Reach is the
-#: one that matters, because it is structural and checkable where a bare "does this mutate"
-#: boolean is neither.
-#:
-#: It is a difference against the profile, never an inventory of the call. A command working
-#: inside what the session already holds omits it, which is nearly every command, so the ordinary
-#: case costs no tokens and the argument's presence is itself the signal that something is being
-#: asked for.
+#: What a call reaches for beyond its confinement. A difference against the profile, not an inventory.
 ACCESS_REQUEST = (
     "What this call needs beyond what the session already holds — a difference against the "
     "confinement listed in your context, not a list of everything the call touches. Omit it "
@@ -44,24 +31,10 @@ ACCESS_REQUEST = (
     "and never use a path granted for one purpose to do something else."
 )
 
-# bash is synchronous by default: the model chooses whether a command backgrounds
-# (background=true), so backgrounding is never a surprise it has to reason about.
-# A synchronous command blocks and returns its real output up to its ``timeout`` (a
-# per-call window, defaulting to the value below); the timeout only trips for a command
-# that runs unexpectedly long without being backgrounded, at which point it falls through
-# to the background path as a safety net rather than holding the turn open forever.
-# Ordinary git/network/package commands finish well within it and return real output — the
-# old 2s auto-background window is exactly what surprised the model into re-running
-# mutating commands (a `gh pr merge` that crossed the threshold looked unfinished and got
-# issued twice). Genuinely long work is the model's cue to pass background=true or raise
-# timeout. The default windows live centrally in Tunable (bash_sync_window_seconds,
-# slow_tool_sync_window_seconds, web_search_sync_window_seconds) and are scaled by the
-# tuning timeout multiplier at each call site.
+#: bash is synchronous by default: the model chooses whether a command backgrounds, so it is never a surprise.
 
 
-#: What a kernel refusal looks like coming back through a shell. Matched on the message rather
-#: than on an errno, because the errno never reaches here: the shell prints its own sentence and
-#: exits, so the text is the only evidence there is.
+#: What a kernel refusal looks like through a shell. Matched on the message, since the errno never arrives.
 _SANDBOX_REFUSAL_PHRASES = (
     "operation not permitted",
     "permission denied",
@@ -70,19 +43,7 @@ _SANDBOX_REFUSAL_PHRASES = (
 
 
 def _sandbox_refusal_note(return_code: int, output: str, profile, workspace: str) -> dict:
-    """What to say when a command probably died on the confinement rather than on its own work.
-
-    A boundary that refuses in errno is a boundary nobody can act on. `Operation not permitted`
-    names no path, says nothing about what would have been permitted, and reads as a broken tool
-    — so the usual response is to run the same command again.
-
-    **This is a hint and not an attribution.** Seatbelt writes the denied path to the system log
-    and Landlock returns a bare `EACCES`; neither can be tied back to one child reliably, and a
-    note naming the wrong path would be worse than one naming none. So it states what is
-    certainly true — where this session may write — and leaves the model to match that against
-    what it was trying to do. Returned as structured data rather than pasted into the output,
-    because the output is the command's and this is the harness's.
-    """
+    """What to say when a command died on the confinement rather than its own work, since `EPERM` names no path."""
     if return_code == 0 or not output:
         return {}
     lowered = output.lower()
@@ -130,12 +91,7 @@ async def bash(
 
     active = tool_context.current()
     profile, workspace = active.sandbox, active.workspace
-    # The tool's own log lands somewhere the profile permits, or bash fails on its bookkeeping
-    # rather than on anything that was asked of it. The workspace is deliberately not the
-    # fallback: a profile permitting nowhere else would otherwise drop a `bash-<id>.log` into
-    # the tree the session is working in. The last resort is the system temporary directory,
-    # which is scratch by definition; if the profile denies even that, the command still ran and
-    # its output still reaches the model inline.
+    # The tool's log lands where the profile permits, and never in the tree the session is working in.
     _scratch = _confinement.temporary_directory(profile, workspace=workspace)
     output_path = Path(_scratch or tempfile.gettempdir()) / f"{new_id('bash')}.log"
     process_holder: dict[str, Any] = {}
@@ -155,37 +111,25 @@ async def bash(
                 return
 
     async def run() -> str:
-        # The session's own tools ride in the same environment the confinement builds: its
-        # profile at the front of `PATH`, and the package manager already pointed at that
-        # profile — so `nix profile add nixpkgs#jq` needs no path, no flag and no variable, and
-        # a missing tool has an ordinary ending instead of becoming a wall to route around.
+        # The session's own tools ride in the environment the confinement builds, already on `PATH`.
         spawn = _confinement.spawn_recipe(
             _confinement.first_attempt(profile, workspace=workspace),
             workspace=workspace, extra_environment=active.child_environment(),
         )
         process = await asyncio.create_subprocess_exec(
-            # The command still runs through a shell — the confinement prefix wraps that shell,
-            # it does not replace it — but the working directory is now the process's own rather
-            # than a `cd` the model could write past in the same string.
+            # Still a shell command; the working directory is the process's own, not a `cd` the model can escape.
             *_confinement.resolve_command(command, spawn),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=workspace or None,
             env=spawn.environment,
             preexec_fn=spawn.preexec,
-            # A new process *group*, not a new process session. The group is what `killpg`
-            # needs to reap the whole subtree, and it is all that was ever wanted here — but
-            # `start_new_session` also detached the shell from the worker's process session,
-            # which is how the daemon recognises a caller on its socket as this session, and
-            # what `frank kill` sweeps. Staying in the session is what makes it attributable.
+            # A process group, not a session: `killpg` needs the group, and the session is what makes it attributable.
             process_group=0,
         )
         process_holder["process"] = process
         process_id = process.pid
-        # `process_group=0` puts the shell in its own group with pgid == pid, so killpg reaps
-        # the whole subtree. Persist the group id so a crash-orphaned subtree (survived a
-        # SIGKILL of the harness) is reaped on the next startup. No-op UPDATE when the job is
-        # not durably tracked (no context).
+        # Persist the group id, so a subtree orphaned by a crash is reaped on the next startup.
         try:
             current_background_jobs().store.record_process_group(job_id, os.getpgid(process_id))
         except (ProcessLookupError, OSError):
@@ -222,8 +166,7 @@ async def bash(
                     except ProcessLookupError:
                         pass
                 await process.wait()
-            # Read the captured output off the loop — a large log would otherwise block
-            # the whole event loop while this background-job coroutine reads it.
+            # Read off the loop: a large log would otherwise block every session sharing it.
             output = (
                 await asyncio.to_thread(output_path.read_text, errors="replace")
                 if output_path.exists()
@@ -241,11 +184,9 @@ async def bash(
                 "returncode": process.returncode,
             }
             return compact(payload)
-        # Off the loop: a multi-megabyte command output must not stall the event loop
-        # (and every other session on it) while this coroutine reads it back.
+        # Off the loop, for the same reason: a multi-megabyte output must not stall it.
         output = await asyncio.to_thread(output_path.read_text)
-        # A non-zero exit code is a failure the model must be able to see — without it,
-        # `exit 7` was indistinguishable from success.
+        # A non-zero exit is a failure the model must see, or `exit 7` reads as success.
         return_code = process.returncode or 0
         result_code = "bash_completed" if return_code == 0 else "bash_failed"
         result_status = "ok" if return_code == 0 else "error"
@@ -277,20 +218,13 @@ async def bash(
             "explanation": explanation,
             "background": background,
         },
-        # Correlate the job with its tool call from the start, so the user can
-        # background a still-blocking foreground command by that tool-call id.
+        # Correlate the job with its tool call, so a blocking foreground command can be backgrounded by that id.
         tool_call_identifier=current_tool_call_id(),
-        # A model-backgrounded command is detached: it outlives the turn and a Stop
-        # leaves it running. A synchronous command is foreground — Stop kills it.
+        # A backgrounded command is detached and survives a Stop; a synchronous one is killed by it.
         detached=background,
     )
     if not background:
-        # Block until the command finishes and hand its real output straight back,
-        # so the model always sees the outcome of the action it took — never an
-        # opaque "scheduled" placeholder it might mistake for unfinished and re-run.
-        # The ceiling only trips for a command that runs unexpectedly long without
-        # being backgrounded; it then falls through to the background path below as
-        # a safety net rather than holding the turn open indefinitely.
+        # Block and hand back real output, so the model never mistakes a placeholder for unfinished work.
         settled = await jobs.settle_inline(job_id, active_tuning().scale_timeout(timeout))
         if settled is not None:
             return settled.result
@@ -313,9 +247,7 @@ async def search_web(
     if client is None:
         return compact({"code": "web_search_error", "status": "error", "message": "Web search is not configured."})
 
-    # Mint the identifier up front so the eventual completed/error result can echo
-    # it — the model correlates a delivered result to the search it started by
-    # this id, instead of guessing whether its searches have finished.
+    # Mint the id up front, so a delivered result can be matched to the search that started it.
     job_id = new_id("search")
     output_path = Path("/tmp") / f"{job_id}.log"
 
@@ -358,20 +290,14 @@ async def search_web(
     jobs.spawn(
         "search_web", run(), identifier=job_id, output_path=output_path,
         arguments={"query": query, "explanation": explanation, "result_count": result_count},
-        # A search that outlives the turn keeps running detached — a Stop ends the
-        # turn but leaves it running, so its result still lands and wakes the agent.
+        # A search outliving the turn keeps running, so its result still lands and wakes the agent.
         detached=True,
     )
-    # Give the search a short window to finish inline. The common case returns the
-    # real results directly, so the model never juggles a pending handle at all.
+    # A short inline window, so the common case returns results rather than a pending handle.
     settled = await jobs.settle_inline(job_id, active_tuning().duration(Tunable.web_search_sync_window_seconds))
     if settled is not None:
         return settled.result
-    # The started acknowledgement intentionally omits any file path or other
-    # fetch-looking handle: the only thing the model needs is the id to match the
-    # auto-delivered result against. The "do not poll/read_turn" guidance is
-    # attached by the runtime from a prompt template (user-facing wording lives in
-    # prompts, not in tool code).
+    # No path or fetch-looking handle in the acknowledgement: the id is the only thing the model needs.
     return compact({
         "code": "web_search_started",
         "status": "running",
@@ -578,25 +504,10 @@ def load_skill(name: str, explanation: str = Field(..., description=EXPLANATION)
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
-# Background jobs are cancelled by whoever owns the process: the worker's entry point on
-# shutdown, and `SessionExecutor.aclose` when a session ends. This module used to register an
-# `atexit` hook and install process-wide SIGTERM and SIGHUP handlers that called `sys.exit(1)`,
-# at import — which made importing the harness enough to seize a host program's signals, and
-# killed a forked child the moment it was signalled. A library configures nothing it was not
-# asked to configure.
+# Background jobs are cancelled by whoever owns the process, since a library configures nothing unasked.
 
 
-# What each tool tells the model it does, read from `descriptions/*.md` at import.
-#
-# It used to be the function's docstring, which put a document written *for the model* inside a
-# construct meant for whoever reads the code — 11,507 characters of it in `control_screen`'s
-# case, wrapped in quotes, re-indented by every formatter, and unreviewable beside the prose it
-# belongs with. Every other thing this harness says to a model already lives in a `.md` under
-# `prompts/` or `messages/`, loaded through `PromptLoader`; there was no reason for the tool
-# descriptions to be the exception except that a decorator happened to read `__doc__`.
-#
-# The function keeps a one-line docstring saying where its description lives and who dispatches
-# it, because that is what a reader of the code needs and it is not the same fact.
+# What each tool tells the model, read from `descriptions/*.md` at import rather than from a docstring.
 _DESCRIPTIONS = PromptLoader(Path(__file__).parent / "descriptions")
 
 _DESCRIBED = (
@@ -607,13 +518,7 @@ _DESCRIBED = (
 
 
 def _apply_descriptions() -> None:
-    """Give every tool the description written for it, and refuse to ship one that has none.
-
-    Loudly, at import, rather than silently: `PromptLoader.load` answers "" for a file that is not
-    there, and a tool whose description is the empty string is offered to the model as a name with
-    no explanation — which it will still call, and then guess at. A missing file is a packaging
-    mistake, and the moment to hear about it is the build rather than the first turn that reaches
-    for that tool."""
+    """Give every tool its description, and fail at import rather than ship one offered as an empty string."""
     missing = []
     for entity in _DESCRIBED:
         text = _DESCRIPTIONS.load(entity.name, {}).strip()
