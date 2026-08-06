@@ -1,10 +1,4 @@
-"""The consuming half of the turn-event catalog.
-
-Every :class:`TurnEvent` the runtime yields is translated to its A2A wire part here — in a
-single exhaustive, typed dispatch — and nowhere else. The sink owns the assistant-text
-buffer, so a structured part forces an ordered flush, and it accumulates the turn's terminal
-text and stop reason for the runner to read once the stream drains.
-"""
+"""The consuming half of the turn-event catalog: every event translated to its wire part in one typed dispatch."""
 
 from __future__ import annotations
 
@@ -51,12 +45,7 @@ from frank.runtime.turn_events import (
 )
 
 class _TextPartBuffer:
-    """Coalesce adjacent text chunks before publishing A2A task updates.
-
-    The buffering is intentionally at the semantic event layer, not the SSE/ASGI
-    layer: structured parts such as tool calls, status changes, and agent
-    lifecycle events must force a flush so replay order remains exact.
-    """
+    """Coalesce adjacent text chunks before publishing, at the semantic layer rather than the transport one."""
 
     def __init__(
         self,
@@ -101,18 +90,7 @@ class _TextPartBuffer:
 
 
 class _TurnEventSink:
-    """The consuming half of the one turn-event catalog.
-
-    Every :class:`TurnEvent` variant the runtime yields is translated to its A2A
-    wire part here — in a single exhaustive, typed dispatch — and nowhere else. The
-    sink owns the assistant-text buffer (so a structured part forces an ordered
-    flush) and the turn's telemetry span, and it accumulates the turn's terminal
-    text and stop reason for the orchestrator to read once the stream drains.
-
-    A suspension goes to the injected ``suspend`` strategy, which returns whether the stream
-    is finished: every pause is durable now — the segment closes and a later answer rebuilds
-    the turn from its checkpoint — where a delegated turn used to park in place instead.
-    """
+    """The consuming half of the one turn-event catalog, exhaustive over the closed union."""
 
     def __init__(
         self,
@@ -129,12 +107,7 @@ class _TurnEventSink:
         self._span = telemetry_span
         self._model_identifier = model_identifier
         self._text = _TextPartBuffer(self._emit_text)
-        # Reasoning is buffered on the same terms as prose, and for a reason that has nothing to
-        # do with rendering: every emitted part becomes its own message, and every message its
-        # own row. A turn's thinking arrives as dozens of few-character deltas, so leaving them
-        # unbuffered turned a few kilobytes of reasoning into dozens of inserts — twenty-five
-        # rows for six blocks in one short session. Coalescing them costs nothing on screen,
-        # since the client keys deltas by block and concatenates them anyway.
+        # Reasoning is buffered on the same terms as prose, because every emitted part becomes its own row.
         self._thinking = _TextPartBuffer(self._emit_thinking)
         self.final_text = ""
         self.stop_reason = ""
@@ -148,16 +121,12 @@ class _TurnEventSink:
         await self._emit(_event_part(ThinkingEvent(text=text, block_id=key[0] if key else "")))
 
     async def flush(self, force: bool = True) -> None:
-        # Prose before reasoning would reorder a turn that ends mid-thought, so each buffer is
-        # drained in the order its content was produced: the pushers below keep only one of the
-        # two non-empty at a time, which makes the order here immaterial and the invariant cheap.
+        # Each buffer is drained in the order its content was produced, so a turn ending mid-thought is not reordered.
         await self._text.flush(force=force)
         await self._thinking.flush(force=force)
 
     async def emit_compaction(self, event: CompactionStarted | CompactionDone) -> None:
-        """Map a runtime compaction event to its ``compaction`` DataPart, so both the
-        manual pass and mid-turn auto-compaction render identically (a live
-        "compacting" indicator, then the separator)."""
+        """Map a compaction event to its part, so a manual pass and an automatic one render identically."""
         if isinstance(event, CompactionStarted):
             await self._emit(_event_part(CompactionEvent(
                 status="started",
@@ -178,19 +147,13 @@ class _TurnEventSink:
             )))
 
     async def handle(self, event: TurnEventUnion) -> bool:
-        """Consume one runtime event — emit its wire parts and advance turn state. Dispatch is
-        a ``match`` over the closed :data:`TurnEventUnion`; the ``case _`` calls
-        :func:`assert_never`, so a new variant a consumer forgets is a static exhaustiveness
-        error, not a silently dropped branch (and a wiring bug at runtime if one slips through).
-        Returns True when the turn should stop consuming and return from ``execute`` (a durable
-        top-level suspension closed the segment), False to keep consuming."""
+        """Consume one runtime event, emitting its parts and advancing turn state, exhaustively."""
         match event:
             case TextChunk():
                 content_block_identifier = str(event.block_id)
                 if not content_block_identifier:
                     raise ValueError("Assistant text events require a content-block identity.")
-                # Only ever one of the two buffers holds anything: switching kind drains the
-                # other first, which is what keeps replay in the order things were said.
+                # Only one of the two buffers ever holds anything, since switching kind drains the other first.
                 await self._thinking.flush(force=True)
                 await self._text.push(event.text, (content_block_identifier,))
             case Thinking():
@@ -212,8 +175,7 @@ class _TurnEventSink:
                 await self.flush()
                 await self._emit(_tool_result_part(event.name, event.id, event.result, event.status))
             case Checkpoint():
-                # A durable-safe point: snapshot the conversation so a mid-turn crash leaves
-                # completed tools' results in the record (the next turn does not redo them).
+                # A durable-safe point: snapshot the conversation so a crash leaves completed tools' results in the record.
                 await self._save_conversation()
             case Mcp():
                 await self.flush()
@@ -257,9 +219,7 @@ class _TurnEventSink:
                     ),
                 )))
             case Suspended():
-                # The turn needs one or more human decisions before it can run its tool batch.
-                # Surface each gate as its native DataPart so a client renders the prompt, then
-                # close the segment durably through the injected suspend strategy.
+                # The turn needs a decision before it can run its batch, so each gate is surfaced and the segment closed durably.
                 await self.flush()
                 interactions = event.interactions or []
                 plans = event.plans or {}
@@ -297,8 +257,7 @@ class _TurnEventSink:
                 self.final_text = event.text or self.final_text
                 self.stop_reason = event.stop_reason or self.stop_reason
             case DeniedInjection():
-                # A denied-command marker the runtime tracks for its own bookkeeping; the
-                # executor does not surface it.
+                # A denied-command marker the runtime tracks for itself, which the executor does not surface.
                 pass
             case _:
                 assert_never(event)

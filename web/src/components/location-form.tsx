@@ -9,8 +9,7 @@ import { PermissionModeControl } from "./session-controls";
 import { SimpleSelect, type SelectOption } from "./ui/simple-select";
 import { swallowed } from "@/lib/swallowed";
 
-// A fresh, empty location for the wizard/editor. The name is derived server-side from the
-// connection, and permission_mode defaults to manual approvals.
+// A fresh, empty location for the editor, whose name the server derives from the connection.
 export function emptyLocation(): LocationInput {
   return {
     kind: "local",
@@ -20,11 +19,7 @@ export function emptyLocation(): LocationInput {
   };
 }
 
-// A structured description of the first overlap between two locations on the same machine
-// — identical base directories, or one nested inside another — which is redundant and
-// ambiguous. Locations on different machines (different host, or local vs remote) never
-// conflict. Mirrors the server's authoritative check so the UI can warn before submitting.
-// The conflict is returned as a translation key + values so the caller localizes the copy.
+// The first overlap between two locations on one machine, which is redundant and ambiguous.
 export type LocationConflict =
   | { key: "conflictSameDirectory"; values: { directory: string } }
   | { key: "conflictNested"; values: { inner: string; outer: string } };
@@ -50,11 +45,7 @@ export function locationConflict(
   return null;
 }
 
-// The reusable environment editor — used during creation and in workspace-environment settings.
-// `hosts` come from ~/.ssh/config (remote only). `showPermission` reveals the permission
-// mode control (shown when editing an existing location, hidden in the create wizard so
-// creation stays about *where*, not policy). `onRemove` (optional) puts a remove control in
-// the local/remote row.
+// The reusable location editor, shared by creation and by workspace settings.
 export function LocationForm({
   hosts,
   value,
@@ -79,17 +70,12 @@ export function LocationForm({
     [hosts],
   );
 
-  // Which machine this location points at: the local one, or one named remote. A base
-  // directory is a path *on that machine*, so the machine changing is exactly what makes the
-  // path in the field stop meaning anything — which is what the prefill below keys on.
+  // Which machine this location points at, since a base directory is a path on that machine.
   const machine = value.kind === "remote" ? `remote:${(value.host_alias ?? "").trim()}` : "local";
-  // Keep the latest value/onChange in refs (updated after each render, before the effects
-  // below run) so those effects can stay keyed only on what actually drives them.
+  // Keep the latest value and handler in refs, so the effects below stay keyed only on what drives them.
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
-  // The machine whose path the field currently holds. Seeded with the machine this form
-  // opened on so an existing location — which already carries a real path for its own
-  // machine — is never overwritten just because it was rendered.
+  // The machine whose path the field currently holds, seeded with the one the form opened on.
   const settledMachine = useRef(machine);
   const [resolvingHome, setResolvingHome] = useState(false);
   const [homeUnresolved, setHomeUnresolved] = useState(false);
@@ -98,9 +84,7 @@ export function LocationForm({
     onChangeRef.current = onChange;
   });
 
-  // Fallback so a remote location always has a host selected: if hosts finish loading
-  // *after* the user already switched to remote (so the click handler couldn't pick one
-  // yet), select the first host as soon as they arrive.
+  // Fallback so a remote always has a host, for when hosts finish loading after the switch.
   useEffect(() => {
     const current = valueRef.current;
     if (current.kind === "remote" && !current.host_alias && hosts.length > 0) {
@@ -108,16 +92,7 @@ export function LocationForm({
     }
   }, [value.kind, hosts]);
 
-  // Prefill the base directory with the home directory of the machine the location points at,
-  // as an editable starter: this machine's home for a local location, the host's own home for
-  // a remote one. Keyed on the machine rather than on the field being empty, because that is
-  // the honest condition — a path that was right for the previous machine is not a path the
-  // user chose for this one, and on a remote they usually cannot know one to type. The only
-  // path left alone is the one an existing location arrived with, which `settledMachine`
-  // (seeded at mount) distinguishes.
-  //
-  // Resolving a remote home means an SSH round trip, so a value typed while it is in flight
-  // wins: the answer is applied only if the field still holds what this effect left it as.
+  // Prefill the base directory with that machine's home, as an editable starter.
   useEffect(() => {
     if (machine === settledMachine.current && valueRef.current.base_directory) return;
     let cancelled = false;
@@ -134,8 +109,7 @@ export function LocationForm({
         : alias ? await fetchHostHomeDirectory(alias) : "";
       if (cancelled) return;
       setResolvingHome(false);
-      // A remote whose home could not be read (unknown, unreachable, or not yet
-      // authenticated) says so rather than silently leaving an empty box.
+      // A remote whose home could not be read says so rather than leaving an empty box.
       setHomeUnresolved(machine !== "local" && !!alias && !home);
       settledMachine.current = machine;
       const latest = valueRef.current;
@@ -172,9 +146,7 @@ export function LocationForm({
           flex={1}
           variant={value.kind === "remote" ? "subtle" : "outline"}
           colorPalette={value.kind === "remote" ? "blue" : undefined}
-          // Switching to remote immediately selects the first host (if any are loaded)
-          // rather than leaving the host empty; the effect below only backfills for the
-          // case where hosts finish loading after the switch.
+          // Switching to remote selects the first host at once, with the effect below only backfilling.
           onClick={() => set({ kind: "remote", host_alias: value.host_alias || hosts[0]?.alias || "" })}
         >
           <LuServer size={13} /> {translation("remote")}
@@ -246,8 +218,7 @@ export function LocationForm({
   );
 }
 
-// A stack of editable environment forms with an "Add environment" button and an inline overlap
-// warning. Creation and Settings share the same editing surface; only persistence differs.
+// A stack of editable location forms with an inline overlap warning, shared by creation and settings.
 export function LocationEditorList({
   hosts,
   locations,
