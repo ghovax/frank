@@ -16,9 +16,7 @@ from mcp.shared.session import RequestResponder
 from pydantic import AnyUrl
 
 
-# How long to wait for one MCP server to complete its connect + initialize handshake
-# on startup before giving up on it and booting without it. Bounds a hung spawn/endpoint
-# so a single unresponsive server can never freeze the whole harness boot.
+# How long to wait for one MCP server to complete its connect + initialize handshake on startup before giving up on it and booting without it.
 
 from frank.base.configuration import MCPServerConfiguration
 from frank.base.tuning import Tunable, active_tuning
@@ -68,16 +66,7 @@ class MCPClientManager:
         return sorted(self._servers)
 
     async def start(self) -> None:
-        # A single broken MCP server (bad command, wrong runtime, unreachable host) must
-        # NOT take down the whole harness on startup — connect each independently and keep
-        # going past failures, so the remaining servers' tools are still available. The
-        # failed session is dropped; a later reconcile (file watcher) can retry it.
-        #
-        # "Broken" includes a server that CONNECTS but never answers the initialize
-        # handshake (a hung `uvx`/`npx` spawn, a stalled HTTP endpoint): without a bound,
-        # `_connect()` awaits forever and the whole server never finishes booting. So each
-        # connection is time-boxed; a server that exceeds it is treated like any other
-        # failure and skipped, and the app boots without it.
+        # A single broken MCP server (bad command, wrong runtime, unreachable host) must NOT take down the whole harness on startup — connect each independently and keep going past failures, so the remaining servers' tools are still available.
         for name, configuration in self._servers.items():
             if not configuration.stateful:
                 continue
@@ -292,9 +281,7 @@ class _StatefulStdioSession:
 
     @asynccontextmanager
     async def session(self, event_callback: MCPEventCallback | None = None) -> AsyncIterator[ClientSession]:
-        # Bounded like the startup connect: an endpoint that accepts the connection and then
-        # never completes the handshake would otherwise hold the caller open indefinitely,
-        # and a settings panel listing tools is not something to hang a request on.
+        # Bounded like the startup connect: an endpoint that accepts the connection and then never completes the handshake would otherwise hold the caller open indefinitely, and a settings panel listing tools is not something to hang a request on.
         session = await asyncio.wait_for(self._connect(), timeout=active_tuning().duration(Tunable.mcp_connect_seconds))
         async with self._operation_lock:
             if event_callback is not None:
@@ -323,10 +310,7 @@ class _StatefulStdioSession:
                 )
                 await session.initialize()
             except BaseException as error:
-                # Tear the partially-entered contexts down HERE, in the same task they were
-                # entered in, so a failed connection's anyio cancel scopes (stdio_client's
-                # subprocess task group) unwind within this task and cannot leak into — and
-                # cancel — the caller/lifespan task. Reset the stack so a later retry is clean.
+                # Tear the partially-entered contexts down HERE, in the same task they were entered in, so a failed connection's anyio cancel scopes (stdio_client's subprocess task group) unwind within this task and cannot leak into — and cancel — the caller/lifespan task.
                 with suppress(BaseException):
                     await self._exit_stack.aclose()
                 self._exit_stack = AsyncExitStack()
@@ -372,9 +356,7 @@ class _StatefulStreamableHTTPSession:
 
     @asynccontextmanager
     async def session(self, event_callback: MCPEventCallback | None = None) -> AsyncIterator[ClientSession]:
-        # Bounded like the startup connect: an endpoint that accepts the connection and then
-        # never completes the handshake would otherwise hold the caller open indefinitely,
-        # and a settings panel listing tools is not something to hang a request on.
+        # Bounded like the startup connect: an endpoint that accepts the connection and then never completes the handshake would otherwise hold the caller open indefinitely, and a settings panel listing tools is not something to hang a request on.
         session = await asyncio.wait_for(self._connect(), timeout=active_tuning().duration(Tunable.mcp_connect_seconds))
         async with self._operation_lock:
             if event_callback is not None:
@@ -408,9 +390,7 @@ class _StatefulStreamableHTTPSession:
                 )
                 await session.initialize()
             except BaseException as error:
-                # Same-task teardown of the partially-entered contexts on failure, so the
-                # streamable-http client's anyio task group unwinds within this task instead
-                # of leaking its cancel scope into the caller/lifespan task.
+                # Same-task teardown of the partially-entered contexts on failure, so the streamable-http client's anyio task group unwinds within this task instead of leaking its cancel scope into the caller/lifespan task.
                 with suppress(BaseException):
                     await self._exit_stack.aclose()
                 self._exit_stack = AsyncExitStack()

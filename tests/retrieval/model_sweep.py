@@ -39,9 +39,7 @@ logger = logging.getLogger(__name__)
 
 RESULTS_DIRECTORY = Path(__file__).parent / "results"
 
-# Static embedding models to compare. The two `potion-code` entries are the reason this module
-# exists; the rest are controls, so that "the code model is better" cannot be confused with "any
-# model other than the incumbent is better".
+# Static embedding models to compare.
 EMBEDDING_MODELS = {
     "M2V_multilingual (live)": "minishlab/M2V_multilingual_output",
     "potion-retrieval-32M": "minishlab/potion-retrieval-32M",
@@ -97,9 +95,7 @@ def structural_path(element: RecordedElement) -> str:
     return element.path
 
 
-# How an element is turned into indexed text. The first is what the product ships; the rest are
-# the fragmentations of the declaration this module exists to test, plus hybrids that keep the
-# shipped words and add one thing.
+# How an element is turned into indexed text.
 INDEXED_TEXTS = {
     "words: name + url + title (live web)": compose(("name", "url", "title")),
     "words: name (live native)": compose(("name",)),

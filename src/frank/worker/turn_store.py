@@ -49,9 +49,7 @@ class DaemonTurnStore(TaskStore):
         try:
             response = await self._http().post("/ingest", json=payload)
         except (httpx.HTTPError, OSError) as error:
-            # Losing the daemon means losing durability, not the turn: the session keeps its
-            # own conversation in memory and the next successful write catches up. Failing the
-            # turn here would discard work the model has already done.
+            # Losing the daemon means losing durability, not the turn: the session keeps its own conversation in memory and the next successful write catches up.
             logger.warning("persistence call failed %s", compact({"method": method, **describe(error)}))
             return None
         if response.status_code >= 400:
@@ -61,8 +59,7 @@ class DaemonTurnStore(TaskStore):
 
     # The TaskStore interface a2a expects.
 
-    # The context argument is part of the interface the A2A handler calls through; it carries
-    # per-call server state this store has no use for, but the signature must accept it.
+    # The context argument is part of the interface the A2A handler calls through; it carries per-call server state this store has no use for, but the signature must accept it.
     async def save(self, task: Task, context: Any = None) -> None:
         await self._call("turn.save", task=task.model_dump(by_alias=True, exclude_none=True, mode="json"))
 

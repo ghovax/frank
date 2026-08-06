@@ -18,8 +18,7 @@ from frank.base.sqlite_lock import sqlite_write_lock
 from frank.hub import state
 from frank.hub.database import SOLE_INTERFACE, InterfacePreferenceRecord
 
-# What a fresh install answers with, and what a daemon whose row has never been written falls
-# back to. Stated once so the route, the record's column defaults and this agree.
+# What a fresh install answers with, and what a daemon whose row has never been written falls back to.
 DEFAULTS: dict[str, Any] = {
     "color_mode": "system",
     "locale": "",
@@ -27,8 +26,7 @@ DEFAULTS: dict[str, Any] = {
     "computer_control_awaiting_grant": False,
 }
 
-# The colour modes the interface can be in. Anything else is refused rather than stored, so a
-# bad write cannot leave the interface unable to render itself.
+# The colour modes the interface can be in.
 COLOR_MODES = ("system", "light", "dark")
 
 

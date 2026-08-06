@@ -9,35 +9,25 @@ from __future__ import annotations
 
 from a2a.types import DataPart, Part
 
-# See https://a2a-protocol.org/latest/topics/extensions — "extensions should place custom
-# attributes in the metadata map … using this URI-namespaced convention".
+# See https://a2a-protocol.org/latest/topics/extensions — "extensions should place custom attributes in the metadata map … using this URI-namespaced convention".
 METADATA_KEY = "urn:frank:ext:turn:v1"
 
 # DataPart discriminator: every structured part declares its kind in `data.kind`.
 PART_KIND = "kind"
 
-# Opens an on-demand compaction turn. It runs no model turn — it summarizes older history
-# and emits the compaction parts — so it is modelled like an autonomous wake.
+# Opens an on-demand compaction turn.
 COMPACTION_KIND = "compaction_request"
 
-# Opens an autonomous wake turn. A2A has no "system/harness" message role — only `user` and
-# `agent` — so a harness-initiated turn is modelled honestly as an *agent* message (the
-# session resumed itself) carrying this single, prose-less part. It renders as nothing, so
-# the wake never fabricates a user message.
+# Opens an autonomous wake turn.
 AUTONOMOUS_RESUME_KIND = "autonomous_resume"
 
 # Answers an input-required pause, carrying the request id and the decision or answers.
 INPUT_RESPONSE_KIND = "input_response"
 
-# Opens a turn for a goal that is still unfinished. Modelled like an autonomous wake — the
-# session picking its own work back up — and a distinct kind because the two carry different
-# things: a wake delivers a background result that landed, and this delivers the goal itself.
+# Opens a turn for a goal that is still unfinished.
 GOAL_CONTINUATION_KIND = "goal_continuation"
 
-# Opens a turn that exists only to remind a session it has not reported to the session that
-# created it. Modelled like an autonomous wake — an agent-role message with a prose-less part
-# — but a distinct kind, because a wake delivers a result that is waiting and this delivers
-# nothing at all; the autonomous path would close it as a no-op for exactly that reason.
+# Opens a turn that exists only to remind a session it has not reported to the session that created it.
 REPORT_REMINDER_KIND = "report_reminder"
 
 
@@ -54,20 +44,14 @@ class Metadata:
     PROJECT_DIRECTORY = "projectDirectory"
     WORKSPACE_ID = "workspaceId"
     PERMISSION_MODE = "permissionMode"
-    # Marks a harness-initiated turn (not user input): an autonomous background wake, or an
-    # on-demand compaction pass.
+    # Marks a harness-initiated turn (not user input): an autonomous background wake, or an on-demand compaction pass.
     AUTONOMOUS_RESUME = "autonomousResume"
     COMPACTION = "compaction"
     REPORT_REMINDER = "reportReminder"
     GOAL_CONTINUATION = "goalContinuation"
-    # Set by a session sending another session a message. Its presence is what makes the turn
-    # a peer turn — the field carries who, and "who" and "not the user" are the same fact here.
+    # Set by a session sending another session a message.
     PEER_SENDER = "peerSender"
-    # When the harness took this message, as an ISO-8601 instant in UTC. Stamped once, by the
-    # side that receives it, because that is the only clock in the exchange this side can vouch
-    # for: a sender's clock is its own, and the clock of whoever *reads* the transcript later is
-    # nobody's. Without it a replayed conversation had no time in it at all — a client rebuilding
-    # the transcript could only date each message to the moment it loaded the page.
+    # When the harness took this message, as an ISO-8601 instant in UTC.
     RECEIVED_AT = "receivedAt"
 
 

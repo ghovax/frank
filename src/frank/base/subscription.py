@@ -33,37 +33,13 @@ from frank.base.credentials import ChatGPTAuthError, ChatGPTTokens, valid_tokens
 from frank.base.tuning import Tunable, active_tuning
 
 RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
-# The account's live, plan-specific model catalogue. Same host and auth as the responses
-# endpoint; `client_version` gates each model by its `minimal_client_version`, hiding any model
-# whose floor is above what we claim. This is a *floor to clear*, not a cosmetic string: newer
-# models raise their floor over time (gpt-5.4 needs 0.98, gpt-5.5 needs 0.124, the gpt-5.6-*
-# family needs 0.144), so it must track a current Codex CLI version or the newer models
-# silently vanish from the catalogue.
+# The account's live, plan-specific model catalogue.
 MODELS_URL = "https://chatgpt.com/backend-api/codex/models"
 CLIENT_VERSION = "0.144.4"
-# Identifies the client to the endpoint, and it is checked. The endpoint admits only
-# first-party originators — `codex_cli_rs`, `codex_vscode`, `codex_sdk_ts`, or a value
-# starting with `Codex` — and refuses everything else, so this is the Codex CLI's own default
-# rather than a name of ours. It did once accept any value, which is why opencode shipped
-# `originator: opencode` and why this file used to say no impersonation was required; that
-# stopped being true, and opencode now rewrites the header to this same value.
-#
-# `USER_AGENT` below is the other half of the same check: the two are gated *together*, so
-# sending a Codex originator beside a `frank/…` user-agent fails the pair — mid-stream, with a
-# `server_error` that reads like backend trouble rather than like a rejected client, which is
-# the worst way for this to break because it looks like someone else's outage.
+# Identifies the client to the endpoint, and it is checked.
 ORIGINATOR = "codex_cli_rs"
 
-# The documented shape of the Codex CLI's user-agent is
-# `codex_cli_rs/<version> (<os> <os version>; <arch>)`, with a transport token appended that
-# varies by call path — so it is omitted here rather than guessed, and readers of this header
-# are advised to match on the `codex_cli_rs/` prefix in any case.
-#
-# Every value in it is real: the version is `CLIENT_VERSION` above, which is already maintained
-# against current Codex releases because the model catalogue gates on it, and the platform
-# fields are this machine's. Nothing here is a plausible-looking invention, which is the line
-# this file and the Cursor client both hold — a fabricated version invites trust it has not
-# earned, while a true one that is merely incomplete does not.
+# The documented shape of the Codex CLI's user-agent is `codex_cli_rs/<version> (<os> <os version>; <arch>)`, with a transport token appended that varies by call path — so it is omitted here rather than guessed, and readers of this header are advised to match on the `codex_cli_rs/` prefix in any case.
 USER_AGENT = (
     f"codex_cli_rs/{CLIENT_VERSION} "
     f"({platform.system()} {platform.release()}; {platform.machine()})"
@@ -198,9 +174,7 @@ def capture_usage_headers(headers: httpx.Headers) -> None:
             after = _header_int(headers.get(f"x-codex-{key}-reset-after-seconds"))
             resets_at = now + after if after is not None else None
         windows.append({
-            # The label is derived on the client from `window_minutes`, localised — the
-            # five-hour and weekly mapping is not pinned to primary and secondary, and this
-            # layer stays free of presentation and locale.
+            # The label is derived on the client from `window_minutes`, localised — the five-hour and weekly mapping is not pinned to primary and secondary, and this layer stays free of presentation and locale.
             "key": key,
             "used_percent": _header_float(headers.get(f"x-codex-{key}-used-percent")) or 0.0,
             "window_minutes": window_minutes,

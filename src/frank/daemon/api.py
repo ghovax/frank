@@ -148,8 +148,6 @@ def _resolve_sandbox(agent: str, working_directory: str, parent, read_only: bool
     if parent is not None:
         profile = profile.clamp(confinement.Profile.from_dict(parent.sandbox))
     # A session asked for read-only is read-only at the kernel: a profile with nowhere writable.
-    # Nothing about a command's text decides it, so there is no spelling of a write that gets
-    # past — the operating system refuses it, and a grant cannot widen what was never offered.
     if read_only:
         profile = dataclasses.replace(
             profile,
@@ -193,15 +191,10 @@ async def _session_create(params: dict) -> dict:
     parent's, so a child can never be created looser than the session that created it — the
     clamp lives here rather than in the caller because the caller is often the model."""
     assert state.registry is not None and state.lifecycle is not None
-    # No fallback: which agent a session runs is the one thing nothing can reasonably guess
-    # on the caller's behalf. A default here would mean a mistyped or forgotten `--agent`
-    # silently produced a session doing work under a profile nobody chose.
+    # No fallback: which agent a session runs is the one thing nothing can reasonably guess on the caller's behalf.
     agent = _require(params, "agent")
     _assert_agent_exists(agent, str(params.get("working_directory") or ""))
-    # A session that authenticated as itself is the parent, whatever it asked for. The clamp
-    # and the reaper both hang off this link, so leaving it to the caller to declare made both
-    # opt-out: a session could create a peer outside its own tree, at any mode, simply by not
-    # mentioning itself. An unattributed call (a person's client) still passes `parent`.
+    # A session that authenticated as itself is the parent, whatever it asked for.
     parent_id = str(params.get("calling_session") or params.get("parent") or "").strip()
     parent = state.registry.get(parent_id) if parent_id else None
     if parent_id and parent is None:
@@ -218,26 +211,19 @@ async def _session_create(params: dict) -> dict:
             parent.permission_mode if parent is not None else None,
             requested=params.get("permission_mode"),
             fallback=configured,
-            # The agent's own ceiling, which the runtime applies whether or not this record
-            # mentions it — so it is applied here too rather than leaving the record claiming a
-            # mode the session will not run under.
+            # The agent's own ceiling, which the runtime applies whether or not this record mentions it — so it is applied here too rather than leaving the record claiming a mode the session will not run under.
             ceiling=_agent_permission_ceiling(agent, working_directory),
         )
     except ValueError as conflict:
-        # A session that cannot answer a gate, asking for a peer that raises them. Refused at
-        # creation, where it can be reported to whoever asked, rather than minting a peer that
-        # would park on its first gate and be waited on forever.
+        # A session that cannot answer a gate, asking for a peer that raises them.
         raise RpcError(str(conflict), status_code=409, code="unattended_conflict") from conflict
-    # Read-only is a confinement, not a policy: a session that may look and not touch is one
-    # whose profile has nowhere writable. A child inherits it, because a session that cannot
-    # write must not be able to create a peer that can.
+    # Read-only is a confinement, not a policy: a session that may look and not touch is one whose profile has nowhere writable.
     read_only = bool(params.get("read_only")) or bool(
         parent is not None and not (parent.sandbox or {}).get("filesystem", {}).get("writable")
     )
     sandbox = _resolve_sandbox(agent, working_directory, parent, read_only)
 
-    # `create` registers the session in memory; the durable write is awaited here, off the
-    # loop, because the worker about to be started will look this row up.
+    # `create` registers the session in memory; the durable write is awaited here, off the loop, because the worker about to be started will look this row up.
     record = state.registry.create(
         agent=agent,
         working_directory=working_directory,
@@ -249,10 +235,7 @@ async def _session_create(params: dict) -> dict:
         created_at=_now(),
     )
 
-    # Where the session will actually run, and its durable row, decided here rather than on
-    # its first turn: the workspace strategy can put a session in its own git worktree, and a
-    # session whose tools do not yet know which directory they operate on is not a session
-    # anyone can safely message. It is also the row the title and the draft later land on.
+    # Where the session will actually run, and its durable row, decided here rather than on its first turn: the workspace strategy can put a session in its own git worktree, and a session whose tools do not yet know which directory they operate on is not a session anyone can safely message.
     from frank.hub.services.sessions import _ensure_session_workspace
 
     try:
@@ -277,11 +260,7 @@ async def _session_create(params: dict) -> dict:
             status_code=503,
             code="worker_unavailable",
         )
-    # The token is returned exactly once, here, to whoever asked for the session. The parent
-    # and mode come back too because both may differ from what was asked for — a caller
-    # attributed by its token becomes the parent whatever it said, and the mode is clamped
-    # against that parent — and a creator that cannot see the difference cannot reason about
-    # what it just made.
+    # The token is returned exactly once, here, to whoever asked for the session.
     return {
         "id": record.id,
         "token": record.token,
@@ -429,8 +408,7 @@ async def _session_permission_mode(params: dict) -> dict:
     return {
         "id": record.id,
         "permission_mode": str(mode),
-        # What the caller asked for is not always what it got: the parent clamp is applied
-        # here, and a creator that cannot see the difference cannot reason about it.
+        # What the caller asked for is not always what it got: the parent clamp is applied here, and a creator that cannot see the difference cannot reason about it.
         "clamped": str(mode) != str(requested),
         "descendants_changed": [altered.id for altered in changed if altered.id != record.id],
     }
@@ -618,11 +596,7 @@ def _remote_text_parts(event: Any) -> list[str]:
 async def _daemon_status(_params: dict) -> dict:
     assert state.registry is not None
     live = state.registry.live()
-    # The prototype's own numbers, asked for rather than remembered. `threads` and
-    # `frozen_objects` are here because both are invariants that fail silently: a prototype
-    # that has picked up a second thread cannot fork safely, and one whose heap was never
-    # frozen still works while costing most of the memory saving. Neither is visible anywhere
-    # else, so this is where they get reported.
+    # The prototype's own numbers, asked for rather than remembered.
     prototype = await state.prototype.refresh_status() if state.prototype else {
         "alive": False, "pid": 0, "threads": 0, "frozen_objects": 0, "sessions": 0,
     }
@@ -632,11 +606,7 @@ async def _daemon_status(_params: dict) -> dict:
         "prototype": prototype,
         "socket": str(state.daemon_socket),
         "port": state.daemon_port,
-        # Which image is actually serving. Once the daemon is installed there are two `frank`
-        # on a developer's PATH — the signed bundle and the checkout's `uv run frank` — and they
-        # share a runtime directory, so whichever started first owns it. That is invisible
-        # otherwise, and it decides whether computer control has a stable Accessibility grant:
-        # the frozen image is one code identity across rebuilds, an interpreter is not.
+        # Which image is actually serving.
         "image": {"executable": sys.executable, "frozen": bool(getattr(sys, "frozen", False))},
     }
 
@@ -662,21 +632,10 @@ async def _daemon_restart(_params: dict) -> dict:
     running = len(state.registry.running())
 
     async def replace() -> None:
-        # `execv` rather than spawn-and-exit, for two reasons. It keeps the pid, so the lock
-        # file's descriptor carries over and a successor never races the predecessor for it —
-        # the failure mode a naive stop-then-start hits, where the new daemon dies on a lock the
-        # old one has not released yet and nothing is left running. And it replaces the address
-        # space, which is where the Accessibility trust result was cached, so the successor asks
-        # the current TCC database rather than remembering the old answer. That second point is
-        # the whole purpose of this method and can only be confirmed on macOS.
-        #
-        # The sleep is long enough for the response to be written and flushed, short enough that
-        # nobody is left wondering.
+        # `execv` rather than spawn-and-exit, for two reasons.
         await asyncio.sleep(0.5)
         if state.lifecycle is not None:
-            # Sleep them rather than reap them. Their records are durable, so stopping the
-            # processes is the whole of what a restart has to do — and the successor picks
-            # every one of them back up as an asleep session.
+            # Sleep them rather than reap them.
             with contextlib.suppress(Exception):
                 await state.lifecycle.sleep_all()
         os.execv(sys.executable, [sys.executable, *_daemon_argv()])
@@ -814,10 +773,7 @@ METHODS: dict[str, Callable[[dict], Awaitable[dict]]] = {
 }
 
 
-# What a session may ask the control plane for on its own behalf. Narrower than what a
-# person's client may do, and deliberately so: a session token is a capability for one
-# session's work, not a second daemon token. Everything absent here — reading another tree's
-# history, answering a permission request, compacting somebody else — stays with the human.
+# What a session may ask the control plane for on its own behalf.
 _SESSION_CALLER_METHODS = frozenset({
     "session.create", "session.send", "session.get", "session.tree",
     "session.end", "session.history", "remote.list", "remote.send",
@@ -876,35 +832,16 @@ async def telemetry_faults(request: Request) -> JSONResponse:
         return JSONResponse({"accepted": False}, status_code=202)
     if not isinstance(payload, dict):
         return JSONResponse({"accepted": False}, status_code=202)
-    # Whole, not clipped. These were cut to 200, 2000, 500 and 100 characters, and the one that
-    # mattered was `detail`: it carries a stack trace, a trace is longest exactly when the fault
-    # is least understood, and 2000 characters reliably kept the frames nearest the throw while
-    # discarding the ones that said which of the caller's paths reached it. A fault is rare and a
-    # log line is cheap; a truncated one costs another reproduction.
-    # Two fields, not a sentence with the place glued to the front. The interface used to send
-    # `chat input: could not read the message history`, which meant the only way to ask "which
-    # surface is failing" was to match on a prefix — and a colon inside a message took that
-    # apart wrongly. `component` and `operation` are dimensions; they group.
+    # Whole, not clipped.
     component = str(payload.get("component") or "")
     operation = str(payload.get("operation") or "")
-    # The error arrives already parsed into fields — the interface runs whatever it caught
-    # through `serialize-error`, so a thrown string or bare object has a name and a message
-    # like anything else. Nothing here has to guess at the shape of a blob.
+    # The error arrives already parsed into fields — the interface runs whatever it caught through `serialize-error`, so a thrown string or bare object has a name and a message like anything else.
     error_name = str(payload.get("errorName") or "")
     error_message = str(payload.get("errorMessage") or "")
     error_stack = str(payload.get("errorStack") or "")
     url = str(payload.get("url") or "")
     session_id = str(payload.get("sessionId") or "")
-    # Logged whether or not telemetry is configured, and that is the point: the interface no
-    # longer keeps a console copy, so this log is the single answer to "where did that go".
-    # Telemetry, when on, is an additional destination rather than the only one.
-    #
-    # As fields rather than as a sentence. This used to read `interface fault at %s: %s -- %s`,
-    # which glued the page, the context and a stack trace together with punctuation invented
-    # here and nowhere else — so anything reading the log back, a person included, had to take
-    # it apart by counting colons, and a `--` inside a stack trace took it apart wrongly. The
-    # same reasoning already applies to every payload this harness puts in front of a model:
-    # the fields have names, so use them.
+    # Logged whether or not telemetry is configured, and that is the point: the interface no longer keeps a console copy, so this log is the single answer to "where did that go".
     logger.warning("interface fault %s", compact({
         "component": component,
         "operation": operation,
@@ -942,9 +879,7 @@ async def rpc(request: Request) -> JSONResponse:
     handler = METHODS.get(method)
     if handler is None:
         return JSONResponse({"error": {"code": "no_such_method", "message": f"Unknown method {method!r}."}}, status_code=404)
-    # Who is calling, according to the kernel and the token — never according to the body. The
-    # key is stripped before anything reads it, so `calling_session` inside a handler can only
-    # ever be what the middleware put there; a caller cannot name itself.
+    # Who is calling, according to the kernel and the token — never according to the body.
     params.pop("calling_session", None)
     caller = getattr(request.state, "calling_session", "")
     if caller:
@@ -971,9 +906,7 @@ async def attach(session_id: str, request: Request) -> EventSourceResponse:
     The snapshot comes first so a client that attaches mid-turn is not left guessing about
     what it missed, and the live tail continues from there."""
     _session(session_id)
-    # Same scoping as the control plane: a session's own token watches its own subtree, not
-    # every stream on the machine. A human's client presents the daemon token and is not
-    # narrowed — watching is what it exists to do.
+    # Same scoping as the control plane: a session's own token watches its own subtree, not every stream on the machine.
     caller = getattr(request.state, "calling_session", "")
     if caller:
         refusal = _refuse_session_caller(caller, "session.get", {"id": session_id})
@@ -997,29 +930,21 @@ async def attach(session_id: str, request: Request) -> EventSourceResponse:
                 try:
                     event = await asyncio.wait_for(subscription.get(), timeout=15)
                 except asyncio.TimeoutError:
-                    # A comment keeps the connection warm through proxies without inventing an
-                    # event the client would have to ignore.
+                    # A comment keeps the connection warm through proxies without inventing an event the client would have to ignore.
                     yield {"comment": "keepalive"}
                     continue
                 if event is None:
                     yield {"data": compact({"kind": "done"})}
                     break
                 if "turn" in event:
-                    # A turn started or ended. Distinct from `done`, which is the session
-                    # itself ending: a session goes idle many times over its life, and a
-                    # watcher that conflated the two would either stop after the first turn
-                    # or wait for a process to die.
+                    # A turn started or ended.
                     yield {"data": compact({
                         "kind": "turn",
                         "seq": event.get("seq", 0),
                         "running": bool((event.get("turn") or {}).get("running")),
                     })}
                     continue
-                # One part, not one message: the bus carries parts as the model emits them,
-                # so a turn's prose arrives as a run of text parts rather than a finished
-                # message. Naming the field `message` cost the interface every live update —
-                # the client's reducers all walk `.parts`, which a part does not have, so
-                # each frame reduced to nothing and answers only appeared on reload.
+                # One part, not one message: the bus carries parts as the model emits them, so a turn's prose arrives as a run of text parts rather than a finished message.
                 yield {"data": compact({"kind": "live", "seq": event.get("seq", 0), "part": event.get("part")})}
         finally:
             state.event_bus.unsubscribe(session_id, subscription)
@@ -1043,9 +968,7 @@ async def events(request: Request) -> EventSourceResponse:
                     yield {"comment": "keepalive"}
                     continue
                 if event is None:
-                    # The daemon is going down and has closed the bus. Ending here is what lets
-                    # it finish: a server draining its connections cannot outwait a stream that
-                    # is waiting on the daemon.
+                    # The daemon is going down and has closed the bus.
                     break
                 yield {"data": compact(event)}
         finally:

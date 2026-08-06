@@ -8,26 +8,10 @@ import {
 import { LocaleProvider } from "@/lib/i18n/locale-provider"
 import { PreferencesProvider } from "@/lib/preferences"
 
-// The app's design language lives here as theme-level defaults, so component call sites
-// stay lean and only pass size/radius when they intentionally deviate:
-//
-//   • Radius — Chakra maps a control's corner to the semantic radii `l1/l2/l3` (xs/sm/md).
-//     Most controls default to `l2` (= sm). We remap `l1` and `l2` to `md` so `md` is the
-//     universal default corner (`l3` is already `md`); only `sm` (tiny chips), `full`
-//     (dots/pills/avatars) and `none` (joined segmented buttons) are ever set explicitly.
-//   • Size — the compact `xs` control height is the house default, set once via each
-//     control recipe's `defaultVariants`, instead of `size="xs"` on every button/input.
-//   • Dialogs — the stock dialog recipe is roomy (px6/pt6 headers, l3 corners); tightened
-//     here to compact padding + md corners so every dialog inherits it.
-//   • Elevation — the `panel` shadow is a soft, ring-free drop shadow for the floating
-//     cards. Stock Chakra shadow tokens bake in a crisp `0 0 1px` hairline ring which,
-//     layered on a card's own 1px border, renders as a doubled border line; this token is
-//     pure blur so the real border stays the only crisp edge.
+// The app's design language lives here as theme-level defaults, so component call sites stay lean and only pass size/radius when they intentionally deviate: ; Radius — Chakra maps a control's corner to the semantic radii `l1/l2/l3` (xs/sm/md).
 const config = defineConfig({
   theme: {
-    // Named typography roles, so the recurring text combos are written once here and used
-    // as `textStyle="…"` instead of repeating fontSize/fontWeight/color at each call site.
-    // (Chakra ships a `label` role at sm/medium — these are app-specific compact variants.)
+    // Named typography roles, so the recurring text combos are written once here and used as `textStyle="…"` instead of repeating fontSize/fontWeight/color at each call site.
     textStyles: {
       fieldLabel: { value: { fontSize: "xs", fontWeight: "medium" } },
       sectionLabel: { value: { fontSize: "xs", fontWeight: "semibold", color: "fg.muted" } },
@@ -60,9 +44,7 @@ const config = defineConfig({
       },
     },
     slotRecipes: {
-      // Tab triggers (e.g. the Settings left nav) are clamped to the same 32px as the app's
-      // xs buttons/inputs, so they read as one control family rather than a taller variant.
-      // Done here — not per Tabs.Trigger — so every tab list stays in step automatically.
+      // Tab triggers (e.g. the Settings left nav) are clamped to the same 32px as the app's xs buttons/inputs, so they read as one control family rather than a taller variant.
       tabs: {
         slots: ["root", "list", "trigger", "content", "indicator"],
         base: {
@@ -73,16 +55,6 @@ const config = defineConfig({
         slots: ["backdrop", "positioner", "content", "title", "description", "header", "body", "footer", "closeTrigger"],
         base: {
           // A dialog is a card on a wide screen and a *screen* on a narrow one.
-          //
-          // Both because a phone runs this interface now, and because the two are the same
-          // problem: a centred 640px card inside a 390px viewport is a card with its sides cut
-          // off, which is exactly as broken in a narrow browser window as it is on a phone. So
-          // this is stated once, at the base, and every dialog in the app inherits it rather
-          // than each one learning it separately.
-          //
-          // Full-bleed below `sm`: square corners, because a rounded corner against the edge of
-          // the glass reads as a rendering fault; full height, so the content scrolls inside the
-          // dialog rather than the dialog overflowing the screen.
           positioner: {
             padding: { base: "0", sm: "4" },
             alignItems: { base: "stretch", sm: "center" },
@@ -96,9 +68,7 @@ const config = defineConfig({
             display: "flex",
             flexDirection: "column",
           },
-          // The header and footer stay put while the body scrolls between them — on a phone a
-          // dialog is often taller than the screen, and a title that scrolls away takes with it
-          // the only thing saying what you are looking at.
+          // The header and footer stay put while the body scrolls between them — on a phone a dialog is often taller than the screen, and a title that scrolls away takes with it the only thing saying what you are looking at.
           header: {
             px: "4",
             pt: { base: "calc(env(safe-area-inset-top) + 1rem)", sm: "4" },
@@ -116,16 +86,7 @@ const config = defineConfig({
           },
         },
       },
-      // One dropdown row for the whole app. Menus (size sm — the DropdownMenu wrapper) and
-      // Selects (size xs — SimpleSelect, model/agent pickers, session controls) are the same
-      // UI to the user, but their stock recipes disagree: menu-sm rows are tighter (6px side
-      // padding, 4px icon gap, regular weight, no inter-row gap) while select-xs rows are
-      // roomier (8px/8px, hand-medium at every call site, plus a 4px flex gap between rows).
-      // Both size variants are overridden here to one scale — 28px medium-weight rows, 8px
-      // side padding and icon gap, rhythm from item padding alone — so no call site needs
-      // its own py/fontWeight/fontSize on items. The slot lists mirror each recipe's anatomy
-      // order exactly: config arrays merge index-wise, so a partial or reordered list would
-      // corrupt the recipe's slot mapping.
+      // One dropdown row for the whole app.
       menu: {
         slots: ["arrow", "arrowTip", "content", "contextTrigger", "indicator", "item", "itemGroup", "itemGroupLabel", "itemIndicator", "itemText", "positioner", "separator", "trigger", "triggerItem", "itemCommand"],
         variants: {

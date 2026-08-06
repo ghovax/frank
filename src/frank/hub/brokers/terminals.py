@@ -45,9 +45,7 @@ def _terminal_directory(session_id: str, working_directory: str) -> Path:
 
 
 def _shell_command() -> list[str]:
-    # The user's real login shell comes from the passwd database — the same source
-    # `login` uses — not from $SHELL, which reflects whatever shell happened to launch
-    # this server and would be wrong on a remote/shared host.
+    # The user's real login shell comes from the passwd database — the same source `login` uses — not from $SHELL, which reflects whatever shell happened to launch this server and would be wrong on a remote/shared host.
     try:
         shell = pwd.getpwuid(os.getuid()).pw_shell
     except (KeyError, OSError):
@@ -73,8 +71,7 @@ def _login_base_environment() -> dict[str, str]:
     except (KeyError, OSError):
         # No passwd entry (unusual): fall back to the interpreter's notion of $HOME.
         environment["HOME"] = str(Path.home())
-    # The default PATH `login` seeds; the login shell and its rc files (e.g. macOS
-    # path_helper, home-manager) immediately rebuild the real one on top of it.
+    # The default PATH `login` seeds; the login shell and its rc files (e.g. macOS path_helper, home-manager) immediately rebuild the real one on top of it.
     environment["PATH"] = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     # The PTY is an xterm-compatible emulator, so advertise it as one.
     environment["TERM"] = "xterm-256color"
@@ -213,8 +210,7 @@ class TerminalSession:
         self.terminal_context = terminal_context
         self.terminal_key = terminal_key
         self.directory = directory
-        # When set, the terminal is an interactive login shell on this remote host (over
-        # multiplexed SSH), in `directory` on that machine, rather than a local PTY.
+        # When set, the terminal is an interactive login shell on this remote host (over multiplexed SSH), in `directory` on that machine, rather than a local PTY.
         self.remote_host_alias = remote_host_alias
         self.master_fd = -1
         self.pid = -1
@@ -245,8 +241,7 @@ class TerminalSession:
             return
         environment = _login_base_environment()
         if self.remote_host_alias:
-            # Remote terminal: ssh to the host and start an interactive login shell in the
-            # location's base dir. The `cd` happens on the remote (never locally).
+            # Remote terminal: ssh to the host and start an interactive login shell in the location's base dir.
             command = SshExecutor(self.remote_host_alias).terminal_argv(str(self.directory))
         else:
             command = _shell_command()

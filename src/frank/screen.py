@@ -63,8 +63,7 @@ def _message(name: str, **variables: str) -> str:
         text = text.replace("{{ " + key + " }}", value)
     return text
 
-#: How a call reaches the live surface. The runner installs this before a script runs; a program
-#: importing this module outside a session finds it unset, and says so rather than doing nothing.
+#: How a call reaches the live surface.
 _bridge: Optional[Callable[[str, list, dict], Any]] = None
 
 
@@ -122,9 +121,5 @@ def place(target: str = "") -> Screen:
     return Screen(target)
 
 
-#: The place, for ``from frank.screen import screen``. Bound to whatever the tool call named,
-#: because the bridge that carries every call was installed pointing at it before this module
-#: was reached. Outside a session it is an ordinary object whose every method raises
-#: :class:`NotDriving`, which is what keeps screen control reachable only through the tool that
-#: asks permission for it.
+#: The place, for ``from frank.screen import screen``.
 screen = Screen()

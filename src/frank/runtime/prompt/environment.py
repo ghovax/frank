@@ -63,8 +63,7 @@ def _parse_history_invocation(line: str) -> tuple[str, str, list[str]] | None:
     base = tokens[index].split("/")[-1]
     if not base or base[0] in "-$(){}<>|&;'\"`.":
         return None
-    # Sub-commands are only collected before the first flag, so a flag's value (e.g. the
-    # username after ``-u``) is never mistaken for a sub-command.
+    # Sub-commands are only collected before the first flag, so a flag's value (e.g. the username after ``-u``) is never mistaken for a sub-command.
     subcommands: list[str] = []
     flags: list[str] = []
     seen_flag = False
@@ -107,8 +106,7 @@ def _shell_command_usage(
     for invocations that used no sub-command. Only sub-command verbs and flag NAMES are ever
     recorded; positional arguments and flag values (paths, URLs, secrets) are never read,
     so nothing sensitive leaves the history file. Silent on any failure."""
-    # command -> {"count", "subcommands": {chain: {"count", "flags": {name: count}}},
-    #             "flags": {name: count}}
+    # command -> {"count", "subcommands": {chain: {"count", "flags": {name: count}}}, "flags": {name: count}}
     commands: dict[str, dict] = {}
     for line in _iter_history_lines():
         parsed = _parse_history_invocation(line)
@@ -174,8 +172,7 @@ def probe_local_environment(path: Optional[Sequence[str]] = None) -> str:
     import socket
 
     uname = platform.uname()
-    # Presence-only probe of a broad, common toolchain — never versions/paths, which the
-    # agent can pull itself if it needs them. Grouped by category for maintainability.
+    # Presence-only probe of a broad, common toolchain — never versions/paths, which the agent can pull itself if it needs them.
     probed = [
         # Language runtimes
         "python3", "node", "deno", "bun", "ruby", "perl", "php", "go", "rustc",
@@ -207,8 +204,7 @@ def probe_local_environment(path: Optional[Sequence[str]] = None) -> str:
         # Editors and multiplexers
         "vim", "nvim", "emacs", "nano", "tmux", "screen", "code",
     ]
-    # Resolved against the `PATH` a command will actually be run with, so a tool the session
-    # itself installed counts as present and one only the worker can see does not.
+    # Resolved against the `PATH` a command will actually be run with, so a tool the session itself installed counts as present and one only the worker can see does not.
     lookup = os.pathsep.join(path) if path else os.environ.get(environment_variables.PATH, "")
     present = [name for name in probed if shutil.which(name, path=lookup)]
     try:
@@ -232,8 +228,7 @@ def probe_local_environment(path: Optional[Sequence[str]] = None) -> str:
             "present": present,
             "absent": [name for name in probed if name not in present],
         },
-        # The user's habitual commands mapped to how they invoke them (sub-commands + flag
-        # names), mined from their shell history. No positional args / flag values.
+        # The user's habitual commands mapped to how they invoke them (sub-commands + flag names), mined from their shell history.
         "frequent_commands": _shell_command_usage(),
         "editor": os.environ.get(environment_variables.EDITOR) or os.environ.get(environment_variables.VISUAL),
         "path": list(path) if path else [
@@ -285,12 +280,10 @@ def _home_relative(path: Path | str) -> str:
     return text
 
 
-# Directory-changing commands whose first non-flag argument is a navigation target — mined
-# from history to surface the folders the user actually works in.
+# Directory-changing commands whose first non-flag argument is a navigation target — mined from history to surface the folders the user actually works in.
 _DIRECTORY_JUMP_COMMANDS = frozenset({"cd", "pushd", "z", "j", "zi"})
 
 # Chromium-family browser history databases, relative to ~/Library/Application Support.
-# Each browser keeps one `History` SQLite file per profile; the glob covers extra profiles.
 _CHROMIUM_HISTORY_GLOBS = (
     "Google/Chrome/*/History",
     "BraveSoftware/Brave-Browser/*/History",
@@ -344,8 +337,7 @@ def _browser_site_activity(
     import time
 
     support = Path.home() / "Library" / "Application Support"
-    # (database, SQL, has_timestamp). Chromium keeps counts + microsecond timestamps in `urls`;
-    # Safari's `history_items` has counts but not a per-item time, so it feeds only the totals.
+    # (database, SQL, has_timestamp).
     queries: list[tuple[Path, str, bool]] = []
     for pattern in _CHROMIUM_HISTORY_GLOBS:
         for database in sorted(support.glob(pattern)):
@@ -510,13 +502,11 @@ def _running_app_durations(limit: int = 22) -> dict:
     counted (nested helper processes — browser renderers, etc. — are skipped). App to hours."""
     import re
 
-    # `command=` gives the full executable path (unlike `comm=`, which truncates to the short
-    # accounting name); macOS uses `etime` (formatted), not Linux's `etimes`.
+    # `command=` gives the full executable path (unlike `comm=`, which truncates to the short accounting name); macOS uses `etime` (formatted), not Linux's `etimes`.
     output = _run_command(["ps", "-axo", "etime=,command="], timeout=6)
     if not output:
         return {}
-    # A top-level app runs from ``…/Applications/<Name>.app/Contents/MacOS/`` — a helper's
-    # ``.app`` sits under Frameworks/Helpers and never directly under an Applications dir.
+    # A top-level app runs from ``…/Applications/<Name>.app/Contents/MacOS/`` — a helper's ``.app`` sits under Frameworks/Helpers and never directly under an Applications dir.
     top_level = re.compile(r"/Applications/([^/]+)\.app/Contents/MacOS/")
     durations: dict[str, float] = {}
     for line in output.splitlines():
@@ -578,8 +568,7 @@ def _editor_extensions(limit: int = 70) -> list[str]:
         try:
             for entry in os.scandir(Path.home() / base):
                 if entry.is_dir(follow_symlinks=False) and "-" in entry.name and not entry.name.startswith("."):
-                    # Dir names look like `publisher.name-1.2.3` or `…-1.2.3-darwin-arm64`;
-                    # drop everything from the first `-<digit>` to the end.
+                    # Dir names look like `publisher.name-1.2.3` or `…-1.2.3-darwin-arm64`; drop everything from the first `-<digit>` to the end.
                     names.add(re.sub(r"-\d.*$", "", entry.name))
         except OSError:
             continue
@@ -725,9 +714,7 @@ def _frequent_directories(limit: int = 15) -> dict[str, int]:
         if not target or target in ("..", "...", "~", "/") or target.startswith("$"):
             continue
         path = Path(target).expanduser()
-        # A relative target (``cd src``) cannot be located without the working directory it
-        # was run from, and a path that no longer exists is dead weight; keep only absolute
-        # destinations that are still real directories.
+        # A relative target (``cd src``) cannot be located without the working directory it was run from, and a path that no longer exists is dead weight; keep only absolute destinations that are still real directories.
         if not path.is_absolute() or not path.is_dir():
             continue
         rendered = _home_relative(path)
@@ -769,8 +756,7 @@ def _shell_activity_timeline() -> dict:
                         timestamps.append(int(stripped[len("when:"):].strip()))
                     except ValueError:
                         continue
-    # A handful of timestamps (e.g. zsh EXTENDED_HISTORY only recently enabled) produces a
-    # misleading "timeline" — omit it entirely rather than imply a rhythm from a few points.
+    # A handful of timestamps (e.g. zsh EXTENDED_HISTORY only recently enabled) produces a misleading "timeline" — omit it entirely rather than imply a rhythm from a few points.
     if len(timestamps) < 30:
         return {}
     by_hour: dict[int, int] = {}
@@ -781,8 +767,7 @@ def _shell_activity_timeline() -> dict:
         except (OverflowError, OSError, ValueError):
             continue
         by_hour[moment.hour] = by_hour.get(moment.hour, 0) + 1
-        # ISO 8601 weekday: locale-independent, Monday=1 … Sunday=7 (no culture-specific day
-        # names or week-start assumptions bleed into the snapshot).
+        # ISO 8601 weekday: locale-independent, Monday=1 … Sunday=7 (no culture-specific day names or week-start assumptions bleed into the snapshot).
         weekday = moment.isoweekday()
         by_iso_weekday[weekday] = by_iso_weekday.get(weekday, 0) + 1
     timeline: dict = {
@@ -843,9 +828,7 @@ def _hardware_status() -> dict:
             if remaining and remaining != "0:00":
                 status["battery_time_remaining"] = remaining
 
-    # Wi-Fi. macOS discloses the SSID only to a process holding Location Services permission,
-    # so the connection state and signal (which are not gated) are always reported and the
-    # network name is added when the system returns it.
+    # Wi-Fi. macOS discloses the SSID only to a process holding Location Services permission, so the connection state and signal (which are not gated) are always reported and the network name is added when the system returns it.
     airport = _run_command(["system_profiler", "-json", "SPAirPortDataType"], timeout=8)
     if airport:
         try:
@@ -974,8 +957,7 @@ def _dock_applications(limit: int = 30) -> list[str]:
     return list(ordered)[:limit]
 
 
-# Config files/directories whose presence reveals a tool the user has set up, mapped to the tool
-# name reported. Checked under the home directory; first hit per tool wins.
+# Config files/directories whose presence reveals a tool the user has set up, mapped to the tool name reported.
 _TOOLING_MARKERS = {
     ".vimrc": "vim", ".config/nvim": "neovim", ".tmux.conf": "tmux",
     ".config/fish": "fish", ".zshrc": "zsh", ".bashrc": "bash",
@@ -993,10 +975,7 @@ def _tooling_preferences() -> dict:
     developer tools their config files reveal they have set up. Rounds out *how* the user likes to
     work at the terminal. Env values are plain strings (editor/pager names), never secrets."""
     profile: dict = {}
-    # NOTE ON NAMING: ``$EDITOR`` is the *terminal fallback* editor (what pops up for a git
-    # commit message), not the user's real IDE — it is labelled ``cli_editor`` so it is never
-    # mistaken for how they actually edit code. Their true editor shows up in app usage,
-    # launch counts, default-app handlers, and editor extensions, which weigh far more.
+    # NOTE ON NAMING: ``$EDITOR`` is the *terminal fallback* editor (what pops up for a git commit message), not the user's real IDE — it is labelled ``cli_editor`` so it is never mistaken for how they actually edit code.
     for variable, label in (("EDITOR", "cli_editor"), ("VISUAL", "cli_visual_editor"),
                             ("PAGER", "pager"), ("TERM_PROGRAM", "terminal")):
         value = os.environ.get(variable)
@@ -1046,8 +1025,7 @@ def _spotlight_app_usage(limit: int = 24) -> dict:
     return {name: counts[name] for name in top if counts[name] > 0}
 
 
-# Content types worth reporting a default handler for, mapped to a human label. Reveals which
-# app the user has chosen to open each kind of thing — the truest statement of preference.
+# Content types worth reporting a default handler for, mapped to a human label.
 _HANDLER_CONTENT_TYPES = {
     "public.html": "web pages",
     "public.python-script": "Python files",
@@ -1116,8 +1094,7 @@ def _recently_used_files(limit: int = 20) -> list[str]:
     return files
 
 
-# Shell-config markers, and the tool each reveals is loaded. Presence in ~/.zshrc means the user
-# has wired it into their terminal, a strong statement of how they work.
+# Shell-config markers, and the tool each reveals is loaded.
 _SHELL_TOOL_MARKERS = (
     "nvm", "pyenv", "rbenv", "conda", "direnv", "starship", "zoxide", "fnm", "rustup",
     "sdkman", "thefuck", "powerlevel10k", "fzf", "atuin", "mise", "asdf", "volta",
@@ -1180,9 +1157,7 @@ def probe_user_context() -> str:
     except OSError:
         pass
 
-    # Recent activity: the standard drop folders plus the directories the user actually works
-    # in. Files show what they have been editing; sub-directories show which projects/folders
-    # they have most recently touched (current focus, vs. frequent_directories' all-time count).
+    # Recent activity: the standard drop folders plus the directories the user actually works in.
     recent_roots = [home / "Desktop", home / "Downloads", home / "Documents"]
     for relative in frequent_directories:
         candidate = Path(relative.replace("~", str(home), 1)) if relative.startswith("~") else Path(relative)

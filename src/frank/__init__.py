@@ -111,11 +111,7 @@ from frank.base.ports import (
     describe_unmet,
 )
 from frank.base.schedules import ScheduleError, is_due, next_firing, validate as validate_schedule
-# The vocabulary `stream()` speaks. Exported because a caller driving a turn has to dispatch on
-# these, and reaching into `frank.runtime.turn_events` to name the thing a public method yields
-# is the library telling you where its front door is and then handing you the side entrance.
-# `TurnEventUnion` is closed, so a `match` over it can prove exhaustiveness with `assert_never`
-# and a variant added later becomes a type error rather than a silently dropped branch.
+# The vocabulary `stream()` speaks.
 from frank.runtime.turn_events import (
     Checkpoint,
     CompactionDone,
@@ -275,13 +271,10 @@ class Session:
         permission_mode: str = "",
         sandbox: Any = None,
         configuration: Any = None,
-        # Provider credentials in code. A library whose only way to be given an API key is a
-        # YAML file in the user's home directory is not a library — and the environment
-        # variables still win, so a deployment that injects them keeps doing so.
+        # Provider credentials in code.
         providers: Optional[Mapping[str, str | Mapping[str, str]]] = None,
         model_identifier: str = "",
-        # The seams. Each defaults to the least surprising thing for a program that is not a
-        # daemon, which for anything durable means "in memory", not "somewhere under $HOME".
+        # The seams.
         model: Any = None,
         catalogue: Optional[CatalogueLike] = None,
         checkpoints: Optional[Checkpoints] = None,
@@ -292,19 +285,16 @@ class Session:
         credentials: Optional[Credentials] = None,
         peers: Any = None,
         mcp_manager: Any = None,
-        # Extension, as distinct from configuration: tools the agent gains, and where it may
-        # run them.
+        # Extension, as distinct from configuration: tools the agent gains, and where it may run them.
         tools: Sequence[Any] = (),
         supplied_tool_gate: str = "ask",
-        # The three seams around a turn. Each defaults to what the harness has always done,
-        # so a caller who passes none of them sees no change.
+        # The three seams around a turn.
         hooks: Sequence[Any] = (),
         pipeline: Sequence[Any] = (),
         compaction: Optional[Compaction] = None,
         permissions: Any = None,
         locations: Optional[list[dict]] = None,
-        # A git worktree per session. Off by default and deliberately: it writes to disk, and a
-        # library that does that unasked is the thing every other default here avoids.
+        # A git worktree per session.
         workspace: Any = None,
         tracer_provider: Any = None,
     ) -> None:
@@ -318,8 +308,7 @@ class Session:
                 "load it yourself: `frank.daemon.machine.load_catalogue(...).agent(name)`."
             )
         self._agent = agent
-        # Absolute, and not resolved against the process's current directory. Where tools run
-        # is a property of the run, not of where you happened to start Python.
+        # Absolute, and not resolved against the process's current directory.
         if not Path(directory).is_absolute():
             raise ValueError(f"directory must be absolute, got {directory!r}.")
         self._directory = str(Path(directory))
@@ -328,13 +317,7 @@ class Session:
         self._sandbox = sandbox
         self._peers = peers
         self._mcp_manager = mcp_manager
-        # `seed=False`: reading configuration must not leave a file in the caller's home
-        # directory. The CLI and the daemon seed it deliberately, because a person installing
-        # Frank needs something to edit; a program that imported us did not ask for that.
-        # `Configuration()`, not `.load()`. A library that reads your home directory
-        # because you imported it is not location-agnostic, whatever it does with what it finds.
-        # `frank.daemon.machine` is where the XDG loaders live, and it is the daemon's business
-        # because the daemon is the program that runs on a machine.
+        # `seed=False`: reading configuration must not leave a file in the caller's home directory.
         self._configuration = configuration if configuration is not None else Configuration()
         if providers:
             _apply_providers(self._configuration, providers)
@@ -377,13 +360,10 @@ class Session:
             from frank.base.tuning import set_tuning, tuning_from_policy
             from frank.runtime.runtime import AgentRuntime
 
-            # The tuning policy is bound per task, so binding it here scopes it to the caller
-            # rather than to the interpreter.
+            # The tuning policy is bound per task, so binding it here scopes it to the caller rather than to the interpreter.
             set_tuning(tuning_from_policy(self._configuration.tuning))
             _bind_retrieval_policy(self._configuration)
-            # Both are bound per task rather than installed on the process, so two sessions in
-            # one interpreter can hold different credentials and report to different places.
-            # The tokens are held so the bindings end with the session rather than leaking.
+            # Both are bound per task rather than installed on the process, so two sessions in one interpreter can hold different credentials and report to different places.
             if self._credentials is not None:
                 from frank.base.credentials import set_credentials
 
@@ -394,22 +374,10 @@ class Session:
                 self._bindings.append(
                     ("tracer", set_tracer(self._tracer_provider.get_tracer("frank")))
                 )
-            # The working directory's own `.agents` plus the packaged base layer, and
-            # deliberately nothing of `$HOME`. A program that imported Frank did not ask to
-            # inherit the machine's agents, its memories, or — as the instruction loader did —
-            # another product's configuration file. `frankd` and the CLI pass a catalogue that
-            # does read those, because there the person and the home directory are the same
-            # person.
-            # An empty catalogue, not a search. Supplying nothing means the session has no
-            # skills, no memories and no project instructions — not that the harness should go
-            # and find some. Prompt templates still fall back to the packaged ones, which is
-            # the library reading itself rather than reading your machine.
+            # The working directory's own `.agents` plus the packaged base layer, and deliberately nothing of `$HOME`.
             catalogue = self._catalogue if self._catalogue is not None else Catalogue()
             agent_configuration = self._agent
-            # A model named at the call site beats the profile's. The common case for an
-            # embedder is one agent definition run against whichever model the program is
-            # configured for, and editing the profile to say so would be editing a file to
-            # express a runtime choice.
+            # A model named at the call site beats the profile's.
             if self._model_identifier:
                 if "/" not in self._model_identifier:
                     raise ValueError(
@@ -426,11 +394,7 @@ class Session:
                 working_directory=self._runtime_directory,
                 project_directory=self._directory,
                 permission_mode=self._permission_mode,
-                # Handed over as the caller gave it, including `None`. The runtime normalises
-                # every shape in one place, and `None` there means the configured default rather
-                # than an empty `Profile()` — which is what this line used to substitute, and
-                # which denies every write, in the directory the caller just named as the
-                # session's workspace.
+                # Handed over as the caller gave it, including `None`.
                 sandbox=self._sandbox,
                 session_access=self._peers,
                 mcp_manager=self._mcp_manager,
@@ -538,9 +502,7 @@ class Session:
             message, [attachment_payload(records)], runtime.effective_model_identifier,
         )
         if images_not_inlined:
-            # The daemon raises a warning event to its client; a library caller may have no
-            # client to raise one to, so this goes to the log it does have. Silence would be
-            # worse: the model gets the path and not the pixels, and nothing would say why.
+            # The daemon raises a warning event to its client; a library caller may have no client to raise one to, so this goes to the log it does have.
             logger.warning(
                 "%d attached image(s) were not inlined: %s does not advertise vision support. "
                 "The model has the file paths and can open them with its tools.",
@@ -592,19 +554,12 @@ class Session:
         recording a turn that failed."""
         if not self._restored:
             await self.restore()
-        # Somebody is here again, so a goal that had used its allowance gets it back and is
-        # picked up where it stopped.
+        # Somebody is here again, so a goal that had used its allowance gets it back and is picked up where it stopped.
         self.runtime.restore_goal_allowance()
         try:
             async for event in self.runtime.stream(self._compose(message, attachments)):
                 yield event
-            # A goal outlives the turn that set it, so this call is over when the *goal* is,
-            # not when the model first stops talking. Each further pass is a real turn — the
-            # same events, through the same loop — opened with the goal restated, and the whole
-            # stretch is bounded by `Tunable.goal_continuation_turns` so a program that asks one
-            # question cannot be handed an unbounded run. Without this, a library session could
-            # set a goal and nothing would ever act on it: in the desktop app the layer above
-            # opens those turns, and here there is no layer above.
+            # A goal outlives the turn that set it, so this call is over when the *goal* is, not when the model first stops talking.
             async for event in self._pursue_goal():
                 yield event
         finally:
@@ -701,8 +656,7 @@ class Session:
         if self._runtime is not None:
             with contextlib.suppress(Exception):
                 self._runtime.abort()
-        # Unbind what the session bound, so a caller's credentials and tracer do not outlive
-        # the session that supplied them.
+        # Unbind what the session bound, so a caller's credentials and tracer do not outlive the session that supplied them.
         for kind, token in reversed(self._bindings):
             with contextlib.suppress(Exception):
                 if kind == "credentials":

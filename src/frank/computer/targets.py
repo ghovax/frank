@@ -42,19 +42,14 @@ logger = logging.getLogger(__name__)
 NATIVE_PREFIX = "win"
 BROWSER_PREFIX = "tab"
 
-# The two vocabularies a place can answer to. A window and a page differ in what they can be told
-# to do — a page can be navigated and scripted, a window cannot — and a script cannot be written
-# without knowing which. This is not the surface name: it says what this place *is*, which is why
-# it is safe to show where "computer" and "browser" were not.
+# The two vocabularies a place can answer to.
 WINDOW_VOCABULARY = "window"
 PAGE_VOCABULARY = "page"
 
-# Applications whose windows are pages: their real interface is reachable over the DevTools
-# protocol, which reads structure the accessibility tree flattens or omits entirely.
+# Applications whose windows are pages: their real interface is reachable over the DevTools protocol, which reads structure the accessibility tree flattens or omits entirely.
 BROWSER_OWNERS = frozenset({"Google Chrome", "Chromium", "Google Chrome Canary", "Google Chrome Beta"})
 
-# Processes that own windows nobody addresses. Named rather than inferred, because the
-# alternative — guessing from size alone — also hides small real windows.
+# Processes that own windows nobody addresses.
 FURNITURE_OWNERS = frozenset({"Control Center", "Window Server", "Dock", "Spotlight", "Notification Center"})
 
 
@@ -93,9 +88,7 @@ class Target:
             described["focused"] = True
         if self.main:
             described["main"] = True
-        # What this window holds, when it holds a file or a page. The strongest discriminator
-        # there is: two Finder windows called "Applications" are told apart by nothing else, and
-        # a window showing a PDF is better named by the PDF than by its own title.
+        # What this window holds, when it holds a file or a page.
         if self.document:
             described["document"] = self.document
         if not self.visible:
@@ -104,8 +97,7 @@ class Target:
             described["addressable"] = False
         if self.url:
             described["url"] = self.url
-        # Where it is and how big, so two otherwise identical windows can still be told apart —
-        # and so "the one on the left" is a thing the model can answer rather than guess at.
+        # Where it is and how big, so two otherwise identical windows can still be told apart — and so "the one on the left" is a thing the model can answer rather than guess at.
         if self.bounds and any(self.bounds):
             left, top, width, height = self.bounds
             described["bounds"] = {"x": left, "y": top, "width": width, "height": height}
@@ -186,8 +178,7 @@ def _native_targets() -> list[Target]:
             logger.debug("could not read the windows of pid %s", pid, exc_info=True)
             published = []
         if not published:
-            # Running, and publishing nothing addressable: a menu-bar agent, or a window it draws
-            # without describing. Kept as one row so it is seen rather than silently missing.
+            # Running, and publishing nothing addressable: a menu-bar agent, or a window it draws without describing.
             silent_pids.add(pid)
             continue
         for record in published:
@@ -211,18 +202,6 @@ def _native_targets() -> list[Target]:
             ))
     if silent_pids:
         # Two things are deliberately not reported.
-        #
-        # Background services, because they are not places anybody means. Twelve of twenty-eight
-        # rows were `coreautha`, `loginwindow`, `TextInputSwitcher`, `PressAndHold` and their
-        # kind, each carrying a twenty-word note about accessibility — nearly half the listing
-        # spent on windows no task will ever address. Dock-visible applications are the ones a
-        # person would name, and that is a fact the system reports rather than one we guess.
-        #
-        # And an application that already has addressable windows, because its silent *other*
-        # process is not news. RStudio runs several: one publishes the real window, another
-        # publishes nothing, and both were listed as "RStudio" — the second saying this
-        # application does not publish its windows to accessibility, which was flatly untrue of
-        # the application the model had just been told it could drive.
         answered_apps = {target.app for target in targets}
         withheld = {
             number: entry for number, entry in numbered.items()
@@ -375,9 +354,7 @@ def list_targets() -> list[Target]:
     that a diff between two listings reflects the world changing rather than the enumeration."""
     global _warmed
     targets = _native_targets() + _browser_targets()
-    # Set on the way out rather than on the way in: a listing that is still running has not
-    # paid the connection cost yet, and something checking `warm()` in the meantime must not be
-    # told it is cheap and then wait out the whole of it.
+    # Set on the way out rather than on the way in: a listing that is still running has not paid the connection cost yet, and something checking `warm()` in the meantime must not be told it is cheap and then wait out the whole of it.
     _warmed = True
     return targets
 
@@ -414,12 +391,7 @@ def describe_windows() -> list[dict[str, Any]]:
     return [target.described() for target in list_windows()]
 
 
-# The keys of a listed target whose meaning cannot be read off the name. `id`, `app` and `title`
-# say what they are, and explaining them would bury the two that genuinely mislead: `visible`,
-# which is written only when false and therefore reads as a warning, and `can`, which is the one
-# word deciding what a script may call at all. Each is a file under `messages/computer/`, like
-# every other sentence this package puts in front of a model — prose belongs where prose is
-# edited, not in a dict literal wrapped to eighty columns.
+# The keys of a listed target whose meaning cannot be read off the name.
 LEGEND_KEYS = ("visible", "can", "main", "addressable")
 
 
@@ -436,13 +408,7 @@ def describe_all(targets: Optional[list[Target]] = None) -> list[dict[str, Any]]
     return [target.described() for target in (targets if targets is not None else list_targets())]
 
 
-# Whether this process has completed an enumeration. The first one costs about 1.8 seconds and
-# every one after it about 0.15: what is expensive is a process opening its accessibility
-# connection to each running application, which is per-process state that then lasts for the
-# session's life. Nothing about the *listing* is remembered here — every call still reads the
-# world — so this flag trades away no freshness at all. It exists so a turn can tell "the
-# screen is expensive right now" from "the screen is cheap", which is the difference between
-# waiting two seconds before the model is called and not waiting.
+# Whether this process has completed an enumeration.
 _warmed = False
 
 
@@ -495,11 +461,7 @@ def context_block() -> dict[str, Any]:
         "primitives": vocabularies(),
         "legend": legend(),
     }
-    # Said once, as a condition, at the top. It used to be said only as a note repeated on every
-    # collapsed row — twenty-five identical sentences hanging off twenty-five entries that
-    # otherwise looked like places to act. A fact stated that way reads as a footnote about each
-    # application rather than as the state of the whole screen, and it was ignored: a model saw a
-    # list of targets and tried to use one.
+    # Said once, as a condition, at the top.
     if not permissions.accessibility_granted():
         block["blocked"] = message_loader("computer")("screen_blocked")
     return block

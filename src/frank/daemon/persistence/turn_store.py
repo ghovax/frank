@@ -65,11 +65,7 @@ def _dump(model) -> str:
     return json.dumps(model.model_dump(mode="json"))
 
 
-# A turn persists many small history rows (one per text flush, reasoning chunk,
-# etc.). For replay that granularity is pure overhead — adjacent same-kind deltas
-# are merged into one message so a session loads and re-reduces far fewer, larger
-# rows. Mirrors what the client used to do, now server-side so both the REST tasks
-# endpoint and the live-stream snapshot benefit and the client no longer needs to.
+# A turn persists many small history rows (one per text flush, reasoning chunk, etc.).
 
 def _sole_part(message: object) -> dict | None:
     parts = message.get("parts") if isinstance(message, dict) else None  # type: ignore[union-attr]
@@ -143,8 +139,7 @@ def _compact_history(messages: list) -> list:
             continue
         sub = _sole_data(message, "text")
         if sub is not None:
-            # An agent's text arrives as a path-tagged `text` data event; merge only
-            # adjacent ones from the same agent (same path).
+            # An agent's text arrives as a path-tagged `text` data event; merge only adjacent ones from the same agent (same path).
             key = _path_key(sub)
             last = compacted[-1] if compacted else None
             last_sub = _sole_data(last, "text") if last is not None else None
@@ -183,11 +178,7 @@ _TERMINAL_TASK_STATES = {
 }
 
 
-# The turn kind carried in a task's head ``metadata`` — the field the restart
-# reconciliation reads to decide a non-terminal task's fate. (Background-result delivery
-# stays in ``background_store``, which is already results-durable / execution-ephemeral and
-# additionally reaps orphaned OS process groups and recovers running jobs — capabilities a
-# task-metadata inbox would not carry, so it is not folded in.)
+# The turn kind carried in a task's head ``metadata`` — the field the restart reconciliation reads to decide a non-terminal task's fate.
 def _task_state_value(task: Task) -> str:
     state = task.status.state
     return state.value if isinstance(state, TaskState) else str(state)
@@ -214,9 +205,7 @@ class AppendOnlyTaskStore(TaskStore):
     def __init__(self, engine: AsyncEngine):
         self._engine = engine
         self._metadata = MetaData()
-        # The task head: small and mutable. A distinct table name (not ``tasks``)
-        # so it never collides with a pre-existing DatabaseTaskStore schema in an
-        # older database; a context lookup reads one compact row per task.
+        # The task head: small and mutable.
         self._head = Table(
             "turn_head",
             self._metadata,
@@ -226,12 +215,7 @@ class AppendOnlyTaskStore(TaskStore):
             Column("status", Text),
             Column("turn_metadata", Text),
         )
-        # Append-only history: one row per message, ordered by ``row_id`` — the database's
-        # own autoincrement insert order. There is no hand-computed per-task position: an
-        # append is a bare insert and the database assigns the monotonic id atomically, so
-        # two concurrent saves of one task can never collide on a position. ``sqlite_auto
-        # increment`` makes the id strictly increasing and never reused, so it stays a valid
-        # ordering key even after compaction deletes the tail of a task's history.
+        # Append-only history: one row per message, ordered by ``row_id`` — the database's own autoincrement insert order.
         self._history = Table(
             "turn_history",
             self._metadata,
@@ -240,8 +224,7 @@ class AppendOnlyTaskStore(TaskStore):
             Column("message", Text),
             sqlite_autoincrement=True,
         )
-        # Artifacts are few and may be revised in place, so they upsert by id
-        # (bounded by artifact count, never by history length).
+        # Artifacts are few and may be revised in place, so they upsert by id (bounded by artifact count, never by history length).
         self._artifacts = Table(
             "turn_artifacts",
             self._metadata,
@@ -251,18 +234,7 @@ class AppendOnlyTaskStore(TaskStore):
             Column("artifact", Text),
             UniqueConstraint("turn_id", "artifact_id", name="uq_task_artifact_id"),
         )
-        # The turn's durable resume checkpoint: the model-facing LangChain conversation,
-        # snapshotted (messages_to_dict) at each safe point of the running turn. One row
-        # per context — the running dialogue accumulates across a session's turns and
-        # compaction rewrites it in place (summarizing earlier turns), so a whole-snapshot
-        # is the only representation that stays correct; a per-turn append-only log cannot
-        # express an in-place rewrite. Distinct from ``history`` (the A2A wire view): the
-        # wire messages and the internal model-facing list are not losslessly
-        # interconvertible, so this snapshot is authoritative for resume. It lives in the
-        # task store (the single durable surface) rather than a separate conversations
-        # database, and NOT on the write-hot task head (which upserts per stream event) —
-        # it is written only at safe points, a few times per turn. ``turn_id`` records
-        # which turn last wrote it, for reconciliation.
+        # The turn's durable resume checkpoint: the model-facing LangChain conversation, snapshotted (messages_to_dict) at each safe point of the running turn.
         self._checkpoint = Table(
             "turn_checkpoint",
             self._metadata,
@@ -271,11 +243,7 @@ class AppendOnlyTaskStore(TaskStore):
             Column("messages", Text),
             Column("updated_at", String),
         )
-        # A context's durable non-conversation state — the agent's active goal and task
-        # list — kept beside the conversation checkpoint so a restart restores the agent's
-        # objective, not just its transcript. One row per context, whole-row upsert at the
-        # same safe points as the checkpoint. Compaction rewrites the conversation but never
-        # touches this, so goal and tasks are never folded away.
+        # A context's durable non-conversation state — the agent's active goal and task list — kept beside the conversation checkpoint so a restart restores the agent's objective, not just its transcript.
         self._session_state = Table(
             "session_state",
             self._metadata,
@@ -283,8 +251,7 @@ class AppendOnlyTaskStore(TaskStore):
             Column("state", Text),
             Column("updated_at", String),
         )
-        # User message history, scoped to the working directory. Used for
-        # up/down arrow recall of previously sent messages within a project.
+        # User message history, scoped to the working directory.
         self._user_messages = Table(
             "user_message_history",
             self._metadata,
@@ -294,20 +261,9 @@ class AppendOnlyTaskStore(TaskStore):
             Column("created_at", DateTime, server_default=func.now()),
         )
         self._initialized = False
-        # How many history rows are persisted for each task, maintained authoritatively in
-        # memory rather than re-counted from the database on every save. The store's write
-        # lock serializes all writers, so a lock-guarded counter is exact: seeded once (a
-        # single COUNT) the first time a task is saved in this process, incremented by the
-        # appended delta, and reset to the compacted length when a terminal save rewrites the
-        # rows. This keeps a save O(delta) — the module's whole reason to exist — instead of
-        # the O(rows) COUNT-per-event a per-save COUNT reintroduces (O(N²) over a long turn).
+        # How many history rows are persisted for each task, maintained authoritatively in memory rather than re-counted from the database on every save.
         self._persisted_counts: dict[str, int] = {}
-        # Tasks whose history has been terminally compacted. Once a task goes terminal its
-        # persisted rows are the compacted merge of its whole history while the in-memory
-        # `task.history` is still the raw list, so a *later* non-terminal save would re-append
-        # already-merged messages and silently duplicate them. Terminal is the last save for a
-        # task (a new turn is a new task id), so a non-terminal save after it is a real bug and
-        # is rejected rather than corrupting the stored history.
+        # Tasks whose history has been terminally compacted.
         self._terminal_turns: set[str] = set()
 
     async def initialize(self) -> None:
@@ -582,9 +538,7 @@ class AppendOnlyTaskStore(TaskStore):
         artifacts = task.artifacts or []
         terminal = _is_terminal_task(task)
         if task.id in self._terminal_turns and not terminal:
-            # The persisted rows are the compacted merge of the whole history; re-appending the
-            # raw suffix on top would duplicate already-merged messages. Terminal is the last
-            # save for a task, so this is a wiring bug, not a state to tolerate.
+            # The persisted rows are the compacted merge of the whole history; re-appending the raw suffix on top would duplicate already-merged messages.
             raise ValueError(
                 f"non-terminal save for already-terminal task {task.id}: a terminal save must be the last save for a task"
             )
@@ -612,9 +566,7 @@ class AppendOnlyTaskStore(TaskStore):
                     )
                 )
 
-                # History: insert only the messages not yet persisted. The list only ever
-                # grows, so the already-stored prefix is never rewritten — an append is the
-                # suffix past the (in-memory, lock-guarded) persisted count.
+                # History: insert only the messages not yet persisted.
                 persisted = await self._persisted_count(connection, task.id)
                 new_messages = history[persisted:]
                 if new_messages:
@@ -625,10 +577,7 @@ class AppendOnlyTaskStore(TaskStore):
                     self._persisted_counts[task.id] = persisted + len(new_messages)
 
                 if terminal:
-                    # The whole history is now in the table (suffix appended above with natural
-                    # contiguous row_ids); compact it in place — pure update-and-delete, no new
-                    # row_ids — and record the terminal, compacted count so a stray later save
-                    # is caught rather than duplicating.
+                    # The whole history is now in the table (suffix appended above with natural contiguous row_ids); compact it in place — pure update-and-delete, no new row_ids — and record the terminal, compacted count so a stray later save is caught rather than duplicating.
                     compacted_count = await self._compact_persisted_history(connection, task.id)
                     self._persisted_counts[task.id] = compacted_count
                     self._terminal_turns.add(task.id)
@@ -696,9 +645,7 @@ class AppendOnlyTaskStore(TaskStore):
                 await connection.execute(
                     select(self._head)
                     .where(self._head.c.session_id == session_id)
-                    # Ordered below by when each turn actually started. A turn's id is a
-                    # random UUID, so ordering by it returned a session's turns shuffled —
-                    # and anything reading "the last turn" off the end got an arbitrary one.
+                    # Ordered below by when each turn actually started.
                     .order_by(self._head.c.id)
                 )
             ).mappings().all()
@@ -710,8 +657,7 @@ class AppendOnlyTaskStore(TaskStore):
                 await connection.execute(
                     select(self._history.c.turn_id, self._history.c.message)
                     .where(self._history.c.turn_id.in_(turn_ids))
-                    # Globally by row_id, not grouped by turn: the append order *is* the
-                    # chronology, so first appearance of a turn id here is when it began.
+                    # Globally by row_id, not grouped by turn: the append order *is* the chronology, so first appearance of a turn id here is when it began.
                     .order_by(self._history.c.row_id)
                 )
             ).all()
@@ -730,8 +676,7 @@ class AppendOnlyTaskStore(TaskStore):
         for turn_id, artifact in artifact_rows:
             artifacts[str(turn_id)].append(artifact)
 
-        # When each turn began, from the order its first message was appended. A turn with no
-        # history yet sorts last, which is where a just-opened turn belongs.
+        # When each turn began, from the order its first message was appended.
         started: dict[str, int] = {}
         for position, (turn_id, _message) in enumerate(history_rows):
             started.setdefault(str(turn_id), position)

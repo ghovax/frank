@@ -1,21 +1,13 @@
 "use client";
 
 // The form that describes one schedule, and nothing else.
-//
-// Its own component because a schedule can be created from two places now — the Settings panel
-// that lists them, and a dialog reached from the sidebar without opening Settings at all — and
-// a form duplicated across two callers is a form that drifts: the cron reading gets a fix in
-// one, the permission hint gets reworded in the other, and the two stop being the same thing
-// people learned. Everything about *what a schedule is* lives here; both callers supply only
-// the workspace it belongs to and what to do once one exists.
 
 import { Alert, Button, Flex, Input, Text, Textarea } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
 import { useState, type ReactNode } from "react";
 import { createSchedule, type AgentSummary, type PermissionMode } from "@/lib/api";
 import cronstrue from "cronstrue";
-// Registers Japanese with the English core, rather than `cronstrue/i18n`, which carries all
-// thirty-odd locales for the two this app has.
+// Registers Japanese with the English core, rather than `cronstrue/i18n`, which carries all thirty-odd locales for the two this app has.
 import "cronstrue/locales/ja";
 import { useLocale } from "@/lib/i18n/locale-provider";
 import { AgentSelectControl, PermissionModeControl } from "./session-controls";
@@ -28,11 +20,7 @@ type Draft = {
   cron: string;
   prompt: string;
   agent: string;
-  // Starts at manual approvals — the same mode a new session starts under, and the most
-  // restrictive of the ones that can still do work. Which matters more here than anywhere
-  // else: a schedule runs with nobody watching, so a mode that asks is a mode that stalls.
-  // The daemon refuses a schedule with no mode at all, so this field is never empty; the hint
-  // beside the control is what says why the choice matters for an unattended run.
+  // Starts at manual approvals — the same mode a new session starts under, and the most restrictive of the ones that can still do work.
   permissionMode: PermissionMode;
   timezone: string;
 };
@@ -42,17 +30,6 @@ function emptyDraft(agent: string): Draft {
 }
 
 // What a cron expression actually says, in the reader's own language.
-//
-// `cronstrue` rather than a reader of our own, and the reason is the shape of the problem
-// rather than the size of the library. Cron is lists, ranges, steps and names across five
-// fields that interact, so anything short of a parser recognises the handful of shapes its
-// author thought of and answers everything else with a shrug — which is precisely what the
-// version this replaced did: `0 9 * * MON-FRI` read back as "Every weekday at 09:00", while
-// `0 9 * * MON-THU`, `30 6 * * SAT,SUN` and `0 */4 * * *` all fell through to "five fields:
-// minute, hour, …", a sentence that restates the syntax to somebody who has just written it.
-//
-// A schedule fires unattended for months, so the one moment to discover that an expression
-// does not say what its author meant is while they are still looking at it.
 type CronReading =
   | { kind: "described"; text: string }
   | { kind: "invalid"; reason: string };
@@ -62,22 +39,17 @@ function readCron(expression: string, locale: string): CronReading | null {
   try {
     return {
       kind: "described",
-      // 24-hour because the rest of this form is: the timezone field, the presets, and the
-      // schedule list all speak in `09:00`.
+      // 24-hour because the rest of this form is: the timezone field, the presets, and the schedule list all speak in `09:00`.
       text: cronstrue.toString(expression, { locale, use24HourTimeFormat: true }),
     };
   } catch (caught) {
-    // Deliberately `String(caught)` and not `caught.message`. cronstrue throws a *string*, so
-    // `instanceof Error` is false and `.message` is `undefined` — which is what the field
-    // would have displayed to somebody who mistyped a weekday. The prefix is stripped because
-    // this is already rendered as a warning; the word "Error" twice is not more informative.
+    // Deliberately `String(caught)` and not `caught.message`. cronstrue throws a *string*, so `instanceof Error` is false and `.message` is `undefined` — which is what the field would have displayed to somebody who mistyped a weekday.
     const reason = String(caught).replace(/^Error:\s*/, "");
     return { kind: "invalid", reason };
   }
 }
 
-// One field: its label above, its control below, and whatever it has to say about itself
-// underneath. The same shape the environment editor uses, so the two forms read alike.
+// One field: its label above, its control below, and whatever it has to say about itself underneath.
 function ScheduleField({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
     <Flex direction="column" gap={1} minW={0}>
@@ -111,9 +83,7 @@ export function ScheduleForm({
     { cron: "0 9 * * MON", label: translation("presetWeekly") },
   ];
   const reading = readCron(draft.cron, locale);
-  // Required-ness is expressed by the button being unavailable rather than by a failure after
-  // the fact — including an expression that is not five fields, which the daemon would reject
-  // anyway and which the reading below already names.
+  // Required-ness is expressed by the button being unavailable rather than by a failure after the fact — including an expression that is not five fields, which the daemon would reject anyway and which the reading below already names.
   const complete =
     draft.name.trim() !== "" && draft.cron.trim() !== "" && draft.prompt.trim() !== "" &&
     draft.agent !== "" && draft.timezone.trim() !== "" && reading?.kind === "described";
@@ -134,8 +104,7 @@ export function ScheduleForm({
       });
       await onCreated();
     } catch (error) {
-      // The daemon's own sentence — which cron expression, which timezone. A schedule is written
-      // once and fires unattended, so the moment to say what is wrong is while somebody is here.
+      // The daemon's own sentence — which cron expression, which timezone.
       toaster.create({ type: "error", title: translation("createError"), description: errorMessage(error), closable: true });
     } finally {
       setSaving(false);
@@ -151,10 +120,7 @@ export function ScheduleForm({
 
       <ScheduleField
         label={translation("labelCron")}
-        // Always an alert, never a caption. This line is the answer to the only question that
-        // matters about a cron expression — *when does this actually run* — and it was set in
-        // muted 12px under the field, which is where a form puts things nobody needs to read.
-        // A person checks this before trusting a job to fire unattended for months.
+        // Always an alert, never a caption.
         hint={
           <Alert.Root
             status={reading?.kind === "invalid" ? "warning" : "info"}

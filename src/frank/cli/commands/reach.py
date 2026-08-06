@@ -44,23 +44,16 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-# The port. Fixed, and that is its only interesting property: everything else in Frank takes an
-# ephemeral port precisely so that nothing has to agree on one, and this exists because a phone
-# has to. Next to `frank serve`'s 8824 so the two read as a pair.
+# The port.
 DEFAULT_PORT = 8825
 
-# Where a paired device is told to go. The scheme is `frank://` rather than an https URL because
-# the payload is a secret: an https link would be resolved by whatever handles links on the
-# phone — a browser, a preview fetcher, a chat client's unfurler — and the token would go with
-# it. A private scheme is opened by this application or by nothing.
+# Where a paired device is told to go.
 PAIRING_SCHEME = "frank"
 
-# The session cookie the interface rides on. Named for what it is, so somebody looking at a
-# request in a debugger can tell it from the daemon's own credentials.
+# The session cookie the interface rides on.
 REACH_COOKIE = "frank_reach"
 
-# Tailscale on macOS may be the App Store build, which puts its command line inside the bundle
-# rather than on PATH. Both are tried before concluding there is no Tailscale here.
+# Tailscale on macOS may be the App Store build, which puts its command line inside the bundle rather than on PATH.
 _TAILSCALE_CANDIDATES = (
     "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
     "/usr/local/bin/tailscale",
@@ -108,9 +101,7 @@ def rotate_token() -> str:
 
 
 def _write_token(path: Path, token: str) -> str:
-    # Written to a neighbour and moved into place, so a reader never sees a half-written token —
-    # and opened 0600 from the start rather than chmod'ed after, which would leave a window in
-    # which the secret existed at the umask's mercy.
+    # Written to a neighbour and moved into place, so a reader never sees a half-written token — and opened 0600 from the start rather than chmod'ed after, which would leave a window in which the secret existed at the umask's mercy.
     temporary = path.with_name(path.name + ".new")
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(descriptor, "w") as handle:
@@ -157,8 +148,7 @@ def _tailscale_command() -> str:
     )
 
 
-# A link Tailscale prints when something has to be switched on for the whole tailnet, which is a
-# thing only a person with the admin console open can do.
+# A link Tailscale prints when something has to be switched on for the whole tailnet, which is a thing only a person with the admin console open can do.
 _CONSOLE_LINK = re.compile(r"https://login\.tailscale\.com/\S+")
 
 
@@ -166,17 +156,11 @@ def _tailscale(*arguments: str, timeout: float = 15.0) -> subprocess.CompletedPr
     try:
         return subprocess.run(
             [_tailscale_command(), *arguments], capture_output=True, text=True,
-            # Nothing here can answer a prompt, and a command silently waiting on one is
-            # indistinguishable from a command that has hung.
+            # Nothing here can answer a prompt, and a command silently waiting on one is indistinguishable from a command that has hung.
             stdin=subprocess.DEVNULL, timeout=timeout, check=False,
         )
     except subprocess.TimeoutExpired as error:
         # What it managed to say before the clock ran out, which is usually the whole answer.
-        #
-        # `tailscale serve` does not fail when a tailnet has not enabled Serve — it prints a link
-        # to enable it and then *waits*, polling until somebody does. Captured and timed out,
-        # that read as "Tailscale is not answering", which is both wrong and unactionable: the
-        # one thing that would have fixed it was the link nobody ever saw.
         said = _said(error.stdout) + _said(error.stderr)
         if (link := _CONSOLE_LINK.search(said)) is not None:
             raise TailscaleUnavailable(
@@ -229,15 +213,7 @@ def tailnet_name() -> str:
             "This machine has no MagicDNS name, so there is no address a certificate can be "
             "issued for. Turn MagicDNS on in the Tailscale admin console under DNS."
         )
-    # Checked separately from the name, because a tailnet can hand out names with MagicDNS off
-    # and then neither of the two things this depends on works: the name does not resolve for
-    # anything trying to reach it, and Tailscale will not issue a certificate for it — HTTPS
-    # certificates are gated behind MagicDNS, so the admin console's HTTPS switch does nothing
-    # until this one is on.
-    #
-    # Worth the extra field rather than left to fail later. Without it `tailscale serve` succeeds,
-    # this announces `Serving on https://…`, and the failure surfaces as a TLS error on a phone —
-    # which is a long way from the switch that fixes it.
+    # Checked separately from the name, because a tailnet can hand out names with MagicDNS off and then neither of the two things this depends on works: the name does not resolve for anything trying to reach it, and Tailscale will not issue a certificate for it — HTTPS certificates are gated behind MagicDNS, so the admin console's HTTPS switch does nothing until this one is on.
     if not (status.get("CurrentTailnet") or {}).get("MagicDNSEnabled"):
         raise TailscaleUnavailable(
             "MagicDNS is off for your tailnet, so this machine's name resolves nowhere and "
@@ -266,16 +242,12 @@ def ensure_served(port: int) -> None:
     address answers with a connection error, which is what a phone shows as "not answering"
     either way — and re-asserting it on every start is cheaper than a teardown that could only
     ever be best-effort. `tailscale serve --https=443 off` removes it."""
-    # Twenty seconds, not a minute. Configuring a serve takes well under a second when it is
-    # going to work at all; the only thing a longer wait buys is a longer wait before the link
-    # that explains why it will not.
+    # Twenty seconds, not a minute.
     completed = _tailscale("serve", "--bg", "--https=443", f"http://127.0.0.1:{port}", timeout=20.0)
     if completed.returncode == 0:
         return
     message = (completed.stderr or completed.stdout or "").strip()
-    # The one failure worth naming, because it is the one a person cannot guess: certificates are
-    # off for the whole tailnet until somebody turns them on, and every machine on it fails this
-    # way until they do.
+    # The one failure worth naming, because it is the one a person cannot guess: certificates are off for the whole tailnet until somebody turns them on, and every machine on it fails this way until they do.
     if (link := _CONSOLE_LINK.search(message)) is not None:
         raise TailscaleUnavailable(
             "Tailscale is waiting for something to be switched on for your tailnet. Open this, "
@@ -302,14 +274,10 @@ def pairing_payload() -> dict:
     is not to carry three of them; it is to use the one that does not change."""
     return {
         "version": 1,
-        # The first label only. A hostname arrives with whatever the network's DHCP server
-        # decided to append, which on a home router is the ISP's domain — so the machine a
-        # person calls "Giovanni's MBP" would introduce itself to the phone by the name of a
-        # telephone company.
+        # The first label only.
         "name": socket.gethostname().split(".")[0],
         "token": reach_token(),
-        # Port 443, so it is not in the URL. `tailscale serve` listens there and nothing else on
-        # the tailnet competes for it.
+        # Port 443, so it is not in the URL.
         "endpoint": f"https://{tailnet_name()}",
     }
 
@@ -354,9 +322,7 @@ def require_token(application, token: str):
 
     async def refuse(scope, receive, send) -> None:
         if scope["type"] == "websocket":
-            # Closing before accepting is how ASGI says "the handshake is refused", and it
-            # surfaces to the client as a failed upgrade rather than a socket that opens and
-            # then dies for no stated reason.
+            # Closing before accepting is how ASGI says "the handshake is refused", and it surfaces to the client as a failed upgrade rather than a socket that opens and then dies for no stated reason.
             await send({"type": "websocket.close", "code": 1008})
             return
         body = json.dumps(
@@ -392,9 +358,7 @@ def require_token(application, token: str):
             return await refuse(scope, receive, send)
         scope = dict(scope, query_string=remainder, headers=_without_cookie(scope))
 
-        # A document asked for with `?token=…` is the app opening the interface. Answer it, and
-        # set the cookie on the way out, so the hundred requests that document is about to make
-        # carry the token without anything having to remember to add it.
+        # A document asked for with `?token=…` is the app opening the interface.
         if from_query and scope["type"] == "http" and _wants_document(scope):
             return await application(scope, receive, _setting_cookie(send, presented))
         return await application(scope, receive, send)
@@ -421,14 +385,7 @@ def _setting_cookie(send, token: str):
     async def sending(message):
         if message["type"] == "http.response.start":
             message = dict(message)
-            # `HttpOnly` so no script on the page can read it back out, `SameSite=Lax` so
-            # another site cannot make the browser spend it, `Secure` so it is never sent in the
-            # clear, and session-scoped so closing the app ends it.
-            #
-            # `Secure` is new and is the point of everything above it: this used to be plain HTTP
-            # on a LAN address, where a `Secure` cookie would simply never be stored. Tailscale
-            # terminates TLS in front of this now, so the browser both accepts the flag and
-            # enforces it.
+            # `HttpOnly` so no script on the page can read it back out, `SameSite=Lax` so another site cannot make the browser spend it, `Secure` so it is never sent in the clear, and session-scoped so closing the app ends it.
             cookie = f"{REACH_COOKIE}={token}; Path=/; HttpOnly; Secure; SameSite=Lax"
             message["headers"] = [*message.get("headers", []), (b"set-cookie", cookie.encode("latin-1"))]
         await send(message)
@@ -539,9 +496,7 @@ def _serve(arguments, payload: dict) -> int:
         interface_directory,
     )
 
-    # Loopback, always, and there is no flag to change it. Nothing here is meant to be addressed
-    # from a network — Tailscale is what carries this off the machine, and it reaches this port
-    # the same way anything else on the machine would.
+    # Loopback, always, and there is no flag to change it.
     host = "127.0.0.1"
     if _port_is_taken(host, arguments.port):
         logger.info(
@@ -550,11 +505,7 @@ def _serve(arguments, payload: dict) -> int:
         )
         return 1
 
-    # Started if it is not up, and left running when this stops — unlike `frank serve`, which
-    # undoes its own side effect. The difference is what the two commands are for: serving is
-    # something you do while you are looking at the screen, and reaching is something a machine
-    # does so that you can be somewhere else. A phone that started a session and put the phone
-    # away should not lose it because the listener was restarted.
+    # Started if it is not up, and left running when this stops — unlike `frank serve`, which undoes its own side effect.
     ensure_daemon()
     try:
         daemon_port = int(daemon_port_path().read_text().strip())
@@ -563,11 +514,7 @@ def _serve(arguments, payload: dict) -> int:
         logger.info("frank: frankd is not running and could not be started.")
         return 1
 
-    # The interface *and* the proxy, because the phone's app is a window onto that interface
-    # rather than a second implementation of it. This is what the cookie above exists for: the
-    # bundle authenticates by being on the same machine as the daemon and so carries no reach
-    # token of its own, and the cookie supplies one to every request it makes without the page
-    # ever holding it.
+    # The interface *and* the proxy, because the phone's app is a window onto that interface rather than a second implementation of it.
     develop = getattr(arguments, "interface", "") or ""
     interface = None if develop else interface_directory()
     if develop:
@@ -595,8 +542,7 @@ def _serve(arguments, payload: dict) -> int:
     )
     guarded = require_token(application, payload["token"])
 
-    # Put it on the tailnet before saying it is available, so that a failure here is reported
-    # instead of a QR code somebody would scan and wait on.
+    # Put it on the tailnet before saying it is available, so that a failure here is reported instead of a QR code somebody would scan and wait on.
     try:
         ensure_served(arguments.port)
     except TailscaleUnavailable as error:
@@ -606,9 +552,7 @@ def _serve(arguments, payload: dict) -> int:
     _describe(payload)
     logger.info(f"Serving on {payload['endpoint']}. Scan the code with Frank on your phone, or paste the link.")
 
-    # No TLS here. Tailscale terminates it, with a certificate issued for this machine's tailnet
-    # name — which is the one thing this process could not obtain for itself and the reason there
-    # is no `--tls-certificate` any more.
+    # No TLS here.
     configuration = uvicorn.Config(
         guarded, host=host, port=arguments.port, log_level="warning",
     )

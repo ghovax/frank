@@ -63,26 +63,12 @@ class ToolMetadata(BaseModel):
     background_job_id: str | None = None
 
 
-# Streamed events (API -> client)
-#
-# Every event is a DataPart payload of the shape {kind, ...}, and the client discriminates
-# on `kind`. Events carry no tree position: a peer is its own session with its own
-# stream, so there is no parent transcript for a child's events to be placed into.
+# Streamed events (API -> client) Every event is a DataPart payload of the shape {kind, ...}, and the client discriminates on `kind`.
 
 class _EventBase(BaseModel):
     """Base of the wire-event union. Every event contributes its own `kind` literal."""
 
     #: When this event was made, ISO-8601 in UTC.
-    #
-    #: On every event rather than on the few that seemed to want one, because which events want
-    #: one is not knowable in advance: the transcript's own order answers "what happened next"
-    #: but never "how long after", and that second question is the one asked of stored data
-    #: afterwards. Two calls seconds apart and two calls minutes apart are indistinguishable in
-    #: an append-only log, and the difference between them decides whether a prompt cache was
-    #: still warm — which could not be checked at all until this existed.
-    #
-    #: Stamped when the event is constructed, which is where the thing being described happened;
-    #: a time added on the way to disk would measure the writer, not the event.
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
@@ -94,8 +80,7 @@ class TextEvent(_EventBase):
 class ThinkingEvent(_EventBase):
     kind: Literal["thinking"] = "thinking"
     text: str = ""
-    # The reasoning content-block this chunk belongs to, so the client coalesces a
-    # streamed thinking block rather than appending each delta as its own line.
+    # The reasoning content-block this chunk belongs to, so the client coalesces a streamed thinking block rather than appending each delta as its own line.
     block_id: str = ""
 
 
@@ -116,12 +101,9 @@ class ToolResultEvent(_EventBase):
     tool_call_id: str
     tool_name: str
     status: ToolStatus
-    # Finer outcome sub-type when `status` is not enough (e.g. "cancelled" vs a
-    # generic error, or a tool-specific success variant). Optional.
+    # Finer outcome sub-type when `status` is not enough (e.g.
     code: str | None = None
-    # Whatever the UI should render for this result: arbitrary JSON, shaped by the
-    # tool. This is the wire/UI view; the model reads the same result from the LLM
-    # conversation, never from here.
+    # Whatever the UI should render for this result: arbitrary JSON, shaped by the tool.
     display: Any = None
     metadata: ToolMetadata
 
@@ -172,9 +154,7 @@ class CumulativeUsage(BaseModel):
     output_tokens: int = 0
     total_tokens: int = 0
     cache_read_tokens: int = 0
-    #: What a cache could have returned across the session, so `cache_read_tokens` has a
-    #: denominator that means something. Against total input a perfect cache still reads about
-    #: 70%, because every token is paid for once before it can ever be served from cache.
+    #: What a cache could have returned across the session, so `cache_read_tokens` has a denominator that means something.
     reachable_tokens: int = 0
     reasoning_tokens: int = 0
     model_calls: int = 0
@@ -201,16 +181,9 @@ class CompactionEvent(_EventBase):
 class SteeringEvent(_EventBase):
     kind: Literal["steering"] = "steering"
     text: str = ""
-    #: The session that sent this, when it was not the person. A message arriving mid-turn is
-    #: injected into the running turn rather than starting a new one — and that path had no way
-    #: to say who it came from, so a peer's report and the daemon's own notice about a dead child
-    #: reached the transcript wearing the user's name. The same distinction the turn kind makes
-    #: for a message that starts a turn, made for one that joins a turn already running.
+    #: The session that sent this, when it was not the person.
     peer_sender: str = ""
-    #: The id the sender gave this message, carried back so a client can recognise the message
-    #: it already knows about. Without it the only handle was the text, and a client that had
-    #: shown the message optimistically could not tell its own copy from the one the session
-    #: persisted — so both were on screen until a replay rebuilt the list and dropped one.
+    #: The id the sender gave this message, carried back so a client can recognise the message it already knows about.
     message_id: str = ""
 
 
@@ -220,23 +193,12 @@ class TokenUsageEvent(_EventBase):
     input_tokens: int = 0
     output_tokens: int = 0
     context_window: int = 0
-    # Per-call cache and reasoning, which used to be folded into the cumulative totals and
-    # nowhere else. A running total cannot say which call missed, and "which call missed" is
-    # the whole question — a session reading 2% overall turned out to be one partial hit and
-    # five outright misses, which the cumulative figure hid completely.
+    # Per-call cache and reasoning, which used to be folded into the cumulative totals and nowhere else.
     cache_read_tokens: int = 0
     reasoning_tokens: int = 0
     # Session-lifetime running totals for this agent's own calls.
     cumulative: CumulativeUsage = Field(default_factory=CumulativeUsage)
-    # What the cache figure means, which the figure alone cannot say. A provider serves the
-    # longest prefix it recognises, so a low read is either a prefix that moved — and
-    # ``divergence`` says which piece — or an unchanged prefix the provider missed anyway,
-    # which is ``prefix_intact`` with a read of zero and is not something a differently shaped
-    # request would cure. ``reachable_tokens`` is the ceiling the read is measured against,
-    # estimated with this harness's tokenizer rather than the provider's.
-    #
-    # Recorded on the event rather than logged: this is asked about days later, of a specific
-    # call in a specific session, and only stored data can answer that.
+    # What the cache figure means, which the figure alone cannot say.
     prefix_intact: bool = False
     reachable_tokens: int = 0
     segments: int = 0
@@ -265,18 +227,13 @@ class PermissionRequestEvent(_EventBase):
     kind: Literal["permission_request"] = "permission_request"
     request_id: str
     tool_call_id: str = ""
-    # A permission is asked for before its tool call is announced, so this event is the only
-    # description of the call a client has when it draws the prompt. It carries the tool and
-    # its arguments so the prompt renders as the tool call it is, rather than a bare command.
+    # A permission is asked for before its tool call is announced, so this event is the only description of the call a client has when it draws the prompt.
     tool_name: str = ""
     arguments: dict[str, Any] = Field(default_factory=dict)
     command: str = ""
-    # Why approval is needed, in the client's own words. Absent where the reason is prose the
-    # harness did not author — the reviewer's verdict, or the model's own account of itself.
+    # Why approval is needed, in the client's own words.
     reason: Optional[PermissionReason] = None
-    # Why approval is needed, where the text is somebody's prose rather than a fact about the
-    # call. The model's own reason for wanting the call lives in ``arguments["explanation"]``;
-    # both are shown.
+    # Why approval is needed, where the text is somebody's prose rather than a fact about the call.
     explanation: str = ""
 
 
@@ -290,8 +247,7 @@ class QuestionEvent(_EventBase):
 
 class WarningEvent(_EventBase):
     kind: Literal["warning"] = "warning"
-    # A non-fatal notice surfaced to the user (e.g. an image attached to a non-vision model):
-    # a machine code plus a human title/message. The turn continues.
+    # A non-fatal notice surfaced to the user (e.g. an image attached to a non-vision model): a machine code plus a human title/message.
     code: str = ""
     title: str = ""
     message: str = ""
@@ -299,9 +255,7 @@ class WarningEvent(_EventBase):
 
 class ErrorEvent(_EventBase):
     kind: Literal["error"] = "error"
-    # A tool-scoped error (an aborted/failed tool call) carries the call id so the UI
-    # flips that card to failed; a turn/system error leaves it empty and surfaces a
-    # top-level banner from code/title/message.
+    # A tool-scoped error (an aborted/failed tool call) carries the call id so the UI flips that card to failed; a turn/system error leaves it empty and surfaces a top-level banner from code/title/message.
     tool_call_id: str = ""
     tool_name: str = ""
     code: str = "turn_failed"
@@ -330,9 +284,7 @@ WIRE_EVENT_MODELS: tuple[type[_EventBase], ...] = (
 )
 
 
-# Model-facing envelopes (harness -> model)
-#
-# One canonical shape for everything the harness injects into the LLM conversation.
+# Model-facing envelopes (harness -> model) One canonical shape for everything the harness injects into the LLM conversation.
 
 class ModelToolResult(BaseModel):
     """The one-line JSON metadata header prepended to every tool result the model reads —
@@ -358,35 +310,15 @@ class TurnContext(BaseModel):
 
     now: str = ""
     pwd: str = ""
-    # The session's goal as the agent wrote it: the end state and the conditions that would
-    # prove it, plus where it stands when that is anything other than open. What is counted in
-    # order to keep the session working is not here — see `frank.runtime.goal`.
+    # The session's goal as the agent wrote it: the end state and the conditions that would prove it, plus where it stands when that is anything other than open.
     goal: dict[str, Any] = Field(default_factory=dict)
     tasks: list[dict[str, Any]] = Field(default_factory=list)
     background: dict[str, Any] = Field(default_factory=dict)
-    # Where tools may run, and under which permission mode. Here because the mode is changeable
-    # while a session runs: stating it in the cached prompt meant every change rewrote the front
-    # of the request and threw away the cache for the whole conversation.
-    #
-    # The machine snapshot is deliberately NOT here. It is minted once, at the session's first
-    # message, and appended to the conversation — see `_environment_note`. A snapshot of a
-    # machine does not need restating every turn, and restating it would cost its own size on
-    # each one; appended once, it is cached with everything else from the second call onward.
+    # Where tools may run, and under which permission mode.
     locations: list[dict[str, Any]] = Field(default_factory=list)
-    # What the operating system will actually permit a tool child, and what has been granted on
-    # top of it. Here, and not in the system prompt, for the reason `locations` is here: a grant
-    # approved mid-session changes it, and anything changeable in the cached prefix rewrites the
-    # front of every request.
-    #
-    # It is here *at all* because it was nowhere. A session was told its permission mode and
-    # never its confinement, so the first it learned of the boundary was an `Operation not
-    # permitted` that named no path — a boundary you can only discover by hitting it is one you
-    # hit repeatedly.
+    # What the operating system will actually permit a tool child, and what has been granted on top of it.
     confinement: dict[str, Any] = Field(default_factory=dict)
-    # Where a screen script can be pointed, and what may be called there. Present only when the
-    # screen tool is enabled. It is here rather than in the system prompt because the system
-    # prompt is cached for the session and windows open and close within one: a cached list of
-    # places is a list of places that were open once.
+    # Where a screen script can be pointed, and what may be called there.
     screen: dict[str, Any] = Field(default_factory=dict)
 
 

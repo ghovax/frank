@@ -60,9 +60,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Mapping, Optional, Protocol, S
 if TYPE_CHECKING:  # pragma: no cover - import only for typing; `base` stays free of langchain
     from langchain_core.language_models.chat_models import BaseChatModel
 
-    # The model seam, stated as a type rather than as a Protocol of ours. Every provider this
-    # harness routes to already implements it, and so does every mock, tracer and rate limiter
-    # in that ecosystem — which is the entire argument for adopting it instead of wrapping it.
+    # The model seam, stated as a type rather than as a Protocol of ours.
     ChatModel = BaseChatModel
 
 
@@ -96,19 +94,15 @@ class SuspensionGate:
     arguments: dict[str, Any] = field(default_factory=dict)
     command: str = ""
     explanation: str = ""
-    # Why approval is needed, as facts rather than prose, so a client writes the sentence in its
-    # own language (a ``PermissionReason``, or the plain dict it survives persistence as).
-    # ``Any`` because the typed shape belongs to the protocol, which is above this module.
+    # Why approval is needed, as facts rather than prose, so a client writes the sentence in its own language (a ``PermissionReason``, or the plain dict it survives persistence as).
     reason: Any = None
     questions: list[dict[str, Any]] = field(default_factory=list)
     is_bash: bool = False
     deny_message: str = ""
     egress_agent: str = ""
-    # The widening a call is asking for, carried so that approving the gate records exactly what
-    # was approved rather than re-parsing the arguments to guess at it.
+    # The widening a call is asking for, carried so that approving the gate records exactly what was approved rather than re-parsing the arguments to guess at it.
     escape: Any = None
-    # Whether approving means "let this one command reach past the workspace", which is what a
-    # command the operating system refused is offered.
+    # Whether approving means "let this one command reach past the workspace", which is what a command the operating system refused is offered.
     whole_disk: bool = False
     denial_evidence: str = ""
     refused_result: Any = None
@@ -242,11 +236,7 @@ class JobStore(Protocol):
     implementation is a day's work, and no less, so one that satisfies this actually works.
     """
 
-    # Keyword-only throughout, and named for what the caller passes. This signature drifted from
-    # its only caller once — the protocol said `request=` while `BackgroundJobs.spawn` passed
-    # `arguments=` and `tool_call_id=` — and because `JobStore` is `@runtime_checkable`, which
-    # compares method *names* and never signatures, nothing caught it at wiring time. It surfaced
-    # as a `TypeError` on the first background job of every session, which is every `bash` call.
+    # Keyword-only throughout, and named for what the caller passes.
     def record_started(
         self,
         *,
@@ -299,9 +289,7 @@ class MemoryJobStore:
         arguments: Mapping[str, Any],
         tool_call_id: str = "",
     ) -> None:
-        # The same keys the SQLite store writes, so a reader cannot tell the two apart. It held
-        # `request` here and `arguments_json` there, which would have made every consumer of a job
-        # row correct against one store and wrong against the other.
+        # The same keys the SQLite store writes, so a reader cannot tell the two apart.
         self._jobs[job_id] = {
             "job_id": job_id,
             "session_id": session_id,
@@ -337,8 +325,7 @@ class MemoryJobStore:
         ]
 
     def orphaned_process_groups(self) -> Sequence[int]:
-        # Nothing is ever orphaned here: this store dies with the process that owns the jobs,
-        # so there is never a previous run whose children outlived it.
+        # Nothing is ever orphaned here: this store dies with the process that owns the jobs, so there is never a previous run whose children outlived it.
         return []
 
     def undelivered_jobs(self, session_id: str, agent_name: str) -> Sequence[Mapping[str, Any]]:

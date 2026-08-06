@@ -94,10 +94,7 @@ def _set_turn_state(session_id: str, running: bool, retains: bool = False) -> No
         state._running_contexts.pop(session_id, None)
     if (previous == 0) != (updated == 0):
         state.broadcaster.publish({"type": "sessions_changed"})
-        # The same edge on the session's own stream, so a watcher learns the turn ended
-        # without polling. Turn parts alone never say this — they stop arriving, which is
-        # indistinguishable from a model thinking — so `frank wait` had nothing to wait for
-        # and blocked until the session died instead of until it went idle.
+        # The same edge on the session's own stream, so a watcher learns the turn ended without polling.
         _SEQUENCE[session_id] = _SEQUENCE.get(session_id, 0) + 1
         state.event_bus.publish(
             session_id, {"seq": _SEQUENCE[session_id], "turn": {"running": bool(updated)}}
@@ -106,8 +103,7 @@ def _set_turn_state(session_id: str, running: bool, retains: bool = False) -> No
             _sleep_when_idle(session_id)
 
 
-# One pending idle timer per session. A session that goes idle starts one; anything that
-# touches the session again cancels it and the next idle start replaces it.
+# One pending idle timer per session.
 _IDLE_TIMERS: dict[str, asyncio.Task] = {}
 
 
@@ -182,38 +178,25 @@ async def _session_event(params: dict) -> dict:
     event = params.get("event") or {}
     session_id = str(event.get("session_id") or params.get("session_id") or "")
     if "running" in event:
-        # Whether a turn is in flight, which the registry cannot infer: a session's process
-        # is alive for its whole life, including while it sits idle between messages.
+        # Whether a turn is in flight, which the registry cannot infer: a session's process is alive for its whole life, including while it sits idle between messages.
         _set_turn_state(session_id, bool(event.get("running")), bool(event.get("retains")))
         return {"noted": True}
     if "awaiting_input" in event:
         awaiting = bool(event.get("awaiting_input"))
         if state.registry is not None:
             state.registry.mark(session_id, awaiting_input=awaiting)
-        # And the set the *workspace* reads. The registry is the control plane's, and the
-        # browser's session list is built by the workspace, which deliberately cannot reach
-        # across — so the daemon pushes into it here, exactly as `_set_turn_state` does for
-        # running turns. Marking only the registry left the two disagreeing: a session parked
-        # on a permission prompt reported `awaiting_input: false` to the interface, so the
-        # prompt was never raised and the turn sat waiting on a decision nobody was asked for.
+        # And the set the *workspace* reads.
         if awaiting:
             state._awaiting_input_contexts.add(session_id)
         else:
             state._awaiting_input_contexts.discard(session_id)
         state.broadcaster.publish({"type": "sessions_changed"})
         if awaiting:
-            # The best case for sleeping, and the one that motivated it. `input-required` is
-            # already a durable suspension — the whole turn is checkpointed on disk — and the
-            # worker was holding an entire interpreter to wait for a person who may take
-            # hours. Answering it wakes a fresh worker and rebuilds the turn from that
-            # checkpoint, which is a path that already existed for surviving a restart.
+            # The best case for sleeping, and the one that motivated it.
             _sleep_when_idle(session_id)
         return {"noted": True}
     if "goal" in event:
-        # The session's goal changed. Held beside the registry rather than in it, exactly as the
-        # running-turn count is: a goal belongs to the live context, and a stored one would
-        # outlive the worker that was pursuing it. The interface reads it from the session
-        # listing, so a change is announced the same way every other change to a session is.
+        # The session's goal changed.
         goal = event.get("goal")
         if isinstance(goal, dict):
             state._session_goals[session_id] = goal
@@ -223,8 +206,7 @@ async def _session_event(params: dict) -> dict:
         return {"noted": True}
     part = event.get("part")
     if part is not None:
-        # A monotonic sequence per session lets a client order frames and notice a gap, which
-        # matters when a watcher attaches mid-turn and joins a stream already in progress.
+        # A monotonic sequence per session lets a client order frames and notice a gap, which matters when a watcher attaches mid-turn and joins a stream already in progress.
         _SEQUENCE[session_id] = _SEQUENCE.get(session_id, 0) + 1
         state.event_bus.publish(session_id, {"seq": _SEQUENCE[session_id], "part": part})
     return {"published": True}
@@ -254,21 +236,13 @@ async def _session_title(params: dict) -> dict:
     title = str(params.get("title") or "").strip()
     if not session_id or not title:
         return {"saved": False}
-    # A name somebody chose is not a name to improve on. `create_session` takes a `title`, and a
-    # session that creates ten peers names them for what each is *for* — then the first brief
-    # reached each peer, every one of them generated a title from it, and half the set came back
-    # renamed to a summary of its own instructions while the other half kept the label, purely by
-    # which background call finished first. The generated title exists for the session a person
-    # opened with a message and never named; this is the one place that can tell the two apart,
-    # because it is the only writer of the field.
+    # A name somebody chose is not a name to improve on.
     existing = state.registry.get(session_id) if state.registry is not None else None
     if existing is not None and (existing.title or "").strip():
         return {"saved": False}
     changed = await asyncio.to_thread(_set_session_title, session_id, title)
     if changed:
-        # Both views of a session carry the title: the durable row the GUI lists from, and
-        # the registry the CLI reads, which would otherwise keep showing a directory for a
-        # session that has since named itself.
+        # Both views of a session carry the title: the durable row the GUI lists from, and the registry the CLI reads, which would otherwise keep showing a directory for a session that has since named itself.
         if state.registry is not None:
             state.registry.mark(session_id, title=title)
         state.broadcaster.publish({"type": "sessions_changed"})

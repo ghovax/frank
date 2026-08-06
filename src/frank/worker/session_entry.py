@@ -38,11 +38,7 @@ from frank.base.fork_protocol import StartFailure
 
 logger = logging.getLogger(__name__)
 
-# Why a session refused to start, as a value rather than a sentence. Prose belongs in the log,
-# where a person reads it; what crosses the ready pipe is consumed by the prototype and ends up
-# in a session record, so it wants to be matchable and stable.
-# The vocabulary lives in `base.fork_protocol`, because the reader of this value is a
-# different process and a code only works if both ends agree on it in one place.
+# Why a session refused to start, as a value rather than a sentence.
 
 
 def _configure_logging() -> None:
@@ -79,12 +75,7 @@ def _read_assignment(descriptor: int) -> dict:
                 break
             chunks.append(chunk)
     raw = b"".join(chunks).decode()
-    # End-of-file with nothing before it is not an empty assignment, it is the prototype
-    # dying while this worker sat parked waiting to be told which session it was. Read as
-    # `{}` — which is what happened before — the worker went on to start a session with no
-    # id, no token and no directory, and the ones that got far enough stayed up serving a
-    # socket nothing would ever call. This is the whole reason a parked worker was among the
-    # strays after a crash.
+    # End-of-file with nothing before it is not an empty assignment, it is the prototype dying while this worker sat parked waiting to be told which session it was.
     if not raw:
         raise PrototypeGone
     payload = json.loads(raw)
@@ -110,26 +101,12 @@ def main(arguments: list[str]) -> int:
 
     _configure_logging()
 
-    # Import before reading the assignment, not after. The order is the whole reason a session
-    # can start quickly: this is around two and a half seconds — most of it litellm — and none
-    # of it depends on which session this will become. Paying it first means the prototype can
-    # start a child before anyone has asked for one, let it do this work while nobody is
-    # waiting, and leave it parked on the read below. Handing that child a session is then a
-    # write down a pipe. Read-then-import made every session pay the cost in full, with the
-    # caller waiting for all of it.
-    #
-    # `serve` alone is not enough and is the easy mistake: it is a third of a second, because it
-    # deliberately defers the expensive graph into the body of `serve()`. The two modules named
-    # here are where litellm, the model clients and the tool registry actually come from, so
-    # they are imported by name rather than by whatever happens to be reachable from `run`.
+    # Import before reading the assignment, not after.
     from frank.worker.serve import run
     import frank.worker.server  # noqa: F401 — imported for its cost, not its name
     import frank.worker.session  # noqa: F401 — see above
 
-    # The embedding model that ranks screen elements, loaded here for the same reason and by
-    # the same logic: it takes about three quarters of a second, it is identical for every
-    # session, and a parked worker has nothing else to do. Left lazy, the first `control_screen`
-    # search of a session paid it while someone waited.
+    # The embedding model that ranks screen elements, loaded here for the same reason and by the same logic: it takes about three quarters of a second, it is identical for every session, and a parked worker has nothing else to do.
     with contextlib.suppress(Exception):
         from frank.computer.retrieval import _dense_model
 
@@ -138,14 +115,12 @@ def main(arguments: list[str]) -> int:
     try:
         assignment = _read_assignment(assignment_fd)
     except PrototypeGone:
-        # No ready report and no traceback: the prototype is the only thing that reads that
-        # pipe, and it is what has just gone. Saying so on the way out is the whole message.
+        # No ready report and no traceback: the prototype is the only thing that reads that pipe, and it is what has just gone.
         logger.info("the prototype went away before this worker was given a session; stopping")
         return 0
     except Exception:  # noqa: BLE001 — a session that cannot read its assignment cannot start
         logger.exception("session could not read its assignment")
-        # Said on the ready pipe as well as in the log, because the prototype is waiting on that
-        # pipe and would otherwise report a session that simply never arrived.
+        # Said on the ready pipe as well as in the log, because the prototype is waiting on that pipe and would otherwise report a session that simply never arrived.
         with os.fdopen(ready_fd, "wb", closefd=True) as ready:
             ready.write(json.dumps({"ready": False, "reason": StartFailure.ASSIGNMENT_UNREADABLE}).encode())
         return 1

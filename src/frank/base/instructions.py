@@ -60,19 +60,14 @@ def instructions_payload(instructions: Sequence[Instruction]) -> list[dict[str, 
     payload = [
         {
             "source": instruction.source,
-            # Absent rather than filled with a word. An instruction supplied in code has no
-            # directory, and to invent one — "everywhere" — would put a value in the field that
-            # reads like a path and is not one. A model applying the precedence rule to it has
-            # nothing to compare. An absent key says the same thing and cannot be misread.
+            # Absent rather than filled with a word.
             **({"scope": instruction.scope} if instruction.scope else {}),
             "content": instruction.content,
         }
         for instruction in instructions
         if instruction.content.strip()
     ]
-    # Shallowest scope first, so the documents arrive in the order the precedence rule reads
-    # them. An instruction with no scope sorts first: it is the most general thing there is,
-    # and everything with a directory overrides it.
+    # Shallowest scope first, so the documents arrive in the order the precedence rule reads them.
     return sorted(payload, key=lambda entry: entry.get("scope", "").count("/"))
 
 

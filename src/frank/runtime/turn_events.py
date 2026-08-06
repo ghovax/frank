@@ -103,8 +103,7 @@ class ToolResult(TurnEvent):
     status: str = ""
     # Set when this result is a background job's completion, not a synchronous return.
     job_id: str = ""
-    # A tool result's payload is whatever the tool returned — genuinely open, so it rides a typed
-    # envelope with an open tail rather than pretending to a fixed shape.
+    # A tool result's payload is whatever the tool returned — genuinely open, so it rides a typed envelope with an open tail rather than pretending to a fixed shape.
     extra: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -133,20 +132,14 @@ class Usage(TurnEvent):
     reasoning_tokens: int = 0
     context_window: int = 0
     cumulative: dict[str, Any] = field(default_factory=dict)
-    #: Whether every byte this request shared with the last one was unchanged. Recorded because
-    #: it is what makes `cache_read_tokens` interpretable: intact with a read of zero means the
-    #: provider missed a prefix it had already been sent, which no different request would fix.
+    #: Whether every byte this request shared with the last one was unchanged.
     prefix_intact: bool = False
-    #: How much of the prefix was unchanged, and so could have come from cache — the ceiling on
-    #: `cache_read_tokens`. An estimate: counted with this harness's tokenizer, not the
-    #: provider's.
+    #: How much of the prefix was unchanged, and so could have come from cache — the ceiling on `cache_read_tokens`.
     reachable_tokens: int = 0
-    #: How many segments the request had, and how many of them the previous request already
-    #: carried unchanged — the same measurement `reachable_tokens` counts, in pieces.
+    #: How many segments the request had, and how many of them the previous request already carried unchanged — the same measurement `reachable_tokens` counts, in pieces.
     segments: int = 0
     shared_segments: int = 0
-    #: The segment that moved, when one did: its position, what is there now, what was there
-    #: before, and whether it stayed put and was rewritten. Fields, not a sentence.
+    #: The segment that moved, when one did: its position, what is there now, what was there before, and whether it stayed put and was rewritten.
     divergence: dict[str, Any] | None = None
 
 
@@ -160,10 +153,7 @@ class Done(TurnEvent):
 @dataclass(frozen=True)
 class Suspended(TurnEvent):
     TYPE = EventType.SUSPENDED
-    # The gates awaiting a human, typed. `plans` are the preflight tool-plan serializations a
-    # resume rebuilds the batch from — opaque to the sink/executor, which round-trip them
-    # through `_ToolPlan.from_dict`, so they stay a keyed map of plan dicts rather than a
-    # fully modelled shape.
+    # The gates awaiting a human, typed.
     interactions: list[SuspensionGate] = field(default_factory=list)
     plans: dict[str, dict[str, Any]] = field(default_factory=dict)
 
@@ -234,20 +224,14 @@ class CompactionDone(TurnEvent):
     messages_before: int = 0
     messages_after: int = 0
     tokens_before: int = 0
-    # What the fold actually reclaimed. Reported by every strategy, including a supplied one —
-    # which used to pass this and crash on it, because the field had been written at the call
-    # site and never added here, and no test drove a supplied strategy to its end.
+    # What the fold actually reclaimed.
     tokens_after: int = 0
     observations_added: int = 0
-    # How large the memory itself has become. Reported because the whole schedule of a long
-    # session turns on it — how often the Reflector runs, and how many times an early finding is
-    # rewritten before anyone reads it — and it was previously a number nobody could see.
+    # How large the memory itself has become.
     log_tokens: int = 0
 
 
-# The closed union of every turn event, so a consumer can dispatch with ``match`` and prove
-# exhaustiveness with ``assert_never`` in the default case — a new variant that a consumer forgets
-# is then a static error, not a silently dropped branch.
+# The closed union of every turn event, so a consumer can dispatch with ``match`` and prove exhaustiveness with ``assert_never`` in the default case — a new variant that a consumer forgets is then a static error, not a silently dropped branch.
 TurnEventUnion = Union[
     Status, Thinking, ThinkingDone, TextChunk, ToolCall, ToolResult, Mcp, Usage, Done,
     Suspended, Checkpoint, Error, DeniedInjection, Steering,

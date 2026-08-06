@@ -22,9 +22,7 @@ from frank.base.sqlite_lock import sqlite_write_lock
 from frank.hub import state
 from frank.hub.database import MachineRecord
 
-# The scheme `frank reach` prints. Accepted with or without it: what a person has on the
-# clipboard after a `| pbcopy` is the whole link, and what they get from a screenshot they have
-# retyped is often just the payload.
+# The scheme `frank reach` prints.
 PAIRING_PREFIX = "frank://pair#"
 
 
@@ -114,9 +112,7 @@ def remember_machine(link: str) -> dict[str, Any]:
                 )
                 database.add(record)
             else:
-                # The name is left alone. It may have been edited here, and a re-pair is about the
-                # token; overwriting a chosen name with whatever DHCP called the host would be
-                # undoing an edit to do something unrelated.
+                # The name is left alone.
                 record.token = described["token"]
             database.commit()
             return _serialize(record)

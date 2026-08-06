@@ -24,12 +24,9 @@ from frank.base.permission_mode import PermissionMode
 logger = logging.getLogger(__name__)
 
 
-# Where state lives is the placement layer's business, not this module's: it follows the
-# XDG convention and is resolved in `frank.base.paths`.
+# Where state lives is the placement layer's business, not this module's: it follows the XDG convention and is resolved in `frank.base.paths`.
 
-# The packaged configuration lives in a sibling YAML file so editing the template
-# is a data change, not a code change. Used to seed the XDG configuration file
-# on first run and as the base when persisting settings before any file exists.
+# The packaged configuration lives in a sibling YAML file so editing the template is a data change, not a code change.
 PACKAGED_CONFIGURATION_PATH = Path(__file__).resolve().parent / "configuration.yaml"
 
 
@@ -247,24 +244,14 @@ class FilesystemConfiguration(Section):
 
     readable: list[str] = Field(
         default=[
-            # Where a person's own agents, skills and workflows live. Not a convenience: a
-            # `control_screen` script imports its workflows and its skills' script packages from
-            # here, and without the read those imports fail inside the sandbox with
-            # `PermissionError: Operation not permitted` — which names no file and reads as a
-            # broken tool rather than a missing permission. Everything under it is the person's
-            # own instructions to the harness, which the harness is the intended reader of.
+            # Where a person's own agents, skills and workflows live.
             "~/.agents",
             "~/.config", "~/.local", "~/.ssh", "~/.gitconfig", "~/.gitignore_global",
             "~/.cargo", "~/.rustup", "~/.npmrc", "~/.nvm", "~/.pyenv", "~/.docker", "~/.netrc",
         ],
     )
     writable: list[str] = Field(default=["$WORKSPACE", "$TMPDIR", "/tmp", "$XDG_CACHE_HOME", "~/.cache"])
-    # `/tmp` is listed beside `$TMPDIR` because on macOS they are not the same place. `$TMPDIR`
-    # expands to a per-user directory under `/var/folders`, so a session whose writable set named
-    # only `$TMPDIR` was refused at `/tmp` — the one scratch path every convention points at, and
-    # the first one anything reaches for. What came back was `Operation not permitted`, naming no
-    # path, which reads as a broken tool rather than a boundary. Nothing of the user's lives in
-    # `/tmp`; it is world-writable already, and cleared by the system.
+    # `/tmp` is listed beside `$TMPDIR` because on macOS they are not the same place.
     grantable: list[str] = Field(default=[])
     deny: list[str] = Field(default=[
             "~/Documents", "~/Desktop", "~/Downloads", "~/Pictures", "~/Movies", "~/Music",
@@ -319,20 +306,14 @@ class WorkspaceConfiguration(Section):
     strategy: Literal["none", "branch", "worktree"] = Field("none")
 
 
-#: Compaction settings that were renamed, and the name that now carries their value. A section
-#: refuses keys it does not define, on purpose — so without this a rename does not merely ignore
-#: an old setting, it stops the whole configuration file from loading, and the daemon with it.
+#: Compaction settings that were renamed, and the name that now carries their value.
 _COMPACTION_RENAMED = {
     "auto": "automatic",
     "observer_context_fraction": "reclaim_at_fraction",
     "reflector_observation_fraction": "condense_log_at_fraction",
 }
 
-#: Compaction settings that are gone with nothing standing in for them. `keep_recent_turns`
-#: counted user turns, which is the measure this section stopped using — an unattended run is one
-#: turn and hundreds of tool results — and the pruning pass beside it was removed once it was
-#: shown to be unreachable. Dropped rather than translated, and said out loud rather than
-#: silently, because a setting that can no longer take effect should be reported, not obeyed.
+#: Compaction settings that are gone with nothing standing in for them.
 _COMPACTION_REMOVED = (
     "keep_recent_turns", "preserve_recent_tokens", "prune", "prune_tool_results",
     "pruned_result_tokens",
@@ -779,8 +760,7 @@ class Configuration(Section):
 
     def agent_directories(self) -> list[Path]:
         return _dedupe_paths([
-            # Bundled (server-shipped) agents are the always-present base layer;
-            # home and project agents override a bundled profile with the same id.
+            # Bundled (server-shipped) agents are the always-present base layer; home and project agents override a bundled profile with the same id.
             BUNDLED_DOTAGENTS_ROOT / "agents",
             Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "agents",
             Path(self.AGENTS_ROOT_DIRECTORY) / "agents",
@@ -789,8 +769,7 @@ class Configuration(Section):
 
     def skill_directories(self) -> list[Path]:
         return _dedupe_paths([
-            # Bundled (server-shipped) skills are the always-present base layer, exactly
-            # like agents — home and project skills override a bundled skill of the same id.
+            # Bundled (server-shipped) skills are the always-present base layer, exactly like agents — home and project skills override a bundled skill of the same id.
             BUNDLED_DOTAGENTS_ROOT / "skills",
             Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "skills",
             Path(self.AGENTS_ROOT_DIRECTORY) / "skills",
@@ -803,16 +782,7 @@ class Configuration(Section):
             Path(self.AGENTS_ROOT_DIRECTORY) / "memories",
         ])
 
-    # Working-directory-scoped resolution.
-    #
-    # The home root (``~/.agents``) is always global. Project-relative roots
-    # (``.agents`` and friends) are resolved against the *session's working
-    # directory* rather than the harness's launch CWD, so a session working
-    # outside the directory the harness happens to have been started in is never
-    # advertised that directory's agents/skills/memories/MCP servers — and the
-    # paths it is handed are valid for where it actually runs. Each ``*_for``
-    # method mirrors its CWD-relative counterpart above; prefer these everywhere
-    # a working directory is known (every session and every UI folder selection).
+    # Working-directory-scoped resolution. The home root (``~/.agents``) is always global.
 
     def _local_base(self, working_directory: str) -> Path:
         """The directory project-relative ``.agents`` roots resolve against — the
@@ -841,8 +811,7 @@ class Configuration(Section):
 
     def agent_directories_for(self, working_directory: str) -> list[Path]:
         return _dedupe_paths([
-            # Bundled (server-shipped) agents are the always-present base layer;
-            # home and project agents override a bundled profile with the same id.
+            # Bundled (server-shipped) agents are the always-present base layer; home and project agents override a bundled profile with the same id.
             BUNDLED_DOTAGENTS_ROOT / "agents",
             Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "agents",
             self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY) / "agents",
@@ -851,8 +820,7 @@ class Configuration(Section):
 
     def skill_directories_for(self, working_directory: str) -> list[Path]:
         return _dedupe_paths([
-            # Bundled (server-shipped) skills are the always-present base layer, exactly
-            # like agents — home and project skills override a bundled skill of the same id.
+            # Bundled (server-shipped) skills are the always-present base layer, exactly like agents — home and project skills override a bundled skill of the same id.
             BUNDLED_DOTAGENTS_ROOT / "skills",
             Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "skills",
             self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY) / "skills",
@@ -924,19 +892,6 @@ class BashToolConfiguration(BaseModel):
     _SUBSHELL = re.compile(r"\$\((.+?)\)|`(.+?)`")
 
     #: Commands whose damage is not bounded by the confinement, and what to do about each.
-    #:
-    #: The box answers "where can this reach", and for almost every command that is the whole
-    #: question. It does not answer "how much of the workspace survives this": `rm -rf .` is
-    #: entirely inside the boundary, and so is `git reset --hard`. Nothing about a path list can
-    #: see the difference between a build that writes eleven files and a command that removes
-    #: the tree it was pointed at.
-    #:
-    #: So this list exists, it is short, and it is the only place a command's *text* decides
-    #: anything. It is not a classifier and does not try to be: each entry is a prefix somebody
-    #: could have written themselves in `tools.bash.permissions`, seeded here because a person
-    #: should not have to think of them before the first destructive command rather than after.
-    #: A person's own rules are merged over the top and win, so any of these can be turned off
-    #: by writing `allow` for the same prefix.
     DESTRUCTIVE_DEFAULTS: ClassVar[dict[str, str]] = {
         "rm -rf *": "ask",
         "rm -fr *": "ask",
@@ -1034,8 +989,7 @@ class ToolsConfiguration(BaseModel):
     """
 
     bash: BashToolConfiguration = BashToolConfiguration()
-    # The other two tools whose calls can be named, and so can be ruled on. Empty means no rule,
-    # which leaves the barrier's own default in force exactly as before.
+    # The other two tools whose calls can be named, and so can be ruled on.
     mcp: NamedToolPermissions = NamedToolPermissions()
     screen: NamedToolPermissions = NamedToolPermissions()
     disabled: list[str] = Field(default_factory=list)
@@ -1062,23 +1016,15 @@ class AgentConfiguration(BaseModel):
     role: str = ""
     enabled: bool = True
     # Names of the skills (files in the skills directory) this agent may use.
-    # Empty means every available skill is offered to the agent by default.
     skills: list[str] = []
-    # The model and its provider are separate fields, mirroring the global config:
-    # a human editing an AGENT.md sees both explicitly. ``model_identifier``
-    # recombines them into the ``provider/model`` form the factory expects.
+    # The model and its provider are separate fields, mirroring the global config: a human editing an AGENT.md sees both explicitly.
     model: Optional[str] = None
     provider: Optional[str] = None
     reasoning_effort: str = "high"
-    # A ceiling: the loosest mode a session running this profile may ever have. `None` means the
-    # card has no opinion, which is the default and the same convention as `sandbox` below — a
-    # value here bounds every session that runs the profile, so silence must not be a bound.
+    # A ceiling: the loosest mode a session running this profile may ever have.
     permission_mode: Optional[Literal["ask", "auto"]] = None
 
-    # An agent's own confinement, narrowing the global one. An investigator and a build agent
-    # genuinely want different filesystems, and the harness already accepts that agents differ in
-    # what they may do. Unset means "whatever the machine's configuration says"; set, it is still
-    # clamped against the session that created this one, so it can only ever narrow.
+    # An agent's own confinement, narrowing the global one.
     sandbox: Optional[SandboxConfiguration] = None
     tools: ToolsConfiguration = ToolsConfiguration()
     tools_enabled: list[str] = []
@@ -1127,11 +1073,7 @@ class AgentConfiguration(BaseModel):
         frontmatter.setdefault("name", default_identifier)
         frontmatter.setdefault("title", frontmatter["name"])
 
-        # Everything the agent is, in one file. There used to be a `configuration.json` beside
-        # this one holding the model preset, the permission ceiling and the tool toggles — in
-        # camelCase, while the front matter above is snake_case — and loading meant merging the
-        # two, which is why the same fact had two spellings and two places to be wrong. A skill
-        # is one `SKILL.md`; an agent is one `AGENT.md`.
+        # Everything the agent is, in one file.
         tools_data = frontmatter.pop("tools", {})
         tools_configuration = (
             ToolsConfiguration(**{name: value for name, value in tools_data.items()})
@@ -1163,8 +1105,7 @@ def write_agent_markdown(path: str | Path, configuration: AgentConfiguration) ->
     front = configuration.model_dump(
         mode="json", exclude_defaults=True, exclude_none=True, exclude={"system_prompt"},
     )
-    # `name` is the identity the rest of the harness addresses this agent by; it is worth
-    # stating even when it matches the directory it lives in.
+    # `name` is the identity the rest of the harness addresses this agent by; it is worth stating even when it matches the directory it lives in.
     front.setdefault("name", configuration.identifier)
     rendered = yaml.safe_dump(front, sort_keys=False, allow_unicode=True, default_flow_style=False).strip()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1209,8 +1150,7 @@ class PermissionEvaluator:
             raise PermissionDenied("Background bash execution is not allowed")
 
     def check_tool(self, tool_name: str, /, **arguments) -> None:
-        # tool_name is positional-only so that a tool whose own arguments include a
-        # key named "tool_name" (e.g. call_mcp_tool) does not collide with it.
+        # tool_name is positional-only so that a tool whose own arguments include a key named "tool_name" (e.g. call_mcp_tool) does not collide with it.
         self.check_tool_enabled(tool_name)
         self.check_tool_not_disabled(tool_name)
 
@@ -1281,19 +1221,14 @@ class PromptLoader:
         own_line = r"^[ \t]*\{\{\s*(\w+)\s*\}\}[ \t]*"
         template = re.sub(own_line + r"\n(?:[ \t]*\n)?", drop_if_empty, template, flags=re.M)
 
-        # What is left on a line of its own contributes its content and nothing else: the
-        # template's own newline already ends the line, so a value that ends in one — which every
-        # value read from a file does — would spend it on a blank line nobody asked for. The
-        # template decides the spacing; the value decides the words.
+        # What is left on a line of its own contributes its content and nothing else: the template's own newline already ends the line, so a value that ends in one — which every value read from a file does — would spend it on a blank line nobody asked for.
         sections = set(re.findall(own_line + r"$", template, flags=re.M))
         variables = {
             name: str(value).strip() if name in sections else value
             for name, value in variables.items()
         }
 
-        # A {{ … }} in the template that is not a well-formed {{ name }} (a dotted path, a space
-        # in the name, an unclosed brace) is a template bug — catch it before substitution so it
-        # can't be confused with stray output. Checked on the template, so injected values are safe.
+        # A {{ … }} in the template that is not a well-formed {{ name }} (a dotted path, a space in the name, an unclosed brace) is a template bug — catch it before substitution so it can't be confused with stray output.
         malformed = re.search(r"\{\{.*?\}\}", placeholder.sub("", template), re.DOTALL)
         if malformed is not None:
             raise ValueError(f"Malformed placeholder {malformed.group(0)!r}{where}.")
@@ -1304,13 +1239,7 @@ class PromptLoader:
                 raise ValueError(
                     f"Unresolved placeholder '{{{{ {variable_name} }}}}'{where}: no value was provided (given: {sorted(variables)})."
                 )
-            # Rendered rather than required to already be a string. A caller that passed a window's
-            # width as the `int` it is raised `TypeError: sequence item 2: expected str instance,
-            # int found` out of `re.sub` — which the surface guard then swallowed, so the model was
-            # handed "The action failed (sequence item 2: expected str instance, int found)" in
-            # place of the message explaining that the application withholds its interface. A
-            # message that cannot render is worse than one that says the wrong thing, because the
-            # failure looks like it came from the application rather than from the template.
+            # Rendered rather than required to already be a string.
             return str(variables[variable_name])
 
         # Accept both the spaced ({{ name }}) and unspaced ({{name}}) forms.
@@ -1328,9 +1257,7 @@ def _agent_paths(agents_directories: str | Path | Iterable[str | Path], include_
     for directory in _as_directories(agents_directories):
         if not directory.is_dir():
             continue
-        # `AGENT.md`, in that spelling, exactly as a skill is `SKILL.md`. Accepting a lowercase
-        # variant as well meant two files could name the same agent and which one won depended
-        # on glob order, and it meant the convention had to be explained twice.
+        # `AGENT.md`, in that spelling, exactly as a skill is `SKILL.md`.
         candidates = [
             *sorted(directory.glob("*.md")),
             *sorted(directory.glob("*/AGENT.md")),
@@ -1387,8 +1314,7 @@ def list_agents(agents_directory: str | Path | Iterable[str | Path]) -> list[dic
                 "title": config.display_name,
                 # What the agent is for — surfaced as the subtitle in the UI's agent picker.
                 "description": config.description,
-                # The resolved ``provider/model`` identifier; empty means the
-                # agent has not configured a runnable model.
+                # The resolved ``provider/model`` identifier; empty means the agent has not configured a runnable model.
                 "model": config.model_identifier or "",
             })
         except Exception:

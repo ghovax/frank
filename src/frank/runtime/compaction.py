@@ -148,14 +148,10 @@ class _CompactsContext:
             if carried > budget and index < len(messages) - 1:
                 break
             start = index
-        # A tool result must stay with the call it answers, so walk forward off any ToolMessage
-        # the budget happened to land on. An AIMessage left holding calls whose results moved
-        # into the tail would be the same break seen from the other side, so this skips the
-        # whole group rather than just its first message.
+        # A tool result must stay with the call it answers, so walk forward off any ToolMessage the budget happened to land on.
         while start < len(messages) and isinstance(messages[start], ToolMessage):
             start += 1
-        # Nothing to fold: either the whole conversation fits the tail, or the tail is everything
-        # after a cut that could not be placed anywhere useful.
+        # Nothing to fold: either the whole conversation fits the tail, or the tail is everything after a cut that could not be placed anywhere useful.
         return start if 0 < start < len(messages) else 0
 
     def _carried_user_messages(self, folded: list) -> list:
@@ -201,8 +197,7 @@ class _CompactsContext:
                 break
             carried.append(message)
             spent += size
-        # Back into the order they were said in: `first` is already at the front, and the rest
-        # were collected newest-first.
+        # Back into the order they were said in: `first` is already at the front, and the rest were collected newest-first.
         carried[1:] = list(reversed(carried[1:]))
         carried.reverse()
         return carried
@@ -304,10 +299,7 @@ class _CompactsContext:
         window. Recent turns stay verbatim. Yields COMPACTION_STARTED/DONE for the UI. A
         no-op yields nothing. Manual calls force a pass; the auto trigger is gated by
         :meth:`_should_compact`."""
-        # A supplied strategy replaces the Observer/Reflector pass entirely. It answers with
-        # the conversation to carry forward and calls no model unless it wants to; the events
-        # around it stay the runtime's, so the interface shows a compaction the same way
-        # whichever strategy produced it.
+        # A supplied strategy replaces the Observer/Reflector pass entirely.
         if self._compaction is not None:
             state = self._compaction_state(reason)
             messages_before = len(self._conversation)
@@ -329,15 +321,10 @@ class _CompactsContext:
         existing = self._observations_of(observation_message)
         # Fold every older message except the existing observation block (it is rebuilt).
         older = [message for message in self._conversation[:boundary] if message is not observation_message]
-        # The log is excluded from the tail as well as from the fold. It is rebuilt and placed at
-        # the front below, so a boundary that happened to leave it on the recent side would put
-        # two copies of the memory in the conversation rather than moving it.
+        # The log is excluded from the tail as well as from the fold.
         recent = [message for message in self._conversation[boundary:] if message is not observation_message]
         if not older:
-            # The boundary landed just past the observation log with nothing but the log behind
-            # it — which happens once a folded conversation's tail alone fills the budget. There
-            # is nothing to fold, and asking the Observer to summarize an empty list would spend
-            # a model call on every iteration to be told so.
+            # The boundary landed just past the observation log with nothing but the log behind it — which happens once a folded conversation's tail alone fills the budget.
             return
         tokens_before = self._latest_context_tokens
         messages_before = len(self._conversation)
@@ -360,23 +347,13 @@ class _CompactsContext:
         usable = self._usable_context()
         if usable > 0 and merged_tokens > compaction.condense_log_at_fraction * usable:
             merged = await self._reflect(merged)
-        # Replace in place: the conversation list object is shared with the executor's
-        # per-context store, so mutating the same object keeps that binding.
-        # What the user said, then what was learned from it, then the live tail. The log sits
-        # closest to the recent turns because it is the freshest synthesis of everything behind
-        # them; the user's own words sit behind it because they are the oldest authority and the
-        # one thing in here that was not written by a model.
+        # Replace in place: the conversation list object is shared with the executor's per-context store, so mutating the same object keeps that binding.
         self._conversation[:] = [
             *self._carried_user_messages(older),
             self._build_observation_message(merged),
             *_without_provider_reasoning(recent),
         ]
-        # Occupancy no longer describes the conversation, so it is measured again rather than
-        # zeroed. Zeroing was enough while the only question afterwards was "do not fold again
-        # immediately", which any small number answers. It is not enough now that something runs
-        # *after* a fold and has to know whether the fold was sufficient: a zero would report
-        # every conversation as empty and the fallback could never fire. Counting the real thing
-        # answers both, and answers the second one honestly.
+        # Occupancy no longer describes the conversation, so it is measured again rather than zeroed.
         self._latest_context_tokens = conversation_tokens(self._conversation)
         yield CompactionDone(reason=reason, ok=True,
             observations_added=len(new_observations),

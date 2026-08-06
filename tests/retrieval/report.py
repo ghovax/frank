@@ -170,7 +170,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    # Configured here rather than at import, so that importing this module for its functions never
-    # reconfigures logging for whoever imported it.
+    # Configured here rather than at import, so that importing this module for its functions never reconfigures logging for whoever imported it.
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     raise SystemExit(main())

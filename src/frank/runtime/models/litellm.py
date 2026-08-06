@@ -6,12 +6,7 @@ from uuid import uuid4
 import litellm
 from langchain_core.language_models.chat_models import BaseChatModel
 
-# LiteLLM validates request parameters against each provider's supported set and
-# raises if an unsupported one is present. Reasoning effort, for example, is only
-# meaningful for o-series / Anthropic-thinking models, yet the harness sends it
-# unconditionally — so let LiteLLM drop per-provider-unsupported parameters
-# silently rather than fail the call. This is what makes one model configuration
-# portable across providers.
+# LiteLLM validates request parameters against each provider's supported set and raises if an unsupported one is present.
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
@@ -39,21 +34,13 @@ from frank.base.message_content import (
 
 litellm.drop_params = True
 
-#: The one thing worth asking for on a Responses request, and the reason to make the request a
-#: Responses one at all: the model's own thinking, encrypted, so the next call can hand it back.
+#: The one thing worth asking for on a Responses request, and the reason to make the request a Responses one at all: the model's own thinking, encrypted, so the next call can hand it back.
 _ENCRYPTED_REASONING = ["reasoning.encrypted_content"]
 
-#: Routes that want `reasoning_content` on every assistant message, present and empty rather than
-#: absent. DeepSeek rejects a history where some assistant turns carry the field and others do not.
+#: Routes that want `reasoning_content` on every assistant message, present and empty rather than absent.
 _ALWAYS_REASONING_ROUTES = ("deepseek",)
 
-#: Providers whose reasoning is only recoverable through the Responses API. OpenAI's Chat
-#: Completions endpoint neither returns encrypted reasoning nor accepts it back, so a reasoning
-#: model routed there forgets its own thinking at every tool hop and derives it again, and the
-#: prefix stops matching what was cached. There is no flag that fixes this on the chat endpoint —
-#: the round-trip only exists on the other one, which is why the Codex CLI speaks nothing but
-#: Responses and OpenCode sends every OpenAI-family reasoning model the same way. LiteLLM enters
-#: its own Responses bridge on a `responses/` segment in the model id.
+#: Providers whose reasoning is only recoverable through the Responses API.
 _RESPONSES_ROUTES = ("openai", "azure")
 
 
@@ -76,27 +63,18 @@ class ChatLiteLLMModel(BaseChatModel):
     model: str
     api_key: Optional[SecretStr] = None
     api_base: Optional[str] = None
-    #: The conversation this model serves, sent as the provider's prompt cache key. See
-    #: :meth:`_completion_kwargs` for why a cache is not reachable without it.
+    #: The conversation this model serves, sent as the provider's prompt cache key.
     session_id: str = ""
     #: The window models.dev advertises, for the models LiteLLM's own map has never heard of.
-    #: See :meth:`context_window`.
     context_length: int = 0
     temperature: float = 0.0
     reasoning_effort: Optional[str] = None
     maximum_tokens: Optional[int] = None
-    # A bounded request timeout so a stalled or half-dead provider connection cannot
-    # hang a turn forever. The streaming loop only checks for aborts BETWEEN chunks,
-    # so if the provider stops sending bytes entirely the turn is otherwise
-    # unrecoverable (Stop cannot interrupt an await that never resumes). The value is
-    # deliberately generous — it bounds a truly dead connection without cutting off a
-    # legitimately long generation. LiteLLM forwards it to the underlying HTTP client.
+    # A bounded request timeout so a stalled or half-dead provider connection cannot hang a turn forever.
     timeout: Optional[float] = 300.0
     default_headers: dict[str, str] = {}
 
-    #: The last request's segment trace, kept so the next one can be told what moved. Declared
-    #: rather than merely assigned: an undeclared private attribute cannot be set on a Pydantic
-    #: model at all.
+    #: The last request's segment trace, kept so the next one can be told what moved.
     _previous_trace: Optional[RequestTrace] = PrivateAttr(default=None)
 
     @property
@@ -197,18 +175,6 @@ class ChatLiteLLMModel(BaseChatModel):
                 if tool_calls:
                     entry["tool_calls"] = tool_calls
                 # Reasoning goes back in exactly one form, the same way prose does.
-                #
-                # The provider-native form wins where there is one: a signed thinking block
-                # already contains the thinking *and* the signature that makes it usable, and an
-                # encrypted item is the only form its model can read. Sending the prose beside it
-                # is the same words a second time — 541 tokens of duplicate reasoning on a single
-                # turn when this was measured, paid for again on every later call, since a
-                # conversation carries every past turn.
-                #
-                # The prose is the fallback, for the OpenAI-compatible endpoints that have no
-                # native form. DeepSeek wants the field on *every* assistant message, present and
-                # empty rather than absent, because it returns empty reasoning of its own that has
-                # to be handed back the same way; OpenCode carries the same special case.
                 carried = carried_reasoning_for(message, self.model)
                 entry.update(carried)
                 reasoning = message_reasoning_text(message)
@@ -254,44 +220,20 @@ class ChatLiteLLMModel(BaseChatModel):
                 plain.append(entry.model_dump(exclude_none=True))
         return plain
 
-    #: What makes a model want explicit cache breakpoints: being a Claude, wherever it is served
-    #: from. Deliberately a property of the *model* and not of the provider — Claude reaches this
-    #: harness as `anthropic/claude-…`, `openrouter/anthropic/claude-…`, `bedrock/anthropic.claude-…`,
-    #: `vertex_ai/claude-…`, through the OpenCode Zen gateway and through resellers like
-    #: Databricks, and every one of those wants the same markers. Gating on the provider instead
-    #: got it wrong in both directions at once: it put Anthropic's markers on
-    #: `openrouter/openai/gpt-…`, which is not Claude and does not want them, while missing Claude
-    #: anywhere the provider was not one of two named prefixes.
+    #: What makes a model want explicit cache breakpoints: being a Claude, wherever it is served from.
     _CACHE_BREAKPOINT_MARKERS = ("claude", "anthropic")
 
-    #: Routes whose models take the same explicit breakpoints regardless of family. Alibaba's
-    #: Model Studio implements Anthropic-style `cache_control` across its own Qwen models, so the
-    #: marker is right there even though nothing about the model says Claude.
+    #: Routes whose models take the same explicit breakpoints regardless of family.
     _CACHE_BREAKPOINT_ROUTES = ("dashscope",)
 
-    #: The one route that must never be marked. A gateway does its own caching (see
-    #: `_completion_kwargs`), and a breakpoint aimed at the model behind it would be describing a
-    #: request the gateway is going to rewrite.
+    #: The one route that must never be marked.
     _GATEWAY_ROUTE = "vercel_ai_gateway"
 
-    #: How many breakpoints to place, and where. Anthropic honours at most four, so they are
-    #: spent where they pay: two at the front covering the tools and the system prompt, which
-    #: never change, and two at the moving end of the conversation. The trailing pair is what
-    #: makes an append-only conversation cache *incrementally* — each call writes a breakpoint
-    #: just behind the newest messages, and the next call reads it as the prefix it starts from.
+    #: How many breakpoints to place, and where.
     _LEADING_BREAKPOINTS = 2
     _TRAILING_BREAKPOINTS = 2
 
-    #: GitHub Copilot resells Claude but reads a differently named marker, and LiteLLM has no
-    #: translation for it — so the plain one would ride all the way to Copilot's endpoint and mean
-    #: nothing there. Named per-route rather than assumed, because "which word does this endpoint
-    #: read" is exactly the kind of thing that differs quietly and costs a cache silently.
-    #:
-    #: Bedrock is deliberately *not* here even though its own wire format calls the thing a
-    #: `cachePoint`. LiteLLM's Converse transform reads OpenAI-style `cache_control` and builds
-    #: that block itself, so Bedrock's own spelling would produce a key nothing reads — the one
-    #: place where copying an implementation written against a different SDK would have
-    #: introduced the bug rather than avoided it.
+    #: GitHub Copilot resells Claude but reads a differently named marker, and LiteLLM has no translation for it — so the plain one would ride all the way to Copilot's endpoint and mean nothing there.
     _CACHE_CONTROL_KEYS = {"github_copilot": "copilot_cache_control"}
     _DEFAULT_CACHE_CONTROL_KEY = "cache_control"
 
@@ -333,17 +275,11 @@ class ChatLiteLLMModel(BaseChatModel):
             entry for index, entry in enumerate(dicts)
             if entry["role"] != "system" and index not in transient
         ]
-        # Disjoint by construction — one selects system messages and the other excludes them — so
-        # the two never mark the same message, and together they never exceed the four
-        # breakpoints Anthropic honours.
+        # Disjoint by construction — one selects system messages and the other excludes them — so the two never mark the same message, and together they never exceed the four breakpoints Anthropic honours.
         system = [entry for entry in dicts if entry["role"] == "system"][: self._LEADING_BREAKPOINTS]
         for entry in system:
             self._mark_cached(entry, self._cache_control_key())
-        # Walk back until the trailing breakpoints are actually *placed*, rather than taking the
-        # last two entries and hoping. Not every message can carry one: an assistant turn that is
-        # pure tool calls has empty content and no block to attach to, and it is the single most
-        # common message at the end of an agentic request — so taking the last two silently spent
-        # one of Anthropic's four on nothing at all.
+        # Walk back until the trailing breakpoints are actually *placed*, rather than taking the last two entries and hoping.
         placed = 0
         for entry in reversed(durable):
             if placed >= self._TRAILING_BREAKPOINTS:
@@ -370,9 +306,7 @@ class ChatLiteLLMModel(BaseChatModel):
         if isinstance(content, str):
             if not content:
                 return False  # an empty block is not a cacheable prefix, only a malformed one
-            # Annotated rather than inferred: a bare literal reads as `list[dict[str, str]]`, and
-            # the marker written below is a dict, so the block being promoted here would type as
-            # one that cannot hold it.
+            # Annotated rather than inferred: a bare literal reads as `list[dict[str, str]]`, and the marker written below is a dict, so the block being promoted here would type as one that cannot hold it.
             promoted: list[dict[str, Any]] = [{"type": "text", "text": content}]
             entry["content"] = promoted
         elif not isinstance(content, list) or not content:
@@ -403,8 +337,7 @@ class ChatLiteLLMModel(BaseChatModel):
 
         rendered: list[dict[str, Any]] = []
         for call in tool_calls:
-            # LangChain ToolCall stores the parsed arguments under ``args``; the
-            # OpenAI wire format we serialize back to uses ``arguments``.
+            # LangChain ToolCall stores the parsed arguments under ``args``; the OpenAI wire format we serialize back to uses ``arguments``.
             arguments = call.get("args")
             serialized = arguments if isinstance(arguments, str) else compact(arguments)
             rendered.append({
@@ -436,40 +369,19 @@ class ChatLiteLLMModel(BaseChatModel):
         if self.default_headers:
             params["extra_headers"] = self.default_headers
         if self.session_id:
-            # Which cache to look in. A prompt cache is not one global store: a provider routes
-            # the lookup by hashing the first couple of hundred tokens of the prefix *together
-            # with* this key, so requests that share a key land on the machine holding their
-            # prefix. Without it an unchanged conversation is sprayed across machines and mostly
-            # misses — measured here at 41 of 66 calls reporting zero cached tokens on a prefix
-            # that had not changed at all. One session is one conversation is one prefix, so the
-            # session id is the key. LiteLLM drops the parameter for providers that have no such
-            # concept (`drop_params`), so this is safe to send everywhere.
+            # Which cache to look in.
             params["prompt_cache_key"] = self.session_id
         if self._route() == self._GATEWAY_ROUTE:
-            # A gateway sits in front of many providers and rewrites the request for whichever
-            # one it routes to, so it is the only thing positioned to place the breakpoints —
-            # which is why `_apply_cache_breakpoints` leaves its traffic alone. Asking for
-            # automatic caching is the whole of our side of that bargain.
+            # A gateway sits in front of many providers and rewrites the request for whichever one it routes to, so it is the only thing positioned to place the breakpoints — which is why `_apply_cache_breakpoints` leaves its traffic alone.
             params["extra_body"] = {**params.get("extra_body", {}), "gateway": {"caching": "auto"}}
         if self._speaks_responses():
             # Ask for the encrypted reasoning, and decline to have the conversation kept.
-            #
-            # These two go together and are meaningless apart. `store: false` says the provider
-            # holds nothing between calls, which is the only honest arrangement when the client
-            # owns the transcript — and it is what makes `include` necessary, because with
-            # nothing stored the encrypted item is the sole way the model's thinking reaches the
-            # next call. Asking for one without the other either leaks the conversation into a
-            # provider's storage or loses the reasoning. Both references send exactly this pair.
-            #
-            # `extra_body` is how they reach LiteLLM's Responses bridge, which lifts the keys it
-            # recognises to the top level of the request it builds.
             params["extra_body"] = {
                 **params.get("extra_body", {}),
                 "include": _ENCRYPTED_REASONING,
                 "store": False,
             }
-        # Caller-supplied kwargs (tools, tool_choice, parallel_tool_calls, stop)
-        # override the model defaults so bind_tools() bindings reach LiteLLM.
+        # Caller-supplied kwargs (tools, tool_choice, parallel_tool_calls, stop) override the model defaults so bind_tools() bindings reach LiteLLM.
         params.update({key: value for key, value in kwargs.items() if value is not None})
         return params
 
@@ -501,29 +413,21 @@ class ChatLiteLLMModel(BaseChatModel):
         run_manager=None,
         **kwargs: Any,
     ) -> AsyncIterator[ChatGenerationChunk]:
-        # include_usage asks the provider for a trailing usage chunk so the real
-        # prompt/completion token counts are reported for the streamed turn (LiteLLM
-        # drops this option for providers that don't support it, and normalizes the
-        # usage object across providers either way).
+        # include_usage asks the provider for a trailing usage chunk so the real prompt/completion token counts are reported for the streamed turn (LiteLLM drops this option for providers that don't support it, and normalizes the usage object across providers either way).
         params = self._completion_kwargs(
             stop=stop, stream=True, stream_options={"include_usage": True}, **kwargs,
         )
-        # One name for the prose this call produces. Everything downstream that asks "is this
-        # delta part of the block already on screen" is asking about *this* call, and nothing
-        # LiteLLM streams answers that — so the answer is minted here, once, and every chunk of
-        # the call carries it.
+        # One name for the prose this call produces.
         block = f"litellm-{uuid4().hex}-"
         sent = self._apply_cache_breakpoints(self._messages_to_dicts(messages), messages)
-        # Taken before the request, reported once the response says what the cache did — a hit
-        # figure on its own cannot say whether we moved the prefix or the provider simply missed.
+        # Taken before the request, reported once the response says what the cache did — a hit figure on its own cannot say whether we moved the prefix or the provider simply missed.
         current_trace = self._trace_request(params, sent)
         reported = False
         stream = cast(AsyncIterator[Any], await litellm.acompletion(messages=sent, **params))
         async for chunk in stream:
             generation_chunk = self._litellm_chunk_to_generation_chunk(chunk, block)
             if generation_chunk is not None:
-                # Attached to the chunk that carries usage, so the diagnosis travels with the
-                # figure it explains and is recorded with it.
+                # Attached to the chunk that carries usage, so the diagnosis travels with the figure it explains and is recorded with it.
                 if generation_chunk.message.usage_metadata and not reported:
                     reported = True
                     generation_chunk.message.additional_kwargs["cache_trace"] = self._cache_diagnosis(current_trace)
@@ -569,9 +473,7 @@ class ChatLiteLLMModel(BaseChatModel):
         usage_metadata = ChatLiteLLMModel._usage_metadata(getattr(chunk, "usage", None))
         choices = getattr(chunk, "choices", None) or []
         if not choices:
-            # The trailing include_usage chunk (and some providers' final chunk)
-            # carries usage but no choices — surface an empty message that only
-            # transports the token counts so the merged response accumulates them.
+            # The trailing include_usage chunk (and some providers' final chunk) carries usage but no choices — surface an empty message that only transports the token counts so the merged response accumulates them.
             if usage_metadata is not None:
                 return ChatGenerationChunk(message=AIMessageChunk(content="", usage_metadata=usage_metadata))
             return None
@@ -589,9 +491,7 @@ class ChatLiteLLMModel(BaseChatModel):
                 "index": getattr(call, "index", 0) or 0,
                 "id": getattr(call, "id", None),
                 "name": getattr(function, "name", None) if function else None,
-                # The OpenAI streaming delta exposes the partial JSON as
-                # function.arguments; langchain-core's ToolCallChunk stores it
-                # under the ``args`` key (not ``arguments``).
+                # The OpenAI streaming delta exposes the partial JSON as function.arguments; langchain-core's ToolCallChunk stores it under the ``args`` key (not ``arguments``).
                 "args": getattr(function, "arguments", None) if function else None,
                 "type": "tool_call_chunk",
             }))
@@ -604,8 +504,7 @@ class ChatLiteLLMModel(BaseChatModel):
             content=content_blocks_to_message_content(content_blocks),
             tool_call_chunks=tool_call_chunks,
             usage_metadata=usage_metadata,
-            # Chunk merging concatenates these lists, so the finished message ends up holding
-            # every signed block of the turn, in the order the model produced them.
+            # Chunk merging concatenates these lists, so the finished message ends up holding every signed block of the turn, in the order the model produced them.
             additional_kwargs=self._reasoning_to_carry(delta),
         )
         finish_reason = getattr(choice, "finish_reason", None)
@@ -694,11 +593,7 @@ class ChatLiteLLMModel(BaseChatModel):
             })
         message = AIMessage(
             content_blocks=ChatLiteLLMModel._standard_content_blocks(content, reasoning),
-            # An empty list, never `None`. `AIMessage.tool_calls` is a list with a default,
-            # and a default applies to an *omitted* key — passing `None` explicitly fails
-            # validation before any caller can look at it. Most turns carry tool calls so
-            # this stayed hidden; the one that reliably does not is titling, which is why
-            # every conversation was named "Untitled conversation".
+            # An empty list, never `None`.
             tool_calls=list(tool_calls or []),
             usage_metadata=ChatLiteLLMModel._usage_metadata(getattr(response, "usage", None)),
             additional_kwargs=self._reasoning_to_carry(message_obj),

@@ -39,10 +39,7 @@ __all__ = [
     "validate",
 ]
 
-#: The modes a schedule may run under. Deliberately every mode a person may choose, minus
-#: nothing: a scheduled job is not a lesser kind of session and may legitimately need to write.
-#: Read off the enum rather than restated, so a mode added there is offered here without an edit
-#: — this list was a hand-kept copy, which is the kind that falls behind silently.
+#: The modes a schedule may run under.
 PERMISSION_MODES = tuple(str(mode) for mode in PermissionMode)
 
 
@@ -64,9 +61,7 @@ def validate(cron: str, zone: str, permission_mode: str) -> None:
     except (ZoneInfoNotFoundError, ValueError) as error:
         raise ScheduleError(f"{zone!r} is not a timezone this machine knows.") from error
     if permission_mode not in PERMISSION_MODES:
-        # Never defaulted. A schedule runs with nobody present, so the mode is the one thing
-        # its author must decide rather than discover — inheriting the workspace's would mean a
-        # job silently gaining write access the day somebody loosened the workspace.
+        # Never defaulted.
         raise ScheduleError(
             "A schedule must state its permission mode explicitly (one of: "
             + ", ".join(PERMISSION_MODES) + "), because it runs with nobody watching."

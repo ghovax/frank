@@ -129,12 +129,7 @@ class _TurnEventSink:
         self._span = telemetry_span
         self._model_identifier = model_identifier
         self._text = _TextPartBuffer(self._emit_text)
-        # Reasoning is buffered on the same terms as prose, and for a reason that has nothing to
-        # do with rendering: every emitted part becomes its own message, and every message its
-        # own row. A turn's thinking arrives as dozens of few-character deltas, so leaving them
-        # unbuffered turned a few kilobytes of reasoning into dozens of inserts — twenty-five
-        # rows for six blocks in one short session. Coalescing them costs nothing on screen,
-        # since the client keys deltas by block and concatenates them anyway.
+        # Reasoning is buffered on the same terms as prose, and for a reason that has nothing to do with rendering: every emitted part becomes its own message, and every message its own row.
         self._thinking = _TextPartBuffer(self._emit_thinking)
         self.final_text = ""
         self.stop_reason = ""
@@ -148,9 +143,7 @@ class _TurnEventSink:
         await self._emit(_event_part(ThinkingEvent(text=text, block_id=key[0] if key else "")))
 
     async def flush(self, force: bool = True) -> None:
-        # Prose before reasoning would reorder a turn that ends mid-thought, so each buffer is
-        # drained in the order its content was produced: the pushers below keep only one of the
-        # two non-empty at a time, which makes the order here immaterial and the invariant cheap.
+        # Prose before reasoning would reorder a turn that ends mid-thought, so each buffer is drained in the order its content was produced: the pushers below keep only one of the two non-empty at a time, which makes the order here immaterial and the invariant cheap.
         await self._text.flush(force=force)
         await self._thinking.flush(force=force)
 
@@ -189,8 +182,7 @@ class _TurnEventSink:
                 content_block_identifier = str(event.block_id)
                 if not content_block_identifier:
                     raise ValueError("Assistant text events require a content-block identity.")
-                # Only ever one of the two buffers holds anything: switching kind drains the
-                # other first, which is what keeps replay in the order things were said.
+                # Only ever one of the two buffers holds anything: switching kind drains the other first, which is what keeps replay in the order things were said.
                 await self._thinking.flush(force=True)
                 await self._text.push(event.text, (content_block_identifier,))
             case Thinking():
@@ -212,8 +204,7 @@ class _TurnEventSink:
                 await self.flush()
                 await self._emit(_tool_result_part(event.name, event.id, event.result, event.status))
             case Checkpoint():
-                # A durable-safe point: snapshot the conversation so a mid-turn crash leaves
-                # completed tools' results in the record (the next turn does not redo them).
+                # A durable-safe point: snapshot the conversation so a mid-turn crash leaves completed tools' results in the record (the next turn does not redo them).
                 await self._save_conversation()
             case Mcp():
                 await self.flush()
@@ -258,8 +249,6 @@ class _TurnEventSink:
                 )))
             case Suspended():
                 # The turn needs one or more human decisions before it can run its tool batch.
-                # Surface each gate as its native DataPart so a client renders the prompt, then
-                # close the segment durably through the injected suspend strategy.
                 await self.flush()
                 interactions = event.interactions or []
                 plans = event.plans or {}
@@ -297,8 +286,7 @@ class _TurnEventSink:
                 self.final_text = event.text or self.final_text
                 self.stop_reason = event.stop_reason or self.stop_reason
             case DeniedInjection():
-                # A denied-command marker the runtime tracks for its own bookkeeping; the
-                # executor does not surface it.
+                # A denied-command marker the runtime tracks for its own bookkeeping; the executor does not surface it.
                 pass
             case _:
                 assert_never(event)

@@ -46,9 +46,7 @@ import httpx
 from frank.base.paths import oauth_token_path
 from frank.base.tuning import Tunable, active_tuning
 
-# Codex's public OAuth client and endpoints. The client id is not a secret — it is
-# the same value the Codex CLI ships — and reusing it is exactly what makes the
-# consent screen mint a ChatGPT-subscription-scoped token for us.
+# Codex's public OAuth client and endpoints.
 CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"
 TOKEN_URL = "https://auth.openai.com/oauth/token"
@@ -62,8 +60,7 @@ SCOPE = "openid profile email offline_access"
 
 PROVIDER = "chatgpt"
 
-# Serializes token refreshes: many concurrent turns can each notice an expiring
-# token at once, and we want exactly one refresh + write, not a stampede.
+# Serializes token refreshes: many concurrent turns can each notice an expiring token at once, and we want exactly one refresh + write, not a stampede.
 _refresh_lock = asyncio.Lock()
 
 
@@ -114,9 +111,7 @@ class FileCredentials:
         auth_file_path().unlink(missing_ok=True)
 
 
-# Which store the process uses. A `ContextVar` rather than a module global for the reason every
-# other per-session value in this tree is one: two sessions in one interpreter may legitimately
-# hold different credentials, and the last caller must not win.
+# Which store the process uses.
 _store: contextvars.ContextVar[Any] = contextvars.ContextVar(
     "frank_credentials", default=None
 )
@@ -269,8 +264,7 @@ class ChatGPTAuthError(RuntimeError):
     """Raised when a ChatGPT-subscription call cannot be authenticated."""
 
 
-# The HTML shown in the browser tab after the OAuth redirect, kept in a sibling
-# asset (with a {{message}} placeholder) rather than inline in the code.
+# The HTML shown in the browser tab after the OAuth redirect, kept in a sibling asset (with a {{message}} placeholder) rather than inline in the code.
 _CALLBACK_PAGE_PATH = Path(__file__).resolve().parent / "assets" / "chatgpt_callback.html"
 
 

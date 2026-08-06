@@ -8,9 +8,7 @@ import { LocationEditorList, emptyLocation, locationConflict } from "./location-
 import { toaster } from "./ui/toaster";
 import { errorMessage } from "@/lib/errors";
 
-// A workspace is an internal grouping of one or more environments — a folder on this machine
-// or on an SSH host — so creation only asks where the agent will work. Mount this only while
-// open so its initializers give fresh state.
+// A workspace is an internal grouping of one or more environments — a folder on this machine or on an SSH host — so creation only asks where the agent will work.
 export function NewWorkspaceDialog({
   hosts,
   hostsLoaded,

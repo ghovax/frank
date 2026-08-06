@@ -136,18 +136,13 @@ async def list_models_endpoint():
     assert state.global_configuration is not None
     configured_keys = state.global_configuration.configured_provider_keys()
     available_identifiers = {model.identifier for model in available_models(configured_keys)}
-    # The two subscription providers list a static superset but are only *available*
-    # per-model against the account's live catalog, so the picker can grey the ones a
-    # plan does not serve. Both are asked at once — they are independent network calls
-    # and this endpoint is polled.
+    # The two subscription providers list a static superset but are only *available* per-model against the account's live catalog, so the picker can grey the ones a plan does not serve.
     live_chatgpt, live_cursor = await asyncio.gather(
         fetch_subscription_models(),
         cursor_fetch_subscription_models(),
     )
     catalog = list_models()
-    # Live models the static list has not caught are appended so nothing a plan serves is
-    # missed. For chatgpt that means real gpt-* only, because the live Codex catalog also
-    # names models this harness does not route; for cursor every entry is routable.
+    # Live models the static list has not caught are appended so nothing a plan serves is missed.
     catalog.extend(_live_additions(
         "chatgpt", live_chatgpt, catalog, lambda slug: slug.startswith("gpt-"), ("text", "image"),
     ))
@@ -292,8 +287,7 @@ async def cursor_auth_start():
     ``settings_changed`` broadcast (or by polling GET /auth/cursor)."""
     previous = state.cursor_login_flow
     if previous is not None:
-        # A second sign-in supersedes the first, and the first must stop polling rather
-        # than race to write a token the user has already replaced.
+        # A second sign-in supersedes the first, and the first must stop polling rather than race to write a token the user has already replaced.
         await previous.close()
     flow = CursorLoginFlow()
     state.cursor_login_flow = flow
@@ -318,8 +312,7 @@ async def cursor_auth_start():
 async def cursor_auth_signout():
     """Sign out: clear the stored tokens and reset runtimes so the ``cursor`` provider
     re-locks immediately."""
-    # Deferred: resumable conversation state is the model client's, and the REST layer does
-    # not import the runtime at module scope. Everything else here lives in ``base``.
+    # Deferred: resumable conversation state is the model client's, and the REST layer does not import the runtime at module scope.
     from frank.runtime.models.cursor import clear_resumptions
 
     if state.cursor_login_flow is not None:
@@ -339,9 +332,7 @@ async def get_settings():
     """Return the API credentials stored in the XDG configuration file so the
     settings dialog can pre-fill them, including per-provider keys."""
     assert state.global_configuration is not None
-    # The configured floor, not some agent's own setting: this is what a session gets when its
-    # creator does not say, and reading it off a nominated profile would make that profile a
-    # default agent in everything but name.
+    # The configured floor, not some agent's own setting: this is what a session gets when its creator does not say, and reading it off a nominated profile would make that profile a default agent in everything but name.
     permission_mode = _normalize_permission_mode(state.global_configuration.agent.permission_mode)
     return {
         "permission_mode": permission_mode,
@@ -357,9 +348,7 @@ async def get_settings():
         "user_context_enabled": state.global_configuration.user_context.enabled,
         "computer_control_enabled": state.global_configuration.computer_control.enabled,
         "toolbox_enabled": state.global_configuration.toolbox.enabled,
-        # Whether this machine could offer one at all, which is not the same question: the
-        # switch can be on while the machine has no package manager to honour it, and an
-        # interface that showed only the setting would be describing something that is not there.
+        # Whether this machine could offer one at all, which is not the same question: the switch can be on while the machine has no package manager to honour it, and an interface that showed only the setting would be describing something that is not there.
         "toolbox_available": _toolbox.available(),
         "dictation_enabled": state.global_configuration.dictation.enabled,
         "providers": {
@@ -393,9 +382,7 @@ async def update_settings(request: SettingsUpdateRequest):
                 if request.permission_mode is not None else None
             ),
         )
-        # `agent.permission_mode` in the configuration file, which is where it is read from
-        # too. It used to be written onto a nominated profile's sidecar — which made that one
-        # profile the global default, and any agent's own setting a global setting.
+        # `agent.permission_mode` in the configuration file, which is where it is read from too.
         if request.permission_mode is not None:
             configuration.agent.permission_mode = _normalize_permission_mode(request.permission_mode)
             await state.reset_runtimes()
@@ -413,8 +400,7 @@ async def update_settings(request: SettingsUpdateRequest):
             configuration.sandbox = _merged_sandbox(configuration.sandbox, request.sandbox)
         if request.worktree_strategy is not None:
             configuration.workspace.strategy = request.worktree_strategy
-        # Rebuild the providers map from the posted keys/base URLs, merging so a
-        # provider the dialog did not render keeps its stored credential.
+        # Rebuild the providers map from the posted keys/base URLs, merging so a provider the dialog did not render keeps its stored credential.
         merged_providers = {
             identifier: _configuration.ProviderCredential(
                 api_key=credential.api_key, base_url=credential.base_url
@@ -475,8 +461,7 @@ async def settings_schema():
             "secret": setting.secret,
             "default": setting.default,
             "value": value,
-            # Whether the file says this, as opposed to the code shipping it. What a person
-            # changed is the question they actually ask of their own configuration.
+            # Whether the file says this, as opposed to the code shipping it.
             "configured": configured,
         })
     return {"sections": [section for section in sections.values() if section["settings"]]}
@@ -498,8 +483,7 @@ async def update_setting(request: SettingValueRequest):
         document = await asyncio.to_thread(configuration_file.load)
         entry = setting_for(request.path)
         if request.value is None and entry is not None and not entry.optional:
-            # Nothing, for a setting that cannot hold nothing, means "put it back" rather than
-            # "write a null the schema will refuse at the next start".
+            # Nothing, for a setting that cannot hold nothing, means "put it back" rather than "write a null the schema will refuse at the next start".
             configuration_file.remove(document, request.path)
         else:
             configuration_file.write(document, request.path, request.value)
@@ -507,8 +491,7 @@ async def update_setting(request: SettingValueRequest):
         if invalid:
             raise HTTPException(status_code=400, detail=invalid)
         await asyncio.to_thread(configuration_file.save, document)
-        # Read back, applied live, and every session told to rebuild — the same three steps
-        # every bespoke endpoint performed for its own field, done once for all of them.
+        # Read back, applied live, and every session told to rebuild — the same three steps every bespoke endpoint performed for its own field, done once for all of them.
         await _reload_configuration_from_disk()
         await state.reset_runtimes()
     return {"status": "saved", "path": request.path}

@@ -39,10 +39,7 @@ class ContextWindowExceeded(Exception):
         self.tokens = tokens
 
 
-# What a provider calls this failure in the machine-readable ``code`` beside its message. These are
-# identifiers, not sentences: a provider that changes its prose keeps its code, and one that
-# changes its code has changed its API. Only consulted for providers reached outside litellm, which
-# raises its own typed error and needs no help from a list.
+# What a provider calls this failure in the machine-readable ``code`` beside its message.
 CONTEXT_OVERFLOW_CODES = frozenset({
     "context_length_exceeded",
     "context_length_error",

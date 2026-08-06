@@ -8,15 +8,12 @@ import type { ToolEventStatus } from "@/lib/tool-event";
 export { STATUS_PALETTE };
 export type { StatusKind };
 
-// The glyph for statuses that render as icon chips (the tool-group recap). Prose surfaces show
-// a label instead and ignore this. Which statuses get one is decided in `@shared/status`; what a
-// glyph *is* is this client's business.
+// The glyph for statuses that render as icon chips (the tool-group recap).
 export const STATUS_ICON: Partial<Record<StatusKind, IconType>> = Object.fromEntries(
   Object.entries(STATUS_GLYPH).map(([kind, name]) => [kind, glyph(name)]),
 ) as Partial<Record<StatusKind, IconType>>;
 
-// A live tool call's status (plus whether it was pushed to the background), mapped to the
-// normalized kind, so one call reads with the same colour language as its group.
+// A live tool call's status (plus whether it was pushed to the background), mapped to the normalized kind, so one call reads with the same colour language as its group.
 export function toolStatusKind(status: ToolEventStatus | undefined, background = false): StatusKind {
   if (status === "running") return background ? "background" : "running";
   if (status === "failed") return "failed";
@@ -42,8 +39,7 @@ export function taskStateKind(state: string): StatusKind {
   }
 }
 
-// A task-list lifecycle value (the model's own task bookkeeping), mapped to the normalized
-// kind. Tolerant of spacing/casing/hyphenation the model may emit.
+// A task-list lifecycle value (the model's own task bookkeeping), mapped to the normalized kind.
 export function taskLifecycleKind(status: string): StatusKind {
   switch (status.toLowerCase().replace(/[\s-]+/g, "_")) {
     case "completed":

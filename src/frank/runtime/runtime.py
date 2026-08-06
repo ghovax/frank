@@ -160,8 +160,7 @@ def build_chat_model(
         )
     if provider_identifier == "cursor":
         catalog_entry = find_model(model_identifier)
-        # No reasoning_effort: a Cursor model id carries its effort as part of the id, so
-        # the user's model choice already said it and a second setting could only disagree.
+        # No reasoning_effort: a Cursor model id carries its effort as part of the id, so the user's model choice already said it and a second setting could only disagree.
         return ChatCursorModel(
             model=model_suffix,
             workspace=working_directory,
@@ -172,10 +171,7 @@ def build_chat_model(
         global_configuration.configured_provider_keys(),
         global_configuration.configured_provider_bases(),
     )
-    # The catalogue's window travels with the model, the same way it already does on the Codex
-    # path. LiteLLM knows nothing about a gateway's models, so without this the window was zero
-    # for every one of them — and a zero window is not a small window, it is no fill ring, no
-    # scaled budget, and no over-context guard.
+    # The catalogue's window travels with the model, the same way it already does on the Codex path.
     catalogued = find_model(model_identifier)
     return ChatLiteLLMModel.model_validate({
         "model": resolved["model"],
@@ -202,18 +198,12 @@ def _build_tools(
         can_reach_peers=can_reach_peers, extra_tools=extra_tools,
         permission_mode=permission_mode,
     )
-    # The agent profile's allow-list narrows *our* tools. It cannot narrow the caller's: a
-    # profile is a file describing which of the harness's capabilities an agent should have,
-    # written long before this program existed, so filtering a tool the caller passed in
-    # against it would mean a supplied tool silently vanishing for every agent that names an
-    # explicit list.
+    # The agent profile's allow-list narrows *our* tools.
     supplied = {tool.name for tool in extra_tools}
     allowed = _live_allow_list(
         agent_configuration.tools_enabled, {tool.name for tool in tools} - supplied,
     )
-    # `disabled` applies to the harness's tools and to the caller's alike: a program that
-    # supplies a tool and then switches it off for one agent means it, and the allow-list
-    # exemption above is about a *profile* not knowing the tool exists, not about the caller.
+    # `disabled` applies to the harness's tools and to the caller's alike: a program that supplies a tool and then switches it off for one agent means it, and the allow-list exemption above is about a *profile* not knowing the tool exists, not about the caller.
     return [
         tool for tool in tools
         if agent_configuration.tools.is_enabled(tool.name)
@@ -278,17 +268,10 @@ def _all_available_tools(
         update_goal_tool,
         read_turn_tool,
     ]
-    # Asking a person parks the turn until somebody answers, which is a coherent thing to offer
-    # only where somebody is expected to be there. Under `classify` nobody is: that mode exists
-    # so a session can be sent off and left alone, and it is defined by never putting a question
-    # in front of anyone. A session that could still call this would have a way to stop dead and
-    # wait forever — the exact failure the mode is meant to remove — so it does not have one.
-    # Withheld rather than forbidden in prose, because a tool that is absent cannot be called.
+    # Asking a person parks the turn until somebody answers, which is a coherent thing to offer only where somebody is expected to be there.
     if permission_mode.asks:
         available.append(ask_user_tool)
-    # Searching and controlling the live screen (the browser and native apps) drives the whole
-    # machine, so it is opt-in: added only when the user has enabled it in Settings (which also
-    # gates the Accessibility grant flow).
+    # Searching and controlling the live screen (the browser and native apps) drives the whole machine, so it is opt-in: added only when the user has enabled it in Settings (which also gates the Accessibility grant flow).
     if global_configuration.computer_control.enabled:
         available.append(control_screen_tool)
     if global_configuration.mcp.enabled_servers():
@@ -298,23 +281,15 @@ def _all_available_tools(
             list_mcp_resources_tool,
             read_mcp_resource_tool,
         ])
-    # Peer sessions: the one composition path. Offered only when there is a profile to run
-    # *and* a control plane to reach — a `create_session` with an empty enumeration, or with no
-    # way to address what it creates, is a tool that cannot succeed, and offering one costs
-    # context and invites an attempt. A library session has no control plane, so it composes by
-    # calling the harness again rather than by creating a peer.
+    # Peer sessions: the one composition path.
     if can_reach_peers:
         available.extend(
             session_tools(_installed_agent_names(global_configuration, working_directory))
         )
-        # Agents on other hosts are a different bargain — someone else's machine, someone
-        # else's cost, no access to this filesystem — so they are separate verbs, and they
-        # appear only when the user has actually registered one.
+        # Agents on other hosts are a different bargain — someone else's machine, someone else's cost, no access to this filesystem — so they are separate verbs, and they appear only when the user has actually registered one.
         if global_configuration.remote_agents.agents:
             available.extend(remote_agent_tools())
-    # The caller's own tools, last, so a name collision resolves to ours rather than silently
-    # replacing a built-in — a tool called `bash` that is not this harness's `bash` would be a
-    # confinement surprise, not an extension point.
+    # The caller's own tools, last, so a name collision resolves to ours rather than silently replacing a built-in — a tool called `bash` that is not this harness's `bash` would be a confinement surprise, not an extension point.
     known = {tool.name for tool in available}
     available.extend(tool for tool in extra_tools if tool.name not in known)
     return available
@@ -333,12 +308,6 @@ def _as_profile(sandbox: Any):
 
     if sandbox is None:
         # Deliberately the configured default, not `Profile()`.
-        #
-        # `Profile()` has empty path tuples, and an empty writable set is not "unconfined" — it
-        # is "may write nowhere". So a library session built without a `sandbox=` produced an
-        # agent whose `bash` could not write to the directory the caller had just named as its
-        # workspace: every write came back `Operation not permitted`. The daemon never met this,
-        # because it always resolves a profile from configuration first.
         from frank.base.configuration import SandboxConfiguration
 
         return SandboxConfiguration().to_profile()
@@ -373,11 +342,7 @@ def _build_tool_context(
     the reverse. The two arguments that are *not* configuration are the two the runtime cannot
     derive: which session this is, and the MCP connections somebody else owns the lifetime of.
     """
-    # The session's own tools, and the one widening of the confinement that goes with them: a
-    # session cannot install into a directory it may not write. Widening here rather than in the
-    # profile the daemon resolved keeps `sandbox` what the person configured — the toolbox is
-    # Frank's own directory for this session, holding nothing of the user's, and it is created
-    # and deleted by the harness rather than named by anybody.
+    # The session's own tools, and the one widening of the confinement that goes with them: a session cannot install into a directory it may not write.
     toolbox = toolbox_for(session_id, enabled=global_configuration.toolbox.enabled)
     if toolbox is not None:
         toolbox.prepare()
@@ -451,10 +416,7 @@ class TaskManager:
         self._recalculate_statuses()
         return created
 
-    #: What an update may say. A key outside this set is reported rather than ignored: the tool
-    #: documented `turn_id` while this read `task_id`, so every well-formed-looking update matched
-    #: nothing and came back as "No matching tasks found" — a message that describes the task list
-    #: rather than the mistake, and gives a model no way to find the difference.
+    #: What an update may say.
     UPDATE_KEYS = frozenset({"task_id", "status"})
     STATUSES = ("pending", "in_progress", "completed", "blocked")
 
@@ -519,17 +481,9 @@ class TaskManager:
 
 
 class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _RunsTurns):
-    # A turn runs until the model is done or the user interrupts it — there is no tool-call
-    # ceiling and no heuristic stuck-detector. The model owns progress: it ends its own turn
-    # when finished, uses ``wait_for`` to poll rather than spinning, and re-reads a tool's
-    # ``output_file`` to see whether a repeated action changed anything. Context compaction is
-    # Observational Memory (Observer/Reflector); its thresholds and on/off switch live in
-    # Configuration.compaction.
+    # A turn runs until the model is done or the user interrupts it — there is no tool-call ceiling and no heuristic stuck-detector.
 
-    # Tool-name -> handler method. ``_execute_tool`` resolves permission, location, and
-    # policy once (the shared preamble), then dispatches the call to its handler here.
-    # Grouped tools (edit/write, the peer-session verbs, the MCP queries, computer/browser) share
-    # one handler; an unmapped name is the "unknown tool" error.
+    # Tool-name -> handler method.
     _TOOL_HANDLERS = {
         "bash": "_tool_bash",
         "read_file": "_tool_read_file",
@@ -590,36 +544,23 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         from frank.runtime.hooks import HookRunner
         from frank.runtime.pipeline import ToolPipeline
 
-        # The three seams around a turn. Each defaults to what the harness has always done:
-        # no hooks, no middleware, and the Observer/Reflector compaction built from
-        # configuration. Passing none of them changes nothing.
+        # The three seams around a turn.
         self._hooks = HookRunner(hooks)
         self._pipeline = ToolPipeline(pipeline)
         self._compaction = compaction
         self._session_id = session_id
-        # The session that created this one, empty when a person did. Reaches the model in the
-        # turn context, because reporting back is sending it a message and that needs an id.
+        # The session that created this one, empty when a person did.
         self._parent_session = parent_session
-        # What every child this runtime spawns is confined to. Resolved by the daemon at session
-        # creation and clamped there; held rather than re-derived, so a configuration edit cannot
-        # widen a session that is already running.
+        # What every child this runtime spawns is confined to.
         from frank.base.confinement import Grant
 
-        # Normalised, because callers already hand this three different shapes and only one of
-        # them worked. The worker converts a dict first, the library passed whatever it was
-        # given straight through, and a person reaching for the documented `SandboxConfiguration`
-        # got a pydantic model installed as the confinement — where every later `.describe()`,
-        # `.with_grant()` and `spawn_recipe()` raises `AttributeError` deep inside a turn rather
-        # than at the call that made the mistake. One conversion here settles it for every path.
+        # Normalised, because callers already hand this three different shapes and only one of them worked.
         self._sandbox = _as_profile(sandbox)
         self._agent_configuration = agent_configuration
         self._global_configuration = global_configuration
         self._working_directory = working_directory or str(Path.home())
         self._project_directory = project_directory or self._working_directory
-        # The workspace's locations the agent may address per tool call (keyed by URI, and
-        # by name for friendlier errors). When none are supplied (agents built without
-        # an explicit set, or a bare runtime), a single local location is synthesized from
-        # the working directory so the single-location default still works.
+        # The workspace's locations the agent may address per tool call (keyed by URI, and by name for friendlier errors).
         self._locations: dict[str, ResolvedLocation] = {}
         self._locations_by_name: dict[str, ResolvedLocation] = {}
         self._build_locations(
@@ -627,43 +568,28 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         )
 
         effective_model = agent_configuration.model_identifier
-        # Only a runtime that must *build* a client needs to be told which one. A caller who
-        # brought their own has already answered the question, and this refused them anyway —
-        # while naming `model=` as one of the three ways out, which made the message a promise
-        # the code did not keep. The identifier is still worth having when it is there, because
-        # the context window is looked up from it, but its absence degrades rather than refuses.
+        # Only a runtime that must *build* a client needs to be told which one.
         if not effective_model and model is None:
             raise ValueError(
                 f"Agent '{agent_configuration.identifier}' names no model. Set `provider` and "
                 "`model` in its profile, pass `model_identifier=\"provider/model\"` to "
                 "`frank.Session`, or hand the runtime a `model=` of your own."
             )
-        # A profile pinned to a provider the user never keyed fails on its first call, and
-        # that is the honest outcome: there is nothing to fall back to. Borrowing another
-        # profile's model would make one agent's behaviour depend on a second one it never
-        # named — the coupling every agent is defined to be free of — and would quietly run
-        # the work on a model nobody chose for it.
+        # A profile pinned to a provider the user never keyed fails on its first call, and that is the honest outcome: there is nothing to fall back to.
         self._effective_model_identifier = effective_model
 
-        # A caller's own chat model wins over anything configuration would build. Every provider
-        # this harness routes to implements LangChain's `BaseChatModel`, and so does every mock,
-        # tracer and rate limiter in that ecosystem — so accepting one is the whole of the model
-        # seam, with no interface of ours in the middle.
+        # A caller's own chat model wins over anything configuration would build.
         self._llm = model if model is not None else build_chat_model(
             effective_model, global_configuration, agent_configuration, self._working_directory,
             session_id,
         )
 
         self._file_lease_manager = file_lease_manager
-        # The caller's own tools, alongside the harness's. `BaseTool` is LangChain's, adopted
-        # rather than wrapped, so anything already written for that ecosystem works unchanged.
+        # The caller's own tools, alongside the harness's.
         self._extra_tools = {tool.name: tool for tool in tools}
-        # What a caller's tool is gated at. The permission engine classifies by tool *name* and
-        # has never heard of this one, so there is no honest way to infer it; defaulting to a
-        # mode that asks means adding a tool cannot silently widen what a session may do.
+        # What a caller's tool is gated at.
         self._supplied_tool_gate = supplied_tool_gate
-        # Resolved before the tools are assembled, because which tools exist depends on it: an
-        # autonomous session is not given the one that waits for a person.
+        # Resolved before the tools are assembled, because which tools exist depends on it: an autonomous session is not given the one that waits for a person.
         self._permission_mode: PermissionMode = PermissionMode.more_restrictive(
             permission_mode, agent_configuration.permission_policy
         )
@@ -672,25 +598,10 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             can_reach_peers=session_access is not None, extra_tools=tools,
             permission_mode=self._permission_mode,
         )
-        # Concrete tools are bound natively — the provider sees each tool's real
-        # JSON schema and can constrain argument decoding to it, and it emits
-        # several tool calls in one response when work is parallel. (The old
-        # single `query` dispatch envelope hid every schema behind `list[Any]`.)
-        # Parallel tool calls are the DEFAULT on every provider this harness
-        # routes to (OpenAI, Anthropic, Gemini, Mistral, the OpenAI-compatible
-        # family, …), so no `parallel_tool_calls` parameter is sent: LiteLLM
-        # forwards it verbatim to openai-compatible custom gateways — most of
-        # this harness's provider matrix — where a non-conforming server (or an
-        # o-series model) rejects it. What actually preserves parallelism is
-        # never forcing `tool_choice` and keeping each turn's tool results in
-        # one contiguous block (see the turn loop).
+        # Concrete tools are bound natively — the provider sees each tool's real JSON schema and can constrain argument decoding to it, and it emits several tool calls in one response when work is parallel.
         self._tool_schemas: dict[str, Any] = {tool.name: tool.args_schema for tool in self._tools}
         self._bound_model = self._llm.bind_tools(self._tools)
-        # The evaluator gates against the same narrowed allow-list the tool set was built
-        # from, so a profile naming a tool that no longer exists cannot refuse everything.
-        # A caller's own evaluator replaces the rule engine entirely. `Approvals` answers a
-        # gate once the engine has decided there should be one; this decides whether there is
-        # one at all, which is the difference between a policy and a decision.
+        # The evaluator gates against the same narrowed allow-list the tool set was built from, so a profile naming a tool that no longer exists cannot refuse everything.
         self._permissions = permissions if permissions is not None else PermissionEvaluator(
             agent_configuration.model_copy(update={
                 "tools_enabled": sorted(
@@ -703,46 +614,32 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             agent_name=agent_configuration.identifier,
             store=jobs,
         )
-        # Where the audit trail goes, and who answers a gate. Both absent by default, and both
-        # absences are the behaviour that was already there: the observations were computed and
-        # dropped, and a gate suspended and waited for a human.
+        # Where the audit trail goes, and who answers a gate.
         self._observer = observer
         self._approvals = approvals
         self._transcript = transcript
         # When the turn now running began, for the transcript entry it will produce.
         self._turn_started_at = None
-        # Command patterns the user chose to "always allow" this session — matching
-        # bash commands then skip the sandbox/approval prompts. Scoped to this
-        # runtime (this context), populated on demand from an LLM-derived rule.
+        # Command patterns the user chose to "always allow" this session — matching bash commands then skip the sandbox/approval prompts.
 
         self._conversation: list = conversation if conversation is not None else []
         self._system_prompt = agent_configuration.system_prompt
-        # Files the model has read this session, keyed by (location uri, resolved
-        # path) with the content hash from the last read — the uri disambiguates a
-        # same-named path on two hosts. Mutating tools compare against this so
-        # stale line numbers cannot overwrite externally changed content.
+        # Files the model has read this session, keyed by (location uri, resolved path) with the content hash from the last read — the uri disambiguates a same-named path on two hosts.
         self._read_files: dict[tuple[str, str], str] = {}
         self._abort_event = asyncio.Event()
-        # Running token totals for the session, summed from the real usage each
-        # model call reports (LiteLLM ``usage`` -> message ``usage_metadata``).
+        # Running token totals for the session, summed from the real usage each model call reports (LiteLLM ``usage`` -> message ``usage_metadata``).
         self._token_usage: dict[str, int] = {
             "input_tokens": 0,
             "output_tokens": 0,
             "total_tokens": 0,
             "cache_read_tokens": 0,
-            # What a cache could have returned across the session — the tokens each call had
-            # already sent last time. Kept beside the read because the read alone has no honest
-            # denominator: measured against total input it looks like a miss even when every
-            # cacheable token came back, since a token must be sent once before it can be cached.
+            # What a cache could have returned across the session — the tokens each call had already sent last time.
             "reachable_tokens": 0,
             "reasoning_tokens": 0,
             "model_calls": 0,
         }
 
-        # Where the prompt's material comes from: agent profiles, skills, memories, the
-        # project's instructions, and the templates themselves. Supplied rather than derived,
-        # because finding it means walking hardcoded paths — including, before this, two other
-        # products' configuration files out of the user's home directory.
+        # Where the prompt's material comes from: agent profiles, skills, memories, the project's instructions, and the templates themselves.
         if catalogue is None:
             from frank.base.catalogue import machine_catalogue
 
@@ -751,40 +648,25 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         self._prompt_loader = _CataloguePrompts(catalogue)
         self._cached_system_prompt: str | None = None
         self._task_manager = TaskManager()
-        # The judge behind `classify`, built on first use and kept for the session's life. It is
-        # the session's own model at its own configured effort — see `_reviewer_model`.
+        # The judge behind `classify`, built on first use and kept for the session's life.
         self._reviewer_llm: Optional[BaseChatModel] = None
         self._goal: Optional[Goal] = None
-        # Called whenever the goal changes, so the layer above can tell the daemon (and through
-        # it the interface, which shows the goal with a control to call it off). Installed by the
-        # executor; a library session leaves it unset and simply keeps the goal to itself.
+        # Called whenever the goal changes, so the layer above can tell the daemon (and through it the interface, which shows the goal with a control to call it off).
         self._on_goal_change: Optional[Callable[[Optional[Goal]], None]] = None
-        # Set when the goal or task list changes, so the executor persists the durable
-        # session state only on mutation rather than on every checkpoint.
+        # Set when the goal or task list changes, so the executor persists the durable session state only on mutation rather than on every checkpoint.
         self._session_dirty = False
         self._execution_history: list[dict] = []
-        # The session's permission policy is one typed value: the mode is chosen at `create`,
-        # clamped against the parent's and against the agent card's own ceiling.
-        # `more_restrictive` ignores absent inputs and falls back to the interactive default
-        # with none, which is what a session with neither a requested mode nor a card ceiling
-        # should get.
+        # The session's permission policy is one typed value: the mode is chosen at `create`, clamped against the parent's and against the agent card's own ceiling.
         self._a2a_turn_id: str = ""
-        # Reads another A2A task (sibling/agent) by id from the shared store,
-        # so context-aware agents can coordinate. Injected by the executor.
+        # Reads another A2A task (sibling/agent) by id from the shared store, so context-aware agents can coordinate.
         self._turn_reader: Optional[Callable] = None
         self._steering_messages: asyncio.Queue[str] = asyncio.Queue()
         self._steering_available = asyncio.Event()
         self._active_tool_tasks: dict[str, asyncio.Task] = {}
-        # The latest call's context occupancy (prompt + completion) and the model's
-        # window, tracked from usage so auto-compaction can fire before the next call
-        # would overflow. Zero until the first call reports usage.
+        # The latest call's context occupancy (prompt + completion) and the model's window, tracked from usage so auto-compaction can fire before the next call would overflow.
         self._latest_context_tokens: int = 0
         self._context_window: int = 0
-        # What the module-level tools read at call time. Built here, from this runtime's own
-        # configuration and the two things only the layer above can supply — how this session
-        # reaches its peers, and the MCP connections it owns the lifecycle of. It used to be
-        # eight process globals installed by the worker at startup, which held only because a
-        # worker serves one session; `dispatch` rewrote one of them mid-turn.
+        # What the module-level tools read at call time.
         self._tool_context = _build_tool_context(
             global_configuration,
             sandbox=self._sandbox,
@@ -793,21 +675,9 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             session_access=session_access,
             mcp_manager=mcp_manager,
         )
-        # What a person has approved this session reaching beyond its configured profile. Held
-        # for the session rather than for the call that asked, because a grant re-asked on every
-        # command of a build produces a column of gates that nobody reads by the fourth — and how
-        # often somebody is asked is itself a security property, pointing the opposite way to
-        # intuition. An approval asked too often teaches the person to approve without looking.
-        #
-        # Deliberately not carried in `self._sandbox`. That profile is what a peer clamps against
-        # when this session creates one, so a grant recorded there would flow to every child: a
-        # person who allowed one write for a build would have silently allowed it for four peers
-        # doing something else, and asking narrowly then delegating widely would launder it.
+        # What a person has approved this session reaching beyond its configured profile.
         self._access_grants: list[Grant] = []
-        # The exact files the person attached to this conversation. Kept beside the grants and
-        # applied the same way, but arrived at differently: a grant answers something the model
-        # asked for, and this answers something the person handed over. That difference is what
-        # lets it outrank the deny list where a grant may not.
+        # The exact files the person attached to this conversation.
         self._attached_files: list[str] = []
 
     def note_attachments(self, paths: Sequence[str]) -> None:
@@ -843,12 +713,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
             permission_mode_default=self._agent_configuration.permission_policy,
             executors=carried,
         )
-        # The system prompt is deliberately left alone. The environments and their policies are
-        # stated to the model in the *turn context*, which is rebuilt every turn anyway, so the
-        # next turn already names the current set. Dropping the cached prompt here used to be
-        # required and is now merely expensive: it is the front of every request, so rebuilding
-        # it discards the provider's prompt cache for the whole conversation — a full-price
-        # re-read of everything, to restate something that was not in it.
+        # The system prompt is deliberately left alone.
 
     def _build_locations(
         self,
@@ -861,9 +726,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         carries an executor (local subprocess or multiplexed SSH) and its effective policy."""
         entries = locations or []
         if not entries:
-            # No workspace locations supplied — synthesize a single local location at the
-            # working directory, so a bare/agent runtime still has exactly one location
-            # (and the single-location default applies).
+            # No workspace locations supplied — synthesize a single local location at the working directory, so a bare/agent runtime still has exactly one location (and the single-location default applies).
             entries = [{
                 "name": "local",
                 "kind": "local",
@@ -895,13 +758,11 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         if not location_value:
             if len(self._locations) == 1:
                 return next(iter(self._locations.values()))
-            # Default an omitted location to the local filesystem, so an omission is never
-            # accidentally executed on a remote host.
+            # Default an omitted location to the local filesystem, so an omission is never accidentally executed on a remote host.
             local = next((location for location in self._locations.values() if location.kind == "local"), None)
             if local is not None:
                 return local
-            # No local location to fall back to (every location is remote) — require an
-            # explicit choice rather than picking a remote host on the model's behalf.
+            # No local location to fall back to (every location is remote) — require an explicit choice rather than picking a remote host on the model's behalf.
             names = ", ".join(sorted(self._locations_by_name)) or "(none configured)"
             raise ToolLocationError(
                 f"This workspace has only remote locations and no local default — specify `location` (one of: {names})."
@@ -1013,19 +874,9 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         reasoning = int((usage.get("output_token_details") or {}).get("reasoning", 0) or 0)
         if not (input_tokens or output_tokens or total_tokens):
             return None
-        # What the adapter worked out about this request's prefix, read before the totals below
-        # because one of them is now part of it.
+        # What the adapter worked out about this request's prefix, read before the totals below because one of them is now part of it.
         cache_trace = response.additional_kwargs.get("cache_trace") or {}
         # What could have been served, which is never less than what *was*.
-        #
-        # The estimate comes from comparing this request against the last one this process sent,
-        # so it is zero whenever there is no last one — the first call of a session, and every
-        # call after the session slept, because waking forks a fresh worker that has never sent
-        # anything. The provider's cache does not forget across that boundary, so it happily
-        # returned tokens against an estimate of zero, and the running totals came out at 106%.
-        # The provider's own figure is the authority on what it had: an estimate below it is an
-        # estimate that is wrong, and the two counts differ by a few percent anyway for having
-        # been made with different tokenizers.
         reachable = max(int(cache_trace.get("reachable_tokens", 0) or 0), cache_read)
         self._token_usage["input_tokens"] += input_tokens
         self._token_usage["output_tokens"] += output_tokens
@@ -1034,10 +885,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         self._token_usage["reachable_tokens"] += reachable
         self._token_usage["reasoning_tokens"] += reasoning
         self._token_usage["model_calls"] += 1
-        # input_tokens for this (latest) call is the whole prompt — system, history,
-        # and the new turn — so it reflects how full the context currently is. Paired
-        # with the model's context window, it drives the context-fill indicator and
-        # the auto-compaction check (see _should_compact).
+        # input_tokens for this (latest) call is the whole prompt — system, history, and the new turn — so it reflects how full the context currently is.
         model = getattr(self, "_llm", None)
         context_window = model.context_window() if model is not None else 0
         self._latest_context_tokens = input_tokens + output_tokens
@@ -1080,10 +928,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         return bool(self._sandbox.filesystem.writable)
 
     def abort(self) -> None:
-        # Stop tears down only the live turn: signal the loop to end and kill every
-        # foreground tool still running. Detached background work has its own lifecycle and
-        # must not become collateral of steering the main flow — nor does a peer session,
-        # which is a separate process ended with `frank kill`, not by stopping this turn.
+        # Stop tears down only the live turn: signal the loop to end and kill every foreground tool still running.
         self._abort_event.set()
         self._background.cancel_foreground()
         for task in list(self._active_tool_tasks.values()):
@@ -1287,8 +1132,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         try:
             asyncio.get_running_loop().create_task(_drain_observation(pending))
         except RuntimeError:
-            # No loop: an observation recorded outside a turn. Nothing to schedule it on, and
-            # blocking to run it would be worse than dropping it.
+            # No loop: an observation recorded outside a turn.
             logger.debug("dropped an awaitable observation with no running loop")
 
     def _background_result_events(self) -> list[TurnEvent]:
@@ -1307,16 +1151,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
                 duration_milliseconds=duration_milliseconds,
                 background_job_id=completion.identifier,
             )
-            # Append-only: the scheduled placeholder ToolMessage stays put and the
-            # result lands as a *new* message (a user-role reminder — a system
-            # role here would be hoisted into Anthropic's top-level system param and
-            # bust the whole prefix; see _reminder_message). Rewriting the
-            # placeholder in place would change the conversation mid-stream and
-            # invalidate the provider's prompt cache from that point on — re-billing
-            # the whole suffix. The placeholder already satisfies its tool_call, so
-            # appending keeps the prefix monotonic (always cacheable) while the model
-            # still sees the result. Same canonical envelope as an inline tool
-            # result, wrapped so the model reads it as a background delivery.
+            # Append-only: the scheduled placeholder ToolMessage stays put and the result lands as a *new* message (a user-role reminder — a system role here would be hoisted into Anthropic's top-level system param and bust the whole prefix; see _reminder_message).
             background_status, background_code = _model_result_status(
                 capped_result, ok=True, backgrounded=False,
             )

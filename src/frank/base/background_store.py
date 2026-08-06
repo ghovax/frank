@@ -153,14 +153,7 @@ class BackgroundJobStore:
                 }
                 if "process_group" not in existing_columns:
                     connection.execute("ALTER TABLE background_jobs ADD COLUMN process_group INTEGER")
-                # Indices matched to the hot queries:
-                #  - undelivered_jobs / has_undelivered_jobs (run after every turn and
-                #    on startup) filter (session_id, agent_name, status);
-                #  - running_jobs(agent) and contexts_with_undelivered filter
-                #    (agent_name, status);
-                #  - running_jobs() / orphaned_process_groups filter status alone.
-                # The first covers session_id-only prefixes too, so no separate
-                # (session_id, status) index is needed.
+                # Indices matched to the hot queries: ; undelivered_jobs / has_undelivered_jobs (run after every turn and on startup) filter (session_id, agent_name, status); running_jobs(agent) and contexts_with_undelivered filter (agent_name, status); running_jobs() / orphaned_process_groups filter status alone.
                 connection.execute(
                     "CREATE INDEX IF NOT EXISTS idx_background_jobs_context_agent_status "
                     "ON background_jobs(session_id, agent_name, status)"

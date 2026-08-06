@@ -35,19 +35,14 @@ class Goal(BaseModel):
     status: str = "active"
     #: What is in the way, set when the agent reports the goal blocked.
     blocker: str = ""
-    #: How many turns have been opened for this goal since a person last spoke. Bookkeeping for
-    #: the allowance, and deliberately absent from :meth:`for_model`: what keeps the session
-    #: working is not the model's business, and one told it has "three passes left" starts
-    #: rationing its work against a number it should never have seen.
+    #: How many turns have been opened for this goal since a person last spoke.
     continuations: int = 0
 
     #: Being worked, so the session keeps going on its own.
     ACTIVE: ClassVar[str] = "active"
     #: The agent reported an impasse it cannot pass without the person. Nothing further is opened.
     BLOCKED: ClassVar[str] = "blocked"
-    #: Set when the goal used its whole allowance without a person saying anything. Distinct from
-    #: ``blocked``: nobody claimed the work is stuck, only that it has run long enough unattended
-    #: to be worth a look.
+    #: Set when the goal used its whole allowance without a person saying anything.
     PARKED: ClassVar[str] = "parked"
 
     @property

@@ -49,9 +49,7 @@ from frank.base.tuning import Tunable, active_tuning, settle
 
 logger = logging.getLogger(__name__)
 
-# How a target id is spelled. A browser window is numbered by the window server like any other
-# window; a tab is numbered by DevTools. Both are places, and `_page_for` tells them apart here
-# rather than making the model do it.
+# How a target id is spelled.
 WINDOW_PREFIX = "win"
 TAB_PREFIX = "tab"
 
@@ -79,8 +77,7 @@ def _page_script(name: str) -> str:
     return (Path(__file__).parent / "scripts" / f"{name}.js").read_text()
 
 
-# The DOM selection Playwright has no native API for: an arbitrary substring, or the caret at an
-# offset.
+# The DOM selection Playwright has no native API for: an arbitrary substring, or the caret at an offset.
 _APPLY_SELECTION_JS = _page_script("apply_selection")
 # Tooltips keyed by the visible text that carries them, so a `title` can enrich an element's key.
 _TITLES_BY_LABEL = _page_script("titles_by_label")
@@ -143,10 +140,7 @@ def _body_shape(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: _body_shape(entry) for key, entry in value.items()}
     if isinstance(value, list):
-        # One shape for the whole array, unioned across its items: rows are usually the same record
-        # repeated, and where they are not, the union says so rather than letting the first item
-        # claim a uniformity the data does not have. An optional field present on one row in a
-        # thousand is a fact about the endpoint, and this is the only place it can be seen.
+        # One shape for the whole array, unioned across its items: rows are usually the same record repeated, and where they are not, the union says so rather than letting the first item claim a uniformity the data does not have.
         shapes = [_body_shape(item) for item in value]
         if not shapes:
             return []
@@ -169,17 +163,12 @@ def _merged_shape(left: Any, right: Any) -> Any:
         if not right:
             return left
         return [_merged_shape(left[0], right[0])]
-    # An absent value tells you nothing about the field's type, so anything outranks it — this is
-    # what makes an optional field read as what it holds when set, rather than as `null` because
-    # the first row happened not to have it. Otherwise the first shape stands: genuinely mixed
-    # types in one field are rare, and inventing a notation for them would cost every reader of
-    # every ordinary shape more than it buys.
+    # An absent value tells you nothing about the field's type, so anything outranks it — this is what makes an optional field read as what it holds when set, rather than as `null` because the first row happened not to have it.
     if left == "null":
         return right
     return left
 
-# The user-visible Chromium browsers we can connect to and drive, mapped to the support directory
-# that holds each one's DevToolsActivePort file (written when its remote-debugging switch is on).
+# The user-visible Chromium browsers we can connect to and drive, mapped to the support directory that holds each one's DevToolsActivePort file (written when its remote-debugging switch is on).
 _SUPPORT_ROOT = Path.home() / "Library" / "Application Support"
 BROWSERS = {
     "chrome": {"data": _SUPPORT_ROOT / "Google" / "Chrome"},
@@ -187,8 +176,7 @@ BROWSERS = {
     "brave": {"data": _SUPPORT_ROOT / "BraveSoftware" / "Brave-Browser"},
 }
 
-# Where the user turns on Chrome's remote-debugging switch. Surfaced to the UI so it can offer a
-# one-click "open this page" button.
+# Where the user turns on Chrome's remote-debugging switch.
 REMOTE_DEBUGGING_URL = "chrome://inspect/#remote-debugging"
 
 
@@ -248,42 +236,29 @@ class _Session:
         self.browser = playwright_browser
         self.context = context
         self.page = None
-        # Which pages have had their dialog/download/network handlers wired. Not ids — those come
-        # from the browser's own target list, so that one scheme serves listing and acting alike.
+        # Which pages have had their dialog/download/network handlers wired.
         self.tab_ids: dict[Any, bool] = {}
         self._tab_counter = count(1)
-        # One CDP session against the *browser*, not a page. Everything a listing needs is
-        # answered here — see `describe_targets` — so a listing never speaks to a renderer.
+        # One CDP session against the *browser*, not a page.
         self._device = None
         # The browser's own target id, mapped to the `tabN` the model sees, and that tab's last known url.
-        # The url is how a tab id is turned back into a Playwright page when something acts on it.
         self._ids_by_target: dict[str, str] = {}
         self.url_by_tab: dict[str, str] = {}
-        # Playwright `Page`, mapped to the browser's target id for it, asked once per page and kept. The
-        # join that makes a tab id mean the same thing before and after the tab navigates; see
-        # `target_of`. The url mapping above is now only the fallback for a page never bound here.
+        # Playwright `Page`, mapped to the browser's target id for it, asked once per page and kept.
         self._targets_by_page: dict[Any, str] = {}
         self._targets_cache: Optional[list[dict]] = None
         self._targets_read: float = 0.0
-        # What to do with the next JavaScript dialog an action triggers ("accept"/"dismiss"); None
-        # means the default (acknowledge alerts, decline questions).
+        # What to do with the next JavaScript dialog an action triggers ("accept"/"dismiss"); None means the default (acknowledge alerts, decline questions).
         self.pending_dialog: Optional[str] = None
-        # The page's recent network exchanges — method, url, status and the *shape* of each body
-        # (see `_body_shape`), never its contents, so a ``find`` can surface the API endpoints
-        # behind a rendered view and ``evaluate`` can replay them. A generous rolling window,
-        # bounded only so a long-lived page cannot grow the buffer forever; it stays affordable
-        # because what each entry holds is a description rather than a document.
+        # The page's recent network exchanges — method, url, status and the *shape* of each body (see `_body_shape`), never its contents, so a ``find`` can surface the API endpoints behind a rendered view and ``evaluate`` can replay them.
         self.exchanges: deque[dict] = deque(maxlen=active_tuning().amount(Tunable.web_exchanges))
         self._exchange_counter = count(1)
-        # Live WebSockets and their recent frames (chat, live data, trading feeds — the traffic that
-        # never shows up as XHR). Keyed by a model-facing id, pruned oldest-first past the limit.
+        # Live WebSockets and their recent frames (chat, live data, trading feeds — the traffic that never shows up as XHR).
         self.websockets: dict[str, dict] = {}
         self._websocket_counter = count(1)
         # Dialogs auto-handled and downloads captured since the last result, drained into it.
         self.events: deque[dict] = deque(maxlen=8)
-        # Frame id (``f1``), mapped to the aria-ref of the ``iframe`` element that owns it, read out of the
-        # last snapshot. The snapshot states this ownership itself, so it is recorded rather than
-        # inferred from the order Playwright happens to list frames in.
+        # Frame id (``f1``), mapped to the aria-ref of the ``iframe`` element that owns it, read out of the last snapshot.
         self.frame_owners: dict[str, str] = {}
 
     def device(self):
@@ -317,18 +292,13 @@ class _Session:
         twenty-seven tabs: two commands, about fifty milliseconds, twenty-seven titles, none
         blank, nothing discarded woken. A tab that cannot answer for itself is no longer able to
         stall a question that was never really about it."""
-        # Memoised for a moment. Callers ask this per page as well as per listing, and without a
-        # memo a listing of N tabs became N listings — the answer is one round trip to the
-        # browser, but N of them is N² commands and it showed: twenty-seven tabs took nineteen
-        # seconds. The window is short enough that a tab opened or closed mid-script is still
-        # seen, and every caller here is inside one operation.
+        # Memoised for a moment.
         now = time.monotonic()
         if self._targets_cache is not None and now - self._targets_read < 0.5:
             return self._targets_cache
         device = self.device()
         infos = device.send("Target.getTargets").get("targetInfos", [])
-        # The window server's Chrome windows, read once for the whole listing and joined to
-        # Chrome's own by rectangle below.
+        # The window server's Chrome windows, read once for the whole listing and joined to Chrome's own by rectangle below.
         windows = _browser_windows_by_rectangle()
         described = []
         for info in infos:
@@ -338,9 +308,7 @@ class _Session:
             window, bounds = None, None
             try:
                 placed = device.send("Browser.getWindowForTarget", {"targetId": target_id})
-                # Chrome reports the window's rectangle here for free, and that rectangle is the
-                # only thing this browser and the window server both agree on — so the id this
-                # carries is the *window server's*, which is what every target is named by.
+                # Chrome reports the window's rectangle here for free, and that rectangle is the only thing this browser and the window server both agree on — so the id this carries is the *window server's*, which is what every target is named by.
                 bounds = placed.get("bounds")
                 window = _match_rectangle(bounds, windows)
             except Exception:  # noqa: BLE001 — a target that will not place itself is still a tab
@@ -432,9 +400,7 @@ class _Session:
         immediately because an unanswered dialog freezes the page: an alert is acknowledged and a
         question declined by default, unless the acting call asked to ``accept``/``dismiss``."""
         self.tab_ids[page] = True   # adopted; the model-facing id comes from the browser
-        # Bind the page to the browser's handle on it now, while we are already paying for a page
-        # this session will act through. One CDP round trip, once, and from here the tab keeps its
-        # id through every navigation it makes.
+        # Bind the page to the browser's handle on it now, while we are already paying for a page this session will act through.
         self.target_of(page)
 
         def on_dialog(dialog) -> None:
@@ -461,10 +427,7 @@ class _Session:
                 self.events.append({"download": {"url": download.url, "error": str(error)}})
 
         def on_response(response) -> None:
-            # Capture each exchange as its *shape*: eager but selective — only the data-shaped
-            # requests (XHR/fetch with a text-ish body), so the junk (images, fonts, media) never
-            # gets stored — and described by :func:`_body_shape` rather than retained, so no
-            # response body is ever held in memory or carried into a result. Best effort.
+            # Capture each exchange as its *shape*: eager but selective — only the data-shaped requests (XHR/fetch with a text-ish body), so the junk (images, fonts, media) never gets stored — and described by :func:`_body_shape` rather than retained, so no response body is ever held in memory or carried into a result.
             try:
                 request = response.request
                 resource_type = request.resource_type
@@ -483,12 +446,7 @@ class _Session:
                     headers = dict(response.headers)
                 except Exception:
                     pass
-                # Headers get the same treatment as bodies, and for both reasons. They were 21% of
-                # the traffic in the result that overflowed a context window, and one of them is
-                # `authorization` — a bearer token that has no business being in a model's
-                # context. The names say what the endpoint expects, which is what a script
-                # replaying it needs; `content-type` keeps its value because it is the one header
-                # whose value *is* the shape.
+                # Headers get the same treatment as bodies, and for both reasons.
                 if request_headers:
                     entry["request_header_names"] = sorted(request_headers)
                 if headers:
@@ -515,8 +473,7 @@ class _Session:
                 pass
 
         def on_websocket(websocket) -> None:
-            # Observe a WebSocket's frames — the model can search them like any exchange, and act on
-            # the socket in-page with ``evaluate`` (the page's own socket, or a new one it opens).
+            # Observe a WebSocket's frames — the model can search them like any exchange, and act on the socket in-page with ``evaluate`` (the page's own socket, or a new one it opens).
             identifier = f"ws{next(self._websocket_counter)}"
             if len(self.websockets) >= active_tuning().amount(Tunable.web_websockets):
                 self.websockets.pop(next(iter(self.websockets)))
@@ -528,10 +485,7 @@ class _Session:
                     if isinstance(payload, (bytes, bytearray)):
                         record["frames"].append({"direction": direction, "binary_bytes": len(payload)})
                     else:
-                        # Shaped like every other captured body, and for the same reasons — a live
-                        # feed is the one source here that never stops producing, so 200 retained
-                        # frames of a trading or chat socket is precisely where verbatim data does
-                        # the most damage.
+                        # Shaped like every other captured body, and for the same reasons — a live feed is the one source here that never stops producing, so 200 retained frames of a trading or chat socket is precisely where verbatim data does the most damage.
                         record["frames"].append({"direction": direction,
                                                  "data": _body_shape(_decode_body(payload))})
                 return handler
@@ -551,8 +505,7 @@ class _Session:
         return events
 
 
-# Observation: Playwright's ref-carrying accessibility snapshot, parsed into the shared indexed
-# ``Element`` — the unit a ``find`` ranks.
+# Observation: Playwright's ref-carrying accessibility snapshot, parsed into the shared indexed ``Element`` — the unit a ``find`` ranks.
 
 _INTERACTIVE_ROLES = frozenset({
     "button", "link", "textbox", "searchbox", "combobox", "checkbox", "radio", "switch",
@@ -567,17 +520,14 @@ _SNAPSHOT_NAME = re.compile(r'"((?:[^"\\]|\\.)*)"')
 _SNAPSHOT_ATTRS = re.compile(r"\[([a-zA-Z-]+)(?:=([^\]]*))?\]")
 # `- /url: "/wiki/Braille"` — the destination Playwright prints under a link, quoted or bare.
 _SNAPSHOT_URL = re.compile(r'^\s*-\s*/url:\s*"?(?P<url>[^"]*?)"?\s*$')
-# An aria-ref inside an iframe is prefixed with the frame it belongs to: ``f1e3`` is the third
-# element of the first frame. The prefix is Playwright's, and it is reused as the frame's id rather
-# than being paired with a second numbering of our own, which would only ever drift from it.
+# An aria-ref inside an iframe is prefixed with the frame it belongs to: ``f1e3`` is the third element of the first frame.
 _FRAME_PREFIX = re.compile(r"^(f\d+)e\d+$")
 
 _LIVE_REGION_ROLES = frozenset({"alert", "status"})
 _STRUCTURAL_ROLES = frozenset({
     "region", "navigation", "main", "complementary", "banner", "contentinfo", "form", "search",
 })
-# Roles whose accessible name labels the section around them, becoming the `context` of the plainer
-# controls inside it — what tells twenty identical "Add to Cart" buttons apart.
+# Roles whose accessible name labels the section around them, becoming the `context` of the plainer controls inside it — what tells twenty identical "Add to Cart" buttons apart.
 _LABEL_ROLES = _STRUCTURAL_ROLES | frozenset({"heading", "link"})
 
 
@@ -611,10 +561,7 @@ def _parse_snapshot(snapshot: str) -> tuple[list[Element], dict[str, str]]:
         role = match.group("head")
         rest = match.group("rest")
         if role.startswith("/"):
-            # A property line like `- /url: "/wiki/Braille"`, not a node of its own: the snapshot
-            # indents it under the element it describes. A link's destination is the only wording
-            # of a target that is written independently of the link's visible text, so it is the
-            # one thing on a page that says where a control goes rather than what it is called.
+            # A property line like `- /url: "/wiki/Braille"`, not a node of its own: the snapshot indents it under the element it describes.
             url_match = _SNAPSHOT_URL.match(line)
             if url_match and elements and depth > last_depth:
                 elements[-1].flags["url"] = url_match.group("url")
@@ -635,8 +582,7 @@ def _parse_snapshot(snapshot: str) -> tuple[list[Element], dict[str, str]]:
             labels[depth] = name
 
         reference = attributes.get("ref") or None
-        # Frame bookkeeping runs before the filter below, because an ``iframe`` node carries no
-        # name, no value and no pointer cursor, so it is exactly the kind of node that filter drops.
+        # Frame bookkeeping runs before the filter below, because an ``iframe`` node carries no name, no value and no pointer cursor, so it is exactly the kind of node that filter drops.
         while open_iframes and open_iframes[-1][0] >= depth:
             open_iframes.pop()
         frame = _frame_of(reference)
@@ -663,12 +609,6 @@ def _snapshot(page) -> str:
 
 
 # Tooltips, collected in one pass and keyed by the visible text they sit on.
-#
-# The aria snapshot cannot supply these. A `title` attribute becomes an element's accessible name
-# only when nothing else does, so the snapshot shows a title exactly when it is redundant and hides
-# it whenever the element also has visible text — which is the case where a title says something
-# new, about a fifth of all elements. Reading the DOM is therefore the only way to get at it.
-#
 
 
 def _folded_label(text: str) -> str:
@@ -718,8 +658,7 @@ _KEY_ALIASES = {
     **{f"f{number}": f"F{number}" for number in range(1, 13)},
 }
 
-# What a chord's modifiers are called here, in Playwright, and on a window. One vocabulary reaches
-# all three: a script writes `press("cmd+shift+g")` and it works wherever it is pointed.
+# What a chord's modifiers are called here, in Playwright, and on a window.
 _MODIFIER_NAMES = {
     "cmd": "Meta", "command": "Meta", "meta": "Meta", "super": "Meta", "win": "Meta", "⌘": "Meta",
     "ctrl": "Control", "control": "Control", "⌃": "Control",
@@ -887,29 +826,14 @@ class WebSurface(Surface):
         websocket_url = _devtools_websocket_url(browser)
         if websocket_url is None:
             raise ToolFailure(_not_connected_payload())
-        # Long enough for a person to notice Chrome's consent box, find it, and click Allow —
-        # which is a human reaction time, not a network timeout, and was budgeted as one.
-        #
-        # A retry loop was tried here and reverted. The theory was that the attempt raising the
-        # prompt cannot be the one the approval completes, so asking again would pick the grant
-        # up; in practice approving it still hung, and each retry opens *another* pending
-        # connection, which may simply reproduce the same problem on a loop. Two things are worth
-        # recording for whoever picks this up: the retry deadline must be shorter than
-        # `machinery_ceiling()`, or `SerialWorker.submit` expires first and the honest "still
-        # waiting" payload below can never be delivered; and the question that decides the design
-        # is whether Chrome raises a *second* prompt while an earlier one is pending, which nobody
-        # has watched for yet.
+        # Long enough for a person to notice Chrome's consent box, find it, and click Allow — which is a human reaction time, not a network timeout, and was budgeted as one.
         budget = active_tuning().amount(Tunable.browser_authorization_ms)
         try:
             connected = self._playwright.chromium.connect_over_cdp(websocket_url, timeout=budget)
         except PlaywrightTimeout:
             raise ToolFailure(_awaiting_authorization_payload(budget / 1000.0))
         except PlaywrightError as error:
-            # The switch is demonstrably on — `websocket_url` came out of the port file a few
-            # lines above — so "turn on remote debugging" is the one thing this cannot be, and
-            # saying it invites the user to toggle a switch that would dismiss any approval
-            # prompt still waiting. That advice was also tagged `browser_remote_debugging_off`,
-            # so the interface offered the very button that does the harm.
+            # The switch is demonstrably on — `websocket_url` came out of the port file a few lines above — so "turn on remote debugging" is the one thing this cannot be, and saying it invites the user to toggle a switch that would dismiss any approval prompt still waiting.
             raise ToolFailure({
                 "ok": False,
                 "error": message("connection_refused", detail=str(error).splitlines()[0]),
@@ -921,12 +845,6 @@ class WebSurface(Surface):
         context.set_default_navigation_timeout(active_tuning().amount(Tunable.navigation_timeout_ms))
         session = _Session(connected, context)
         # Pages are adopted when something first acts in them, not all at once here.
-        #
-        # Adopting wires dialog, download and network handlers onto a page, and every open tab was
-        # given all of them at connect — a second or more of setup on a browser with a couple of
-        # dozen tabs, and a network buffer filling from tabs no script would ever mention. The
-        # listing does not need it: it reads from the browser (`describe_targets`). Only the page
-        # a primitive is about needs handlers, and it gets them there.
         context.on("page", session.adopt)
         session.page = self._pick_page(session)
         self._session = session
@@ -1009,9 +927,7 @@ class WebSurface(Surface):
         if target.startswith(f"{TAB_PREFIX}-") or not target.startswith(f"{WINDOW_PREFIX}-"):
             wanted = target.split("-", 1)[-1]
             names = {target, wanted, f"{TAB_PREFIX}{wanted}"}
-            # By the browser's own target id first, because that is the only handle on a tab that
-            # navigation does not change. Pages already bound answer from memory; the rest are
-            # asked once and remembered.
+            # By the browser's own target id first, because that is the only handle on a tab that navigation does not change.
             for page in session.live_pages():
                 bound_target = session._targets_by_page.get(page)
                 if bound_target and session._ids_by_target.get(bound_target) in names:
@@ -1019,9 +935,7 @@ class WebSurface(Surface):
             for page in session.live_pages():
                 if session.tab_id(page) in names:
                     return page
-            # Only now the url the listing recorded. This used to be the primary test, which is
-            # why acting in a tab stopped working the moment that tab followed a link: the recorded
-            # url described where it had been, and nothing described where it was.
+            # Only now the url the listing recorded.
             for candidate in names:
                 url = session.url_by_tab.get(candidate)
                 if url:
@@ -1032,16 +946,14 @@ class WebSurface(Surface):
         window_id = int(target.split("-", 1)[1])
         in_window = [page for page in session.live_pages() if self._window_of(session, page) == window_id]
         if not in_window:
-            # The window is real (the target registry found it) but Chrome reports no page in it:
-            # a browser window showing only its own interface, or one that closed since the list.
+            # The window is real (the target registry found it) but Chrome reports no page in it: a browser window showing only its own interface, or one that closed since the list.
             return self.page(session)
         return next((page for page in in_window if page is session.page), in_window[0])
 
     def _bind(self, target: str) -> _Bound:
         session = self.session()
         page = self._page_for(session, target)
-        # The one place a page becomes one this tool acts through, and so the one place handlers
-        # are wired. Idempotent: adopting twice would double every dialog and response handler.
+        # The one place a page becomes one this tool acts through, and so the one place handlers are wired.
         if page not in session.tab_ids:
             session.adopt(page)
         session.page = page
@@ -1145,11 +1057,7 @@ class WebSurface(Surface):
             tooltips = _titles_by_label(page)
             for element in elements:
                 title = tooltips.get(_folded_label(element.name), "")
-                # Two texts, and the difference between them is the point. What the model *reads*
-                # keeps ``context``, because a person deciding between two "Add to Cart" buttons
-                # needs to know which section each sits in. What the embedding *ranks* leaves it
-                # out, because a section's label repeated across all its children is what makes
-                # those children indistinguishable to a cosine. See ``the-input-is-the-ceiling``.
+                # Two texts, and the difference between them is the point.
                 shown = element_text(name=element.name, value=element.value, context=element.context)
                 key = web_element_text(name=element.name,
                                        url=str(element.flags.get("url") or ""), title=title,
@@ -1157,8 +1065,7 @@ class WebSurface(Surface):
                 payload: dict[str, Any] = {"role": element.role}
                 if title:
                     payload["title"] = title
-                # Which frame the element sits in, so a model meeting `f1e3` for the first time is
-                # not left to guess what `f1` is or to spend a call asking.
+                # Which frame the element sits in, so a model meeting `f1e3` for the first time is not left to guess what `f1` is or to spend a call asking.
                 frame = _frame_of(element.token if isinstance(element.token, str) else None)
                 if frame:
                     payload["frame"] = frame
@@ -1201,16 +1108,6 @@ class WebSurface(Surface):
             available = ", ".join(target_registry.vocabularies()[target_registry.PAGE_VOCABULARY])
             return {"ok": False, "error": f"A page has no {operation!r} action. It has: {available}."}
         # Bound *on the worker thread*, together with the call it binds for.
-        #
-        # This ran here, on whichever thread asked. `_bind` calls `session()`, and `session()` is
-        # where `sync_playwright().start()` and `connect_over_cdp` happen — so the Playwright
-        # instance and the whole connection were created on the caller's thread while every
-        # primitive body ran on the worker's. Playwright's sync API is thread-affine, which this
-        # module's own docstring says is why the worker exists, so each call across that seam
-        # raised `greenlet.error: Cannot switch to a different thread`. Where the result was
-        # swallowed it looked like missing data — every tab title empty, while the url beside it
-        # was right because a url needs no round trip to answer — and where it was not, the action
-        # simply failed.
         def bound_call() -> dict:
             try:
                 bound = self._bind(target)
@@ -1402,8 +1299,7 @@ class WebSurface(Surface):
                 source = self._locator(page, element).inner_text(timeout=timeout)
             else:
                 source = self._frame_or_page(session, page, frame).inner_text("body", timeout=timeout)
-            # Lines, like a window's read: one name, one shape, on both surfaces. A script that
-            # wants the whole thing joins it; a script that wants the third row cannot unjoin it.
+            # Lines, like a window's read: one name, one shape, on both surfaces.
             return {"ok": True, "lines": _clean_page_text(source).splitlines(), "url": _safe_url(page)}
 
         return self.guard(run)
@@ -1414,17 +1310,13 @@ class WebSurface(Surface):
             expression_text = expression.strip()
             if not expression_text:
                 return {"ok": False, "error": "evaluate needs a JavaScript expression to run."}
-            # A frame is its own origin with its own session. Running in one is what lets the
-            # embedded checkout, consent screen or document viewer be scripted through the
-            # credentials it actually holds, instead of the top document's.
+            # A frame is its own origin with its own session.
             target = self._frame_or_page(session, page, frame)
             try:
                 value = target.evaluate(expression_text, argument)
             except Exception as error:
                 return {"ok": False, "error": f"Evaluation failed: {str(error).splitlines()[0]}"}
-            # Playwright already deserialized the JS result into native Python; return it as-is and
-            # in full, so the model gets a structure it can navigate — never a stringified, escaped,
-            # or truncated blob. The model scopes its own JavaScript if it wants less back.
+            # Playwright already deserialized the JS result into native Python; return it as-is and in full, so the model gets a structure it can navigate — never a stringified, escaped, or truncated blob.
             return {"ok": True, "result": value, "url": _safe_url(page)}
 
         return self.guard(run)
@@ -1503,9 +1395,6 @@ class WebSurface(Surface):
             ids = frozenset()
         return Glance(
             # Whole, because these are compared for equality to decide whether anything moved.
-            # `str(focused)[:80]` made two different focused elements identical whenever they
-            # agreed for eighty characters — which is exactly what two rows of one table do —
-            # and a diff that cannot see a change reports that nothing happened.
             facts={"title": self._title_of(session, page), "url": _safe_url(page),
                    "focus": (str(focused) if focused else None)},
             ids=ids,
@@ -1529,7 +1418,6 @@ class WebSurface(Surface):
             session = self.session()
             active_url = _safe_url(self.page(session))
             # From the browser, in two commands — never by asking each tab for its own title.
-            # See `_Session.describe_targets`.
             return {"ok": True, "tabs": [
                 {
                     "id": session.tab_id_for_target(entry["target_id"], entry["url"]),
@@ -1544,15 +1432,10 @@ class WebSurface(Surface):
     def _primitive_tab(self, bound: _Bound, tab: str, **_: Any) -> dict:
         def run() -> dict:
             session = self.session()
-            # One resolver for every way a target can be named — `_page_for` knows the tab ids the
-            # listing minted as well as the window ids. This kept its own registry, which the
-            # browser-driven listing does not fill, so every id `tabs()` handed out came back as
-            # "No open tab".
+            # One resolver for every way a target can be named — `_page_for` knows the tab ids the listing minted as well as the window ids.
             page = self._page_for(session, tab)
             session.page = page
-            # Raises the window on the user's own screen. That is the point: this tool acts as the
-            # user, and a tab being driven invisibly behind the one they are looking at would be
-            # the surprising behaviour, not this.
+            # Raises the window on the user's own screen.
             try:
                 page.bring_to_front()
             except Exception:
@@ -1565,9 +1448,7 @@ class WebSurface(Surface):
         def run() -> dict:
             session = self.session()
             page = session.context.new_page()
-            # `context.on("page", adopt)` normally gets there first; adopting twice would double
-            # every dialog, download and response handler on the page, so this only covers the case
-            # where it did not.
+            # `context.on("page", adopt)` normally gets there first; adopting twice would double every dialog, download and response handler on the page, so this only covers the case where it did not.
             if page not in session.tab_ids:
                 session.adopt(page)
             session.page = page
@@ -1597,8 +1478,7 @@ class WebSurface(Surface):
             page.close()
             session.tab_ids.pop(page, None)
             if was_active:
-                # Left for `page()` to heal on next use rather than picked here, so closing a tab
-                # never has opening one as a side effect.
+                # Left for `page()` to heal on next use rather than picked here, so closing a tab never has opening one as a side effect.
                 session.page = None
             return {"ok": True, "did": f"Closed {identifier}"}
 
@@ -1616,8 +1496,7 @@ class WebSurface(Surface):
                 try:
                     frame = self._frame(session, page, identifier)
                 except ToolFailure:
-                    # One iframe that has gone must not cost the listing; a dead element does not error,
-                    # it waits out its timeout, which is why this one is short.
+                    # One iframe that has gone must not cost the listing; a dead element does not error, it waits out its timeout, which is why this one is short.
                     record["unavailable"] = True
                 else:
                     record["url"] = frame.url
@@ -1629,10 +1508,7 @@ class WebSurface(Surface):
         return self.guard(run)
 
     def _primitive_navigate(self, bound: _Bound, url: str = "", *, history: str = "", **_: Any) -> dict:
-        # Opening a tab is not a way of navigating, so it is `new_tab` that does it and says what it
-        # made. This used to carry a `new_tab` flag that created a page and told the caller nothing.
-        # It also took a `browser` argument, which the target already answers — and which the model
-        # would now see in the signature, inviting it to name a browser it was never choosing.
+        # Opening a tab is not a way of navigating, so it is `new_tab` that does it and says what it made.
         def run() -> dict:
             session, page = bound.session, bound.page
             try:

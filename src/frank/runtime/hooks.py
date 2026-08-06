@@ -74,9 +74,7 @@ class HookRunner:
                 logger.warning("%s.before_tools raised; skipping it", type(hook).__name__, exc_info=True)
                 continue
             if isinstance(returned, list):
-                # A hook narrows and never widens. Anything it added that the barrier did not
-                # approve is dropped here rather than trusted, so a careless hook cannot turn
-                # into a permission bypass.
+                # A hook narrows and never widens.
                 approved = {id(call) for call in calls}
                 calls = [call for call in returned if id(call) in approved]
         return calls

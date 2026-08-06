@@ -35,20 +35,15 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
-# How a missing backend is handled. `required` refuses to create a session at all, which is the
-# default and the direct answer to how this module came to exist: a setting that claims to confine
-# and does not is worse than one that refuses. `preferred` runs with the POSIX half only and says
-# so; `off` does not confine.
+# How a missing backend is handled.
 ENFORCE_REQUIRED = "required"
 ENFORCE_PREFERRED = "preferred"
 ENFORCE_OFF = "off"
 
-# The rlimits the configuration may name. Restricted to the ones that mean something for a tool
-# child, so a typo is an error rather than a silently ignored key.
+# The rlimits the configuration may name.
 _SUPPORTED_LIMITS = ("RLIMIT_CPU", "RLIMIT_AS", "RLIMIT_FSIZE", "RLIMIT_NPROC", "RLIMIT_CORE", "RLIMIT_NOFILE")
 
-# Environment variables a child needs to be a usable Unix process. Everything else the worker holds
-# — API keys above all — is left behind unless a profile passes it explicitly.
+# Environment variables a child needs to be a usable Unix process.
 _BASE_ENVIRONMENT_KEYS = (
     "HOME", "LANG", "LC_ALL", "LC_CTYPE", "LOGNAME", "PATH", "SHELL", "TERM", "TZ", "USER",
     "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_RUNTIME_DIR",
@@ -71,22 +66,9 @@ class Filesystem:
     readable: tuple[str, ...] = ()
     writable: tuple[str, ...] = ()
     deny: tuple[str, ...] = ()
-    # Paths a runtime grant may open without asking a person. Not an allowance in itself: a path
-    # listed here is reachable only once the agent has actually requested it, which is what keeps
-    # it different from `writable`. Nothing is listed by default, so every request is asked about
-    # until somebody decides otherwise.
+    # Paths a runtime grant may open without asking a person.
     grantable: tuple[str, ...] = ()
     # Exact files the person handed to this session, and the one thing that outranks `deny`.
-    #
-    # `deny` stops the agent from *going looking* through a directory. It was never meant to stop
-    # somebody from passing it one named file, and treating those as the same thing is what made
-    # an attachment from `~/Downloads` unreadable — which is where almost every attachment comes
-    # from. The model cannot put anything in this list: there is no tool that attaches a file, so
-    # the only way a path arrives here is that a person chose it in the interface.
-    #
-    # Exact files only, never a directory. That is the whole of why this is safe: an allowance
-    # for `~/Downloads/report.pdf` opens that file and tells the agent nothing about what else
-    # is in the folder.
     attached: tuple[str, ...] = ()
 
     def intersect(self, parent: "Filesystem") -> "Filesystem":
@@ -97,13 +79,9 @@ class Filesystem:
             readable=_contained_in(self.readable, parent.readable),
             writable=_contained_in(self.writable, parent.writable),
             deny=tuple(dict.fromkeys(self.deny + parent.deny)),
-            # What may be granted without asking narrows exactly as an allowance does: a child
-            # cannot be handed a quieter approval path than its parent holds.
+            # What may be granted without asking narrows exactly as an allowance does: a child cannot be handed a quieter approval path than its parent holds.
             grantable=_contained_in(self.grantable, parent.grantable),
-            # Deliberately dropped. A file the person attached to one conversation was handed
-            # to *that* session, and a peer it creates is doing different work for a different
-            # reason. Carrying the allowance down would turn one deliberate act into a standing
-            # exemption across a subtree the person never saw.
+            # Deliberately dropped.
             attached=(),
         )
 
@@ -163,9 +141,7 @@ def parse_access_request(value: object) -> tuple[Optional[AccessRequest], str]:
         if not isinstance(entries, list) or any(not isinstance(entry, str) for entry in entries):
             return None, f"access_request.{name} must be a list of paths."
         cleaned = tuple(entry.strip() for entry in entries if entry.strip())
-        # A request for the whole filesystem is not a request; it is a way of not being asked
-        # again. Refused at the surface rather than left for the classifier, so that the answer
-        # is the same however the session is configured to decide.
+        # A request for the whole filesystem is not a request; it is a way of not being asked again.
         for entry in cleaned:
             if entry in ("/", "~", "/*", "~/", "~/*"):
                 return None, (
@@ -234,8 +210,7 @@ class Grant:
         )
 
 
-#: Who approved a grant. Not an enum, because it crosses the wire and a session record written
-#: by one release is read by the next; the three spellings are the whole of it.
+#: Who approved a grant.
 APPROVED_BY_PERSON = "person"
 APPROVED_BY_RULE = "rule"
 APPROVED_BY_REVIEWER = "reviewer"
@@ -277,10 +252,7 @@ class Profile:
     """One child's confinement, whole. Frozen because it is resolved once and then only narrowed."""
 
     filesystem: Filesystem = field(default_factory=Filesystem)
-    # Closed, like the filesystem it sits beside. A box with a hole in it is not a box: a command
-    # that can reach the network can post the contents of the workspace anywhere, and every
-    # argument for confining the disk applies unchanged to the wire. It opens the way the disk
-    # opens — a call asks for it, and somebody or something says yes.
+    # Closed, like the filesystem it sits beside.
     network: bool = False
     limits: dict[str, int] = field(default_factory=dict)
     umask: Optional[int] = None
@@ -321,15 +293,10 @@ class Profile:
             self,
             filesystem=Filesystem(
                 readable=self.filesystem.readable,
-                # A strict intersection, with no fallback. An `or tuple(writable)` here would
-                # have meant that a session permitted to write nowhere useful handed its child
-                # a directory it did not itself hold — a widening, in the one method whose
-                # whole purpose is to narrow.
+                # A strict intersection, with no fallback.
                 writable=_contained_in(tuple(writable), self.filesystem.writable, workspace=workspace),
                 deny=self.filesystem.deny,
-                # Explicitly nothing. A narrowed child is a helper the harness spawns for one
-                # bridged purpose, not a session anybody negotiates with, so there is no route
-                # by which it could ask for more and nothing to gain by leaving one open.
+                # Explicitly nothing.
                 grantable=(),
             ),
             network=self.network and network,
@@ -387,16 +354,12 @@ class Profile:
         return replace(
             self,
             filesystem=Filesystem(
-                # A granted write implies the read that goes with it. Every tool that writes a
-                # file reads it first — `edit_file` must, and a shell redirect into an existing
-                # file opens it — so a grant that gave the write alone would be approved, applied,
-                # and then fail on the read half in a way nobody could explain from the profile.
+                # A granted write implies the read that goes with it.
                 readable=tuple(dict.fromkeys(self.filesystem.readable + granted_reads + granted_writes)),
                 writable=tuple(dict.fromkeys(self.filesystem.writable + granted_writes)),
                 deny=self.filesystem.deny,
                 grantable=self.filesystem.grantable,
-                # Carried, not rebuilt. A grant and an attachment are independent routes, and
-                # applying one must not quietly revoke the other.
+                # Carried, not rebuilt.
                 attached=self.filesystem.attached,
             ),
             network=self.network or grant.network,
@@ -443,8 +406,7 @@ class Profile:
             return True
         if self._is_denied(resolved, workspace=workspace):
             return False
-        # The workspace is readable whatever else is configured: a session pointed at a
-        # directory to work in must be able to read it, or it is not restricted but broken.
+        # The workspace is readable whatever else is configured: a session pointed at a directory to work in must be able to read it, or it is not restricted but broken.
         if workspace and _within(resolved, expand("$WORKSPACE", workspace=workspace)):
             return True
         if _outside_home(resolved):
@@ -503,10 +465,6 @@ class Profile:
             "nice": self.nice,
             "enforce": self.enforce,
             # Empty in every profile the configuration can currently express, and carried anyway.
-            # This dict is what travels to a worker and what a session record stores, so a field
-            # left out of it is a field that silently reverts the moment a profile crosses either
-            # boundary — and `child_environment` builds every confined child's environment out of
-            # this one.
             "environment": dict(self.environment),
         }
 
@@ -525,13 +483,7 @@ class Profile:
         """
         backend = backend_name()
         if not backend:
-            # Nothing on this machine can enforce a path. To list writable, readable and denied
-            # directories here would describe a boundary that does not exist — the worst kind of
-            # thing to tell a model, because it reads exactly like a real one and would have it
-            # route around a wall that is not there, or ask for access it already holds.
-            #
-            # `enforce` decides whether a session may run at all in this state; that refusal
-            # happens at creation. What this says is only what is true now.
+            # Nothing on this machine can enforce a path.
             return {"enforced": False}
 
         def resolved(entries: Iterable[str]) -> list[str]:
@@ -643,8 +595,7 @@ def _contained_in(paths: Iterable[str], allowed: Iterable[str], *, workspace: st
     return tuple(dict.fromkeys(kept))
 
 
-# Everything below is the POSIX half: applied in the child between fork and exec, and needing
-# no platform code at all.
+# Everything below is the POSIX half: applied in the child between fork and exec, and needing no platform code at all.
 
 
 def _apply_posix(profile: Profile) -> None:
@@ -732,8 +683,7 @@ def _package_root() -> str:
     return os.path.realpath(os.path.dirname(package))
 
 
-# The devices every confined child may use, whatever else its profile says. Not a policy choice:
-# a sandbox that denies these does not restrict a command, it breaks it — see `build_sbpl`.
+# The devices every confined child may use, whatever else its profile says.
 _DEVICE_LITERALS: tuple[str, ...] = (
     "/dev/null",
     "/dev/zero",
@@ -758,29 +708,17 @@ def build_sbpl(profile: Profile, *, workspace: str = "") -> str:
     lines = ["(version 1)", "(allow default)"]
     if not profile.network:
         lines.append("(deny network*)")
-    # Writes are denied wholesale and then granted back, because the set of places a command should
-    # be able to write is small and nameable while the set it should not is the rest of the disk.
+    # Writes are denied wholesale and then granted back, because the set of places a command should be able to write is small and nameable while the set it should not is the rest of the disk.
     lines.append("(deny file-write*)")
     for entry in profile.filesystem.writable:
         resolved = expand(entry, workspace=workspace)
         if resolved:
             lines.append(f"(allow file-write* (subpath {_quote_sbpl(resolved)}))")
-    # Reads are the other way round: the system stays readable and the user's home is closed, so
-    # only the home needs naming.
+    # Reads are the other way round: the system stays readable and the user's home is closed, so only the home needs naming.
     home = os.path.expanduser("~")
     if home and home != "/":
         lines.append(f"(deny file-read* (subpath {_quote_sbpl(home)}))")
-    # The workspace itself, always, whatever the mode. A session is pointed at a directory
-    # *to work in*; being able to read it is the premise of the job rather than a privilege a
-    # mode hands out. A `read_only` profile carries no writable entries and no readable ones —
-    # its whole configuration is the absence of them — so the home denial above closed the very
-    # tree the session was created to review. Reviewers found `ls` refused in their own
-    # workspace, while `read_file` worked on the same files by accident, because the interpreter
-    # and package allowances at the end happened to cover the source directory. A read-only
-    # session that cannot read is not restricted, it is broken.
-    #
-    # Before the profile's own denials, so a directory the user refused stays refused even when
-    # it sits inside the workspace.
+    # The workspace itself, always, whatever the mode.
     workspace_root = expand("$WORKSPACE", workspace=workspace) if workspace else ""
     if workspace_root:
         lines.append(f"(allow file-read* (subpath {_quote_sbpl(workspace_root)}))")
@@ -793,45 +731,19 @@ def build_sbpl(profile: Profile, *, workspace: str = "") -> str:
         resolved = expand(entry, workspace=workspace)
         if resolved:
             lines.append(f"(deny file-read* file-write* (subpath {_quote_sbpl(resolved)}))")
-    # After the denials, and therefore beating them — which is the entire point, and is only
-    # correct because a person put each of these here by attaching that exact file. `literal`
-    # rather than `subpath`: the allowance is the one file and cannot widen to its directory,
-    # even if a directory path somehow reached this list.
+    # After the denials, and therefore beating them — which is the entire point, and is only correct because a person put each of these here by attaching that exact file.
     for entry in profile.filesystem.attached:
         resolved = expand(entry, workspace=workspace)
         if resolved:
             lines.append(f"(allow file-read* (literal {_quote_sbpl(resolved)}))")
-    # Metadata everywhere, content nowhere it was not granted. Denying `file-read*` across a
-    # home directory also denies `file-read-metadata` on every directory *above* an allowance,
-    # and a path cannot be reached without traversing its ancestors — so a subpath allowance
-    # under home silently did nothing, including the ones a person writes in their own
-    # settings. Metadata is the existence and shape of a file, not its contents; the denial
-    # above still refuses every byte, which is what it is for.
+    # Metadata everywhere, content nowhere it was not granted.
     lines.append("(allow file-read-metadata)")
-    # Last of all, and therefore winning over every denial above it. A profile that cannot read
-    # and execute the interpreter cannot run anything at all, so this is not a preference and not
-    # configurable — a home-wide read denial would otherwise silently make the whole sandbox
-    # unusable, which is precisely what it did. `sys.executable` is usually a symlink (a
-    # virtualenv's `bin/python3`, a managed interpreter under `~/.local/share/uv`) and the sandbox
-    # judges the resolved file, so the real prefixes are what get allowed: `sys.prefix` for the
-    # environment, `sys.base_prefix` for the interpreter and its standard library.
+    # Last of all, and therefore winning over every denial above it.
     for interpreter_root in _interpreter_roots():
         lines.append(f"(allow file-read* process-exec (subpath {_quote_sbpl(interpreter_root)}))")
     # And the package itself, for the same reason: a helper that cannot be read cannot be run.
     lines.append(f"(allow file-read* process-exec (subpath {_quote_sbpl(_package_root())}))")
     # The devices, last of all, and not configurable for the same reason the interpreter is not.
-    #
-    # `(deny file-write*)` above closes the whole disk and the writable list grants back the few
-    # places work happens. `/dev/null` is not one of those places and is not a place at all: it is
-    # how a program says "discard this", and a shell writes to it constantly. Git opens it before
-    # doing anything and reports `could not open '/dev/null' for reading and writing: Operation
-    # not permitted`, which reads like a broken repository rather than a sandbox that forgot the
-    # null device. Every ordinary command was failing this way.
-    #
-    # The rest of the list is the same argument. Entropy comes from `/dev/random`; a redirection
-    # or a process substitution goes through `/dev/fd` and the standard streams; anything
-    # interactive needs a terminal, which is `/dev/tty` and a pty pair. None of them is a path
-    # into the user's data, which is what this profile exists to keep closed.
     for device in _DEVICE_LITERALS:
         lines.append(f"(allow file-read* file-write* (literal {_quote_sbpl(device)}))")
     lines.append('(allow file-read* file-write* (subpath "/dev/fd"))')
@@ -848,8 +760,7 @@ def _macos_available() -> bool:
 # The Linux backend.
 
 
-# Landlock's syscall numbers. Stable across architectures Linux supports them on, and named here
-# because `ctypes` reaches them through `syscall(2)` — there is no libc wrapper to call instead.
+# Landlock's syscall numbers.
 _SYS_LANDLOCK_CREATE_RULESET = 444
 _SYS_LANDLOCK_ADD_RULE = 445
 _SYS_LANDLOCK_RESTRICT_SELF = 446
@@ -867,10 +778,7 @@ def _libc():
     import ctypes
 
     library = ctypes.CDLL(None, use_errno=True)
-    # `syscall` is variadic, so only its return type is declared. Declaring `argtypes` would fix
-    # one signature for a function that is called here with three different ones; every argument
-    # is passed as an explicit ctypes value instead, which is the supported way to call a
-    # variadic and the only way to be sure a pointer arrives as a pointer.
+    # `syscall` is variadic, so only its return type is declared.
     library.syscall.restype = ctypes.c_long
     library.prctl.restype = ctypes.c_int
     library.prctl.argtypes = [ctypes.c_int, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong]
@@ -912,8 +820,7 @@ def _apply_landlock(profile: Profile, workspace: str) -> None:
         _fields_ = [("handled_access_fs", ctypes.c_uint64), ("handled_access_net", ctypes.c_uint64)]
 
     class PathBeneathAttribute(ctypes.Structure):
-        # The kernel declares this packed, so it is 12 bytes and not the 16 a naturally-aligned
-        # struct would be. Getting that wrong makes every rule silently reject.
+        # The kernel declares this packed, so it is 12 bytes and not the 16 a naturally-aligned struct would be.
         _pack_ = 1
         _fields_ = [("allowed_access", ctypes.c_uint64), ("parent_fd", ctypes.c_int32)]
 
@@ -962,14 +869,12 @@ def _apply_landlock(profile: Profile, workspace: str) -> None:
         root = Path(resolved)
         inside = [Path(entry) for entry in denied if Path(entry).is_relative_to(root)]
         if not inside:
-            # The ordinary case, and the one worth keeping cheap: no denial lies under this
-            # allowance, so it is granted whole with one rule.
+            # The ordinary case, and the one worth keeping cheap: no denial lies under this allowance, so it is granted whole with one rule.
             if any(root.is_relative_to(Path(entry)) for entry in denied):
                 return  # the allowance is itself inside a denial
             add(resolved, access)
             return
-        # Grant every sibling along the way down, so the subtree is covered except for the
-        # denied branches. `frontier` holds directories still to be split.
+        # Grant every sibling along the way down, so the subtree is covered except for the denied branches.
         frontier = [root]
         while frontier:
             current = frontier.pop()
@@ -990,22 +895,19 @@ def _apply_landlock(profile: Profile, workspace: str) -> None:
                 elif os.path.exists(child):
                     add(str(child), access)
 
-    # The system is readable; the home directory is not named here at all, because Landlock grants
-    # rather than denies — anything not granted is already refused.
+    # The system is readable; the home directory is not named here at all, because Landlock grants rather than denies — anything not granted is already refused.
     for root in ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/opt", "/proc", "/dev", "/var"):
         allow(root, _LANDLOCK_FS_READ | _LANDLOCK_FS_READ_DIR)
     for entry in profile.filesystem.readable:
         allow(entry, _LANDLOCK_FS_READ | _LANDLOCK_FS_READ_DIR)
     for entry in profile.filesystem.writable:
         allow(entry, _LANDLOCK_FS_READ | _LANDLOCK_FS_READ_DIR | _LANDLOCK_FS_WRITE)
-    # After the denials, and therefore beating them, exactly as on macOS: a person handed this
-    # session one named file, and that is not a path the model went looking for.
+    # After the denials, and therefore beating them, exactly as on macOS: a person handed this session one named file, and that is not a path the model went looking for.
     for entry in profile.filesystem.attached:
         resolved = expand(entry, workspace=workspace)
         if resolved and os.path.exists(resolved):
             add(resolved, _LANDLOCK_FS_READ)
-    # landlock_restrict_self refuses without this: a process may only narrow itself if it cannot
-    # then regain privilege through a setuid binary.
+    # landlock_restrict_self refuses without this: a process may only narrow itself if it cannot then regain privilege through a setuid binary.
     libc.prctl(_PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)
     libc.syscall(
         ctypes.c_long(_SYS_LANDLOCK_RESTRICT_SELF), ctypes.c_int(ruleset), ctypes.c_uint32(0)
@@ -1095,10 +997,7 @@ def retry_attempt(profile: Optional[Profile], grant: Grant, *, workspace: str = 
     return Attempt(profile=profile, grant=grant, workspace=workspace)
 
 
-#: What the two backends say when they refuse. Neither names the path — a Seatbelt denial is an
-#: `EPERM` and a Landlock one is an `EACCES` — so this is a reading of the wreckage rather than a
-#: report from the enforcer, and it is allowed to be: a false positive costs one needless
-#: question, and a false negative leaves today's behaviour, which is the error reaching the model.
+#: What the two backends say when they refuse.
 _DENIAL_MARKERS = (
     "operation not permitted",
     "permission denied",
@@ -1143,9 +1042,7 @@ def denial_in(*, exit_code: int, output: str, attempt: Attempt) -> Optional[Deni
     lowered = output.lower()
     for marker in _NETWORK_DENIAL_MARKERS:
         if marker in lowered:
-            # Only where the box is what closed the network. With the network open, an unreachable
-            # host is an unreachable host, and offering to widen a permission the command already
-            # holds is an offer that fixes nothing.
+            # Only where the box is what closed the network.
             return None if profile.network else Denial(kind="network", evidence=marker)
     for marker in _DENIAL_MARKERS:
         if marker in lowered:

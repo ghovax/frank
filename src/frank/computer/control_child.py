@@ -37,20 +37,11 @@ from contextlib import redirect_stdout
 from typing import Any
 from frank.base.errors import summary
 
-# The primitives a script may call, sent by the parent because only the parent knows which surface
-# is answering. A name the surface does not implement is simply not bound, so reaching for it is a
-# `NameError` at the line that used it, raised before anything else in the script has run.
-#
-# It used to be one fixed tuple — the union of both surfaces — handed out whole regardless of what
-# was on the other end. A native window implements eight of the twenty, so a script could call
-# `hover`, `evaluate` or `tabs` and learn at runtime, from a result payload, that the plan it had
-# already committed to was never possible. A result payload reads as a runtime condition worth
-# working around; an unbound name reads as what it is.
+# The primitives a script may call, sent by the parent because only the parent knows which surface is answering.
 _FALLBACK_PRIMITIVES = ("find_one", "find_many", "click", "type", "press", "scroll", "drag",
                         "select", "caret", "read")
 
-# The request/reply pipes to the parent, opened in ``main`` so importing this module (it never
-# should be — it is a script) has no side effect.
+# The request/reply pipes to the parent, opened in ``main`` so importing this module (it never should be — it is a script) has no side effect.
 _request: Any = None
 _reply: Any = None
 
@@ -78,8 +69,7 @@ class _PreloadsBundledLibraries:
         self._pending: dict[str, str] = {}
         for directory in directories or ():
             name = os.path.basename(directory)
-            # `delocate` puts a wheel's vendored libraries in `<package>/.dylibs`; anything else
-            # is the package directory itself.
+            # `delocate` puts a wheel's vendored libraries in `<package>/.dylibs`; anything else is the package directory itself.
             package = os.path.basename(os.path.dirname(directory)) if name == ".dylibs" else name
             if package:
                 self._pending[package] = directory
@@ -90,22 +80,16 @@ class _PreloadsBundledLibraries:
             import ctypes
             import glob
 
-            # `*.dylib`, and `lib*.so` for the ones built with the other extension. The `lib`
-            # prefix is what separates a shared library from a Python extension module: they are
-            # both `.so` here, and loading `_extra.so` this way would be wrong. Dylibs first,
-            # since a `lib*.so` in these bundles is usually the C++ layer over the C one.
+            # `*.dylib`, and `lib*.so` for the ones built with the other extension.
             libraries = (sorted(glob.glob(os.path.join(directory, "*.dylib")))
                          + sorted(glob.glob(os.path.join(directory, "lib*.so"))))
             for library in libraries:
-                # Quietly: a library that will not load on its own is not necessarily a problem —
-                # it may be one this package never reaches for — and the import that follows is
-                # what says whether anything is actually missing.
+                # Quietly: a library that will not load on its own is not necessarily a problem — it may be one this package never reaches for — and the import that follows is what says whether anything is actually missing.
                 try:
                     ctypes.CDLL(library, mode=getattr(ctypes, "RTLD_GLOBAL", 0))
                 except OSError:
                     continue
-        # Never claims the import. This exists for its side effect; the normal machinery finds
-        # the module.
+        # Never claims the import. This exists for its side effect; the normal machinery finds the module.
         return None
 
 
@@ -161,16 +145,6 @@ def _script_namespace(
     a person's saved workflows and the script packages their skills carry.
     """
     # The path is settled *before* anything is imported, because the import below depends on it.
-    # It was written the other way round — `from frank import screen` first, the repair after —
-    # so the repair could never run in the one situation it existed for, and every script died
-    # with `ModuleNotFoundError: No module named 'frank'`.
-    #
-    # The child is launched by file path, so Python puts its own directory on `sys.path`, which
-    # makes every module beside it importable by a bare name and shadows anything of the same
-    # name further along; a sibling called `workflows.py` is exactly that collision. Removing it
-    # also removes the only route to `frank` when the package is not installed where this
-    # interpreter looks, so the package root goes on explicitly:
-    # `.../src/frank/computer` -> `.../src`.
     here = os.path.dirname(os.path.abspath(__file__))
     sys.path[:] = [entry for entry in sys.path if os.path.abspath(entry or os.getcwd()) != here]
     package_root = os.path.dirname(os.path.dirname(here))
@@ -178,42 +152,20 @@ def _script_namespace(
         sys.path.insert(0, package_root)
 
     # `frank.screen`, loaded from its file without running `frank/__init__.py`.
-    #
-    # A plain `from frank import screen` executes the package's `__init__`, and that imports the
-    # whole runtime — compaction, credentials, httpx, rich — none of which this process has any
-    # use for. It is slow, it is the opposite of the thin disposable child this file exists to
-    # be, and under the session's own sandbox it does not even work: `rich` raises
-    # `PermissionError` on import, so every script died before its first line with an error
-    # naming a library nobody mentioned.
-    #
-    # So a stub `frank` package is put in `sys.modules` with its real `__path__`, and `screen` is
-    # executed into it directly. Anything else under `frank` a script reaches for still imports
-    # normally through that path; the package body simply never runs. A workflow or skill saying
-    # `from frank.screen import Screen` finds this same module object, which is what makes the
-    # inline script and the saved file the same program.
     screen_module = _load_screen_module(package_root)
     screen_module.install_bridge(lambda name, arguments, keywords: _perform(name, arguments, keywords))
     screen_module.screen.target = target
-    # A project's and a person's workflow directories, and any script package a skill carries, in
-    # precedence order — so `from workflows.invoice import run` reaches whichever wrote it and
-    # `from filing import file_all` reaches the skill that ships it. The workflow directories are
-    # namespace packages, so Python merges the two into one `workflows` and the project wins a
-    # collision.
+    # A project's and a person's workflow directories, and any script package a skill carries, in precedence order — so `from workflows.invoice import run` reaches whichever wrote it and `from filing import file_all` reaches the skill that ships it.
     for root in reversed(list(workspace or ())):
         if root and root not in sys.path:
             sys.path.insert(0, root)
-    # A skill's own dependencies go on the *end*. They have to be reachable — a skill whose
-    # package imports `httpx` is broken without them, and the failure names a module the script
-    # never mentioned — but they must not be reachable before anything else: one skill pinning an
-    # old copy of a library would otherwise decide what every script in this process gets, and
-    # `frank` itself is importable from exactly one place for a reason.
+    # A skill's own dependencies go on the *end*.
     for root in dependencies or ():
         if root and root not in sys.path:
             sys.path.append(root)
     if libraries:
         sys.meta_path.insert(0, _PreloadsBundledLibraries(libraries))
-    # The names a surface implements, for a script that wants to ask rather than try. Everything
-    # else a script needs, it imports.
+    # The names a surface implements, for a script that wants to ask rather than try.
     return {"__primitives__": tuple(allowed)}
 
 
@@ -255,8 +207,7 @@ def _run(script: str, namespace: dict[str, Any]) -> Any:
     """Execute ``script`` and return the value of its trailing expression, or ``None``. Parsed to an
     AST first (so a syntax error is precise and no source is rewritten); if the last statement is a
     bare expression it is evaluated separately for its value, and everything before it is executed."""
-    # Named, so a syntax error reports `File "<control_screen>"` rather than `File "<unknown>"` —
-    # the same name the compiles below use, and one that says which script is meant.
+    # Named, so a syntax error reports `File "<control_screen>"` rather than `File "<unknown>"` — the same name the compiles below use, and one that says which script is meant.
     tree = ast.parse(script, filename="<control_screen>", mode="exec")
     final_value = None
     if tree.body and isinstance(tree.body[-1], ast.Expr):
@@ -298,11 +249,7 @@ def main() -> None:
     captured = io.StringIO()
     result: dict[str, Any] = {"ok": True}
     try:
-        # Building the namespace is inside the guard, because it can fail: it imports
-        # `frank.screen` and rewrites `sys.path`, and when it raised, this whole process died
-        # before writing anything — so the parent had no result to read and could only say the
-        # helper "stopped before it could do anything", which tells a model nothing it can act
-        # on. Everything that can go wrong now comes back as an error the script can be fixed by.
+        # Building the namespace is inside the guard, because it can fail: it imports `frank.screen` and rewrites `sys.path`, and when it raised, this whole process died before writing anything — so the parent had no result to read and could only say the helper "stopped before it could do anything", which tells a model nothing it can act on.
         allowed = configuration.get("primitives") or _FALLBACK_PRIMITIVES
         namespace: dict[str, Any] = _script_namespace(allowed, configuration.get("target", ""),
                                                       configuration.get("import_roots", []),
@@ -311,21 +258,14 @@ def main() -> None:
         with redirect_stdout(captured):
             result["value"] = _run(script, namespace)
     except SyntaxError as error:
-        # The interpreter's own rendering, verbatim — the offending line, the caret under the
-        # column, the message. Reporting only `msg` and `lineno` and rewriting them into a
-        # sentence threw away the two things that make a syntax error fixable: which text, and
-        # where in it. "invalid syntax (line 7)" is not something a program can be repaired
-        # from; the caret is. The parent adds its guidance around this rather than instead of it.
+        # The interpreter's own rendering, verbatim — the offending line, the caret under the column, the message.
         result = {
             "ok": False, "error_code": "syntax_error",
             "detail": error.msg or "", "line": error.lineno or 0,
             "rendered": "".join(traceback.format_exception_only(type(error), error)).strip(),
         }
     except NameError as error:
-        # Almost always the one mistake: a script written as though `screen` were in scope,
-        # which it was until this became a program that says where its screen comes from.
-        # Answered with the line to add rather than with the bare name, because "name 'screen'
-        # is not defined" is true and teaches nothing.
+        # Almost always the one mistake: a script written as though `screen` were in scope, which it was until this became a program that says where its screen comes from.
         missing = getattr(error, "name", "") or ""
         if missing in ("screen", "Screen", "place"):
             result = {"ok": False, "error_code": "needs_import", "detail": missing}
@@ -337,9 +277,7 @@ def main() -> None:
     if output:
         result["stdout"] = output
     try:
-        # Compact, like every other payload that ends up in front of a model — spelled out
-        # here rather than imported from `base`, because this file is launched by path and
-        # holds no Frank code. One helper's worth of duplication is the price of that.
+        # Compact, like every other payload that ends up in front of a model — spelled out here rather than imported from `base`, because this file is launched by path and holds no Frank code.
         sys.stdout.write(json.dumps(result, default=str, ensure_ascii=False, separators=(",", ":")))
     except Exception:
         sys.stdout.write(json.dumps(

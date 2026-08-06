@@ -5,19 +5,13 @@ import type { ReactNode } from "react";
 import { LuX } from "react-icons/lu";
 import { Tooltip } from "./tooltip";
 
-// The shared height for a panel's top strip — its tabs and any controls sitting beside
-// them (the "＋" button, an environment switcher) all use this so the whole strip lines
-// up at one height instead of each control picking its own.
+// The shared height for a panel's top strip — its tabs and any controls sitting beside them (the "＋" button, an environment switcher) all use this so the whole strip lines up at one height instead of each control picking its own.
 export const PANEL_TAB_HEIGHT = "32px";
 
-// The card styling for a panel tab's rich hover tooltip — matched to the context/token
-// counter tooltip so every panel's tab tooltips read identically.
+// The card styling for a panel tab's rich hover tooltip — matched to the context/token counter tooltip so every panel's tab tooltips read identically.
 const PANEL_TAB_TOOLTIP_PROPS = { p: 3, bg: "bg", color: "fg", borderRadius: "md", boxShadow: "lg", border: "1px solid", borderColor: "border" } as const;
 
-// A single selectable tab in a panel's top strip. One implementation shared by every
-// panel that has tabs, so they look and behave identically and can never drift apart in
-// height or styling. Pass `tooltip` for a rich hover card (built by the
-// caller, styled here) — the same affordance every panel's tabs get for free.
+// A single selectable tab in a panel's top strip.
 export function PanelTab({
   icon,
   label,

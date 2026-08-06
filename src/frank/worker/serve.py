@@ -60,18 +60,11 @@ async def serve(assignment: dict, ready_fd: int = -1, lifeline_fd: int = -1) -> 
         _report(ready_fd, {"ready": False, "reason": "assignment is missing a session id or socket path"})
         return 1
     if not agent_name:
-        # There is no default to fall back to, and running an unnamed profile would mean a
-        # session whose behaviour nobody chose. Refusing is the only honest answer.
+        # There is no default to fall back to, and running an unnamed profile would mean a session whose behaviour nobody chose.
         _report(ready_fd, {"ready": False, "reason": "assignment is missing the agent to run"})
         return 1
 
-    # This process's identity, for the children that inherit its environment wholesale: an MCP
-    # server over stdio, a helper the worker spawns directly. A *confined* tool child does not
-    # inherit — the confinement builds its environment from an allowlist — so `bash` is handed
-    # the same fact explicitly, from the tool context rather than read back out of here. The
-    # reader that matters either way is the `frank` CLI: run from inside a session, `frank
-    # create` makes a child of that session instead of an orphan outside the tree, the reaper
-    # and the permission clamp.
+    # This process's identity, for the children that inherit its environment wholesale: an MCP server over stdio, a helper the worker spawns directly.
     os.environ[environment_variables.SESSION_ID] = session_id
 
     configuration = Configuration.load()
@@ -91,20 +84,7 @@ async def serve(assignment: dict, ready_fd: int = -1, lifeline_fd: int = -1) -> 
     )
     await session.start()
 
-    # Claim the session before touching its socket, and hold the claim for as long as this
-    # process lives.
-    #
-    # A session is one conversation, and one conversation cannot have two writers. The daemon
-    # tries to arrange that — a wake lock, a sleeping check, a reachability check — but every one
-    # of those is an *inference* about whether a worker exists, and an inference that is wrong
-    # once forks a second worker. Which used to be enough, because the line below unlinks the
-    # socket path unconditionally: the newcomer took the path from the incumbent, both served the
-    # same session id, each with its own runtime and its own copy of the conversation, and a
-    # single question came back answered twice.
-    #
-    # A lock makes the arrangement a fact instead of an intention. The kernel releases it when
-    # the holder dies, however it dies, so the stale-socket case the unlink was written for still
-    # works: no live holder means the lock is free, and the newcomer is the rightful owner.
+    # Claim the session before touching its socket, and hold the claim for as long as this process lives.
     socket_path.parent.mkdir(parents=True, exist_ok=True)
     claim = os.open(str(socket_path) + ".lock", os.O_RDWR | os.O_CREAT, 0o600)
     try:
@@ -144,15 +124,12 @@ async def serve(assignment: dict, ready_fd: int = -1, lifeline_fd: int = -1) -> 
     )
     server = _AnnouncingServer(config)
 
-    # uvicorn captures the termination signals itself; the worker wants its own teardown to
-    # run first, so the session's turn is aborted and its conversation checkpointed before the
-    # socket goes away.
+    # uvicorn captures the termination signals itself; the worker wants its own teardown to run first, so the session's turn is aborted and its conversation checkpointed before the socket goes away.
     server.capture_signals = contextlib.nullcontext  # type: ignore[method-assign]
     stopping = asyncio.Event()
 
     async def _shutdown_on_signal() -> None:
-        # Set from inside the loop rather than from the handler: uvicorn only observes the
-        # flag between its own iterations.
+        # Set from inside the loop rather than from the handler: uvicorn only observes the flag between its own iterations.
         await stopping.wait()
         server.should_exit = True
 
@@ -161,16 +138,7 @@ async def serve(assignment: dict, ready_fd: int = -1, lifeline_fd: int = -1) -> 
         with contextlib.suppress(NotImplementedError):
             loop.add_signal_handler(received, stopping.set)
 
-    # The lifeline, watched for as long as this session runs rather than checked once. It only
-    # ever becomes readable by reaching end-of-file, because nothing is ever written to it: the
-    # prototype holds the far end open and closes it by dying.
-    #
-    # This is what a signal cannot do. Ending a session by signalling it needs the prototype to
-    # still be alive enough to send one, so a prototype that was killed outright, or that
-    # crashed, left every session it had forked running — reparented, still holding its socket,
-    # and unreapable, because the only process that could ever have reported their deaths was
-    # the one that had just died. Stopping here goes through the same path as a `SIGTERM`, so
-    # the turn is abandoned and the conversation checkpointed on the way out rather than lost.
+    # The lifeline, watched for as long as this session runs rather than checked once.
     def _prototype_is_gone() -> None:
         with contextlib.suppress(OSError, ValueError):
             loop.remove_reader(lifeline_fd)
@@ -185,9 +153,7 @@ async def serve(assignment: dict, ready_fd: int = -1, lifeline_fd: int = -1) -> 
     shutdown_watcher = asyncio.create_task(_shutdown_on_signal())
 
     serve_task = asyncio.create_task(server.serve())
-    # Waiting on the readiness event and on the serve task together means a worker that
-    # cannot bind is reported as failed instead of hanging its creator until the assignment
-    # times out.
+    # Waiting on the readiness event and on the serve task together means a worker that cannot bind is reported as failed instead of hanging its creator until the assignment times out.
     ready_wait = asyncio.create_task(server.ready.wait())
     await asyncio.wait({ready_wait, serve_task}, return_when=asyncio.FIRST_COMPLETED)
     if serve_task.done():
@@ -209,8 +175,7 @@ async def serve(assignment: dict, ready_fd: int = -1, lifeline_fd: int = -1) -> 
         await session.aclose()
         with contextlib.suppress(OSError):
             socket_path.unlink(missing_ok=True)
-        # The kernel would drop this when the process exits anyway; closing it here means an
-        # orderly shutdown hands the session on without waiting for that.
+        # The kernel would drop this when the process exits anyway; closing it here means an orderly shutdown hands the session on without waiting for that.
         with contextlib.suppress(OSError):
             os.close(claim)
     return 0

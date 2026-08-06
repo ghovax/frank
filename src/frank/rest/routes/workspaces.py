@@ -75,8 +75,7 @@ async def get_project(workspace_id: str):
 
 @router.delete("/workspaces/{workspace_id}")
 async def delete_project(workspace_id: str):
-    # There is always exactly one active workspace in the UI, so the last one can't be
-    # deleted — that would leave an empty state the redesigned app no longer has.
+    # There is always exactly one active workspace in the UI, so the last one can't be deleted — that would leave an empty state the redesigned app no longer has.
     if await asyncio.to_thread(_workspaces._workspace_count) <= 1:
         raise HTTPException(status_code=400, detail="Can't delete the only workspace.")
     deleted = await asyncio.to_thread(_delete_workspace, workspace_id)
@@ -115,9 +114,7 @@ async def create_location(workspace_id: str, request: LocationInput):
     if location is None:
         raise HTTPException(status_code=404, detail="Project not found.")
     _publish_broadcast({"type": "workspaces_changed"})
-    # The sessions already open in this workspace are told too. Without it the new
-    # environment existed in Settings and in no conversation — every session that
-    # predated the edit went on addressing the set it was created with.
+    # The sessions already open in this workspace are told too.
     await state.workspace_locations_changed(workspace_id)
     return location
 
@@ -137,8 +134,7 @@ async def update_location(location_id: str, request: LocationInput):
 
 @router.delete("/locations/{location_id}")
 async def delete_location(location_id: str):
-    # Read the workspace off the row before it goes: after the delete there is nothing left
-    # to ask which workspace's sessions need telling.
+    # Read the workspace off the row before it goes: after the delete there is nothing left to ask which workspace's sessions need telling.
     workspace_id = await asyncio.to_thread(_workspace_id_for_location, location_id)
     deleted = await asyncio.to_thread(_delete_location, location_id)
     if not deleted:

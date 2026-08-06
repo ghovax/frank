@@ -1,11 +1,4 @@
-/**
- * Reading the theme, and choosing it.
- *
- * Three-valued like the desktop's colour mode — light, dark, or follow the system — persisted so
- * the choice survives the app being killed. `useTheme()` is what components call; it hands back
- * the palette and the scales together, because a component that needs one almost always needs
- * the other and two hooks would be two re-render subscriptions.
- */
+/** Reading the theme, and choosing it. */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -43,8 +36,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [preference, setStoredPreference] = useState<ThemePreference>("system");
 
   useEffect(() => {
-    // Read once at mount. A miss means the default, which is what the state already holds, so
-    // there is nothing to do on the failure path.
+    // Read once at mount.
     AsyncStorage.getItem(STORAGE_KEY)
       .then((stored) => {
         if (stored === "light" || stored === "dark" || stored === "system") setStoredPreference(stored);

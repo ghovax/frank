@@ -52,19 +52,14 @@ from frank.base.serialization import compact
 from frank.runtime.tools import context as tool_context
 from frank.runtime.tools.registry import EXPLANATION
 
-# A tool's description is the guidance a model reads to decide whether and how to call it —
-# model-facing prose, and so it lives in a prompt template like every other piece of it. The
-# field descriptions stay here: those are schema annotations naming what an argument is, not
-# advice about when to use it.
+# A tool's description is the guidance a model reads to decide whether and how to call it — model-facing prose, and so it lives in a prompt template like every other piece of it.
 _PROMPTS = PromptLoader(Path(__file__).resolve().parent.parent / "prompts")
 
 
 def _description(tool_name: str) -> str:
     text = _PROMPTS.load(f"tool_{tool_name}", {}).strip()
     if not text:
-        # The loader answers a missing template with an empty string, and an empty description
-        # is a tool the model is handed with no idea what it does. Fail at import instead of
-        # shipping one.
+        # The loader answers a missing template with an empty string, and an empty description is a tool the model is handed with no idea what it does.
         raise ValueError(f"No description template for the {tool_name!r} tool.")
     return text
 
@@ -143,8 +138,6 @@ async def _message_session(session: str, message: str, explanation: str = "") ->
             "session": session, "message": str(exception),
         })
     # A peer parked on a human decision does not take the message, and saying so is the point.
-    # The alternative — which is what happened — is that the send reports success, the peer never
-    # acts on it, and the sender concludes the peer is broken and replaces it.
     if isinstance(outcome, dict) and outcome.get("awaiting_input"):
         return compact({
             "code": "session_awaiting_input", "status": "error", "session": session,
@@ -219,13 +212,7 @@ def build_create_session_tool(agent_names: list[str]) -> BaseTool:
             Literal[names],  # type: ignore[valid-type]
             Field(description="The agent profile the peer runs."),
         ),
-        # Absent is how "the same as mine" is said, which a schema expresses by leaving a field
-        # out rather than by offering an empty string among the choices.
-        #
-        # There is deliberately no `permission_mode`. Who answers for a session is the person's
-        # policy, not a parameter for the thing being governed to set: a peer works the way its
-        # creator works, narrowed by whatever ceiling its agent profile declares, and both of
-        # those are decided outside this call.
+        # Absent is how "the same as mine" is said, which a schema expresses by leaving a field out rather than by offering an empty string among the choices.
         working_directory=(
             Optional[str],
             Field(default=None, description="Where the peer works. Omit to use your working directory."),
@@ -347,9 +334,7 @@ async def invoke(tool_name: str, tool_arguments: dict, create_tool: BaseTool | N
     try:
         return await tool.ainvoke(tool_arguments)
     except ValidationError as exception:
-        # Named, so the model can see which call to fix rather than which turn to mourn. The
-        # missing field is in the message pydantic wrote; the tool name is not, and with ten
-        # calls in flight it is the part that says where to look.
+        # Named, so the model can see which call to fix rather than which turn to mourn.
         return compact({
             "code": "invalid_tool_arguments",
             "status": "error",

@@ -56,14 +56,7 @@ def _safe_turn_error(error: object, had_images: bool = False) -> dict[str, objec
     if status_code is not None:
         fields["status"] = status_code
 
-    # Its own failure, ahead of every status-code test, because it is the one the harness caused
-    # and the one a user can act on. It used to fall through all of them into the generic bucket —
-    # "The turn stopped unexpectedly. The raw details were written to the server log" — because
-    # the provider client raised a bare RuntimeError carrying the sentence and not the code.
-    #
-    # Three structural signals and no prose: the harness's own pre-flight measurement, litellm's
-    # typed error (which already encodes every provider's way of saying this), and the
-    # machine-readable `code` for the providers reached outside litellm.
+    # Its own failure, ahead of every status-code test, because it is the one the harness caused and the one a user can act on.
     overflow = error if isinstance(error, ContextWindowExceeded) else None
     if (overflow is not None
             or isinstance(error, litellm_exceptions.ContextWindowExceededError)
@@ -71,8 +64,7 @@ def _safe_turn_error(error: object, had_images: bool = False) -> dict[str, objec
         window = getattr(overflow, "context_window", 0) or 0
         model = getattr(overflow, "model", "") or ""
         tokens = getattr(overflow, "tokens", None)
-        # Said only when it is known, and said as the measurement it is. A window with no token
-        # count is a fact about the model; the pair is a fact about this request.
+        # Said only when it is known, and said as the measurement it is.
         if window and tokens:
             measured = f" — about {tokens:,} tokens against a {window:,}-token window"
         elif window:
@@ -90,12 +82,9 @@ def _safe_turn_error(error: object, had_images: bool = False) -> dict[str, objec
                 "cause."
             ),
         }
-    # `provider_code` classifies the failure below (e.g. context-length) but is not part
-    # of the wire ErrorEvent — the client keys off `code`/`status`, never the raw provider code.
+    # `provider_code` classifies the failure below (e.g. context-length) but is not part of the wire ErrorEvent — the client keys off `code`/`status`, never the raw provider code.
 
-    # A turn with an image that the provider rejects almost always means the
-    # agent model is text-only — the most common, most actionable cause, and one
-    # the raw "invalid request" gives no hint of.
+    # A turn with an image that the provider rejects almost always means the agent model is text-only — the most common, most actionable cause, and one the raw "invalid request" gives no hint of.
     if had_images and (isinstance(error, litellm_exceptions.BadRequestError) or status_code == 400):
         return {
             **fields,
@@ -133,10 +122,7 @@ def _safe_turn_error(error: object, had_images: bool = False) -> dict[str, objec
             "message": "The model connection dropped before the turn finished. Check the connection and retry.",
         }
     if isinstance(error, litellm_exceptions.BadRequestError) or status_code == 400:
-        # The overflow codes are tested above, against every error rather than only against a 400,
-        # because a streaming provider reports this failure mid-stream where there is no status
-        # code to key off at all. One code (`context_window_exceeded`) covers both routes, so the
-        # interface has one thing to recognise instead of two spellings of one failure.
+        # The overflow codes are tested above, against every error rather than only against a 400, because a streaming provider reports this failure mid-stream where there is no status code to key off at all.
         return {
             **fields,
             "code": "request_rejected",

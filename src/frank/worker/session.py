@@ -78,18 +78,13 @@ class SessionExecutor(AgentExecutor):
     ):
         self._session_id = session_id
         self._agent_name = agent_name
-        # A worker is a process a restart happens to, so its background jobs want the durable
-        # store rather than the in-memory default a library session gets. Injectable all the
-        # same: this is the layer that decides, not the runtime and not a module global.
+        # A worker is a process a restart happens to, so its background jobs want the durable store rather than the in-memory default a library session gets.
         self._job_store: JobStore = job_store if job_store is not None else get_background_job_store()
         self._working_directory = working_directory
-        # Where tools actually run. The daemon resolves this when the session is created —
-        # a worktree workspace is not the project directory — and hands it over, so the
-        # session never has to work it out mid-turn.
+        # Where tools actually run.
         self._runtime_working_directory = runtime_working_directory or working_directory
         self._permission_mode = permission_mode
-        # Resolved and clamped by the daemon before this worker existed. Held as the profile the
-        # tool layer applies to every child it spawns; the worker never widens it.
+        # Resolved and clamped by the daemon before this worker existed.
         from frank.base.confinement import Profile
 
         self._sandbox = Profile.from_dict(sandbox)
@@ -98,27 +93,18 @@ class SessionExecutor(AgentExecutor):
         self._token = token
         self._global_configuration = global_configuration
 
-        # The worker never opens the database. Every write goes to the daemon, which is the
-        # sole writer, so the append-only store keeps the single-writer property it was built
-        # around. Live turn events ride the same channel and reach whoever is attached.
+        # The worker never opens the database.
         from frank.base.paths import daemon_socket_path
         from frank.worker.turn_store import DaemonTurnStore
 
         self._turn_store = DaemonTurnStore(str(daemon_socket_path()), session_id, daemon_token or token)
 
         # The same daemon, reached for a different purpose: composing with other sessions.
-        # It carries this session's identity so every peer it creates is a child of this one —
-        # not because a caller remembered to say so, but because there is no way to say
-        # otherwise.
         from frank.worker.peers import PeerSessions
 
         self._peers = PeerSessions(
             socket_path=str(daemon_socket_path()),
-            # This session's own token, not the daemon's. The daemon token would work and say
-            # nothing about who is calling; this one identifies the session, which is what
-            # makes every peer it creates a child of this one and confines its reach to its
-            # own subtree. Falling back to the daemon token keeps a session with no token of
-            # its own (a bare worker in a test) able to compose at all.
+            # This session's own token, not the daemon's.
             token=token or daemon_token,
             session_id=session_id,
             working_directory=runtime_working_directory or working_directory,
@@ -126,34 +112,23 @@ class SessionExecutor(AgentExecutor):
             parent_session=parent,
         )
 
-        # A2A needs a handler to drive turns through; a worker serves exactly one session, so
-        # it builds its own rather than being handed a registry of them.
+        # A2A needs a handler to drive turns through; a worker serves exactly one session, so it builds its own rather than being handed a registry of them.
         self._registry = None
         self._handler = None
 
-        # Where this session's tools may run, resolved by the daemon at `session.create` and
-        # carried in the assignment — the same once-and-immutable treatment the sandbox and the
-        # permission mode get, and for the same reason. `None` means no project, and the
-        # runtime synthesises a single local location at the working directory.
+        # Where this session's tools may run, resolved by the daemon at `session.create` and carried in the assignment — the same once-and-immutable treatment the sandbox and the permission mode get, and for the same reason.
         self._locations = locations
         self._on_turn_state = self._notify_turn_state
         self._on_permission_state = self._notify_permission_state
-        # Structured turn parts are handed to the daemon as they are persisted, so an attached
-        # client sees the turn as it happens rather than on the next poll.
+        # Structured turn parts are handed to the daemon as they are persisted, so an attached client sees the turn as it happens rather than on the next poll.
         self._on_stream_event = self._publish_stream_event
-        # Advisory locks so two sessions editing the same file notice each other. Built here
-        # rather than injected: the manager was a `None` in every worker, so `_acquire_filesystem_lease`
-        # answered "" and no session has ever taken a lease. The cross-process `flock` under it
-        # is what actually does the work, so one per process is exactly right — the object was
-        # only ever the in-process fast path over it.
+        # Advisory locks so two sessions editing the same file notice each other.
         self._file_lease_manager = FileLeaseManager()
 
         self._contexts: dict[str, _ContextState] = {}
         # Maps an in-flight A2A task to its runtime, purely so `cancel` can abort it.
         self._aborts: dict[str, AgentRuntime] = {}
-        # One session, one conversation. The monolith shared this map across agents so a
-        # persona switch continued the same dialogue; a session is one agent for life now, so
-        # the map has exactly one entry and exists only because the turn machinery indexes it.
+        # One session, one conversation.
         self._conversations: dict[str, list] = {}
         self._startup_resume_tasks: set[asyncio.Task] = set()
         self._compaction_tasks: set[asyncio.Task] = set()
@@ -333,14 +308,11 @@ class SessionExecutor(AgentExecutor):
         await self._drive_self_sent_turn(session_id, COMPACTION_KIND, metadata_flags={Metadata.COMPACTION: True})
 
     def abort_context(self, session_id: str) -> bool:
-        # Stop is broadcast to every executor (chat.py), but only the one that actually
-        # holds this context's state has anything to stop.
+        # Stop is broadcast to every executor (chat.py), but only the one that actually holds this context's state has anything to stop.
         state = self._contexts.get(session_id)
         if state is None or (state.runtime is None and state.resume_pump is None):
             return False
-        # Mark Stopped so the turn's finally (and any later completion) cannot re-arm a
-        # resume pump, then cancel the pump already watching it — the autonomous wake is
-        # what otherwise revived a fresh, abort-cleared turn seconds after Stop.
+        # Mark Stopped so the turn's finally (and any later completion) cannot re-arm a resume pump, then cancel the pump already watching it — the autonomous wake is what otherwise revived a fresh, abort-cleared turn seconds after Stop.
         state.aborted = True
         handled = False
         if state.resume_pump is not None:
@@ -407,10 +379,7 @@ class SessionExecutor(AgentExecutor):
         if resolved is None:
             return self._permission_mode
         self._permission_mode = str(resolved)
-        # What a runtime built later starts from, and what this session asks for when it
-        # creates a peer. The daemon clamps a child against the parent's record either way, so
-        # this cannot widen anything; leaving it stale would only mean asking for a mode this
-        # session has since moved off.
+        # What a runtime built later starts from, and what this session asks for when it creates a peer.
         self._peers.permission_mode = self._permission_mode
         for state in self._contexts.values():
             if state.runtime is not None:
@@ -440,8 +409,7 @@ class SessionExecutor(AgentExecutor):
             state = self._contexts.get(task.context_id)
             runtime = state.runtime if state is not None else None
             if runtime is None:
-                # No live runtime to ask. The record already carries the new mode, so the gate
-                # is re-decided when the turn resumes and rebuilds one.
+                # No live runtime to ask.
                 continue
             for gate in list(pending.gates):
                 if gate.request_id in pending.answers:
@@ -579,8 +547,7 @@ class SessionExecutor(AgentExecutor):
         session has none, so a late call from an ending turn's finally is a clean no-op
         that cannot resurrect a deleted session's pump."""
         state = self._contexts.get(session_id)
-        # A Stopped or torn-down context stays quiet: don't arm a pump that would
-        # autonomously wake the agent. Pending work is replayed on the next user turn.
+        # A Stopped or torn-down context stays quiet: don't arm a pump that would autonomously wake the agent.
         if state is None or state.aborted:
             return
         runtime = runtime or state.runtime
@@ -604,21 +571,18 @@ class SessionExecutor(AgentExecutor):
                 if runtime is None or not runtime.has_pending_jobs():
                     return
                 await runtime.wait_for_jobs()
-                # A result landed — drive an autonomous turn to deliver it. If a
-                # concurrent user turn already drained it, that turn no-ops.
+                # A result landed — drive an autonomous turn to deliver it.
                 await self._run_autonomous_turn(session_id)
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("background-resume pump failed for context %s", session_id)
         finally:
-            # Clear the slot only if it still points at *this* pump — a freshly armed
-            # pump (the user resumed) must not be dropped by a late-finishing finally.
+            # Clear the slot only if it still points at *this* pump — a freshly armed pump (the user resumed) must not be dropped by a late-finishing finally.
             state = self._contexts.get(session_id)
             if state is not None and state.resume_pump is asyncio.current_task():
                 state.resume_pump = None
-            # The context is idle now, so any reset deferred while it had work in
-            # flight can finally take effect (rebuilding with the new configuration).
+            # The context is idle now, so any reset deferred while it had work in flight can finally take effect (rebuilding with the new configuration).
             self._maybe_evict(session_id)
 
     async def _run_autonomous_turn(self, session_id: str) -> None:
@@ -628,22 +592,14 @@ class SessionExecutor(AgentExecutor):
         turn — the agent genuinely picks the work back up on its own."""
         if self._agent_handler() is None:
             return
-        # Nothing left to deliver — a concurrent user turn already drained the result
-        # while the pump was scheduling this wake — so don't even mint a task. The
-        # executor re-checks this under the per-context lock (that's the authoritative
-        # guard against the race); short-circuiting here just avoids creating an empty,
-        # invisible wake task in the common case.
+        # Nothing left to deliver — a concurrent user turn already drained the result while the pump was scheduling this wake — so don't even mint a task.
         state = self._contexts.get(session_id)
         runtime = state.runtime if state is not None else None
         has_live_result = runtime is not None and runtime.has_completed_undelivered_jobs()
         has_stored_result = self._job_store.has_undelivered_jobs(session_id, self._agent_name)
         if not has_live_result and not has_stored_result:
             return
-        # An agent-authored message (the agent resumed itself), carrying only the prose-less
-        # `autonomous_resume` part. Modelling it as `agent` rather than `user` keeps the
-        # persisted A2A task honest — no consumer sees a user message the user never sent —
-        # and the part renders as nothing. The framing note reaches only the model, injected
-        # as a system note in `execute`. Driven through the shared self-sent-turn path.
+        # An agent-authored message (the agent resumed itself), carrying only the prose-less `autonomous_resume` part.
         await self._drive_self_sent_turn(session_id, AUTONOMOUS_RESUME_KIND, metadata_flags={Metadata.AUTONOMOUS_RESUME: True})
 
     def _build_runtime(
@@ -654,9 +610,7 @@ class SessionExecutor(AgentExecutor):
         conversation: Optional[list] = None,
         locations: Optional[list[dict]] = None,
     ) -> AgentRuntime:
-        # A worker serves a person's machine, so it gets the machine's catalogue: `~/.agents`,
-        # the project's own, the packaged base layer, and the well-known instruction files. A
-        # library session gets a narrower one, which is the whole reason this is an argument.
+        # A worker serves a person's machine, so it gets the machine's catalogue: `~/.agents`, the project's own, the packaged base layer, and the well-known instruction files.
         catalogue = machine_catalogue(self._global_configuration, project_directory)
         configuration = catalogue.agent(self._agent_name)
         if configuration is None:
@@ -674,41 +628,20 @@ class SessionExecutor(AgentExecutor):
             project_directory=project_directory or working_directory or "",
             file_lease_manager=self._file_lease_manager,
             locations=locations,
-            # Who to answer. A session was already told another one might be waiting on its
-            # result and given no way to find out which; the return path is a message, and a
-            # message needs an address.
+            # Who to answer.
             parent_session=self._parent,
-            # The mode this session was created with. It was not passed, and nothing failed
-            # loudly: the runtime's parameter defaults to empty, which it reads as "no session
-            # mode given" and falls back to the agent profile's own policy. So a session created
-            # `read_only` was recorded read-only, listed read-only and displayed read-only, and
-            # ran as whatever its agent profile said — `default`, for every profile that does not
-            # set one. Every permission decision in the session was made against the wrong mode:
-            # a read-only session could click, type and write.
+            # The mode this session was created with.
             permission_mode=self._permission_mode,
             sandbox=self._sandbox,
-            # The two things the runtime cannot derive from configuration: how this session
-            # reaches its peers, and the MCP connections this worker owns.
+            # The two things the runtime cannot derive from configuration: how this session reaches its peers, and the MCP connections this worker owns.
             session_access=self._peers,
             mcp_manager=self._mcp_manager,
-            # The durable job store this worker already holds. Left unpassed, the runtime built
-            # its own `MemoryJobStore` — so a background job was written to a dictionary that
-            # died with the turn, while the worker went on querying SQLite for undelivered
-            # results (see `has_undelivered_jobs` above). A daemon is precisely the thing
-            # restarts happen to, which is why it supplies a store at all; not handing it over
-            # made every background job unrecoverable and every `bash` call a `TypeError`.
+            # The durable job store this worker already holds.
             jobs=self._job_store,
         )
-        # No agent-event sink is installed on the runtime any more: `AgentRuntime` stopped
-        # carrying one in the package restructure, and path-tagged activity now reaches the
-        # stream from `worker/turn.py`, which calls `_on_stream_event` itself. The call that
-        # used to be here survived the method it called, so *every* turn died on
-        # `AttributeError: 'AgentRuntime' object has no attribute 'set_agent_event_sink'`
-        # before it could start — reported to the interface as "the turn stopped unexpectedly".
+        # No agent-event sink is installed on the runtime any more: `AgentRuntime` stopped carrying one in the package restructure, and path-tagged activity now reaches the stream from `worker/turn.py`, which calls `_on_stream_event` itself.
         runtime.set_turn_reader(self._make_turn_reader())
-        # Every goal change reaches the daemon, and through it the interface — which is what
-        # makes a goal something the person can see and call off rather than something they
-        # infer from the session refusing to go quiet.
+        # Every goal change reaches the daemon, and through it the interface — which is what makes a goal something the person can see and call off rather than something they infer from the session refusing to go quiet.
         runtime.set_goal_listener(lambda goal: self._notify_goal_state(session_id, goal))
         return runtime
 
@@ -717,33 +650,23 @@ class SessionExecutor(AgentExecutor):
             if not turn_id:
                 return None
             task = await self._turn_store.get(turn_id)
-            # Exclude `history` for the same reason as the delegate's done payload:
-            # read_turn feeds a sibling/agent task straight into the caller's
-            # model context, and the full transcript (incl. raw web-search text)
-            # would overflow it. Only the status + deliverable are needed.
+            # Exclude `history` for the same reason as the delegate's done payload: read_turn feeds a sibling/agent task straight into the caller's model context, and the full transcript (incl. raw web-search text) would overflow it.
             return task.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"}) if task else None
         return read_turn
 
     async def _runtime_for(self, session_id: str, workspace: SessionWorktree) -> AgentRuntime:
-        # Apply any reset that was deferred while this context had background work in
-        # flight: if the runtime has since gone idle, drop it now so this turn rebuilds
-        # it with the new configuration rather than reusing the stale one.
+        # Apply any reset that was deferred while this context had background work in flight: if the runtime has since gone idle, drop it now so this turn rebuilds it with the new configuration rather than reusing the stale one.
         self._maybe_evict(session_id)
         state = self._context(session_id)
         runtime = state.runtime
         if runtime is None:
-            # Restore a persisted conversation the first time a context is seen this
-            # process (e.g. a session reopened after a restart), so the agent resumes
-            # with the same history the UI is replaying rather than a blank slate.
+            # Restore a persisted conversation the first time a context is seen this process (e.g. a session reopened after a restart), so the agent resumes with the same history the UI is replaying rather than a blank slate.
             if session_id not in self._conversations:
-                # The model-facing conversation is the task store's per-context checkpoint
-                # (the single durable turn surface); a reopened session resumes from it.
+                # The model-facing conversation is the task store's per-context checkpoint (the single durable turn surface); a reopened session resumes from it.
                 restored = messages_from_dict(await self._turn_store.load_checkpoint(session_id))
                 if restored:
                     self._conversations[session_id] = restored
-            # Seed from (and bind to) the process-wide dialogue history for this
-            # context — the same list object another agent may have been writing
-            # to — so a persona switch picks up exactly where the last turn left off.
+            # Seed from (and bind to) the process-wide dialogue history for this context — the same list object another agent may have been writing to — so a persona switch picks up exactly where the last turn left off.
             conversation = self._conversations.setdefault(session_id, [])
             locations = None
             locations = self._locations
@@ -754,26 +677,16 @@ class SessionExecutor(AgentExecutor):
                 conversation=conversation,
                 locations=locations,
             )
-            # Restore the agent's durable objective — its goal and task list — the first
-            # time this process builds a runtime for the context (e.g. a session reopened
-            # after a restart), alongside the conversation restored above, so a marathon run
-            # never loses what it was working toward.
+            # Restore the agent's durable objective — its goal and task list — the first time this process builds a runtime for the context (e.g. a session reopened after a restart), alongside the conversation restored above, so a marathon run never loses what it was working toward.
             session_state = await self._turn_store.load_session_state(session_id)
             if session_state:
                 runtime.restore_session(session_state)
-                # Announce the restored goal, so a session reopened after a restart shows what
-                # it is working toward. `restore_session` deliberately does not announce: it is
-                # the one write that changes nothing, and routing it through the listener would
-                # have every rebuilt runtime republish a goal that never moved.
+                # Announce the restored goal, so a session reopened after a restart shows what it is working toward.
                 self._notify_goal_state(session_id, runtime.goal)
             state.runtime = runtime
-            # First time this process builds a runtime for the context: replay any
-            # background results the durable store holds but never delivered (e.g.
-            # a parse that finished, or was interrupted, across a restart), so the
-            # model sees them as soon as this — or the autonomous wake — runs.
+            # First time this process builds a runtime for the context: replay any background results the durable store holds but never delivered (e.g. a parse that finished, or was interrupted, across a restart), so the model sees them as soon as this — or the autonomous wake — runs.
             self._replay_stored_background_results(session_id, runtime)
-        # A context's working directory is fixed at creation — a session stays
-        # bound to the folder it was started in, so later turns never repoint it.
+        # A context's working directory is fixed at creation — a session stays bound to the folder it was started in, so later turns never repoint it.
         return runtime
 
     def _replay_stored_background_results(self, session_id: str, runtime: AgentRuntime) -> None:
@@ -875,10 +788,6 @@ class SessionExecutor(AgentExecutor):
             await updater.cancel()
 
     # The facade the session's socket serves.
-    #
-    # Everything above is the turn machinery, which still speaks in contexts because that is
-    # the A2A shape. A worker only ever has one, so these methods bind that machinery to this
-    # session and are the whole surface the socket exposes.
 
     @property
     def session_id(self) -> str:
@@ -922,25 +831,16 @@ class SessionExecutor(AgentExecutor):
             sample_ratio=telemetry.sample_ratio,
         )
 
-        # Each session connects its own MCP servers. The daemon keeps a pool of its own for the
-        # browser's server list, but connections are stateful and a session's tool calls belong
-        # to the session's process — sharing one pool across processes is not something a stdio
-        # server can offer. The manager is handed to each runtime this session builds; the
-        # worker keeps it because the worker is what closes it.
+        # Each session connects its own MCP servers.
         servers = configuration.mcp.enabled_servers()
         if servers:
             from frank.base.mcp_client import MCPClientManager
 
             self._mcp_manager = MCPClientManager(servers)
-            # Connected in the background: a hung server must not delay the session's socket,
-            # and tool gating keys on the manager existing rather than on live connections.
+            # Connected in the background: a hung server must not delay the session's socket, and tool gating keys on the manager existing rather than on live connections.
             self._mcp_connect = asyncio.create_task(self._mcp_manager.start())
 
-        # Every turn tells the model what is on the screen, and the first time a process asks
-        # for that listing it spends ~1.8s opening an accessibility connection to each running
-        # application — a cost that landed on the session's first turn, before the model had
-        # been called at all. It is paid here instead, off the loop and behind the socket, so it
-        # overlaps the fork acknowledgement and the trip the first message is still making.
+        # Every turn tells the model what is on the screen, and the first time a process asks for that listing it spends ~1.8s opening an accessibility connection to each running application — a cost that landed on the session's first turn, before the model had been called at all.
         if self._global_configuration.computer_control.enabled:
             def warm_screen() -> None:
                 from frank.computer import targets
@@ -1060,18 +960,6 @@ class SessionExecutor(AgentExecutor):
                 HumanMessage(content=first_message),
             ]
             # The tool is offered, and the prompt is what insists on it.
-            #
-            # Forcing it is the obvious way to guarantee the object, and it cannot be used: a
-            # thinking model behind a gateway refuses the request outright — *400, Thinking mode
-            # does not support this tool_choice* — and refuses it whatever is sent for
-            # `reasoning_effort`, including nothing at all, because the model thinks by default
-            # and the incompatibility is with the forcing itself. Measured against the live
-            # provider on all three settings before giving up on it.
-            #
-            # `auto` is accepted everywhere, so the guarantee moves into the instruction and the
-            # attempts below cover a model that ignores it. A tool call is what this wants: the
-            # answer arrives as a typed field rather than as text somebody has to guess the
-            # shape of.
             attempts = active_tuning().amount(Tunable.session_title_attempts)
             for attempt in range(1, attempts + 1):
                 try:
@@ -1098,9 +986,7 @@ class SessionExecutor(AgentExecutor):
                 )
             logger.warning("gave up naming session %s after %d attempts", self._session_id, attempts)
         except Exception:  # noqa: BLE001 — a session is not worth failing over its own name
-            # Not `debug`. Failing to name a session is cosmetic; failing to name *every*
-            # session is a fault, and at debug level the difference was invisible — a sidebar
-            # full of "Untitled conversation" with nothing anywhere saying why.
+            # Not `debug`.
             logger.warning(
                 "could not generate a title for session %s", self._session_id, exc_info=True
             )
@@ -1264,10 +1150,7 @@ class SessionExecutor(AgentExecutor):
         self.teardown_context(self._session_id)
         with contextlib.suppress(Exception):
             cancel_all_background_jobs()
-        # The browser surface holds a connection to the user's Chrome if a screen tool ever
-        # ran. Closed here, by the session that opened it, rather than from an `atexit` hook
-        # the module used to register on import — imported lazily, so a session that never
-        # touched the screen does not load PyObjC just to shut down.
+        # The browser surface holds a connection to the user's Chrome if a screen tool ever ran.
         if "frank.computer.web" in sys.modules:
             with contextlib.suppress(Exception):
                 sys.modules["frank.computer.web"].close()

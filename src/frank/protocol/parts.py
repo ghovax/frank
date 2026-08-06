@@ -71,13 +71,9 @@ def _structured_data_payloads(message) -> list[dict]:
     return payloads
 
 
-# Attachments whose mime type starts with this are viewable by a vision model, so
-# they are inlined into the turn as image content blocks. Everything else stays a
-# text-only reference (path + metadata) the model opens with its file tools.
+# Attachments whose mime type starts with this are viewable by a vision model, so they are inlined into the turn as image content blocks.
 _INLINE_IMAGE_MIME_PREFIX = "image/"
-# A generous ceiling on an inlined image so a huge upload cannot blow up the
-# request (and the persisted conversation it becomes part of). Larger images are
-# left as text references rather than inlined.
+# A generous ceiling on an inlined image so a huge upload cannot blow up the request (and the persisted conversation it becomes part of).
 _MAXIMUM_INLINE_IMAGE_BYTES = 20 * 1024 * 1024
 
 
@@ -164,8 +160,7 @@ def compose_turn_input(
     where it was, attaching a file was reachable only by posting to the daemon's socket, and
     the harness's own front door could not do what its client could.
     """
-    # The metadata always rides along as text, so the model can act on the attachments with
-    # its file tools whether or not it can see them.
+    # The metadata always rides along as text, so the model can act on the attachments with its file tools whether or not it can see them.
     text_payload = compact({"text": user_text, "data_parts": structured_payloads})
     images = _image_attachments(structured_payloads)
     if not images:
@@ -220,13 +215,10 @@ def _work_habits_acknowledgement_parts(job_id: str) -> tuple[Part, Part]:
     )
 
 
-# Fields in a tool result that are guidance addressed to the model, or bulk payload it
-# reads from the conversation — never something the transcript should render. They are
-# stripped from `display` so the wire (live and on replay) carries only what the UI shows.
+# Fields in a tool result that are guidance addressed to the model, or bulk payload it reads from the conversation — never something the transcript should render.
 _MODEL_ONLY_RESULT_KEYS = frozenset({"hint", "note"})
 
-# Per-tool heavy payloads the UI summarizes (a count, a range) rather than dumping: the
-# model still reads them from the conversation; the client never needs the raw blob.
+# Per-tool heavy payloads the UI summarizes (a count, a range) rather than dumping: the model still reads them from the conversation; the client never needs the raw blob.
 _HEAVY_RESULT_KEYS: dict[str, frozenset[str]] = {
     "search_code": frozenset({"matches"}),
     "read_file": frozenset({"content"}),

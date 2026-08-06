@@ -1,9 +1,6 @@
 "use client";
 
-// Bridges the app UI to the native menu-bar tray (desktop only). It keeps the
-// tray's "Recent Conversations" submenu in sync with the session list, and reacts
-// to the tray's "New Chat" and recent-conversation clicks by calling back into the
-// app. In a plain browser it does nothing.
+// Bridges the app UI to the native menu-bar tray (desktop only).
 
 import { useEffect, useRef } from "react";
 import { isTauri } from "@/lib/tauri";
@@ -21,8 +18,7 @@ interface TrayHandlers {
 }
 
 export function useTray(handlers: TrayHandlers): void {
-  // Latest handlers, so the event subscription can stay mounted-once while always
-  // calling through to current state.
+  // Latest handlers, so the event subscription can stay mounted-once while always calling through to current state.
   const handlersRef = useRef(handlers);
 
   useEffect(() => {

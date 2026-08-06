@@ -52,9 +52,7 @@ class PeerSessions:
         self.working_directory = working_directory
         self.permission_mode = permission_mode
         self._parent_session = parent_session
-        # Whether this session has ever answered the one that created it. Tracked here
-        # because this is the only place a message can leave, so it cannot be missed — and it
-        # is what tells the harness whether a finished turn left somebody waiting.
+        # Whether this session has ever answered the one that created it.
         self.reported_to_parent = False
         self._client: Optional[httpx.AsyncClient] = None
 
@@ -104,9 +102,7 @@ class PeerSessions:
             "session.create",
             agent=agent,
             working_directory=working_directory,
-            # No mode is sent. The daemon gives a child its parent's, narrowed by the agent
-            # profile's own ceiling — which is where that decision belongs.
-            # Not a parameter of the tool. The caller is the parent, always.
+            # No mode is sent.
             parent=self.session_id,
         )
         return result.get("session") or result
@@ -123,8 +119,7 @@ class PeerSessions:
             parts=[{"kind": "text", "text": text}],
             metadata={Metadata.PEER_SENDER: self.session_id},
         )
-        # A refused send is not a report. Marking the parent told when the message never landed
-        # would silence the reminder that exists for exactly that case.
+        # A refused send is not a report.
         accepted = not (isinstance(outcome, dict) and outcome.get("awaiting_input"))
         if accepted and self._parent_session and session_id == self._parent_session:
             self.reported_to_parent = True

@@ -84,11 +84,7 @@ def run(arguments) -> int:
         return 0
 
     if arguments.setting is None:
-        # No argument: what this machine has actually been set to, as one object — the short
-        # answer to "what have I changed?". `--all` is the long answer, and says so on stderr
-        # rather than on stdout, which carries the values. A key the schema no longer defines
-        # is inert; it is still listed, because it is in the file and hiding it would make an
-        # unremovable setting invisible. `--unset` is how it goes away.
+        # No argument: what this machine has actually been set to, as one object — the short answer to "what have I changed?".
         print(compact(dict(sorted(_flatten(data)))))
         logger.info("(what is set; `frank configure --all` lists every setting with its default)")
         return 0
@@ -99,15 +95,10 @@ def run(arguments) -> int:
             value = _read(data, arguments.setting)
         except KeyError:
             if known is None:
-                # A name the schema does not have will never do anything at all. Nothing on
-                # stdout: there is no value to print, and a reader must not mistake an
-                # explanation for one.
+                # A name the schema does not have will never do anything at all.
                 logger.info(f"frank: no setting named {arguments.setting!r}")
                 return 1
-            # A real setting simply not in the file runs on what the code ships. Printing that
-            # value rather than nothing is what makes reading a setting mean the same thing
-            # whether or not somebody happened to write it down — and printing *only* it is what
-            # makes `$(frank configure …)` in a script mean the value.
+            # A real setting simply not in the file runs on what the code ships.
             value = known.default
         print(compact(value) if isinstance(value, (dict, list)) else value)
         return 0
@@ -121,8 +112,7 @@ def run(arguments) -> int:
         logger.info(f"frank: {arguments.setting} would not be valid: {invalid}")
         return 1
     _save(data)
-    # Echoing the stored value rather than the argument shows how it was interpreted, so a
-    # `true` that landed as a string is visible immediately instead of at the next boot.
+    # Echoing the stored value rather than the argument shows how it was interpreted, so a `true` that landed as a string is visible immediately instead of at the next boot.
     stored = _read(data, arguments.setting)
     print(compact(stored) if isinstance(stored, (dict, list)) else stored)
     return 0
@@ -138,6 +128,5 @@ def run_unset(arguments) -> int:
         logger.info(f"frank: {arguments.setting} cannot be removed: {invalid}")
         return 1
     _save(data)
-    # Nothing on stdout: removing a setting has no value to report, and the exit code already
-    # says whether it happened.
+    # Nothing on stdout: removing a setting has no value to report, and the exit code already says whether it happened.
     return 0

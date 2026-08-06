@@ -53,9 +53,7 @@ class ObservationBatch(BaseModel):
     observations: list[Observation] = Field(default_factory=list)
 
 
-# Sentinel returned by ``_stream_next`` when an async iterator is exhausted, so a
-# stream read can be raced against an abort inside a Task without a
-# StopAsyncIteration propagating through it (which asyncio mishandles).
+# Sentinel returned by ``_stream_next`` when an async iterator is exhausted, so a stream read can be raced against an abort inside a Task without a StopAsyncIteration propagating through it (which asyncio mishandles).
 _STREAM_EXHAUSTED = object()
 
 
@@ -100,9 +98,7 @@ def _maybe_json(value: str) -> Any:
         return value
 
 
-# Background-task handles minted by the tool registries: search_web ids carry the
-# "search-" prefix, background bash the "bg-" prefix. These are NOT A2A tasks and
-# can never be read with read_turn — their results are auto-delivered when ready.
+# Background-task handles minted by the tool registries: search_web ids carry the "search-" prefix, background bash the "bg-" prefix.
 _BACKGROUND_HANDLE_PREFIXES = {
     "search-": "search_web",
     "bg-": "bash",
@@ -182,9 +178,6 @@ def _cap_model_result_payload(result: str, *, code: str = "tool_result_truncated
         return clip_to_tokens(rendered_with(fields), budget)[1]
 
     # Largest first, so the fewest fields are lost — but never the ones that say what happened.
-    # Dropping by size alone once discarded `error` while keeping `targets`, which is the wrong
-    # way round by exactly the margin that matters: a model can act on a failure it can read and
-    # can do nothing at all with a result whose reason has been elided for being long.
     essential = {"ok", "error", "error_code", "code", "status"}
     for key in sorted(kept, key=lambda key: len(compact(kept[key])), reverse=True):
         if not over(kept):
@@ -195,10 +188,7 @@ def _cap_model_result_payload(result: str, *, code: str = "tool_result_truncated
     if not over(kept):
         return rendered_with(kept)
 
-    # What is left is essential and still too large, which means one field is enormous on its own —
-    # a script that raised with a page's worth of records interpolated into its message. Clip that
-    # field's text in place, so the result keeps its shape and its reason stays readable, rather
-    # than dropping the one thing the model needs in order to do anything about the failure.
+    # What is left is essential and still too large, which means one field is enormous on its own — a script that raised with a page's worth of records interpolated into its message.
     for key in sorted(kept, key=lambda key: len(compact(kept[key])), reverse=True):
         if not over(kept) or not isinstance(kept[key], str):
             continue
@@ -412,20 +402,13 @@ class _PreflightGate:
     request_id: str
     tool_call_id: str
     kind: str  # "permission" | "question"
-    # The call this gate stands in front of. A gate is raised during preflight, before the
-    # tool call has been announced to a client, so these are what a person is shown — without
-    # them the prompt can only print a bare command and the model's own reason is lost.
+    # The call this gate stands in front of.
     tool_name: str = ""
     arguments: dict = field(default_factory=dict)
     command: str = ""
-    # Why approval is needed, from the rules or the boundary. Distinct from
-    # ``arguments["explanation"]``, which is why the model wants the call at all. A person
-    # deciding wants both: what is being attempted, and what made it stop here.
+    # Why approval is needed, from the rules or the boundary.
     explanation: str = ""
-    # Why approval is needed, as facts rather than as a sentence, so the client writes the
-    # prose in its own language. Set where the harness itself is the reason; left unset where
-    # the reason is somebody's prose — the reviewer's verdict or the model's own words — which
-    # no catalogue could translate anyway.
+    # Why approval is needed, as facts rather than as a sentence, so the client writes the prose in its own language.
     reason: Any = None
     questions: list = field(default_factory=list)
     # A bash command approval remembers an "always allow" as a session rule.
@@ -434,19 +417,13 @@ class _PreflightGate:
     deny_message: str = ""
     # For an egress gate, the remote agent name (an "always allow" is remembered).
     egress_agent: str = ""
-    # The widening being asked for. Carried on the gate so that approving it records the grant,
-    # rather than the resolver having to reconstruct from the arguments what the planner already
-    # worked out — two derivations of one request is two chances to disagree about what somebody
-    # actually approved.
+    # The widening being asked for.
     escape: Any = field(default_factory=lambda: _escape_from_dict(None))
-    # Whether approving this means "let this one command reach past the workspace". Set only by
-    # a retry gate, where the operating system refused a command and named no path.
+    # Whether approving this means "let this one command reach past the workspace".
     whole_disk: bool = False
-    # What the refusal looked like, for a retry gate. Shown to the reviewer so it is judging a
-    # command that hit a wall rather than one that merely failed.
+    # What the refusal looked like, for a retry gate.
     denial_evidence: str = ""
-    # What the confined run produced. A retry that is refused still owes the model this, which is
-    # the account of why the command failed.
+    # What the confined run produced.
     refused_result: Any = None
     # Whether approving this lets a screen script call the primitives that change something.
     grants_screen_mutations: bool = False
@@ -488,8 +465,7 @@ class _PreflightGate:
             reason=data.get("reason"),
             questions=list(data.get("questions", []) or []), is_bash=bool(data.get("is_bash", False)),
             deny_message=str(data.get("deny_message", "")), egress_agent=str(data.get("egress_agent", "")),
-            # Rebuilt as the real thing rather than left as a dict: what reads it on the way back
-            # is `_approve`, which takes `.reads`, `.writes` and `.network` off it.
+            # Rebuilt as the real thing rather than left as a dict: what reads it on the way back is `_approve`, which takes `.reads`, `.writes` and `.network` off it.
             escape=_escape_from_dict(data.get("escape")),
             whole_disk=bool(data.get("whole_disk", False)),
             denial_evidence=str(data.get("denial_evidence", "")),
@@ -509,13 +485,11 @@ class _ToolPlan:
     tool_call_id: str
     refusal: Optional[dict] = None  # {"code", "message", "denied_injection", "raw_command", "reason"}
     gates: list[_PreflightGate] = field(default_factory=list)
-    # Whether a screen script may call the primitives that change something. Default False, so
-    # the narrow set is what a call gets unless something widened it deliberately.
+    # Whether a screen script may call the primitives that change something.
     screen_mutations: bool = False
     # Set when this call is a second run of a command the operating system refused.
     retry_grant: Any = None
-    # The outcome of a call that already ran, held across a suspension so the resumed batch
-    # replays it instead of running the tool a second time. Only a call that finished has one.
+    # The outcome of a call that already ran, held across a suspension so the resumed batch replays it instead of running the tool a second time.
     completed: Optional[dict] = None
 
     @property
@@ -573,21 +547,15 @@ class _ResolvedToolDecision:
     approved: bool = True
     denial: Optional[dict] = None  # {"code", "message", "denied_injection", "raw_command", "reason"}
     answers: Any = None  # ask_user: the answers list, or the decline sentinel
-    # Whether a screen script may call the primitives that change something. False unless the
-    # rules or somebody's answer said otherwise, so the default is the narrow set.
+    # Whether a screen script may call the primitives that change something.
     screen_mutations: bool = False
-    # The widening a second run of this command was approved to use, when the first was refused
-    # by the operating system.
+    # The widening a second run of this command was approved to use, when the first was refused by the operating system.
     retry_grant: Any = None
-    # The outcome of a call that already ran before the turn suspended. When present the tool is
-    # not run again: this is replayed, which is what keeps a suspension from repeating side
-    # effects a concurrent call in the same batch already had.
+    # The outcome of a call that already ran before the turn suspended.
     completed: Optional[dict] = None
 
 
-# How a turn-loop phase tells the driver what to do next. A phase is an async generator
-# (it yields wire events), so it cannot return a value through ``async for``; it writes
-# its directive into a small holder the driver inspects once the phase drains.
+# How a turn-loop phase tells the driver what to do next.
 _PROCEED = "proceed"    # fall through to the rest of the iteration
 _CONTINUE = "continue"  # the phase already advanced loop bookkeeping; loop again
 _STOP = "stop"          # the turn is over (a terminal event was already yielded); return

@@ -25,10 +25,7 @@ _tracer: Any = None
 _token_counter: Any = None
 _call_counter: Any = None
 
-# A tracer bound for one task, which wins over the process-wide one where it is set. The
-# pattern `base/tuning.py` established and the last module global in this tree that still
-# needed it: two sessions in one interpreter may report to different places, and a caller
-# embedding the harness should not have to reconfigure the process to say so.
+# A tracer bound for one task, which wins over the process-wide one where it is set.
 _bound_tracer: contextvars.ContextVar[Any] = contextvars.ContextVar(
     "frank_tracer", default=None
 )

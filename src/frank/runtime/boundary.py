@@ -48,8 +48,6 @@ class Escape:
             wanted.append("reach the network")
         asked = "; ".join(wanted) or "reach beyond its confinement"
         # The reason is the model's own, and it is the only thing that makes the path meaningful.
-        # A card reading "write /tmp/x" and nothing else asks somebody to approve a path with no
-        # purpose attached, which is a decision nobody can make well.
         return f"Needs to {asked} — {explanation}" if explanation else f"Needs to {asked}"
 
 
@@ -94,8 +92,7 @@ class Verdict:
         return self.kind == "run"
 
 
-#: Where a rule's decision may land. The same three words a person writes in their
-#: configuration, so what they typed and what happens are one vocabulary.
+#: Where a rule's decision may land.
 RULE_ALLOW = "allow"
 RULE_ASK = "ask"
 RULE_DENY = "deny"

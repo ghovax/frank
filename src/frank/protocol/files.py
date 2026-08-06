@@ -27,16 +27,13 @@ from a2a.types import FilePart, FileWithBytes, FileWithUri
 from frank.base.net_trust import UntrustedHostError, pin_to_ip, resolve_public_ips
 from frank.base.tuning import Tunable, active_tuning
 
-# Ceiling on a single ingested file so a hostile or buggy peer cannot exhaust disk with one
-# part; larger files are refused.
+# Ceiling on a single ingested file so a hostile or buggy peer cannot exhaust disk with one part; larger files are refused.
 DEFAULT_MAXIMUM_FILE_BYTES = 50 * 1024 * 1024
 
-# Lifetime of an emitted signed file URL. Short, because a peer fetches a referenced file
-# promptly; a stale link 404s and can be re-issued.
+# Lifetime of an emitted signed file URL.
 
 
-# A file at or below this size is emitted inline as bytes rather than a URL, so a small
-# attachment reaches the peer even if it cannot fetch back from this server.
+# A file at or below this size is emitted inline as bytes rather than a URL, so a small attachment reaches the peer even if it cannot fetch back from this server.
 DEFAULT_INLINE_MAXIMUM_BYTES = 256 * 1024
 
 
@@ -87,8 +84,7 @@ def attachment_from_path(path: Path | str) -> dict[str, Any]:
         "path": str(resolved),
         "mime_type": mimetypes.guess_type(name)[0] or "application/octet-stream",
         "size": resolved.stat().st_size,
-        # Referenced in place, so there is nothing stored under a digest. The field stays
-        # present and empty so every consumer sees one attachment shape.
+        # Referenced in place, so there is nothing stored under a digest.
         "sha256": "",
     }
 
@@ -126,10 +122,7 @@ async def ingest_file_part(
             hostname, ips = resolve_public_ips(file.uri, allow_private=allow_private)
         except UntrustedHostError:
             return None
-        # Pin the connection to the verified IP so a rebind between the check above and the
-        # socket connect cannot swap in a private target — unless an egress proxy is configured,
-        # which does its own DNS/connect, so pinning to an IP would be wrong (and the resolve
-        # check already ran). No proxy (the desktop app's normal case): pin.
+        # Pin the connection to the verified IP so a rebind between the check above and the socket connect cannot swap in a private target — unless an egress proxy is configured, which does its own DNS/connect, so pinning to an IP would be wrong (and the resolve check already ran).
         proxied = bool(os.environ.get(environment_variables.HTTPS_PROXY) or os.environ.get("https_proxy")
                        or os.environ.get(environment_variables.ALL_PROXY) or os.environ.get("all_proxy"))
         if proxied or not ips:
@@ -161,16 +154,7 @@ class PathNotServableError(Exception):
     into a fetchable URL."""
 
 
-# Who a signed file link is for. An audience is what stops a token minted for one purpose
-# being accepted for another, so it has to be unique to this one — which is why the harness's
-# name belongs here even though it is noise on an ordinary field: strip it and you get
-# "a2a-file", exactly the string another A2A implementation would reach for.
-#
-# A URN rather than an ad-hoc hyphenated string. RFC 7519 types `aud` as StringOrURI, and the
-# reason that type exists is that URIs do not collide while chosen words do; it is also the
-# form this harness already uses for its A2A extension key, so there is one convention for
-# namespaced identifiers rather than two. The version is there so a future change to the claim
-# set can be rejected by verifiers instead of needing the signing secret rotated.
+# Who a signed file link is for.
 _FILE_TOKEN_AUDIENCE = "urn:frank:a2a:file:v1"
 
 
@@ -189,10 +173,7 @@ class FileUrlSigner:
         self._base_url = base_url.rstrip("/")
         self._route = route
         self._allowed_root = Path(allowed_root).resolve() if allowed_root is not None else None
-        # jti -> expiry of tokens already redeemed, so a token is single-use within its window:
-        # once a peer fetches the file, that link is spent and a replay 404s. Pruned by expiry, so
-        # the set is bounded by the number of live (unexpired) tokens. (A retry after a dropped
-        # connection must re-request a fresh link — acceptable for the one-shot A2A file handoff.)
+        # jti -> expiry of tokens already redeemed, so a token is single-use within its window: once a peer fetches the file, that link is spent and a replay 404s.
         self._redeemed: dict[str, float] = {}
 
     def _within_root(self, file_path: str) -> bool:

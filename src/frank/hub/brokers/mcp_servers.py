@@ -14,12 +14,10 @@ async def _reload_mcp() -> None:
     and drop cached runtimes so the next turn rebuilds its tools with the new set.
     No server restart required."""
     assert state.global_configuration is not None
-    # Serialize with the settings endpoints and the configuration watcher: they all
-    # rebuild the shared `_mcp_manager`, so overlapping runs would clobber it.
+    # Serialize with the settings endpoints and the configuration watcher: they all rebuild the shared `_mcp_manager`, so overlapping runs would clobber it.
     async with state.configuration_lock:
         state.global_configuration.mcp = Configuration.load().mcp
-        # Re-fold the startup-provisioned Composio server back in so a live mcp.json
-        # edit doesn't drop Composio's tools (and the agent keeps its MCP tools).
+        # Re-fold the startup-provisioned Composio server back in so a live mcp.json edit doesn't drop Composio's tools (and the agent keeps its MCP tools).
         state.global_configuration.mcp.servers.update(state.composio_servers)
         enabled = state.global_configuration.mcp.enabled_servers()
         if state.mcp_manager is None:
@@ -39,8 +37,7 @@ async def _ensure_mcp_servers_for(working_directory: str) -> None:
     assert state.global_configuration is not None
     if not working_directory:
         return
-    # Serialize with every other `_mcp_manager` mutator (settings save, config/mcp.json
-    # watchers) so concurrent reconciles never clobber the shared manager.
+    # Serialize with every other `_mcp_manager` mutator (settings save, config/mcp.json watchers) so concurrent reconciles never clobber the shared manager.
     async with state.configuration_lock:
         folder_servers = state.global_configuration.mcp_configuration_for(working_directory).servers
         new_servers = {

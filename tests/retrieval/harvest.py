@@ -18,9 +18,7 @@ from frank.computer.web import _folded_label, _parse_snapshot, _snapshot, _title
 
 from tests.retrieval.corpus import Corpus, RecordedElement, write_corpus
 
-# Chosen for variety of page shape rather than familiarity: an encyclopaedia article dense with
-# links, a plain-HTML link list, a web application, developer documentation, a marketing home
-# page, a news front page, a research listing, and a government site.
+# Chosen for variety of page shape rather than familiarity: an encyclopaedia article dense with links, a plain-HTML link list, a web application, developer documentation, a marketing home page, a news front page, a research listing, and a government site.
 PAGES_TO_HARVEST = {
     "wikipedia": "https://en.wikipedia.org/wiki/Accessibility",
     "hackernews": "https://news.ycombinator.com/",
@@ -34,10 +32,7 @@ PAGES_TO_HARVEST = {
 
 logger = logging.getLogger(__name__)
 
-# One pass over the DOM collecting what the accessibility snapshot cannot: an element's own
-# markup, its opening tag, its attributes, and its structural path. Keyed by visible label and
-# joined the same way tooltips are, with any label claimed by two different declarations dropped
-# rather than guessed at — a wrong declaration would put another element's words in this one's key.
+# One pass over the DOM collecting what the accessibility snapshot cannot: an element's own markup, its opening tag, its attributes, and its structural path.
 _DECLARATIONS_BY_LABEL = r"""() => {
   const interesting = 'a,button,input,select,textarea,summary,label,option,[role],[onclick],[tabindex]';
   const declarations = new Map();

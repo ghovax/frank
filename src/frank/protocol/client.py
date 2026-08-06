@@ -91,8 +91,7 @@ class RemoteAgentConfiguration:
     card_url: str
     auth: RemoteAgentAuth = field(default_factory=RemoteAgentAuth)
     card_ttl_seconds: int = 3600
-    # Extra hostnames allowed beyond the card_url origin (rare; e.g. a documented
-    # separate RPC host). The card_url host is always allowed.
+    # Extra hostnames allowed beyond the card_url origin (rare; e.g. a documented separate RPC host).
     allowed_hosts: list[str] = field(default_factory=list)
     # Opt in to private/loopback/link-local targets (e.g. a Frank-to-Frank loopback test).
     allow_private: bool = False
@@ -132,8 +131,7 @@ class _OAuth2ClientCredentials(httpx.Auth):
             data = {"grant_type": "client_credentials"}
             if self._auth.scopes:
                 data["scope"] = " ".join(self._auth.scopes)
-            # No redirects on the token endpoint either — a redirect could replay the
-            # client_id/secret HTTP-Basic credentials to a host the config did not name.
+            # No redirects on the token endpoint either — a redirect could replay the client_id/secret HTTP-Basic credentials to a host the config did not name.
             async with httpx.AsyncClient(timeout=active_tuning().duration(Tunable.card_resolve_seconds), follow_redirects=False) as client:
                 response = await client.post(
                     self._auth.token_url,
@@ -170,8 +168,7 @@ def _assert_url_trusted(url: str, configuration: RemoteAgentConfiguration) -> No
     try:
         assert_public_host(host, allow_private=configuration.allow_private)
     except UntrustedHostError as exception:
-        # The inner error already names the remedy; repeating it here printed the same hint
-        # twice in one sentence.
+        # The inner error already names the remedy; repeating it here printed the same hint twice in one sentence.
         raise RemoteAgentTrustError(
             f"Remote agent {configuration.name!r}: {exception}."
         ) from exception
@@ -259,8 +256,7 @@ class _RemoteAgent:
                 streaming=bool(card.capabilities and card.capabilities.streaming),
             )
             self._client = ClientFactory(config).create(card)
-            # If the agent offers an authenticated extended card, fetch the richer version
-            # now that the client carries auth — re-checking trust on every URL it names.
+            # If the agent offers an authenticated extended card, fetch the richer version now that the client carries auth — re-checking trust on every URL it names.
             if getattr(card, "supports_authenticated_extended_card", False):
                 try:
                     extended = await self._client.get_card()
@@ -268,8 +264,7 @@ class _RemoteAgent:
                         _assert_url_trusted(url, self.configuration)
                     self.card = extended
                 except RemoteAgentTrustError as exception:
-                    # A trust violation on the extended card is a real signal, not an optional
-                    # miss — surface it as untrusted rather than silently keeping the base card.
+                    # A trust violation on the extended card is a real signal, not an optional miss — surface it as untrusted rather than silently keeping the base card.
                     self.health, self.error = "untrusted", str(exception)
                     logger.warning("remote agent %r extended card untrusted: %s", self.configuration.name, exception)
                 except Exception:  # noqa: BLE001 — a non-trust extended-card fetch failure is optional

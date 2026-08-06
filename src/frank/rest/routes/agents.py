@@ -28,9 +28,7 @@ async def agents(working_directory: str = ""):
         directories = state.global_configuration.agent_directories_for(working_directory)
     else:
         directories = state.global_configuration.agent_directories()
-    # The bundled agents are always present, so a folder with no ``.agents`` of its own still
-    # sees the shipped profiles. No profile is singled out as a default: which agent to run is
-    # a choice, and offering one pre-made is how a person ends up not making it.
+    # The bundled agents are always present, so a folder with no ``.agents`` of its own still sees the shipped profiles.
     agent_data = list_agents(directories)
     return AgentsList(agents=[
         AgentInfo(
@@ -89,9 +87,7 @@ async def agent_cards(working_directory: str = ""):
     all_skills = load_skills(skill_roots)
     skill_titles = {skill.identifier: skill.display_title for skill in all_skills}
     skill_enabled = {skill.identifier: skill.enabled for skill in all_skills}
-    # Cards are served from the shared (union) route pool, but listed only for the
-    # agents the selected folder actually declares (home globals plus that folder's
-    # own), so the launch directory's agents don't leak into an unrelated folder.
+    # Cards are served from the shared (union) route pool, but listed only for the agents the selected folder actually declares (home globals plus that folder's own), so the launch directory's agents don't leak into an unrelated folder.
     allowed_agents: set[str] | None = None
     if working_directory:
         allowed_agents = {

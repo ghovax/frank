@@ -42,12 +42,10 @@ from frank.base.tuning import Tunable, active_tuning
 
 logger = logging.getLogger("frank.daemon")
 
-# Bound to loopback only. The token is what authorises a call; the bind is what keeps the
-# surface off the network entirely.
+# Bound to loopback only.
 LOOPBACK_HOST = "127.0.0.1"
 
-# The only browsers with any business here: the desktop app's own webview (whose origin is
-# `tauri://localhost` or `http://tauri.localhost` by platform) and a local dev server.
+# The only browsers with any business here: the desktop app's own webview (whose origin is `tauri://localhost` or `http://tauri.localhost` by platform) and a local dev server.
 _APP_ORIGIN_PATTERN = (
     r"^(tauri://localhost|https?://tauri\.localhost"
     r"|https?://localhost(:\d+)?|https?://127\.0\.0\.1(:\d+)?)$"
@@ -219,87 +217,45 @@ def build_app() -> FastAPI:
             {"error": {"code": error.code, "message": error.message}}, status_code=error.status_code
         )
 
-    # Pure ASGI, not `@app.middleware("http")`. That decorator builds a `BaseHTTPMiddleware`,
-    # which runs the rest of the app inside an anyio task group and pumps the response body
-    # through a memory stream — and this daemon's busiest routes are streams: `attach` and
-    # `/events` are open for the life of a page. When a client goes away mid-stream, which a
-    # browser does on every reload, the task group unwinds from a different task than the one
-    # that entered it and the request dies with "Attempted to exit a cancel scope that isn't
-    # the current task's current cancel scope". The reply never arrives, and a caller that was
-    # only submitting an approval is told its request is no longer active.
-    #
-    # Reading the scope and calling the next app directly has no task group and so no scope to
-    # mis-exit. Nothing about the policy below changed.
+    # Pure ASGI, not `@app.middleware("http")`.
     class Authenticate:
         def __init__(self, application):
             self.application = application
 
         async def __call__(self, scope, receive, send):
-            # Websockets are checked here too, and that is not a widening of the policy — it is
-            # the policy finally being applied where it was always meant to. This read
-            # `scope["type"] != "http"`, which passed every handshake straight through; the only
-            # websocket route is `/terminal`, which is a PTY, or an SSH login shell to a
-            # configured host. Anything that could open a TCP connection to the loopback port got
-            # a shell without presenting anything. Clients were already sending the token — the
-            # query parameter below exists for exactly this transport — and nothing read it.
-            #
-            # `lifespan`, and whatever else a server invents, is not a request and carries no
-            # credential to check.
+            # Websockets are checked here too, and that is not a widening of the policy — it is the policy finally being applied where it was always meant to.
             if scope["type"] not in {"http", "websocket"}:
                 return await self.application(scope, receive, send)
 
-            # `HTTPConnection` rather than `Request`: a websocket scope is not a request and
-            # `Request` will not take one. What is read below — the path, the headers, the query
-            # string — is common to both, and is precisely what `HTTPConnection` is for.
+            # `HTTPConnection` rather than `Request`: a websocket scope is not a request and `Request` will not take one.
             connection = HTTPConnection(scope)
 
             if scope["type"] == "http":
                 if connection.url.path in {"/health"}:
                     return await self.application(scope, receive, send)
-                # A CORS preflight, which a browser sends without credentials by specification and
-                # which asks only whether the real request may follow. Demanding a token here
-                # rejects the question rather than the request, and the real one is then never
-                # sent at all.
-                #
-                # The middleware order already keeps these from reaching this point — CORS is
-                # outermost and answers them itself — so this is the belt to that pair of braces:
-                # the failure it prevents is silent, remote from its cause, and was diagnosed once
-                # already.
-                #
-                # HTTP only, and there is nothing to add for websockets: a handshake is not
-                # preflighted, and there is no unauthenticated websocket path to exempt.
+                # A CORS preflight, which a browser sends without credentials by specification and which asks only whether the real request may follow.
                 if scope.get("method") == "OPTIONS" and "access-control-request-method" in connection.headers:
                     return await self.application(scope, receive, send)
 
             header = connection.headers.get("Authorization", "")
-            # A WebSocket handshake and an <img>/<iframe> URL cannot carry a header, so the
-            # terminal passes the same token as a query parameter.
+            # A WebSocket handshake and an <img>/<iframe> URL cannot carry a header, so the terminal passes the same token as a query parameter.
             presented = (
                 header[len("Bearer "):] if header.startswith("Bearer ")
                 else connection.query_params.get("token", "")
             )
-            # Who the *kernel* says is calling, which no token can contradict. A session's own
-            # shell can read the daemon's 0600 token file — same user, same machine — so a token
-            # alone could never establish that a caller was not a session. This can.
+            # Who the *kernel* says is calling, which no token can contradict.
             peer_session = calling_session(scope)
             scope.setdefault("state", {})
 
             if presented and secrets.compare_digest(presented, state.daemon_token):
-                # The daemon token says "you may drive this daemon" and nothing about who is
-                # asking — so a caller the kernel identified as a session is still that session,
-                # holding this token or not. That is what closes the escape hatch: reading the
-                # token buys a session no anonymity.
+                # The daemon token says "you may drive this daemon" and nothing about who is asking — so a caller the kernel identified as a session is still that session, holding this token or not.
                 scope["state"]["calling_session"] = peer_session or ""
                 return await self.application(scope, receive, send)
-            # A session's own token identifies *which* session is calling, which the daemon token
-            # cannot. That attribution is what lets a session's control-plane calls be attributed
-            # to it — so a peer it creates is its child, and is clamped against it, whatever the
-            # request body claims.
+            # A session's own token identifies *which* session is calling, which the daemon token cannot.
             caller = state.registry.session_for_token(presented) if (presented and state.registry) else None
             if caller is None:
                 return await self._refuse(scope, receive, send)
-            # The kernel's answer wins over the token's when both are available: a session holding
-            # another session's token is still itself.
+            # The kernel's answer wins over the token's when both are available: a session holding another session's token is still itself.
             scope["state"]["calling_session"] = peer_session or caller.id
             return await self.application(scope, receive, send)
 
@@ -321,24 +277,7 @@ def build_app() -> FastAPI:
             return await response(scope, receive, send)
 
     app.add_middleware(Authenticate)
-    # Added *after* `Authenticate`, and the order is the whole point: `add_middleware` prepends,
-    # so the last one added is the outermost, and this has to be outside the token check.
-    #
-    # It was inside it, and the desktop app could not read anything. A browser sends a CORS
-    # preflight before any request carrying a non-simple header — `Authorization` is one — and it
-    # sends that preflight *without* credentials, by specification. So the preflight arrived with
-    # no token, the token check answered 401, and the real request was never sent: every list in
-    # the app was empty, every write failed, and none of it looked like an authentication problem
-    # because the 401 was invisible. The same build served by `frank web` worked perfectly, since
-    # a same-origin page preflights nothing — which is exactly what made this look like a fault
-    # in the app rather than in the daemon.
-    #
-    # Outermost also means the CORS headers are attached to *failures*. A 401 raised in the
-    # middleware below carried none, so the webview could not read the status and reported an
-    # opaque network error in place of the reason.
-    #
-    # Scoped to the app's own origins — reflecting `*` would let any page the user happened to
-    # visit script a local, tool-executing API.
+    # Added *after* `Authenticate`, and the order is the whole point: `add_middleware` prepends, so the last one added is the outermost, and this has to be outside the token check.
     app.add_middleware(
         CORSMiddleware,
         allow_origin_regex=_APP_ORIGIN_PATTERN,
@@ -379,10 +318,7 @@ async def _serve() -> int:
     _reclaim_socket()
 
     hub_state.global_configuration = Configuration.load()
-    # Ask once, at boot, whether this machine can enforce a profile — and on macOS ask by running
-    # one, because `sandbox-exec` being on disk and Apple still honouring it are different
-    # questions, and the interface is deprecated. Sessions refuse individually when they must; this
-    # is so the answer is in the log before the first one does.
+    # Ask once, at boot, whether this machine can enforce a profile — and on macOS ask by running one, because `sandbox-exec` being on disk and Apple still honouring it are different questions, and the interface is deprecated.
     confinement_state = confinement.probe()
     if confinement_state["backend"]:
         logger.info("confinement backend: %s", confinement_state["detail"])
@@ -397,16 +333,12 @@ async def _serve() -> int:
 
     await _open_stores()
 
-    # Before any session exists. A background shell subtree survives a SIGKILL of the harness —
-    # a dev server holding a port is the usual case — and each job recorded its process group
-    # when it started, so this is the one moment those can be cleaned up without racing a
-    # session that legitimately owns one.
+    # Before any session exists.
     orphans = await asyncio.to_thread(reap_orphaned_process_groups)
     if orphans:
         logger.info("reaped %d orphaned process group(s) from a previous run", orphans)
 
-    # The registry is durable now: a daemon restart ends every session's *process*, not every
-    # session. Live records come back asleep, and the first message to one forks it a worker.
+    # The registry is durable now: a daemon restart ends every session's *process*, not every session.
     hub_state.session_store = SqliteSessionStore(hub_state.session_factory)
     state.registry = SessionRegistry(store=hub_state.session_store)
     restored = await asyncio.to_thread(hub_state.session_store.load_all)
@@ -414,10 +346,7 @@ async def _serve() -> int:
     live = [record for record in restored if record.is_live]
     if live:
         logger.info("restored %d session(s), %d of them still live and asleep", len(restored), len(live))
-    # The prototype and the lifecycle know about each other in both directions: the lifecycle
-    # asks the prototype to fork, and the prototype reports every death back to the lifecycle.
-    # Wired here rather than by either of them, because a composition root is exactly the place
-    # a cycle between two collaborators becomes two one-way dependencies.
+    # The prototype and the lifecycle know about each other in both directions: the lifecycle asks the prototype to fork, and the prototype reports every death back to the lifecycle.
     state.prototype = PrototypeClient(
         on_exit=lambda report: state.lifecycle.on_session_exit(report),
         on_lost=lambda: state.lifecycle.on_prototype_lost(),
@@ -427,40 +356,28 @@ async def _serve() -> int:
         state.prototype,
         on_change=lambda: state.broadcaster.publish({"type": "sessions_changed"}),
     )
-    # The two places a workspace change has a supervision consequence. Filled in here because
-    # a composition root is exactly what decides whether there *is* a control plane to tell —
-    # `frank web` serving the same workspace without one leaves them unset, and the workspace
-    # goes on working.
+    # The two places a workspace change has a supervision consequence.
     from frank.daemon.pending_input import settle_and_reap
 
     hub_state.on_session_deleted = settle_and_reap
     hub_state.reset_live_session_runtimes = state.reset_live_session_runtimes
     hub_state.refresh_live_session_locations = state.refresh_workspace_locations
 
-    # Best effort: a machine that cannot start the prototype still serves the browser surface
-    # and every read, and says so in `daemon.status`, rather than refusing to boot.
+    # Best effort: a machine that cannot start the prototype still serves the browser surface and every read, and says so in `daemon.status`, rather than refusing to boot.
     try:
         await state.prototype.start()
     except Exception:  # noqa: BLE001 — a daemon without a prototype is degraded, not dead
         logger.error("the prototype could not be started, new sessions will fail", exc_info=True)
-    # Built after the stores and the prototype, because the shared resources read from both, and
-    # after the port is known, because the file-URL signer signs against this daemon's address.
+    # Built after the stores and the prototype, because the shared resources read from both, and after the port is known, because the file-URL signer signs against this daemon's address.
     await open_shared_resources()
 
     app = build_app()
     announcing = _announcing_server_class()
-    # `log_config=None` leaves uvicorn's loggers alone so they inherit the root configuration
-    # set in `main()` — stderr *and* `frankd.log`. Uvicorn's default config does the opposite:
-    # it binds `uvicorn.error` to a stderr handler with `propagate=False`, so an unhandled
-    # exception in a route is written to a stream nobody is keeping and never reaches the file.
-    # A `GET /sessions` that raised `AttributeError` on every call therefore answered 500 in
-    # complete silence, through a merge and a packaged build, until someone thought to curl it.
+    # `log_config=None` leaves uvicorn's loggers alone so they inherit the root configuration set in `main()` — stderr *and* `frankd.log`.
     socket_server = announcing(
         uvicorn.Config(
             app, uds=state.daemon_socket, log_level="warning", access_log=False, log_config=None,
-            # Only the unix listener: the kernel can name the process on the other end of a
-            # local socket, and that is what identifies a session. The loopback listener is
-            # the desktop client and has no such identity to offer.
+            # Only the unix listener: the kernel can name the process on the other end of a local socket, and that is what identifies a session.
             http=unix_peer_protocol(),
         )
     )
@@ -470,10 +387,7 @@ async def _serve() -> int:
             log_level="warning", access_log=False, log_config=None,
         )
     )
-    # uvicorn captures SIGTERM/SIGINT itself, and with two servers sharing a process each
-    # would install a handler that stops only itself — so a signal would down one listener and
-    # leave the other running, which is exactly how `stop` came back as "still running".
-    # Neutralise both and let the handler below stop them together.
+    # uvicorn captures SIGTERM/SIGINT itself, and with two servers sharing a process each would install a handler that stops only itself — so a signal would down one listener and leave the other running, which is exactly how `stop` came back as "still running".
     for server in (socket_server, tcp_server):
         server.capture_signals = contextlib.nullcontext  # type: ignore[method-assign]
 
@@ -495,12 +409,7 @@ async def _serve() -> int:
         handler that sets it while the loop is parked leaves the daemon running until something
         else happens to wake it — which is how a `stop` came back as "still running"."""
         await stopping.wait()
-        # Streams first, servers second. An open SSE response — someone left `frank attach`
-        # running in another terminal, or the app is showing a Git status bar — holds the
-        # connection until it yields its last frame, and uvicorn will not finish draining until
-        # it does. Everything long-lived is told to stop here, before either listener is asked
-        # to drain: the two buses by closing them, and every stream that waits on something
-        # slower than a request by `hub_state.shutting_down`, which they race.
+        # Streams first, servers second.
         hub_state.shutting_down.set()
         state.event_bus.complete_all()
         state.broadcaster.close()
@@ -509,8 +418,7 @@ async def _serve() -> int:
 
     watcher = asyncio.create_task(_shutdown_on_signal())
     serving = asyncio.gather(socket_server.serve(), tcp_server.serve())
-    # Wait for both listeners to be up, or for serving to fail — whichever happens first, so a
-    # daemon that cannot bind reports that instead of waiting on a readiness that never comes.
+    # Wait for both listeners to be up, or for serving to fail — whichever happens first, so a daemon that cannot bind reports that instead of waiting on a readiness that never comes.
     both_ready = asyncio.gather(socket_server.ready.wait(), tcp_server.ready.wait())
     await asyncio.wait({both_ready, serving}, return_when=asyncio.FIRST_COMPLETED)
     if serving.done():
@@ -518,8 +426,7 @@ async def _serve() -> int:
         await serving
         return 1
     _write_handshake(state.daemon_token, hub_state.daemon_port)
-    # One line on stdout, then close it: whoever started the daemon is waiting to read exactly
-    # this, and leaving the pipe open would let later output block on a reader that has gone.
+    # One line on stdout, then close it: whoever started the daemon is waiting to read exactly this, and leaving the pipe open would let later output block on a reader that has gone.
     with contextlib.suppress(OSError, ValueError):
         sys.stdout.write(json.dumps({"ready": True, "pid": os.getpid(), "port": hub_state.daemon_port}) + "\n")
         sys.stdout.flush()
@@ -530,8 +437,7 @@ async def _serve() -> int:
         await serving
     finally:
         watcher.cancel()
-        # Sessions must not outlive their supervisor: a session whose daemon is gone can no
-        # longer persist anything, so leaving it running would silently lose work.
+        # Sessions must not outlive their supervisor: a session whose daemon is gone can no longer persist anything, so leaving it running would silently lose work.
         with contextlib.suppress(Exception):
             await state.lifecycle.aclose()
         with contextlib.suppress(Exception):
@@ -584,8 +490,7 @@ async def _open_stores() -> None:
 
     hub_state.turn_store = AppendOnlyTaskStore(hub_state.async_engine)
     await hub_state.turn_store.initialize()
-    # A turn that was mid-execution when the daemon last stopped cannot be resurrected — its
-    # worker is gone — so it is marked interrupted rather than left claiming to be running.
+    # A turn that was mid-execution when the daemon last stopped cannot be resurrected — its worker is gone — so it is marked interrupted rather than left claiming to be running.
     interrupted = await hub_state.turn_store.reconcile_orphaned_turns()
     if interrupted:
         logger.warning("marked %d interrupted turn(s) from a previous run", len(interrupted))

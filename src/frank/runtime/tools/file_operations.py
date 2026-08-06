@@ -39,20 +39,10 @@ from frank.runtime.tools import context as tool_context
 _VALIDATION_PROMPT_LOADER = _PromptLoader(Path(__file__).parent / "prompts")
 
 
-# The read-line count, per-line clip, glob/grep result caps, and fetched-page clip are token
-# budgets that scale with the live model context window; they are read per call from
-# ``active_tuning()`` rather than fixed here.
-# A fetch result shorter than this (after stripping) is treated as thin — an empty
-# SPA shell or a block/challenge page — and the next engine is tried. A quality floor, not a
-# token budget, so it stays fixed.
+# The read-line count, per-line clip, glob/grep result caps, and fetched-page clip are token budgets that scale with the live model context window; they are read per call from ``active_tuning()`` rather than fixed here.
 MINIMUM_USEFUL_FETCH_CHARS = 64
 
-# Web-fetch engines come from the bound tool context, built per runtime from the session's
-# configuration. Jina Reader is the always-available default (it works keyless); Firecrawl is
-# optional and present only when a key is configured.
-# read_file ingests these natively as images (pixels attached for vision models)
-# instead of decoding their bytes as text. Matches the formats every routed
-# vision provider accepts.
+# Web-fetch engines come from the bound tool context, built per runtime from the session's configuration.
 IMAGE_FILE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 _IMAGE_MIME_BY_SUFFIX = {
     ".png": "image/png",
@@ -61,8 +51,7 @@ _IMAGE_MIME_BY_SUFFIX = {
     ".gif": "image/gif",
     ".webp": "image/webp",
 }
-# Ceiling on an image attached into the conversation, mirroring the attachment
-# inlining cap; larger files return metadata only.
+# Ceiling on an image attached into the conversation, mirroring the attachment inlining cap; larger files return metadata only.
 MAXIMUM_INLINE_IMAGE_BYTES = 20 * 1024 * 1024
 
 
@@ -114,8 +103,7 @@ def _context_diff_window(before: str, after: str, context_lines: int = 4) -> tup
             first_diff = index
             break
     else:
-        # No difference in the overlapping section — the difference is purely
-        # one side being longer than the other.  Anchor at the common end.
+        # No difference in the overlapping section — the difference is purely one side being longer than the other.
         first_diff = common_length
 
     last_diff = first_diff
@@ -337,10 +325,7 @@ def _fuzzy_find_candidates(
             if ratio >= threshold:
                 candidates.append(_candidate(start, ratio))
 
-    # Fallback pass when the hash-lookup pass found nothing and the first line
-    # does not match literally but is still close. For single-line finds this
-    # scans every line via SequenceMatcher; for multi-line finds it pre-filters
-    # by first-line ratio then scores the full window.
+    # Fallback pass when the hash-lookup pass found nothing and the first line does not match literally but is still close.
     if not candidates:
         from difflib import SequenceMatcher
 
@@ -474,8 +459,7 @@ def edit_file(
         )
     before, find, replace, occurrences = matched
 
-    # A non-unique `find` without `replace_all` is ambiguous, so fail rather
-    # than silently editing the first occurrence.
+    # A non-unique `find` without `replace_all` is ambiguous, so fail rather than silently editing the first occurrence.
     if occurrences > 1 and not replace_all:
         return _edit_failure(
             "edit_find_not_unique",
@@ -517,8 +501,7 @@ def edit_file(
         "characters": len(after),
         "sha256": content_sha256(after),
     }
-    # Include a focused diff window (changed lines + 4 lines of context) so the
-    # frontend can render the change without sending the entire file contents.
+    # Include a focused diff window (changed lines + 4 lines of context) so the frontend can render the change without sending the entire file contents.
     diff_before, diff_after = _context_diff_window(before, after, context_lines=4)
     summary["before"] = diff_before
     summary["after"] = diff_after

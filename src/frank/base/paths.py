@@ -140,11 +140,7 @@ def oauth_token_path(provider_identifier: str) -> Path:
     return oauths_directory() / f"{provider_identifier}.json"
 
 
-# The `sockaddr_un.sun_path` limit, which is an operating-system constant rather than a
-# filesystem one: 104 bytes on macOS and the BSDs, 108 on Linux. The smaller is used
-# everywhere, so a path that binds on one platform binds on all of them — a limit that differs
-# by platform is a bug that only appears on the platform you did not develop on, which is
-# exactly how this one was found.
+# The `sockaddr_un.sun_path` limit, which is an operating-system constant rather than a filesystem one: 104 bytes on macOS and the BSDs, 108 on Linux.
 SOCKET_PATH_MAXIMUM_BYTES = 104
 
 
@@ -177,10 +173,7 @@ def daemon_socket_path() -> Path:
     return _within_socket_limit(runtime_directory() / DAEMON_SOCKET_FILENAME)
 
 
-# How many hex characters name an SSH control socket. The budget is what decides it: a macOS
-# `$TMPDIR` runtime directory is ~63 bytes, and a unix socket path may be 104, so the name has
-# about forty to spend. Sixteen leaves comfortable headroom and is far past the point where a
-# collision between two host aliases on one machine is worth reasoning about.
+# How many hex characters name an SSH control socket.
 SSH_CONTROL_IDENTIFIER_LENGTH = 16
 
 
@@ -214,8 +207,7 @@ def ssh_control_directory() -> Path:
     if len(str(preferred).encode()) + 1 + SSH_CONTROL_IDENTIFIER_LENGTH <= SOCKET_PATH_MAXIMUM_BYTES:
         preferred.mkdir(parents=True, exist_ok=True)
         return preferred
-    # `/tmp` literally, not `tempfile.gettempdir()` — on macOS that *is* the long path this
-    # is escaping from. Everything reached over SSH is POSIX by construction.
+    # `/tmp` literally, not `tempfile.gettempdir()` — on macOS that *is* the long path this is escaping from.
     fallback = Path("/tmp") / f"{APPLICATION}-{os.getuid()}-ssh"
     fallback.mkdir(parents=True, exist_ok=True)
     fallback.chmod(0o700)

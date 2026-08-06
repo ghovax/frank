@@ -24,8 +24,7 @@ async def mcp_tools(server: str = "", working_directory: str = ""):
     not leak in. The folder's servers are ensured running first so their tools
     actually appear (the subprocess pool is shared and grows as a union)."""
     assert state.global_configuration is not None
-    # Servers declared by the working directory's own mcp.json are project-specific;
-    # everything else (home globals and the Composio integration) is global.
+    # Servers declared by the working directory's own mcp.json are project-specific; everything else (home globals and the Composio integration) is global.
     project_server_names: set[str] = set()
     if working_directory:
         await _ensure_mcp_servers_for(working_directory)
@@ -46,8 +45,7 @@ async def mcp_tools(server: str = "", working_directory: str = ""):
         configured = state.global_configuration.mcp.servers
     tools_by_server: dict[str, list] = {}
     if state.mcp_manager is not None:
-        # List every enabled server, then filter below — querying the manager for a
-        # disabled server name would raise, since it only holds enabled ones.
+        # List every enabled server, then filter below — querying the manager for a disabled server name would raise, since it only holds enabled ones.
         listing = await state.mcp_manager.list_tools("")
         tools_by_server = {entry["name"]: entry["tools"] for entry in listing["servers"]}
     servers = [

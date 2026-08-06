@@ -6,36 +6,20 @@ import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 import { useScrollEdgeFade } from "@/lib/scroll-fade";
 import { ActivityIcon } from "./activity-icon";
 
-// The one collapsible line across the app: a fit-content clickable header (leading
-// icon + label + trailing badges + disclosure chevron) whose body hangs off a 2px
-// hairline left rule — the same visual grammar as a markdown blockquote. It is the
-// single source of truth for that pattern, replacing the three hand-rolled copies
-// (transcript tool line, grouped run, capability card) that had silently drifted.
-//
-// The empty rule lives here and nowhere else: a row with no `children` is not
-// collapsible — it renders as a plain line with no chevron, so a disclosure can
-// never open onto an empty rail. `disabled` greys a row and makes it inert even
-// when it has content (a disabled skill/server).
+// The one collapsible line across the app: a fit-content clickable header (leading icon + label + trailing badges + disclosure chevron) whose body hangs off a 2px hairline left rule — the same visual grammar as a markdown blockquote.
 
-// The header's settled colour. `muted` brightens to `fg` when open or hovered (the
-// default line); `active` is always `fg` (a live/kept-open run); `attention` is
-// always the warning tone (a call awaiting input).
+// The header's settled colour.
 export type DisclosureTone = "muted" | "active" | "attention";
 
 export interface DisclosureRowProps {
   // Optional: a row without one spends no width on the slot. See `triggerContent`.
   icon?: ReactNode;
-  // The label. Simple callers wrap text in <DisclosureLabel>; callers with an
-  // animated label (the grouped run) pass their own node.
+  // The label.
   title: ReactNode;
   // Trailing chips, right of the label and left of the chevron.
   badges?: ReactNode;
   actions?: ReactNode;
-  // Lay the actions over the row's right edge instead of beside the title. A row whose
-  // actions only appear on hover should not spend that width while they are invisible —
-  // otherwise every title is permanently shortened by controls nobody can see, and hovering
-  // shortens it again. Callers whose actions are always visible leave this off and keep the
-  // ordinary side-by-side layout.
+  // Lay the actions over the row's right edge instead of beside the title.
   actionsOverlay?: boolean;
   // The disclosure body. Absent means the row is a plain, non-clickable line.
   children?: ReactNode;
@@ -48,17 +32,13 @@ export interface DisclosureRowProps {
   // Has content but must not expand (and reads greyed): a disabled capability.
   disabled?: boolean;
   tone?: DisclosureTone;
-  // Bounds the body into a scroll region (with soft edge fades). Omit for an
-  // unbounded body that grows with its content.
+  // Bounds the body into a scroll region (with soft edge fades).
   maxH?: number | string;
-  // When this value changes while open, the body scrolls to the bottom — for a run
-  // that streams new lines in. Pass e.g. the child count.
+  // When this value changes while open, the body scrolls to the bottom — for a run that streams new lines in.
   followTailKey?: unknown;
 }
 
-// The standard disclosure label: one line, ellipsized, with Chakra's complete sm
-// typography metrics. `shimmer` applies the running gradient for a live line. `size` drops
-// it a step for a dense list — the sessions sidebar, which is scanned rather than read.
+// The standard disclosure label: one line, ellipsized, with Chakra's complete sm typography metrics.
 export function DisclosureLabel({
   children,
   shimmer,
@@ -205,11 +185,7 @@ export function DisclosureRow({
             {...(actionsOverlay
               ? { position: "absolute" as const, right: 0, top: "50%", transform: "translateY(-50%)" }
               : {})}
-            // Callers wrap their controls in a plain Box, which is a block box — so the
-            // inline-flex button inside it sat on the *text baseline*, about 1.7px below the
-            // centre, and every trailing ⋯ in the app rode low against the label beside it.
-            // Centring here rather than in each caller, because sitting on the row's centre
-            // line is what this slot is for, not something each caller should have to know.
+            // Callers wrap their controls in a plain Box, which is a block box — so the inline-flex button inside it sat on the *text baseline*, about 1.7px below the centre, and every trailing ⋯ in the app rode low against the label beside it.
             css={{ "& > *": { display: "flex", alignItems: "center" } }}
           >
             {actions}

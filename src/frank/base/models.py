@@ -29,25 +29,18 @@ class ModelDefinition:
     name: str
     provider: str
     # Capabilities from the models.dev catalog, used to gate and annotate the UI.
-    # ``attachment`` is whether the model accepts file attachments at all; ``vision``
-    # is whether image input is supported; ``input_modalities`` is the raw list
-    # (``text``, ``image``, ``pdf``, ``audio``, …) for finer-grained display.
     attachment: bool = False
     vision: bool = False
     input_modalities: tuple[str, ...] = ()
     # Maximum input context in tokens, from the models.dev catalog (0 = unknown).
-    # Used for the "how full is the context" gauge; the native chatgpt and cursor
-    # providers rely on this since they have no LiteLLM model-info map to consult.
     context_length: int = 0
     # ISO release date (YYYY-MM-DD) from the models.dev catalog, or "" if unknown.
-    # The picker sorts newest-first on this instead of alphabetically.
     release_date: str = ""
     # A per-model override for gateways that expose several wire protocols.
     litellm_prefix: str = ""
 
 
-# Map models.dev provider IDs to our local provider identifiers.
-# models.dev uses kebab-case; we use snake_case (or the original provider name).
+# Map models.dev provider IDs to our local provider identifiers. models.dev uses kebab-case; we use snake_case (or the original provider name).
 _GATEWAY_LITELLM_PREFIXES = {
     "@ai-sdk/openai-compatible": "openai",
     "@ai-sdk/openai": "openai/responses",
@@ -135,12 +128,7 @@ def _catalog() -> list[ModelDefinition]:
         if get_provider_definition(local_id) is None:
             continue
         for model_id, model_info in provider_info.get("models", {}).items():
-            # Stripped, because the catalogue is a community-maintained file and some of its
-            # names carry a leading or trailing space. A name is laid out beside a provider,
-            # an icon and a set of capability glyphs, and a space at either end pushes it off
-            # the alignment every other row keeps. Done here rather than where it is drawn:
-            # the name is also sorted on, matched against and written into a session record,
-            # and one of those would have kept the space.
+            # Stripped, because the catalogue is a community-maintained file and some of its names carry a leading or trailing space.
             name = (model_info.get("name", "") or model_id).strip() or model_id
             identifier = f"{local_id}/{model_id}"
             modalities = model_info.get("modalities") or {}
@@ -174,11 +162,6 @@ def _catalog() -> list[ModelDefinition]:
 
 
 # Which OpenAI models the ChatGPT-subscription (Codex) endpoint currently serves.
-# Ported from opencode's codex plugin (packages/opencode/src/plugin/openai/codex.ts):
-# a small allow/deny set plus "GPT version > 5.4". The set moves over time, so we
-# keep the *rule* in sync with that reference rather than hand-maintaining a model
-# list — every model's name, context window, and modalities still ride in from the
-# models.dev catalog automatically, so no metadata is hand-rolled here.
 _CODEX_ALLOWED_MODELS = frozenset({"gpt-5.5", "gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"})
 _CODEX_DISALLOWED_MODELS = frozenset({"gpt-5.5-pro"})
 
@@ -217,15 +200,7 @@ def _chatgpt_models(base: list[ModelDefinition]) -> list[ModelDefinition]:
     return chatgpt
 
 
-# The ``cursor`` provider contributes nothing here, and that is the design rather than an
-# omission. Its models cannot come from models.dev, which has no Cursor provider and could not
-# describe one: a Cursor model id carries its reasoning effort (``claude-4.6-opus-high``) and
-# names Cursor's own Composer family, neither of which exists in a catalog of direct-API
-# models. So the account is asked instead — ``GetUsableModels`` for the ids a plan serves and
-# ``AvailableModels`` for their context windows — and the ``/models`` endpoint appends what
-# comes back. Until a user signs in there is nothing truthful to list, so nothing is listed;
-# the picker shows the provider, its sign-in control, and no models. A hand-written stand-in
-# would only be a guess about somebody else's subscription wearing the catalog's clothes.
+# The ``cursor`` provider contributes nothing here, and that is the design rather than an omission.
 _catalogue_cache: list[ModelDefinition] | None = None
 _catalogue_lock = threading.Lock()
 
@@ -336,12 +311,7 @@ def resolve_litellm(
     if definition is None:
         raise ValueError(f"Unknown provider in model id: {model_identifier!r}")
     catalog_model = find_model(model_identifier)
-    # The catalogue's prefix is an *override*, set only where one gateway serves several wire
-    # protocols; every other model leaves it empty, meaning "the provider's own". Reading it as
-    # the answer whenever a catalogue entry existed dropped the prefix entirely — `anthropic/
-    # claude-sonnet-4-5` resolved to `/claude-sonnet-4-5`, which routes nowhere. It only bites
-    # once the catalogue is warm, so a cold start looked fine and every provider in models.dev
-    # broke the moment it was fetched.
+    # The catalogue's prefix is an *override*, set only where one gateway serves several wire protocols; every other model leaves it empty, meaning "the provider's own".
     litellm_prefix = (catalog_model.litellm_prefix if catalog_model else "") or definition.litellm_prefix
     provider_base_url = (
         resolve_base_url(provider_identifier, configured_bases)

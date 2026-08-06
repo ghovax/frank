@@ -25,8 +25,7 @@ from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
 
-#: What a setting holds, in the vocabulary a control is chosen from. Derived from the
-#: annotation rather than declared, so a field that changes type cannot keep a stale control.
+#: What a setting holds, in the vocabulary a control is chosen from.
 KIND_SECTION = "section"    # a place to put things, not a thing itself
 KIND_BOOLEAN = "boolean"
 KIND_INTEGER = "integer"
@@ -43,20 +42,15 @@ class Setting:
 
     path: str
     default: Any
-    # A map that accepts any key — `providers`, `mcp.servers`. The names under it are the
-    # user's own, so the walk stops here rather than inventing entries that do not exist yet.
+    # A map that accepts any key — `providers`, `mcp.servers`.
     open_ended: bool = False
-    #: What it holds, so an interface can choose a control without a table of its own. A table
-    #: like that is the thing that goes stale: it lives away from the field, nothing checks the
-    #: two agree, and the first symptom is a checkbox writing a string into a number.
+    #: What it holds, so an interface can choose a control without a table of its own.
     kind: str = KIND_STRING
     #: The values a `choice` accepts, in the order the schema declares them.
     choices: tuple[str, ...] = ()
     #: Whether the field may hold nothing at all, which is not the same as holding "".
     optional: bool = False
-    #: A credential. Declared on the field, because whether a value is a secret is a fact about
-    #: the field and not about its name — a client that guessed from the spelling would show a
-    #: token in the clear the first time somebody added one called `authorization`.
+    #: A credential.
     secret: bool = False
 
 
@@ -149,9 +143,7 @@ def _kind_of(annotation: Any, default: Any) -> tuple[str, tuple[str, ...], bool]
     return KIND_STRING, (), optional
 
 
-# The one map whose keys are neither fixed by a model nor invented by the user: they are the
-# names in `Tunable`. `_walk` enumerates them, so `_descend` must not also accept whatever it is
-# handed under this prefix — that is what let a misspelled tunable resolve as if it existed.
+# The one map whose keys are neither fixed by a model nor invented by the user: they are the names in `Tunable`.
 TUNING_DEFAULTS = "tuning.defaults"
 
 
@@ -168,8 +160,7 @@ def _tuning_defaults(prefix: str) -> list[Setting]:
         Setting(
             path=f"{prefix}.{tunable.name}",
             default=tunable.default,
-            # Every tunable is a number: an amount, a duration, or a fraction. `Default` holds
-            # the shipped value, so the value itself says which of integer and number it is.
+            # Every tunable is a number: an amount, a duration, or a fraction.
             kind=KIND_INTEGER if isinstance(tunable.default, int) and not isinstance(tunable.default, bool) else KIND_NUMBER,
         )
         for tunable in Tunable
@@ -204,14 +195,6 @@ def _walk(model: type[BaseModel], prefix: str) -> list[Setting]:
 
 
 #: The order a person meets the sections in, from what they decide to what they tune.
-#:
-#: Declaration order is the order the *file* is written in, which is a different question and
-#: was answering this one badly: a panel built from it opened on provider credentials and put
-#: how much a session may do without asking below eighty-odd timeouts. So the sequence is
-#: stated, once, and every surface that lists settings — the panel, `frank configure --all`,
-#: the generated reference — reads the same one. A section missing from here is appended rather
-#: than dropped, because a new section must appear somewhere without anybody remembering this
-#: list exists.
 SECTION_ORDER = (
     # What the agent may do, and where.
     "agent", "workspace", "sandbox", "toolbox", "permission_reviewer",
@@ -280,8 +263,7 @@ def _descend(model: type[BaseModel], segments: list[str], full_path: str) -> Opt
     if typing.get_origin(annotation) is dict:
         value_model = _model_of(typing.get_args(annotation)[1])
         if value_model is None:
-            # A map of scalars — `sandbox.limits`, `telemetry.exporter.headers`. One segment
-            # past it names an entry, which is settable; anything deeper is not.
+            # A map of scalars — `sandbox.limits`, `telemetry.exporter.headers`.
             if len(remaining) != 1:
                 return None
             shipped = _field_default(field)
@@ -289,8 +271,7 @@ def _descend(model: type[BaseModel], segments: list[str], full_path: str) -> Opt
                 path=full_path,
                     default=shipped.get(remaining[0]) if isinstance(shipped, dict) else None,
             )
-        # The next segment is the user's own name for an entry; what follows it is that
-        # entry's own field.
+        # The next segment is the user's own name for an entry; what follows it is that entry's own field.
         if not remaining[1:]:
             return Setting(path=full_path, default=None)
         return _descend(value_model, remaining[1:], full_path)

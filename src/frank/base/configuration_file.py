@@ -139,8 +139,7 @@ def rejects(data: dict) -> str:
     try:
         Configuration.model_validate(data)
     except Exception as error:  # noqa: BLE001 — the validator's message is the useful part
-        # Pydantic reports the field, then the reason, then a documentation URL. The first two
-        # are what a person needs; the URL is noise wherever this is shown.
+        # Pydantic reports the field, then the reason, then a documentation URL.
         lines = [line.strip() for line in str(error).splitlines()[1:3] if line.strip()]
         reason = " ".join(line for line in lines if not line.startswith("For further"))
         return reason.split(" [type=")[0] or str(error)

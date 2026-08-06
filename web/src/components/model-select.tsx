@@ -38,15 +38,13 @@ interface ModelSelectProps {
   fallbackModelId?: string;
   compact?: boolean;
   fitted?: boolean;
-  /** Parts the row it sits in has told it to give up, in the order it gives them up: the
-   * provider before the model, the capability glyphs, then the model's own name. */
+  /** Parts the row it sits in has told it to give up, in the order it gives them up: the provider before the model, the capability glyphs, then the model's own name. */
   providerHidden?: boolean;
   capabilitiesHidden?: boolean;
   labelHidden?: boolean;
 }
 
-// Sentinel option in the model dropdown that reveals the free-form Model ID
-// field, for providers/models the catalog does not list yet.
+// Sentinel option in the model dropdown that reveals the free-form Model ID field, for providers/models the catalog does not list yet.
 const CUSTOM_MODEL = "__custom__";
 
 interface ProviderItem {
@@ -57,16 +55,11 @@ interface ProviderItem {
 interface ModelItem {
   value: string;
   label: string;
-  // Whether the provider currently serves this model (has a key, or — for a
-  // subscription provider — the plan includes it). Unavailable models are listed
-  // but greyed and non-selectable.
+  // Whether the provider currently serves this model (has a key, or — for a subscription provider — the plan includes it).
   available: boolean;
 }
 
-// The capability icons for a model, from its models.dev flags: an image glyph for
-// vision (image input), a paperclip for a model that takes file attachments but not
-// images. A text-only model shows nothing. Reused by the picker rows and the
-// current-model chip so capabilities read the same everywhere.
+// The capability icons for a model, from its models.dev flags: an image glyph for vision (image input), a paperclip for a model that takes file attachments but not images.
 export function ModelCapabilityBadges({ model, size = 12 }: { model?: ModelOption | null; size?: number }) {
   const translation = useTranslations("ModelSelect");
   if (!model) return null;
@@ -111,11 +104,7 @@ function displayModelName(modelId: string, models: ModelOption[]): string {
   return models.find((model) => model.id === modelId)?.name ?? modelId;
 }
 
-/**
- * Whether a model's display name is a fallback to its raw ID rather than a
- * proper human-readable label. When true, the frontend renders it in monospace
- * to signal "this is a technical identifier, not a display name."
- */
+/** Whether a model's display name is a fallback to its raw ID rather than a proper human-readable label. */
 function modelNameIsFallbackId(modelId: string, models: ModelOption[]): boolean {
   const model = models.find((model) => model.id === modelId);
   if (!model) return true; // unknown model — treat as fallback, render monospace
@@ -156,8 +145,7 @@ export function ModelSelect({
   const [selectedModel, setSelectedModel] = useState(value);
   const [modelSuffix, setModelSuffix] = useState(() => suffixForModel(value));
   const [customMode, setCustomMode] = useState(() => !!value && !models.some((model) => model.id === value));
-  // The endpoint for the user-declared "custom" OpenAI-compatible provider,
-  // edited here (not in Settings) since it belongs with the model choice.
+  // The endpoint for the user-declared "custom" OpenAI-compatible provider, edited here (not in Settings) since it belongs with the model choice.
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -168,8 +156,7 @@ export function ModelSelect({
   const providerCollection = useMemo(() => createListCollection({ items: providerItems }), [providerItems]);
 
   const providerIsCustom = selectedProvider === "custom";
-  // The two experimental subscription providers sign in over OAuth instead of taking an
-  // API key, so each swaps the key field for its own sign-in control.
+  // The two experimental subscription providers sign in over OAuth instead of taking an API key, so each swaps the key field for its own sign-in control.
   const providerIsChatGPT = selectedProvider === "chatgpt";
   const providerIsCursor = selectedProvider === "cursor";
   const providerIsSubscription = providerIsChatGPT || providerIsCursor;
@@ -182,9 +169,7 @@ export function ModelSelect({
     const providerModels = models
       .filter((model) => model.provider === selectedProvider)
       .sort((left, right) => {
-        // Available models first (unavailable sink to the bottom, greyed), then
-        // recently-used, then newest release first (undated sink last), name as
-        // the final tiebreak.
+        // Available models first (unavailable sink to the bottom, greyed), then recently-used, then newest release first (undated sink last), name as the final tiebreak.
         if (left.available !== right.available) return left.available ? -1 : 1;
         const leftRecent = recentIds.has(left.id);
         const rightRecent = recentIds.has(right.id);
@@ -193,14 +178,7 @@ export function ModelSelect({
         if (byRelease !== 0) return byRelease;
         return left.name.localeCompare(right.name);
       });
-    // A key typed into this dialog counts, before it is applied. `available` is what the server
-    // knew when it answered — whether a credential was already stored — so a provider whose key
-    // is being entered right now had every one of its models greyed, and stayed greyed however
-    // much was typed, because nothing here re-read the field. That reads as "you may not have
-    // these", which is the opposite of what is true at that moment.
-    //
-    // Only for key-based providers. On a subscription, `available` means the plan includes that
-    // particular model, and no amount of typing changes it.
+    // A key typed into this dialog counts, before it is applied.
     const unlockedByTyping = keyEntered && !providerIsSubscription;
     const items = providerModels.map((model) => ({
       value: model.id, label: model.name, available: model.available || unlockedByTyping,
@@ -208,8 +186,7 @@ export function ModelSelect({
     items.push({ value: CUSTOM_MODEL, label: translation("selectUnlisted"), available: true });
     return items;
   }, [models, recentIds, selectedProvider, translation, keyEntered, providerIsSubscription]);
-  // Every model stays selectable (unavailable ones are only greyed as a hint) —
-  // the Apply button, not the dropdown, is what gates on having a usable credential.
+  // Every model stays selectable (unavailable ones are only greyed as a hint) — the Apply button, not the dropdown, is what gates on having a usable credential.
   const modelCollection = useMemo(() => createListCollection({ items: modelItems }), [modelItems]);
 
   // Default to the first *available* model so we never pre-select a greyed one.
@@ -218,8 +195,7 @@ export function ModelSelect({
     modelItems.find((item) => item.value !== CUSTOM_MODEL)?.value ??
     "";
   const customModelItem = modelItems.find((item) => item.value === CUSTOM_MODEL) ?? null;
-  // The user-declared custom provider has no catalog models: skip the model
-  // dropdown entirely and go straight to a free-form model id plus an endpoint.
+  // The user-declared custom provider has no catalog models: skip the model dropdown entirely and go straight to a free-form model id plus an endpoint.
   const inCustomMode = customMode || providerIsCustom;
   const modelIsInProvider = !!selectedModel && providerForModel(selectedModel, models) === selectedProvider;
   const typedModel = modelSuffix.trim() ? `${selectedProvider}/${modelSuffix.trim()}` : "";
@@ -235,11 +211,7 @@ export function ModelSelect({
   const chipModel = effectiveModelId ? (models.find((model) => model.id === effectiveModelId) ?? null) : null;
   const providerLabel = providerName(selectedProvider, providers);
 
-  // Whether Apply is allowed: a model is picked AND its provider can actually serve
-  // it. Rather than blocking selection, we let any model be chosen and only enable
-  // Apply once the credential is in hand — a key typed here, an already-unlocked
-  // provider (stored/env key), the keyless custom endpoint, or, for a subscription
-  // provider, a signed-in plan that includes the specific model.
+  // Whether Apply is allowed: a model is picked AND its provider can actually serve it.
   const activeModelOption = models.find((model) => model.id === activeSelectedModel);
   const providerUnlocked = models.some((model) => model.provider === selectedProvider && model.available);
   const canApply = (() => {
@@ -284,8 +256,7 @@ export function ModelSelect({
         await saveSettings({
           exa_api_key: settings.exa_api_key,
           composio_api_key: settings.composio_api_key,
-          // A subscription provider has no API key — its credential is the OAuth
-          // sign-in, saved out-of-band — so never write a provider key for one.
+          // A subscription provider has no API key — its credential is the OAuth sign-in, saved out-of-band — so never write a provider key for one.
           provider_keys: providerIsSubscription
             ? {}
             : { [credentialId]: providerKey.trim() },
@@ -305,16 +276,11 @@ export function ModelSelect({
       <Button
         variant="outline"
         px={2}
-        // The icon-to-label gap is stated rather than inherited: the button recipe's `xs`
-        // size gives 4px, while the agent and permission chips beside it in the composer are
-        // Select triggers at 6px. Left to the recipe, this one control sat a notch tighter
-        // than its two neighbours in the same row.
+        // The icon-to-label gap is stated rather than inherited: the button recipe's `xs` size gives 4px, while the agent and permission chips beside it in the composer are Select triggers at 6px.
         gap={1.5}
         bg="bg"
         borderColor="border"
-        // With every word gone this is an icon and an arrow, sized like the pickers beside it —
-        // stated in `globals.css` against `data-fit-collapsed`, so the arrangement the row tries
-        // is the arrangement it draws.
+        // With every word gone this is an icon and an arrow, sized like the pickers beside it — stated in `globals.css` against `data-fit-collapsed`, so the arrangement the row tries is the arrangement it draws.
         {...(fitted ? { "data-fit-control": "model", "data-fit-arrow": "", ...(labelHidden ? { "data-fit-collapsed": "" } : {}) } : {})}
         minW={compact ? "max-content" : undefined}
         maxW={fitted ? "none" : compact ? "220px" : "100%"}

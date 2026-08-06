@@ -8,15 +8,7 @@ import type { PermissionMode } from "@/lib/api";
 
 export type WorktreeStrategyValue = "none" | "branch" | "worktree";
 
-// One house control size (xs / 32px, owned by the theme recipe). `layout` only decides
-// whether the control hugs its content (a chip) or fills its field column.
-//
-// `justifyContent` is part of that decision and has to be. Chakra's select trigger is
-// `space-between`, which is invisible on a chip — the content defines the width, so there is no
-// free space to distribute — and wrong the moment the control fills a column: the spare width
-// goes *between* the icon and the label, so a single control reads as two unrelated things
-// sitting at opposite ends of a box. A field packs to the start; the dropdown indicator is
-// absolutely positioned at the end either way, so nothing else moves.
+// One house control size (xs / 32px, owned by the theme recipe).
 function controlMetrics(layout: "chip" | "field") {
   const base = {
     borderRadius: "md" as const,
@@ -34,11 +26,7 @@ function controlMetrics(layout: "chip" | "field") {
     : { ...base, width: "max-content", justifyContent: "space-between" as const };
 }
 
-// A control in a row that fits itself: what it answers to, and whether it is currently down to its
-// icon. The size that goes with `data-fit-collapsed` lives in `globals.css` rather than here,
-// because `useFittedRow` decides by *applying* a candidate to the DOM and measuring it — so the
-// collapsed state has to be reachable by setting one attribute, or what gets measured is not what
-// gets drawn. `hasArrow` says the control keeps a dropdown arrow beside the square.
+// A control in a row that fits itself: what it answers to, and whether it is currently down to its icon.
 function fitMarkers(id: string | undefined, labelHidden: boolean, hasArrow: boolean) {
   if (!id) return {};
   return {
@@ -81,10 +69,7 @@ function worktreeAppearance(worktreeStrategy: WorktreeStrategyValue) {
   }[worktreeStrategy];
 }
 
-// Which agent profile runs. One control for every place that choice is made — the composer,
-// where it picks what the next turn runs as, and a schedule, where it picks what fires
-// unattended. Each item carries the profile's own description, because "code-investigator"
-// and "senior-researcher" are not names anybody can rank without one.
+// Which agent profile runs.
 export function AgentSelectControl({
   agents,
   value,
@@ -167,8 +152,7 @@ export function AgentSelectControl({
         <Select.Positioner>
           <Select.Content minW="220px" maxW="320px">
             {collection.items.map((item) => {
-              // Look the description up from the source list by id — the collection item only
-              // reliably carries label/value, so extra fields are read from `agents`.
+              // Look the description up from the source list by id — the collection item only reliably carries label/value, so extra fields are read from `agents`.
               const description = agents.find((agent) => agent.id === item.value)?.description;
               return (
                 <Select.Item item={item} key={item.value}>
@@ -189,9 +173,7 @@ export function AgentSelectControl({
   );
 }
 
-// The permission mode a session runs under. Chosen before a session exists and adjustable
-// afterwards — the mode is a live property of the session, not a fact settled at creation —
-// so this control is the same picker in both cases.
+// The permission mode a session runs under.
 export function PermissionModeControl({
   value,
   onChange,
@@ -207,15 +189,7 @@ export function PermissionModeControl({
   fitted?: boolean;
   /** The row this sits in has no space for the mode's name; the icon and its colour say it. */
   labelHidden?: boolean;
-  /**
-   * When given, the control offers this as a first choice meaning "no mode", and `onChange`
-   * answers `null` for it.
-   *
-   * Only an agent card wants this. A card that names a mode is declaring a *ceiling* — the
-   * loosest its agent may ever run at — and most cards mean to declare nothing, which a control
-   * that can only emit a mode cannot express. A session picker has no use for it: a session
-   * always runs under some mode.
-   */
+  /** When given, the control offers this as a first choice meaning "no mode", and `onChange` answers `null` for it. */
   unsetLabel?: string;
 }) {
   const translation = useTranslations("SessionControls");
@@ -323,9 +297,7 @@ export function PermissionModeControl({
   );
 }
 
-// One shared appearance shape for the toggle-style controls (sandbox, compaction,
-// user-context, computer-control). Each control only computes its two-state appearance;
-// the button chrome and metrics live here so all four stay pixel-identical.
+// One shared appearance shape for the toggle-style controls (sandbox, compaction, user-context, computer-control).
 interface ToggleAppearance {
   label: string;
   icon: ReactNode;
@@ -360,8 +332,7 @@ function ToggleControl({
       variant="outline"
       borderRadius={metrics.borderRadius}
       fontSize={metrics.fontSize}
-      // Both dimensions from the same variable, so the square stays square on a touch device,
-      // where a control is 40px rather than 32.
+      // Both dimensions from the same variable, so the square stays square on a touch device, where a control is 40px rather than 32.
       h="var(--control-height)"
       px={metrics.paddingX}
       gap={metrics.gap}
@@ -395,14 +366,7 @@ function ToggleControl({
   );
 }
 
-// Confinement is a three-state setting in the configuration — refuse without a backend, run
-// without one, or do not confine — but only two of those are a choice a person makes from a
-// switch, so the switch is `required` against `off`. The paths and limits live in the
-// configuration file, where a person edits them the way they edit any other Unix policy.
-//
-// The third state shows rather than sets: when the machine has no backend, the control says so
-// instead of showing green, because a switch claiming protection that cannot be enforced is the
-// exact defect this whole mechanism was built to remove.
+// Confinement is a three-state setting in the configuration — refuse without a backend, run without one, or do not confine — but only two of those are a choice a person makes from a switch, so the switch is `required` against `off`.
 export function SandboxToggleControl({
   enforce,
   backend,
@@ -517,11 +481,7 @@ export function SettingToggleControl({
   onChange?: (enabled: boolean) => void;
   layout?: "chip" | "field";
 }) {
-  // The toggle for a setting that has no words of its own — the generated rows, where the name
-  // and the explanation are the row's and the control only has to say on or off. Every other
-  // toggle in this file names its subject twice, once in each state ("Own tools" / "No own
-  // tools"), which reads well beside a chip in the composer and reads as a stutter under a
-  // label that just said it.
+  // The toggle for a setting that has no words of its own — the generated rows, where the name and the explanation are the row's and the control only has to say on or off.
   const translation = useTranslations("SessionControls");
   const appearance: ToggleAppearance = enabled
     ? { label: translation("settingOn"), icon: <LuCheck size={13} />, color: "blue.fg", background: "blue.subtle", borderColor: "blue.muted", hover: "blue.muted" }

@@ -29,14 +29,10 @@ import time
 
 import Quartz
 
-# The few-millisecond pacing an OS needs for a synthesized click, keystroke, or drag step to
-# register as a real gesture lives in the central tuning policy (fixed, not window-scaled), read
-# through the one tuning surface like every other tunable.
+# The few-millisecond pacing an OS needs for a synthesized click, keystroke, or drag step to register as a real gesture lives in the central tuning policy (fixed, not window-scaled), read through the one tuning surface like every other tunable.
 from frank.base.tuning import Tunable, active_tuning
 
-# ABI-stable virtual key codes for the named, non-printing physical keys. These map to a
-# fixed physical key regardless of the user's keyboard layout, so they are safe to name
-# (unlike character keys, whose position moves between layouts).
+# ABI-stable virtual key codes for the named, non-printing physical keys.
 _NAMED_KEY_CODES = {
     "return": 0x24, "enter": 0x4C, "tab": 0x30, "space": 0x31,
     "delete": 0x33, "backspace": 0x33, "forwarddelete": 0x75,
@@ -47,9 +43,7 @@ _NAMED_KEY_CODES = {
     "f7": 0x62, "f8": 0x64, "f9": 0x65, "f10": 0x6D, "f11": 0x67, "f12": 0x6F,
 }
 
-# US-layout virtual key codes for the letter and digit keys — the fallback when the active
-# layout cannot produce the requested character (a non-Latin layout). The active layout is
-# consulted first via _layout_key_code; this table is only reached when that returns nothing.
+# US-layout virtual key codes for the letter and digit keys — the fallback when the active layout cannot produce the requested character (a non-Latin layout).
 _US_CHAR_KEY_CODES = {
     "a": 0x00, "b": 0x0B, "c": 0x08, "d": 0x02, "e": 0x0E, "f": 0x03, "g": 0x05,
     "h": 0x04, "i": 0x22, "j": 0x26, "k": 0x28, "l": 0x25, "m": 0x2E, "n": 0x2D,
@@ -195,8 +189,7 @@ def press_key(pid: int, key: str, modifiers: list[str]) -> bool:
         modifiers = [*modifiers, *chord_modifiers]
     code = _NAMED_KEY_CODES.get(name)
     if code is None and len(name) == 1:
-        # Ask the active layout which physical key types this character; fall back to the US
-        # position only when the layout can't produce it (non-Latin), matching macOS itself.
+        # Ask the active layout which physical key types this character; fall back to the US position only when the layout can't produce it (non-Latin), matching macOS itself.
         code = _layout_key_code(name)
         if code is None:
             code = _US_CHAR_KEY_CODES.get(name)

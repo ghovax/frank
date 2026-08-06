@@ -40,33 +40,19 @@ from frank.base.tuning import Tunable, active_tuning
 
 RUN_PATH = "/agent.v1.AgentService/RunSSE"
 APPEND_PATH = "/aiserver.v1.BidiService/BidiAppend"
-# Cursor moves this service between backends. api2 is where it answers today; the two agent
-# hosts are where the plugins have seen it move to, one for privacy mode and one without. They
-# are tried in order and only when a run fails before producing anything.
+# Cursor moves this service between backends. api2 is where it answers today; the two agent hosts are where the plugins have seen it move to, one for privacy mode and one without.
 AGENT_PRIVACY_URL = "https://agent.api5.cursor.sh"
 AGENT_OPEN_URL = "https://agentn.api5.cursor.sh"
 RUN_HOSTS = (API_BASE_URL, AGENT_PRIVACY_URL, AGENT_OPEN_URL)
-# The two model endpoints, on different services and knowing different halves of the answer:
-# which models a plan serves, and how large a window each has.
+# The two model endpoints, on different services and knowing different halves of the answer: which models a plan serves, and how large a window each has.
 USABLE_MODELS_URL = f"{API_BASE_URL}/agent.v1.AgentService/GetUsableModels"
 AVAILABLE_MODELS_URL = f"{API_BASE_URL}/aiserver.v1.AiService/AvailableModels"
 
-# A real Cursor CLI build, and specifically the newest one that any working client is known
-# to send: `cli-2026.01.09-231024f` appears in three files across the two OpenCode plugins
-# that drive this service. It is not invented and not derived from today's date — an
-# authentic-looking version nobody has exercised is worse than an obviously old one, because
-# it invites trust it has not earned.
-#
-# Unlike the Codex client, where `client_version` is a documented floor that hides models
-# below it, nothing in Cursor's descriptor gates anything on this. What is known is only that
-# the service wants the header: one plugin ships `cli-unknown` as its fallback and works, so
-# the value appears to be far less load-bearing than its Codex counterpart. Treat it as a
-# value to keep roughly current, not as a floor to clear.
+# A real Cursor CLI build, and specifically the newest one that any working client is known to send: `cli-2026.01.09-231024f` appears in three files across the two OpenCode plugins that drive this service.
 CLIENT_VERSION = "cli-2026.01.09-231024f"
 CLIENT_TYPE = "cli"
 
-# gRPC status codes worth naming. 8 is RESOURCE_EXHAUSTED, which on this service means
-# the subscription's included usage is spent; 16 is UNAUTHENTICATED.
+# gRPC status codes worth naming. 8 is RESOURCE_EXHAUSTED, which on this service means the subscription's included usage is spent; 16 is UNAUTHENTICATED.
 STATUS_RESOURCE_EXHAUSTED = 8
 STATUS_UNAUTHENTICATED = 16
 
@@ -121,8 +107,7 @@ def request_headers(tokens: CursorTokens, request_id: str) -> dict[str, str]:
     taking the union of two tested combinations is a third combination nobody has tried."""
     return {
         "Authorization": f"Bearer {tokens.access_token}",
-        # Not Connect's own content type: this service answers 415 to
-        # application/connect+proto over HTTP/1.1 and expects the gRPC-web framing.
+        # Not Connect's own content type: this service answers 415 to application/connect+proto over HTTP/1.1 and expects the gRPC-web framing.
         "Content-Type": "application/grpc-web+proto",
         "x-cursor-checksum": _checksum(tokens.access_token),
         "x-cursor-client-version": CLIENT_VERSION,
@@ -130,31 +115,20 @@ def request_headers(tokens: CursorTokens, request_id: str) -> dict[str, str]:
         "x-cursor-timezone": machine_time_zone(),
         # Privacy mode: do not retain this conversation for training.
         "x-ghost-mode": "true",
-        # Without this the service may park a reply in the blob store instead of
-        # streaming it, and a turn that streams nothing looks like a turn that failed.
+        # Without this the service may park a reply in the blob store instead of streaming it, and a turn that streams nothing looks like a turn that failed.
         "x-cursor-streaming": "true",
         "x-request-id": request_id,
     }
 
 
-# Live per-account model discovery. Which models a Cursor plan serves is an account
-# fact, so this is the authoritative list; the static catalog in
-# :mod:`frank.base.models` is only the offline superset the picker greys against.
-#
-# ``GetUsableModels`` is reachable over Connect's JSON encoding, so this one call needs
-# no protobuf at all — a plain JSON POST answers with the model list.
+# Live per-account model discovery.
 _models_cache: Optional[tuple[float, dict[str, dict[str, Any]]]] = None
 _models_cache_lock = asyncio.Lock()
 
-# The floor for a model the catalog named without stating a window, which is the only case
-# left once both endpoints have been asked. It is the smallest window any model on the
-# service currently has, so it under-promises: a context gauge that reads too full compacts
-# early, while one that reads too empty overruns the model.
+# The floor for a model the catalog named without stating a window, which is the only case left once both endpoints have been asked.
 UNKNOWN_CONTEXT_WINDOW = 200_000
 
-# What the server itself said a model's window was, learned from a checkpoint during a turn
-# and keyed by model id. This is the most authoritative source there is — it is per-account
-# and per-model, measured rather than published — so it outranks the catalog once it exists.
+# What the server itself said a model's window was, learned from a checkpoint during a turn and keyed by model id.
 _observed_context_windows: dict[str, int] = {}
 
 
@@ -172,9 +146,7 @@ def observed_context_window(model_id: str) -> int:
     return _observed_context_windows.get(model_id, 0)
 
 
-# The model ids Cursor serves are not plain model names: the reasoning effort is part of
-# the id (``claude-4.6-opus-high``, ``gpt-5.4-medium``). That is also why this provider
-# ignores Frank's reasoning_effort setting — picking the model already said it.
+# The model ids Cursor serves are not plain model names: the reasoning effort is part of the id (``claude-4.6-opus-high``, ``gpt-5.4-medium``).
 _EFFORT_SUFFIX = re.compile(r"-(high|medium|low|max|xhigh)$")
 
 
