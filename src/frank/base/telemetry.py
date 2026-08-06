@@ -1,15 +1,4 @@
-"""User-capturable telemetry: OpenTelemetry traces exported over OTLP.
-
-A process-wide facade. When disabled (the default) every helper is a cheap no-op; when the
-user configures an OTLP endpoint, a turn becomes a trace (session grouped by the A2A
-``session_id``) carrying ``gen_ai.*`` usage attributes. Trace context rides the A2A message
-metadata as a W3C ``traceparent`` so a delegation nests under its parent turn and a shared
-backend can stitch Frank's trace to a remote agent's.
-
-Only span structure and usage/metadata are emitted — no prompt or completion bodies — so
-there is nothing sensitive to redact. Nothing is emitted at all until an endpoint is set,
-so the local-first default stays quiet.
-"""
+"""OpenTelemetry traces over OTLP: a cheap no-op until an endpoint is configured."""
 
 from __future__ import annotations
 
@@ -25,10 +14,7 @@ _tracer: Any = None
 _token_counter: Any = None
 _call_counter: Any = None
 
-# A tracer bound for one task, which wins over the process-wide one where it is set. The
-# pattern `base/tuning.py` established and the last module global in this tree that still
-# needed it: two sessions in one interpreter may report to different places, and a caller
-# embedding the harness should not have to reconfigure the process to say so.
+#: A tracer bound for one task, winning over the process-wide one: two sessions may report elsewhere.
 _bound_tracer: contextvars.ContextVar[Any] = contextvars.ContextVar(
     "frank_tracer", default=None
 )
@@ -49,8 +35,7 @@ def _active_tracer() -> Any:
 
 
 def _metrics_endpoint(traces_endpoint: str) -> str:
-    """The OTLP metrics endpoint derived from the configured traces endpoint (the standard
-    OTLP path pair), so a single configured URL covers both signals."""
+    """The metrics endpoint derived from the traces one, so a single configured URL covers both signals."""
     if traces_endpoint.endswith("/v1/traces"):
         return traces_endpoint[: -len("/v1/traces")] + "/v1/metrics"
     return traces_endpoint
@@ -104,10 +89,7 @@ def record_usage(model: str, input_tokens: int, output_tokens: int) -> None:
 
 
 def start_span(name: str, attributes: Optional[dict[str, Any]] = None) -> Any:
-    """Start a span parented to the current context and return it (or ``None`` when
-    disabled). Unlike :func:`span`, it does not attach the span to the async context, so it
-    is safe to open across an async generator's ``yield``s; the caller ends it via
-    :func:`end_span`."""
+    """Start a span without attaching it to the async context, so it is safe to hold across a ``yield``."""
     tracer = _active_tracer()
     if tracer is None:
         return None
@@ -123,8 +105,7 @@ def end_span(active_span: Any, attributes: Optional[dict[str, Any]] = None) -> N
 
 @contextmanager
 def span(name: str, attributes: Optional[dict[str, Any]] = None, parent_context: Any = None) -> Iterator[Any]:
-    """Open a span (no-op when telemetry is disabled). Spans opened within the same async
-    task nest automatically."""
+    """Open a span. Spans opened in the same task nest automatically."""
     if _tracer is None:
         yield None
         return
@@ -152,22 +133,7 @@ def context_from_traceparent(traceparent: str) -> Any:
 def record_client_fault(
     component: str, operation: str, attributes: Optional[dict[str, Any]] = None
 ) -> None:
-    """Record a fault the *interface* handled and carried on past.
-
-    The browser has no route to the collector of its own: the OTLP endpoint and its headers
-    are configuration that lives here, and giving a webview either would mean shipping
-    credentials into a page and negotiating CORS with someone else's backend. So the interface
-    reports to the daemon and the daemon reports onward, through the exporter already
-    configured for traces and metrics — one endpoint, three streams.
-
-    A span rather than a counter, because the useful part of one of these is its context and
-    message, and a counter cannot carry either. Silent when telemetry is disabled, which is
-    the default and matches every other helper here.
-
-    `component` and `operation` arrive as separate attributes rather than as one sentence,
-    because an attribute is a dimension: "which surface is failing" and "at what" are both
-    questions you group by, and neither should require a prefix match against prose.
-    """
+    """Record a fault the interface handled, since a webview has no route to the collector of its own."""
     tracer = _active_tracer()
     if tracer is None:
         return

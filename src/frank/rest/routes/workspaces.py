@@ -21,8 +21,7 @@ router = APIRouter()
 
 @router.get("/home")
 async def home_directory():
-    """The daemon user's home directory and its folder name — the default workspace
-    the UI selects before anything else is chosen."""
+    """The daemon user's home directory and its folder name: the workspace the UI selects by default."""
     home = str(Path.home())
     return {"path": home, "name": _workspace_name(home)}
 
@@ -35,10 +34,7 @@ async def list_hosts():
 
 @router.get("/hosts/{alias}/home")
 async def host_home_directory(alias: str):
-    """Best-effort resolution of a host's home directory, for prefilling a new location's
-    base directory with an editable starter. Runs `printf $HOME` over SSH with a short
-    timeout; returns an empty path if the host is unknown, unreachable, or not yet
-    authenticated (the field then just stays empty for manual entry)."""
+    """Best-effort home directory of a host, for prefilling a base directory, empty when it cannot be reached."""
     def _resolve() -> str:
         if not host_is_defined(alias):
             return ""
@@ -75,8 +71,7 @@ async def get_project(workspace_id: str):
 
 @router.delete("/workspaces/{workspace_id}")
 async def delete_project(workspace_id: str):
-    # There is always exactly one active workspace in the UI, so the last one can't be
-    # deleted — that would leave an empty state the redesigned app no longer has.
+    # There is always one active workspace, so deleting the last would leave a state the app has not got.
     if await asyncio.to_thread(_workspaces._workspace_count) <= 1:
         raise HTTPException(status_code=400, detail="Can't delete the only workspace.")
     deleted = await asyncio.to_thread(_delete_workspace, workspace_id)
@@ -89,18 +84,7 @@ async def delete_project(workspace_id: str):
 
 @router.put("/workspaces/{workspace_id}/last-session")
 async def remember_last_session(workspace_id: str, request: WorkspaceLastSessionRequest):
-    """Remember which conversation this workspace was last opened at, so the next client to open
-    it lands where the person left off.
-
-    This is deliberately the daemon's memory rather than the browser's. The desktop app, a
-    browser, and the phone are three windows onto one machine; "the conversation I was in" is a
-    fact about that machine, and storing it per-client means each one reopens somewhere
-    different — and the phone, whose storage is cleared whenever the webview is, reopens nowhere
-    at all.
-
-    No broadcast: this only decides where a *later* launch lands, and telling every open client
-    to re-read the workspace list because one of them changed conversations would be a lot of
-    traffic to no visible end."""
+    """Remember where a workspace was last opened, in the daemon, since every client shares that memory."""
     if not await asyncio.to_thread(_remember_last_session, workspace_id, request.session_id):
         raise HTTPException(status_code=404, detail="Project not found.")
     return {"ok": True}
@@ -115,9 +99,7 @@ async def create_location(workspace_id: str, request: LocationInput):
     if location is None:
         raise HTTPException(status_code=404, detail="Project not found.")
     _publish_broadcast({"type": "workspaces_changed"})
-    # The sessions already open in this workspace are told too. Without it the new
-    # environment existed in Settings and in no conversation — every session that
-    # predated the edit went on addressing the set it was created with.
+    # The sessions already open are told too, or a new environment exists in Settings and nowhere else.
     await state.workspace_locations_changed(workspace_id)
     return location
 
@@ -137,8 +119,7 @@ async def update_location(location_id: str, request: LocationInput):
 
 @router.delete("/locations/{location_id}")
 async def delete_location(location_id: str):
-    # Read the workspace off the row before it goes: after the delete there is nothing left
-    # to ask which workspace's sessions need telling.
+    # Read the workspace off the row first: after the delete there is nothing left to ask.
     workspace_id = await asyncio.to_thread(_workspace_id_for_location, location_id)
     deleted = await asyncio.to_thread(_delete_location, location_id)
     if not deleted:

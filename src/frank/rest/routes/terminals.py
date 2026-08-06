@@ -23,8 +23,7 @@ async def list_terminals(session_id: str = "", working_directory: str = ""):
         {"terminal_key": entry["terminal_key"], "cwd": entry["working_directory"], "running": entry["terminal_key"] in live_keys}
         for entry in persisted
     ]
-    # A freshly opened terminal is live before it has persisted any scrollback; surface
-    # it too so its tab does not vanish on a mid-session refresh.
+    # A fresh terminal is live before it has persisted scrollback, so surface it or its tab vanishes.
     known = {entry["terminal_key"] for entry in persisted}
     for terminal_key in sorted(live_keys - known):
         terminals.append({"terminal_key": terminal_key, "cwd": "", "running": True})
@@ -49,8 +48,7 @@ async def terminal_websocket(
     session_id: str = "",
     working_directory: str = "",
     terminal_key: str = "main",
-    # A remote-location terminal: an SSH login shell on this host, in `location_base_directory`.
-    # When empty, the terminal is local (working_directory as before).
+    # A remote terminal is an SSH login shell in the location's base directory; empty means local.
     location_kind: str = "local",
     location_base_directory: str = "",
     location_host_alias: str = "",
@@ -73,8 +71,7 @@ async def terminal_websocket(
     try:
         remote_alias = location_host_alias.strip() if location_kind == "remote" else ""
         if remote_alias and location_base_directory.strip():
-            # Remote terminal: the directory is the remote base dir (used verbatim in the
-            # ssh `cd`, never touched locally), and the session sshes to the host alias.
+    # The remote base directory is used verbatim in the ssh `cd`, never resolved locally.
             directory = Path(location_base_directory.strip())
         elif location_base_directory.strip():
             directory = Path(location_base_directory.strip()).expanduser()
@@ -114,10 +111,7 @@ async def terminal_websocket(
                 elif message_type == "resize":
                     session.resize(int(message.get("rows", 24) or 24), int(message.get("columns", 80) or 80))
 
-        # Three racers, not two. The input loop ends when the client goes away and the output
-        # loop when the session does, but neither ends because the *daemon* was asked to stop —
-        # and a websocket the daemon cannot end holds its shutdown open exactly as a stream
-        # does. The same signal the streams race, for the same reason.
+    # Three racers: a websocket the daemon cannot end holds its shutdown open like a stream would.
         tasks = [
             asyncio.create_task(output_loop()),
             asyncio.create_task(input_loop()),
@@ -140,10 +134,7 @@ async def terminal_websocket(
                 "recoverable": False,
             })
     except Exception as exception:
-        # Logged, and that is not decoration. Everything this handler knows about a failure used
-        # to leave through the socket it was failing on: if the send did not land — and when the
-        # connection is what broke, it does not — the daemon's log said nothing at all, and a
-        # terminal that reconnected forever looked from the outside like a client bug.
+    # Logged, since everything this handler knew used to leave through the socket that was failing.
         logger.exception("terminal websocket failed (key=%s, directory=%s)", terminal_key, working_directory)
         with suppress(Exception):
             await websocket.send_json({

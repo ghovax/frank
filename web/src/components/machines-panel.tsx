@@ -1,19 +1,6 @@
 "use client";
 
-/**
- * The other Franks this one knows how to reach.
- *
- * The desktop's half of what a phone shows as its list of machines, so that "which Frank" is a
- * question with the same answer and the same shape on both. It is the same set, described by the
- * same `frank://pair#…` link, and kept in the daemon's own database rather than in this browser —
- * because it is a fact about the machine, not about the window looking at it.
- *
- * Opening one is a *navigation*, not a change of API base, and that is not a shortcut. A page
- * cannot script another origin: `frank reach` answers no `access-control-allow-origin`, on
- * purpose, because letting arbitrary pages talk to a listener holding full control of a machine
- * is the thing it exists to prevent. So this hands the browser an address and that machine serves
- * its own interface, first party to itself, exactly as it does for a phone.
- */
+/** The other Franks this one can reach, so "which Frank" has the same answer on every surface. */
 
 import { Box, Button, Flex, IconButton, Input, Text } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
@@ -33,14 +20,7 @@ export function MachinesPanel() {
   const [machines, setMachines] = useState<Machine[]>([]);
   const [link, setLink] = useState("");
   const [saving, setSaving] = useState(false);
-  /**
-   * Which of these is serving this page, if any.
-   *
-   * The list knew every machine except the one you were looking at, and offered to connect you
-   * to it — a button whose whole effect is to reload the page you are already on. The answer was
-   * in the address bar all along: this page is served *by* a machine, so its origin is that
-   * machine's endpoint, and the row that matches is the one you are in.
-   */
+/** Which of these is serving this page, read from the address bar rather than offered as a reload. */
   const origin = useOrigin();
 
   const refresh = useCallback(() => {
@@ -51,8 +31,7 @@ export function MachinesPanel() {
 
   useEffect(() => {
     refresh();
-    // Another window adding a machine is a change to the same set, and this panel is exactly
-    // where somebody would be looking when it happens.
+  // Another window adding a machine changes the same set, and this panel is where somebody is looking.
     return subscribeEvents((event) => {
       if (event.type === "machines_changed") refresh();
     });
@@ -75,8 +54,7 @@ export function MachinesPanel() {
 
   async function open(machine: Machine) {
     try {
-      // The address is fetched now rather than held since the list rendered: it is the one thing
-      // here that carries a token, and it should exist for as long as it takes to follow it.
+  // Fetched now rather than held since the list rendered: it is the one thing here carrying a token.
       window.location.assign(await machineAddress(machine.id));
     } catch (caught) {
       toaster.create({ type: "error", title: translation("couldNotReach", { name: machine.name }), description: errorMessage(caught), closable: true });
@@ -112,8 +90,7 @@ export function MachinesPanel() {
                   <Text fontSize="xs" color="fg.subtle" truncate>{machine.endpoint.replace(/^https:\/\//, "")}</Text>
                 </Box>
                 {machine.endpoint === origin ? (
-                  // Not a disabled button. There is nothing to do here, and a greyed-out control
-                  // invites somebody to work out why it will not work; a state does not.
+      // Not a disabled button: a greyed control invites working out why, and a state does not.
                   <Flex align="center" gap={1.5} color="green.fg" flexShrink={0}>
                     <Box boxSize="1.5" borderRadius="full" bg="green.solid" />
                     <Text fontSize="xs">{translation("connected")}</Text>
@@ -128,9 +105,7 @@ export function MachinesPanel() {
                   size="xs"
                   variant="ghost"
                   colorPalette="red"
-                  // Forgetting the machine you are currently using would throw away the token for
-                  // the page you are reading, which is a thing to do deliberately from somewhere
-                  // else rather than by accident from here.
+      // Forgetting the machine you are using discards the token for the page you are reading.
                   disabled={machine.endpoint === origin}
                   aria-label={translation("deleteConnection", { url: machine.endpoint })}
                   onClick={() => {

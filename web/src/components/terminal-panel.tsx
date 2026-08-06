@@ -65,8 +65,7 @@ export function TerminalSurface({
   sessionId: string | null;
   workingDirectory: string;
   terminalKey?: string;
-  // When set, the terminal runs against this location (a remote one opens an SSH login
-  // shell on the host, in its base dir; a local one opens there directly).
+  // When set, the terminal runs against this location, opening an SSH login shell for a remote one.
   location?: { kind: string; base_directory: string; host_alias: string };
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -76,8 +75,7 @@ export function TerminalSurface({
   const [, setConnectionStatus] = useState<{ state: "connecting" | "connected" | "disconnected" | "exited"; label: string } | null>(null);
   const { colorMode } = useColorMode();
   const translation = useTranslations("TerminalPanel");
-  // Kept in a ref so the toast copy stays current without adding `t` (a fresh
-  // function each render) to the terminal effect's deps, which would remount it.
+  // In a ref, so the toast copy stays current without a dependency that would remount the terminal.
   const translateRef = useRef(translation);
   useEffect(() => {
     translateRef.current = translation;
@@ -87,18 +85,14 @@ export function TerminalSurface({
     const host = hostRef.current;
     if (!host) return;
 
-    // A terminal on a touch screen is a different instrument. There is no hover, no middle
-    // click, and no mouse wheel — and a 12px cell that a mouse reads comfortably is below what
-    // a thumb can place a cursor in. So the sizes and the scrolling come from the input the
-    // device actually has, and a pointer-driven window is untouched.
+  // A terminal on a touch screen is a different instrument: no hover, no wheel, and a wider cell.
     const coarse = typeof window !== "undefined"
       && window.matchMedia?.("(pointer: coarse)").matches === true;
 
     const terminal = new Terminal({
       cursorBlink: true,
       fontSize: coarse ? 14 : 12,
-      // Momentum scrolling on a touch surface moves far more rows per gesture than a wheel
-      // notch does; three lines per tick makes a flick feel like it went nowhere.
+  // Momentum scrolling moves far more rows per gesture, so three lines a tick makes a flick feel dead.
       ...(coarse ? { scrollSensitivity: 1, fastScrollSensitivity: 3 } : {}),
       fontWeight: "normal",
       fontWeightBold: "bold",
@@ -161,9 +155,7 @@ export function TerminalSurface({
       fitAndResize();
       socketHadError = false;
       setConnectionStatus({ state: "connecting", label: "Connecting terminal" });
-      // Awaited, because the address and the token are what a restarted daemon changes and
-      // this is where they are read. Re-checked afterwards: resolving can take a moment, and
-      // the panel may have been torn down in it.
+      // Awaited, since a restarted daemon changes the address and token, and re-checked in case of teardown.
       const url = await terminalWebSocketUrl({
         sessionId,
         workingDirectory,
