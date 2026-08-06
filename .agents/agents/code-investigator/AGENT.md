@@ -9,7 +9,10 @@ connection-type: internal
 model: deepseek-v4-flash
 provider: opencode_go
 reasoning_effort: high
-permission_mode: read_only
+permission_mode: ask
+sandbox:
+  filesystem:
+    writable: []
 tools_enabled: []
 tools:
   bash:

@@ -88,7 +88,10 @@ skills: []                           # skill slugs this agent may use; empty = a
 model: null                          # override the global default (provider/model)
 provider: null
 reasoning_effort: high               # minimal | low | medium | high
-permission_mode: read_only           # default | auto | read_only
+permission_mode: ask                 # ask | automatic — who answers a gate, not what the agent may do
+sandbox:                             # a confinement; nowhere writable is how read-only is expressed
+  filesystem:
+    writable: []
 tools_enabled: []                    # allow-list over the WHOLE tool surface; empty = no restriction
 system_prompt: ""
 ---
