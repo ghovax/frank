@@ -1,14 +1,4 @@
-"""Run a ``control_screen`` script in a killable subprocess and bridge its primitive calls back to
-the live surface. The model's Python runs in :mod:`frank.computer.control_child` — a disposable
-child that holds no state — and every ``click``/``type``/``evaluate`` it makes arrives here as a
-JSON request, is performed against the real surface on its serial worker (trusted input, full
-actionability), and is answered. A wall-clock timeout kills the child; rlimits bound its CPU and
-memory; a crash or runaway loop dies with it and never touches the worker.
-
-The bridge is generic over a ``dispatch`` coroutine ``(name, args, kwargs) -> result`` so the
-executor can be exercised without a browser or a Mac in the loop — the surface wiring lives in the
-tool handler, not here.
-"""
+"""Run a ``control_screen`` script in a killable subprocess and bridge its primitive calls back to the live surface."""
 from __future__ import annotations
 
 import asyncio
@@ -35,26 +25,7 @@ CONTROL_CHILD_ROLE = "control-child"
 
 
 def _child_command(request_write: int, reply_read: int) -> list[str]:
-    """How to launch the disposable child, from a checkout and from the packaged app alike.
-
-    From a checkout it is the script, run by the interpreter: launching it by *path* rather than
-    as ``-m frank.computer.control_child`` is what keeps it stdlib-only, since running it as a
-    module would import the ``frank.computer`` package on the way in.
-
-    Frozen, ``sys.executable`` is the ``frank`` binary rather than an interpreter, and handing a
-    binary the path of a ``.py`` file makes it parse that path as a subcommand. It did:
-
-        frank: error: argument command: invalid choice:
-        '/Applications/Frank.app/…/frank/computer/control_child.py'
-
-    — which came back to the model as the screen helper failing to start, for every screen action,
-    in the packaged app only. From a checkout the same code worked perfectly, because there
-    ``sys.executable`` really is a Python. Every other process this project starts already had
-    this branch (`cli.client`, `daemon.prototype`, `worker.prototype`); this one did not.
-
-    So the frozen build is asked by *role*. It carries the sources on disk and a Python to run
-    them with, and `entry.py` answers this role before importing anything of the runtime — which
-    is what keeps the child as thin as the checkout's."""
+    """How to launch the disposable child, from a checkout and from the packaged app alike."""
     numbers = [str(request_write), str(reply_read)]
     if getattr(sys, "frozen", False):
         return [sys.executable, CONTROL_CHILD_ROLE, *numbers]
@@ -63,16 +34,10 @@ def _child_command(request_write: int, reply_read: int) -> list[str]:
 
 
 class _NotPermitted(Exception):
-    """A primitive this session may not run. Its own type so the pump can answer it with the
-    message that says what *is* available, rather than with a bare exception name."""
+    """A primitive this session may not run."""
 
 def _script_ceiling() -> float:
-    """The child's wall-clock limit, and the base of an ordered stack.
-
-    The surface's guard and its worker thread each sit a margin above this, so a script can
-    never outlive the machinery waiting on it. They used to be three independent constants that
-    happened to be equal, which meant raising one made the guard fire first, drop the connection
-    and leave the surface half-dead."""
+    """The child's wall-clock limit, and the base of an ordered stack."""
     return active_tuning().duration(Tunable.control_script_seconds)
 
 Dispatch = Callable[[str, list, dict], Awaitable[Any]]
@@ -91,9 +56,7 @@ async def run_control_script(
     dependency_roots: Optional[list[str]] = None,
     library_roots: Optional[list[str]] = None,
 ) -> dict:
-    """Execute ``script`` in a child process, servicing its primitive calls via ``dispatch``, and
-    return the child's result dict (``{ok, value?, stdout?, error?, traceback?}``). On timeout the
-    child is killed and a timeout payload is returned instead."""
+    """Execute ``script`` in a child process, servicing its primitive calls via ``dispatch``, and return the child's result dict (``{ok, value?, stdout?, error?, traceback?}``)."""
     timeout = timeout if timeout is not None else _script_ceiling()
     permitted = frozenset(primitives or ())
     request_read, request_write = os.pipe()   # child to parent (primitive calls)

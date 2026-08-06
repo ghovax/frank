@@ -1,20 +1,4 @@
-"""Becoming a session: take an assignment, bind a socket, serve until told to stop.
-
-This is everything a worker process does after it knows what it is. It was the second half
-of the worker's entry point, when a worker was a process the daemon started and then told
-over stdin; a worker is now a fork of the prototype, which already has the assignment in
-memory, so there is nothing to read and no entry point to be.
-
-Readiness is reported on a file descriptor rather than on stdout for the same reason. A
-forked child shares its parent's stdout, and the parent is the prototype, whose stdout is
-the daemon's log — a readiness line written there would be a log entry nobody reads instead
-of an answer somebody is waiting for. The descriptor is a pipe the prototype created for
-this one fork and is watching.
-
-The acknowledgement is sent only once the socket is accepting connections, which is the
-property the whole thing exists for: a client that sends immediately after `create` must
-not race the bind.
-"""
+"""Becoming a session: take an assignment, bind a socket, serve until told to stop."""
 
 from __future__ import annotations
 
@@ -34,11 +18,7 @@ logger = logging.getLogger("frank.worker")
 
 
 def _report(ready_fd: int, payload: dict) -> None:
-    """Answer the prototype on the pipe it is watching, once.
-
-    Failures are swallowed deliberately: the prototype may already have given up and closed
-    its end, and a session that is otherwise healthy must not die because nobody was
-    listening for its acknowledgement."""
+    """Answer the prototype on the pipe it is watching, once."""
     if ready_fd < 0:
         return
     with contextlib.suppress(OSError):
@@ -101,11 +81,7 @@ async def serve(assignment: dict, ready_fd: int = -1, lifeline_fd: int = -1) -> 
     import uvicorn
 
     class _AnnouncingServer(uvicorn.Server):
-        """Sets an event once the socket is accepting connections.
-
-        uvicorn only exposes readiness as an attribute to be polled; making it awaitable is
-        what lets the worker report ready at the exact moment it can serve, rather than a
-        sleep-interval later."""
+        """Sets an event once the socket is accepting connections."""
 
         def __init__(self, configuration) -> None:  # noqa: ANN001 — matches uvicorn's signature
             super().__init__(configuration)

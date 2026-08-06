@@ -43,19 +43,7 @@ _SANDBOX_REFUSAL_PHRASES = (
 
 
 def _sandbox_refusal_note(return_code: int, output: str, profile, workspace: str) -> dict:
-    """What to say when a command probably died on the confinement rather than on its own work.
-
-    A boundary that refuses in errno is a boundary nobody can act on. `Operation not permitted`
-    names no path, says nothing about what would have been permitted, and reads as a broken tool
-    — so the usual response is to run the same command again.
-
-    **This is a hint and not an attribution.** Seatbelt writes the denied path to the system log
-    and Landlock returns a bare `EACCES`; neither can be tied back to one child reliably, and a
-    note naming the wrong path would be worse than one naming none. So it states what is
-    certainly true — where this session may write — and leaves the model to match that against
-    what it was trying to do. Returned as structured data rather than pasted into the output,
-    because the output is the command's and this is the harness's.
-    """
+    """What to say when a command probably died on the confinement rather than on its own work."""
     if return_code == 0 or not output:
         return {}
     lowered = output.lower()
@@ -530,13 +518,7 @@ _DESCRIBED = (
 
 
 def _apply_descriptions() -> None:
-    """Give every tool the description written for it, and refuse to ship one that has none.
-
-    Loudly, at import, rather than silently: `PromptLoader.load` answers "" for a file that is not
-    there, and a tool whose description is the empty string is offered to the model as a name with
-    no explanation — which it will still call, and then guess at. A missing file is a packaging
-    mistake, and the moment to hear about it is the build rather than the first turn that reaches
-    for that tool."""
+    """Give every tool the description written for it, and refuse to ship one that has none."""
     missing = []
     for entity in _DESCRIBED:
         text = _DESCRIPTIONS.load(entity.name, {}).strip()

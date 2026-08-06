@@ -1,35 +1,4 @@
-"""`frank reach`: one address a phone can keep, over a connection a browser will trust.
-
-The daemon is deliberately unreachable. It binds loopback on a port it picks fresh every boot,
-and mints a capability token to match, so nothing off this machine can address it and nothing on
-it can address it without reading a 0600 file. That is the right default and this does not
-change it — this binds loopback too. Nothing here ever listens on a network interface.
-
-What faces the network is Tailscale, and only Tailscale. `tailscale serve` puts a listener on
-the tailnet, terminates TLS with a Let's Encrypt certificate for this machine's `*.ts.net` name,
-and proxies to the loopback port below. Three things follow, and they are the reason this is
-built this way rather than on a LAN address and a bearer token in the clear:
-
-  1. **The address is stable.** `mac.tailnet.ts.net` is the machine's name for as long as it is
-     on the tailnet. A LAN address is a DHCP lease: it changes, and a phone holding the old one
-     has no way to find the new one short of pairing again.
-  2. **It is a *secure context*.** This is the one that is not negotiable. Browsers withhold a
-     growing list of APIs from pages served over plain HTTP to anything but localhost — the
-     microphone, the clipboard, `crypto.randomUUID` — and the interface is a real web
-     application that uses them. Served over http://192.168.x.x it does not degrade, it breaks,
-     one API at a time, with errors that read as faults in Frank.
-  3. **Nothing is exposed.** No port is open on the LAN, nothing is forwarded at the router, and
-     the tailnet is WireGuard between authenticated devices. The bearer token below is a second
-     lock on a door that is already inside the house.
-
-`tailscale funnel` would put this on the public internet and is deliberately not used: the token
-is a bearer credential with full control of the machine, which is exactly what `SECURITY.md`
-says to tunnel rather than expose.
-
-The daemon knows none of this, and should not. It is loopback-only with a capability token; this
-is the single network-facing piece; Tailscale fronts this. Each layer's reach is a property of
-how it binds, not of a setting somebody could get wrong.
-"""
+"""`frank reach`: one address a phone can keep, over a connection a browser will trust."""
 
 from __future__ import annotations
 
@@ -65,20 +34,14 @@ logger = logging.getLogger("frank.reach")
 
 
 def _report(error: "TailscaleUnavailable") -> None:
-    """Say what is wrong and, underneath, what Tailscale said about it.
-
-    Never a traceback. Every one of these is a person needing to do something in an app, and a
-    stack of frames from inside `subprocess` is noise in front of the sentence that answers it."""
+    """Say what is wrong and, underneath, what Tailscale said about it."""
     logger.info(f"frank: {error}")
     if error.detail:
         logger.info(f"frank: tailscale said: {error.detail}")
 
 
 def reach_token(create: bool = True) -> Optional[str]:
-    """The durable token, minting one on first use.
-
-    Written 0600 and read back rather than cached in memory, so a rotation by another process is
-    picked up by the next `pair` without anything having to be told."""
+    """The durable token, minting one on first use."""
     from frank.base.paths import reach_token_path
 
     path = reach_token_path()
@@ -111,16 +74,7 @@ def _write_token(path: Path, token: str) -> str:
 
 
 class TailscaleUnavailable(RuntimeError):
-    """Tailscale cannot front this listener, with a sentence saying what to do about it.
-
-    A single exception rather than a set of them because every one of these is answered the same
-    way — by a person doing something in the Tailscale app — and what differs is only which
-    thing. The message is the whole value.
-
-    `detail` is what Tailscale itself said, when it said anything, and it is a separate field
-    rather than a second line of the message because an exception's message is one line here —
-    `frank.base.errors.summary` collapses newlines precisely so it stays one field in a log. How
-    the two are laid out is the caller's decision, not this class's."""
+    """Tailscale cannot front this listener, with a sentence saying what to do about it."""
 
     def __init__(self, message: str, detail: str = "") -> None:
         super().__init__(message)
@@ -128,11 +82,7 @@ class TailscaleUnavailable(RuntimeError):
 
 
 def _tailscale_command() -> str:
-    """Where the Tailscale command line is.
-
-    On PATH if the app's CLI integration is switched on, which installs a launcher into
-    `/usr/local/bin`. Inside the bundle if it is not, and inside the bundle is where the App
-    Store build keeps it regardless — so both are looked for before concluding there is none."""
+    """Where the Tailscale command line is."""
     from shutil import which
 
     found = which("tailscale")
@@ -185,11 +135,7 @@ def _said(stream) -> str:
 
 
 def tailnet_name() -> str:
-    """This machine's name on the tailnet, e.g. `mac.tailnet-name.ts.net`.
-
-    The MagicDNS name rather than the 100.x address, and not because it reads better: the
-    certificate `tailscale serve` obtains is issued *for* this name, so it is the only address at
-    which the connection is both encrypted and trusted. An IP would be a certificate error."""
+    """This machine's name on the tailnet, e.g. `mac.tailnet-name.ts.net`."""
     completed = _tailscale("status", "--json", timeout=10.0)
     if completed.returncode != 0:
         raise TailscaleUnavailable(
@@ -226,22 +172,7 @@ def tailnet_name() -> str:
 
 
 def ensure_served(port: int) -> None:
-    """Put this listener on the tailnet over HTTPS, if it is not there already.
-
-    `--bg` because the alternative holds the terminal for as long as the proxy exists, and this
-    command has its own server to run. The configuration is Tailscale's and outlives this
-    process, which is the behaviour wanted: a phone that started a session should not lose the
-    machine because the listener was restarted.
-
-    Asked for every time rather than only when absent. It is idempotent, it costs one local call,
-    and it is what repairs the case where somebody ran `tailscale serve reset` — which otherwise
-    presents as a phone that cannot connect and a listener insisting it is up.
-
-    Nothing here undoes it when this command stops, and that is deliberate rather than an
-    omission. The configuration is Tailscale's, it costs nothing while this is not running — the
-    address answers with a connection error, which is what a phone shows as "not answering"
-    either way — and re-asserting it on every start is cheaper than a teardown that could only
-    ever be best-effort. `tailscale serve --https=443 off` removes it."""
+    """Put this listener on the tailnet over HTTPS, if it is not there already."""
     # Twenty seconds, not a minute.
     completed = _tailscale("serve", "--bg", "--https=443", f"http://127.0.0.1:{port}", timeout=20.0)
     if completed.returncode == 0:
@@ -266,12 +197,7 @@ def ensure_served(port: int) -> None:
 
 
 def pairing_payload() -> dict:
-    """What a phone is handed, once.
-
-    One address, not a list. There used to be a ranked set — an advertised one, the tailnet, the
-    LAN — and a client that raced them to see which answered. All of that was machinery for
-    coping with addresses that might not work, and the answer to an address that might not work
-    is not to carry three of them; it is to use the one that does not change."""
+    """What a phone is handed, once."""
     return {
         "version": 1,
         # The first label only.
@@ -283,40 +209,13 @@ def pairing_payload() -> dict:
 
 
 def pairing_uri(payload: dict) -> str:
-    """The payload as a single link.
-
-    In the fragment, not the query. A fragment is not sent to a server by anything that resolves
-    a URL, is not written to proxy logs, and is not part of what a QR reader would show as the
-    "site" — which for a link carrying a bearer token is worth the three extra characters."""
+    """The payload as a single link."""
     encoded = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode()
     return f"{PAIRING_SCHEME}://pair#{encoded.rstrip('=')}"
 
 
 def require_token(application, token: str):
-    """Wrap an application so nothing reaches it without the reach token.
-
-    An ASGI class rather than Starlette's `BaseHTTPMiddleware`, for the reason the daemon gives
-    for the same choice: this proxy's whole job is streams that stay open for hours, and that
-    middleware's cancel scopes do not survive them. A plain callable has no such opinion.
-
-    Three ways to present it, and each exists for a transport that cannot manage the others:
-
-      - the `Authorization` header, for anything making its own requests;
-      - a `token` query parameter, because a websocket handshake cannot carry a header;
-      - a **cookie**, because a *page* cannot carry either.
-
-    The cookie is what lets this serve the interface. A browser — or the phone's webview — asks
-    for a document, then for every script, font, event stream and websocket that document names,
-    and it attaches nothing of its own to any of them. Handing the page a token to attach would
-    mean the token living in reachable storage on the device; a cookie is sent by the transport,
-    is `HttpOnly` so no script can read it, and covers subresources and upgrades alike. So the
-    app opens `…/?token=…` exactly once, this exchanges it for the cookie, and everything after
-    that is an ordinary same-origin request.
-
-    Whichever form it arrived in, it is **removed before the request goes any further**: the query
-    parameter is stripped and the cookie header is dropped. Forwarding either would put this
-    listener's durable secret into the daemon's logs and — worse, for the query form — into the
-    daemon's own token check, where it would shadow the header the proxy is about to attach."""
+    """Wrap an application so nothing reaches it without the reach token."""
     import secrets as _secrets
     from urllib.parse import parse_qsl, urlencode
 
@@ -336,14 +235,7 @@ def require_token(application, token: str):
         await send({"type": "http.response.body", "body": body})
 
     def is_preflight(scope) -> bool:
-        """A CORS preflight, which a browser sends without credentials by specification.
-
-        Demanding a token here rejects the *question* rather than the request, and the real
-        request — the one that would have carried the token — is then never sent at all. The
-        daemon's own middleware carries this exemption for the same reason and says so at
-        greater length; this is the second place it has to hold, because a preflight that
-        reaches the daemon has already had to get past this.
-        """
+        """A CORS preflight, which a browser sends without credentials by specification."""
         if scope["type"] != "http" or scope.get("method") != "OPTIONS":
             return False
         return any(name.lower() == b"access-control-request-method" for name, _ in scope.get("headers") or [])
@@ -367,11 +259,7 @@ def require_token(application, token: str):
 
 
 def _wants_document(scope) -> bool:
-    """Whether this request is a page rather than something a page asked for.
-
-    `Sec-Fetch-Dest` says so outright and every current browser sends it. Without it, a request
-    that accepts HTML is close enough — the only cost of guessing wrong is a cookie set on
-    something that did not need one."""
+    """Whether this request is a page rather than something a page asked for."""
     headers = {name.lower(): value for name, value in scope.get("headers") or []}
     destination = headers.get(b"sec-fetch-dest", b"").decode("latin-1")
     if destination:
@@ -413,12 +301,7 @@ def _without_cookie(scope) -> list:
 
 
 def _presented_token(scope, parse_qsl, urlencode) -> tuple[str, bytes, bool]:
-    """The token the caller offered, the query string without it, and whether it came from there.
-
-    The last of those is what decides whether to answer with a cookie: a token in the query is
-    the app opening the interface and asking to be let in for the session, while one in a header
-    or a cookie is a caller that already carries it and needs nothing back.
-    """
+    """The token the caller offered, the query string without it, and whether it came from there."""
     from http.cookies import SimpleCookie
 
     headers = {name.lower(): value for name, value in scope.get("headers") or []}
@@ -444,17 +327,7 @@ def _presented_token(scope, parse_qsl, urlencode) -> tuple[str, bytes, bool]:
 
 
 def _describe(payload: dict) -> None:
-    """Say how to pair a device.
-
-    Split the way the rest of this command line splits it: the link is *data* and goes to stdout,
-    on one line, so `frank reach pair | pbcopy` does the obvious thing. Everything else is prose
-    about what to do with it and goes to stderr, so a reader never has to filter sentences out of
-    the thing it came for.
-
-    A link and nothing else. This drew a QR in the terminal, then wrote one to a PNG and opened
-    it, and neither earned its place: the terminal one needed the right window size, font and
-    colours to be scannable at all, and the PNG was a second way to move a string that copies and
-    pastes perfectly well."""
+    """Say how to pair a device."""
     logger.info(f"Pair a device with Frank on {payload['name']}, at {payload['endpoint']}.")
     logger.info(
         "This link carries a token with full control of this daemon. Send it to a phone, not to "
@@ -525,12 +398,7 @@ def _serve(arguments, payload: dict) -> int:
             "screens. Run `cd web && bun run build` in a checkout, or install the packaged build."
         )
     def where_is_the_daemon() -> tuple[str, str]:
-        """The daemon's address and token, read fresh.
-
-        The proxy calls this when a connection is refused. `frank reach` is meant to be left
-        running while daemons come and go beneath it — a phone that started a session and went in
-        a pocket should not need somebody at the Mac to restart a listener — and the daemon takes
-        a new ephemeral port and a new token on every boot."""
+        """The daemon's address and token, read fresh."""
         return (
             f"http://127.0.0.1:{int(daemon_port_path().read_text().strip())}",
             daemon_token_path().read_text().strip(),

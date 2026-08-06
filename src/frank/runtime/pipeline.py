@@ -1,18 +1,4 @@
-"""The chain a tool call passes through on its way to running.
-
-Middleware wraps one call. `proceed` is the rest of the chain, so ordering is explicit at the
-call site — `[Timed(), RetryTransient()]` times the retries, and reversing it retries the
-timing — and each layer can be tested with a stub `proceed` and nothing else.
-
-It wraps the harness's own tools as well as a caller's, which is the asymmetry this exists to
-remove: before it, a cross-cutting concern could only live inside a tool, so a caller could
-have timing on their tools and never on `bash`.
-
-Unlike a hook, middleware is *not* absorbed on failure. A hook watches; middleware is in the
-call path and decides whether the call happens. Swallowing an exception there would turn a
-retry layer's bug into a silently skipped tool, so a raising middleware fails its call the way
-a raising tool does.
-"""
+"""The chain a tool call passes through on its way to running."""
 
 from __future__ import annotations
 
@@ -30,11 +16,7 @@ class ToolPipeline:
         return not self._middleware
 
     async def run(self, call: Any, execute: Callable[[Any], Awaitable[Any]]) -> Any:
-        """Pass `call` down the chain, ending in `execute`.
-
-        Built from the inside out so the first middleware is the outermost frame, which is the
-        order a reader expects from the list they wrote.
-        """
+        """Pass `call` down the chain, ending in `execute`."""
         proceed = execute
         for middleware in reversed(self._middleware):
             proceed = _Layer(middleware, proceed)

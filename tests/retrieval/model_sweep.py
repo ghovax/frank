@@ -1,19 +1,4 @@
-"""Does an element's *declaration* retrieve better than its words, and does a code model read it?
-
-    uv run python -m tests.retrieval.model_sweep
-
-The hypothesis under test: markup carries information the derived accessibility fields have
-already discarded — a class name, an attribute, a tag, the shape of the surrounding structure —
-and a model trained on code might exploit it where a general text model cannot. Two dimensions
-are swept together, because testing either alone would confound them: what text is indexed, and
-which model embeds it.
-
-This runs a batched ranking path of its own rather than the product's :class:`Index`, for one
-reason: the product loads a single global model, and a comparison that cannot hold the model
-constant while varying the text — or the reverse — measures neither. The ranking arithmetic is
-the same (cosine over unit-normalised static embeddings, ties broken by index), so the numbers
-remain comparable with :mod:`tests.retrieval.report`.
-"""
+"""Does an element's *declaration* retrieve better than its words, and does a code model read it?"""
 
 from __future__ import annotations
 
@@ -61,11 +46,7 @@ def opening_tag(element: RecordedElement) -> str:
 
 
 def attribute_values(element: RecordedElement) -> str:
-    """The attribute values alone, without their names or any markup punctuation.
-
-    A fragmentation worth testing separately: most of what distinguishes one declaration from
-    another lives in the values, while the names (``class``, ``href``, ``id``) repeat on every
-    element and behave like the landmark field did — present everywhere, discriminating nothing."""
+    """The attribute values alone, without their names or any markup punctuation."""
     return " ".join(value for _name, value in _ATTRIBUTE.findall(opening_tag(element)))[:300]
 
 
@@ -75,12 +56,7 @@ def markup_text_only(element: RecordedElement) -> str:
 
 
 def source_declaration(element: RecordedElement) -> str:
-    """The element as a declaration: its own markup where the surface published one, otherwise a
-    record assembled here from the attributes it did publish.
-
-    Assembled at analysis time rather than at harvest time. A fixture that stored this string
-    could only ever be read back one way; built here, the shape of the record is a variable like
-    any other, and changing it costs a re-run instead of re-recording every live application."""
+    """The element as a declaration: its own markup where the surface published one, otherwise a record assembled here from the attributes it did publish."""
     if element.source:
         return element.source
     parts = [element.role]
@@ -190,15 +166,7 @@ def sweep_surface(surface_name: str) -> list[SweepOutcome]:
 
 
 def only_declared(corpora: list[Corpus]) -> list[Corpus]:
-    """The same corpora, keeping only elements whose surface actually declared them.
-
-    Without this the comparison is rigged and in the wrong direction. Markup reaches roughly three
-    elements in ten, because the declaration is joined to an element by its visible label and any
-    label claimed by two different declarations is dropped. A code strategy scored over the whole
-    corpus is therefore being asked to rank two thousand elements of which fourteen hundred have
-    an empty key — it loses on coverage, and its quality is never tested at all. Restricting both
-    sides to the elements that have a declaration is the only way to ask whether markup retrieves
-    *better*, rather than whether it is *present*."""
+    """The same corpora, keeping only elements whose surface actually declared them."""
     filtered = []
     for corpus in corpora:
         elements = tuple(element for element in corpus.elements if element.source.strip())

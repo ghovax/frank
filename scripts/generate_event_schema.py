@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
-"""Emit the JSON Schema for the wire events and model-facing envelopes.
-
-Pydantic is the source of truth (``frank.core.events``); this uses Pydantic's own
-``models_json_schema`` — no hand-written Python->TS type mapping — to produce
-``shared/generated/events.schema.json``. The TypeScript is then generated from
-that schema by ``json-schema-to-typescript`` (see the web ``build:events`` script), so
-the whole pipeline is two authoritative libraries and zero bespoke type-walking.
-
-Run the full pipeline with ``bun run build:events`` in ``web/`` (which invokes this and
-then ``json2ts``); this file alone only refreshes the schema.
-"""
+"""Emit the JSON Schema for the wire events and model-facing envelopes."""
 
 from __future__ import annotations
 
@@ -35,13 +25,7 @@ REFERENCE_TEMPLATE = "#/$defs/{model}"
 
 
 def _strip_titles(node: object) -> object:
-    """Drop Pydantic's injected ``title`` *metadata* (which makes json-schema-to-typescript
-    promote every field into its own throwaway alias — Kind1, Path4, …); the type names we
-    want come from the ``$defs`` keys, not titles. A ``title`` that is a *field name* — a key
-    inside a ``properties``/``$defs`` map — is real data and is preserved; only a ``title``
-    keyword sitting directly on a schema node is metadata and stripped. (The naive "drop every
-    key named title" deletes a modelled field literally named ``title``, e.g.
-    ``GroupStartedEvent.title`` / ``WarningEvent.title``, silently erasing it from the wire.)"""
+    """Drop Pydantic's injected ``title`` *metadata* (which makes json-schema-to-typescript promote every field into its own throwaway alias — Kind1, Path4, …); the type names we want come from the ``$defs`` keys, not titles."""
     if isinstance(node, list):
         return [_strip_titles(item) for item in node]
     if not isinstance(node, dict):
@@ -70,15 +54,7 @@ _SCHEMA_NODE_KEYS = {"items", "additionalProperties", "not", "if", "then", "else
 
 
 def _readable_types(node: object) -> object:
-    """Give json-schema-to-typescript clean TS instead of anonymous ``{ [k: string]:
-    unknown }`` index signatures everywhere:
-
-    * ``dict[str, Any]`` (``type: object`` + open ``additionalProperties``) -> the named
-      ``Record<string, unknown>`` (via json2ts's ``tsType`` extension keyword);
-    * a free ``Any`` schema -> ``unknown``;
-    * every model object -> ``additionalProperties: false`` so its interface is closed
-      and gains no stray index signature at all.
-    """
+    """Give json-schema-to-typescript clean TS instead of anonymous ``{ [k: string]: unknown }`` index signatures everywhere:"""
     if not isinstance(node, dict):
         return node
     if node.get("type") == "object" and node.get("additionalProperties") is True and "properties" not in node:
@@ -102,11 +78,7 @@ def _readable_types(node: object) -> object:
 
 
 def _require_discriminant(definition: object) -> object:
-    """Mark the ``kind`` discriminant required. Pydantic makes it optional (each ``Literal`` has a
-    default), which leaves the generated TS with ``kind?: "..."`` — so the union does not narrow
-    cleanly and a reducer cannot assert exhaustiveness. On the wire the discriminator is always
-    present, so requiring it is accurate and lets the client switch on it as a real discriminated
-    union."""
+    """Mark the ``kind`` discriminant required."""
     if not isinstance(definition, dict):
         return definition
     properties = definition.get("properties")

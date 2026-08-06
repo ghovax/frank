@@ -1,20 +1,4 @@
-"""The typed runtime-to-executor event contract.
-
-A turn's runtime yields events as it runs — text chunks, tool calls and results, usage, the
-suspend/checkpoint signals, relayed child events. These used to be one ``StreamEvent(type, **data)``
-carrier: an enum tag plus an open, untyped ``**data`` bag that every consumer read back with
-``data.get("command", "")``. Adding a field a consumer forgot failed silently, and the contract
-between the runtime and the executor lived only in their shared conventions.
-
-This module makes that contract a closed, typed union: one frozen dataclass per event kind, with
-its fields named and typed. The executor matches on the variant; an unhandled kind is a real error,
-not a dropped ``elif``. Where an event's payload is genuinely open — a tool result carries whatever
-the tool returned, an error its detail — the envelope stays typed and only that tail is a dict.
-
-The union is in-process only (it never crosses the A2A wire), so it is plain frozen dataclasses,
-not pydantic. Consumers match on the variant class and read typed fields; ``.type`` is available
-where the bare :class:`EventType` is convenient.
-"""
+"""The typed runtime-to-executor event contract."""
 
 from __future__ import annotations
 
@@ -50,8 +34,7 @@ class EventType(str, Enum):
 
 @dataclass(frozen=True)
 class TurnEvent:
-    """Base of the closed event union. Each variant declares its ``TYPE``; consumers match on the
-    variant class (``isinstance``) and read typed fields — there is no untyped ``data`` bag."""
+    """Base of the closed event union."""
 
     TYPE: ClassVar[EventType]
 
@@ -182,12 +165,7 @@ class DeniedInjection(TurnEvent):
 
 @dataclass(frozen=True)
 class RetryRequested(TurnEvent):
-    """A command the operating system refused, which somebody could let out of the box.
-
-    Internal to the turn loop: it never reaches a client. The batch runner turns it into a gate
-    and the turn suspends, so the answer arrives the same way every other answer does. The
-    result of the confined run rides along, because a refused retry means that result is what
-    the model is told."""
+    """A command the operating system refused, which somebody could let out of the box."""
 
     TYPE = EventType.RETRY_REQUESTED
     id: str = ""

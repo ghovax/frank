@@ -1,35 +1,4 @@
-"""The one place every tool's size, count, and timing limit is decided.
-
-Historically the tool backends carried some sixty scattered magic numbers — an element cap here,
-a read window there, a dozen different Playwright ``timeout=`` literals — each a fixed guess that
-neither scaled with the model nor could be tuned. This module replaces all of them with a single
-policy that answers two kinds of question:
-
-* **How much may one tool result be?** Size and count caps (a page's element listing, a read
-  window, a truncation ceiling, a grep result set) are *token budgets*, so they scale with the
-  live model context window: a small local model gets tight caps that keep it from drowning, a
-  million-token model gets room to work. Text budgets are counted in **tokens** and enforced with
-  a real tokenizer (:func:`clip_to_tokens`), never a fixed characters-per-token guess.
-
-* **How long may one action wait, and how does a surface settle?** Timeouts scale only with the
-  ``timeout_multiplier`` knob (time does not depend on the context window). Settlement is not a fixed
-  sleep at all: :func:`settle` polls a surface until it stops changing, bounded by the configured
-  interval and ceiling.
-
-Every tunable value is defined **exactly once** as a member of :class:`Tunable`, carrying its
-baseline and how it scales — no parallel wall of module constants and one-line accessor methods.
-Two typed getters resolve any of them against the live window: :meth:`Tuning.amount` (an integer:
-tokens, counts, milliseconds, characters) and :meth:`Tuning.duration` (a float of seconds).
-
-Delivery mirrors the rest of the harness, and neither half is process-global. The static
-*policy* is bound per task by :func:`set_tuning` at startup and on every config reload, so a
-process hosting more than one session gives each its own. The
-dynamic *budget* — the live context window — is threaded per call through
-:data:`current_context_window`, a context variable the running agent sets around each tool
-execution; it is copied into worker threads by ``asyncio.to_thread``, so both the async tools and
-the thread-affine automation surfaces read the calling agent's real window without any of them
-having to grow a parameter for it. Concurrent calls from different agents each see their own.
-"""
+"""The one place every tool's size, count, and timing limit is decided."""
 from __future__ import annotations
 
 import contextvars
@@ -48,12 +17,7 @@ current_context_window: contextvars.ContextVar[int] = contextvars.ContextVar(
 
 
 class WindowModel(NamedTuple):
-    """The span of context windows the baselines are calibrated across, in tokens.
-
-    One object rather than four loose numbers, because they are four facets of a single decision
-    and only mean anything together: `reference` is where a baseline resolves to exactly its
-    shipped value, and the clamp is the range over which scaling from that point stays sensible.
-    """
+    """The span of context windows the baselines are calibrated across, in tokens."""
 
     #: The standard window of the current flagship chat models, and so the harness's usual case.
     reference: int
@@ -69,15 +33,7 @@ WINDOW = WindowModel(reference=200_000, turn_zero=200_000, minimum=16_000, maxim
 
 
 class Family(NamedTuple):
-    """How one scaling family turns a shipped default into a live value.
-
-    Everything a family needs is stated here, once. It used to be spread over three places that
-    had to agree — this enum, a pair of module constants naming the calibration, and a branch per
-    family in `Tuning._raw` restating which knob went with which — and a fourth in
-    `configuration.py`, where the same fractions were typed again as field defaults. Nothing tied
-    them together, so moving a calibration in one place quietly broke the property the other three
-    assume: that at the calibrated knob value the multiplier is exactly 1.0.
-    """
+    """How one scaling family turns a shipped default into a live value."""
 
     #: Where the knob lives on the policy, as an attribute path. Empty for a family with no knob.
     knob: str
@@ -90,10 +46,7 @@ class Family(NamedTuple):
 
 
 class Scaling(Enum):
-    """How a tunable's shipped default becomes its live value.
-
-    Each family answers to exactly one knob, named the same thing here and in the configuration,
-    so a reader can tell what a setting moves without consulting a table."""
+    """How a tunable's shipped default becomes its live value."""
 
     # a token or character budget: window * context_share.text
     TEXT = Family(knob="context_share.text", calibrated=0.25, follows_window=True, floor=1.0)
@@ -115,26 +68,14 @@ def _clamp(value: float, low: float, high: float) -> float:
 #: Where a tunable's long note lives, one markdown file per member, named for the member.
 @dataclass(frozen=True)
 class Default:
-    """One tunable's shipped value, and how it scales.
-
-    What it is *for* is not here. A setting's explanation is a sentence to translate, so it lives
-    with the rest of the interface's words in ``shared/messages/*.json``, keyed by the same dotted
-    path — and the reference table in the documentation lists them all. This carries only what a
-    tunable is."""
+    """One tunable's shipped value, and how it scales."""
 
     value: float
     scaling: Scaling
 
 
 class Tunable(Enum):
-    """Every value a user may tune, with what it ships at and how that ships-at value scales.
-
-    Deliberately lowercase. These are not constants — each is a *default* the configuration may
-    replace under ``tuning.defaults``, and the casing is the first thing that says so. The member
-    name is the configuration key verbatim, so there is one vocabulary rather than two.
-
-    Resolve one with :meth:`Tuning.amount` (integers: tokens, counts, milliseconds, characters) or
-    :meth:`Tuning.duration` (seconds), which apply the scaling for its family."""
+    """Every value a user may tune, with what it ships at and how that ships-at value scales."""
 
     # Text budgets, in TOKENS unless a character clip, scaled by the window and context_share.text.
     output_tokens = Default(16_000, Scaling.TEXT)
@@ -237,18 +178,7 @@ class Tunable(Enum):
     accessibility_ready_backoff_seconds = Default(0.2, Scaling.NONE)
 
     def __new__(cls, default: Default) -> "Tunable":
-        """Give every member a value of its own.
-
-        Without this, `Enum` treats two members declared with the same `(baseline, scaling)` pair
-        as aliases of one member — and this enum is full of them, because plenty of unrelated
-        limits happen to share a number. Sixteen of the fifty-five names below collapsed that way:
-        `Tunable.connect_timeout_ms is Tunable.snapshot_timeout_ms` was true, and asking either for
-        its `.name` returned whichever was declared first.
-
-        It was harmless while every reader only wanted the number, since aliases agree on that by
-        definition. It stopped being harmless when the configuration began keying overrides on the
-        name: an override for one would have silently moved its unrelated twins, and a name that
-        lost the race would have been rejected as unknown."""
+        """Give every member a value of its own."""
         member = object.__new__(cls)
         member._value_ = len(cls.__members__) + 1
         return member
@@ -265,10 +195,7 @@ _encoding = None
 
 
 def _bundled_vocabulary() -> None:
-    """Point tiktoken at the vocabulary carried in a frozen build, if this is one.
-
-    Set before tiktoken is imported, because the cache directory is read at fetch time. A
-    checkout has no bundled copy and falls through to tiktoken's own cache."""
+    """Point tiktoken at the vocabulary carried in a frozen build, if this is one."""
     import sys
 
     if not getattr(sys, "frozen", False) or "TIKTOKEN_CACHE_DIR" in os.environ:
@@ -279,10 +206,7 @@ def _bundled_vocabulary() -> None:
 
 
 def _get_encoding():
-    """The encoding every budget in this harness is measured with.
-
-    Raises if it cannot be loaded. Deliberately: a harness that cannot count tokens cannot honour
-    a single one of its limits, and continuing on a guess is how a caps bug survives a day."""
+    """The encoding every budget in this harness is measured with."""
     global _encoding
     if _encoding is None:
         _bundled_vocabulary()
@@ -293,22 +217,12 @@ def _get_encoding():
 
 
 def count_tokens(text: str) -> int:
-    """How many tokens ``text`` is, by the same encoding :func:`clip_to_tokens` cuts on.
-
-    Its counterpart: clipping answers "what fits", this answers "how much is there", and a caller
-    fitting several pieces into one budget needs both."""
+    """How many tokens ``text`` is, by the same encoding :func:`clip_to_tokens` cuts on."""
     return len(_get_encoding().encode(text, disallowed_special=()))
 
 
 def clip_to_tokens(text: str, budget: int) -> tuple[str, bool]:
-    """Clip ``text`` to at most ``budget`` tokens, returning (clipped_text, was_truncated). The cut
-    is placed on a real token boundary, so the budget means what it says regardless of the
-    content's density — unlike a fixed characters-per-token slice.
-
-    The whole text is encoded, which is the same thing :func:`count_tokens` does to every message
-    in a conversation on the way to every request. This used to encode only a bounded head, on the
-    reasoning that no token exceeds some number of characters — a correct bound, and an
-    optimisation applied in exactly one place while the hot path did without it."""
+    """Clip ``text`` to at most ``budget`` tokens, returning (clipped_text, was_truncated)."""
     budget = max(1, budget)
     encoding = _get_encoding()
     tokens = encoding.encode(text, disallowed_special=())
@@ -318,9 +232,7 @@ def clip_to_tokens(text: str, budget: int) -> tuple[str, bool]:
 
 
 def tunable_names() -> tuple[str, ...]:
-    """Every name that may appear under ``tuning.defaults``. The configuration validates against
-    this rather than accepting anything, so a typo is an error at load rather than a setting that
-    looks applied and is not."""
+    """Every name that may appear under ``tuning.defaults``."""
     return tuple(member.name for member in Tunable)
 
 
@@ -337,9 +249,7 @@ class _ContextShare(NamedTuple):
 
 
 class TuningConfiguration:
-    """The knob policy, structurally compatible with the Pydantic model in ``configuration.py``
-    (which is what is actually loaded). Kept as a plain attribute holder here so ``tuning`` has no
-    import dependency on the config module; :func:`set_tuning` accepts either."""
+    """The knob policy, structurally compatible with the Pydantic model in ``configuration.py`` (which is what is actually loaded)."""
 
     def __init__(
         self,
@@ -360,11 +270,7 @@ class TuningConfiguration:
 
 @dataclass
 class Tuning:
-    """Resolves the policy against a live context window. :meth:`amount` and :meth:`duration` take
-    a :class:`Tunable` and an optional ``window``; when the window is omitted they read
-    :data:`current_context_window` (the calling agent's live window), falling back to the turn-zero
-    seed while that is still unknown — so a call site simply asks
-    ``active_tuning().amount(Tunable.output_tokens)`` and gets the right value for whoever is running."""
+    """Resolves the policy against a live context window. :meth:`amount` and :meth:`duration` take a :class:`Tunable` and an optional ``window``; when the window is omitted they read :data:`current_context_window` (the calling agent's live window), falling back to the turn-zero seed while that is still unknown — so a call site simply asks ``active_tuning().amount(Tunable.output_tokens)`` and gets the right value for whoever is running."""
 
     policy: TuningConfiguration
 
@@ -378,11 +284,7 @@ class Tuning:
         return self._window(window) / WINDOW.reference
 
     def _default_for(self, tunable: Tunable) -> float:
-        """What this tunable ships at, or what the configuration replaced it with.
-
-        An override replaces the *default*, not the resolved value, so family scaling still applies
-        on top: ``action_timeout_ms: 10000`` under ``timeout_multiplier: 2.0`` resolves to twenty
-        seconds, which is what somebody reaching for both would expect."""
+        """What this tunable ships at, or what the configuration replaced it with."""
         override = getattr(self.policy, "defaults", None)
         if override:
             value = override.get(tunable.name)
@@ -398,11 +300,7 @@ class Tuning:
         return float(value)  # type: ignore[arg-type]
 
     def _raw(self, tunable: Tunable, window: Optional[int]) -> float:
-        """The live value, before it is rounded to an int or returned as a float.
-
-        One expression for every family, because each family carries what makes it different. It
-        used to be a branch apiece, which is where a family's knob and its calibration could
-        disagree with the places that declared them."""
+        """The live value, before it is rounded to an int or returned as a float."""
         family = tunable.scaling.value
         value = self._default_for(tunable)
         if family.follows_window:
@@ -420,19 +318,11 @@ class Tuning:
         return self._raw(tunable, window)
 
     def ratio(self, tunable: Tunable) -> float:
-        """A limit as a bare fraction — a margin or a share, in neither seconds nor items.
-
-        Separate from `duration`, which returns the same number: a threshold read through a method
-        called "duration" is a unit error waiting to be copied, and this file exists so that the
-        name of a value says what the value is.
-
-        No window argument, unlike the others: a fraction does not grow with a context window, and
-        offering the parameter would invite somebody to pass one."""
+        """A limit as a bare fraction — a margin or a share, in neither seconds nor items."""
         return self._raw(tunable, None)
 
     def scale_timeout(self, seconds: float) -> float:
-        """Apply the timeout knob to a caller-supplied or baseline IO timeout — the one place a
-        command/connect/subprocess ceiling is adjusted for a slow (or fast) machine or link."""
+        """Apply the timeout knob to a caller-supplied or baseline IO timeout — the one place a command/connect/subprocess ceiling is adjusted for a slow (or fast) machine or link."""
         return max(0.1, seconds * self.policy.timeout_multiplier)
 
     # Settlement interval and ceiling come straight from the policy (they are the user's knobs, not scaled baselines); the stable-read count is an unscaled tunable.
@@ -450,23 +340,12 @@ _active: contextvars.ContextVar[Tuning] = contextvars.ContextVar(
 
 
 def set_tuning(tuning: Tuning) -> None:
-    """Bind the tuning policy for this task and everything it spawns.
-
-    Returns nothing on purpose: callers install a policy for the life of a session rather than
-    scoping it, and the context variable's default covers anything that runs before they do."""
+    """Bind the tuning policy for this task and everything it spawns."""
     _active.set(tuning)
 
 
 def tuning_from_policy(policy: object, screen_policy: object = None) -> Tuning:
-    """Wrap loaded config sections into a :class:`Tuning`.
-
-    ``policy`` is the ``tuning`` section; ``screen_policy`` is ``computer_control``, which owns the
-    two settle knobs — settling is what a *surface* does after an action, not a budget, and having
-    them under `tuning` made them look like one. Missing attributes fall back to what the code
-    ships with, so a partial policy built by hand never breaks.
-
-    Unknown names under ``defaults`` are dropped here rather than carried: the configuration layer
-    rejects them at load, so anything reaching this far was built in code."""
+    """Wrap loaded config sections into a :class:`Tuning`."""
     overrides = dict(getattr(policy, "defaults", None) or {})
     for name in unknown_tunable_names(overrides):
         overrides.pop(name, None)
@@ -497,12 +376,7 @@ def settle(
     ceiling: Optional[float] = None,
     stable_reads: Optional[int] = None,
 ) -> _Reading:
-    """Poll a surface until it stops changing, instead of sleeping a fixed guess. Calls ``read``
-    repeatedly, ``interval`` apart, and returns as soon as it yields the same value ``stable_reads``
-    times in a row (the surface has settled) or ``ceiling`` seconds have elapsed (a page that never
-    quiesces — a spinner, an animation — costs the ceiling, not forever). ``read`` should return a
-    cheap, comparable signature of the surface (an element count, a snapshot, a scroll offset).
-    Interval, ceiling, and stable-read count default to the active policy's settlement knobs."""
+    """Poll a surface until it stops changing, instead of sleeping a fixed guess."""
     active = active_tuning()
     step = active.settle_poll() if interval is None else max(0.001, interval)
     limit = active.settle_give_up() if ceiling is None else max(0.0, ceiling)

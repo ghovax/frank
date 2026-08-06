@@ -1,8 +1,4 @@
-"""The AgentRuntime turn-loop concern (a mixin composed into AgentRuntime).
-
-The ``stream()`` driver and its phases — the model call, the no-tool-calls finalize (agent
-messaging, completion), and the tool batch — plus turn-message assembly, the static/dynamic
-system prompt, steering drain, and turn recording."""
+"""The AgentRuntime turn-loop concern (a mixin composed into AgentRuntime)."""
 from __future__ import annotations
 
 import json
@@ -65,19 +61,10 @@ from frank.base.serialization import compact
 logger = logging.getLogger(__name__)
 
 class _RunsTurns:
-    """The turn itself: what the model is told, what comes back, and when it is over.
-
-    The loop the other three serve."""
+    """The turn itself: what the model is told, what comes back, and when it is over."""
 
     def _locations_summary(self) -> list[dict]:
-        """The workspace's locations as the model sees them: the `location` URI to pass, plus
-        name/kind/base_directory so it can choose the right one per tool call.
-
-        What it does not carry is the permission policy in force: that is the layer above
-        talking to the thing it governs, and the model has no use for it.
-
-        `writable` is an affordance rather than a policy — a location it cannot change is worth
-        knowing about, because otherwise it plans work that will be refused."""
+        """The workspace's locations as the model sees them: the `location` URI to pass, plus name/kind/base_directory so it can choose the right one per tool call."""
         return [
             {
                 "location": resolved.uri,
@@ -90,16 +77,7 @@ class _RunsTurns:
         ]
 
     def _build_static_system_prompt(self) -> str:
-        """Build the static portion of the system prompt (cached across calls).
-
-        Every session is built through this same path, so they share the baseline prompt, the
-        working-directory context, and the awareness of their own skills.
-
-        What a session is deliberately *not* told is which other agent profiles exist. An
-        agent is independent: it is defined by its own profile and nothing else, and a roster
-        of its siblings would both couple them together and invite it to hand work to one it
-        was never asked to involve. A caller that wants a peer names the profile.
-        """
+        """Build the static portion of the system prompt (cached across calls)."""
         if self._cached_system_prompt is None:
             all_skills = enabled_skills(list(self._catalogue.skills()))
             agent_skills = skills_for_agent(all_skills, self._agent_configuration.skills)
@@ -185,23 +163,7 @@ class _RunsTurns:
         return user_context is not None and bool(user_context.enabled)
 
     def _ensure_environment_note(self) -> None:
-        """Put the machine snapshot into the conversation once, at the session's first message.
-
-        Minted once and then left alone, which is the whole point. It describes a machine, and a
-        machine does not change between two turns of a conversation in any way worth re-reading;
-        what it *does* do is read the live environment and the shell history, so producing it
-        again later yields different bytes for reasons the user never caused.
-
-        That is why it cannot live in the system prompt. The prompt is rebuilt whenever a worker
-        wakes — a worker is created per activation — and it sits at the very front of the
-        request, which is exactly where a prompt cache matches. A snapshot that differed because
-        the user had opened a terminal since the last wake therefore missed the cache for every
-        call of that session.
-
-        Appended to the conversation instead, it is written once, travels in the checkpoint, and
-        is part of the cached prefix from the second call onward. Appending is safe at any point,
-        so a conversation that predates this simply gains one on its next turn.
-        """
+        """Put the machine snapshot into the conversation once, at the session's first message."""
         if any(message.additional_kwargs.get("environment_note") for message in self._conversation):
             return
         # Described with the `PATH` a tool child is given, not this process's own.
@@ -217,19 +179,7 @@ class _RunsTurns:
 
 
     def _append_turn_context(self) -> None:
-        """Append this turn's context to the conversation, if it says anything new.
-
-        The same treatment the environment note gets, and for the same reason: a message that is
-        appended and kept extends the cached prefix, while one assembled for a single request and
-        dropped guarantees the next request differs where it used to sit.
-
-        Emitted only on change, which is what keeps that affordable. Of the fields here only
-        ``now`` moves every turn, and a fresh clock reading is not worth a message of its own — it
-        rides along whenever something that matters has actually changed (the directory, the
-        goal, the task list, background work, the reachable locations) and is otherwise left to
-        the wall clock the model can read for itself. So a session doing steady work appends
-        nothing at all, and one whose situation changed appends the picture once.
-        """
+        """Append this turn's context to the conversation, if it says anything new."""
         context = json.loads(self._build_dynamic_context())
         previous: dict[str, Any] = {}
         for message in reversed(self._conversation):
@@ -247,12 +197,7 @@ class _RunsTurns:
         self._conversation.append(note)
 
     def _build_dynamic_context(self) -> str:
-        """The structured per-turn context injected at the end of the message list: the current
-        time, where the agent is, its goal, its tasks, its background work, the machine it runs
-        on and the locations it may reach. Empty goal/tasks are omitted so the model isn't fed
-        noise. Standing behavioural guidance lives once in the system prompt, not re-injected
-        here — what lives here is everything that can *differ*, so that the system prompt in
-        front of it stays byte-identical and the provider's cache keeps matching it."""
+        """The structured per-turn context injected at the end of the message list: the current time, where the agent is, its goal, its tasks, its background work, the machine it runs on and the locations it may reach."""
         context = TurnContext(
             now=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
             pwd=self._working_directory or str(Path.cwd()),
@@ -279,24 +224,7 @@ class _RunsTurns:
         return [entry for entry in environment.get("PATH", "").split(os.pathsep) if entry]
 
     def _confinement_summary(self) -> dict:
-        """The boundary the operating system will enforce, as the model needs to read it.
-
-        The session's *configured* profile, plus the grants approved so far — not the widened
-        profile the two combine into. Those are different facts and the difference is the point:
-        one is what a person set up, the other is what this session has since been allowed, and a
-        model that cannot tell them apart cannot tell a standing permission from one it asked for
-        and must not spend on something else.
-
-        One path in the writable list is neither: the session's own toolbox, which the harness
-        widened for so a session can install into its own profile. It is listed because it is
-        genuinely writable and this summary has to be true — a boundary the model reads is worth
-        nothing if it omits things — and it is explained in the prompt beside the rest of the
-        toolbox rather than annotated here, because this structure carries paths, not captions.
-
-        Absent entirely where nothing enforces a profile, because a list of paths captioned with
-        a boundary that does not exist is worse than no list — it invites the model to route
-        around a wall that is not there.
-        """
+        """The boundary the operating system will enforce, as the model needs to read it."""
         profile = getattr(self._tool_context, "sandbox", None)
         if profile is None or self._global_configuration.sandbox.enforce == "off":
             return {}
@@ -306,16 +234,7 @@ class _RunsTurns:
         return summary
 
     def _screen_context(self) -> dict:
-        """Every place a screen script can be pointed at, and what may be called in each.
-
-        The cold-start problem this solves was designed away on paper and then left in the code:
-        `control_screen` requires a target, target ids are minted by the platform, and nothing
-        ever told the model what they were — so the first call of every screen task had to fail in
-        order to read the list out of the error. It guessed an application name, which is not an
-        address, and burned two calls before it could begin.
-
-        Enumerating windows is window-server and accessibility work only; it never connects to a
-        browser, so carrying this every turn cannot put a consent dialog in front of anybody."""
+        """Every place a screen script can be pointed at, and what may be called in each."""
         if not self._global_configuration.computer_control.enabled:
             return {}
         try:
@@ -356,15 +275,7 @@ class _RunsTurns:
     async def _record_transcript_turn(
         self, request: str, response: str, outcome: str, tool_calls: list, error: str = "",
     ) -> None:
-        """Hand one completed turn to the caller's transcript, if there is one.
-
-        Separate from `_record_turn`, which feeds the `Observer` and is per *message*. This is
-        one entry per turn — what was asked, what came back, how it ended and what it cost —
-        which is the shape a program wants for auditing, billing and showing a history.
-
-        A transcript that raises must not fail the turn: the work happened whether or not it
-        was written down, and losing the answer because the record failed would be the worse
-        of the two outcomes."""
+        """Hand one completed turn to the caller's transcript, if there is one."""
         if self._transcript is None:
             return
         from frank.base.ports import TurnSummary
@@ -398,17 +309,7 @@ class _RunsTurns:
         return events
 
     async def _answer_gates(self, gates: list[SuspensionGate]) -> dict[str, Any]:
-        """Ask the caller's `Approvals` about each gate, in the shape a resume would carry.
-
-        Without one, nothing is answered and every gate suspends — which is what has always
-        happened, and is right when there is a person on the other end. With one, a script can
-        run unattended without hand-driving the suspend/resume dance through `stream`.
-
-        A `None` verdict means *no opinion*, and that gate suspends alone. So an approver can
-        auto-allow the cases it understands and still escalate the rest, instead of facing an
-        all-or-nothing choice. An approver that raises is treated the same way: the gate goes to
-        a human, because a broken policy must fail closed rather than open.
-        """
+        """Ask the caller's `Approvals` about each gate, in the shape a resume would carry."""
         if self._approvals is None or not gates:
             return {}
         answers: dict[str, Any] = {}
@@ -430,32 +331,7 @@ class _RunsTurns:
         self, content: str, image_blocks: list[dict] | None = None, transient: bool = False,
         marks: dict[str, Any] | None = None,
     ) -> HumanMessage:
-        """A reminder: something neither the user nor the model said, put into the conversation
-        as a user-role message.
-
-        The role is deliberate, and it is what keeps the conversation strictly append-only for
-        the provider's prompt cache. A mid-conversation ``role:"system"`` message does not stay
-        where it is put — LiteLLM hoists it into Anthropic's top-level ``system`` parameter, and
-        the Responses translation folds it into ``instructions`` — so it renders before the
-        entire history, and writing one rewrites the prefix and discards the cache for the whole
-        conversation. A user-role reminder stays exactly where it was appended, on every
-        provider, so the prefix only ever grows.
-
-        The wrapper lives in the ``reminder`` prompt template, so the wording stays in a file
-        rather than in code; it tells the model this is authoritative guidance from the system
-        it is running in, not something the user typed. The ``reminder`` marker is how everything
-        downstream tells the two apart — most importantly the fold, which carries the user's own
-        messages across verbatim and must not mistake one of these for one of those.
-
-        ``image_blocks`` (OpenAI-shaped ``image_url`` blocks) make a reminder multimodal: the
-        user role is the one role every provider accepts images on, which is how a file the
-        model asked to read reaches a vision model.
-
-        The heading it carries lives in the ``reminder`` template, like every other piece of
-        model-facing wording here. On the Responses API the `developer` role says the same thing
-        by itself; elsewhere — Anthropic's Messages API has no per-message system role at all,
-        only a top-level parameter — the text is the only place the distinction can live, so it
-        is written once, here, and reads the same everywhere."""
+        """A reminder: something neither the user nor the model said, put into the conversation as a user-role message."""
         text = self._prompt_loader.load("reminder", {"content": content.strip()}).strip()
         # `transient` marks a note that is assembled for one request and never appended to the conversation — so it cannot appear in the next one, and a cache breakpoint placed on it is a breakpoint nothing will ever match.
         tags = {"reminder": True, **({"transient": True} if transient else {}), **(marks or {})}
@@ -464,22 +340,14 @@ class _RunsTurns:
         return HumanMessage(content=text, additional_kwargs=tags)
 
     def _invalid_tool_call_content(self, invalid: dict) -> str:
-        """Build the message for a malformed tool call — used both as the tool
-        result the model sees and the error surfaced to the user. The wording
-        lives in the loaded ``invalid_tool_call`` prompt template so it stays
-        out of code; a missing template degrades to an empty string, which still
-        pairs the tool_call_id with a (blank) tool message and keeps the
-        conversation valid."""
+        """Build the message for a malformed tool call — used both as the tool result the model sees and the error surfaced to the user."""
         return self._prompt_loader.load("invalid_tool_call", {
             "name": invalid.get("name") or "unknown",
             "error": invalid.get("error") or "arguments could not be parsed",
         })
 
     def _close_dangling_tool_calls(self) -> None:
-        """If the conversation ends with a tool-call AIMessage that has no ToolMessages —
-        a turn that suspended at input-required and was superseded by a new message rather
-        than answered — append a ToolMessage for each call so the history stays valid.
-        A later answer for that superseded pause then finds no checkpoint and is a no-op."""
+        """If the conversation ends with a tool-call AIMessage that has no ToolMessages — a turn that suspended at input-required and was superseded by a new message rather than answered — append a ToolMessage for each call so the history stays valid."""
         if not self._conversation:
             return
         last = self._conversation[-1]
@@ -493,11 +361,7 @@ class _RunsTurns:
     async def resume_stream(
         self, plans: dict[str, dict], answers: dict[str, Any]
     ) -> AsyncIterator[TurnEvent]:
-        """Resume a durably-suspended turn. The conversation was rebuilt from the DB and
-        ends with the pending tool-call AIMessage (the checkpoint); ``plans`` are the
-        persisted preflight plans and ``answers`` the human decisions keyed by request id.
-        Runs the pending batch with those decisions, then continues the turn normally —
-        into the next model call, or a fresh suspension if it needs another decision."""
+        """Resume a durably-suspended turn."""
         async for event in self.stream("", resume_plans=plans, resume_answers=answers):
             yield event
 
@@ -629,52 +493,11 @@ class _RunsTurns:
                 yield steering_event
 
     def _build_turn_messages(self) -> list:
-        """The message list for this iteration's model call: the static system prompt,
-        the conversation, and — only on the turn's first iteration — the dynamic context.
-
-        Dynamic context (time, pwd, active goal, tasks, background) is injected only on
-        the first iteration of a turn, when the user just sent a message; subsequent
-        iterations (after tool calls) skip it to avoid re-sending the same per-turn
-        metadata on every LLM call within the turn. It rides as a transient user-role
-        reminder at the very tail of the request — never as a system message (LiteLLM
-        would hoist it into Anthropic's top-level system param, whose fresh timestamp
-        would then invalidate the ENTIRE conversation cache on every turn). As a tail
-        note, everything before it still prefix-matches the provider cache.
-
-        The per-turn context is *in* that conversation rather than assembled beside it — see
-        :meth:`_append_turn_context`. It used to ride here as a transient note appended to the
-        request and dropped afterwards, which made the last item of every first-iteration request
-        an item the next request did not have. Measured over a real session, that was the only
-        divergence the harness produced anywhere: five of twelve calls, every one of them at the
-        final position. It cost little, because everything before it still matched, but "the
-        request is append-only except for one item" is a weaker promise than the one this is
-        supposed to make, and it is not a promise worth keeping weak for 112 tokens."""
+        """The message list for this iteration's model call: the static system prompt, the conversation, and — only on the turn's first iteration — the dynamic context."""
         return [SystemMessage(content=self._build_static_system_prompt())] + self._conversation
 
     def _refuse_if_over_window(self, messages: list) -> None:
-        """Refuse a request that cannot fit, before it is sent, and say so with numbers.
-
-        The harness assembles the request and knows the window, so whether the two fit is a fact
-        it can compute rather than a verdict it has to wait for. Measuring here beats every
-        alternative on the three things that matter: it is the same answer for every provider
-        (including any that reports an overflow with no machine-readable code at all), it names
-        the size instead of merely the failure, and it does not spend a round trip discovering
-        something already knowable.
-
-        This replaced matching phrases like "exceeds the context window" against whatever prose a
-        provider returned — a test that would have quietly stopped working the day a provider
-        reworded its message, and never worked in another language.
-
-        Conservative on purpose (see :func:`over_context_window`): the count uses one general
-        tokenizer as a proxy for every model's own, so it is approximate, and refusing a request
-        the model would have taken is the worse of the two mistakes. Anything this misses the
-        provider still catches, and is still classified properly when it does.
-
-        Conservative is not the same as blind, though, and this used to be both. Reading only
-        each message's prose meant a tool call's arguments and the size of what came back were
-        counted as nothing — so a conversation that was almost entirely tool traffic measured
-        near zero, and one request went out at 272,640 tokens against a 272,000 window without
-        this noticing. :func:`conversation_tokens` counts what is actually sent."""
+        """Refuse a request that cannot fit, before it is sent, and say so with numbers."""
         window = self._context_window
         if window <= 0:
             return                              # the catalogue is cold; it says nothing about room
@@ -691,21 +514,7 @@ class _RunsTurns:
     async def _stream_model_call(
         self, messages: list, outcome: _ModelCallOutcome
     ) -> AsyncIterator[TurnEvent]:
-        """One streamed model call. Yields the thinking/answer events and writes the
-        assembled response into ``outcome`` — or a terminal condition instead: ``cancelled``
-        (a Stop with nothing queued; a ``Done`` was already yielded) or
-        ``aborted_for_steering`` (a Stop that found queued steering, so the driver drains
-        it and iterates again).
-
-        Opens a thinking step for the iteration: one channel (THINKING) drives the
-        indicator — this bare ping marks "reasoning started" and reasoning_content fills
-        the body — and a matching THINKING_DONE fires the moment reasoning ends (the first
-        answer token, or, for a tool-only turn, when the stream closes), timed server-side
-        as wall-clock so "Thought for Ns" is correct live and on replay. Each read races
-        the abort event so a Stop interrupts *immediately*, even while parked awaiting the
-        next token from a slow or stalled provider — checking the flag only between chunks
-        let a provider that had gone quiet swallow the cancel until it happened to emit
-        again, which is why Stop "sometimes" appeared to do nothing."""
+        """One streamed model call."""
         yield Thinking()
         thinking_started_at = time.monotonic()
         thinking_done_emitted = False
@@ -777,10 +586,7 @@ class _RunsTurns:
         self, response: AIMessageChunk, recorded_user_message: str,
         turn_tool_calls_log: list[dict], turn_tool_results_log: list[dict], step: _PhaseStep,
     ) -> AsyncIterator[TurnEvent]:
-        """Handle a model response that made no tool calls. Retries a malformed-only
-        batch, delivers or awaits agent messages, or finishes the turn — advancing the loop
-        bookkeeping and setting ``step`` to ``_CONTINUE`` (iterate again) or ``_STOP`` (a
-        terminal ``Done`` was yielded)."""
+        """Handle a model response that made no tool calls."""
         if response.invalid_tool_calls:
             # A response carrying only malformed tool calls (arguments that failed to parse).
             if response.content:
@@ -815,10 +621,7 @@ class _RunsTurns:
     async def _rerun_answered(
         self, tool_calls, turn_tool_calls_log, turn_tool_results_log, outcomes, decisions,
     ):
-        """Run the calls a retry answer settled, once the rest of the batch has finished.
-
-        Only the calls carrying a decision that is not a replay: everything else already ran,
-        and its outcome is in ``outcomes`` where the caller left it."""
+        """Run the calls a retry answer settled, once the rest of the batch has finished."""
         pending = [
             call for call in tool_calls
             if (decision := decisions.get(call["id"])) is not None and decision.completed is None
@@ -834,14 +637,7 @@ class _RunsTurns:
         self, response: AIMessageChunk, recorded_user_message: str,
         turn_tool_calls_log: list[dict], turn_tool_results_log: list[dict], step: _PhaseStep,
     ) -> AsyncIterator[TurnEvent]:
-        """Run the response's tool batch and checkpoint it. Appends the initiating
-        AIMessage first — an AIMessage carrying tool_calls with no ToolMessages yet is the
-        durable resume checkpoint — then resolves the whole batch's permissions BEFORE any
-        tool runs (concurrent tools cannot be re-run on resume without re-doing side
-        effects). If a human is needed the turn suspends here; otherwise it drains with
-        every decision already in hand. Sets ``step`` to ``_STOP`` (a top-level suspend
-        that returns, or a Stop with nothing queued) or ``_CONTINUE`` (a Stop that found
-        queued steering); leaves it ``_PROCEED`` for the normal end of the iteration."""
+        """Run the response's tool batch and checkpoint it."""
         self._conversation.append(response)
         tool_calls = cast(list[dict], response.tool_calls)
         outcomes: dict[str, dict] = {}

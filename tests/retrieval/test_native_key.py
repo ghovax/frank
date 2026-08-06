@@ -1,14 +1,4 @@
-"""Guards on the native key, which had none until a regression shipped through the gap.
-
-The browser tests in `test_encoding_strategies` load only browser corpora, deliberately — pooling
-the surfaces would score compositions on windows that cannot supply a URL or a tooltip. The
-consequence was that the native key had no coverage at all, and a change that keyed 628 elements
-by the name of their kind reached the repository without a single test noticing.
-
-What that regression exposed is that top-1 accuracy is structurally blind to it. An element that
-cannot be retrieved contributes no query, so burying one *improves* the average over the queries
-that remain. Every test here is therefore about reachability first and ranking second.
-"""
+"""Guards on the native key, which had none until a regression shipped through the gap."""
 
 from __future__ import annotations
 
@@ -42,11 +32,7 @@ def test_every_element_with_words_has_a_key(corpora):
 
 
 def test_content_is_not_shadowed_by_the_name_of_its_kind(corpora):
-    """The regression this file exists for.
-
-    `AXRoleDescription` is present on every element, so placing it ahead of the value fallback
-    silenced that fallback entirely: forty-seven Finder rows keyed "text" while Recents, Desktop
-    and Documents sat unread. An element that displays words must key on those words."""
+    """The regression this file exists for."""
     shadowed = []
     for corpus in corpora:
         for element in corpus.elements:
@@ -61,10 +47,7 @@ def test_content_is_not_shadowed_by_the_name_of_its_kind(corpora):
 
 
 def test_few_elements_share_a_key_with_many_others(corpora):
-    """A key shared by dozens of elements cannot single any of them out.
-
-    Not a ranking assertion — a degeneracy one. The regression produced 628 elements sharing a
-    handful of keys, which no accuracy average over answerable queries could see."""
+    """A key shared by dozens of elements cannot single any of them out."""
     for corpus in corpora:
         counts: dict[str, int] = {}
         for element in corpus.elements:
@@ -79,12 +62,7 @@ def test_few_elements_share_a_key_with_many_others(corpora):
 
 
 def test_the_fixtures_record_attributes_rather_than_assembled_strings(corpora):
-    """A fixture stores what a surface published; anything built from it belongs to analysis.
-
-    The native fixtures once held a `source` column of strings assembled at harvest time out of
-    `role`, `name` and `value`. It carried no information the other columns lacked, could only be
-    read back in the shape it was written, and quietly guaranteed the result of any experiment run
-    against it."""
+    """A fixture stores what a surface published; anything built from it belongs to analysis."""
     for corpus in corpora:
         for element in corpus.elements:
             assert not element.source, (

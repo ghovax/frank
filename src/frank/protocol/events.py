@@ -1,26 +1,4 @@
-"""The single source of truth for streamed events and model-facing envelopes.
-
-Everything the harness streams to a client, and everything it feeds back to the
-model, is described here as a Pydantic model. The TypeScript the web client consumes
-is *generated* from these models by ``scripts/generate_event_schema.py`` — so the two
-sides can never silently drift the way a hand-mirrored ``switch`` used to.
-
-Two design rules make this small instead of sprawling:
-
-* **One vocabulary, tagged by path.** An agent is just an agent running at a
-  deeper ``path``; it emits the *same* event kinds as the root agent. There is no
-  separate ``sub_task_*`` / ``AGENT_*`` vocabulary and no per-hop re-encoding — a
-  parent forwards a child's event by prepending one path segment. ``path == []`` is
-  the root agent (the main transcript); any non-empty path renders in the agents
-  panel.
-* **Lifecycle is a field, not a string suffix.** A tool result carries an explicit
-  :class:`ToolStatus`; nothing infers "running" from ``code.endswith("_started")``.
-  ``code`` survives only as an optional finer sub-type (e.g. ``cancelled``).
-
-The wire carries the *display* side of a tool result (:attr:`ToolResultEvent.display`)
-for the UI; the model reads the same result from the LLM conversation, wrapped in the
-:class:`ModelToolResult` header.
-"""
+"""The single source of truth for streamed events and model-facing envelopes."""
 
 from __future__ import annotations
 
@@ -50,9 +28,7 @@ def tool_status_from_result(result: Any) -> ToolStatus:
 
 
 class ToolMetadata(BaseModel):
-    """Correlational + timing facts about a tool call. Shown in the UI and — per the
-    product decision — kept visible to the model too, so it can reason about what it
-    ran and when."""
+    """Correlational + timing facts about a tool call."""
 
     tool_name: str
     tool_call_id: str
@@ -122,12 +98,7 @@ class StatusEvent(_EventBase):
 
 
 class TracedSegment(BaseModel):
-    """Which piece of a request a cache measurement is talking about.
-
-    Fields rather than a formatted label, so a consumer can count how often the tool schemas
-    move or which role tends to be rewritten. ``position`` is the index within the conversation,
-    or ``-1`` for the parts a request has only one of.
-    """
+    """Which piece of a request a cache measurement is talking about."""
 
     kind: str = ""
     position: int = -1
@@ -147,8 +118,7 @@ class PrefixDivergence(BaseModel):
 
 
 class CumulativeUsage(BaseModel):
-    """Session-lifetime running totals (monotonic), distinct from the per-call figures
-    on :class:`TokenUsageEvent` which describe only the latest model call."""
+    """Session-lifetime running totals (monotonic), distinct from the per-call figures on :class:`TokenUsageEvent` which describe only the latest model call."""
 
     input_tokens: int = 0
     output_tokens: int = 0
@@ -207,17 +177,7 @@ class TokenUsageEvent(_EventBase):
 
 
 class PermissionReason(BaseModel):
-    """Why approval is needed, as data rather than as a sentence.
-
-    The harness used to build the sentence itself — "Sandbox approval required: this command
-    reads outside the working directory (/a, /b)." — and hand a client the finished English.
-    That put user-facing prose in the one place that cannot translate it: the daemon has no
-    locale, the string never reached the message catalogue, and a Japanese interface rendered
-    an English clause with a colon and a parenthetical in the middle of its own layout.
-
-    So the harness states the *facts* and the client writes the sentence. `kind` selects the
-    message; the paths ride as data the message interpolates. A reason the client does not
-    recognise falls back to the model's own explanation, which is prose either way."""
+    """Why approval is needed, as data rather than as a sentence."""
 
     kind: str
     paths: list[str] = Field(default_factory=list)
@@ -287,11 +247,7 @@ WIRE_EVENT_MODELS: tuple[type[_EventBase], ...] = (
 # Model-facing envelopes (harness -> model) One canonical shape for everything the harness injects into the LLM conversation.
 
 class ModelToolResult(BaseModel):
-    """The one-line JSON metadata header prepended to every tool result the model reads —
-    inline as a ToolMessage (``kind="tool_result"``) or, for a background completion, as an
-    append-only system message (``kind="background_result"``). The tool's raw output body
-    follows the header after a blank line, delivered **as-is**: prose stays prose (never
-    re-encoded into an escaped JSON string), structured output stays JSON."""
+    """The one-line JSON metadata header prepended to every tool result the model reads — inline as a ToolMessage (``kind="tool_result"``) or, for a background completion, as an append-only system message (``kind="background_result"``)."""
 
     kind: Literal["tool_result", "background_result"] = "tool_result"
     tool_name: str
@@ -305,8 +261,7 @@ class ModelToolResult(BaseModel):
 
 
 class TurnContext(BaseModel):
-    """The structured per-turn context injected at the end of the message list: the current time,
-    where the agent is, its goal, its tasks, and its background work."""
+    """The structured per-turn context injected at the end of the message list: the current time, where the agent is, its goal, its tasks, and its background work."""
 
     now: str = ""
     pwd: str = ""

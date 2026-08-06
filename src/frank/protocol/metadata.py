@@ -1,9 +1,4 @@
-"""The harness's own per-turn metadata on the A2A wire, and the envelope kinds it sends itself.
-
-A2A's convention is that an extension places its attributes under a single URI-namespaced
-key in a message's ``metadata`` map rather than as bare top-level keys, so they can never
-collide with another extension's. Everything Frank adds to a turn lives under one such key.
-"""
+"""The harness's own per-turn metadata on the A2A wire, and the envelope kinds it sends itself."""
 
 from __future__ import annotations
 
@@ -32,11 +27,7 @@ REPORT_REMINDER_KIND = "report_reminder"
 
 
 class Metadata:
-    """Field names inside the turn-metadata object stored under :data:`METADATA_KEY`.
-
-    A client sets only ``WORKING_DIRECTORY``/``PERMISSION_MODE``/``WORKSPACE_ID`` at session
-    creation; the rest are set internally once the daemon has resolved the session's runtime
-    checkout."""
+    """Field names inside the turn-metadata object stored under :data:`METADATA_KEY`."""
 
     WORKING_DIRECTORY = "workingDirectory"
     WORKSPACE_STRATEGY = "worktreeStrategy"
@@ -62,19 +53,12 @@ def turn_metadata(message) -> dict:
 
 
 def turn_metadata_envelope(fields: dict) -> dict:
-    """Wrap turn fields under the namespaced key for an outgoing message, dropping keys whose
-    value is ``None`` so the object only carries what was actually set."""
+    """Wrap turn fields under the namespaced key for an outgoing message, dropping keys whose value is ``None`` so the object only carries what was actually set."""
     return {METADATA_KEY: {key: value for key, value in fields.items() if value is not None}}
 
 
 def part_payload(data: dict | None) -> dict:
-    """The harness's payload inside a ``DataPart``, or ``{}`` when the part is not ours.
-
-    ``DataPart.data`` is an open dict on messages that reach a session's own A2A socket, so
-    the values in it are not all minted here. One namespaced key keeps ours apart from a
-    foreign implementation's — the same convention the turn metadata already uses, and the
-    reason a bare ``data.kind`` is not enough: this module *dispatches* on that value, so a
-    peer's unrelated ``input_response`` would be read as answering a permission gate."""
+    """The harness's payload inside a ``DataPart``, or ``{}`` when the part is not ours."""
     payload = (data or {}).get(METADATA_KEY)
     return payload if isinstance(payload, dict) else {}
 
@@ -85,6 +69,5 @@ def wrap_part_payload(payload: dict) -> dict:
 
 
 def envelope_part(kind: str, **fields) -> Part:
-    """An internal marker part for the envelopes the harness sends itself (compaction,
-    autonomous resume, input response, report reminder, goal continuation)."""
+    """An internal marker part for the envelopes the harness sends itself (compaction, autonomous resume, input response, report reminder, goal continuation)."""
     return Part(root=DataPart(data=wrap_part_payload({PART_KIND: kind, **fields})))

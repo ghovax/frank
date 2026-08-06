@@ -1,9 +1,4 @@
-"""The session's goal: one contract for completion, durable across turns.
-
-A leaf module, imported by the runtime that owns the goal, the tool concern that writes it, and
-the worker that decides whether the session keeps working — so all three name the same type
-rather than passing a dictionary between them and each guessing at its shape.
-"""
+"""The session's goal: one contract for completion, durable across turns."""
 
 from __future__ import annotations
 
@@ -13,20 +8,7 @@ from pydantic import BaseModel
 
 
 class Goal(BaseModel):
-    """The session's single contract for completion, and the one piece of durable state that
-    outlives the turn that set it.
-
-    It is written by the agent (``update_goal``) and read by two other parties: the model, which
-    is shown it whenever its situation changes, and the person, who sees it in the interface with
-    a control to call it off. What makes it more than a note to self is that a session with an
-    open goal does not go quiet when a turn ends — another turn is opened for it — so the goal,
-    rather than the end of a turn, is what decides when the work stops.
-
-    ``requirements`` is why this is a record and not a sentence. An outcome nobody wrote down as
-    checkable conditions cannot be audited at the end, and the audit is the whole point: without
-    it, "done" means the model's memory of having worked, which is exactly the failure a goal
-    exists to prevent.
-    """
+    """The session's single contract for completion, and the one piece of durable state that outlives the turn that set it."""
 
     #: The end state, in the agent's own words.
     text: str

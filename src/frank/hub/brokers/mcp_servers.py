@@ -1,5 +1,4 @@
-"""MCP domain: per-request resolution of an agent's MCP servers, and the live reload that
-re-merges mcp.json with the Composio-provisioned servers."""
+"""MCP domain: per-request resolution of an agent's MCP servers, and the live reload that re-merges mcp.json with the Composio-provisioned servers."""
 
 from __future__ import annotations
 
@@ -9,10 +8,7 @@ from frank.hub import state
 
 
 async def _reload_mcp() -> None:
-    """Re-read mcp.json and apply the daemon set live: reconcile the client manager
-    (start new servers, stop removed/disabled ones, keep unchanged ones connected)
-    and drop cached runtimes so the next turn rebuilds its tools with the new set.
-    No server restart required."""
+    """Re-read mcp.json and apply the daemon set live: reconcile the client manager (start new servers, stop removed/disabled ones, keep unchanged ones connected) and drop cached runtimes so the next turn rebuilds its tools with the new set."""
     assert state.global_configuration is not None
     # Serialize with the settings endpoints and the configuration watcher: they all rebuild the shared `_mcp_manager`, so overlapping runs would clobber it.
     async with state.configuration_lock:
@@ -30,10 +26,7 @@ async def _reload_mcp() -> None:
 
 
 async def _ensure_mcp_servers_for(working_directory: str) -> None:
-    """Additively grow the shared MCP server pool with the working directory's own
-    ``mcp.json`` servers, so a folder's servers are running and listable once that
-    folder is selected. The pool is a union — servers are only added or updated,
-    never removed — so no other session loses its servers."""
+    """Additively grow the shared MCP server pool with the working directory's own ``mcp.json`` servers, so a folder's servers are running and listable once that folder is selected."""
     assert state.global_configuration is not None
     if not working_directory:
         return

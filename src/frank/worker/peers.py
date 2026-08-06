@@ -1,20 +1,4 @@
-"""This session's view of its peers.
-
-The runtime offers the peer-session tools; this is what makes them work. It lives in the
-worker because the worker is the layer that knows *which* session this is and holds the
-connection to the daemon — the two things the tools need and the runtime deliberately does
-not carry.
-
-Everything goes through the daemon's control plane, the same surface the `frank` command and
-the desktop client call. Nothing here reaches into another session's socket: a peer is driven
-by asking the daemon to relay, exactly as a person would.
-
-The one thing this adds on the caller's behalf is identity. Every create carries this
-session as the parent, and it is not optional — that is what puts the child in the tree,
-inside the reaper, and under the permission clamp. Passing it explicitly at each call site
-would make it something a caller could forget, which is precisely how the shell-based version
-went wrong.
-"""
+"""This session's view of its peers."""
 
 from __future__ import annotations
 
@@ -91,13 +75,7 @@ class PeerSessions:
     # The SessionAccess surface the runtime's tools call.
 
     async def create(self, *, agent: str, working_directory: str) -> dict:
-        """Make a peer. It is not named here.
-
-        A session is named after the first thing it is asked to do, and that holds whoever asks:
-        a person typing into a composer, or a session sending a brief. Letting the creator pass a
-        title made the same session answer to two names — the terse label its parent chose, and
-        the one it generated from the brief a moment later — and which one you saw depended on
-        which finished first."""
+        """Make a peer. It is not named here."""
         result = await self._call(
             "session.create",
             agent=agent,
@@ -108,11 +86,7 @@ class PeerSessions:
         return result.get("session") or result
 
     async def send(self, session_id: str, text: str) -> dict:
-        """Hand another session a message, as a peer turn.
-
-        The kind matters. Without it the message arrives with `role: "user"`, and both the
-        model and the desktop client read it as the person speaking — a peer's report would be
-        attributed to the user who never wrote it."""
+        """Hand another session a message, as a peer turn."""
         outcome = await self._call(
             "session.send",
             id=session_id,
@@ -126,20 +100,12 @@ class PeerSessions:
         return outcome if isinstance(outcome, dict) else {}
 
     async def get(self, session_id: str) -> dict:
-        """A peer's record, plus what it is waiting on when it is waiting on a person.
-
-        `awaiting_input: true` alone says a session is blocked and not what would unblock it, so
-        a caller cannot tell "parked on a permission request I should leave alone" from "never
-        started". That ambiguity is what led a session to replace three peers that were working."""
+        """A peer's record, plus what it is waiting on when it is waiting on a person."""
         result = await self._call("session.get", id=session_id)
         return result.get("session") or {}
 
     async def children(self) -> list[dict]:
-        """The sessions this one created, and their descendants.
-
-        Its own subtree rather than the machine's session list: a session has no business
-        enumerating work it did not start, and a listing it cannot act on is context spent for
-        nothing."""
+        """The sessions this one created, and their descendants."""
         result = await self._call("session.tree", id=self.session_id)
         return list(result.get("descendants") or [])
 

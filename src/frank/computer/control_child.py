@@ -1,30 +1,4 @@
-"""The child process that runs a ``control_screen`` script. It holds no Frank code and no surface
-state: every primitive the script calls (``click``, ``type``, ``evaluate``, …) is a stub that
-sends one JSON request to the parent, blocks for the JSON reply, and returns it. The parent
-performs the real, trusted action on the live surface and answers. Keeping the child this thin is
-what makes it disposable — a runaway loop or a crash dies here without touching the worker, and a
-wall-clock timeout in the parent simply kills it.
-
-The script runs with **REPL semantics**: every statement executes, and the value of a trailing
-bare expression (if any) is reported as the result, exactly like the last line of a notebook cell.
-Anything the script prints is captured and reported too, so a script that just prints its findings
-is as good as one that ends in an expression. The script is run through the AST — no source is
-rewritten — so a multiline string literal is never disturbed.
-
-Nothing is injected into the script's namespace. It reaches the screen by importing it —
-``from frank.screen import screen`` — which is what makes the text a program rather than a
-fragment that only means something inside one ``exec``: it declares what it depends on, it can be
-saved to a file unchanged, and a person can read it without knowing this harness exists. The two
-pipe fds and the configuration arrive out-of-band (fds on argv, the configuration as the first
-line the parent writes on the reply pipe), so nothing about this run lives in the process
-environment.
-
-The script may import anything else it likes. That is not an oversight: this process is confined
-by the operating system to a scratch directory and no network, so what it can *reach* is settled
-before it starts and does not depend on guessing from the source which modules are harmless. The
-screen itself is the exception, and it is bridged rather than held — every primitive call goes to
-the parent, which is where the permission to make it was asked for.
-"""
+"""The child process that runs a ``control_screen`` script."""
 from __future__ import annotations
 
 import ast
@@ -47,23 +21,7 @@ _reply: Any = None
 
 
 class _PreloadsBundledLibraries:
-    """Loads a package's own shared libraries just before that package is first imported.
-
-    A wheel that ships a compiled library links it as ``@rpath/libwhatever.dylib`` and records
-    rpaths that assume the environment it was installed into. Borrowing the packages does not
-    reproduce that, so the extension module loads and its library does not, and the import fails
-    naming a ``.dylib`` the script never mentioned.
-
-    The ordinary answer is ``DYLD_FALLBACK_LIBRARY_PATH``, and it cannot be used here: macOS
-    strips every ``DYLD_*`` variable when the protected ``/usr/bin/sandbox-exec`` is executed, so
-    it never reaches this process. Loading the library by absolute path has the same effect from
-    the inside — it is registered under its install name, and the later ``@rpath`` request finds
-    the image already loaded.
-
-    Done as a finder rather than up front so it costs nothing until it is needed. A script that
-    never touches the package never loads its libraries, which matters when one of them is tens
-    of megabytes and most scripts want neither.
-    """
+    """Loads a package's own shared libraries just before that package is first imported."""
 
     def __init__(self, directories) -> None:
         self._pending: dict[str, str] = {}
@@ -94,13 +52,7 @@ class _PreloadsBundledLibraries:
 
 
 def _load_screen_module(package_root: str):
-    """`frank.screen`, executed on its own, without the package body it lives under.
-
-    Registered in ``sys.modules`` under both names so that everything afterwards — this file, a
-    saved workflow, a skill's package — reaches the same module object and therefore the same
-    installed bridge. Importing it the ordinary way instead would run `frank/__init__.py`, which
-    pulls in the entire runtime for the sake of one file that imports `pathlib` and `typing`.
-    """
+    """`frank.screen`, executed on its own, without the package body it lives under."""
     import importlib.util
     import types
 
@@ -126,24 +78,7 @@ def _load_screen_module(package_root: str):
 def _script_namespace(
     allowed: tuple, target: str, workspace: list, dependencies: list = (), libraries: list = ()
 ) -> dict[str, Any]:
-    """What a script starts with: an empty namespace, and everything importable that it may need.
-
-    Deliberately empty. A script reaches the screen the way a program reaches anything —
-
-    ::
-
-        from frank.screen import screen
-
-    — and nothing is put into scope for it. The runner used to inject a bound ``screen``, which
-    read pleasantly and made the text not a program: it declared none of what it depended on, so
-    it could not be saved to a file, could not be read by anyone who did not already know this
-    harness, and could not be moved between the inline form and the saved form without being
-    rewritten. One of those two was going to have to become the other, and the one with the
-    import is the one that is ordinary Python.
-
-    What this does instead is arrange the import path, so that the line above resolves, and so do
-    a person's saved workflows and the script packages their skills carry.
-    """
+    """What a script starts with: an empty namespace, and everything importable that it may need."""
     # The path is settled *before* anything is imported, because the import below depends on it.
     here = os.path.dirname(os.path.abspath(__file__))
     sys.path[:] = [entry for entry in sys.path if os.path.abspath(entry or os.getcwd()) != here]
@@ -170,8 +105,7 @@ def _script_namespace(
 
 
 def _apply_limits(limits: dict[str, int]) -> None:
-    """Bound CPU seconds, best effort — a runaway computation dies on its own even
-    before the parent's wall-clock kill, and a memory bomb cannot take the host down."""
+    """Bound CPU seconds, best effort — a runaway computation dies on its own even before the parent's wall-clock kill, and a memory bomb cannot take the host down."""
     try:
         import resource
 
@@ -183,8 +117,7 @@ def _apply_limits(limits: dict[str, int]) -> None:
 
 
 def _call(name: str, arguments: tuple, keywords: dict) -> Any:
-    """Send one primitive call to the parent and return its reply. A reply carrying ``__error__`` is
-    raised as an exception so the script sees a normal Python error it can try/except."""
+    """Send one primitive call to the parent and return its reply."""
     json.dump({"call": name, "args": list(arguments), "kwargs": keywords}, _request)
     _request.write("\n")
     _request.flush()
@@ -198,15 +131,12 @@ def _call(name: str, arguments: tuple, keywords: dict) -> Any:
 
 
 def _perform(name: str, arguments: list, keywords: dict) -> Any:
-    """One screen call, bridged to the parent. Installed into `frank.screen` so every call a
-    script makes — inline or through an imported workflow — travels the same wire."""
+    """One screen call, bridged to the parent."""
     return _call(name, tuple(arguments), keywords)
 
 
 def _run(script: str, namespace: dict[str, Any]) -> Any:
-    """Execute ``script`` and return the value of its trailing expression, or ``None``. Parsed to an
-    AST first (so a syntax error is precise and no source is rewritten); if the last statement is a
-    bare expression it is evaluated separately for its value, and everything before it is executed."""
+    """Execute ``script`` and return the value of its trailing expression, or ``None``."""
     # Named, so a syntax error reports `File "<control_screen>"` rather than `File "<unknown>"` — the same name the compiles below use, and one that says which script is meant.
     tree = ast.parse(script, filename="<control_screen>", mode="exec")
     final_value = None
@@ -221,16 +151,7 @@ def _run(script: str, namespace: dict[str, Any]) -> Any:
 
 
 def _failure(error: BaseException) -> dict[str, Any]:
-    """A raised exception as a result: the message once, and the frames that led to it.
-
-    Once, because it used to be twice. ``error`` carried ``f"{type}: {error}"`` and ``traceback``
-    carried ``format_exc()``, whose last line is that same string — so a script that raised with a
-    payload in the message sent the payload twice. One real script raised with 172 element records
-    interpolated into it, and the two fields came to 35,414 and 36,063 characters of the same text.
-
-    The frames stop short of the exception line for exactly that reason: the message is already
-    the field above, and a traceback is worth carrying for *where* it happened, not for repeating
-    what happened."""
+    """A raised exception as a result: the message once, and the frames that led to it."""
     frames = "".join(traceback.format_tb(error.__traceback__, limit=8)).strip()
     result: dict[str, Any] = {"ok": False, "error": summary(error)}
     if frames:

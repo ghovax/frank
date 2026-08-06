@@ -1,27 +1,4 @@
-"""The daemon's end of the prototype: start it, keep it alive, ask it for sessions.
-
-This is a client, not the prototype. The prototype itself lives in `worker/prototype.py`
-because it must import the runtime, and the daemon must never — which is precisely why it is
-a separate process rather than a function call. Everything here speaks to it over a unix
-socket in newline-delimited JSON, and nothing here imports anything the prototype imports.
-
-Three responsibilities, and they are all consequences of that separation:
-
-**Supervision.** The daemon spawns the prototype and restarts it if it dies. A dead prototype
-does not affect live sessions — they are independent processes, reparented to init, still
-serving on their own sockets. Only *new* sessions block, and only for as long as the restart
-takes.
-
-**Forking.** `fork_session` is the replacement for claiming a warm worker. It writes the
-assignment and waits for the child to report that its socket is accepting connections, which
-is the same acknowledgement the old worker wrote to stdout and for the same reason: a client
-that sends immediately after `create` must not race the bind.
-
-**Exit reporting.** The daemon cannot `waitpid` a process it did not fork, so it cannot watch
-a session die the way it used to. The prototype can, because it is the parent, and it reports
-each exit here. `pidfd_open` on Linux and `kqueue` on macOS would also work; reporting needs
-no platform-specific syscall and the prototype had to exist anyway.
-"""
+"""The daemon's end of the prototype: start it, keep it alive, ask it for sessions."""
 
 from __future__ import annotations
 
@@ -43,15 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def prototype_command() -> list[str]:
-    """How to launch the prototype.
-
-    Deliberately a re-exec of *this* executable rather than a separate binary or a bare
-    interpreter. In the packaged application the daemon runs as a signed helper inside the app
-    bundle, and macOS attributes the Accessibility grant to that code identity; a prototype
-    launched by any other path would be a different identity and would prompt the user for its
-    own grant. Re-execing the same image is what keeps one grant covering the fleet — and
-    because every session is a fork of this process, the grant reaches them too.
-    """
+    """How to launch the prototype."""
     if getattr(sys, "frozen", False):
         return [sys.executable, "prototype"]
     return [sys.executable, "-m", "frank", "prototype"]
@@ -125,11 +94,7 @@ class PrototypeClient:
         await self._end_process()
 
     async def _end_process(self) -> None:
-        """Stop the prototype and wait for it to go, killing it if it will not.
-
-        Waiting matters rather than being tidy: the prototype's exit is what closes the
-        lifelines its sessions hold, so returning before it has actually gone would be
-        returning while the sessions are still running."""
+        """Stop the prototype and wait for it to go, killing it if it will not."""
         process, self._process = self._process, None
         if process is None or process.returncode is not None:
             return
@@ -157,11 +122,7 @@ class PrototypeClient:
         return self._process.pid if self._process is not None else 0
 
     def status(self) -> dict[str, Any]:
-        """What `daemon.status` reports about the prototype.
-
-        `frozen` is not decoration: `gc.freeze()` being forgotten or reverted costs most of
-        the memory saving and breaks nothing, so a zero here is the only way anyone would
-        find out. `threads` is the invariant the whole design rests on."""
+        """What `daemon.status` reports about the prototype."""
         return {
             "alive": self.alive,
             "pid": self.pid,
@@ -199,10 +160,7 @@ class PrototypeClient:
             raise PrototypeUnavailable(f"could not start the prototype: {error}") from error
 
     async def _attach(self) -> None:
-        """Connect to the prototype's socket, waiting for it to appear.
-
-        The prototype binds only after importing the runtime, which is the five seconds this
-        whole design exists to pay once, so the wait is generous."""
+        """Connect to the prototype's socket, waiting for it to appear."""
         socket_path = prototype_socket_path()
         deadline = asyncio.get_running_loop().time() + active_tuning().duration(
             Tunable.prototype_start_seconds
@@ -300,19 +258,7 @@ class PrototypeClient:
     # Keeping the prototype alive.
 
     async def _supervise(self) -> None:
-        """Restart the prototype if it dies.
-
-        Every session it had forked ends with it, through the lifeline each one holds. That is
-        deliberate, and it replaces an arrangement where they carried on: a session outlives its
-        prototype perfectly well as a *process* — it has its own socket and the daemon talks to
-        it directly — but nothing can ever report its death again, because the only process that
-        could was the one that just died. The daemon would show it running until the machine was
-        rebooted, and a replacement prototype cannot adopt it: it is not its parent, so it cannot
-        wait on it.
-
-        So a dead prototype costs the sessions that were running, and they come back as records
-        rather than as processes, which they were built to do. What it must not cost is a set of
-        workers nobody can see or stop."""
+        """Restart the prototype if it dies."""
         while not self._closed:
             process = self._process
             if process is None:
@@ -343,10 +289,7 @@ class PrototypeClient:
     # Asking for a session.
 
     async def fork_session(self, assignment: dict[str, Any]) -> int:
-        """Fork a session and answer with its process id once it is serving.
-
-        Raises :class:`PrototypeUnavailable` when the session could not be started, which the
-        caller turns into a failed session record rather than a daemon-level error."""
+        """Fork a session and answer with its process id once it is serving."""
         session_id = str(assignment.get("session_id") or "")
         if not session_id:
             raise PrototypeUnavailable("an assignment must name its session")

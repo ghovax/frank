@@ -1,13 +1,4 @@
-"""The queries a strategy is scored against, and where each family's wording comes from.
-
-Every query here is text a human wrote in the product being searched. None is invented by whoever
-wrote the harness, which is a rule rather than a preference: an earlier round of this
-investigation scored strategies against hand-written "semantic" queries and measured nothing but
-the imagination of the person who wrote them.
-
-The four families deliberately test different things, because a single blended number hides the
-trade a strategy is actually making.
-"""
+"""The queries a strategy is scored against, and where each family's wording comes from."""
 
 from __future__ import annotations
 
@@ -37,24 +28,14 @@ def _usable_name(element: RecordedElement) -> bool:
 
 
 def literal_queries(corpus: Corpus) -> list[Query]:
-    """The element's own accessible name, exactly as the page states it.
-
-    The easy case, and the one most likely to be common in practice: a model that can see a label
-    and asks for it by name."""
+    """The element's own accessible name, exactly as the page states it."""
     return [Query(text=element.name, target_index=index)
             for index, element in enumerate(corpus.elements)
             if _usable_name(element) and len(element.name) <= 60]
 
 
 def partial_queries(corpus: Corpus) -> list[Query]:
-    """A real three-word run taken from inside a long label.
-
-    Stands in for a model that half-remembers what it saw, or that quotes the part of a long link
-    that mattered to it rather than the whole thing.
-
-    The window starts at the second word rather than at a random offset. Skipping the first word
-    is the point: a query beginning at the start of a label can be answered by prefix similarity,
-    which is not the ability being tested. Taking a fixed window also means no seed."""
+    """A real three-word run taken from inside a long label."""
     queries = []
     for index, element in enumerate(corpus.elements):
         words = element.name.split()
@@ -65,12 +46,7 @@ def partial_queries(corpus: Corpus) -> list[Query]:
 
 
 def slug_queries(corpus: Corpus) -> list[Query]:
-    """The readable words of a link's destination, when they share no word with its label.
-
-    The word-overlap filter is what makes this family meaningful. A URL that repeats its link's
-    text would be answerable by matching the label alone, and counting those would credit a
-    strategy for retrieval it did not perform. What survives is wording chosen by whoever built
-    the site's URLs, independently of whoever wrote its link text."""
+    """The readable words of a link's destination, when they share no word with its label."""
     queries = []
     for index, element in enumerate(corpus.elements):
         if element.role != "link" or not element.url:
@@ -86,14 +62,7 @@ def slug_queries(corpus: Corpus) -> list[Query]:
 
 
 def tooltip_queries(corpus: Corpus) -> list[Query]:
-    """The element's tooltip, when its words are not already its label.
-
-    The closest thing to a genuine test of meaning that a page supplies without anyone inventing
-    it: a developer's own prose description of what a control is for.
-
-    A strategy that indexes the tooltip scores on this family **by construction** — the query is
-    the indexed text. That is why :func:`tests.retrieval.evaluation.is_circular_pairing` exists
-    and why reports mark the combination rather than quietly ranking it first."""
+    """The element's tooltip, when its words are not already its label."""
     queries = []
     for index, element in enumerate(corpus.elements):
         title = element.title.strip()

@@ -1,25 +1,4 @@
-"""Workflows somebody saved: what exists, where it lives, and how to call it.
-
-A workflow is an ordinary Python module that takes a :class:`frank.screen.Screen` and does
-something with it. Two directories hold them, following the layering skills and memories already
-use — a project's own beside the project, a person's own beside the person:
-
-* ``.agents/workflows/`` in the project — about *this* codebase's application. Versioned with it,
-  shared with whoever else works on it.
-* ``~/.agents/workflows/`` — about the person's own tools. Available in every project and
-  committed to none, which is not a filing preference: a workflow that drives somebody's mail
-  carries their account names and habits, and has no business in a shared repository.
-
-Both are on the import path as one ``workflows`` namespace package, so Python merges them and a
-script writes ``from workflows.invoice import run`` without caring which directory answered. Where
-the same module name exists in both, the project's wins — the same precedence skills use — and the
-listing says so rather than letting the personal one vanish quietly.
-
-**Discovered by reading, never by importing.** A listing runs on every turn, and importing user
-code to find out what it is would execute it every turn — arbitrary code, for a question about
-names. So each file is parsed to an AST and read: the functions it defines, their signatures, and
-the first line of their docstrings. Nothing here runs anything.
-"""
+"""Workflows somebody saved: what exists, where it lives, and how to call it."""
 
 from __future__ import annotations
 
@@ -43,18 +22,7 @@ SKILLS_ROOT = "skills"
 
 
 def import_roots(project_directory: str = "") -> list[str]:
-    """The directories to put on a script's import path, in precedence order.
-
-    The project first, so a project workflow shadows a personal one of the same name — the layering
-    skills already use, and the one a person would expect.
-
-    Skills contribute too, and that is the point of the second half. A skill is instructions plus,
-    very often, a ``scripts/`` directory holding a real Python package with its own
-    ``pyproject.toml`` — which is how capability is packaged for an agent generally, not something
-    invented here. Putting those directories on the path is what lets a skill ship screen work:
-    the package is written, tested and versioned like any other, and a script reaches it with an
-    ordinary import instead of having the whole of it pasted in as text.
-    """
+    """The directories to put on a script's import path, in precedence order."""
     resolved = agent_roots(project_directory)
     return [str(root) for root in resolved] + _skill_script_roots(resolved)
 
@@ -69,28 +37,7 @@ def agent_roots(project_directory: str = "") -> list[Path]:
 
 
 def dependency_roots(project_directory: str = "") -> list[str]:
-    """The ``site-packages`` of every skill that has its own environment.
-
-    A skill's ``scripts/`` is a real project with a ``pyproject.toml`` and, very often, real
-    dependencies that ``uv`` has installed into a ``.venv`` beside it. Putting the package
-    directory on the path makes the package importable and its dependencies *not*, which fails in
-    the least helpful way available: the import of the skill succeeds and something three levels
-    down raises ``ModuleNotFoundError`` for a name the script never mentioned.
-
-    Only when the interpreter versions match. A ``site-packages`` built for another Python holds
-    extension modules this one cannot load, and a confident ``ImportError`` about a name that is
-    plainly installed is worse than the honest absence.
-
-    Kept apart from :func:`import_roots` because the two want opposite ends of ``sys.path``: a
-    skill's own package must win, and a skill's *dependencies* must not — one pinning an old copy
-    of something should never decide what the rest of this process imports.
-
-    The packages are borrowed rather than activated — this process stays the session's
-    interpreter — so anything an environment would normally set up for them has to be arranged
-    here too. :func:`library_roots` is the other half: a wheel that ships its own shared library
-    finds it through an rpath that assumes its own environment, and without that the import fails
-    on a missing ``.dylib`` rather than on anything the script did.
-    """
+    """The ``site-packages`` of every skill that has its own environment."""
     version = f"python{sys.version_info.major}.{sys.version_info.minor}"
     found: list[str] = []
     for scripts in _skill_script_roots(agent_roots(project_directory)):
@@ -102,11 +49,7 @@ def dependency_roots(project_directory: str = "") -> list[str]:
 
 @lru_cache(maxsize=8)
 def _libraries_under(root: str) -> tuple[str, ...]:
-    """Directories inside one ``site-packages`` that hold a shared library of their own.
-
-    Cached because it is a directory walk and the answer changes only when something is
-    installed, which does not happen while a script is running.
-    """
+    """Directories inside one ``site-packages`` that hold a shared library of their own."""
     base = Path(root)
     found: list[str] = []
     for package in sorted(base.iterdir()) if base.is_dir() else []:
@@ -123,32 +66,13 @@ def _libraries_under(root: str) -> tuple[str, ...]:
 
 
 def library_roots(project_directory: str = "") -> list[str]:
-    """Where to look for shared libraries a skill's dependencies bring with them.
-
-    A wheel that ships a compiled library links it as ``@rpath/libwhatever.dylib`` and records
-    rpaths that assume the environment it was installed into. Borrowing the packages does not
-    reproduce that, so the extension module loads and the library it needs does not — the import
-    fails naming a ``.dylib`` the script never mentioned, which reads as a broken skill rather
-    than a missing search path. ``PyMuPDF`` is the case in hand: its ``libmupdf.dylib`` sits
-    beside the extension that wants it, and the recorded rpath points nine directories above
-    ``site-packages`` at nothing.
-
-    Handed to the child as ``DYLD_FALLBACK_LIBRARY_PATH`` rather than ``DYLD_LIBRARY_PATH``,
-    which matters: the fallback is consulted only once normal resolution has failed, so a package
-    shipping its own copy of a common library cannot displace the system's for everything else in
-    the process.
-    """
+    """Where to look for shared libraries a skill's dependencies bring with them."""
     return [directory for root in dependency_roots(project_directory)
             for directory in _libraries_under(root)]
 
 
 def _skill_script_roots(agent_roots: list[Path]) -> list[str]:
-    """Each skill's ``scripts/`` directory, in the same precedence order.
-
-    Read off the filesystem rather than from the loaded skill list, because this runs where the
-    directories are known and the skills are not — and a directory either exists or it does not,
-    which is the whole of the question. A skill without scripts contributes nothing.
-    """
+    """Each skill's ``scripts/`` directory, in the same precedence order."""
     found: list[str] = []
     for root in agent_roots:
         skills = root / SKILLS_ROOT
@@ -161,11 +85,7 @@ def _skill_script_roots(agent_roots: list[Path]) -> list[str]:
 
 
 def _summarise(function: ast.FunctionDef | ast.AsyncFunctionDef, module: str, scope: str) -> Optional[dict[str, Any]]:
-    """One callable, as the model reads it — or ``None`` when it is not a workflow.
-
-    A workflow is recognised by its first parameter being ``screen``, which is the whole of the
-    convention. A module is free to hold helpers beside its workflows; they are simply not listed,
-    because a helper is not a thing anybody calls from a script."""
+    """One callable, as the model reads it — or ``None`` when it is not a workflow."""
     parameters = [argument.arg for argument in function.args.args]
     if not parameters or parameters[0] != "screen" or function.name.startswith("_"):
         return None

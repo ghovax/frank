@@ -111,13 +111,6 @@ def carried_reasoning_for(message: BaseMessage, model: str) -> dict[str, Any]:
 
 
 def forget_carried_reasoning(message: BaseMessage) -> None:
-    """Strip the provider-native reasoning from a message, in place.
-
-    Used where the conversation stops being the one the reasoning was written into. Compaction is
-    the case that matters: the earlier turns are gone, replaced by a summary, and reasoning that
-    refers back to them refers to nothing. Both references cut here for the same reason — an
-    encrypted item outlives its context and fails the request rather than being ignored. The
-    readable text stays; it is already a reasoning content block and costs nothing to keep.
-    """
+    """Strip the provider-native reasoning from a message, in place."""
     for key in (*CARRIED_REASONING_KEYS, REASONING_MODEL_KEY):
         message.additional_kwargs.pop(key, None)

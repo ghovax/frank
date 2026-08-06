@@ -1,17 +1,4 @@
-"""A persisted A2A push-notification configuration store and its sender.
-
-A client registers a webhook (``pushNotificationConfig/set``) to be told when a task
-updates. That registration is durable state — it must survive a server restart, or a
-client that registered a webhook would silently stop being notified — so it is persisted
-to the shared database rather than held in memory. This implements the A2A SDK's
-``PushNotificationConfigStore`` contract, backed by the same engine as the task store.
-
-The paired :class:`PinnedPushNotificationSender` is what actually POSTs a task update to a
-registered webhook. Both halves apply the same anti-SSRF guard: the store refuses a private
-host at registration, and the sender re-resolves and pins the connection at send time, so a
-webhook that was public when registered but rebinds to a loopback/metadata address before it
-fires cannot turn a durable config into a blind SSRF channel.
-"""
+"""A persisted A2A push-notification configuration store and its sender."""
 
 from __future__ import annotations
 
@@ -43,8 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 class PersistentPushNotificationConfigurationStore(PushNotificationConfigStore):
-    """Persists push-notification configurations so a registered webhook survives a
-    restart. One row per (task, configuration), upserted by that pair."""
+    """Persists push-notification configurations so a registered webhook survives a restart."""
 
     def __init__(self, engine: AsyncEngine, *, allow_private_webhooks: bool = False):
         self._engine = engine
@@ -62,8 +48,7 @@ class PersistentPushNotificationConfigurationStore(PushNotificationConfigStore):
 
     @property
     def allow_private_webhooks(self) -> bool:
-        """Whether the operator opted into private/loopback webhook targets — read by the
-        paired sender so its send-time guard matches this store's registration-time guard."""
+        """Whether the operator opted into private/loopback webhook targets — read by the paired sender so its send-time guard matches this store's registration-time guard."""
         return self._allow_private_webhooks
 
     async def initialize(self) -> None:
@@ -132,19 +117,7 @@ class PersistentPushNotificationConfigurationStore(PushNotificationConfigStore):
 
 
 class PinnedPushNotificationSender(BasePushNotificationSender):
-    """POSTs task updates to registered webhooks, re-validating and pinning each delivery.
-
-    The SDK's ``BasePushNotificationSender`` POSTs to the stored webhook URL directly. But a
-    registration is durable and outlives its DNS: a host that was public when the webhook was
-    registered can rebind to a loopback/metadata address before the notification actually
-    fires, so the one-time check in :meth:`PersistentPushNotificationConfigurationStore.set_info`
-    is not enough on its own. This sender re-resolves the host immediately before each POST,
-    refuses a non-public result, and pins the socket to the verified IP — ``Host`` header and
-    TLS ``sni_hostname`` preserved — so a same-request rebind cannot redirect the delivery to
-    an internal service. It is the outbound-webhook counterpart of the inbound file fetch's
-    guard, closing the seam the SDK left open. Pinning is skipped when an egress proxy is
-    configured (the proxy does its own DNS/connect), where the resolve-and-reject check still
-    runs."""
+    """POSTs task updates to registered webhooks, re-validating and pinning each delivery."""
 
     def __init__(
         self,

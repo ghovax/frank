@@ -1,30 +1,4 @@
-"""The session worker's entry point, reached by `exec` from the prototype.
-
-The prototype forks and immediately execs this, rather than running the session in the forked
-image. That is the whole difference between a session that works and one that dies of
-`SIGSEGV` inside `getaddrinfo` on its first model call: a forked child inherits the parent's
-copy of Network.framework and the Objective-C runtime, and neither is usable after a fork
-without an exec.
-
-Three descriptors survive the exec, named on the command line because a number is all that can
-be passed across it:
-
-* the **assignment pipe**, which the prototype fills before forking. The assignment carries
-  this session's capability token and the daemon's, so it travels on a pipe rather than in
-  ``argv``, which any other process on the machine can read out of ``ps``.
-* the **ready pipe**, which this process writes once it is listening, and which the prototype
-  is watching to know whether the session came up.
-* the **lifeline**, which carries nothing at all. The prototype holds the other end open for
-  as long as it lives, so reading end-of-file on it means the prototype is gone — and a
-  session whose prototype is gone can never have its death reported to the daemon, which
-  would leave the daemon believing it is running forever. So this process stops when that
-  happens, and it does so without anyone having to signal it: closing the descriptor is the
-  kernel's doing, which is why it still works when the prototype was killed outright.
-
-All three are passed as raw file-descriptor numbers, which is only meaningful because
-:func:`os.set_inheritable` was called on them before the exec — the default is for a
-descriptor to be closed by it.
-"""
+"""The session worker's entry point, reached by `exec` from the prototype."""
 
 from __future__ import annotations
 
@@ -42,12 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 def _configure_logging() -> None:
-    """The same file the daemon and the prototype write.
-
-    A session is its own process now, so it configures its own logging — nothing is inherited
-    across an `exec`. Without this a turn that fails logs `Agent turn failed` to a stderr that
-    nothing keeps, which is exactly how an `AttributeError` on every single turn stayed
-    invisible long enough to be mistaken for a network problem."""
+    """The same file the daemon and the prototype write."""
     from frank.base.paths import log_file_path
 
     logging.basicConfig(
@@ -58,15 +27,11 @@ def _configure_logging() -> None:
 
 
 class PrototypeGone(Exception):
-    """The prototype closed the assignment pipe without ever writing an assignment.
-
-    Which means it died while this worker was parked. It is not an error to report anywhere —
-    there is nobody left to report it to — so it ends the process quietly."""
+    """The prototype closed the assignment pipe without ever writing an assignment."""
 
 
 def _read_assignment(descriptor: int) -> dict:
-    """Drain the assignment pipe. Reads to EOF rather than once, because a pipe is a stream and
-    a short read would produce a truncated assignment that parses as nothing useful."""
+    """Drain the assignment pipe."""
     chunks: list[bytes] = []
     with os.fdopen(descriptor, "rb", closefd=True) as pipe:
         while True:

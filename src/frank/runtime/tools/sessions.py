@@ -1,43 +1,4 @@
-"""Peer sessions, as tools.
-
-A session composes with another session by messaging it. That is the harness's one
-composition path, and these tools are how a model walks it — the same control-plane API the
-`frank` command and the desktop client call, reached directly instead of through a shell.
-
-Doing it through the shell was the earlier design, and it could not hold. A session that runs
-`frank create` writes argv as free text, and free text cannot carry what makes a peer a *peer*:
-the caller's own identity. Nothing propagated a session id into the environment its `bash`
-tool ran in, so every peer created that way was born unparented — outside the tree, outside
-the reaper, and outside the permission clamp, which is skipped entirely when there is no
-parent to clamp against. A read-only session could create an unrestricted one. It was also
-not portable: in the packaged application the daemon re-execs a bundled helper, and there is
-no `frank` on the path at all.
-
-A typed call fixes all of that by construction rather than by instruction. `parent` is not an
-argument here — it is the calling session, always, so the clamp and the reaper cannot be
-opted out of. The agent profile is an enumeration built from the live catalogue, so an
-invented name is unrepresentable rather than refused after the fact. And the working
-directory defaults to the caller's, which is what a peer working on the same problem needs
-and what a model would otherwise have to remember to pass.
-
-There is no waiting, either as an argument or behind the scenes. A peer *answers* — it calls
-`message_session` on the session that created it, and its answer arrives there as an ordinary
-inbound message. So a caller starts the work, carries on with whatever does not depend on it,
-and ends its turn; the peer's reply wakes it the way a person's message would.
-
-That replaced a mechanism worth naming, because its absence is the point. The caller used to
-subscribe to the peer's event stream, wait for the edge where its turn stopped running, read
-its last task out of the store, and reconstruct prose by walking the result artifact and then
-the final status message for text parts. It reached into another session's durable record to
-recover something the peer already knew, and it decided by string surgery which fragments of
-a transcript constituted "the answer" — a judgement only the peer can honestly make.
-
-There is deliberately no permission gate on creating a peer. The clamp is the control: a
-child can never hold authority its parent lacks, so creating one grants nothing that asking
-for it would not. Sending to an agent on *another host* is a different matter — that leaves
-the machine — and stays governed by the per-profile authorization the remote agent registry
-already applies.
-"""
+"""Peer sessions, as tools."""
 
 from __future__ import annotations
 
@@ -66,12 +27,7 @@ def _description(tool_name: str) -> str:
 
 @runtime_checkable
 class SessionAccess(Protocol):
-    """What a session needs in order to work with its peers.
-
-    Implemented by the worker, which is the layer that holds the session's identity and its
-    connection to the daemon. It reaches the tools through the bound tool context, so the
-    runtime can offer them without importing the layer above it and without a module global
-    that would make two sessions in one process share one identity."""
+    """What a session needs in order to work with its peers."""
 
     session_id: str
     working_directory: str
@@ -99,14 +55,7 @@ async def _create_session(
     working_directory: Optional[str] = None,
     explanation: str = "",
 ) -> str:
-    """Make a peer, and nothing else.
-
-    Creating and briefing used to be one call, which made this the only tool that could half
-    succeed: a failed send returned an error *and* a live session, so a caller reading the
-    error had already leaked a process it was not told to clean up. Every other layer has
-    always kept them apart — the daemon's `session.create` takes no message, and a person types
-    `frank create` then `frank send` — so the tool was the one place a session composed with a
-    peer differently from the way a person does."""
+    """Make a peer, and nothing else."""
     access = tool_context.current().session_access
     if access is None:
         return _unavailable("create_session_error")
@@ -199,12 +148,7 @@ async def _message_remote_agent(name: str, message: str, explanation: str = "") 
 
 
 def build_create_session_tool(agent_names: list[str]) -> BaseTool:
-    """The create tool, with the installed agent profiles baked into its schema.
-
-    An enumeration rather than a free string, because "never invent a profile name" is an
-    instruction a model can disobey, while a schema it cannot satisfy is one it cannot get
-    wrong. The catalogue is read when the runtime is built, so a profile added while a session
-    is running appears on its next rebuild."""
+    """The create tool, with the installed agent profiles baked into its schema."""
     names = tuple(sorted(agent_names))
     arguments = create_model(
         "CreateSessionArguments",
@@ -286,10 +230,7 @@ message_remote_agent_tool = StructuredTool.from_function(
 
 
 def session_tools(agent_names: list[str]) -> list[BaseTool]:
-    """Every peer-session tool, or none at all when there are no profiles to run.
-
-    Offering `create_session` with an empty enumeration would be offering a tool that cannot
-    be called successfully, which costs context and invites an attempt."""
+    """Every peer-session tool, or none at all when there are no profiles to run."""
     if not agent_names:
         return []
     return [
@@ -314,17 +255,7 @@ _TOOLS_BY_NAME: dict[str, Any] = {
 
 
 async def invoke(tool_name: str, tool_arguments: dict, create_tool: BaseTool | None) -> str:
-    """Run one session tool by name. `create_session` is passed in because its schema is built
-    per-runtime from the live agent catalogue rather than being a module-level singleton.
-
-    A call whose arguments do not fit its schema comes back as a tool error the model can read
-    and correct. It used to come back as a *turn failure*: these tools are dispatched here rather
-    than through the preflight that validates every other tool's arguments, so the schema was
-    enforced by the invocation itself and the exception escaped as "the turn stopped
-    unexpectedly". A model that sent ten briefs and forgot the `session` field on each was told
-    ten times that its turn had failed, and concluded the peers were unreachable — so it created
-    three more and briefed them again, which is the duplicate work a person then has to unpick.
-    """
+    """Run one session tool by name."""
     if tool_name == "create_session":
         if create_tool is None:
             return _unavailable("create_session_error")

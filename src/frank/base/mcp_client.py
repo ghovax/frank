@@ -29,15 +29,7 @@ MCPEventCallback = Callable[[dict[str, Any]], Awaitable[None] | None]
 
 
 def _as_connection_failure(error: BaseException, server_name: str) -> BaseException:
-    """Turn a cancellation raised *by* a failed connect into a real error.
-
-    The MCP client libraries build on anyio task groups, and a server that goes away
-    mid-handshake unwinds those groups by cancelling — which surfaces here as a bare
-    `CancelledError`. That is not our caller asking to stop; it is the connection failing, and
-    letting it propagate as cancellation makes a broken MCP server look like an abort and
-    escape every `except Exception` a caller reasonably wrote. A cancellation that our own
-    task actually requested is passed through untouched, which `Task.cancelling` is exactly
-    the signal for."""
+    """Turn a cancellation raised *by* a failed connect into a real error."""
     if not isinstance(error, asyncio.CancelledError):
         return error
     task = asyncio.current_task()
@@ -47,11 +39,7 @@ def _as_connection_failure(error: BaseException, server_name: str) -> BaseExcept
 
 
 class MCPClientManager:
-    """Small MCP client facade for configured servers.
-
-    Connections are stateful by default: initialized sessions stay open, so MCP
-    servers can keep process/session state and stream server-initiated events.
-    """
+    """Small MCP client facade for configured servers."""
 
     def __init__(self, servers: dict[str, MCPServerConfiguration]):
         self._servers = servers
@@ -89,10 +77,7 @@ class MCPClientManager:
                 self._streamable_sessions.pop(name, None)
 
     async def reconcile(self, servers: dict[str, MCPServerConfiguration]) -> None:
-        """Apply a new server set live, without a full restart. Sessions for
-        removed or changed servers are closed; unchanged servers stay connected;
-        new (or changed) stateful servers are started. Used by the file watcher so
-        editing ``mcp.json`` takes effect with no downtime."""
+        """Apply a new server set live, without a full restart."""
         for name, configuration in list(self._servers.items()):
             if name not in servers or servers[name] != configuration:
                 await self._close_session(name)
@@ -108,12 +93,7 @@ class MCPClientManager:
             await self._close_connection(connection)
 
     async def list_tools(self, server: str = "") -> dict[str, Any]:
-        """What every selected server offers.
-
-        A server that cannot be reached is listed with no tools rather than failing the
-        whole call: one misconfigured or offline endpoint should grey out its own row, not
-        take the tool panel — and the agent's tool gating — down with it. Naming a single
-        server is a direct question, so that one does raise."""
+        """What every selected server offers."""
         result: dict[str, Any] = {"servers": []}
         for name in self._selected_servers(server):
             try:
@@ -182,8 +162,7 @@ class MCPClientManager:
             pass
 
     async def list_resources(self, server: str = "") -> dict[str, Any]:
-        """What every selected server exposes. Tolerant of an unreachable server for the
-        same reason `list_tools` is."""
+        """What every selected server exposes."""
         result: dict[str, Any] = {"servers": []}
         for name in self._selected_servers(server):
             try:

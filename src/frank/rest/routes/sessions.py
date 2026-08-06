@@ -46,13 +46,7 @@ async def session_turns(session_id: str):
 
 @router.get("/sessions/{session_id}/turns/page")
 async def session_turn_page(session_id: str, before_row_id: int | None = None, limit: int = 400):
-    """A bounded replay page for fast session switching.
-
-    Returns the newest persisted turn-history rows first on the initial call;
-    pass ``before_row_id`` from the previous response to load older rows. This
-    keeps long conversations interactive without waiting for the complete turn
-    history to deserialize and cross the local HTTP boundary.
-    """
+    """A bounded replay page for fast session switching."""
     assert state.turn_store is not None
     page = await state.turn_store.turn_page_for_session(session_id, before_row_id=before_row_id, limit=limit)
     return {

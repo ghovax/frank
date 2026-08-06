@@ -1,5 +1,4 @@
-"""Agent domain: card building, per-request configuration resolution, sidecar
-read/write, configuration updates, and model-selection history."""
+"""Agent domain: card building, per-request configuration resolution, sidecar read/write, configuration updates, and model-selection history."""
 
 from __future__ import annotations
 from frank.protocol.dtos import (
@@ -25,19 +24,12 @@ from frank.hub.database import ModelHistoryRecord
 
 
 def _catalogue_base_url() -> str:
-    """The address a card from this catalogue names.
-
-    These are agent *profiles*, not running sessions — nothing is listening on their
-    behalf until one is created, and a created session advertises its own socket instead.
-    So the honest address is the daemon that would create it, which binds an ephemeral
-    port chosen at boot; a fixed one baked in here would name whatever else happened to
-    take that number."""
+    """The address a card from this catalogue names."""
     return f"http://127.0.0.1:{state.daemon_port}"
 
 
 def _path_scope(path_value: str, home_root: Path) -> str:
-    """Whether a discovered file is ``global`` (under ``~/.agents``) or
-    ``project`` (the selected folder's own ``.agents``)."""
+    """Whether a discovered file is ``global`` (under ``~/.agents``) or ``project`` (the selected folder's own ``.agents``)."""
     try:
         return "global" if Path(path_value).resolve().is_relative_to(home_root) else "project"
     except Exception:
@@ -45,9 +37,7 @@ def _path_scope(path_value: str, home_root: Path) -> str:
 
 
 def _record_model_selection(model_identifier: str) -> None:
-    """Record a model selection in the history (upserting by id), mirroring the
-    project-history list. Catalog models use their display label; typed model ids
-    derive a readable label from the provider/model value."""
+    """Record a model selection in the history (upserting by id), mirroring the project-history list."""
     if not model_identifier or state.session_factory is None:
         return
     definition = find_model(model_identifier)
@@ -104,12 +94,7 @@ def _recent_models(limit: int = 8) -> list[dict[str, str]]:
 
 
 def _card_for(agent_name: str, working_directory: str = ""):
-    """Build an agent's AgentCard from its config and the skills available to it.
-
-    When a ``working_directory`` is given, skills are scoped to that path (home
-    globals plus the path's own ``.agents``, deduped) rather than the daemon's
-    launch directory — so a card advertises the skills a session in that folder
-    can actually find. Without one, the daemon-CWD scoping is used (startup mount)."""
+    """Build an agent's AgentCard from its config and the skills available to it."""
     assert state.global_configuration is not None
     configuration = load_agent_configuration(agent_name, state.global_configuration.agent_directories())
     skill_roots = (
@@ -163,13 +148,7 @@ def _agent_configuration_payload(agent_name: str, working_directory: str) -> Age
 def _apply_agent_configuration_update(
     configuration: _configuration.AgentConfiguration, request: AgentConfigurationUpdateRequest
 ) -> _configuration.AgentConfiguration:
-    """The profile with this request applied, as a value.
-
-    Edits land on the `AgentConfiguration` itself now. It used to be a camelCase JSON sidecar
-    parsed into its own parallel model, projected back onto the front matter's snake_case at
-    load time — two spellings of one fact, and a whole class whose job was to keep them in
-    step. The profile is one file, so there is one model of it.
-    """
+    """The profile with this request applied, as a value."""
     updated = configuration.model_copy(deep=True)
     if request.model is not None:
         updated.model = request.model or None
@@ -204,12 +183,7 @@ def _normalized_permissions(permissions: dict[str, str]) -> dict[str, str]:
 
 
 def _reload_agent_cards() -> None:
-    """Recompile the catalogue of AgentCards from the agent and skill files on disk.
-
-    This describes the agent *profiles* a session could be created with, which is a
-    different thing from the sessions themselves — a running session serves its own card on
-    its own socket. Kept current so discovery reflects an edit without a restart; agent
-    behaviour is already live, since every turn loads its configuration and skills fresh."""
+    """Recompile the catalogue of AgentCards from the agent and skill files on disk."""
     assert state.global_configuration is not None
     catalogue = {}
     for agent_name in list_agent_route_names(state.global_configuration.agent_directories()):

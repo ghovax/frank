@@ -1,16 +1,4 @@
-"""Fully-qualified location URIs — the value the agent passes as ``location``.
-
-A location is identified to the model by a fully-qualified URI derived from its
-connection, so the identifier is unambiguous on its own:
-
-    local, as ``file:///Users/me/acme``
-    remote, as ``ssh://me@prod.example.com:22/srv/acme``
-
-The URI is purely an *identity/addressing* string. Execution fidelity (which SSH
-identity file, ProxyJump, …) comes from the location's ``~/.ssh/config`` host *alias*,
-which the location record carries alongside the URI — the URI's ``host`` is the
-resolved hostname (from ``ssh -G``), not necessarily the alias.
-"""
+"""Fully-qualified location URIs — the value the agent passes as ``location``."""
 
 from __future__ import annotations
 
@@ -23,8 +11,7 @@ REMOTE_SCHEME = "ssh"
 
 @dataclass(frozen=True)
 class LocationTarget:
-    """The connection coordinates encoded in a location URI. ``base_directory`` is the
-    absolute directory on the target machine that tools treat as their cwd."""
+    """The connection coordinates encoded in a location URI."""
 
     kind: str  # "local" | "remote"
     base_directory: str
@@ -66,8 +53,7 @@ def format_remote(host: str, base_directory: str, user: str = "", port: int = 22
 
 
 def parse(uri: str) -> LocationTarget:
-    """Parse a location URI back into its coordinates. Raises ``ValueError`` on any
-    URI that is not a well-formed ``file://`` or ``ssh://`` location."""
+    """Parse a location URI back into its coordinates."""
     parts = urlsplit((uri or "").strip())
     if parts.scheme == LOCAL_SCHEME:
         if parts.netloc:

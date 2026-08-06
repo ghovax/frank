@@ -1,16 +1,4 @@
-"""Record corpora from live macOS applications. Run deliberately, never from a test.
-
-    uv run python -m tests.retrieval.harvest_native
-
-Unlike the web harvester, what this captures depends on which applications happen to be running
-and what they are showing, so a refresh will not reproduce the previous fixtures exactly. That is
-a property of the surface rather than a flaw in the recording: a native window has no stable
-public address the way a URL does. The fixtures are still worth committing, because a recording
-of a real window beats a synthetic tree, and because the questions asked of them — does this field
-help, does that one hurt — are answered within a corpus rather than across refreshes.
-
-Read-only: this snapshots accessibility trees. It never clicks, types, or activates anything.
-"""
+"""Record corpora from live macOS applications. Run deliberately, never from a test."""
 
 from __future__ import annotations
 
@@ -31,12 +19,7 @@ APPLICATIONS_TO_HARVEST = (
 # Attributes surveyed across 921 live elements and deliberately not recorded.
 
 def harvest_application(surface: NativeSurface, application_name: str) -> Corpus | None:
-    """Record one running application, or ``None`` if it is not running or has nothing to read.
-
-    Read through :meth:`NativeSurface.documents` rather than the raw accessibility walk, because
-    an element's *name* is derived — title, or failing that description, or failing that help —
-    and that derivation is part of what is being measured. Recording the raw tree would measure a
-    reimplementation of the product instead of the product."""
+    """Record one running application, or ``None`` if it is not running or has nothing to read."""
     result = surface.documents(application_name)
     if not result.get("ok") or not result.get("documents"):
         return None

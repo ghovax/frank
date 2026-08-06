@@ -1,28 +1,4 @@
-"""Synthesized mouse/keyboard input, used when a control has no usable accessibility
-action (custom canvases, some web widgets) or when a bare navigation key is needed.
-
-Containment governs how events are posted. The user and the agent must never fight over
-one shared pointer or keyboard, so every event goes through ``CGEventPostToPid(pid, …)``:
-it is delivered straight to the target application's own event queue. It does not move
-the global mouse cursor and does not travel through the shared HID tap, so whatever the
-user is typing in their own window is untouched. We never warp the real cursor and never
-force-activate the target.
-
-Text is entered with ``CGEventKeyboardSetUnicodeString``, which carries the actual
-characters — so any script (Latin, CJK, Arabic, emoji) types correctly with no
-character-to-keycode table. Discrete keys use virtual key codes: the named non-printing
-keys (Return, Tab, arrows, function keys), plus the letter/digit keys for keyboard
-shortcuts (Cmd+C, Cmd+A, Cmd+F, …) — the everyday chords a person uses to copy, select,
-find, switch, and so on.
-
-A virtual key code is a *physical* key position, and which character it yields depends on
-the active keyboard layout — Dvorak, AZERTY, and the like move the letters around. So for a
-shortcut we ask the live layout which key produces the wanted character (see
-``_layout_key_code``) rather than assuming US, and Cmd+C presses whatever key actually types
-``c``. A hardcoded US table remains only as the fallback for a layout that cannot produce
-the character at all (a non-Latin layout), which mirrors macOS's own Latin fallback for
-command chords.
-"""
+"""Synthesized mouse/keyboard input, used when a control has no usable accessibility action (custom canvases, some web widgets) or when a bare navigation key is needed."""
 from __future__ import annotations
 
 import time
@@ -66,15 +42,7 @@ NAMED_KEYS = tuple(sorted(_NAMED_KEY_CODES))
 
 
 def _layout_key_code(char: str) -> int | None:
-    """The virtual key code that types ``char`` under the *active* keyboard layout, or None.
-
-    A key code is a physical key position; the character it produces depends on the layout.
-    Instead of assuming US, we ask the live layout: for each key code,
-    ``CGEventKeyboardGetUnicodeString`` reports the character it currently yields (unmodified),
-    and we return the first key code that yields ``char``. Pure CoreGraphics — no Carbon /
-    ``UCKeyTranslate`` binding needed. The scan is ~0.1 ms and stops at the first match, so it
-    runs per press and always reflects the layout in effect right now (a mid-session switch
-    included)."""
+    """The virtual key code that types ``char`` under the *active* keyboard layout, or None."""
     for key_code in range(128):
         event = Quartz.CGEventCreateKeyboardEvent(None, key_code, True)
         if event is None:
@@ -86,8 +54,7 @@ def _layout_key_code(char: str) -> int | None:
 
 
 def click(pid: int, point_x: float, point_y: float, *, clicks: int = 1, button: str = "left") -> None:
-    """Post a click to one app's event queue at global point (point_x, point_y).
-    Contained: the user's real cursor never moves."""
+    """Post a click to one app's event queue at global point (point_x, point_y)."""
     button_code = {
         "left": Quartz.kCGMouseButtonLeft,
         "right": Quartz.kCGMouseButtonRight,
@@ -107,16 +74,13 @@ def click(pid: int, point_x: float, point_y: float, *, clicks: int = 1, button: 
 
 
 def move(pid: int, point_x: float, point_y: float) -> None:
-    """Move the pointer over one app's window (revealing hover states and tooltips) without
-    pressing anything. Contained: posted to the pid, so the user's real cursor never moves."""
+    """Move the pointer over one app's window (revealing hover states and tooltips) without pressing anything."""
     event = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, (point_x, point_y), Quartz.kCGMouseButtonLeft)
     Quartz.CGEventPostToPid(pid, event)
 
 
 def drag(pid: int, start_x: float, start_y: float, end_x: float, end_y: float, *, button: str = "left") -> None:
-    """Press at the start point, drag to the end point, and release — the gesture behind drag and
-    drop and drag-to-select. Interpolated into several moves so the target sees a real drag, not a
-    teleport. Contained: every event is posted to the app's own queue."""
+    """Press at the start point, drag to the end point, and release — the gesture behind drag and drop and drag-to-select."""
     button_code = {
         "left": Quartz.kCGMouseButtonLeft, "right": Quartz.kCGMouseButtonRight,
     }.get(button, Quartz.kCGMouseButtonLeft)
@@ -140,14 +104,7 @@ def drag(pid: int, start_x: float, start_y: float, end_x: float, end_y: float, *
 
 
 def type_text(pid: int, text: str) -> None:
-    """Type an arbitrary Unicode string into the target app, script-independent. Posts to
-    the pid, so the user's own keyboard focus is undisturbed.
-
-    CGEventKeyboardSetUnicodeString counts length in UTF-16 code units, not Python
-    characters, so a character outside the BMP (an emoji is a surrogate pair — two units,
-    one Python char) must be measured in UTF-16 or the string is truncated. Chunking is by
-    whole Python characters, which never splits a code point, and each chunk's length is
-    its true UTF-16 unit count."""
+    """Type an arbitrary Unicode string into the target app, script-independent."""
     tuning = active_tuning()
     chunk_size = tuning.amount(Tunable.type_chunk_size)
     chunk_interval = tuning.duration(Tunable.type_chunk_interval_seconds)
@@ -171,18 +128,7 @@ _MODIFIER_ALIASES = {
 
 
 def press_key(pid: int, key: str, modifiers: list[str]) -> bool:
-    """Press a key or chord (optionally with modifiers) in the target app — a named
-    non-printing key (return, tab, escape, arrows, f-keys) or a single letter/digit for a
-    shortcut (with Cmd/Option/Ctrl/Shift). Returns False if the key name or a modifier is
-    unknown.
-
-    A chord may arrive as one string — ``"cmd+shift+g"`` — as well as a key plus a
-    ``modifiers`` list. Both are accepted because both are what callers write: the browser
-    surface has always taken the joined form (it hands the string to Playwright, whose
-    ``"Control+Shift+G"`` is the convention every automation tool shares), so a script that
-    worked in a browser raised here on nothing but punctuation. Refusing it taught nobody
-    anything; a `+` is unambiguous and splitting on it costs a line.
-    """
+    """Press a key or chord (optionally with modifiers) in the target app — a named non-printing key (return, tab, escape, arrows, f-keys) or a single letter/digit for a shortcut (with Cmd/Option/Ctrl/Shift)."""
     name = key.strip().lower()
     if "+" in name and len(name) > 1:
         *chord_modifiers, name = [part.strip() for part in name.split("+") if part.strip()]

@@ -1,10 +1,4 @@
-"""Value types for tool-call location resolution and permission decisions.
-
-A tool call may target a workspace *location* (the local machine or a configured SSH
-remote); these types capture the resolved location, the per-call execution policy threaded
-through as an immutable value (so concurrent calls never cross working directories or
-permission flags), and the structured verdict the permission reviewer emits.
-"""
+"""Value types for tool-call location resolution and permission decisions."""
 
 from __future__ import annotations
 
@@ -19,9 +13,7 @@ from frank.locations.executor import LocationExecutor
 
 @dataclass
 class ResolvedLocation:
-    """A workspace location resolved for execution: its identity (uri/name), the executor
-    that runs tools against it (local subprocess or multiplexed SSH), the base directory
-    tools treat as cwd, and its effective execution policy."""
+    """A workspace location resolved for execution: its identity (uri/name), the executor that runs tools against it (local subprocess or multiplexed SSH), the base directory tools treat as cwd, and its effective execution policy."""
 
     uri: str
     name: str
@@ -41,12 +33,7 @@ class ToolLocationError(ValueError):
 
 @dataclass(frozen=True)
 class CallExecutionPolicy:
-    """The effective execution policy for ONE tool call: the resolved location it
-    targets (``None`` for tools that do not address a location), the directory its
-    shell/file work runs in, and the permission flags in force. Computed per call and
-    threaded through as a value — never written to runtime state — so tool calls
-    running concurrently against different locations cannot cross policies or
-    working directories."""
+    """The effective execution policy for ONE tool call: the resolved location it targets (``None`` for tools that do not address a location), the directory its shell/file work runs in, and the permission flags in force."""
 
     location: ResolvedLocation | None
     working_directory: str
@@ -54,9 +41,7 @@ class CallExecutionPolicy:
 
     @property
     def asks(self) -> bool:
-        """Whether a gate raised by this call goes to a person. The complement is the reviewer,
-        which answers for itself. Derived from the one resolved mode so nothing can disagree
-        with it."""
+        """Whether a gate raised by this call goes to a person."""
         return self.mode.asks
 
     @property
@@ -69,14 +54,7 @@ _LOCATION_TOOLS = frozenset({"bash", "read_file", "write_file", "edit_file", "se
 
 
 class PermissionDecision(BaseModel):
-    """What the reviewer decided about one request to reach past the confinement.
-
-    Two outcomes, and asking a person is not among them: the reviewer only ever runs where
-    there is nobody to ask, so escalating would be escalating to no one.
-
-    ``risk`` is the reviewer's own reading, not the agent's. That distinction is the whole of
-    why a risk field is acceptable here and was not on the tool call: this one is produced by
-    something being asked to judge, and the thing it judges cannot see it."""
+    """What the reviewer decided about one request to reach past the confinement."""
 
     action: Literal["allow", "deny"]
     explanation: str

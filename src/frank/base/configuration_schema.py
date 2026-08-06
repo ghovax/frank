@@ -1,17 +1,4 @@
-"""Every setting that exists, walked out of the schema rather than listed by hand.
-
-`frank configure` used to be able to show only what a file already contained, which is exactly
-backwards: a person reaching for it wants to know what they *could* set, and the file they have
-is by definition the part they already know about. Nothing enumerated the rest, because nothing
-knew what the rest was — the settings existed as Pydantic fields and the descriptions for them
-existed as comments beside those fields, in a form no program could read.
-
-So this module walks the models to produce the list: every path there is, what it holds, what it
-ships at. What each one is *called* and what it is *for* are not here — they are words, and words
-belong in the message catalogue (`shared/messages/`) where they can be translated, and in the
-configuration reference. Keeping them beside the fields put the interface in one language
-whatever the person had chosen, and put the same sentence in the repository twice.
-"""
+"""Every setting that exists, walked out of the schema rather than listed by hand."""
 
 from __future__ import annotations
 
@@ -115,10 +102,7 @@ def _choices(annotation: Any) -> tuple[str, ...]:
 
 
 def _kind_of(annotation: Any, default: Any) -> tuple[str, tuple[str, ...], bool]:
-    """What this field holds, how to offer it, and whether it may be nothing.
-
-    Read from the annotation, with the default as the tie-breaker for the one case an
-    annotation cannot answer: a bare `dict` or a `list` says nothing about what goes in it."""
+    """What this field holds, how to offer it, and whether it may be nothing."""
     inner, optional = _unwrapped(annotation)
     choices = _choices(inner)
     if choices:
@@ -148,12 +132,7 @@ TUNING_DEFAULTS = "tuning.defaults"
 
 
 def _tuning_defaults(prefix: str) -> list[Setting]:
-    """The individual tunables, expanded under ``tuning.defaults``.
-
-    This is the one field whose keys are neither fixed by a model nor invented by the user:
-    they are the names in :class:`~frank.base.tuning.Tunable`, each of which already carries its
-    own shipped value and its own explanation. Enumerating them here is what lets somebody ask
-    what may go under `defaults` without reading the source."""
+    """The individual tunables, expanded under ``tuning.defaults``."""
     from frank.base.tuning import Tunable
 
     return [
@@ -210,8 +189,7 @@ SECTION_ORDER = (
 
 
 def settings() -> list[Setting]:
-    """Every setting, sections ordered from what a person decides to what they tune, and within
-    a section in the order the schema declares them."""
+    """Every setting, sections ordered from what a person decides to what they tune, and within a section in the order the schema declares them."""
     from frank.base.configuration import Configuration
 
     walked = _walk(Configuration, "")
@@ -220,8 +198,7 @@ def settings() -> list[Setting]:
 
 
 def leaf_settings() -> list[Setting]:
-    """Only the settings that hold a value — no section headers. A section is a setting whose
-    path is a prefix of another's, so it is a place to put things rather than a thing itself."""
+    """Only the settings that hold a value — no section headers."""
     everything = settings()
     prefixes = {setting.path.rsplit(".", 1)[0] for setting in everything if "." in setting.path}
     return [
@@ -231,11 +208,7 @@ def leaf_settings() -> list[Setting]:
 
 
 def setting_for(path: str) -> Optional[Setting]:
-    """The setting at a dotted path, or ``None`` if the schema does not define one.
-
-    A path under an open-ended map — ``providers.anthropic.api_key`` — resolves to the setting
-    the map's value model defines, since the key in the middle is the user's own name for one
-    of them and cannot be enumerated in advance."""
+    """The setting at a dotted path, or ``None`` if the schema does not define one."""
     for setting in settings():
         if setting.path == path:
             return setting

@@ -1,20 +1,4 @@
-"""``ChatCodexModel`` — a LangChain chat model that talks to a ChatGPT subscription.
-
-This is the counterpart to :class:`~frank.runtime.models.litellm.ChatLiteLLMModel`
-for the experimental ``chatgpt`` provider. It does **not** go through LiteLLM,
-because the ChatGPT-subscription route is not the normal OpenAI API: it is Codex's
-endpoint ``chatgpt.com/backend-api/codex/responses``, which speaks the OpenAI
-*Responses* API (not Chat Completions), is stateless (``store: false`` with the
-full history resent every turn), and authenticates with the OAuth token minted for
-Codex plus a ``ChatGPT-Account-Id`` header.
-
-It sends frank's *own* system prompt in the ``instructions`` field like any normal
-Responses request — there is no Codex-prompt impersonation. The widely repeated claim
-that the endpoint validates a Codex-specific system prompt does not hold; what it does
-check is the client's identity, which is why ``originator`` names the Codex CLI while the
-prompt stays ours. See :mod:`frank.base.subscription` for that header set — including why
-``User-Agent`` still says frank — and :mod:`frank.base.credentials` for the auth/token side.
-"""
+"""``ChatCodexModel`` — a LangChain chat model that talks to a ChatGPT subscription."""
 
 from __future__ import annotations
 
@@ -77,16 +61,7 @@ def _error_code(body: str) -> str:
 
 
 class ChatCodexModel(BaseChatModel):
-    """A ``BaseChatModel`` backed by the ChatGPT-subscription Codex endpoint.
-
-    Auth is not passed in: the access token and account id are read (and refreshed)
-    from the shared token store on every call, so a single sign-in serves every
-    agent and a background refresh is transparent to callers. ``context_length`` is
-    the cold-start fallback the factory reads from the models.dev catalog, but the
-    Codex endpoint enforces a *smaller* budget than models.dev's direct-API metadata
-    advertises (e.g. models.dev lists ~1M for gpt-5.5/5.6 while Codex serves 272k),
-    so :meth:`context_window` prefers the live per-account value when it is known and
-    never reports more than :data:`COLD_START_WINDOW` when it is not."""
+    """A ``BaseChatModel`` backed by the ChatGPT-subscription Codex endpoint."""
 
     model: str
     reasoning_effort: Optional[str] = None
@@ -141,11 +116,7 @@ class ChatCodexModel(BaseChatModel):
         return message_text(message)
 
     def _to_responses_input(self, messages: Sequence[BaseMessage]) -> tuple[str, list[dict[str, Any]]]:
-        """Translate LangChain messages into a Responses ``(instructions, input)``
-        pair. frank's own system prompt(s) go straight into ``instructions`` (the
-        standard Responses home for system text) — no Codex preamble. Tool
-        calls/results become top-level ``function_call`` / ``function_call_output``
-        items (Responses does not nest them in a message)."""
+        """Translate LangChain messages into a Responses ``(instructions, input)`` pair. frank's own system prompt(s) go straight into ``instructions`` (the standard Responses home for system text) — no Codex preamble."""
         instructions = ""
         items: list[dict[str, Any]] = []
         for message in messages:
@@ -237,12 +208,7 @@ class ChatCodexModel(BaseChatModel):
         return payload
 
     async def _headers(self) -> dict[str, str]:
-        """The request headers, with a freshly-valid access token.
-
-        No longer static: the headers carry this conversation's id, which the endpoint routes a
-        cache lookup by. The token store is still per-account and per-machine, and that is what
-        being static used to be justified by — but a request that cannot say which conversation
-        it belongs to cannot be sent to where that conversation's prefix already is."""
+        """The request headers, with a freshly-valid access token."""
         return request_headers(await valid_tokens(), self.session_id)
 
     @staticmethod
@@ -390,11 +356,7 @@ class ChatCodexModel(BaseChatModel):
 
 
     def _trace_payload(self, payload: dict[str, Any]) -> RequestTrace:
-        """Cut the outgoing request into the pieces a prompt cache matches on, in wire order.
-
-        Instructions first, then the tool schemas, then one segment per input item — which is
-        exactly how the endpoint reads a prefix, so a segment index here is an offset there.
-        """
+        """Cut the outgoing request into the pieces a prompt cache matches on, in wire order."""
         pieces = [
             Piece(kind=INSTRUCTIONS, text=payload.get("instructions") or ""),
             Piece(kind=TOOLS, text=compact(payload.get("tools") or [])),

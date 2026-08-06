@@ -1,9 +1,4 @@
-"""Shared runtime internals extracted from agent.py.
-
-The helper functions, small dataclasses, and support classes the AgentRuntime concern
-mixins reference. Kept in a leaf module (it imports only stable modules, never agent.py or
-the mixin files) so the dependency graph is a clean DAG — agent_internals -> mixin files ->
-agent.py — with no import cycle."""
+"""Shared runtime internals extracted from agent.py."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -47,8 +42,7 @@ class Observation(BaseModel):
 
 
 class ObservationBatch(BaseModel):
-    """The structured memory the Observer/Reflector emits as a tool call — so the shape
-    is guaranteed by the model's tool-calling, never scraped from free text."""
+    """The structured memory the Observer/Reflector emits as a tool call — so the shape is guaranteed by the model's tool-calling, never scraped from free text."""
 
     observations: list[Observation] = Field(default_factory=list)
 
@@ -58,10 +52,7 @@ _STREAM_EXHAUSTED = object()
 
 
 async def _stream_next(iterator: AsyncIterator) -> Any:
-    """Return the next item from ``iterator``, or ``_STREAM_EXHAUSTED`` when it is
-    done. Wrapped so the model stream can be driven one read at a time and each read
-    raced against the abort event — a Stop then interrupts the turn even while it is
-    parked on the network awaiting the next token."""
+    """Return the next item from ``iterator``, or ``_STREAM_EXHAUSTED`` when it is done."""
     try:
         return await iterator.__anext__()
     except StopAsyncIteration:
@@ -72,15 +63,7 @@ def model_is_authorized(
     model_identifier: str,
     global_configuration: Configuration,
 ) -> bool:
-    """Whether we currently hold credentials to call ``model_identifier``.
-
-    The single authorization authority, mirroring how ``build_chat_model`` resolves
-    credentials so every LLM call site authorizes identically: the two native
-    subscription providers (``chatgpt``, ``cursor``) are unlocked by an OAuth sign-in
-    (their own token stores), each LiteLLM provider by a configured key or one of its env
-    vars, and ``custom`` is selectable on demand. Auxiliary calls (session titling, ...)
-    consult this before building a model instead of re-deriving the check per call site —
-    which is how titling used to silently exclude the OAuth-only chatgpt provider."""
+    """Whether we currently hold credentials to call ``model_identifier``."""
     provider_identifier = model_identifier.split("/", 1)[0]
     if provider_identifier == "chatgpt":
         return is_signed_in()
@@ -106,12 +89,7 @@ _BACKGROUND_HANDLE_PREFIXES = {
 
 
 def _coerce_mcp_arguments(value: Any) -> dict:
-    """Normalize the `arguments` of a call_mcp_tool call to a dict. Models often
-    emit the nested arguments object as a JSON *string* rather than a real object;
-    the previous `isinstance(dict)`-only guard silently dropped those to `{}`, so
-    the MCP server saw every field as undefined. Parse a JSON string back to the
-    dict it represents; fall back to empty only when there is genuinely nothing
-    usable."""
+    """Normalize the `arguments` of a call_mcp_tool call to a dict."""
     if isinstance(value, dict):
         return value
     if isinstance(value, str) and value.strip():
@@ -125,8 +103,7 @@ def _coerce_mcp_arguments(value: Any) -> dict:
 
 
 def _background_handle_kind(turn_id: str) -> str | None:
-    """The background-task kind if ``turn_id`` is one of
-    those handles rather than a readable A2A task; otherwise ``None``."""
+    """The background-task kind if ``turn_id`` is one of those handles rather than a readable A2A task; otherwise ``None``."""
     for prefix, kind in _BACKGROUND_HANDLE_PREFIXES.items():
         if turn_id.startswith(prefix):
             return kind
@@ -134,28 +111,7 @@ def _background_handle_kind(turn_id: str) -> str | None:
 
 
 def _cap_model_result_payload(result: str, *, code: str = "tool_result_truncated") -> str:
-    """Bound a model-facing tool result to the window-scaled output budget.
-
-    This is the backstop: whatever a tool produces, what reaches the conversation is smaller than
-    the budget. It has to hold unconditionally, because every tool that grows a result is a tool
-    that can end a turn, and the tools cannot each be trusted to bound themselves.
-
-    It did not hold. The previous version clipped the result to an ``excerpt``, then returned
-    ``{**parsed, "output_excerpt": excerpt, …}`` — every original key *plus* a copy of the whole
-    thing, popping only four hard-coded names (``output``, ``content``, ``summary``, ``results``)
-    that a ``control_screen`` result does not have. Measured on a real payload it turned 533,013
-    characters into 855,823. The one function whose job was to make results smaller was the
-    largest single contributor to the result that overran a context window, and it announced this
-    by setting ``"truncated": true`` on a payload it had just enlarged.
-
-    What replaces it drops whole fields, largest first, and says which ones went. A structured
-    result is read field by field, so losing ``ran`` entirely and being told so leaves something a
-    model can still act on, where a payload clipped mid-string leaves it holding the first 60% of
-    a JSON document. Only when a single field is itself over budget is that field's text clipped.
-
-    Nothing is written to disk. The full result used to be spooled to ``/tmp`` and its path handed
-    over, which read as a way to recover the rest and was not: the path outlived the turn, nothing
-    ever cleaned it up, and no model in a recorded session ever read one back."""
+    """Bound a model-facing tool result to the window-scaled output budget."""
     budget = active_tuning().amount(Tunable.output_tokens)
     _, was_truncated = clip_to_tokens(result, budget)
     if not was_truncated:
@@ -203,19 +159,7 @@ def _cap_model_result_payload(result: str, *, code: str = "tool_result_truncated
 
 
 def message_tokens(message: Any) -> int:
-    """How much of the context window one conversation message occupies.
-
-    Counts what is actually *sent*, which is more than the message's prose. A turn that calls
-    tools carries most of its weight in the tool calls' arguments and the results that come back,
-    and a sizing routine that read only text blocks would look at a conversation of a hundred
-    shell results and see almost nothing. That undercount is not academic: it is measured against
-    the model's window to decide whether to fold history, and a fold that never triggers is how a
-    context reaches the wall.
-
-    An approximation either way — the encoding is one general tokenizer standing in for every
-    model's own, and the provider's own framing is not modelled — so it is right for deciding
-    *when* a conversation has grown too large, and not for deciding whether one more token fits.
-    """
+    """How much of the context window one conversation message occupies."""
     from frank.base.message_content import message_text
 
     total = count_tokens(message_text(message))
@@ -264,12 +208,7 @@ _MODEL_PROMPT_LOADER = PromptLoader(Path(__file__).parent / "prompts")
 def _model_visible_tool_result(
     content: str, metadata: dict[str, Any], status: str, code: str | None = None, *, kind: str = "tool_result",
 ) -> str:
-    """The canonical model-facing tool result: a one-line JSON metadata header, a blank
-    line, then the tool's raw output body. The body is delivered **as-is** — prose stays
-    prose (never re-encoded into an escaped JSON string), structured output stays JSON — so
-    a long log or a fetched page reads cleanly instead of collapsing onto one escaped line.
-    Used for both an inline ToolMessage (``kind="tool_result"``) and a background-completion
-    system message (``kind="background_result"``). Mirrors :class:`events.ModelToolResult`."""
+    """The canonical model-facing tool result: a one-line JSON metadata header, a blank line, then the tool's raw output body."""
     header: dict[str, Any] = {
         "kind": kind,
         "tool_name": metadata.get("tool_name", ""),
@@ -288,8 +227,7 @@ def _model_visible_tool_result(
 
 
 def _model_result_status(content: str, *, ok: bool, backgrounded: bool) -> tuple[str, str | None]:
-    """The (status, code) for a model-facing tool result. A failed tool is an error; a
-    backgrounded one is still running; otherwise fall back to the payload's own code."""
+    """The (status, code) for a model-facing tool result."""
     parsed = _maybe_json(content)
     code = parsed.get("code") if isinstance(parsed, dict) else None
     if not ok:
@@ -300,9 +238,7 @@ def _model_result_status(content: str, *, ok: bool, backgrounded: bool) -> tuple
 
 
 def _detect_workspace(working_directory: str) -> tuple[str, bool]:
-    """Return ``(worktree_root, is_git_repo)``. Walks up from the working
-    directory for a ``.git`` marker; if found the workspace root is the repo
-    top level, otherwise it falls back to the working directory itself."""
+    """Return ``(worktree_root, is_git_repo)``."""
     base = Path(working_directory).expanduser().resolve() if working_directory else Path.cwd().resolve()
     current = base
     while True:
@@ -315,8 +251,7 @@ def _detect_workspace(working_directory: str) -> tuple[str, bool]:
 
 
 def _container_origins(annotation: Any) -> set:
-    """The container origins (``list`` and/or ``dict``) an annotation can be, seen through
-    Optional/Union wrappers. Used to decide whether a string argument should be JSON-parsed."""
+    """The container origins (``list`` and/or ``dict``) an annotation can be, seen through Optional/Union wrappers."""
     import types as types_module
     import typing
 
@@ -335,12 +270,7 @@ def _container_origins(annotation: Any) -> set:
 
 
 def _coerce_structured_arguments(schema: Any, arguments: dict) -> dict:
-    """Models frequently serialize array/object tool arguments as a JSON *string* rather than a
-    native value (e.g. ``"[\\"a\\"]"`` for a ``list[str]`` field). For any field the schema types
-    as a list or dict, parse a string that is well-formed JSON of that shape and use the parsed
-    value, so a stringified-but-valid argument is accepted by both validation and dispatch
-    instead of being rejected by the typed field. Returns a new dict; values that do not apply
-    pass through unchanged."""
+    """Models frequently serialize array/object tool arguments as a JSON *string* rather than a native value (e.g."""
     if not isinstance(arguments, dict):
         return arguments
     model_fields = getattr(schema, "model_fields", {})
@@ -367,8 +297,7 @@ def _coerce_structured_arguments(schema: Any, arguments: dict) -> dict:
 
 
 def _escape_to_dict(escape: Any) -> dict:
-    """An :class:`~frank.runtime.boundary.Escape` as plain data. Its tuples become lists,
-    because this is about to be JSON."""
+    """An :class:`~frank.runtime.boundary.Escape` as plain data."""
     return {
         "reads": list(escape.reads),
         "writes": list(escape.writes),
@@ -377,8 +306,7 @@ def _escape_to_dict(escape: Any) -> dict:
 
 
 def _escape_from_dict(data: Any) -> Any:
-    """The inverse. A value that is already an ``Escape`` is passed through, so this is safe on
-    a gate that never left the process."""
+    """The inverse."""
     from frank.runtime.boundary import Escape
 
     if isinstance(data, Escape):
@@ -393,11 +321,7 @@ def _escape_from_dict(data: Any) -> Any:
 
 @dataclass
 class _PreflightGate:
-    """One human-in-the-loop interaction a tool call needs before it can run: a
-    permission prompt or an ``ask_user`` question. Surfaced by the preflight pass
-    and carried in a ``SUSPENDED`` event; the durable pending-interaction record the
-    executor persists is built from these, and a later answer resolves each by
-    ``request_id``."""
+    """One human-in-the-loop interaction a tool call needs before it can run: a permission prompt or an ``ask_user`` question."""
 
     request_id: str
     tool_call_id: str
@@ -429,18 +353,7 @@ class _PreflightGate:
     grants_screen_mutations: bool = False
 
     def to_dict(self) -> dict:
-        """Every field, as plain JSON-safe data.
-
-        *Every* field, and that is the whole of a bug this used to have. A gate's dict is what
-        crosses two boundaries — the suspension event a client draws the prompt from, and the
-        durable plan a resumed turn is rebuilt out of — so a field omitted here does not degrade,
-        it disappears. `reason` was missing and the sink read it off the other side, which
-        crashed every turn that raised a permission gate; the widening was missing and an
-        approval that arrived after the suspension recorded no grant, because the gate it came
-        back to had forgotten what was being asked for.
-
-        The two that are not already plain data are flattened here: a reason is a Pydantic
-        model, and an escape is a frozen dataclass of tuples."""
+        """Every field, as plain JSON-safe data."""
         return {
             "request_id": self.request_id, "tool_call_id": self.tool_call_id, "kind": self.kind,
             "tool_name": self.tool_name, "arguments": self.arguments,
@@ -476,11 +389,7 @@ class _PreflightGate:
 
 @dataclass
 class _ToolPlan:
-    """The preflight verdict for one tool call. Exactly one shape holds: a hard ``refusal``
-    (the tool never runs and the model gets this error), one or more pending ``gates`` (needs
-    an answer), or neither (cleared: run it). The decision is computed once, here, so
-    ``_execute_tool`` only ever carries out a verdict and can no longer approve anything
-    itself."""
+    """The preflight verdict for one tool call."""
 
     tool_call_id: str
     refusal: Optional[dict] = None  # {"code", "message", "denied_injection", "raw_command", "reason"}
@@ -526,11 +435,7 @@ class _ToolPlan:
 
 @dataclass
 class _ToolCall:
-    """One call, as middleware sees it.
-
-    Mutable arguments, deliberately: a layer that rewrites a path or injects a default is a
-    legitimate use, and a frozen value would force every such layer to reconstruct the call.
-    """
+    """One call, as middleware sees it."""
 
     name: str
     arguments: dict
@@ -538,10 +443,7 @@ class _ToolCall:
 
 @dataclass
 class _ResolvedToolDecision:
-    """The verdict a batch runner hands each tool: run it, deny it (with the exact
-    error the gate would have produced), or — for ``ask_user`` — the answers to return.
-    Produced from the preflight plans plus any human answers, on both the fresh and the
-    resumed path, so ``_execute_tool`` only carries a decision out."""
+    """The verdict a batch runner hands each tool: run it, deny it (with the exact error the gate would have produced), or — for ``ask_user`` — the answers to return."""
 
     tool_call_id: str
     approved: bool = True
@@ -563,11 +465,7 @@ _STOP = "stop"          # the turn is over (a terminal event was already yielded
 
 @dataclass
 class _ModelCallOutcome:
-    """What one streamed model call produced: the assembled response, or a terminal
-    condition the turn loop must act on instead. ``cancelled`` means a Stop with nothing
-    queued (a ``Done`` was already yielded); ``aborted_for_steering`` means a Stop that
-    found queued steering, so the loop should drain it and iterate again; otherwise
-    ``response`` holds the assembled ``AIMessageChunk``."""
+    """What one streamed model call produced: the assembled response, or a terminal condition the turn loop must act on instead."""
 
     response: Optional[AIMessageChunk] = None
     aborted_for_steering: bool = False

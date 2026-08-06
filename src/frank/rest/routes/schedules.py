@@ -79,10 +79,7 @@ async def delete_schedule(schedule_id: str):
 
 @router.post("/schedules/{schedule_id}/run")
 async def run_schedule(schedule_id: str):
-    """Fire now, without waiting for the window and without moving it.
-
-    So a schedule can be tried the moment it is written rather than at six tomorrow morning,
-    which is the only way to find out that the agent name was wrong before it matters."""
+    """Fire now, without waiting for the window and without moving it."""
     from frank.daemon import scheduler
     from frank.hub.database import ScheduleRecord
     from frank.hub import state as hub_state

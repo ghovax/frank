@@ -45,20 +45,7 @@ _RESPONSES_ROUTES = ("openai", "azure")
 
 
 class ChatLiteLLMModel(BaseChatModel):
-    """A LangChain ``BaseChatModel`` backed by LiteLLM, the single route to every
-    provider (Anthropic, OpenAI, Gemini, Bedrock, the OpenAI-compatible family, and
-    any custom OpenAI-compatible server). LiteLLM owns each provider's auth, base
-    URL, request format, streaming wire format, and reasoning-token normalization;
-    this class only translates between LangChain messages and LiteLLM's
-    OpenAI-shaped request/response, so the harness's existing tool-binding, chunk
-    merging, and reasoning round-trip keep working unchanged across providers.
-
-    One adapter replaces the former ``ChatOpenAI`` + ``ReasoningChatOpenAI`` pair:
-    there is no longer an OpenAI-only path and a separate reasoning subclass.
-    LiteLLM normalizes provider reasoning fields on the wire; this adapter immediately
-    converts them into LangChain's standard reasoning content blocks, so the rest of
-    the harness has one provider-neutral representation.
-    """
+    """A LangChain ``BaseChatModel`` backed by LiteLLM, the single route to every provider (Anthropic, OpenAI, Gemini, Bedrock, the OpenAI-compatible family, and any custom OpenAI-compatible server)."""
 
     model: str
     api_key: Optional[SecretStr] = None
@@ -82,19 +69,7 @@ class ChatLiteLLMModel(BaseChatModel):
         return "litellm"
 
     def context_window(self) -> int:
-        """The model's maximum input context in tokens. Zero means genuinely unknown.
-
-        Two sources, because neither covers everything. LiteLLM's map knows the models it routes
-        natively and nothing about a gateway's — a model reached through an OpenAI-compatible
-        endpoint is just a name to it, so it answered zero, and zero is what blanked the
-        composer's context ring on every gateway provider. The models.dev catalogue knows those,
-        having been fetched under whichever provider publishes them.
-
-        The smaller wins when both answer. They disagree — 200K against 1M for the same Claude,
-        one quoting the standard window and the other a beta — and over-reporting is the harmful
-        direction: every window-scaled budget divides by this number, so believing the larger
-        figure sizes each cap for room that is not there and reports a conversation as far
-        emptier than it is."""
+        """The model's maximum input context in tokens. Zero means genuinely unknown."""
         catalogued = max(0, int(self.context_length or 0))
         try:
             info = litellm.get_model_info(self.model)
@@ -115,15 +90,7 @@ class ChatLiteLLMModel(BaseChatModel):
         }
 
     def _speaks_responses(self) -> bool:
-        """Whether this model's reasoning is only round-trippable over the Responses API.
-
-        Asked of LiteLLM's own model map rather than guessed from the name, because the map is
-        what LiteLLM consults when it decides which endpoint to speak — so the answer here and
-        the endpoint actually used cannot drift apart. A model already carrying a `responses/`
-        segment says so itself; one whose declared mode is `responses` is routed there without
-        being asked. What is left is the case this exists for: a reasoning model on `openai` or
-        `azure` whose mode is `chat`, which is where the reasoning was being lost.
-        """
+        """Whether this model's reasoning is only round-trippable over the Responses API."""
         route, _, remainder = self.model.partition("/")
         if remainder.startswith("responses/"):
             return True
@@ -186,15 +153,7 @@ class ChatLiteLLMModel(BaseChatModel):
         return dicts
 
     def _reasoning_to_carry(self, source: Any) -> dict[str, Any]:
-        """Whatever of the provider's own reasoning this message can hand back next time.
-
-        A streamed thinking block arrives twice. First as deltas — a slice of text and no
-        signature, which is display material and nothing more; Anthropic rejects an unsigned
-        block outright rather than ignoring it. Then, when the signature lands, as one whole
-        block carrying the full text *and* the signature. Only the second kind is history, so
-        only the second kind is kept: taking both would send the same thinking several times
-        over and get the request refused for the partials.
-        """
+        """Whatever of the provider's own reasoning this message can hand back next time."""
         carried: dict[str, Any] = {}
         blocks = [
             block for block in ChatLiteLLMModel._plain(getattr(source, "thinking_blocks", None))
@@ -247,18 +206,7 @@ class ChatLiteLLMModel(BaseChatModel):
     def _apply_cache_breakpoints(
         self, dicts: list[dict[str, Any]], messages: Sequence[BaseMessage] = (),
     ) -> list[dict[str, Any]]:
-        """Mark the messages the provider should cache up to.
-
-        Anthropic caches nothing unless asked. There were no breakpoints anywhere in this harness,
-        which meant every Claude call re-read and re-billed the whole conversation at full rate —
-        a worse deal than the OpenAI path, and invisible, because a request with no cache still
-        succeeds and simply costs more.
-
-        The trailing pair skips anything the harness marked ``transient``. A transient note is
-        assembled for one request and is gone from the next, so a breakpoint on it can never be
-        read back — it would burn one of the four Anthropic allows and return nothing. Skipping
-        it puts both trailing breakpoints on conversation that will still be there to match.
-        """
+        """Mark the messages the provider should cache up to."""
         route = self._route()
         if route == self._GATEWAY_ROUTE:
             return dicts
@@ -290,15 +238,7 @@ class ChatLiteLLMModel(BaseChatModel):
 
     @staticmethod
     def _mark_cached(entry: dict[str, Any], key: str = "cache_control") -> bool:
-        """Put the breakpoint where LiteLLM will find it for this role, and say whether it went.
-
-        A tool result carries it on the message, because that is where LiteLLM reads it when
-        building Anthropic's `tool_result` block. Every other role carries it on the last content
-        block, which means promoting plain string content to a one-block list — the marker has
-        nowhere to live on a bare string.
-
-        Answers ``False`` when there is nothing to attach to, so the caller can try the message
-        before instead of quietly losing a breakpoint."""
+        """Put the breakpoint where LiteLLM will find it for this role, and say whether it went."""
         if entry["role"] == "tool":
             entry[key] = {"type": "ephemeral"}
             return True
@@ -387,11 +327,7 @@ class ChatLiteLLMModel(BaseChatModel):
 
 
     def _trace_request(self, params: dict[str, Any], sent: list[dict[str, Any]]) -> RequestTrace:
-        """Cut the outgoing request into the pieces a prompt cache matches on, in wire order.
-
-        Tool schemas first, since every OpenAI-shaped request carries them ahead of the
-        conversation, then one segment per message.
-        """
+        """Cut the outgoing request into the pieces a prompt cache matches on, in wire order."""
         pieces = [Piece(kind=TOOLS, text=compact(params.get("tools") or []))]
         for position, message in enumerate(sent):
             pieces.append(Piece(kind=ITEM, text=compact(message), position=position,
@@ -435,10 +371,7 @@ class ChatLiteLLMModel(BaseChatModel):
 
     @staticmethod
     def _usage_metadata(usage: Any) -> Optional[UsageMetadata]:
-        """Normalize a LiteLLM ``Usage`` object into a LangChain ``UsageMetadata``
-        dict, so real per-call token counts ride along on the message and merge
-        automatically when streamed chunks are combined. Returns ``None`` when the
-        response carries no usage."""
+        """Normalize a LiteLLM ``Usage`` object into a LangChain ``UsageMetadata`` dict, so real per-call token counts ride along on the message and merge automatically when streamed chunks are combined."""
         if usage is None:
             return None
 
@@ -513,15 +446,7 @@ class ChatLiteLLMModel(BaseChatModel):
 
     @staticmethod
     def _standard_content_blocks(content: Any, reasoning: Any, block: str = "") -> list[ContentBlock]:
-        """Name the blocks in one streamed chunk.
-
-        `block` identifies the model call this chunk belongs to, and it is what makes these
-        identifiers *identify*. They used to be the position within the chunk, which is 0 for
-        every chunk of every call — so a whole session's prose shared one name, and anything
-        downstream that trusted the identifier to mean "this block" was reading a constant. The
-        Responses API hands out a real per-item id; LiteLLM streams no such thing, so the id is
-        minted per stream here and the position distinguishes blocks within a chunk.
-        """
+        """Name the blocks in one streamed chunk."""
         normalized_blocks: list[ContentBlock] = []
         if reasoning:
             normalized_blocks.append(ReasoningContentBlock(
