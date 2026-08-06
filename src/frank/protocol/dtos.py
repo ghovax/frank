@@ -48,7 +48,7 @@ class AgentConfigurationResponse(BaseModel):
     provider: str = ""
     reasoning_effort: str = "high"
     # `None` where the card sets no ceiling, which is what most cards do.
-    permission_mode: Literal["ask", "auto"] | None = None
+    permission_mode: Literal["ask", "automatic"] | None = None
     tools_enabled: list[str]
     tools_disabled: list[str]
     bash: AgentBashConfigurationResponse
@@ -65,7 +65,7 @@ class AgentConfigurationUpdateRequest(BaseModel):
     model: str | None = None
     provider: str | None = None
     reasoning_effort: str | None = None
-    permission_mode: Literal["ask", "auto"] | None = None
+    permission_mode: Literal["ask", "automatic"] | None = None
     tools_enabled: list[str] | None = None
     tools_disabled: list[str] | None = None
     bash: AgentBashConfigurationRequest | None = None
@@ -96,7 +96,7 @@ class SettingsUpdateRequest(BaseModel):
     jina_api_key: str | None = None
     firecrawl_api_key: str | None = None
     web_fetch_proxy_url: str | None = None
-    permission_mode: Literal["ask", "auto"] | None = None
+    permission_mode: Literal["ask", "automatic"] | None = None
     sandbox: dict | None = None
     # Per-provider API keys. Both OpenCode gateways use the key under "opencode".
     provider_keys: dict[str, str] | None = None

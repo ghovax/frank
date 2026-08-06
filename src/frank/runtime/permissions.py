@@ -295,7 +295,7 @@ class _DecidesPermissions:
 
         # ask_user is the one call that is a question rather than an act.
         if tool_name == "ask_user":
-            # Not offered under `auto` — the tool is left out of the session's set entirely — so this is the second lock rather than the first.
+            # Not offered under `automatic` — the tool is left out of the session's set entirely — so this is the second lock rather than the first.
             if not policy.asks:
                 plan.refusal = self._refusal(self._prompt_loader.load("nobody_to_ask", {}))
                 return plan
@@ -343,7 +343,7 @@ class _DecidesPermissions:
             is_bash=(tool_name == "bash"),
             deny_message=self._deny_message(tool_name),
         )
-        # Under `auto` the gate is answered here rather than put to somebody.
+        # Under `automatic` the gate is answered here rather than put to somebody.
         if not policy.asks:
             decision = await self._review(gate)
             if decision.action == "allow":
@@ -517,7 +517,7 @@ class _DecidesPermissions:
 
         A gate is a question that has been asked, and changing the policy does not unask it: the
         turn that raised it has ended, its verdict sits in the task record, and nothing re-reads
-        that record. So somebody who switches to `auto` precisely because they are tired of being
+        that record. So somebody who switches to `automatic` precisely because they are tired of being
         asked watches the same card go on asking.
 
         Answers ``"allow"``, ``"deny"``, or ``""`` for "still a question". The same reviewer the

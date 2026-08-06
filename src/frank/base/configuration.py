@@ -680,7 +680,7 @@ class ProviderCredential(Section):
 class AgentDefaults(Section):
     """What a session gets when its creator did not say."""
 
-    permission_mode: Literal["ask", "auto"] = Field("ask")
+    permission_mode: Literal["ask", "automatic"] = Field("ask")
 
 
 class Configuration(Section):
@@ -1022,7 +1022,7 @@ class AgentConfiguration(BaseModel):
     provider: Optional[str] = None
     reasoning_effort: str = "high"
     # A ceiling: the loosest mode a session running this profile may ever have.
-    permission_mode: Optional[Literal["ask", "auto"]] = None
+    permission_mode: Optional[Literal["ask", "automatic"]] = None
 
     # An agent's own confinement, narrowing the global one.
     sandbox: Optional[SandboxConfiguration] = None

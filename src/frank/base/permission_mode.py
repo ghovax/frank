@@ -24,7 +24,7 @@ so widening is the human's act, never the model's.
 There is deliberately **no bypass mode**. An agent that runs with no gate at all is the one
 configuration whose blast radius is unbounded, and sessions now create sessions without a human
 in the loop, so the mode that disables the loop entirely is not offered. The loosest policy
-available is :attr:`AUTO`, whose reviewer judges every gate it is handed and answers for
+available is :attr:`AUTOMATIC`, whose reviewer judges every gate it is handed and answers for
 itself — but it does answer, and a request it cannot vouch for is refused rather than run.
 """
 
@@ -40,9 +40,9 @@ class PermissionMode(StrEnum):
     special-cases it.
 
     - ``ASK`` — the person running the session answers. The turn parks until they do.
-    - ``AUTO`` — the reviewer answers: it allows the request or refuses it, and never asks.
+    - ``AUTOMATIC`` — the reviewer answers: it allows the request or refuses it, and never asks.
 
-    ``AUTO`` is for work nobody is watching. An agent sent off to do a job cannot be autonomous
+    ``AUTOMATIC`` is for work nobody is watching. An agent sent off to do a job cannot run alone
     and also stop every few minutes for a click — a mode that escalates is a mode that needs
     somebody at the keyboard, which is the opposite of what it is for. So the reviewer is given
     the decision: it allows what it can vouch for and refuses the rest, and a refusal reaches
@@ -54,7 +54,7 @@ class PermissionMode(StrEnum):
     """
 
     ASK = "ask"
-    AUTO = "auto"
+    AUTOMATIC = "automatic"
 
     @classmethod
     def parse(cls, value: str | PermissionMode | None) -> Optional[PermissionMode]:
@@ -80,9 +80,9 @@ class PermissionMode(StrEnum):
 
     @property
     def restrictiveness(self) -> int:
-        """Position in the restrictiveness order, least to most: ``auto < ask``.
+        """Position in the restrictiveness order, least to most: ``automatic < ask``.
 
-        ``auto`` is the looser of the two because it is the one that can let a request through
+        ``automatic`` is the looser of the two because it is the one that can let a request through
         with nobody watching, and that — what a session may do without a person — is the axis
         the clamp cares about."""
         return 1 if self is PermissionMode.ASK else 0
@@ -140,7 +140,7 @@ class PermissionMode(StrEnum):
     @property
     def never_asks(self) -> bool:
         """Whether this mode can run with nobody watching."""
-        return self is PermissionMode.AUTO
+        return self is PermissionMode.AUTOMATIC
 
     @property
     def asks(self) -> bool:

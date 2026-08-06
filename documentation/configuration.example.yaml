@@ -52,7 +52,7 @@ web_fetch:
 # What a session may do
 
 agent:
-  # ask | auto — who answers when a call asks to reach past the confinement. A session can be
+  # ask | automatic — who answers when a call asks to reach past the confinement. A session can be
   # started with its own;
   # this is what it gets when nobody says.
   permission_mode: "ask"

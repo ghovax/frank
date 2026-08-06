@@ -484,9 +484,9 @@
     "permissionAskLabel": "Ask me first",
     "permissionAskName": "Ask first",
     "permissionAskDescription": "Anything that reaches past the session's confinement stops for you",
-    "permissionAutoLabel": "Decide without me",
-    "permissionAutoName": "Autonomous",
-    "permissionAutoDescription": "A reviewer answers those requests on its own — it allows or refuses, and never asks you"
+    "permissionAutomaticLabel": "Decide without me",
+    "permissionAutomaticName": "Autonomous",
+    "permissionAutomaticDescription": "A reviewer answers those requests on its own — it allows or refuses, and never asks you"
   },
   "SessionsSidebar": {
     "activeFirst": "Active first",
@@ -957,7 +957,7 @@
     "agent": {
       "permission_mode": {
         "ask": "Ask me first",
-        "auto": "Decide without me"
+        "automatic": "Decide without me"
       }
     },
     "workspace": {

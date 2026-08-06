@@ -168,7 +168,7 @@ def _agent_permission_ceiling(agent: str, working_directory: str) -> Optional[Pe
     """The loosest mode the agent's own profile allows, or ``None`` if it cannot be read.
 
     The runtime has always applied this — it meets the session's mode with the profile's
-    before enforcing anything — but the control plane did not, so a record could say `auto`
+    before enforcing anything — but the control plane did not, so a record could say `automatic`
     while the session it described ran under `default`. That gap was invisible while the mode
     was fixed at creation and nobody could ask for it again; it is not invisible now that a
     person changes it from a chip and watches for the answer. Applied here so what is recorded,
@@ -356,7 +356,7 @@ async def _session_permission_mode(params: dict) -> dict:
 
     The mode was fixed at `create` for the whole of a session's life, and the cost of that was
     paid by the person: a conversation begun under manual approvals and then trusted had to be
-    abandoned and restarted to stop being asked about every command, and one begun under `auto`
+    abandoned and restarted to stop being asked about every command, and one begun under `automatic`
     could not be reined in without ending it. So the mode is a live property now, and the two
     guarantees that made it worth fixing are kept as clamps rather than as immobility:
 
@@ -381,7 +381,7 @@ async def _session_permission_mode(params: dict) -> dict:
     requested = PermissionMode.parse(params.get("permission_mode"))
     if requested is None:
         raise RpcError(
-            "permission_mode must be one of: ask, auto.",
+            "permission_mode must be one of: ask, automatic.",
             status_code=400,
             code="invalid_permission_mode",
         )
