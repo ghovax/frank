@@ -1048,12 +1048,7 @@ export async function fetchRecentModels(): Promise<RecentModel[]> {
   return data.models ?? [];
 }
 
-// ChatGPT-subscription sign-in state for the `chatgpt` provider.
-// This is an OAuth session, not a stored key — the token lives server-side and
-// this only reports whether one is present and for which account.
-// One rate-limit window the ChatGPT/Codex backend enforces (a rolling 5h window
-// and a weekly window). `window_minutes` is the source of truth for labeling —
-// the 5h/weekly split isn't pinned to a fixed slot across accounts.
+// ChatGPT sign-in state: an OAuth session held server-side, reported as present and for which account.
 export interface ChatGPTUsageWindow {
   key: string;
   used_percent: number;
@@ -1061,9 +1056,7 @@ export interface ChatGPTUsageWindow {
   resets_at: number | null;
 }
 
-// The account's usage snapshot, captured from `x-codex-*` headers on the last turn.
-// Absent (null) until the first turn runs after sign-in — the headers only ride on
-// the responses call, so there is no cheaper source to poll.
+// The account's usage, from headers on the last turn, so there is no cheaper source to poll.
 export interface ChatGPTUsage {
   plan_type: string;
   active_limit: string;
@@ -1084,9 +1077,7 @@ export async function fetchChatGPTAuthStatus(): Promise<ChatGPTAuthStatus> {
   return response.json();
 }
 
-// Begin sign-in: the server binds its loopback callback and returns the OpenAI
-// authorize URL to open in a browser. Completion arrives via a `settings_changed`
-// broadcast (or by re-polling fetchChatGPTAuthStatus).
+// Begin sign-in: the server binds its callback and returns the authorize URL to open.
 export async function startChatGPTLogin(): Promise<{ authorize_url: string }> {
   const response = await apiFetch(`/auth/chatgpt/start`, { method: "POST" });
   if (!response.ok) {
@@ -1100,10 +1091,7 @@ export async function signOutChatGPT(): Promise<void> {
   await apiFetch(`/auth/chatgpt`, { method: "DELETE" });
 }
 
-// Cursor-subscription sign-in state for the `cursor` provider. The same shape as the
-// ChatGPT status minus the usage meters: Cursor's agent service reports no remaining
-// allowance on any call this makes, so there is nothing to meter. `account` is whatever
-// the token names its subject as — an email when the claim carries one.
+// Cursor sign-in state, without the usage meters: its service reports no remaining allowance.
 export interface CursorAuthStatus {
   signed_in: boolean;
   account: string;
@@ -1115,10 +1103,7 @@ export async function fetchCursorAuthStatus(): Promise<CursorAuthStatus> {
   return response.json();
 }
 
-// Begin sign-in: the server returns Cursor's login URL to open in a browser and starts
-// polling Cursor for completion. There is no redirect in this flow, so nothing lands back
-// here — completion arrives via a `settings_changed` broadcast (or by re-polling
-// fetchCursorAuthStatus).
+// Begin sign-in: no redirect lands here, so completion arrives on a broadcast or by re-polling.
 export async function startCursorLogin(): Promise<{ authorize_url: string }> {
   const response = await apiFetch(`/auth/cursor/start`, { method: "POST" });
   if (!response.ok) {
@@ -1162,15 +1147,11 @@ export interface McpServerTools {
   name: string;
   tools: McpTool[];
   enabled?: boolean;
-  // "global" (from ~/.agents or the Composio integration) or "workspace" (from the
-  // selected folder's own mcp.json).
+  // "global" from the home directory or Composio, "workspace" from the folder's own mcp.json.
   scope?: "global" | "workspace";
 }
 
-// Discovery: tools exposed by each configured MCP server, for the capabilities panel.
-// Skills available in the selected folder — home globals plus that folder's own
-// `.agents/skills`, deduped — independent of any agent, so the panel can show a
-// folder's skills even when it has no agents.
+// Skills in the selected folder, home globals included, independent of any agent.
 export async function fetchSkills(workingDirectory?: string): Promise<AgentSkill[]> {
   const query = workingDirectory
     ? `?working_directory=${encodeURIComponent(workingDirectory)}`
@@ -1186,9 +1167,7 @@ export async function fetchSkills(workingDirectory?: string): Promise<AgentSkill
   }
 }
 
-// MCP servers are listed for the selected folder: its own `mcp.json` plus the
-// home globals and the global Composio integration (deduped), never the server's
-// launch directory. The subprocess pool is shared and grows as a union.
+// MCP servers for the selected folder, never the server's launch directory. The pool is a shared union.
 export async function fetchMcpTools(workingDirectory?: string): Promise<McpServerTools[]> {
   const query = workingDirectory
     ? `?working_directory=${encodeURIComponent(workingDirectory)}`
@@ -1204,13 +1183,7 @@ export async function fetchMcpTools(workingDirectory?: string): Promise<McpServe
   }
 }
 
-// Subscribe to live server events (e.g. agents changed). Returns an unsubscribe.
-//
-// All subscribers share ONE stream. Opening one per subscriber (many components
-// subscribe) quickly exhausted the browser's ~6-connections-per-host limit with
-// long-lived SSE streams, starving every other request to the server — most visibly, a
-// user-triggered POST could never get a connection and hung forever. A single stream
-// fans out to all local listeners instead.
+// Subscribe to live server events. One shared stream, since a stream per subscriber exhausts the pool.
 const eventListeners = new Set<(event: { type: string }) => void>();
 let sharedEventStream: { close: () => void } | null = null;
 
@@ -1239,8 +1212,7 @@ function ensureEventStream(): void {
   }, (connected) => {
     if (connected === lastReportedConnection) return;
     lastReportedConnection = connected;
-    // Whatever comes back may be a different daemon, on a different port, with a different
-    // token. Forgetting the endpoint here is what makes the reconnection reach it.
+  // What comes back may be a different daemon, so forgetting the endpoint is what reaches it.
     if (!connected) forgetDaemonEndpoint();
     connectionListeners.forEach((listener) => listener(connected));
   });
@@ -1251,8 +1223,7 @@ export function subscribeEvents(onEvent: (event: { type: string }) => void): () 
   ensureEventStream();
   return () => {
     eventListeners.delete(onEvent);
-    // Close the shared stream once nothing is listening, so it reopens cleanly
-    // (and against a possibly-changed API base) when a subscriber returns.
+    // Close the shared stream once nothing listens, so it reopens cleanly for the next subscriber.
     if (eventListeners.size === 0 && sharedEventStream) {
       sharedEventStream.close();
       sharedEventStream = null;
@@ -1260,16 +1231,14 @@ export function subscribeEvents(onEvent: (event: { type: string }) => void): () 
   };
 }
 
-// The default workspace shown before the user picks anything — the server provides
-// its folder name so the selector never has to derive one.
+// The default workspace, with its folder name, so the selector never has to derive one.
 export async function fetchHomeDirectory(): Promise<{ path: string; name: string }> {
   const response = await apiFetch(`/home`);
   const data = await response.json();
   return { path: String(data.path ?? ""), name: String(data.name ?? "") };
 }
 
-// Best-effort home directory of an SSH host (for prefilling a location's base directory).
-// Returns "" if the host is unknown/unreachable — the field then stays empty for manual entry.
+// Best-effort home directory of an SSH host, or "" when it is unknown or unreachable.
 export async function fetchHostHomeDirectory(alias: string): Promise<string> {
   try {
     const response = await apiFetch(`/hosts/${encodeURIComponent(alias)}/home`);
@@ -1282,17 +1251,11 @@ export async function fetchHostHomeDirectory(alias: string): Promise<string> {
   }
 }
 
-// A session as the daemon's registry knows it. `parent` is the session that created this
-// one — a peer is an ordinary session, so the hierarchy belongs in the
-// sidebar rather than in a separate agents panel. The capability token is never listed:
-// it is handed to the creator once, at `create`.
-// What a session is working toward, as its worker last reported it. Absent when it has no
-// goal — which is most sessions, most of the time.
+// A session as the registry knows it. `parent` is its creator, and the token is never listed.
 export interface SessionGoal {
   text: string;
   requirements: string[];
-  // `active` while it is being worked, `blocked` when the agent reported an obstacle it
-  // cannot pass, `parked` when it ran a long stretch unattended and stopped to wait.
+  // `active` while worked, `blocked` on an obstacle it cannot pass, `parked` after a long unattended stretch.
   status: "active" | "blocked" | "parked";
   blocker: string;
 }
@@ -1301,12 +1264,9 @@ export interface SessionSummary {
   id: string;
   agent: string;
   parent: string;
-  // Does this session still exist? `live` or `ended`. Durable — it survives a daemon
-  // restart, because a session is a record and only its process was ever transient.
+  // Whether the session still exists. Durable: a session is a record, and only its process was transient.
   lifecycle: "live" | "ended";
-  // What it is doing right now, derived by the daemon and never stored: `working` (a turn
-  // is in flight), `waiting` (parked on a decision only a person can make), `idle` (has a
-  // process, doing nothing), `asleep` (no process — the next message forks one), or `ended`.
+  // What it is doing now, derived and never stored: working, waiting, idle, asleep or ended.
   activity: "working" | "waiting" | "idle" | "asleep" | "ended";
   // How an ended session finished: `exited` or `failed`. Empty while it is live.
   outcome: string;
@@ -1339,9 +1299,7 @@ export async function fetchSession(sessionId: string, options?: ApiRequestOption
   }
 }
 
-// A session and everything created beneath it. The daemon returns the descendants flat,
-// each carrying its `parent`, so a caller nests them itself rather than being handed a
-// shape it would have to flatten to search.
+// A session and its descendants, returned flat with each carrying its parent, so a caller nests them.
 export interface SessionTree {
   session: SessionSummary;
   descendants: SessionSummary[];
@@ -1357,26 +1315,18 @@ export async function sessionTree(sessionId: string, options?: ApiRequestOptions
   }
 }
 
-// Create a session: one OS process running one agent, empty until it is sent a
-// message. This is the single point where the agent, the directory, the permission
-// mode and the parent are fixed — `send` never changes any of them. The returned token
-// is the session's capability handle; the daemon relays on our behalf, so the GUI keeps
-// it only to identify the session it owns.
+// Create a session: the one place the agent, directory, mode and parent are fixed.
 export interface SessionCreateInput {
   agent: string;
   workingDirectory?: string;
-  // The workspace a session runs in (in place, on a branch, or in a worktree) is chosen
-  // once here, like every other piece of its configuration.
+  // Where a session runs — in place, on a branch, or in a worktree — chosen once, here.
   worktreeStrategy?: WorktreeStrategy;
   permissionMode?: PermissionMode;
   workspaceId?: string;
   parent?: string;
 }
 
-// `parent` and `permissionMode` come back because either may differ from what was asked
-// for: a caller identified by its own token becomes the parent whatever it passed, and the
-// mode is clamped against that parent. A creator that cannot see the clamp cannot reason
-// about what it just made.
+// `parent` and `permissionMode` come back because either may differ from what was asked for.
 export interface SessionCreated {
   id: string;
   token: string;
@@ -1396,10 +1346,7 @@ export async function sessionCreate(input: SessionCreateInput, options?: ApiRequ
   }, options);
 }
 
-// Change the approval policy of a session that already exists — including one mid-turn, which
-// reaches the very next tool call rather than the next turn. The daemon answers with the mode
-// that actually took: a session is clamped to no looser than its parent (and than its agent
-// profile), so what comes back is not always what was asked for.
+// Change an existing session's policy, reaching the next tool call. The answer is the mode that took.
 export async function setSessionPermissionMode(
   sessionId: string,
   mode: PermissionMode,
@@ -1411,14 +1358,7 @@ export async function setSessionPermissionMode(
   return data.permission_mode ?? mode;
 }
 
-// What became of a message the session was handed. A send is not a transport question: it
-// succeeds at the HTTP layer and is still refused by the session, and the only place that says
-// so is the body.
-//
-// `accepted: false` is the session declining to take the message at all. It happens for one
-// reason today — the session is parked on a decision a person has to make, and starting a turn
-// would discard the parked one — and `waitingOn` says which decision, in the session's own
-// words, so a caller can tell somebody what to do about it instead of just failing.
+// What became of a message: a send succeeds at HTTP and is still refused by the session, in the body.
 export interface SendOutcome {
   /** Whether the session took the message. When false, nothing was delivered and nothing ran. */
   accepted: boolean;
@@ -1432,16 +1372,7 @@ export interface SendOutcome {
   taskId: string;
 }
 
-// Drive a turn. A message to an idle session starts one; a message to a session that is
-// mid-turn is safe-point injected at the next tool boundary — which is why steering is
-// no longer a separate call. The response arrives on the attach stream, not here.
-//
-// This used to answer `task_id` alone and discard the rest, which made a refusal
-// indistinguishable from an accepted message that had not started a turn yet. A message typed
-// while a permission prompt was open went out, came back `accepted: false`, and was thrown
-// away here — the client drew it, attached, and waited for a turn that was never going to run;
-// the next rebuild from the server dropped the message, because the server had never had it.
-// `sessionRespond` next door has always read its body. This one now does too.
+// Drive a turn: an idle session starts one, a busy one takes it at the next safe point.
 export async function sessionSend(
   sessionId: string,
   parts: A2APart[],
