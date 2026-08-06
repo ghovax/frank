@@ -1014,8 +1014,6 @@ def _shell_setup() -> dict:
     return profile
 
 
-#: How long a snapshot of the machine stays good enough to send without rebuilding it.
-_USER_CONTEXT_TTL_SECONDS = 6 * 60 * 60
 _user_context_refresh = threading.Lock()
 
 
@@ -1023,10 +1021,10 @@ def _user_context_cache_path() -> Path:
     return state_directory() / "user_context.json"
 
 
-def probe_user_context() -> str:
+def probe_user_context(refresh_hours: float) -> str:
     """The last snapshot of how the user works, refreshed behind the turn because building one costs seconds."""
     cached = _read_user_context_cache()
-    if cached is None or time.time() - cached.get("built_at", 0) > _USER_CONTEXT_TTL_SECONDS:
+    if cached is None or time.time() - cached.get("built_at", 0) > refresh_hours * 3600:
         _refresh_user_context_later()
     return compact(cached["payload"]) if cached and cached.get("payload") else ""
 
@@ -1058,10 +1056,10 @@ def _refresh_user_context_later() -> None:
     threading.Thread(target=rebuild, name="user-context-refresh", daemon=True).start()
 
 
-def warm_user_context() -> None:
+def warm_user_context(refresh_hours: float) -> None:
     """Build the snapshot now if there is none or it is stale, so the first message never pays for it."""
     cached = _read_user_context_cache()
-    if cached is None or time.time() - cached.get("built_at", 0) > _USER_CONTEXT_TTL_SECONDS:
+    if cached is None or time.time() - cached.get("built_at", 0) > refresh_hours * 3600:
         _refresh_user_context_later()
 
 

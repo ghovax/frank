@@ -125,7 +125,7 @@ sandbox:   { enforce: "required" }
 workspace: { strategy: "none" }
 agent:     { permission_mode: "ask" }
 computer_control: { enabled: false }
-user_context:     { enabled: false }
+user_context:     { enabled: false, refresh_hours: 6 }
 toolbox:          { enabled: true }
 ```
 

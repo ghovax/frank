@@ -134,6 +134,8 @@ compaction:
 # session. Off by default: it is about you, not about the code.
 user_context:
   enabled: false
+  # Rebuilt in the background once it is this old, so no message ever waits for the probes.
+  refresh_hours: 6
 
 
 # The tools a session installs for itself. On where the machine has Nix: each session gets a

@@ -170,7 +170,7 @@ class _RunsTurns:
         snapshot = _maybe_json(probe_local_environment(self._child_path()))
         payload: dict[str, Any] = {"machine": snapshot if isinstance(snapshot, dict) else {}}
         if self._user_context_enabled():
-            user_context = _maybe_json(probe_user_context())
+            user_context = _maybe_json(probe_user_context(self._global_configuration.user_context.refresh_hours))
             if isinstance(user_context, dict) and user_context:
                 payload["user_context"] = user_context
         note = self._reminder_message(compact(payload))

@@ -21,7 +21,11 @@ from langmesh.hub import state as hub_state
 from langmesh.hub.services.agents import _reload_agent_cards
 from langmesh.hub.services.broadcast import _notify_filesystem_lease_state
 from langmesh.hub.services.workspaces import _ensure_default_project
-from langmesh.hub.services.settings import _configuration_digest, _reload_configuration_from_disk
+from langmesh.hub.services.settings import (
+    _configuration_digest,
+    _mcp_server_fingerprint,
+    _reload_configuration_from_disk,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +70,8 @@ async def open_shared_resources() -> None:
     configuration.mcp.servers.update(hub_state.composio_servers)
     mcp_servers = configuration.mcp.enabled_servers()
     hub_state.mcp_manager = MCPClientManager(mcp_servers) if mcp_servers else None
+    # Recorded here too, or the first write after every boot reconnects everything to learn what it already knows.
+    hub_state.mcp_server_fingerprint = _mcp_server_fingerprint(mcp_servers)
     if hub_state.mcp_manager is not None:
         # Connected in the background, so a slow or hung server never delays the daemon's boot.
         state._mcp_start_task = asyncio.create_task(hub_state.mcp_manager.start())

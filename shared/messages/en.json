@@ -577,7 +577,8 @@
     },
     "user_context": {
       "_": "User snapshot",
-      "enabled": "Include the user snapshot"
+      "enabled": "Include the user snapshot",
+      "refresh_hours": "Rebuild the snapshot every (hours)"
     },
     "computer_control": {
       "_": "Screen control",
@@ -788,7 +789,8 @@
     },
     "user_context": {
       "_": "Whether the system prompt describes how you work on this machine.",
-      "enabled": "Include a snapshot of how you work — your editor, your habits, your machine — in the system prompt."
+      "enabled": "Include a snapshot of how you work — your editor, your habits, your machine — in the system prompt.",
+      "refresh_hours": "How old the snapshot may get before it is rebuilt. The rebuild runs in the background, so no message ever waits for it."
     },
     "computer_control": {
       "_": "Driving the screen.",

@@ -89,6 +89,7 @@ Whether the system prompt describes how you work on this machine.
 | Setting | Type | Default | What it is for |
 |---|---|---|---|
 | `user_context.enabled` | boolean | `false` | Include a snapshot of how you work — your editor, your habits, your machine — in the system prompt. |
+| `user_context.refresh_hours` | number | `6` | How old that snapshot may get before it is rebuilt. The rebuild runs in the background, so no message waits for it. |
 
 
 ## Screen control

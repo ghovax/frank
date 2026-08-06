@@ -334,6 +334,7 @@ class UserContextConfiguration(Section):
     """Opt-in snapshot of how the user works on this machine, folded into the system prompt."""
 
     enabled: bool = Field(False)
+    refresh_hours: float = Field(6.0, gt=0)
 
 
 class SettleConfiguration(Section):
