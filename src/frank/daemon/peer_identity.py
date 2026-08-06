@@ -44,13 +44,11 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Linux hands back (pid, uid, gid) as three ints; macOS has no SO_PEERCRED and exposes the
-# peer's pid on its own option under SOL_LOCAL.
+# Linux hands back (pid, uid, gid) as three ints; macOS has no SO_PEERCRED and exposes the peer's pid on its own option under SOL_LOCAL.
 _SOL_LOCAL = 0
 _LOCAL_PEERPID = 2
 
-# What `scope["client"]` carries for a unix-socket request, in place of the (host, port) a TCP
-# connection would have. uvicorn only formats this for its access log, which is off.
+# What `scope["client"]` carries for a unix-socket request, in place of the (host, port) a TCP connection would have. uvicorn only formats this for its access log, which is off.
 UNIX_PEER = "unix"
 
 
@@ -158,8 +156,7 @@ def unix_peer_protocol():
             super().connection_made(transport)
             process_id = peer_process_id(transport)
             if process_id:
-                # Stands in for the (host, port) a TCP peer would have. Every request on this
-                # connection reads it back out of the scope.
+                # Stands in for the (host, port) a TCP peer would have.
                 self.client = (UNIX_PEER, process_id)
 
     return PeerAwareProtocol

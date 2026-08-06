@@ -88,13 +88,9 @@ class SessionLifecycle:
         self._on_change = on_change
         # session id -> the process id the prototype forked for it.
         self._processes: dict[str, int] = {}
-        # session id -> a future settled when that session's exit is reported, so a reap can
-        # wait for the process to actually be gone rather than for a timeout to elapse.
+        # session id -> a future settled when that session's exit is reported, so a reap can wait for the process to actually be gone rather than for a timeout to elapse.
         self._departures: dict[str, asyncio.Future] = {}
         # Sessions whose process this file is deliberately stopping in order to *sleep* them.
-        # Without it a sleep is indistinguishable from a crash: the exit report arrives the
-        # same way for both, finds a record that is still live, and ends the session — which
-        # is the opposite of what sleeping means.
         self._sleeping: set[str] = set()
 
     def _changed(self) -> None:
@@ -112,26 +108,17 @@ class SessionLifecycle:
             "session_id": record.id,
             "agent": record.agent,
             "working_directory": record.working_directory,
-            # Where the session's tools run, which is not always where its project lives: a
-            # worktree workspace puts them somewhere else entirely, and the daemon resolved
-            # that when the session was created.
+            # Where the session's tools run, which is not always where its project lives: a worktree workspace puts them somewhere else entirely, and the daemon resolved that when the session was created.
             "runtime_working_directory": record.runtime_working_directory or record.working_directory,
             "permission_mode": record.permission_mode,
-            # Already resolved and clamped by `session.create`. The session applies it to
-            # every child it spawns and never widens it, so it travels with the session rather
-            # than being read again from a configuration file that may have changed since.
+            # Already resolved and clamped by `session.create`.
             "sandbox": record.sandbox,
             "workspace_id": record.workspace_id,
-            # Resolved once, here, rather than by the session asking back. A project's
-            # locations are fixed for a session's life in the same way its sandbox and its
-            # permission mode are, and the injection that was supposed to let a worker resolve
-            # them was never wired to anything — so multi-location projects were dead at the
-            # session level and every runtime synthesised a single local location.
+            # Resolved once, here, rather than by the session asking back.
             "locations": _resolve_locations(record.id),
             "parent": record.parent,
             "token": record.token,
-            # The daemon's own token, so the session can write to the ingest endpoint. Its
-            # session token authorises calls *to* it, which is the other direction entirely.
+            # The daemon's own token, so the session can write to the ingest endpoint.
             "daemon_token": _daemon_token(),
             "socket": str(session_socket_path(record.id)),
         }
@@ -195,17 +182,12 @@ class SessionLifecycle:
         if departure is not None and not departure.done():
             departure.set_result(None)
         if session_id in self._sleeping:
-            # A death this file caused on purpose. The session keeps its record and its
-            # subscribers; only the process is gone.
+            # A death this file caused on purpose.
             return
         record = self._registry.get(session_id)
         if record is not None and record.is_live:
             if not report.clean:
-                # Said out loud, because until now it was not. The reason went onto the record
-                # and into the database, where nothing reads it until a client asks about that
-                # session — so a worker dying on every single fork looked, from the log, like
-                # nothing happening at all. The client is told "could not start the turn"; this
-                # is the line that says why.
+                # Said out loud, because until now it was not.
                 logger.error(
                     "session %s died: %s", session_id, report.describe(),
                 )
@@ -217,8 +199,7 @@ class SessionLifecycle:
             )
             # A dead parent takes its children with it, exactly as an explicit kill would.
             await self.reap(session_id, reason="parent session ended", skip_self=True)
-            # Read back rather than reused: `mark` is what put the terminal status and reason
-            # on the record, and the notice reports those.
+            # Read back rather than reused: `mark` is what put the terminal status and reason on the record, and the notice reports those.
             ended = self._registry.get(session_id)
             if ended is not None:
                 await self._tell_parent(ended)
@@ -265,12 +246,6 @@ class SessionLifecycle:
             return 0
         descendants = [record for record in self._registry.descendants_of(session_id) if record.is_live]
         # A goal describes work in progress, so it ends with the session that was pursuing it.
-        # Left behind, it would keep a finished session showing an objective in the interface,
-        # with a control offering to call off something nobody is working on.
-        #
-        # The toolbox goes for the same reason and with the same finality: the tools a session
-        # installed were its own, and what is deleted is a directory of symlinks — the packages
-        # themselves stay in the shared store until nothing refers to them.
         from frank.base import toolbox
         from frank.daemon import state as daemon_state
 
@@ -282,8 +257,7 @@ class SessionLifecycle:
                 descendant.id, outcome=EXITED, updated_at=_now(),
                 reason=reason or "parent session was reaped",
             )
-        # Stopped together rather than one at a time: each carries its own grace period, and a
-        # wide tree would otherwise take that period multiplied by its size to come down.
+        # Stopped together rather than one at a time: each carries its own grace period, and a wide tree would otherwise take that period multiplied by its size to come down.
         await asyncio.gather(*(self._stop(record.id) for record in descendants), return_exceptions=True)
         reaped = len(descendants)
         if not skip_self and record.is_live:
@@ -291,9 +265,7 @@ class SessionLifecycle:
             await self._stop(session_id)
             reaped += 1
         self._changed()
-        # After the stops, so the notice describes a session that is actually over. Only for
-        # the session that was asked about: a descendant's parent is inside this same subtree
-        # and is going down with it, so telling it would be writing to a corpse.
+        # After the stops, so the notice describes a session that is actually over.
         if not skip_self:
             await self._tell_parent(self._registry.get(session_id) or record)
         return reaped
@@ -324,9 +296,7 @@ class SessionLifecycle:
             self._sleeping.discard(session_id)
         self._departures.pop(session_id, None)
         self._registry.sleep(session_id, updated_at=_now())
-        # Deliberately not closing subscribers and not unlinking the socket the way `_stop`
-        # does. An `attach` on a sleeping session stays open — the session has not ended, and a
-        # watcher should see the next turn when it wakes rather than having to reconnect.
+        # Deliberately not closing subscribers and not unlinking the socket the way `_stop` does.
         with contextlib.suppress(OSError):
             session_socket_path(session_id).unlink(missing_ok=True)
         self._changed()
@@ -364,9 +334,7 @@ class SessionLifecycle:
 
         groups = await asyncio.to_thread(session_process_groups, pid)
         if not groups:
-            # No listing available (an unexpected platform, `ps` missing). Falling back to the
-            # session's own group keeps its death reliable, and says why it is less than it
-            # should be rather than silently reaping too little.
+            # No listing available (an unexpected platform, `ps` missing).
             logger.warning(
                 "could not enumerate the process session of %d; signalling its group only", pid
             )

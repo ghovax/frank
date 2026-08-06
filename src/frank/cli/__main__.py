@@ -76,20 +76,12 @@ def _command_create(arguments: argparse.Namespace) -> int:
         working_directory=arguments.directory or "",
         permission_mode=arguments.mode or "",
         workspace_id=arguments.workspace or "",
-        # Run from inside a session's shell, this command creates a *child* of that session by
-        # default. Without it a session that reached for the CLI created an orphan: outside the
-        # tree, outside the reaper, and outside the permission clamp, which is skipped entirely
-        # when there is no parent to clamp against.
-        #
-        # Read only when it is shaped like one of ours. The variable is a plain name that a
-        # person may already have exported for their own purposes, and this is the one place a
-        # value from the environment decides whose child a session is.
+        # Run from inside a session's shell, this command creates a *child* of that session by default.
         parent=arguments.parent or _session_from_environment(),
         read_only=bool(getattr(arguments, "read_only", False)),
         title=arguments.title or "",
     )
-    # The bare id, because the answer is one value: this is what makes `id=$(frank create …)`
-    # work in a shell script. The token and socket are in `frank get`.
+    # The bare id, because the answer is one value: this is what makes `id=$(frank create …)` work in a shell script.
     print(result["id"])
     return 0
 
@@ -97,19 +89,13 @@ def _command_create(arguments: argparse.Namespace) -> int:
 def _command_send(arguments: argparse.Namespace) -> int:
     text = sys.stdin.read() if arguments.message == "-" else arguments.message
     result = call("session.send", id=arguments.session, parts=[{"kind": "text", "text": text}])
-    # A session parked on a decision takes nothing, and says so in the body rather than by
-    # failing — the call succeeded, the message did not land. Reported here as what it is: the
-    # message was not delivered, so this exits non-zero, and `--wait` does not follow a turn
-    # that was never started. It used to fall straight through to `_follow` with an empty
-    # `turn_id`, which then waited for the session to go idle — which it already was.
+    # A session parked on a decision takes nothing, and says so in the body rather than by failing — the call succeeded, the message did not land.
     if result.get("accepted") is False:
         waiting_on = str(result.get("waiting_on") or "a decision from the user")
         _note(f"frank: not sent — the session is waiting on {waiting_on}")
         return 1
     if arguments.wait:
-        # Waiting on *this* turn, not merely on the session going quiet: a session can have a
-        # compaction or an autonomous wake open alongside the message just sent, and returning
-        # when one of those ends would hand back a turn the caller never asked about.
+        # Waiting on *this* turn, not merely on the session going quiet: a session can have a compaction or an autonomous wake open alongside the message just sent, and returning when one of those ends would hand back a turn the caller never asked about.
         return _follow(arguments.session, until_idle=True, frames=False,
                        turn_id=str(result.get("turn_id") or ""))
     _emit(result)
@@ -129,9 +115,7 @@ def _command_attach(arguments: argparse.Namespace) -> int:
     return _follow(arguments.session, until_idle=False, frames=True)
 
 
-# A turn the session is still driving on its own. Anything else — completed, failed,
-# canceled, or parked on a human with `input-required` — means it will not progress without
-# something happening, which is exactly when a waiter should be handed back control.
+# A turn the session is still driving on its own.
 _IN_FLIGHT = {"submitted", "working"}
 
 
@@ -160,9 +144,7 @@ def _follow(session_id: str, *, until_idle: bool, frames: bool, turn_id: str = "
             if kind == "snapshot":
                 turns = frame.get("turns") or []
                 if turn_id and not any(turn.get("id") == turn_id for turn in turns):
-                    # Our own turn has not been persisted yet. It is in flight by definition —
-                    # the send was accepted — so keep waiting rather than reading its absence
-                    # as an idle session and returning somebody else's last turn.
+                    # Our own turn has not been persisted yet.
                     continue
                 if not any(_still_working(turn) for turn in turns):
                     break
@@ -234,9 +216,7 @@ def _command_configure(arguments: argparse.Namespace) -> int:
             _note("frank: --unset needs a setting to remove")
             return 1
         if arguments.value is not None:
-            # Caught here rather than inside `run`, which never sees this: `--unset` is
-            # dispatched before it. Left to itself the value was silently discarded and the
-            # setting removed — the opposite of what `configure x true --unset` looks like.
+            # Caught here rather than inside `run`, which never sees this: `--unset` is dispatched before it.
             _note("frank: pass either a value or --unset, not both")
             return 1
         return configure.run_unset(arguments)
@@ -262,19 +242,14 @@ def _command_remote(arguments: argparse.Namespace) -> int:
 
 def _command_daemon(arguments: argparse.Namespace) -> int:
     if arguments.action == "status":
-        # Reporting must not start anything: `status` is what a person runs to find out, and a
-        # status check that silently launches a service is a status check that can never
-        # report the absence it was asked about. `--start` opts into the other behaviour.
+        # Reporting must not start anything: `status` is what a person runs to find out, and a status check that silently launches a service is a status check that can never report the absence it was asked about.
         if not daemon_is_up() and not arguments.start:
             _note("frankd is not running (start it with `frank serve`)")
             return 1
         _emit(call("daemon.status"))
         return 0
     if arguments.action == "endpoint":
-        # The two values a GUI needs to attach to *this* daemon: where it listens, and the
-        # token that authorises talking to it. The port is ephemeral and the token is minted
-        # per boot, so neither can be guessed — and over SSH there is no runtime directory
-        # to read them from, which is what makes this worth a verb.
+        # The two values a GUI needs to attach to *this* daemon: where it listens, and the token that authorises talking to it.
         from frank.base.paths import daemon_port_path, daemon_token_path
 
         try:
@@ -286,9 +261,7 @@ def _command_daemon(arguments: argparse.Namespace) -> int:
         _emit({"port": int(port), "token": token})
         return 0
     if arguments.action == "stop":
-        # A signal rather than an API call: a daemon wedged badly enough to need stopping may
-        # not be answering its own socket, and this must work then too. The group is signalled
-        # so the sessions go with it — a worker whose daemon is gone cannot persist anything.
+        # A signal rather than an API call: a daemon wedged badly enough to need stopping may not be answering its own socket, and this must work then too.
         import os
         import signal
 
@@ -312,12 +285,6 @@ def _command_daemon(arguments: argparse.Namespace) -> int:
         return 0
     if arguments.action == "restart":
         # Stop, wait for the socket to go, start again.
-        #
-        # This ends every live session, and says so rather than letting it be discovered:
-        # workers are the daemon's children, and shutdown reaps them. It exists because macOS
-        # caches the Accessibility trust check per process, so a daemon that was running before
-        # the grant never sees it — and now that the desktop app no longer owns the daemon,
-        # restarting the window is not a way to restart the harness.
         import os
         import signal
 
@@ -334,11 +301,7 @@ def _command_daemon(arguments: argparse.Namespace) -> int:
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(os.getpgid(pid), signal.SIGTERM)
 
-        # Wait for the *process*, not for its socket. The socket file goes early in shutdown
-        # while the daemon is still reaping sessions and still holding `frankd.lock` through an
-        # open descriptor, and a successor started in that window dies on "Another frankd holds
-        # the lock but never started serving" — leaving nothing running at all, which is the one
-        # outcome a restart must not produce. A pid that no longer exists is the real signal.
+        # Wait for the *process*, not for its socket.
         tuning = active_tuning()
 
         def check_exited() -> None:
@@ -367,8 +330,7 @@ def _command_daemon(arguments: argparse.Namespace) -> int:
     return 1
 
 
-# The desktop app's bundle identifier, which is how it is launched. Addressing it by identifier
-# rather than by name means the application can be renamed or moved and this still finds it.
+# The desktop app's bundle identifier, which is how it is launched.
 APPLICATION_BUNDLE_ID = "com.ghovax.frank"
 
 
@@ -440,8 +402,7 @@ def _command_run(arguments: argparse.Namespace) -> int:
             async def decide(self, _gate):
                 return Approval(allow=True, reason="--allow was passed")
 
-        # The CLI is a program for a person on a machine, so it reads the machine — visibly,
-        # here, rather than inside the library. `Session` takes the resolved profile.
+        # The CLI is a program for a person on a machine, so it reads the machine — visibly, here, rather than inside the library.
         from pathlib import Path
 
         from frank.daemon.machine import load_agent, load_catalogue, load_configuration
@@ -479,9 +440,7 @@ def _command_run(arguments: argparse.Namespace) -> int:
                 sys.stdout.write("\n")
             return 0
         except Exception as error:  # noqa: BLE001 — a person gets a sentence, not a traceback
-            # The common cases are a provider with no credential and a model the account
-            # cannot serve, and neither is a bug to be reported with a stack. The detail is
-            # kept because it is usually the whole answer.
+            # The common cases are a provider with no credential and a model the account cannot serve, and neither is a bug to be reported with a stack.
             _note(f"\nfrank: the turn failed — {type(error).__name__}: {error}")
             return 1
         finally:
@@ -519,15 +478,13 @@ def _command_auth(arguments: argparse.Namespace) -> int:
         try:
             await flow.start()
         except OSError as error:
-            # Port 1455 is the redirect target OpenAI's consent screen sends the browser to,
-            # so it cannot be chosen: another sign-in already holding it is the whole message.
+            # Port 1455 is the redirect target OpenAI's consent screen sends the browser to, so it cannot be chosen: another sign-in already holding it is the whole message.
             _note(f"frank: could not listen for the sign-in callback ({error}). "
                   "Another Frank or Codex sign-in may be in progress.")
             return 1
         _note("frank: open this in a browser to sign in:")
         print(flow.authorize_url)
-        # Best effort. On a headless box there is nothing to open and the printed URL is the
-        # whole point of this command, so a failure here is not a failure.
+        # Best effort.
         with contextlib.suppress(Exception):
             import webbrowser
 
@@ -571,11 +528,7 @@ def _command_open(arguments: argparse.Namespace) -> int:
         timeout=active_tuning().duration(Tunable.open_url_seconds),
     )
     if result.returncode != 0:
-        # `open -b` resolves through LaunchServices, which knows about applications in the
-        # standard locations. A freshly built Frank.app sitting in the Tauri target directory
-        # has usually never been registered, so this failure most often means "built but not
-        # installed" rather than "not built" — worth saying, because the two look identical
-        # from here and the fix is one `ditto`.
+        # `open -b` resolves through LaunchServices, which knows about applications in the standard locations.
         _note(
             f"frank: nothing on this system claims {APPLICATION_BUNDLE_ID}. If you have built "
             "Frank.app but not installed it, macOS will not find it by identifier — move it to "
@@ -763,9 +716,7 @@ def build_parser() -> argparse.ArgumentParser:
     tree.add_argument("session")
     tree.set_defaults(handler=_command_tree)
 
-    # Two verbs, because there are two answers and they are the two words used everywhere else:
-    # the decision on the wire is `allow_once` or `deny`, the reviewer answers `allow` or `deny`,
-    # and the app's buttons say the same.
+    # Two verbs, because there are two answers and they are the two words used everywhere else: the decision on the wire is `allow_once` or `deny`, the reviewer answers `allow` or `deny`, and the app's buttons say the same.
     allow = add("allow", help="allow a session's pending permission request")
     allow.add_argument("session")
     allow.add_argument("request")
@@ -864,15 +815,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    # Prose, on stderr, with nothing in front of it. The daemon's format — timestamp, level,
-    # logger name — is right for a file somebody greps a week later and wrong for a command
-    # answering somebody who is watching. `force` because a library on the way in may already
-    # have installed a handler of its own, and then this one would be ignored.
-    #
-    # The root stays at `WARNING` and only Frank's own logger is lowered. Lowering the root as
-    # well let every library share the channel, and httpx narrating `POST http://daemon/rpc
-    # "HTTP/1.1 200 OK"` before each answer is not what somebody running `frank ps` asked to
-    # read.
+    # Prose, on stderr, with nothing in front of it.
     logging.basicConfig(
         level=logging.WARNING, format="%(message)s",
         handlers=[logging.StreamHandler(sys.stderr)], force=True,
@@ -888,10 +831,7 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         return 130
     except BrokenPipeError:
-        # `frank ps | head` closes the pipe while we are still writing to it. That is a normal
-        # way to use a command, not a failure, so it must not print a traceback. Redirecting
-        # stdout to /dev/null first is what stops the interpreter from raising the same error
-        # again while flushing at exit, which would print one anyway.
+        # `frank ps | head` closes the pipe while we are still writing to it.
         import os
 
         devnull = os.open(os.devnull, os.O_WRONLY)

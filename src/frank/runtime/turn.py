@@ -107,9 +107,7 @@ class _RunsTurns:
             worktree_root, is_git_repo = _detect_workspace(self._working_directory)
             context_json = compact({
                 "session": self._session_id,
-                # Present only when another session created this one. Its presence is the
-                # obligation: there is somebody waiting for an answer, and this is where to
-                # send it.
+                # Present only when another session created this one.
                 **({"parent_session": self._parent_session} if self._parent_session else {}),
                 "working_directory": self._working_directory,
                 "project_directory": self._project_directory,
@@ -118,20 +116,9 @@ class _RunsTurns:
                 "session_worktree_strategy": self._global_configuration.workspace.strategy,
                 "platform": platform.system(),
                 "today_date": datetime.now().strftime("%Y-%m-%d"),
-                # `locations` is deliberately absent: it carries each location's permission mode,
-                # which a person can change mid-session, and anything changeable in here rewrites
-                # the front of every request. It rides in the turn context instead.
+                # `locations` is deliberately absent: it carries each location's permission mode, which a person can change mid-session, and anything changeable in here rewrites the front of every request.
             })
-            # Also conditional: it asserts "you are running as a session", which a
-            # library-embedded runtime is not, and which has no peer tools either.
-            #
-            # The instruction to report to a parent is conditional *within* it, on there being a
-            # parent, and it names the real id. It used to ship to every session that merely had
-            # the tool, phrased as "if `parent_session` is in your context" — so a session that
-            # nobody created still read an instruction to report, and one duly sent its findings
-            # to a session literally named `parent_session`. A placeholder in a prompt is a
-            # value to whoever reads it; the way not to have it mistaken for an id is not to
-            # write one.
+            # Also conditional: it asserts "you are running as a session", which a library-embedded runtime is not, and which has no peer tools either.
             parent_report = (
                 self._prompt_loader.load("parent_report", {"parent": self._parent_session})
                 if self._parent_session else ""
@@ -140,26 +127,15 @@ class _RunsTurns:
                 self._prompt_loader.load("agent_context", {"parent_report": parent_report})
                 if "message_session" in {tool.name for tool in self._tools} else ""
             )
-            # The opt-in user-context section is its own template, rendered into the prompt's
-            # `user_environment` slot only when enabled — so the section (heading and all) simply
-            # is not there when off. Only the standing guidance lives here; the snapshot it
-            # describes travels with each turn, because it is read fresh from the machine and
-            # would otherwise differ between one worker and the next.
+            # The opt-in user-context section is its own template, rendered into the prompt's `user_environment` slot only when enabled — so the section (heading and all) simply is not there when off.
             user_environment = ""
             if self._user_context_enabled():
                 user_environment = self._prompt_loader.load("user_context", {})
-            # The computer/browser tools are opt-in, so their guidance (what each is for, and
-            # to pick the right one rather than force one) only enters the prompt when they do.
+            # The computer/browser tools are opt-in, so their guidance (what each is for, and to pick the right one rather than force one) only enters the prompt when they do.
             computer_control_guidance = ""
             if self._global_configuration.computer_control.enabled:
                 computer_control_guidance = self._prompt_loader.load("computer_control_guidance", {})
-            # Guidance for tools this session does not have is guidance to call something that
-            # is not there. Peer sessions and MCP were stated unconditionally, so a session
-            # embedded as a library — no control plane, no MCP server — was told at length how to
-            # `create_session` and `message_session`, and had neither.
-            # The same argument, for the tools a session can give itself: a machine without Nix
-            # has no toolbox, and telling a session to install what it needs there would be
-            # telling it to run a command that does not exist. Present only when it is real.
+            # Guidance for tools this session does not have is guidance to call something that is not there.
             toolbox = (
                 self._prompt_loader.load("toolbox", {})
                 if self._tool_context.toolbox is not None else ""
@@ -173,15 +149,10 @@ class _RunsTurns:
                 self._prompt_loader.load("mcp_servers", {})
                 if "call_mcp_tool" in available else ""
             )
-            # Whole documents, so each is laid out by its own template rather than serialised
-            # into a JSON array of escaped strings: metadata as JSON, the document as itself.
-            # Empty when the machine and project supply none, which drops the section instead of
-            # leaving a bare `[]` in the prompt.
+            # Whole documents, so each is laid out by its own template rather than serialised into a JSON array of escaped strings: metadata as JSON, the document as itself.
             instruction_files = "".join(
                 self._prompt_loader.load("instruction_file", {
                     # Whatever the payload carries, and nothing invented for what it does not.
-                    # `scope` is absent for a document that came from somewhere other than a
-                    # file, and the prompt says what that absence means.
                     "metadata": compact({key: entry[key] for key in ("source", "scope") if key in entry}),
                     "content": entry["content"].strip(),
                 })
@@ -191,9 +162,7 @@ class _RunsTurns:
                 self._prompt_loader.load("instructions", {"files": instruction_files})
                 if instruction_files else ""
             )
-            # One statement of how to think, rendered into both places that want it — this
-            # prompt and the permission reviewer's — so the two cannot drift into telling two
-            # models two different things about the same habit.
+            # One statement of how to think, rendered into both places that want it — this prompt and the permission reviewer's — so the two cannot drift into telling two models two different things about the same habit.
             thinking_language = self._prompt_loader.load("thinking_language", {}).strip()
             self._cached_system_prompt = self._prompt_loader.load("system_prompt", {
                 "system_prompt": self._system_prompt,
@@ -235,9 +204,7 @@ class _RunsTurns:
         """
         if any(message.additional_kwargs.get("environment_note") for message in self._conversation):
             return
-        # Described with the `PATH` a tool child is given, not this process's own. A session
-        # with a toolbox leads with its own profile, and a snapshot that reported the worker's
-        # `PATH` would be describing an environment none of its commands run in.
+        # Described with the `PATH` a tool child is given, not this process's own.
         snapshot = _maybe_json(probe_local_environment(self._child_path()))
         payload: dict[str, Any] = {"machine": snapshot if isinstance(snapshot, dict) else {}}
         if self._user_context_enabled():
@@ -289,9 +256,7 @@ class _RunsTurns:
         context = TurnContext(
             now=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
             pwd=self._working_directory or str(Path.cwd()),
-            # The goal as the agent stated it, with the bookkeeping around it left out: what is
-            # counted to keep a session working is the harness's affair, and a model shown the
-            # count would start pacing itself against it.
+            # The goal as the agent stated it, with the bookkeeping around it left out: what is counted to keep a session working is the harness's affair, and a model shown the count would start pacing itself against it.
             goal=self._goal.for_model() if self._goal is not None else {},
             tasks=self._task_manager.to_dict_list(),
             background={
@@ -358,32 +323,14 @@ class _RunsTurns:
             from frank.computer.surface import message_loader
 
             # The one turn where this is expensive is skipped rather than waited on.
-            #
-            # Enumerating costs ~1.8s the first time a process asks and ~0.15s afterwards, and
-            # the worker warms itself in the background from the moment it starts. But a session
-            # is a fresh process per wake and its first message arrives right behind the fork, so
-            # a turn that insisted on the listing sat in front of the model call waiting out a
-            # warm-up that was already running — roughly two seconds, on the very turn a person
-            # is watching for the first sign of life.
-            #
-            # So a cold process says so instead. The model is told the listing is being read and
-            # to ask for it if this turn needs it, which costs one call on the rare turn that
-            # does; every turn from the second on carries it as before, freshly enumerated. No
-            # snapshot is cached and nothing here is ever stale — the choice is between the
-            # current listing and none, never between the current one and an old one.
             if not target_registry.warm():
                 return {"reading": message_loader("computer")("screen_warming")}
 
             from frank.computer import workflows
 
-            # Every primitive the surface implements is listed. What a given script may call is
-            # decided per call, from what that script asks to do, so filtering the vocabulary
-            # here would hide a capability the very next call could legitimately be granted.
+            # Every primitive the surface implements is listed.
             block = target_registry.context_block()
-            # What somebody has already worked out and saved, so a task that has been solved once
-            # is imported rather than derived again. Read off the files without importing them —
-            # this runs every turn, and importing user code to find out its name would run that
-            # code every turn.
+            # What somebody has already worked out and saved, so a task that has been solved once is imported rather than derived again.
             saved = workflows.available(self._project_directory or self._working_directory or "")
             if saved:
                 block["workflows"] = saved
@@ -510,9 +457,7 @@ class _RunsTurns:
         only a top-level parameter — the text is the only place the distinction can live, so it
         is written once, here, and reads the same everywhere."""
         text = self._prompt_loader.load("reminder", {"content": content.strip()}).strip()
-        # `transient` marks a note that is assembled for one request and never appended to the
-        # conversation — so it cannot appear in the next one, and a cache breakpoint placed on it
-        # is a breakpoint nothing will ever match.
+        # `transient` marks a note that is assembled for one request and never appended to the conversation — so it cannot appear in the next one, and a cache breakpoint placed on it is a breakpoint nothing will ever match.
         tags = {"reminder": True, **({"transient": True} if transient else {}), **(marks or {})}
         if image_blocks:
             return HumanMessage(content=[{"type": "text", "text": text}, *image_blocks], additional_kwargs=tags)
@@ -562,17 +507,12 @@ class _RunsTurns:
         resume_answers: Optional[dict[str, Any]] = None,
     ) -> AsyncIterator[TurnEvent]:
         self._abort_event.clear()
-        # The turn runs until the model is done or the user interrupts it — there is no
-        # iteration count and no stuck-detector. A turn that stops, stops: an unfinished goal is
-        # not this loop's business, because a goal outlives the turn that set it and the layer
-        # that owns the session is the one that can act on that.
+        # The turn runs until the model is done or the user interrupts it — there is no iteration count and no stuck-detector.
         turn_tool_calls_log: list[dict] = []
         turn_tool_results_log: list[dict] = []
 
         if resume_plans is not None:
-            # Resume: the checkpoint AIMessage is already at the tail of the rebuilt
-            # conversation. Run its batch with the resolved decisions, then fall into the
-            # loop for the next model call. No new user message is appended.
+            # Resume: the checkpoint AIMessage is already at the tail of the rebuilt conversation.
             recorded_user_message = ""
             response = self._conversation[-1] if self._conversation else None
             if response is None or not getattr(response, "tool_calls", None):
@@ -590,22 +530,10 @@ class _RunsTurns:
             self._append_tool_results(response, resume_outcomes)
             yield Checkpoint()
         else:
-            # A prior turn may have suspended at input-required and been superseded by
-            # this new message instead of answered. Close its dangling tool calls (an
-            # AIMessage carrying tool_calls with no ToolMessages) so appending this turn
-            # keeps the conversation valid for the provider.
-            # Before the first message of the session, so the snapshot sits at the front of the
-            # conversation and every later call prefix-matches over it.
+            # A prior turn may have suspended at input-required and been superseded by this new message instead of answered.
             self._ensure_environment_note()
             self._close_dangling_tool_calls()
-            # A turn's input is usually plain text, but an attachment turn carries a
-            # multimodal content list (a text block plus one image_url block per
-            # attached image) so a vision model actually sees the pixels. LangChain's
-            # HumanMessage accepts either, and the model adapter passes the content
-            # straight through to the provider. A harness-initiated turn (an autonomous
-            # wake, a report reminder) enters as a reminder so the
-            # model treats it as its own observation, not as something the user said — in
-            # a user-role message so the append stays cache-safe (_reminder_message).
+            # A turn's input is usually plain text, but an attachment turn carries a multimodal content list (a text block plus one image_url block per attached image) so a vision model actually sees the pixels.
             turn_message = (
                 self._reminder_message(user_message)
                 if as_system_note and isinstance(user_message, str)
@@ -614,8 +542,7 @@ class _RunsTurns:
             self._conversation.append(turn_message)
             # The event-log recorder only wants prose from LangChain's standard blocks.
             recorded_user_message = message_text(turn_message)
-        # After the turn's message, so the freshest picture is the last thing the model reads,
-        # and once per turn rather than per iteration — a tool hop changes nothing this describes.
+        # After the turn's message, so the freshest picture is the last thing the model reads, and once per turn rather than per iteration — a tool hop changes nothing this describes.
         self._append_turn_context()
         self._turn_started_at = datetime.now(timezone.utc)
 
@@ -635,37 +562,24 @@ class _RunsTurns:
                     yield background_event
                 continue
 
-            # In-flight background work no longer holds the turn open. Completed
-            # results are drained above and delivered mid-turn while the model is
-            # still working; if the model goes idle with work still pending, the turn
-            # simply ends and the executor's resume pump wakes the agent with an
-            # autonomous turn the moment the next result lands.
+            # In-flight background work no longer holds the turn open.
             for steering_event in await self._drain_steering_messages():
                 yield steering_event
 
-            # Keeping the context inside the window. Folding is the whole of it: it replaces
-            # an unbounded head with a fixed-size observation log, so what it saves compounds
-            # over the rest of the run rather than being spent once. The reserved buffer
-            # guarantees room to run the fold itself, and compact() re-measures the occupancy
-            # so this cannot re-fire in a loop.
+            # Keeping the context inside the window.
             if self._should_compact():
                 async for compaction_event in self.compact(reason="auto"):
                     yield compaction_event
 
             messages = self._build_turn_messages()
 
-            # Phase 1 — the model call. Yields the thinking/answer stream and hands back
-            # the assembled response, or a terminal (cancelled) / steering condition.
+            # Phase 1 — the model call.
             call = _ModelCallOutcome()
             try:
                 async for event in self._stream_model_call(messages, call):
                     yield event
             except ContextWindowExceeded as overflow:
-                # The context reading is written from a call's reported usage, and a call that is
-                # refused reports none — so the indicator held whatever the last *successful* call
-                # said and went on claiming it. One session showed 3% full (36,021 of 1,050,000)
-                # while the provider was rejecting the conversation for length. Refusal is itself
-                # a measurement, and the one thing it establishes is that the window is full.
+                # The context reading is written from a call's reported usage, and a call that is refused reports none — so the indicator held whatever the last *successful* call said and went on claiming it.
                 window = overflow.context_window or self._context_window
                 if window > 0:
                     self._context_window = window
@@ -684,19 +598,12 @@ class _RunsTurns:
             if usage_event is not None:
                 yield usage_event
 
-            # Malformed tool calls (arguments that failed JSON parsing) land in
-            # `invalid_tool_calls` while `tool_calls` may be empty. LangChain still
-            # serializes invalid_tool_calls into the API payload as `tool_calls`, so each
-            # one MUST be followed by a tool message — otherwise the next provider call
-            # fails with "insufficient tool messages following tool_calls". Ensure every
-            # invalid call carries an id that matches the ToolMessage appended for it.
+            # Malformed tool calls (arguments that failed JSON parsing) land in `invalid_tool_calls` while `tool_calls` may be empty.
             for invalid in response.invalid_tool_calls:
                 if not invalid.get("id"):
                     invalid["id"] = f"call_invalid_{uuid.uuid4().hex[:24]}"
 
-            # Phase 2 — no tool calls: retry a malformed batch, answer or await agents, or
-            # finish the turn. Always ends the iteration (_CONTINUE to loop again, _STOP once a
-            # terminal event was yielded).
+            # Phase 2 — no tool calls: retry a malformed batch, answer or await agents, or finish the turn.
             if not response.tool_calls:
                 step = _PhaseStep()
                 async for event in self._finalize_no_tool_calls(
@@ -707,9 +614,7 @@ class _RunsTurns:
                     return
                 continue
 
-            # Phase 3 — run the tool batch (append the checkpoint AIMessage, preflight the
-            # whole batch's permissions, suspend if a human is needed, drain the tools,
-            # checkpoint), then honor a Stop that landed during it.
+            # Phase 3 — run the tool batch (append the checkpoint AIMessage, preflight the whole batch's permissions, suspend if a human is needed, drain the tools, checkpoint), then honor a Stop that landed during it.
             step = _PhaseStep()
             async for event in self._run_tool_batch(
                 response, recorded_user_message, turn_tool_calls_log, turn_tool_results_log, step,
@@ -776,8 +681,7 @@ class _RunsTurns:
         tokens = conversation_tokens(messages)
         if not over_context_window(tokens, window):
             return
-        # Recorded so the indicator agrees with the refusal instead of reporting the reading from
-        # the last call that succeeded.
+        # Recorded so the indicator agrees with the refusal instead of reporting the reading from the last call that succeeded.
         self._latest_context_tokens = tokens
         raise ContextWindowExceeded(
             "The assembled request is larger than this model's context window.",
@@ -807,8 +711,7 @@ class _RunsTurns:
         thinking_done_emitted = False
         response_chunks: list[AIMessageChunk] = []
         aborted_for_steering = False
-        # A generation span for this model call. Started (not made "current") so it is
-        # safe to hold open across this generator's yields; ended in the finally below.
+        # A generation span for this model call.
         generation_span = _telemetry.start_span(
             "gen_ai.generation", {"gen_ai.request.model": self.effective_model_identifier}
         )
@@ -825,8 +728,7 @@ class _RunsTurns:
                     {chunk_future, abort_waiter}, return_when=asyncio.FIRST_COMPLETED
                 )
                 if self._abort_event.is_set():
-                    # Stop won the race (or landed between chunks): drop the pending
-                    # read and stop consuming the stream (the `finally` closes it).
+                    # Stop won the race (or landed between chunks): drop the pending read and stop consuming the stream (the `finally` closes it).
                     chunk_future.cancel()
                     with suppress(BaseException):
                         await chunk_future
@@ -857,8 +759,7 @@ class _RunsTurns:
         finally:
             _telemetry.end_span(generation_span)
             abort_waiter.cancel()
-            # Close the underlying HTTP stream so an aborted (or exhausted) turn
-            # never leaks a provider connection.
+            # Close the underlying HTTP stream so an aborted (or exhausted) turn never leaks a provider connection.
             with suppress(BaseException):
                 stream_closer = getattr(model_stream, "aclose", None)
                 if stream_closer is not None:
@@ -881,12 +782,7 @@ class _RunsTurns:
         bookkeeping and setting ``step`` to ``_CONTINUE`` (iterate again) or ``_STOP`` (a
         terminal ``Done`` was yielded)."""
         if response.invalid_tool_calls:
-            # A response carrying only malformed tool calls (arguments that failed to
-            # parse). These are NOT valid tool_calls — the LiteLLM model serializes only
-            # message.tool_calls, never invalid_tool_calls — so a ToolMessage response
-            # would be orphaned, and strict providers (e.g. DeepSeek) reject that with
-            # "Messages with role 'tool' must follow a tool_calls message". Correct the
-            # model with a reminder and let it retry. Model-facing; not surfaced.
+            # A response carrying only malformed tool calls (arguments that failed to parse).
             if response.content:
                 self._conversation.append(response)
             for invalid in response.invalid_tool_calls:
@@ -896,10 +792,7 @@ class _RunsTurns:
             step.directive = _CONTINUE
             return
 
-        # The model produced no tool calls. Any still-running background work does not
-        # hold the turn open: it ends here, and the executor's resume pump wakes the agent
-        # with an autonomous turn once the next result lands. Results that already
-        # completed were drained at the top of the loop, so nothing in hand is lost.
+        # The model produced no tool calls.
         final_text = message_text(response)
         self._conversation.append(response)
         steering_events = await self._drain_steering_messages()
@@ -908,11 +801,7 @@ class _RunsTurns:
                 yield steering_event
             step.directive = _CONTINUE
             return
-        # An unfinished goal does not hold the turn open. Keeping the model in one turn until it
-        # agreed it was done bought a single reconsideration — it could refuse once and the turn
-        # ended, goal and all, with nothing left watching. The goal is durable and the session
-        # outlives the turn, so the decision to keep working belongs to whoever owns the session:
-        # this turn ends honestly, and another is opened for the goal if one is owed.
+        # An unfinished goal does not hold the turn open.
         self._record_turn(
             recorded_user_message, turn_tool_calls_log,
             turn_tool_results_log, final_text,
@@ -961,15 +850,7 @@ class _RunsTurns:
             gates = [SuspensionGate(**gate.to_dict()) for gate in pending]
             answered = await self._answer_gates(gates)
             if gates and len(answered) < len(gates):
-                # One suspend event for every turn: the session renders the prompt from it,
-                # and the pause is durable. The segment closes here as input-required and a
-                # later answer rebuilds the turn from its checkpoint, so a session waiting on
-                # a person survives a daemon restart rather than losing the work it had
-                # already done. There is no second, ephemeral continuation path any more —
-                # every turn belongs to a session, and every session is addressable.
-                #
-                # Any gate an `Approvals` did answer is folded into the plans, so a partial
-                # answer narrows what the human is asked rather than being discarded.
+                # One suspend event for every turn: the session renders the prompt from it, and the pause is durable.
                 yield Suspended(
                     interactions=[gate for gate in gates if gate.request_id not in answered],
                     plans={tool_call_id: plan.to_dict() for tool_call_id, plan in plans.items()},
@@ -978,8 +859,7 @@ class _RunsTurns:
                 return
             else:
                 decisions = self._resolve_tool_decisions(plans, answered)
-            # After the barrier, deliberately. A hook sees only what the rules already
-            # approved, so it can drop calls and can never introduce one.
+            # After the barrier, deliberately.
             if not self._hooks.empty:
                 tool_calls = await self._hooks.before_tools(tool_calls)
             retries: list[_PreflightGate] = []
@@ -987,8 +867,7 @@ class _RunsTurns:
                 tool_calls, turn_tool_calls_log, turn_tool_results_log, outcomes, decisions,
             ):
                 if isinstance(event, RetryRequested):
-                    # Never yielded onward: a client draws its prompt from the suspension below,
-                    # and this event exists only to carry the refusal out of the tool task.
+                    # Never yielded onward: a client draws its prompt from the suspension below, and this event exists only to carry the refusal out of the tool task.
                     gate = self.retry_gate(
                         tool_call_id=event.id, command=event.command,
                         denial=Denial(kind=event.denial_kind, evidence=event.denial_evidence),
@@ -1001,9 +880,7 @@ class _RunsTurns:
                     continue
                 yield event
             if retries:
-                # The batch has finished; some of it ran. Every completed call carries its result
-                # into the plan so the resumed batch replays it rather than running it twice, and
-                # the refused ones carry their gate instead.
+                # The batch has finished; some of it ran.
                 for tool_call_id, plan in plans.items():
                     plan.gates = []
                     plan.refusal = None

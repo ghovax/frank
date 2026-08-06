@@ -68,8 +68,7 @@ def ensure_daemon() -> None:
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
             text=True,
-            # Detached, so the daemon outlives the command that started it — otherwise every
-            # CLI invocation would take the fleet down with it on exit.
+            # Detached, so the daemon outlives the command that started it — otherwise every CLI invocation would take the fleet down with it on exit.
             start_new_session=True,
         )
     except OSError as error:
@@ -142,9 +141,7 @@ def stream(path: str):
     ) as client:
         with client.stream("GET", f"http://daemon{path}") as response:
             if response.status_code >= 400:
-                # An event stream that was refused still parses as "no frames", so without
-                # this an `attach` to a session that does not exist ends instantly and
-                # silently — reading, wrongly, as a session with nothing to say.
+                # An event stream that was refused still parses as "no frames", so without this an `attach` to a session that does not exist ends instantly and silently — reading, wrongly, as a session with nothing to say.
                 response.read()
                 try:
                     message = response.json()["error"]["message"]
@@ -153,11 +150,7 @@ def stream(path: str):
                 raise DaemonError(message)
             buffer = ""
             for chunk in response.iter_text():
-                # Server-sent events separate frames with a blank line, and the wire form of
-                # that is CRLF — which is what the server actually sends. Splitting on "\n\n"
-                # alone matched nothing at all against "\r\n\r\n", so every frame stayed in the
-                # buffer and `attach` sat silent for the life of the stream. Normalising first
-                # accepts either spelling, which is what the format allows.
+                # Server-sent events separate frames with a blank line, and the wire form of that is CRLF — which is what the server actually sends.
                 buffer += chunk.replace("\r\n", "\n")
                 while "\n\n" in buffer:
                     frame, buffer = buffer.split("\n\n", 1)

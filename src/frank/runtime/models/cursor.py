@@ -117,16 +117,10 @@ from frank.base.tuning import Tunable, active_tuning
 from frank.runtime.models import cursor_wire as wire
 
 
-# Everything this client says to a model is a prompt on disk, like every other prompt the
-# harness sends: `cursor_tool_instructions` is what the model is told about the tools it has
-# been handed (Cursor puts it in ``McpInstructions``, alongside the definitions themselves),
-# `cursor_builtin_denied` is the refusal a built-in with no counterpart gets, and the two
-# transcript prompts are the preamble in :meth:`ChatCursorModel._preamble`.
+# Everything this client says to a model is a prompt on disk, like every other prompt the harness sends: `cursor_tool_instructions` is what the model is told about the tools it has been handed (Cursor puts it in ``McpInstructions``, alongside the definitions themselves), `cursor_builtin_denied` is the refusal a built-in with no counterpart gets, and the two transcript prompts are the preamble in :meth:`ChatCursorModel._preamble`.
 _PROMPTS = PromptLoader(Path(__file__).resolve().parent.parent / "prompts")
 
-# Frank's file and shell tools take a required, user-facing reason. A translated built-in has no
-# reason of its own to offer, so it says what it truthfully is. Not a prompt: no model reads it,
-# the permission surface does.
+# Frank's file and shell tools take a required, user-facing reason.
 _BUILTIN_JUSTIFICATION = "Requested by the Cursor agent while working on this turn."
 
 
@@ -158,10 +152,7 @@ def _list_arguments(values: list[str]) -> Optional[dict[str, Any]]:
     path = values[0] if values else ""
     if not path:
         return None
-    # The harness speaks `access_request` now, and this is a synthesised call rather than one a
-    # model wrote — so it states the claim the same way any other caller would. `ls` mutates
-    # nothing and reaches nowhere new, which is exactly what an empty request with `mutates:
-    # false` says.
+    # The harness speaks `access_request` now, and this is a synthesised call rather than one a model wrote — so it states the claim the same way any other caller would.
     return {
         "command": f"ls -la {shlex.quote(path)}",
         "access_request": {"mutates": False},
@@ -192,18 +183,7 @@ def _read_resource_arguments(values: list[str]) -> Optional[dict[str, Any]]:
     return {"server": server, "uri": uri} if server and uri else None
 
 
-# Cursor's built-in tools, and the harness tool each becomes. Every exec the server can send is
-# either here or refused by name; nothing is left unanswered, because an unanswered exec is an
-# agent waiting forever.
-#
-# Absent deliberately: `delete`, because turning a delete request into a synthesized `rm` would
-# mean this code decided to remove a file; `diagnostics`, which has no counterpart; `grep`, whose
-# arguments (output modes, context lines, type filters, multiline) do not survive being flattened
-# into one command line and whose nearest harness tool searches by meaning rather than by pattern;
-# `record_screen`, which has no counterpart; `computer_use`, because Cursor describes it as a list
-# of low-level actions while the harness's screen control takes a plain-language instruction, and
-# bridging those would be invention rather than translation; and `write_shell_stdin`, which
-# addresses a background shell by an id only a client that spawned it would hold.
+# Cursor's built-in tools, and the harness tool each becomes.
 _BUILTIN_TRANSLATIONS: dict[str, tuple[str, Callable[[list[str]], Optional[dict[str, Any]]]]] = {
     "shell": ("bash", _shell_arguments),
     "background_shell": ("bash", _background_shell_arguments),
@@ -270,8 +250,7 @@ class ChatCursorModel(BaseChatModel):
     model: str
     workspace: str = ""
     context_length: int = 0
-    # A generous bound so a dead connection cannot hang a turn forever, matching the
-    # other two clients; the streaming loop only checks aborts between frames.
+    # A generous bound so a dead connection cannot hang a turn forever, matching the other two clients; the streaming loop only checks aborts between frames.
     timeout: Optional[float] = 300.0
 
     @property
@@ -295,8 +274,7 @@ class ChatCursorModel(BaseChatModel):
     def _identifying_params(self) -> dict[str, Any]:
         return {"model": self.model}
 
-    # Tool binding — the same surface as the other two clients, so the harness binds
-    # identically; the Cursor-shaped translation happens at request-build time.
+    # Tool binding — the same surface as the other two clients, so the harness binds identically; the Cursor-shaped translation happens at request-build time.
 
     def bind_tools(
         self,
@@ -306,8 +284,7 @@ class ChatCursorModel(BaseChatModel):
         parallel_tool_calls: Optional[bool] = None,
         **kwargs: Any,
     ) -> Runnable:
-        # tool_choice and parallel_tool_calls have no counterpart in Cursor's protocol —
-        # the agent decides both — so they are accepted and dropped rather than faked.
+        # tool_choice and parallel_tool_calls have no counterpart in Cursor's protocol — the agent decides both — so they are accepted and dropped rather than faked.
         return self.bind(tools=[convert_to_openai_tool(tool) for tool in tools], **kwargs)
 
     # Turning the harness's messages into one Cursor turn.
@@ -445,8 +422,7 @@ class ChatCursorModel(BaseChatModel):
             conversation_id = str(uuid.uuid4())
 
         message_body = wire.user_message(body, str(uuid.uuid4()))
-        # Cursor keys a user message's blob by its own serialized bytes rather than a
-        # hash of them, so a request for it can be answered from the same store.
+        # Cursor keys a user message's blob by its own serialized bytes rather than a hash of them, so a request for it can be answered from the same store.
         blobs[message_body] = message_body
 
         workspace = self.workspace or os.getcwd()
@@ -528,9 +504,7 @@ class ChatCursorModel(BaseChatModel):
         tool_names = {
             (tool.get("function", tool)).get("name", "") for tool in (kwargs.get("tools") or [])
         }
-        # Cursor moves this service between backends, so a run that fails before producing
-        # anything is retried against the agent hosts before the failure is reported. A run that
-        # has already said something is never retried: replaying it would duplicate its output.
+        # Cursor moves this service between backends, so a run that fails before producing anything is retried against the agent hosts before the failure is reported.
         errors: list[Exception] = []
         for host in RUN_HOSTS:
             try:
@@ -542,9 +516,7 @@ class ChatCursorModel(BaseChatModel):
                     yield chunk
                 return
             except (httpx.HTTPError, _HostUnavailable) as error:
-                # A run that already emitted something is never retried: replaying it would
-                # duplicate its output. Anything not listed here — a rejected token, a spent
-                # allowance — is definitive and propagates from the first host.
+                # A run that already emitted something is never retried: replaying it would duplicate its output.
                 if produced:
                     raise
                 errors.append(error)
@@ -569,17 +541,13 @@ class ChatCursorModel(BaseChatModel):
             request = client.build_request(
                 "POST", run_url, content=wire.frame(wire.bidi_request_id(request_id)), headers=headers,
             )
-            # The run has to be opened before the turn is pushed into it, but awaiting the
-            # response headers first would deadlock against a server that has nothing to
-            # send until the turn arrives. So the open is started, the turn is pushed, and
-            # only then are the headers awaited.
+            # The run has to be opened before the turn is pushed into it, but awaiting the response headers first would deadlock against a server that has nothing to send until the turn arrives.
             opening = asyncio.create_task(client.send(request, stream=True))
             channel = _Channel(client, tokens, request_id, append_url)
             try:
                 await channel.push(turn)
             except BaseException:
-                # The turn never made it up, so the run it would have driven is dead;
-                # close it rather than leaving an open stream behind the raised error.
+                # The turn never made it up, so the run it would have driven is dead; close it rather than leaving an open stream behind the raised error.
                 opening.cancel()
                 with contextlib.suppress(BaseException):
                     await (await opening).aclose()
@@ -613,23 +581,13 @@ class ChatCursorModel(BaseChatModel):
         inline so the run keeps moving, and the last checkpoint is kept so the next turn can
         resume from it instead of resending the conversation."""
         deframer = wire.Deframer()
-        # The two counts come from different places and mean different things. Generated tokens
-        # arrive as deltas and are summed; the prompt size is the conversation's context fill,
-        # reported whole in each checkpoint, so the largest seen in the turn is the one to keep —
-        # an early checkpoint would otherwise pin the meter below the real figure.
+        # The two counts come from different places and mean different things.
         output_tokens = 0
         input_tokens = 0
-        # A tool call is announced once (``tool_call_started``) and then asked for once
-        # (an mcp exec request), and it is the exec request this hands back, because that
-        # is the one carrying the arguments the server committed to. The announcement is
-        # kept anyway: if a turn ends having announced a call that was never asked for,
-        # dropping it would lose the model's move silently, and a turn that says nothing
-        # is indistinguishable from a turn that failed.
+        # A tool call is announced once (``tool_call_started``) and then asked for once (an mcp exec request), and it is the exec request this hands back, because that is the one carrying the arguments the server committed to.
         announced: Optional[wire.ToolCall] = None
         run_identifier = str(uuid.uuid4())
-        # Cursor holds a run open with heartbeats while the model thinks silently, so silence is
-        # not death and cannot simply time out the connection. What can be measured is silence
-        # *since the last thing that happened*, which is what this bounds.
+        # Cursor holds a run open with heartbeats while the model thinks silently, so silence is not death and cannot simply time out the connection.
         silence_limit = active_tuning().duration(Tunable.model_silence_give_up_seconds)
         progressed_at = time.monotonic()
         went_quiet = False
@@ -646,8 +604,7 @@ class ChatCursorModel(BaseChatModel):
                     input_tokens = max(input_tokens, details.used_tokens)
                     record_context_window(self.model, details.maximum_tokens)
                 if message.checkpoint:
-                    # Kept, not resumed from yet: a checkpoint mid-turn is the newest description
-                    # of this conversation, and the next turn is what gets to use it.
+                    # Kept, not resumed from yet: a checkpoint mid-turn is the newest description of this conversation, and the next turn is what gets to use it.
                     self._remember_resumption(messages, message.checkpoint, blobs, conversation_id)
                 announced = message.tool_call or announced
                 if message.heartbeat and time.monotonic() - progressed_at > silence_limit:
@@ -664,9 +621,7 @@ class ChatCursorModel(BaseChatModel):
                 if (request := message.exec_request) is not None:
                     call = self._tool_call_for(request, tool_names)
                     if call is not None:
-                        # A tool call, whether the model reached for one of the harness's tools or
-                        # one of Cursor's own. Either way the harness runs it, so this run is over:
-                        # hand the call back and stop reading.
+                        # A tool call, whether the model reached for one of the harness's tools or one of Cursor's own.
                         yield _tool_call_chunk(call)
                         yield _final_chunk("tool_calls", input_tokens, output_tokens)
                         return
@@ -677,9 +632,7 @@ class ChatCursorModel(BaseChatModel):
                     return
             if went_quiet:
                 break
-        # Reached when the stream closes without a turn_ended — a clean server-side end as
-        # readily as a truncation — or when the model went quiet for too long. Either way,
-        # report what arrived rather than raising.
+        # Reached when the stream closes without a turn_ended — a clean server-side end as readily as a truncation — or when the model went quiet for too long.
         async for chunk in self._close_turn(announced, input_tokens, output_tokens):
             yield chunk
 
@@ -775,11 +728,7 @@ class ChatCursorModel(BaseChatModel):
         chunk_message = cast(AIMessageChunk, aggregate.message)
         message = AIMessage(
             content=chunk_message.content,
-            # An empty list, never `None`. `AIMessage.tool_calls` is a list with a default,
-            # and a default applies to an *omitted* key — passing `None` explicitly fails
-            # validation before any caller can look at it. Most turns carry tool calls so
-            # this stayed hidden; the one that reliably does not is titling, which is why
-            # every conversation was named "Untitled conversation".
+            # An empty list, never `None`.
             tool_calls=list(chunk_message.tool_calls or []),
             additional_kwargs=chunk_message.additional_kwargs,
             usage_metadata=chunk_message.usage_metadata,
@@ -821,9 +770,7 @@ class ChatCursorModel(BaseChatModel):
         )
 
 
-# Chunk construction, shared by the stream and its aggregation. These mirror the Codex
-# client's helpers so both providers' streams merge into the same shapes the harness
-# already knows how to render.
+# Chunk construction, shared by the stream and its aggregation.
 
 def _chunk(
     content_block: ContentBlock | None = None,
@@ -837,9 +784,7 @@ def _chunk(
 
 
 def _text_block(body: str, run_identifier: str) -> TextContentBlock:
-    # The id and index together identify the block a delta belongs to, and every text
-    # delta of a turn belongs to the same one — Cursor streams a turn's prose as a single
-    # run, so the whole of it merges into one part.
+    # The id and index together identify the block a delta belongs to, and every text delta of a turn belongs to the same one — Cursor streams a turn's prose as a single run, so the whole of it merges into one part.
     return TextContentBlock(type="text", text=body, id=f"{run_identifier}-text", index=0)
 
 
@@ -898,9 +843,7 @@ class _Resumption:
     touched_at: float
 
 
-# Keyed by conversation identity — the digest of the first exchange, which is stable for the life
-# of a conversation and distinct between conversations. Process-local and evicted by age, because
-# this is a cache: losing it costs a full replay, which is the behaviour that existed before it.
+# Keyed by conversation identity — the digest of the first exchange, which is stable for the life of a conversation and distinct between conversations.
 _resumptions: dict[str, _Resumption] = {}
 
 

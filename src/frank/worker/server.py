@@ -88,20 +88,7 @@ def _message_parts(params: dict) -> list[Part]:
             if entry.get("kind") == "text":
                 parts.append(Part(root=TextPart(text=str(entry.get("text", "")))))
             else:
-                # The part's `data`, not the part. This wrapped the whole entry — `kind`
-                # included — so what reached the model and the store was
-                # `{"kind": "data", "data": {"urn:…": {…}}}`: the real payload one level
-                # deeper than every reader looks for it.
-                #
-                # Nothing raised. `part_payload` looks up the extension key, finds it absent,
-                # and answers `{}` — so an attached file became an empty structured payload
-                # in silence. The model was never told about it, and the client's chip
-                # vanished the moment the optimistic message was replaced by the echo it
-                # could no longer read attachments out of.
-                #
-                # A caller may still send a bare payload object with no `data` key; that is
-                # what a hand-written A2A client does, and it was the only shape that worked
-                # before, so it keeps working.
+                # The part's `data`, not the part.
                 payload = entry.get("data") if isinstance(entry.get("data"), dict) else entry
                 parts.append(Part(root=DataPart(data=dict(payload))))
         if parts:
@@ -115,9 +102,7 @@ async def _send(session, params: dict) -> dict:
     A message that arrives while the session is mid-turn is injected at the turn's next safe
     point rather than starting a second one — that is what makes a peer's question reach a
     working session instead of waiting for it to go idle."""
-    # A session parked on a human decision takes no new turn. Starting one discards the parked
-    # turn — with whatever work it had already done, and with the question the person was being
-    # asked — and the sender is told nothing. Refusing says what is true and leaves both intact.
+    # A session parked on a human decision takes no new turn.
     parked = await session.pending_decision()
     if parked and not session.is_running:
         return {"accepted": False, "awaiting_input": True, "waiting_on": parked}
@@ -127,18 +112,13 @@ async def _send(session, params: dict) -> dict:
             for entry in (params.get("parts") or [])
             if isinstance(entry, dict) and entry.get("kind") == "text"
         ) or str(params.get("text", ""))
-        # The sender's own id for this message, carried through so the steering event can name
-        # it. A client that showed the message the moment it typed it needs to recognise its own
-        # copy when the session echoes it back, and text alone cannot do that.
+        # The sender's own id for this message, carried through so the steering event can name it.
         message_id = str((params.get("metadata") or {}).get("messageId") or "")
-        # Who sent it, carried into the running turn. Without this the injection path could not
-        # tell a peer's report from a person's steering, and everything that arrived mid-turn was
-        # shown as the user's own words — including the daemon's notice that a child had died.
+        # Who sent it, carried into the running turn.
         peer_sender = str((params.get("metadata") or {}).get(Metadata.PEER_SENDER) or "")
         if session.inject(text, message_id, peer_sender):
             return {"accepted": True, "injected": True}
-        # The turn ended between the check and the injection; fall through and start a fresh
-        # one rather than silently dropping the message.
+        # The turn ended between the check and the injection; fall through and start a fresh one rather than silently dropping the message.
     turn_id = await session.start_turn(_message_parts(params), dict(params.get("metadata") or {}))
     return {"accepted": True, "injected": False, "turn_id": turn_id}
 
@@ -162,8 +142,7 @@ async def _respond(session, params: dict) -> dict:
 async def _cancel(session, params: dict) -> dict:
     tool_call_id = str(params.get("tool_call_id") or "")
     if tool_call_id:
-        # The facade method, not the context-keyed one underneath it: a worker is one session,
-        # so the id is implicit here and passing only the tool call would be a missing argument.
+        # The facade method, not the context-keyed one underneath it: a worker is one session, so the id is implicit here and passing only the tool call would be a missing argument.
         return {"cancelled": session.abort_tool_call(tool_call_id)}
     return {"cancelled": session.abort()}
 
@@ -218,12 +197,6 @@ async def _reset(session, _params: dict) -> dict:
 
 
 # Every verb this socket answers, in one table.
-#
-# The same shape the control plane's `METHODS` and the ingest intake use, and for the same
-# reason: what a surface accepts is a list, and a list is a thing you can read, enumerate and
-# test. This was a chain of `if method == ...` returning its own `JSONResponse` per arm, which
-# meant the envelope and the error handling were rewritten at every verb and the surface could
-# only be discovered by reading the whole chain. The wrapping now happens once, above.
 METHODS: dict[str, Callable[[Any, dict], Awaitable[dict]]] = {
     "message/send": _send,
     "input/respond": _respond,

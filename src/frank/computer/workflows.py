@@ -32,8 +32,7 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-#: The package name both directories contribute to. One namespace, so a script never has to know
-#: which of the two a workflow came from in order to import it.
+#: The package name both directories contribute to.
 PACKAGE = "workflows"
 
 PROJECT_ROOT = ".agents"
@@ -113,13 +112,11 @@ def _libraries_under(root: str) -> tuple[str, ...]:
     for package in sorted(base.iterdir()) if base.is_dir() else []:
         if not package.is_dir():
             continue
-        # The package itself, and the directory `delocate` puts vendored libraries in when a
-        # wheel is built for macOS.
+        # The package itself, and the directory `delocate` puts vendored libraries in when a wheel is built for macOS.
         for candidate in (package, package / ".dylibs"):
             if not candidate.is_dir():
                 continue
-            # `lib*.so` as well as `*.dylib`: a wheel may ship either, and the `lib` prefix is
-            # what tells a shared library from a Python extension module, which is also `.so`.
+            # `lib*.so` as well as `*.dylib`: a wheel may ship either, and the `lib` prefix is what tells a shared library from a Python extension module, which is also `.so`.
             if any(candidate.glob("*.dylib")) or any(candidate.glob("lib*.so")):
                 found.append(str(candidate))
     return tuple(found)
@@ -199,8 +196,7 @@ def available(project_directory: str = "") -> list[dict[str, Any]]:
             if path.stem.startswith("_"):
                 continue
             if path.stem in seen:
-                # The project already defines this module name, so this one is unreachable. Said
-                # aloud: a workflow that silently does not exist is worse than one that is missing.
+                # The project already defines this module name, so this one is unreachable.
                 listed.append({"import": f"{PACKAGE}.{path.stem}", "scope": scope,
                                "error": "unreachable: the project defines this module name too"})
                 continue

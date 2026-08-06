@@ -1,8 +1,6 @@
 "use client";
 
-// A small segmented control (two or three joined buttons in a muted track) used to switch
-// a panel between views — Terminal/Processes, and similar. The look was
-// duplicated per panel; it lives here once so every toggle reads and behaves identically.
+// A small segmented control (two or three joined buttons in a muted track) used to switch a panel between views — Terminal/Processes, and similar.
 
 import { Button, Flex } from "@chakra-ui/react";
 import type { ReactNode } from "react";

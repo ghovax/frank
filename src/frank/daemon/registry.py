@@ -39,8 +39,7 @@ from frank.base.paths import runtime_directory, session_socket_path
 LIVE = "live"
 ENDED = "ended"
 
-# What is it doing right now? Derived on read from the process, the turn and the gate — never
-# stored, because a stored "working" survives the kill that made it false.
+# What is it doing right now?
 WORKING = "working"   # a turn is in flight
 WAITING = "waiting"   # parked on a human decision
 IDLE = "idle"         # has a worker, doing nothing
@@ -105,13 +104,9 @@ class SessionRecord:
     agent: str
     working_directory: str
     permission_mode: str
-    # What this session's tool children may touch, resolved at creation from the machine's
-    # configuration and the agent profile and clamped against the creating session — the same
-    # once-and-immutable treatment the permission mode gets, and for the same reason.
+    # What this session's tool children may touch, resolved at creation from the machine's configuration and the agent profile and clamped against the creating session — the same once-and-immutable treatment the permission mode gets, and for the same reason.
     sandbox: dict = field(default_factory=dict)
-    # Where the session's tools actually run. Equal to `working_directory` unless the
-    # workspace strategy put the session in its own worktree or branch, which is decided once
-    # when the session is created — the same moment everything else about it is fixed.
+    # Where the session's tools actually run.
     runtime_working_directory: str = ""
     workspace_id: str = ""
     parent: str = ""
@@ -125,15 +120,11 @@ class SessionRecord:
     outcome: str = ""
     exit_reason: str = ""
 
-    # Volatile: the process, if there is one right now. Zero means asleep — the record is
-    # intact and the next message forks a worker for it.
+    # Volatile: the process, if there is one right now.
     pid: int = 0
-    # Set when the session is parked on a human decision, so a listing can show that it is
-    # waiting on someone rather than working. Rebuilt on restart from the turn store, which is
-    # where the suspension durably lives.
+    # Set when the session is parked on a human decision, so a listing can show that it is waiting on someone rather than working.
     awaiting_input: bool = False
-    # Set while a turn is in flight. Purely in-memory, and deliberately: a stored "working"
-    # outlives the kill that made it false.
+    # Set while a turn is in flight.
     busy: bool = False
 
     @property

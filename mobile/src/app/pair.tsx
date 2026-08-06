@@ -1,16 +1,4 @@
-/**
- * Pairing: pointing this phone at a machine, once.
- *
- * Two ways in, because the QR code is the good one and it is not always available. Scanning is
- * what `frank reach pair` prints and is the whole reason the token can be 43 characters of
- * base64 rather than something a person could be asked to retype. Pasting the link is for the
- * case the camera cannot help with — reading the terminal over SSH from the phone itself, or a
- * machine whose screen you are not in front of.
- *
- * What is deliberately absent is a form with a host, a port and a token in three fields. The
- * pairing payload carries several addresses precisely so the app can decide which one works, and
- * asking somebody to pick one by hand throws that away.
- */
+/** Pairing: pointing this phone at a machine, once. */
 
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Clipboard from "expo-clipboard";
@@ -36,14 +24,12 @@ export default function PairScreen() {
   const { add, machines } = useConnection();
   const { link } = useLocalSearchParams<{ link?: string }>();
   const [permission, requestPermission] = useCameraPermissions();
-  // The camera is the default everywhere it exists. On web there is no `frank reach pair` QR to
-  // point a laptop's webcam at from the same laptop, so pasting leads there.
+  // The camera is the default everywhere it exists.
   const [mode, setMode] = useState<"scan" | "paste">(Platform.OS === "web" ? "paste" : "scan");
   const [typed, setTyped] = useState("");
   const [failure, setFailure] = useState("");
   const [busy, setBusy] = useState(false);
-  // A scanner fires the same code many times a second. One accepted code ends the screen, so the
-  // rest have to be dropped rather than each starting its own pairing.
+  // A scanner fires the same code many times a second.
   const claimed = useRef(false);
 
   const accept = useCallback(async (raw: string) => {
@@ -52,9 +38,7 @@ export default function PairScreen() {
     try {
       parsed = parsePairing(raw);
     } catch (caught) {
-      // `parsePairing` says which way the code was wrong by throwing a key, not a sentence: it
-      // is a plain module with no hook to reach a catalogue through, and a sentence written
-      // there would be one this screen could not translate.
+      // `parsePairing` says which way the code was wrong by throwing a key, not a sentence: it is a plain module with no hook to reach a catalogue through, and a sentence written there would be one this screen could not translate.
       setFailure(translation(caught instanceof PairingError ? caught.reason : "notAPairingCode"));
       return;
     }
@@ -63,49 +47,26 @@ export default function PairScreen() {
     setFailure("");
     if (Platform.OS !== "web") await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     await add(parsed);
-    // Straight to the machine that was just paired, over the list rather than instead of it —
-    // dismissing to the list and making somebody tap the row they just created is a step that
-    // exists only because the code was entered on a different screen.
+    // Straight to the machine that was just paired, over the list rather than instead of it — dismissing to the list and making somebody tap the row they just created is a step that exists only because the code was entered on a different screen.
     router.dismissTo("/");
     router.push("/interface");
   }, [add, translation]);
 
   // Ask for the camera as soon as the scanner is what is on screen.
-  //
-  // It used to wait behind an "Allow camera" button, on the reasoning that explaining before
-  // prompting is polite. It is not, here: scanning *is* this screen, the person arrived intending
-  // to point the camera at something, and a button whose only outcome is the system prompt is a
-  // step that asks permission to ask permission. iOS shows its own dialog with our reason string
-  // from `app.json`, which is the explanation that button was carrying.
-  //
-  // `canAskAgain` is what separates "not decided yet" from "already refused" — asking again after
-  // a refusal does nothing at all, silently, so that case gets the fallback below instead.
   useEffect(() => {
     if (mode !== "scan" || Platform.OS === "web") return;
     if (permission === null || permission.granted || !permission.canAskAgain) return;
     void requestPermission();
   }, [mode, permission, requestPermission]);
 
-  // A `frank://pair#…` link opened from outside the app arrives as a route parameter, which is
-  // the same act as scanning and takes the same path.
+  // A `frank://pair#…` link opened from outside the app arrives as a route parameter, which is the same act as scanning and takes the same path.
   useEffect(() => {
-    // A link that will not parse reports itself immediately, which is a state change in the same
-    // tick as the effect — and the right behaviour. The alternative is a screen that sits there
-    // saying nothing about the code somebody just followed.
+    // A link that will not parse reports itself immediately, which is a state change in the same tick as the effect — and the right behaviour.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (link) void accept(String(link));
   }, [link, accept]);
 
-  /**
-   * The clipboard, when there is one.
-   *
-   * There is not always one. Read access is gated on a secure context, so a browser that reached
-   * this over plain HTTP does not merely refuse it — `navigator.clipboard` is undefined and
-   * `expo-clipboard` throws — and a phone can refuse the permission outright. Neither is worth
-   * more than a sentence, because the field below takes a pasted link perfectly well through the
-   * keyboard; this button only ever saved a gesture. Left unhandled it did the opposite, putting
-   * a rejection about an API in front of somebody who was trying to pair a phone.
-   */
+  /** The clipboard, when there is one. There is not always one. */
   const paste = useCallback(async () => {
     try {
       const text = await Clipboard.getStringAsync();
@@ -167,8 +128,7 @@ export default function PairScreen() {
                 onBarcodeScanned={({ data }) => void accept(data)}
               />
             ) : permission && !permission.canAskAgain ? (
-              // Refused before. Asking again does nothing, so the only honest instruction is
-              // where to change it — or to use the other tab, which needs no camera at all.
+              // Refused before.
               <View style={[styles.center, { gap: theme.space[3], padding: theme.space[4] }]}>
                 <Camera size={26} color={theme.colors.fgSubtle} />
                 <Text variant="small" tone="muted" align="center">{translation("cameraRefused")}</Text>

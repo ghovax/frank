@@ -29,8 +29,7 @@ from frank.protocol import events  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-# `shared/`, not `web/`: both clients read this union, and a copy per client is how the
-# two stop describing the same daemon.
+# `shared/`, not `web/`: both clients read this union, and a copy per client is how the two stop describing the same daemon.
 OUTPUT = ROOT / "shared" / "generated" / "events.schema.json"
 REFERENCE_TEMPLATE = "#/$defs/{model}"
 
@@ -50,8 +49,7 @@ def _strip_titles(node: object) -> object:
     cleaned: dict = {}
     for key, value in node.items():
         if key == "title":
-            # Metadata on this schema node — never a field name (field names are reached
-            # only as map keys in the branches below), so this is always Pydantic's title.
+            # Metadata on this schema node — never a field name (field names are reached only as map keys in the branches below), so this is always Pydantic's title.
             continue
         if key in _SCHEMA_MAP_KEYS and isinstance(value, dict):
             cleaned[key] = {name: _strip_titles(sub) for name, sub in value.items()}
@@ -65,9 +63,7 @@ def _strip_titles(node: object) -> object:
 
 
 _STRUCTURAL = {"type", "$ref", "enum", "const", "anyOf", "oneOf", "allOf", "items", "properties", "tsType"}
-# JSON-Schema keywords whose *values* are themselves schemas (or maps/lists of them),
-# so the walk descends only into real schema positions — never into a data map like
-# ``properties`` (keyed by field name) or a list like ``required``.
+# JSON-Schema keywords whose *values* are themselves schemas (or maps/lists of them), so the walk descends only into real schema positions — never into a data map like ``properties`` (keyed by field name) or a list like ``required``.
 _SCHEMA_MAP_KEYS = {"properties", "$defs", "definitions", "patternProperties"}
 _SCHEMA_LIST_KEYS = {"anyOf", "allOf", "oneOf", "prefixItems"}
 _SCHEMA_NODE_KEYS = {"items", "additionalProperties", "not", "if", "then", "else"}
@@ -135,8 +131,7 @@ def _render_schema() -> str:
     )
     definitions: dict = combined.get("$defs", {})
 
-    # Expose the discriminated union as a named `WireEvent` type. Pydantic emits it as
-    # a `oneOf` + discriminator; json-schema-to-typescript renders that as a TS union.
+    # Expose the discriminated union as a named `WireEvent` type.
     wire = TypeAdapter(events.WireEvent).json_schema(ref_template=REFERENCE_TEMPLATE)
     definitions.update(wire.pop("$defs", {}))
     definitions["WireEvent"] = wire
@@ -145,8 +140,7 @@ def _render_schema() -> str:
     schema = {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "title": "FrankEvents",
-        # The root doc only exists to carry `$defs`; closing it keeps json2ts from
-        # emitting a stray open `FrankEvents { [key: string]: unknown }` wrapper.
+        # The root doc only exists to carry `$defs`; closing it keeps json2ts from emitting a stray open `FrankEvents { [key: string]: unknown }` wrapper.
         "type": "object",
         "additionalProperties": False,
         "$defs": cleaned,

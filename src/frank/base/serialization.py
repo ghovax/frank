@@ -19,8 +19,7 @@ from typing import Any
 
 from frank.base.tuning import Tunable, active_tuning, clip_to_tokens
 
-# No padding, and real UTF-8 rather than escapes. Both are purely a matter of encoding: the
-# value that parses back out is identical either way.
+# No padding, and real UTF-8 rather than escapes.
 _SEPARATORS = (",", ":")
 
 

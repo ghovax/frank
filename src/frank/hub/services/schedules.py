@@ -32,9 +32,7 @@ from frank.base.sqlite_lock import sqlite_write_lock
 from frank.hub import state
 from frank.hub.database import ScheduleRecord, WorkspaceRecord
 
-# `ScheduleError` and `PERMISSION_MODES` are re-exported rather than re-imported at each call
-# site: the daemon's API and the REST routes catch one error for one concept, and which module
-# happens to define it is not a distinction worth pushing onto them.
+# `ScheduleError` and `PERMISSION_MODES` are re-exported rather than re-imported at each call site: the daemon's API and the REST routes catch one error for one concept, and which module happens to define it is not a distinction worth pushing onto them.
 __all__ = ["PERMISSION_MODES", "ScheduleError", "create", "delete", "due_now", "get",
            "listing", "next_firing", "record_run", "serialize", "set_enabled", "validate"]
 

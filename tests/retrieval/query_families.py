@@ -19,14 +19,6 @@ from frank.computer.retrieval import url_in_words
 from tests.retrieval.corpus import Corpus, RecordedElement
 
 # Every family yields every query the page supports — nothing is sampled and there is no seed.
-#
-# This is a correction to how these measurements were first taken. Capping each family at a fixed
-# count per site silently *imposes* equal weighting across families, and that weighting is exactly
-# the assumption the shipped key's margin rests on and the one thing here with no evidence behind
-# it. Taking everything lets the pages decide the mix instead: a corpus where few links have
-# distinctive URLs contributes few slug queries, which is a fact about such pages rather than a
-# knob. It also removes the sampling seed, so a change in a number can only mean a change in the
-# code.
 
 
 @dataclass(frozen=True)
@@ -120,10 +112,5 @@ QUERY_FAMILIES: dict[str, QueryFamily] = {
     "tooltip": tooltip_queries,
 }
 
-# The field each family's wording is drawn from, for the families where it discriminates between
-# strategies. A strategy that indexes the named field is scored circularly by that family and its
-# result there is not evidence of retrieval.
-#
-# `literal` and `partial` are absent on purpose: their wording comes from the element's name, and
-# every strategy indexes the name, so flagging them would mark everything and distinguish nothing.
+# The field each family's wording is drawn from, for the families where it discriminates between strategies.
 CIRCULAR_FIELD_BY_FAMILY = {"tooltip": "title", "slug": "url"}

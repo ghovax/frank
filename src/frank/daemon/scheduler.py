@@ -22,8 +22,7 @@ from frank.base.serialization import compact
 
 logger = logging.getLogger(__name__)
 
-#: How often the loop looks. Cron's own resolution is a minute, so looking more often would
-#: only find the same work again, and looking less often would miss windows.
+#: How often the loop looks.
 TICK_SECONDS = 30
 
 
@@ -42,8 +41,7 @@ async def _fire(record) -> None:
             "title": record.name,
         })
         session_id = str(created.get("id") or "")
-        # The same shape `frank send` uses — one wire format, so a scheduled turn and a typed
-        # one are the same thing arriving by different doors.
+        # The same shape `frank send` uses — one wire format, so a scheduled turn and a typed one are the same thing arriving by different doors.
         await api._session_send({
             "id": session_id,
             "parts": [{"kind": "text", "text": record.prompt}],

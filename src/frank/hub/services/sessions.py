@@ -112,8 +112,7 @@ def _ensure_session_workspace(
                     record.worktree_error = workspace.error
                     database_session.commit()
                 return _session_worktree_from_record(record)
-            # No title yet: the session names itself once it has read its first message,
-            # which is the only point anything knows what the session is for.
+            # No title yet: the session names itself once it has read its first message, which is the only point anything knows what the session is for.
             database_session.add(SessionRecord(
                 id=session_id,
                 agent=agent,
@@ -210,19 +209,9 @@ def _sessions_payload() -> dict[str, list[dict[str, Any]]]:
                     ),
                     "running": row.id in state._running_contexts,
                     "awaiting_input": row.id in state._awaiting_input_contexts,
-                    # What this session is working toward, when it has said. Read from the live
-                    # map for the same reason `running` is: the goal belongs to the process
-                    # pursuing it, and the interface shows it with a control to call it off.
+                    # What this session is working toward, when it has said.
                     "goal": state._session_goals.get(row.id),
                     # What the session is *doing*, which `lifecycle` deliberately does not say.
-                    # The interface reads this to choose a status dot, and it was simply absent
-                    # from this payload — so `session.activity || "idle"` on the other side made
-                    # every session look idle, including one parked on a decision.
-                    #
-                    # Derived here rather than read from the daemon's registry, because the
-                    # workspace is served without a daemon and must not reach across. The two
-                    # facts it does have are pushed to it by the daemon at the same edges the
-                    # registry learns them, so they agree.
                     "activity": _activity_of(row.id, str(row.lifecycle or "live")),
                 }
                 for row in rows

@@ -3,11 +3,7 @@
 import { useEffect, useState } from "react";
 import { subscribeGitStatus, validateWorkingDirectory, type DirectoryValidation } from "@/lib/api";
 
-// Live status of a working directory: whether it is a valid path and — when it is a Git
-// repository — its branch, dirtiness, ahead/behind and current commit, streamed so the
-// workspace status bar stays current as the tree changes. This is the single source of
-// truth for directory/git status, shared by the workspace status bar and the composer's
-// send-gate (which only needs `directoryValid`).
+// Live status of a working directory: whether it is a valid path and — when it is a Git repository — its branch, dirtiness, ahead/behind and current commit, streamed so the workspace status bar stays current as the tree changes.
 export type DirectoryStatus = {
   path: string;
   valid: boolean;
@@ -85,8 +81,7 @@ export function useDirectoryStatus(workingDirectory?: string): { status: Directo
     let cancelled = false;
     let unsubscribe: (() => void) | null = null;
 
-    // Debounced so rapid working-directory changes (e.g. switching sessions) don't fire
-    // a validation request per keystroke of navigation.
+    // Debounced so rapid working-directory changes (e.g. switching sessions) don't fire a validation request per keystroke of navigation.
     const timeout = window.setTimeout(() => {
       if (!directory) {
         setStatus({ path: directory, checking: false, ...EMPTY_GIT });
@@ -115,8 +110,7 @@ export function useDirectoryStatus(workingDirectory?: string): { status: Directo
     };
   }, [directory]);
 
-  // Valid only once the streamed/validated status matches the directory being asked
-  // about — during the switch window the stale status still names the previous path.
+  // Valid only once the streamed/validated status matches the directory being asked about — during the switch window the stale status still names the previous path.
   const directoryValid = !!directory && status.path === directory && status.valid;
   return { status, directoryValid };
 }

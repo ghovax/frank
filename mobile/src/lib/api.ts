@@ -1,14 +1,4 @@
-/**
- * Asking a machine whether it is there.
- *
- * That is the whole of this file, and it used to be a transcription of `web/src/lib/api.ts` —
- * sessions, turns, settings, an SSE reader, the lot. All of it is gone because the interface
- * itself now runs on the device and talks to the daemon directly; a second client of the same
- * API, in a second language, was exactly the duplication that kept the two screens diverging.
- *
- * What is left is the one question the *shell* has to answer before it can show anything: which
- * of a machine's addresses is answering, and does this device's token still count.
- */
+/** Asking a machine whether it is there. */
 
 import { fetch as streamingFetch } from "expo/fetch";
 
@@ -28,13 +18,7 @@ export function currentEndpoint(): string {
   return endpoint;
 }
 
-/**
- * A request that did not do what was asked, named by the `InterfaceScreen` entry that says so.
- *
- * `message` is a key rather than a sentence. This is a plain module with no hook to reach the
- * catalogue through, and an English sentence written here would be one no screen could
- * translate — the language of a message belongs to whatever is about to show it.
- */
+/** A request that did not do what was asked, named by the `InterfaceScreen` entry that says so. */
 export class ApiError extends Error {
   constructor(message: string, readonly status: number, readonly code = "") {
     super(message);
@@ -49,11 +33,7 @@ interface RequestOptions {
   signal?: AbortSignal;
 }
 
-/**
- * One door. Every request carries the reach token as a header; the query-parameter form the web
- * client also needs is for transports that cannot carry headers, and this app has none of those
- * that are not the websocket below.
- */
+/** One door. */
 export async function apiFetch(path: string, options: RequestOptions = {}) {
   if (!endpoint) throw new ApiError("notPaired", 0, "unpaired");
   return streamingFetch(`${endpoint}${path}`, {

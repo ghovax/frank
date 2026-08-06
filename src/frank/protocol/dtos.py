@@ -31,7 +31,6 @@ class AgentInfo(BaseModel):
     # What the agent is for — shown as the subtitle in the UI's agent picker.
     description: str = ""
     # The agent's resolved ``provider/model`` identifier, or empty when it has none.
-    # Empty means the agent is misconfigured; per-turn model selection is per-agent.
     model: str = ""
 
 
@@ -48,8 +47,7 @@ class AgentConfigurationResponse(BaseModel):
     model: str = ""
     provider: str = ""
     reasoning_effort: str = "high"
-    # `None` where the card sets no ceiling, which is what most cards do. The settings editor
-    # shows it as "no ceiling" rather than inventing one, because a value here is read as a bound.
+    # `None` where the card sets no ceiling, which is what most cards do.
     permission_mode: Literal["ask", "auto"] | None = None
     tools_enabled: list[str]
     tools_disabled: list[str]

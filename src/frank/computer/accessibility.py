@@ -80,12 +80,9 @@ ROLE = "AXRole"
 SUBROLE = "AXSubrole"
 TITLE = "AXTitle"
 DESCRIPTION = "AXDescription"
-# What the application calls this kind of control, in prose the system itself writes:
-# "increment arrow button", "close button", "disclosure triangle". Present on every element,
-# and the only words some controls have — see the fallback in `engine._element_name`.
+# What the application calls this kind of control, in prose the system itself writes: "increment arrow button", "close button", "disclosure triangle".
 ROLE_DESCRIPTION = "AXRoleDescription"
-# The prompt text shown inside an empty field ("Search", "Filter"). Rare across all elements, but
-# text fields are disproportionately what a query looks for, and an empty one has nothing else.
+# The prompt text shown inside an empty field ("Search", "Filter").
 PLACEHOLDER = "AXPlaceholderValue"
 HELP = "AXHelp"
 VALUE = "AXValue"
@@ -104,26 +101,18 @@ MAIN_WINDOW = "AXMainWindow"
 FOCUSED_WINDOW = "AXFocusedWindow"
 FOCUSED_ELEMENT = "AXFocusedUIElement"
 
-# The text attributes an editable element exposes: its own contents (AXValue), the current
-# selection as a substring, and the selection as a (location, length) range. Setting the range
-# moves the caret or selects text; setting the selected text inserts at the caret or replaces the
-# selection. These are the accessible, VoiceOver-grade way to edit text without synthesizing keys.
+# The text attributes an editable element exposes: its own contents (AXValue), the current selection as a substring, and the selection as a (location, length) range.
 SELECTED_TEXT = "AXSelectedText"
 SELECTED_TEXT_RANGE = "AXSelectedTextRange"
 NUMBER_OF_CHARACTERS = "AXNumberOfCharacters"
 
-# One batched read pulls all of these in a single IPC round-trip per node. AXFrame is the
-# element's rectangle in one value; AXVisibleChildren/AXVisibleRows let the app report
-# what is on screen so we never descend into scrolled-away content.
+# One batched read pulls all of these in a single IPC round-trip per node.
 BATCH_ATTRIBUTES = [
     ROLE, SUBROLE, TITLE, DESCRIPTION, HELP, ROLE_DESCRIPTION, PLACEHOLDER, VALUE, ENABLED, SELECTED,
     FRAME, POSITION, SIZE, VISIBLE_CHILDREN, VISIBLE_ROWS, CHILDREN,
 ]
 
-# Pure containers: not included on their own (they carry no action or information), but
-# always descended through to reach the real controls inside them. Table rows and cells
-# are structure here too — we descend through them and include the text/controls they
-# hold, one line per item instead of row+cell+text triples.
+# Pure containers: not included on their own (they carry no action or information), but always descended through to reach the real controls inside them.
 STRUCTURAL_ROLES = frozenset({
     "AXGroup", "AXSplitGroup", "AXScrollArea", "AXLayoutArea", "AXLayoutItem",
     "AXUnknown", "AXToolbar", "AXTabGroup", "AXList", "AXOutline", "AXTable",
@@ -132,9 +121,7 @@ STRUCTURAL_ROLES = frozenset({
     "AXApplication", "AXWindow",
 })
 
-# Text nodes carry their content in AXValue and have no control subtree, so they are
-# included when they have text and not descended into. Decorative nodes are included only
-# when they carry a real name (a labeled image can be a button; an unlabeled one is chrome).
+# Text nodes carry their content in AXValue and have no control subtree, so they are included when they have text and not descended into.
 TEXT_ROLES = frozenset({"AXStaticText", "AXHeading", "AXText"})
 DECORATIVE_ROLES = frozenset({
     "AXImage", "AXProgressIndicator", "AXBusyIndicator", "AXValueIndicator",
@@ -148,10 +135,7 @@ RECT_TYPE = getattr(AS, "kAXValueCGRectType", getattr(AS, "kAXValueTypeCGRect", 
 ERROR_VALUE_TYPE = getattr(AS, "kAXValueAXErrorType", getattr(AS, "kAXValueTypeAXError", 5))
 RANGE_TYPE = getattr(AS, "kAXValueCFRangeType", getattr(AS, "kAXValueTypeCFRange", 4))
 
-# A single message to a wedged app must not block the walk forever. This is a safety valve against
-# a hung process, not an accuracy cap: a healthy element answers in well under a millisecond, so a
-# generous ceiling never drops a real one. The ceiling lives in the central tuning policy
-# (``accessibility_messaging_seconds``, scaled by the timeout knob), read at each call site.
+# A single message to a wedged app must not block the walk forever.
 
 
 @dataclass
@@ -172,18 +156,12 @@ class Element:
     depth: int
     handle: Any  # AXUIElementRef: fast path for acting within the same observe cycle
     path: tuple[int, ...]  # child-index path from the app root, for re-resolution
-    # The real AX actions this node supports (AXPress, AXConfirm, …), so the caller can tell
-    # a clickable control from an inert label without a separate act-time round-trip. Empty
-    # for text and pure containers, which are never queried for actions.
+    # The real AX actions this node supports (AXPress, AXConfirm, …), so the caller can tell a clickable control from an inert label without a separate act-time round-trip.
     actions: list[str] = field(default_factory=list)
     # What the system calls this kind of control, in its own prose ("increment arrow button").
-    # Defaulted because it is the newest attribute here and every existing construction site
-    # predates it; it is the last fallback for a name, never a first choice.
     role_description: str = ""
     placeholder: str = ""
-    # A region is a container the shallow walk chose not to expand: it stands in for its
-    # subtree and carries how many on-screen children wait inside, so the caller can drill
-    # into it. None on ordinary leaf elements.
+    # A region is a container the shallow walk chose not to expand: it stands in for its subtree and carries how many on-screen children wait inside, so the caller can drill into it.
     child_count: Optional[int] = None
 
 
@@ -396,14 +374,7 @@ def running_app_names() -> list[str]:
     return [name for name in names if name]
 
 
-# The only bridge between the two things that describe a window. Accessibility knows what a
-# window *is* — apps publish exactly their real windows, one entry each — while CoreGraphics
-# knows what the system has *numbered*, which includes every compositing layer: title bars,
-# shadows, sheet backdrops. Measured on one ordinary machine, CoreGraphics reported 19 layers
-# for RStudio's single window and 21 for Finder's five. So AX decides what exists and CG
-# supplies the identity, and `_AXUIElementGetWindow` is the only call that joins them. It is
-# unprefixed-private but ABI-stable and has been the standard answer for a decade; there is no
-# public equivalent, and the alternative — matching by frame — breaks on two stacked windows.
+# The only bridge between the two things that describe a window.
 _WINDOW_ID_SIGNATURE = b"i^{__AXUIElement=}o^I"
 _window_id_lock = threading.Lock()
 _window_id_function: Optional[Any] = None
@@ -544,9 +515,7 @@ MENU_ITEM_CHARACTER = "AXMenuItemCmdChar"
 MENU_ITEM_MODIFIERS = "AXMenuItemCmdModifiers"
 MENU_ITEM_VIRTUAL_KEY = "AXMenuItemCmdVirtualKey"
 
-# AXMenuItemCmdModifiers is a bitfield, and Command is inverted: the bit means *not* Command,
-# because Command is the default for a menu shortcut. Everything downstream reads a chord string,
-# so the inversion is undone exactly here rather than being a fact every caller has to remember.
+# AXMenuItemCmdModifiers is a bitfield, and Command is inverted: the bit means *not* Command, because Command is the default for a menu shortcut.
 _MENU_MODIFIER_BITS = ((1, "shift"), (2, "option"), (4, "control"))
 
 # The virtual key codes macOS uses for menu items that have no character (function keys, arrows).
@@ -626,8 +595,7 @@ def shortcuts_of(pid: int, *, limit: int = 400) -> list[dict[str, Any]]:
             chord = _menu_chord(child)
             if chord:
                 counted += 1
-            # A submenu is a child *menu* holding the items, so the walk goes through it either
-            # way; an item with neither a chord nor a chord below it is not an answer to anything.
+            # A submenu is a child *menu* holding the items, so the walk goes through it either way; an item with neither a chord nor a chord below it is not an answer to anything.
             items = branch(child, depth + 1)
             if not chord and not items:
                 continue
@@ -637,8 +605,7 @@ def shortcuts_of(pid: int, *, limit: int = 400) -> list[dict[str, Any]]:
             if items:
                 node["items"] = items
             nodes.append(node if node.get("title") or node.get("keys") else {"items": items})
-        # An untitled wrapper (the anonymous AXMenu under every menu-bar item) is not a level
-        # anybody means; lift its contents so the tree matches the menus a person sees.
+        # An untitled wrapper (the anonymous AXMenu under every menu-bar item) is not a level anybody means; lift its contents so the tree matches the menus a person sees.
         lifted: list[dict[str, Any]] = []
         for node in nodes:
             if set(node) == {"items"}:
@@ -718,8 +685,7 @@ def _window_roots(root: Any, window: str) -> list[Any]:
         main = _single(root, MAIN_WINDOW) or _single(root, FOCUSED_WINDOW)
         return [main] if main else list(_single(root, WINDOWS) or [])
     if window and window != "focused":
-        # Anything else is a window title (or a substring of one): target the matching window,
-        # so the model can pick one window from another by name rather than by its role.
+        # Anything else is a window title (or a substring of one): target the matching window, so the model can pick one window from another by name rather than by its role.
         needle = window.strip().lower()
         matched = [window for window in (_single(root, WINDOWS) or []) if needle in _string(_single(window, TITLE)).lower()]
         if matched:
@@ -741,19 +707,7 @@ def _includes(role: str, has_name: bool, has_value: bool) -> bool:
     return True
 
 
-# There is no depth limit. There was one — four levels — and it was measured to hide most of
-# every interface: named elements went up 3.8x in Finder, 10x in System Settings and 59x in
-# Chrome when it was removed, because the things a person names sit below the things that
-# merely contain them. A window's own rows were stubs.
-#
-# It was also a guard on the wrong quantity. Depth does not predict what a walk costs: Photos
-# bottoms out at depth 6 and takes 0.41s, while Claude reaches depth 35 in 0.19s — twice as
-# deep, half the time. Cost tracks how quickly an app answers accessibility queries, so the
-# budget below is in seconds, which is the thing actually being protected. Any fixed depth
-# would be a number that truncates some app: 16 looked generous until Claude needed 35.
-#
-# The walk is already protected from a tree that does not end: a visited set breaks reference
-# cycles, and anything off screen is skipped with its subtree.
+# There is no depth limit.
 _WALK_BUDGET_EXCEEDED = "walk_budget_exceeded"
 
 
@@ -824,8 +778,7 @@ def _collect(
     stack: list[tuple[Any, int, tuple[int, ...]]] = list(reversed(seeds))
     while stack:
         if time.perf_counter() > deadline:
-            # Everything still queued is unread. Each becomes a stand-in carrying its child
-            # count, so a truncated read is visibly truncated rather than quietly short.
+            # Everything still queued is unread.
             exhausted = True
             for pending_node, pending_depth, pending_path in reversed(stack):
                 pending = _read(pending_node)
@@ -848,8 +801,7 @@ def _collect(
 
         role = _string(attributes.get(ROLE))
         frame = _frame_of(attributes)
-        # A real rectangle that does not intersect the window is off screen: skip it and its
-        # subtree. A frameless or empty-rect node is a container we still descend.
+        # A real rectangle that does not intersect the window is off screen: skip it and its subtree.
         if frame is not None and window_rect is not None and not Quartz.CGRectIsEmpty(frame):
             if not Quartz.CGRectIntersectsRect(frame, window_rect):
                 continue
@@ -869,8 +821,7 @@ def _collect(
         has_value = value not in (None, "")
         if _includes(role, has_name, has_value):
             elements.append(_make_element(node, attributes, role, frame, depth, path))
-        # Text carries no control subtree: its content is its value, and anything nested inside
-        # is presentation. Everything else is descended into, however far down it goes.
+        # Text carries no control subtree: its content is its value, and anything nested inside is presentation.
         if role in TEXT_ROLES:
             continue
         _push_children(stack, children, depth, path)

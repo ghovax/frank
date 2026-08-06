@@ -225,12 +225,7 @@ class SerialWorker:
                 future.set_exception(error)
 
     def submit(self, operation: Callable[[], Any], timeout: Optional[float] = None) -> Any:
-        # Already on the worker? Run it here. Queueing would enqueue work behind the very call
-        # that is waiting for it and then block on a future only this thread could complete — a
-        # deadlock held until the machinery ceiling expired. Nesting is the natural shape once an
-        # operation is bound on this thread and then calls a primitive that guards itself, and
-        # "the owned state is touched by one thread" is satisfied either way: this *is* that
-        # thread.
+        # Already on the worker? Run it here.
         if threading.get_ident() == self._thread_id:
             return operation()
         timeout = timeout if timeout is not None else machinery_ceiling()
@@ -267,12 +262,7 @@ class Surface:
         try:
             return self.worker.submit(guarded, timeout=timeout)
         except Exception as error:  # substrate errors, timeouts, a dead target
-            # Logged with its traceback before anything narrows it. What reaches the model is one
-            # sentence, and one sentence cannot say where a failure came from: an
-            # `AttributeError: 'AXUIElementCreateApplication'` — a Python symbol that failed to
-            # resolve — arrived as "The action failed … Observe the app again and retry", and the
-            # model spent a turn theorising about the application's readiness. The traceback that
-            # would have named it was discarded here, so nobody could do better afterwards.
+            # Logged with its traceback before anything narrows it.
             logger.exception("a %s operation failed", type(self).__name__)
             first_line = str(error).splitlines()[0] if str(error) else error.__class__.__name__
             try:
@@ -290,17 +280,7 @@ class Surface:
         """The payload for an unexpected failure. Overridden with a surface-specific message."""
         return {"ok": False, "error": detail}
 
-    # The primitives the dispatcher services rather than the surface, so their shapes are written
-    # here instead of discovered below. These three are the only hand-written signatures left.
-    #
-    # `wait_for` is here because waiting for a *condition* is work only this side can do: it reads
-    # the surface until something matches, and says so in words when nothing ever does. It arrived
-    # alongside a `sleep` that has since been removed — that one existed because `import time` was
-    # outside the safe module set, so any script that paused classified `unknown` and was refused,
-    # which made "click, wait for the pane, then find" unwritable and left splitting the work
-    # across tool calls as the only option. Scripts were short because the environment made them
-    # short. The allowlist is gone, `time` is an ordinary import again, and a primitive that only
-    # slept had nothing left to offer over `time.sleep`.
+    # The primitives the dispatcher services rather than the surface, so their shapes are written here instead of discovered below.
     PROVIDED_SIGNATURES = {
         "find_one": 'screen.find_one(query, clickable=None, near="", name="", context="")',
         "find_many": 'screen.find_many(query, limit=8, clickable=None, near="", name="", context="")',
@@ -360,10 +340,7 @@ class Surface:
                 rendered.append(parameter.name)
             else:
                 rendered.append(f"{parameter.name}={parameter.default!r}")
-        # Spelled the way it is called. The signatures went into the model's context as bare
-        # names — `find_many(query, …)` — while the runner bound only `screen`, so a script
-        # written from exactly what it had been handed hit an unbound name and the whole helper
-        # appeared to die before doing anything. One statement of the calling convention.
+        # Spelled the way it is called.
         return f"screen.{name}({', '.join(rendered)})"
 
     def call_primitive(self, name: str, handler: Callable, bound: Any, arguments: list, keywords: dict) -> dict:

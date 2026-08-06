@@ -1,17 +1,4 @@
-/**
- * What a tool call is called, and which glyph stands for it.
- *
- * Lifted wholesale from `web/src/lib/tool-display.ts`. It had been written twice — once there,
- * once on the phone — and the second copy was already drifting: different wording for the same
- * call, and a different glyph for `search_code`.
- *
- * The glyph is a **name**, not a component. The desktop draws with `react-icons/lu` and the phone
- * with `lucide-react-native`, which are different packages exporting different objects, so a
- * shared component is not possible. A shared *decision* is: this file says `bash` is a terminal,
- * and each client has a small table turning `"terminal"` into something it can draw.
- *
- * The tint is likewise a token name (`green.fg`), which both clients already resolve.
- */
+/** What a tool call is called, and which glyph stands for it. */
 
 import { labels } from "./labels";
 
@@ -21,19 +8,14 @@ export type GlyphName =
   | "file-pen" | "file-plus" | "download" | "message-circle-question" | "target"
   | "user-search" | "sparkles" | "plug" | "list-checks" | "server" | "wrench"
   | "users" | "radio-tower" | "clock" | "history"
-  // One tool, one glyph: the families below used to share theirs, so four different peer calls
-  // and four different MCP calls were the same picture in a list.
+  // One tool, one glyph: the families below used to share theirs, so four different peer calls and four different MCP calls were the same picture in a list.
   | "user-plus" | "send" | "list" | "plug-zap" | "boxes" | "book-open"
   | "satellite-dish" | "square-check" | "hard-drive-download"
-  // The settings controls, which pick from the same vocabulary so a concept cannot wear one
-  // glyph in the transcript and another in a menu.
+  // The settings controls, which pick from the same vocabulary so a concept cannot wear one glyph in the transcript and another in a menu.
   | "hand" | "badge-check" | "eye" | "box" | "folder" | "git-branch" | "copy" | "zap"
   | "circle-slash" | "user-round-x" | "mic" | "mic-off";
 
-/**
- * One icon per concept, for the whole interface. Kept together with the colours so a concept
- * cannot pick up a new glyph and keep an old colour.
- */
+/** One icon per concept, for the whole interface. */
 export const CONCEPT_GLYPHS = {
   /** A skill: something the agent knows how to do. Also `load_skill`, which loads one. */
   skill: "sparkles",
@@ -75,26 +57,11 @@ const KNOWN_TOOL_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 
-/**
- * Whether a call can change anything, for the "write" marker a person reads before approving.
- *
- * The marker used to appear whenever a call had not *declared* `mutates: false` — which is every
- * call, because most tools have nothing to declare. `read_file` was badged a write, and so was
- * `list_sessions`, and a badge that appears on everything says nothing about anything: the one
- * call that really did rewrite a file looked exactly like the one that read a directory listing.
- *
- * So the tool answers first, and the declaration only decides the cases where the tool genuinely
- * could go either way. `bash` is the reason this is not simply a list: it runs whatever it is
- * given, so an undeclared `bash` is treated as mutating — which is also how the harness itself
- * treats it when it decides whether to ask.
- */
+/** Whether a call can change anything, for the "write" marker a person reads before approving. */
 const NEVER_MUTATES: ReadonlySet<string> = new Set([
   "read_file", "search_code", "search_web", "fetch_url", "read_turn", "wait_for",
   "list_mcp_tools", "list_mcp_resources", "read_mcp_resource",
-  // The peer-session calls. Creating a session and briefing it changes what is *happening* —
-  // but this badge is read by a person deciding whether to approve a call, and to them "write"
-  // means something on disk changes. A peer created read-only, badged as a write, taught them
-  // to ignore the badge on the calls where it means a file.
+  // The peer-session calls.
   "create_session", "message_session", "read_session", "list_sessions",
   "list_remote_agents", "message_remote_agent",
   // The agent's own bookkeeping: its task list and its goal live in the session record.
@@ -124,28 +91,13 @@ export interface ToolDisplay {
   known: boolean;
   /** Render the label as monospace — true only for an unrecognised tool shown by its bare name. */
   mono: boolean;
-  /**
-   * Render the label as inline Markdown — true when it is the model's own explanation, which may
-   * carry code spans, `file:line` refs and emphasis. A derived label (a raw command or path) is
-   * plain text so it is never mangled.
-   */
+  /** Render the label as inline Markdown — true when it is the model's own explanation, which may carry code spans, `file:line` refs and emphasis. */
   labelIsMarkdown: boolean;
 }
 
 export type Translate = (key: string, values?: Record<string, string | number>) => string;
 
-/**
- * One glyph per tool, and never two tools wearing the same one.
- *
- * This was a `switch` with fall-through cases, which is how the sharing crept in: four peer
- * calls returned the concept glyph for "peer", four MCP calls returned the one for "MCP", and a
- * transcript of ten calls showed three pictures. A glyph is how a person finds a call while
- * scanning, so two calls sharing one is the same as neither having one.
- *
- * As a table rather than a switch because a table can be *checked*: `assertDistinctGlyphs`
- * below runs at import and throws if any glyph is used twice. A future tool that reaches for a
- * taken picture fails the build rather than quietly blending into the list.
- */
+/** One glyph per tool, and never two tools wearing the same one. */
 const TOOL_GLYPHS: Record<string, { glyph: GlyphName; tint: string }> = {
   search_web: { glyph: "globe", tint: "blue.fg" },
   bash: { glyph: "terminal", tint: "green.fg" },
@@ -161,8 +113,7 @@ const TOOL_GLYPHS: Record<string, { glyph: GlyphName; tint: string }> = {
   set_tasks: { glyph: CONCEPT_GLYPHS.tasks, tint: CONCEPT_TINTS.tasks },
   update_tasks: { glyph: "square-check", tint: CONCEPT_TINTS.tasks },
   update_goal: { glyph: "target", tint: "orange.fg" },
-  // A wait is the one call that is doing nothing on purpose, and it reads that way: a clock,
-  // in the muted tint the interface uses for what is quiet rather than notable.
+  // A wait is the one call that is doing nothing on purpose, and it reads that way: a clock, in the muted tint the interface uses for what is quiet rather than notable.
   wait_for: { glyph: "clock", tint: "fg.muted" },
   read_turn: { glyph: "history", tint: "blue.fg" },
   work_habits: { glyph: "user-search", tint: "blue.fg" },
@@ -207,10 +158,7 @@ function fileName(path: string): string {
   return path.split("/").filter(Boolean).at(-1) ?? path;
 }
 
-/**
- * `read_file` with an optional line range — a complete sentence per case, so the range is not an
- * English-word-order suffix a translator would have to reassemble.
- */
+/** `read_file` with an optional line range — a complete sentence per case, so the range is not an English-word-order suffix a translator would have to reassemble. */
 function readFileLabel(filePath: string, args: Record<string, unknown>, translation: Translate): string {
   const file = fileName(filePath);
   const offset = Number(args.offset ?? 1);
@@ -223,10 +171,7 @@ function readFileLabel(filePath: string, args: Record<string, unknown>, translat
   return translation("readFileLines", { file, start: offset, end: offset + limit - 1 });
 }
 
-/**
- * A `control_screen` call with no explanation: describe it from its surface plus the script's
- * first line — the whole script is body content, not a one-line label.
- */
+/** A `control_screen` call with no explanation: describe it from its surface plus the script's first line — the whole script is body content, not a one-line label. */
 function controlScreenLabel(args: Record<string, unknown> | undefined, translation: Translate): string {
   const surface = args?.surface ? String(args.surface) : "";
   const firstLine = args?.script
@@ -241,10 +186,7 @@ function fallbackLabel(name: string, args: Record<string, unknown> | undefined, 
     case "search_web":
       return args?.query ? translation("webSearch", { query: String(args.query) }) : translation("webSearchBare");
     case "bash":
-      // Whole, not edited. A leading `cd '…' && ` used to be the harness's own wrapper and was
-      // cut out here; the harness now sets the process's working directory instead, so any `cd`
-      // in a command is the model's, and removing it from the label hid where the rest of the
-      // command would run — on the very line a person reads before approving it.
+      // Whole, not edited.
       return args?.command ? String(args.command) : translation("bashBare");
     case "read_file":
       return args?.file_path ? readFileLabel(String(args.file_path), args, translation) : translation("readFileBare");
@@ -305,13 +247,7 @@ function fallbackLabel(name: string, args: Record<string, unknown> | undefined, 
   }
 }
 
-/**
- * How one tool call presents itself.
- *
- * `translate` is the desktop's `next-intl` reader, so it keeps its locale and its plural rules.
- * Omitted — which is what the phone does, having no i18n framework — it falls back to the shared
- * catalogue's English, which is the same catalogue the desktop's `en` comes from.
- */
+/** How one tool call presents itself. */
 export function toolCallDisplay(
   name: string,
   args: Record<string, unknown> | undefined,

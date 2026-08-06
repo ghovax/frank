@@ -62,20 +62,16 @@ from tenacity import (
 from frank.base.paths import oauth_token_path
 from frank.base.tuning import Tunable, active_tuning
 
-# Cursor's own login surface and API host. Neither is a secret — they are the addresses
-# the Cursor CLI itself uses — and using them is exactly what makes the browser mint a
-# subscription-scoped token pair for us.
+# Cursor's own login surface and API host.
 LOGIN_URL = "https://cursor.com/loginDeepControl"
 API_BASE_URL = "https://api2.cursor.sh"
 POLL_URL = f"{API_BASE_URL}/auth/poll"
-# Not a typo and not an API-key feature: this endpoint is what Cursor's CLI posts a
-# refresh token to in order to mint a fresh access token.
+# Not a typo and not an API-key feature: this endpoint is what Cursor's CLI posts a refresh token to in order to mint a fresh access token.
 REFRESH_URL = f"{API_BASE_URL}/auth/exchange_user_api_key"
 
 PROVIDER = "cursor"
 
-# Serializes token refreshes: many concurrent turns can each notice an expiring token
-# at once, and we want exactly one refresh + write, not a stampede.
+# Serializes token refreshes: many concurrent turns can each notice an expiring token at once, and we want exactly one refresh + write, not a stampede.
 _refresh_lock = asyncio.Lock()
 
 
@@ -143,8 +139,7 @@ def is_signed_in() -> bool:
     return load_tokens() is not None
 
 
-# PKCE + JWT helpers. The verifier is 32 random bytes base64url-encoded and the
-# challenge its SHA-256, which is what Cursor's login page expects to see.
+# PKCE + JWT helpers.
 
 def _b64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
@@ -282,9 +277,7 @@ class CursorLoginFlow:
             "challenge": _challenge_for(self._verifier),
             "uuid": self._uuid,
             "mode": "login",
-            # Names the shape of the client Cursor is handing a token to. "cli" is the
-            # non-editor flow — the one that answers over /auth/poll rather than a
-            # redirect — which is the flow this is.
+            # Names the shape of the client Cursor is handing a token to.
             "redirectTarget": "cli",
         }
         return f"{LOGIN_URL}?{urllib.parse.urlencode(parameters)}"

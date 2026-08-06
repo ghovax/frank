@@ -42,11 +42,7 @@ function tryParse(content: string): unknown {
 
 function BashCallView({ args }: { args: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
-  // The command as written. Nothing is edited out of it on the way to the screen: this used to
-  // strip a leading `cd '…' && `, from when the harness prepended one to put a command in its
-  // working directory. It stopped doing that — the directory is the process's own `cwd` now —
-  // so the only `cd` left to strip is one the model wrote itself, and hiding that hides where
-  // the rest of the command runs.
+  // The command as written.
   const command = asString(args.command);
   const readOnly = declaredNonMutating(args);
   const access = requestedAccess(args);
@@ -98,8 +94,7 @@ function SearchCodeCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-// control_screen runs a script against a surface; the script is the substance, so it
-// gets a full code block, with the surface as a compact field above it.
+// control_screen runs a script against a surface; the script is the substance, so it gets a full code block, with the surface as a compact field above it.
 function ControlScreenCallView({ args }: { args: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   return (
@@ -114,10 +109,7 @@ function ControlScreenCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-// A task's lifecycle status, mapped to a translation key and a colour, so it reads as a
-// proper badge instead of the raw lowercase value the model emits. The colour comes
-// from the shared status palette (via the normalized kind); only the label key is
-// task-list-specific. A completed task carries no badge (its settled row speaks).
+// A task's lifecycle status, mapped to a translation key and a colour, so it reads as a proper badge instead of the raw lowercase value the model emits.
 const TASK_STATUS_LABEL_KEY: Record<string, string> = {
   running: "statusInProgress",
   blocked: "statusBlocked",
@@ -139,9 +131,7 @@ function taskHashLabel(id: string): string {
   return match ? `#${match[1]}` : id;
 }
 
-// One row shared by task creation and task updates so both read identically: the
-// task's #number on the left, a status badge on the right, the prose as markdown,
-// and dependencies as #number chips (the dependency links carry the ordering).
+// One row shared by task creation and task updates so both read identically: the task's #number on the left, a status badge on the right, the prose as markdown, and dependencies as #number chips (the dependency links carry the ordering).
 function TaskRow({ label, status, body, dependencies = [] }: {
   label: string;
   status: string;
@@ -203,13 +193,11 @@ function UpdateTasksCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-// Fields whose values are human prose (not identifiers/data) — rendered with the
-// markdown renderer in the normal font rather than monospace.
+// Fields whose values are human prose (not identifiers/data) — rendered with the markdown renderer in the normal font rather than monospace.
 const PROSE_FIELD_KEYS = new Set([
   "explanation",
   "goal",
-  // A goal is a sentence somebody wrote, whether it is the current one or the one just
-  // finished — monospace made the second read as an identifier.
+  // A goal is a sentence somebody wrote, whether it is the current one or the one just finished — monospace made the second read as an identifier.
   "previous_goal",
   "blocker",
   "message",
@@ -224,13 +212,7 @@ const PROSE_FIELD_KEYS = new Set([
   "response",
 ]);
 
-/**
- * The goal tool's outcome codes, as words.
- *
- * `goal_satisfied` is a symbol from `dispatch.py`; "Satisfied" is what happened. Read by the
- * result view below, which is the only place a goal outcome is shown — the call view
- * deliberately does not repeat it.
- */
+/** The goal tool's outcome codes, as words. */
 const GOAL_OUTCOME_KEYS: Record<string, string> = {
   goal_active: "goalActive",
   goal_satisfied: "goalSatisfied",
@@ -238,11 +220,9 @@ const GOAL_OUTCOME_KEYS: Record<string, string> = {
   goal_cleared: "goalCleared",
 };
 
-// Translation keys for raw argument/result key labels. Falls back to the raw key
-// if unmapped. The actual label text is resolved through the ToolViews namespace.
+// Translation keys for raw argument/result key labels. Falls back to the raw key if unmapped.
 const FIELD_LABEL_KEYS: Record<string, string> = {
-  // The goal tool, whose fields fell through to this list unmapped and so were labelled with
-  // their own raw keys — `status`, `previous_goal` — beside ones that had been translated.
+  // The goal tool, whose fields fell through to this list unmapped and so were labelled with their own raw keys — `status`, `previous_goal` — beside ones that had been translated.
   status: "fieldStatus",
   goal: "goal",
   previous_goal: "previousGoal",
@@ -269,11 +249,7 @@ const FIELD_LABEL_KEYS: Record<string, string> = {
   result_count: "results",
   job_id: "turnId",
   question: "question",
-  // Not `fieldStatus`, which is what it used to be and is what made two rows of a goal call
-  // both read "Status". They are different facts: `status` is the call's lifecycle — ok, error,
-  // running — and `code` is what the tool decided. `tool_status_from_result` in
-  // `protocol/events.py` depends on `status` meaning the first of those, so neither is
-  // redundant; they were only named as though they were.
+  // Not `fieldStatus`, which is what it used to be and is what made two rows of a goal call both read "Status".
   code: "fieldOutcome",
   // file / search tools (arguments)
   file_path: "filePath",
@@ -407,8 +383,7 @@ function AskUserCallView({ args }: { args: Record<string, unknown> }) {
 
 function ReadFileResultView({ data }: { data: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
-  // The call already shows the file path; the result only confirms how much was read
-  // (the line range) — the file body itself is the model's to read, not the transcript's.
+  // The call already shows the file path; the result only confirms how much was read (the line range) — the file body itself is the model's to read, not the transcript's.
   const range = [asString(data.start_line), asString(data.end_line)].filter(Boolean).join("–");
   const total = asString(data.total_lines);
   if (!range) return null;
@@ -421,8 +396,7 @@ function ReadFileResultView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-// One code match: file:line-range heading (with language + score muted alongside)
-// over the matched snippet, rendered like a small diff/file body.
+// One code match: file:line-range heading (with language + score muted alongside) over the matched snippet, rendered like a small diff/file body.
 function CodeMatchCard({ match }: { match: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   const file = asString(match.file);
@@ -446,8 +420,7 @@ function CodeMatchCard({ match }: { match: Record<string, unknown> }) {
   );
 }
 
-// The query is already on the call card, so the result only surfaces the match count
-// and the matched snippets as cards.
+// The query is already on the call card, so the result only surfaces the match count and the matched snippets as cards.
 function SearchCodeResultView({ data }: { data: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   const matches = asArray(data.matches).map(asRecord);
@@ -464,14 +437,7 @@ function SearchCodeResultView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-// One line describing what an action changed: where it landed, then what moved. A record that
-// changed nothing says so — that is the whole point of reporting changes rather than intentions.
-// What one action changed, as elements rather than as a sentence assembled in TypeScript.
-//
-// This was a string built with `·` and `—` glue and a `.replace("{count}", …)` done by hand — which
-// is not a translation, it is English word order and Latin typography shipped to every locale, with
-// the plural rule silently assumed to be English's. Layout separates the parts now, each part is
-// its own message, and the count goes through ICU so a locale decides its own plural.
+// One line describing what an action changed: where it landed, then what moved.
 function ChangeRow({ entry }: { entry: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   const where = asString(entry.name) || asString(entry.role) || asString(entry.id);
@@ -493,17 +459,14 @@ function ChangeRow({ entry }: { entry: Record<string, unknown> }) {
   );
 }
 
-// control_screen runs a script and reports its value / stdout, or an error with
-// an optional traceback. Debugging-off / missing grants render as their fix-it flow.
+// control_screen runs a script and reports its value / stdout, or an error with an optional traceback.
 function ControlScreenResultView({ data }: { data: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   if (data.ok === false) {
     if (asString(data.code) === "browser_remote_debugging_off") {
       return <BrowserRemoteDebuggingAlert address={asString(data.enable_url)} />;
     }
-    // Chrome is showing its own consent box and nobody has answered it yet. This is a state to
-    // wait in, not a failure to route around — and emphatically not one to "fix" by toggling
-    // remote debugging, which dismisses the very prompt being waited on.
+    // Chrome is showing its own consent box and nobody has answered it yet.
     if (asString(data.awaiting) === "browser_authorization") {
       return <BrowserAuthorizationPending />;
     }
@@ -523,8 +486,7 @@ function ControlScreenResultView({ data }: { data: Record<string, unknown> }) {
   const resultValue = data.value;
   const resultText = resultValue == null ? "" : typeof resultValue === "object" ? JSON.stringify(resultValue, null, 2) : asString(resultValue);
   const stdout = asString(data.stdout);
-  // What each action *changed*, not what it was aimed at. `acted_on` answered the one question a
-  // script already knew the answer to; this answers whether anything happened.
+  // What each action *changed*, not what it was aimed at.
   const changed = asArray(data.changed).map(asRecord);
   if (!resultText && !stdout && changed.length === 0) return null;
   return (
@@ -603,8 +565,7 @@ function FileEditResultView({ data }: { data: Record<string, unknown> }) {
     );
   }
 
-  // Successful edit details stay collapsed to the call row; the group-level +/-
-  // counters retain the useful summary without rendering a full inline diff.
+  // Successful edit details stay collapsed to the call row; the group-level +/- counters retain the useful summary without rendering a full inline diff.
   return null;
 }
 
@@ -643,8 +604,7 @@ function LoadSkillResultView({ data }: { data: Record<string, unknown> }) {
 
 function AskUserResultView({ data }: { data: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
-  // Answers arrive as a per-question array of labels (string | string[]). Flatten
-  // into readable pills instead of dumping the raw JSON array.
+  // Answers arrive as a per-question array of labels (string | string[]).
   const answers = asArray(data.answers);
   const labels: string[] = [];
   for (const answer of answers) {
@@ -693,19 +653,13 @@ function GenericView({ data }: { data: Record<string, unknown> }) {
 }
 
 // The peer-session tools.
-//
-// The most consequential calls a session makes, and until now the least legible: they fell
-// through to the raw argument dump, so a `create_session` brief — often several paragraphs —
-// landed in the transcript as an unformatted blob.
 
 function CreateSessionCallView({ args }: { args: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   const agentName = useAgentName();
   const permissions = useTranslations("SessionControls");
   const message = asString(args.message);
-  // The mode as the rest of the interface names it. `read_only` is the wire's spelling, and
-  // printing it raw here meant one policy wore two names — "Read-only" in every picker and
-  // banner, and an identifier in the one place a person reads it before approving the call.
+  // The mode as the rest of the interface names it.
   const choice = PERMISSION_MODES.choices.find((item) => item.value === asString(args.permission_mode));
   const permissionKey = choice?.nameKey ?? choice?.labelKey;
   return (
@@ -760,8 +714,7 @@ function SessionReferenceCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-// A peer's activity, named the way the sidebar names it — one state, one word, in every
-// language the interface has.
+// A peer's activity, named the way the sidebar names it — one state, one word, in every language the interface has.
 const ACTIVITY_LABEL_KEYS: Record<string, string> = {
   working: "statusWorking",
   waiting: "awaitingInput",
@@ -812,14 +765,12 @@ function SessionResultView({ data }: { data: Record<string, unknown> }) {
   const agentName = useAgentName();
   const sessions = useTranslations("SessionsSidebar");
   const permissions = useTranslations("SessionControls");
-  // The session id is not repeated here. The call above states which session this is about, and
-  // printing the same identifier twice in a row made one fact look like two.
+  // The session id is not repeated here.
   const activity = asString(data.activity);
   const activityKey = ACTIVITY_LABEL_KEYS[activity];
   const resultChoice = PERMISSION_MODES.choices.find((item) => item.value === asString(data.permission_mode));
   const permissionKey = resultChoice?.nameKey ?? resultChoice?.labelKey;
   // "ok" is the wire saying the call worked, which the row's own completed state already says.
-  // Only a status that is not that is worth a line, and it is worth it in words.
   const failed = asString(data.status) === "error";
   return (
     <FieldList>
@@ -845,19 +796,7 @@ function SessionResultView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-/**
- * `update_goal`, whose call and result each said the whole thing.
- *
- * The result's `code` is `f"goal_{status}"` in `dispatch.py` — derived from the argument, so a
- * generic dump of both rendered the same fact twice under two labels: "Status / Now working
- * toward this" from the call, "Outcome / Now working toward this" from the result. Relabelling
- * could not fix that; only one of them is worth showing.
- *
- * The result is the one that is true — a call is a request, and this one can be refused — so the
- * call shows only what the result cannot: the goal being proposed. Setting a goal states it here
- * and confirms it there; finishing one carries no argument worth rendering at all, since
- * `explanation` is already the heading.
- */
+/** `update_goal`, whose call and result each said the whole thing. */
 /** A goal's requirements or evidence: prose lines, each its own row. */
 function GoalLines({ label, lines }: { label: string; lines: string[] }) {
   if (!lines.length) return null;
@@ -871,8 +810,7 @@ function GoalLines({ label, lines }: { label: string; lines: string[] }) {
 function UpdateGoalCallView({ args }: { args: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   const goal = asString(args.goal).trim();
-  // The requirements are the half of a goal that says what "done" means, so a call that sets
-  // one shows both — a goal stated without them reads as complete when it is not yet checkable.
+  // The requirements are the half of a goal that says what "done" means, so a call that sets one shows both — a goal stated without them reads as complete when it is not yet checkable.
   const requirements = asArray(args.requirements).map(asString).filter(Boolean);
   if (!goal && !requirements.length) return null;
   return (
@@ -888,14 +826,7 @@ function UpdateGoalCallView({ args }: { args: Record<string, unknown> }) {
 }
 
 /** What the goal is now, and what it was. One outcome, stated once. */
-// `wait_for` is the one call whose whole content is its own duration, and the heading already
-// says it ("Waiting 25s"). So the arguments render as nothing — repeating the number under the
-// line that just stated it is what made a wait read as two facts — and the result is one line
-// saying how it ended.
-//
-// Deliberately not the payload's `message`. That field is written for the model ("Waited 25s;
-// continue.") and instructing the model is not something to show a person: it leaked an
-// imperative into the transcript that nobody had addressed to them.
+// `wait_for` is the one call whose whole content is its own duration, and the heading already says it ("Waiting 25s").
 function WaitForResultView({ data }: { data: Record<string, unknown> }) {
   const translation = useTranslations("ToolDisplay");
   const seconds = Number(data.seconds);
@@ -912,8 +843,7 @@ function UpdateGoalResultView({ data }: { data: Record<string, unknown> }) {
   const goal = asString(data.goal).trim();
   const previous = asString(data.previous_goal).trim();
   const requirements = asArray(data.requirements).map(asString).filter(Boolean);
-  // What was checked, when a goal was satisfied. This is the claim's evidence, and showing it
-  // is what lets a reader disagree with a "done" rather than take it on trust.
+  // What was checked, when a goal was satisfied.
   const evidence = asArray(data.evidence).map(asString).filter(Boolean);
   const blocker = asString(data.blocker).trim();
   if (!outcome) return <ErrorView message={asString(data.message) || code} />;
@@ -979,8 +909,7 @@ export function ToolCallView({ name, args }: { name: string; args?: Record<strin
       case "wait_for":
         return null;
       default: {
-        // The explanation is already the collapsed heading (the tool-call title);
-        // strip it so the expanded body never repeats it. MCP calls fall here too.
+        // The explanation is already the collapsed heading (the tool-call title); strip it so the expanded body never repeats it.
         const rest = { ...args };
         delete rest.explanation;
         return <GenericView data={rest} />;
@@ -1021,10 +950,7 @@ function WebResultCard({ result }: { result: Record<string, unknown> }) {
   const title = asString(result.title) || translation("untitled");
   const url = asString(result.url);
   const summary = asString(result.summary);
-  // When a result was published, as a labelled field in the locale's own words. It used to be
-  // the raw wire value in the smallest type the theme has — `2026-08-04T10:34:24.672Z`, grey,
-  // under the URL — which is a machine timestamp printed at a size that dares you to read it,
-  // and unlabelled it could as easily have been when the page was fetched.
+  // When a result was published, as a labelled field in the locale's own words.
   const published = asString(result.published_date);
   const publishedAt = published ? new Date(published) : null;
   const publishedKnown = publishedAt !== null && !Number.isNaN(publishedAt.getTime());
@@ -1040,8 +966,7 @@ function WebResultCard({ result }: { result: Record<string, unknown> }) {
           box to happen in. */}
       <Flex direction="column" gap={1} minW={0}>
         {url ? (
-          // Sized to its own text rather than stretched across the card: a flex item fills the
-          // cross axis by default, and a link that wide is a click target over empty space.
+          // Sized to its own text rather than stretched across the card: a flex item fills the cross axis by default, and a link that wide is a click target over empty space.
           <Link href={url} target="_blank" rel="noopener noreferrer" colorPalette="blue" textStyle="fieldLabel" alignSelf="flex-start">
             {title}
           </Link>
@@ -1057,8 +982,7 @@ function WebResultCard({ result }: { result: Record<string, unknown> }) {
               ? format.dateTime(publishedAt, publishedHasTime
                   ? { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }
                   : { year: "numeric", month: "long", day: "numeric" })
-              // Whatever the provider sent, unparsed rather than dropped: some answer a date as
-              // prose, and a date we cannot read is still one the reader might.
+              // Whatever the provider sent, unparsed rather than dropped: some answer a date as prose, and a date we cannot read is still one the reader might.
               : published}
           </InlineField>
         )}
@@ -1072,9 +996,7 @@ function WebResultCard({ result }: { result: Record<string, unknown> }) {
   );
 }
 
-// The query and requested count are already shown by the call view above, so the
-// result view only renders the result cards — shown directly, not behind a
-// nested collapsible (the tool-call card is the collapsible).
+// The query and requested count are already shown by the call view above, so the result view only renders the result cards — shown directly, not behind a nested collapsible (the tool-call card is the collapsible).
 function SearchWebResultView({ data }: { data: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   const results = asArray(data.results).map(asRecord);
@@ -1087,8 +1009,6 @@ function SearchWebResultView({ data }: { data: Record<string, unknown> }) {
 }
 
 // One shared in-chat alert surface — a tinted, bordered box with unified padding.
-// The palette drives the background/border tint (red for errors, yellow for the
-// fixable permission/debugging prompts); callers supply the body.
 function AlertBox({ colorPalette, children }: { colorPalette: string; children: ReactNode }) {
   return (
     <Box bg={`${colorPalette}.subtle`} border="1px solid" borderColor={`${colorPalette}.muted`} borderRadius="md" px={2.5} py={2}>
@@ -1097,10 +1017,7 @@ function AlertBox({ colorPalette, children }: { colorPalette: string; children: 
   );
 }
 
-// Backend wording that says what happened to a program rather than to a person. Each is
-// replaced with a sentence that names the failure and what can be done about it; anything
-// unrecognised still shows verbatim, under a heading, because an unexplained error is worse
-// than a blunt one.
+// Backend wording that says what happened to a program rather than to a person.
 const REPHRASED_ERRORS: ReadonlyArray<readonly [RegExp, string]> = [
   [/^control_screen: the script produced no result\.?$/i, "controlScreenNoResult"],
   [/^control_screen: the script process died before returning a result\.?$/i, "controlScreenDied"],
@@ -1122,12 +1039,7 @@ function ErrorView({ message }: { message: string }) {
   );
 }
 
-// Shown when the browser tool can't reach Chrome because remote debugging is off: a brief message,
-// the exact address, and a one-click button that opens that settings page in the user's browser.
-// Chrome asks the user to approve a debugging connection, in the browser window rather than
-// here, and until now nothing in this interface said so: attaching waited ten seconds and then
-// reported a stale endpoint, advising a toggle that dismisses the prompt. Waiting is a state,
-// and it is the user who ends it.
+// Shown when the browser tool can't reach Chrome because remote debugging is off: a brief message, the exact address, and a one-click button that opens that settings page in the user's browser.
 function BrowserAuthorizationPending() {
   const translation = useTranslations("ToolViews");
   return (
@@ -1162,10 +1074,7 @@ function BrowserRemoteDebuggingAlert({ address, browserName }: { address: string
   );
 }
 
-// Shown when a tool needs the macOS Accessibility grant — the only grant a tool can be
-// missing now. Same in-chat alert language as the remote-debugging one: a brief message
-// and a one-click button that surfaces the system prompt and opens the right System
-// Settings pane.
+// Shown when a tool needs the macOS Accessibility grant — the only grant a tool can be missing now.
 function PermissionGrantAlert() {
   const translation = useTranslations("ToolViews");
   const [opened, setOpened] = useState(false);
@@ -1226,8 +1135,7 @@ function clamp(value: number, lower: number, upper: number): number {
   return Math.min(upper, Math.max(lower, value));
 }
 
-// Zoom is relative to the fitted scale (1 = the image exactly fits the container), so the
-// floor is 1: you can never zoom out past "fits", which would shrink the image to nothing.
+// Zoom is relative to the fitted scale (1 = the image exactly fits the container), so the floor is 1: you can never zoom out past "fits", which would shrink the image to nothing.
 const MINIMUM_RELATIVE_IMAGE_ZOOM = 1;
 const MAXIMUM_RELATIVE_IMAGE_ZOOM = 5;
 
@@ -1288,13 +1196,10 @@ export function ToolResultView({
   const translation = useTranslations("ToolViews");
   const parsed = tryParse(content);
 
-  // MCP discovery results (the full server/tool catalog with JSON schemas) are
-  // internal noise — the call card already conveys that discovery happened.
+  // MCP discovery results (the full server/tool catalog with JSON schemas) are internal noise — the call card already conveys that discovery happened.
   if (name === "list_mcp_tools" || name === "list_mcp_resources") return null;
 
-  // The task tools' result is a bare confirmation string that names raw "task-..."
-  // ids (for the model); the call card already shows the tasks as #..., so don't
-  // re-render the confirmation and leak the internal ids.
+  // The task tools' result is a bare confirmation string that names raw "task-..." ids (for the model); the call card already shows the tasks as #..., so don't re-render the confirmation and leak the internal ids.
   if (name === "set_tasks" || name === "update_tasks") return null;
 
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
@@ -1321,8 +1226,7 @@ export function ToolResultView({
     if (name === "create_session" || name === "read_session") {
       return <SessionResultView data={data} />;
     }
-    // `message_session` reports only that it was accepted. There is nothing to show: the reply,
-    // when there is one, arrives as its own message in the transcript.
+    // `message_session` reports only that it was accepted.
     if (name === "message_session") return null;
     if (name === "update_goal") return <UpdateGoalResultView data={data} />;
     if (name === "wait_for") return <WaitForResultView data={data} />;

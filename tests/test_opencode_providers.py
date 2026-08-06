@@ -81,17 +81,13 @@ def test_resolver_uses_each_gateway_endpoint_and_model_protocol(open_code_catalo
         "api_key": "shared-key",
         "api_base": "https://opencode.ai/zen/v1",
     }
-    # Anthropic is the one protocol whose path we finish ourselves: LiteLLM appends
-    # `/v1/messages` to a custom base unless it already ends that way, so stopping at the
-    # gateway's `/v1` would ask for `…/zen/v1/v1/messages`.
+    # Anthropic is the one protocol whose path we finish ourselves: LiteLLM appends `/v1/messages` to a custom base unless it already ends that way, so stopping at the gateway's `/v1` would ask for `…/zen/v1/v1/messages`.
     assert resolve_litellm("opencode/claude", configured_keys, {}) == {
         "model": "anthropic/claude",
         "api_key": "shared-key",
         "api_base": "https://opencode.ai/zen/v1/messages",
     }
-    # Gemini keeps the bare gateway base. LiteLLM's `_check_custom_proxy` renders it as
-    # `{base}/models/{model}:{generateContent|streamGenerateContent}` and chooses the verb per
-    # call, so anything composed here would be composed a second time.
+    # Gemini keeps the bare gateway base.
     assert resolve_litellm("opencode/gemini", configured_keys, {}) == {
         "model": "gemini/gemini",
         "api_key": "shared-key",

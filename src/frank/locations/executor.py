@@ -34,19 +34,13 @@ from pathlib import Path
 
 from frank.base.tuning import Tunable, active_tuning
 
-# Baseline command and connect ceilings. These are safety valves against a dead process or link,
-# not accuracy caps; the active timeout knob scales them at each subprocess boundary
-# (``active_tuning().scale_timeout``), so a slow machine or link can widen them from the config.
+# Baseline command and connect ceilings.
 DEFAULT_TIMEOUT = 120.0
 DEFAULT_CONNECT_TIMEOUT = 16.0
-# Keep the multiplexed master alive briefly after the last use so bursts of tool calls
-# reuse one connection without holding it open forever.
+# Keep the multiplexed master alive briefly after the last use so bursts of tool calls reuse one connection without holding it open forever.
 CONTROL_PERSIST_SECONDS = 120
 
-# How many matches a single file may contribute and how many remote paths are listed before glob
-# matching are listing budgets that scale with the live model context window; they are read per
-# call from ``active_tuning()`` (grep_per_file / remote_listing). The total per-search match cap
-# likewise comes from the tuning policy and is passed in by the file tools.
+# How many matches a single file may contribute and how many remote paths are listed before glob matching are listing budgets that scale with the live model context window; they are read per call from ``active_tuning()`` (grep_per_file / remote_listing).
 
 
 @dataclass
@@ -137,8 +131,7 @@ def _prune_gitignored(base: Path, paths: list[Path]) -> list[Path]:
 class LocationExecutor(abc.ABC):
     """Run commands and read/write/search files against one location."""
 
-    #: Whether this executor operates on the home server's own filesystem. The file
-    #: tools use it for local-only guards (home-directory search refusal).
+    #: Whether this executor operates on the home server's own filesystem.
     is_local: bool = False
 
     @abc.abstractmethod
@@ -246,15 +239,10 @@ class LocalExecutor(LocationExecutor):
             raise FileNotFoundError(f"Directory does not exist: {base}")
         regex = re.compile(glob_to_regex(pattern))
         if shutil.which("rg"):
-            # ripgrep does the walk: `rg --files` honors the full .gitignore/.ignore chain
-            # and skips .git and hidden files, and `--sortr modified` yields newest-first.
-            # We match the caller's glob against those results ourselves rather than through
-            # `rg -g`, because an rg glob is a whitelist that overrides .gitignore — a broad
-            # pattern like `**/*` would otherwise drag build output and dependencies back in.
+            # ripgrep does the walk: `rg --files` honors the full .gitignore/.ignore chain and skips .git and hidden files, and `--sortr modified` yields newest-first.
             command = ["rg", "--files", "--sortr", "modified"]
             if include_ignored:
-                # Reach what the project excludes — both gitignored and hidden (dot) files.
-                # rg keeps .git internals out even with --hidden, so those still never appear.
+                # Reach what the project excludes — both gitignored and hidden (dot) files. rg keeps .git internals out even with --hidden, so those still never appear.
                 command += ["--no-ignore", "--hidden"]
             result = subprocess.run(
                 command,
@@ -274,8 +262,7 @@ class LocalExecutor(LocationExecutor):
                     if len(matched) >= limit:
                         break
             return matched
-        # Fallback when ripgrep is unavailable: Path.glob, dropping .git always and (unless
-        # include_ignored) the gitignored paths, via `git check-ignore`.
+        # Fallback when ripgrep is unavailable: Path.glob, dropping .git always and (unless include_ignored) the gitignored paths, via `git check-ignore`.
         candidates = [match for match in base.glob(pattern) if not match.is_dir() and ".git" not in match.parts]
         if not include_ignored:
             candidates = _prune_gitignored(base, candidates)
@@ -319,8 +306,7 @@ class LocalExecutor(LocationExecutor):
             candidates = [root]
         else:
             walked = [path for path in root.rglob("*") if path.is_file() and ".git" not in path.parts]
-            # Honor .gitignore on the fallback path too (unless include_ignored), so ripgrep's
-            # presence never changes which files a search can see.
+            # Honor .gitignore on the fallback path too (unless include_ignored), so ripgrep's presence never changes which files a search can see.
             candidates = walked if include_ignored else _prune_gitignored(root, walked)
         results: list[str] = []
         for file in candidates:
@@ -350,21 +336,14 @@ class SshExecutor(LocationExecutor):
 
     def __init__(self, alias: str, control_directory: Path | None = None):
         self.alias = alias
-        # Runtime state, so it lives with the other sockets rather than in a dot-directory in
-        # $HOME: the OS clears the runtime directory on logout, which is exactly the lifetime a
-        # multiplexed control socket should have. `ssh_control_directory` also guarantees the
-        # result is short enough to bind, which is the part that was wrong here.
+        # Runtime state, so it lives with the other sockets rather than in a dot-directory in $HOME: the OS clears the runtime directory on logout, which is exactly the lifetime a multiplexed control socket should have.
         self._control_directory = control_directory or ssh_control_directory()
         self._control_directory.mkdir(parents=True, exist_ok=True)
         self._home_directory: str | None = None
         self._ripgrep_available: bool | None = None
 
     def _mux_options(self) -> list[str]:
-        # Our own digest of the alias, not ssh's `%C`. `%C` is a full SHA-1, so under a macOS
-        # `$TMPDIR` the ControlPath came to 111 bytes against the 104-byte unix socket limit and
-        # ssh refused every connection — `ControlPath too long` — which made every remote
-        # environment unreachable on the one platform this ships for. See
-        # `paths.ssh_control_identifier`.
+        # Our own digest of the alias, not ssh's `%C`.
         control_path = str(self._control_directory / ssh_control_identifier(self.alias))
         return [
             "-o", "ControlMaster=auto",
@@ -461,11 +440,7 @@ class SshExecutor(LocationExecutor):
     def glob_files(self, base_directory: str, pattern: str, limit: int, include_ignored: bool = False) -> list[str]:
         regex = re.compile(glob_to_regex(pattern))
         if self._has_ripgrep():
-            # ripgrep does the walk: `rg --files` honors the remote's .gitignore/.ignore
-            # chain (and skips .git and hidden files) and `--sortr modified` yields
-            # newest-first. As on the local side we match the glob against the results
-            # ourselves — an `rg -g` glob overrides .gitignore, so `**/*` would drag the
-            # excluded tree back in.
+            # ripgrep does the walk: `rg --files` honors the remote's .gitignore/.ignore chain (and skips .git and hidden files) and `--sortr modified` yields newest-first.
             no_ignore = " --no-ignore --hidden" if include_ignored else ""
             listing = self.run(f"rg --files --sortr modified{no_ignore}", base_directory)
             if listing.returncode not in (0, 1):  # 1 == the tree has no files
@@ -482,8 +457,7 @@ class SshExecutor(LocationExecutor):
                     if len(paths) >= limit:
                         break
             return paths
-        # Fallback without ripgrep: list the tree with find (.git excluded) and glob-match
-        # locally. Without ripgrep the rest of the .gitignore chain is not applied.
+        # Fallback without ripgrep: list the tree with find (.git excluded) and glob-match locally.
         listing = self.run(
             f"find . -type f -not -path '*/.git/*' 2>/dev/null | head -{active_tuning().amount(Tunable.remote_listing)}",
             base_directory,
@@ -492,8 +466,7 @@ class SshExecutor(LocationExecutor):
             raise FileNotFoundError(listing.stderr.strip() or f"Directory does not exist: {base_directory}")
         relative = [line[2:] for line in listing.stdout.splitlines() if line.startswith("./")]
         matched = [path for path in relative if regex.fullmatch(path)][:limit]
-        # Newest-first, matching the local contract. xargs -0 chunks very large
-        # sets (sorting within chunks only), which is acceptable at this cap.
+        # Newest-first, matching the local contract. xargs -0 chunks very large sets (sorting within chunks only), which is acceptable at this cap.
         if len(matched) > 1:
             stdin = "\0".join(matched).encode("utf-8")
             sorted_run = self._ssh(
@@ -510,9 +483,7 @@ class SshExecutor(LocationExecutor):
         return [path if path.startswith("/") else f"{base}/{path}" for path in matched]
 
     def grep(self, pattern: str, target: str, include: str | None, maximum_results: int, include_ignored: bool = False) -> list[str]:
-        # Prefer ripgrep on the remote so the regex dialect matches the local tool and the
-        # .gitignore chain is honored; otherwise fall back to POSIX ERE via `grep -E` (never
-        # BRE, whose unescaped `+`/`?` silently match nothing and read as false "not found").
+        # Prefer ripgrep on the remote so the regex dialect matches the local tool and the .gitignore chain is honored; otherwise fall back to POSIX ERE via `grep -E` (never BRE, whose unescaped `+`/`?` silently match nothing and read as false "not found").
         quoted_pattern = shlex.quote(pattern)
         quoted_target = shlex.quote(target)
         per_file_limit = active_tuning().amount(Tunable.grep_per_file)

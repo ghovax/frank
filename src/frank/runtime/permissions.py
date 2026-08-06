@@ -36,19 +36,7 @@ from frank.base.tuning import Tunable, active_tuning
 
 logger = logging.getLogger(__name__)
 
-# The state-changing control_screen primitives. A script that calls any of them is asking to
-# change something on somebody's screen; one that only reads (find_one/find_many/read/hover/
-# scroll/tabs/tab/frames) is not.
-#
-# This set is the screen's confinement rather than a guess about it: the child a script runs in
-# is handed exactly the primitives it may call and holds nothing else, so a name that was not
-# sent is not defined in its namespace. One set, which the gate is about and the bridge enforces.
-#
-# `evaluate` runs arbitrary JavaScript inside the user's signed-in page. `press("Enter")` posts a
-# form. `navigate` is here because on a great many sites a URL is a command rather than an
-# address (`/logout`, `/unsubscribe?token=…`, `/items/12/delete`). `caret` and `select` both call
-# `set_selected_range` on a live element, moving somebody's insertion point inside a field they
-# are editing. Switching tabs and listing tabs or frames are reads, and stay out.
+# The state-changing control_screen primitives.
 MUTATING_SCREEN_PRIMITIVES = frozenset({
     "click", "type", "choose", "upload", "drag",
     "evaluate", "press", "navigate",
@@ -78,8 +66,7 @@ def _screen_mutations(script: str) -> tuple[str, ...]:
     try:
         tree = ast.parse(script)
     except SyntaxError:
-        # Nothing to decide: the tool will fail to run this, and refusing to name a primitive is
-        # not the same as naming one.
+        # Nothing to decide: the tool will fail to run this, and refusing to name a primitive is not the same as naming one.
         return ()
     found: list[str] = []
     for node in ast.walk(tree):
@@ -109,10 +96,7 @@ class _DecidesPermissions:
         question that takes a second to answer."""
         if self._reviewer_llm is not None:
             return self._reviewer_llm
-        # A caller that handed this runtime a model object rather than naming one — the library
-        # front door does exactly that — has no identifier to rebuild from, so the judge is that
-        # same object at whatever effort it was built with. Substituting a model of our own
-        # choosing there would be answering with a provider the caller never configured.
+        # A caller that handed this runtime a model object rather than naming one — the library front door does exactly that — has no identifier to rebuild from, so the judge is that same object at whatever effort it was built with.
         identifier = self.effective_model_identifier
         if not identifier:
             self._reviewer_llm = self._llm
@@ -154,9 +138,7 @@ class _DecidesPermissions:
             },
             "model_explanation": gate.arguments.get("explanation", "") or gate.explanation,
             "confinement": self._sandbox.describe(workspace=self._working_directory),
-            # Present only for a second run: the first was refused by the operating system, and
-            # a reviewer that did not know that would be judging a command that appears to have
-            # simply failed.
+            # Present only for a second run: the first was refused by the operating system, and a reviewer that did not know that would be judging a command that appears to have simply failed.
             **({"refused_by_the_sandbox": gate.denial_evidence} if gate.denial_evidence else {}),
             "allowed_actions": ["allow", "deny"],
         })
@@ -167,9 +149,7 @@ class _DecidesPermissions:
                 if getattr(self._tool_context, "toolbox", None) is not None else ""
             ),
         })
-        # Instructions and subject as separate messages. Folding the request being judged into
-        # the system prompt left the call with no input at all, which some providers reject
-        # outright — the ChatGPT Codex endpoint answers `400: One of "input" … must be provided`.
+        # Instructions and subject as separate messages.
         model = self._reviewer_model().bind_tools([PermissionDecision], tool_choice="auto")
         request = [SystemMessage(content=prompt), HumanMessage(content=context)]
         attempts = active_tuning().amount(Tunable.permission_reviewer_attempts)
@@ -196,9 +176,7 @@ class _DecidesPermissions:
                     attempt, attempts, exc_info=True,
                 )
                 continue
-            # A reason is not decoration: it is the whole of what the agent is told, and a
-            # verdict without one cannot be acted on. Treated as a failed attempt rather than as
-            # a refusal, because a model that forgot the field will usually supply it next time.
+            # A reason is not decoration: it is the whole of what the agent is told, and a verdict without one cannot be acted on.
             if not decision.explanation.strip():
                 logger.warning(
                     "the permission reviewer gave no reason for its decision (attempt %d of %d)",
@@ -280,10 +258,7 @@ class _DecidesPermissions:
             plan = await self._plan_call(
                 tool_call_data["name"], tool_call_data["args"], tool_call_data["id"],
             )
-            # Stamp the call's identity onto every gate it raised, here rather than at each
-            # construction site. A gate is shown to a person before the tool call it belongs to
-            # has been announced, so the gate is the only thing that can tell them what is being
-            # asked for: which tool, and the arguments the model chose.
+            # Stamp the call's identity onto every gate it raised, here rather than at each construction site.
             for gate in plan.gates:
                 gate.tool_name = tool_call_data["name"]
                 gate.arguments = dict(tool_call_data["args"] or {})
@@ -313,19 +288,14 @@ class _DecidesPermissions:
             try:
                 resolved_location = self._resolve_location(location_value)
             except ToolLocationError:
-                # A bad location is an execution error, surfaced by _execute_tool; there is no
-                # permission decision to make, so the batch runs and errors there.
+                # A bad location is an execution error, surfaced by _execute_tool; there is no permission decision to make, so the batch runs and errors there.
                 return plan
         policy = self._call_policy(resolved_location)
         explanation = str(tool_arguments.get("explanation", "") or "")
 
         # ask_user is the one call that is a question rather than an act.
         if tool_name == "ask_user":
-            # Not offered under `auto` — the tool is left out of the session's set entirely — so
-            # this is the second lock rather than the first. It matters because the two layers
-            # fail differently: a tool list is decided once when the runtime is built, and a plan
-            # that outlived a mode change, or a model naming a tool it was never given, would
-            # otherwise park an unattended session on a question with nobody to answer it.
+            # Not offered under `auto` — the tool is left out of the session's set entirely — so this is the second lock rather than the first.
             if not policy.asks:
                 plan.refusal = self._refusal(self._prompt_loader.load("nobody_to_ask", {}))
                 return plan
@@ -337,14 +307,12 @@ class _DecidesPermissions:
             return plan
 
         subject, rule = self._rule_for(tool_name, tool_arguments)
-        # A remote location runs on somebody else's machine, where this machine's confinement
-        # says nothing. There is no box to escape, so the rules are the whole policy there.
+        # A remote location runs on somebody else's machine, where this machine's confinement says nothing.
         profile = None if policy.is_remote else self._granted_profile()
         request, _ = parse_access_request(tool_arguments.get("access_request"))
         escape = escape_of(request, profile, workspace=policy.working_directory)
 
-        # A screen script has a confinement of its own — the primitives its child was handed —
-        # so "reaching outside" means asking to change something rather than only look.
+        # A screen script has a confinement of its own — the primitives its child was handed — so "reaching outside" means asking to change something rather than only look.
         mutations: tuple[str, ...] = ()
         if tool_name == "control_screen":
             mutations = _screen_mutations(str(tool_arguments.get("script", "") or ""))
@@ -375,9 +343,7 @@ class _DecidesPermissions:
             is_bash=(tool_name == "bash"),
             deny_message=self._deny_message(tool_name),
         )
-        # Under `auto` the gate is answered here rather than put to somebody. Every gate goes to
-        # the reviewer, with no exceptions: one that skipped it would park an autonomous session
-        # on a click that is never coming.
+        # Under `auto` the gate is answered here rather than put to somebody.
         if not policy.asks:
             decision = await self._review(gate)
             if decision.action == "allow":
@@ -419,11 +385,7 @@ class _DecidesPermissions:
             subject = mutations[0] if mutations else "read"
             return subject, tools.screen.decide(subject, unmatched=RULE_ASK if mutations else RULE_ALLOW)
         if tool_name in self._extra_tools:
-            # A tool the caller supplied. The engine classifies by tool *name* and has never
-            # heard of this one, so there is no honest way to infer what it does — and the safe
-            # direction is the one where adding a tool cannot silently widen what a session may
-            # do. `supplied_tool_gate="none"` is how a caller says a tool needs no gate at all,
-            # which is a deliberate sentence rather than a default.
+            # A tool the caller supplied.
             return tool_name, RULE_ALLOW if self._supplied_tool_gate == "none" else RULE_ASK
         return tool_name, RULE_ALLOW
 
@@ -501,9 +463,7 @@ class _DecidesPermissions:
                 approved = answer is not None and str(answer) != "deny"
                 if not approved:
                     if gate.refused_result is not None:
-                        # A refused retry is not a refused call: the command ran, inside its
-                        # box, and what the model is owed is what actually happened rather than
-                        # a sentence about an approval it never had.
+                        # A refused retry is not a refused call: the command ran, inside its box, and what the model is owed is what actually happened rather than a sentence about an approval it never had.
                         decision.completed = {"result": gate.refused_result}
                         break
                     decision.approved = False
@@ -513,10 +473,7 @@ class _DecidesPermissions:
                         "reason": None,
                     }
                     break
-                # Approved. Recorded here rather than where the gate was raised, because this is
-                # the only point that knows somebody actually said yes — preflight runs again
-                # when a suspended turn resumes, and recording at the ask would have granted
-                # everything that was ever proposed.
+                # Approved.
                 self._approve(gate, by=confinement.APPROVED_BY_PERSON)
                 if gate.grants_screen_mutations:
                     decision.screen_mutations = True
@@ -570,8 +527,7 @@ class _DecidesPermissions:
             # Interactive: a question is exactly what a person is for.
             return ""
         if gate.kind == "question":
-            # `ask_user` has nobody to answer it now, and a reviewer cannot answer for the
-            # person it was addressed to.
+            # `ask_user` has nobody to answer it now, and a reviewer cannot answer for the person it was addressed to.
             return "deny"
         decision = await self._review(_PreflightGate.from_dict(
             gate.to_dict() if hasattr(gate, "to_dict") else vars(gate)

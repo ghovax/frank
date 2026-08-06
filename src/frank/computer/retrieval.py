@@ -71,41 +71,16 @@ class RetrievalPolicy:
     refer to either one.
     """
 
-    #: Ranks by meaning across languages, for a desktop whose labels are not all English. Also the
-    #: model whose plain cosine backs the relevance floor, because a floor needs a number that
-    #: means the same thing from one call to the next — see :meth:`Index._ranking_scores`.
-    #:
-    #: Not the code-specialized ``potion-code-16M`` semble uses, and that is measured rather than
-    #: assumed: six static models were compared on both surfaces and none was separably better on
-    #: the shipped key. Indexing markup instead of an element's words loses by 17% even counting
-    #: only elements that *have* markup. A page's controls are natural-language labels; the code
-    #: around them is boilerplate that collapses the embedding space rather than dividing it.
+    #: Ranks by meaning across languages, for a desktop whose labels are not all English.
     multilingual_rank_model: str = "minishlab/M2V_multilingual_output"
 
     #: A second embedding, ranked *alongside* the first rather than instead of it.
-    #:
-    #: The sweep above had a blind spot it stated but could not fill: every query in it was built
-    #: out of an element's own fields, so no model could be rewarded for understanding a query
-    #: that shares no words with its target. Against 3,144 queries written by hand for that case
-    #: this model reaches 27.4% top-1 where the multilingual one reaches 20.7%.
-    #:
-    #: Added, not swapped, and that is the whole of it: used alone it is 4.3 points *worse* on
-    #: native windows, where exact-label queries dominate. Together the two are separably better
-    #: than either alone on every cut measured. They cost 0.06 ms each — the pair is cheaper than
-    #: the trigram index.
     english_rank_model: str = "minishlab/potion-base-32M"
 
-    #: At or below this many words, a query is a label quoted off the screen and its spelling is
-    #: the best evidence there is.
+    #: At or below this many words, a query is a label quoted off the screen and its spelling is the best evidence there is.
     lexical_gate_short_words: int = 3
 
-    #: At or above this many words, a query is a description of a purpose: it shares no spelling
-    #: with its target, so a character similarity ranks by coincidence — confidently, because a
-    #: character cosine is never silent. Between the two the signal fades out linearly.
-    #:
-    #: Fitted across a grid of models, weights and bands. The band is what makes the lexical
-    #: signal free: without it, adding trigrams moves hand-written queries by +1.7 points; with
-    #: it, by +5.7, and the mechanically-derived families do not notice the difference.
+    #: At or above this many words, a query is a description of a purpose: it shares no spelling with its target, so a character similarity ranks by coincidence — confidently, because a character cosine is never silent.
     lexical_gate_long_words: int = 7
 
     def weight_for(self, query: str) -> float:
@@ -164,11 +139,7 @@ def lexical_weight(query: str) -> float:
     return _policy.weight_for(query)
 
 
-# What each accessibility role is called in the language a person uses to ask for it. A query is
-# almost always "the save button" or "the search field" — it names a kind of control as well as a
-# label — so the kind has to be in the text that is embedded, in words. The raw role is not those
-# words: including `AXButton` verbatim made retrieval *worse* than leaving the role out entirely,
-# because it is a token an embedding model has never usefully seen.
+# What each accessibility role is called in the language a person uses to ask for it.
 _ROLE_IN_WORDS = {
     "AXButton": "button", "AXTextField": "text field", "AXTextArea": "text area",
     "AXStaticText": "text label", "AXRadioButton": "tab option", "AXCheckBox": "checkbox",
@@ -213,8 +184,7 @@ def element_text(name: str = "", description: str = "", value: Any = None, conte
     return " ".join(part for part in (spoken, name, description, value_text, context) if part).strip()
 
 
-# Path segments that appear on nearly every URL and therefore tell nothing apart. Kept small on
-# purpose: a stop list that grows starts removing words a page actually meant.
+# Path segments that appear on nearly every URL and therefore tell nothing apart.
 _URL_NOISE_WORDS = frozenset({
     "www", "com", "org", "net", "http", "https", "html", "htm", "php", "aspx",
     "index", "wiki", "page", "en", "us", "docs",
@@ -488,8 +458,7 @@ class _Trigrams:
             for position, count in counts.items():
                 matrix[index, position] = count
         present = (matrix > 0).sum(axis=0)
-        # Smoothed inverse document frequency, as the standard formulation has it: a trigram on
-        # every element says nothing, one on a single element says everything.
+        # Smoothed inverse document frequency, as the standard formulation has it: a trigram on every element says nothing, one on a single element says everything.
         self.weights = np.log((1 + self.count) / (1 + present)).astype(np.float32) + 1.0
         matrix *= self.weights
         self.matrix = matrix / np.clip(np.linalg.norm(matrix, axis=1, keepdims=True), 1e-9, None)
@@ -535,9 +504,7 @@ def _standardised(scores: Any) -> Any:
     return (values - float(values.mean())) / deviation
 
 
-# The dense models are loaded once, lazily, and cached by name. ``False`` records a failed load so
-# we do not retry the (possibly slow, possibly unreachable) fetch on every search — BM25 carries
-# retrieval until the process restarts. A missing entry means "not yet attempted".
+# The dense models are loaded once, lazily, and cached by name.
 _dense_models: dict[str, Any] = {}
 
 
@@ -584,9 +551,7 @@ class Index:
         #: One embedded matrix per model, computed on first search if that model loads.
         self._dense_matrices: dict[str, Any] = {}
         self._trigrams: Optional[_Trigrams] = None
-        #: Indices the ranker cannot represent — see :meth:`_unrepresentable_indices`. Filled in
-        #: when the matrix is built, because zero-ness is a fact about the encoding rather than
-        #: about the text, and only the model knows it.
+        #: Indices the ranker cannot represent — see :meth:`_unrepresentable_indices`.
         self._unreachable: set[int] = set()
 
     def _unrepresentable_indices(self, vectors: Any) -> set[int]:
@@ -725,23 +690,14 @@ class Index:
         ranking, cosines = self._ranking_scores(query)
         if ranking is not None:
             fused, unreachable = ranking.tolist(), self._unreachable
-            # The floor is read off the *cosine*, never off the ranking score — see
-            # :meth:`_ranking_scores`. A fused score is comparable within one ranking and
-            # meaningless between two, so a fixed number applied to it would mean a different
-            # thing for every query.
-            #
-            # A zero floor means "no floor", not "drop everything below zero": `find_one` ranks
-            # without one and its margin test is calibrated against the full ranking, so the
-            # default must leave that ranking exactly as it was.
+            # The floor is read off the *cosine*, never off the ranking score — see :meth:`_ranking_scores`.
             if floor > 0:
                 admitted = {index for index in range(len(self.documents))
                             if float(cosines[index]) >= floor}
                 unreachable = unreachable | (set(range(len(self.documents))) - admitted)
             cutoff = float("-inf")
         else:
-            # Without the model, BM25 carries retrieval — and there the same elements are
-            # unreachable for the same reason by a different route: a private-use glyph yields no
-            # tokens at all, so it can never share one with a query.
+            # Without the model, BM25 carries retrieval — and there the same elements are unreachable for the same reason by a different route: a private-use glyph yields no tokens at all, so it can never share one with a query.
             fused = self._bm25.scores(_tokens(query))
             unreachable = {index for index, document in enumerate(self.documents)
                            if not _tokens(document.text)}
@@ -823,15 +779,10 @@ class Index:
         margin = (top - runner_up) / top if top > 0 else 0.0
         if margin < anchor_margin:
             raise WeakAnchor(near, margin)
-        # The anchor is found on the plain cosine above, because it is a *lookup* — one element,
-        # named as exactly as the caller can manage — and its margin test is calibrated against
-        # that. Relevance is the full ranking, because that is the half a caller is actually
-        # asking for and it has no reason to be worse here than anywhere else.
+        # The anchor is found on the plain cosine above, because it is a *lookup* — one element, named as exactly as the caller can manage — and its margin test is calibrated against that.
         ranking, _cosines = self._ranking_scores(query)
         relevance = ranking.tolist() if ranking is not None else self._bm25.scores(_tokens(query))
-        # Shifted to start at zero before scaling: a standardised score is centred on the mean, so
-        # roughly half of them are negative, and dividing by the maximum would leave the proximity
-        # term competing against a relevance term of the wrong sign.
+        # Shifted to start at zero before scaling: a standardised score is centred on the mean, so roughly half of them are negative, and dividing by the maximum would leave the proximity term competing against a relevance term of the wrong sign.
         floor_value = min(relevance, default=0.0)
         relevance = [value - floor_value for value in relevance]
         ceiling = max(relevance) or 1.0

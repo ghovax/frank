@@ -24,23 +24,16 @@ from tests.retrieval.corpus import Corpus
 from tests.retrieval.query_families import QUERY_FAMILIES, Query
 from tests.retrieval.strategies import EncodingStrategy
 
-# Defaults, not settings. Each is a parameter everywhere it is used, so a question that needs a
-# different value is asked by passing one rather than by editing this file.
+# Defaults, not settings.
 
-# The depth `find_one` considers before deciding, from `runtime/tools/dispatch.py`, where it takes
-# `scored[:5]` and picks the score-competitive one. Recall at this depth answers a question about
-# the product — could `find_one` have reached the right element at all, whatever the ranking did
-# above it — which is why it is the default. Other depths answer other questions: the shape of
-# recall from 1 to 10 says whether a strategy misses elements or merely mis-orders them.
+# The depth `find_one` considers before deciding, from `runtime/tools/dispatch.py`, where it takes `scored[:5]` and picks the score-competitive one.
 DEFAULT_CANDIDATE_DEPTH = 5
 DEFAULT_RECALL_DEPTHS = (1, 3, 5, 10)
 
-# Resamples for the paired bootstrap: enough that an interval is stable to a tenth of a point
-# between runs. Raise it for a tighter interval, lower it when sweeping many strategies quickly.
+# Resamples for the paired bootstrap: enough that an interval is stable to a tenth of a point between runs.
 DEFAULT_BOOTSTRAP_RESAMPLES = 4000
 
-# Fixed only so an interval does not shift between two runs over identical data. It selects
-# nothing and samples nothing — every query is used.
+# Fixed only so an interval does not shift between two runs over identical data.
 DEFAULT_BOOTSTRAP_SEED = 20260729
 
 
@@ -100,10 +93,7 @@ def evaluate_strategy(strategy_name: str, strategy: EncodingStrategy, corpora: l
         ])
         for family_name, family_queries in queries[corpus.site_name].items():
             for query in family_queries:
-                # The whole ranking, because this measures *where* the target lands rather than
-                # whether it is returned. Asked for by size rather than by a flag: the flag that
-                # used to do this also existed on the model-facing `find_many`, where it silently
-                # overrode the caller's limit and returned entire surfaces.
+                # The whole ranking, because this measures *where* the target lands rather than whether it is returned.
                 ranking = index.search(query.text, top_k=len(corpus.elements))
                 positions = [position for position, hit in enumerate(ranking)
                              if hit.id == str(query.target_index)]

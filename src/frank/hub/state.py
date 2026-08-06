@@ -30,11 +30,9 @@ from frank.hub.broadcast_bus import Broadcaster
 
 # The database the workspace reads and writes, and the machine's configuration.
 session_factory: Any = None
-# The durable turn record. Shared rather than supervision-owned: the daemon writes it as turns
-# happen, and the browser reads it to replay a transcript. Both need the same object.
+# The durable turn record.
 turn_store: Any = None
-# The registry's durable half, on the same terms and for the same reason: the daemon owns the
-# registry, and the workspace services read the session rows behind it.
+# The registry's durable half, on the same terms and for the same reason: the daemon owns the registry, and the workspace services read the session rows behind it.
 session_store: Any = None
 async_engine: Any = None
 global_configuration: Any = None
@@ -42,26 +40,14 @@ global_configuration: Any = None
 configuration_lock = asyncio.Lock()
 
 #: Set once the daemon has been told to stop, before its listeners are asked to drain.
-#:
-#: A long-lived response has to be able to end itself, because nothing else can end it: the
-#: server will not finish draining until the response yields its last frame, so a stream parked
-#: on something that may never happen holds the whole daemon open. `frank attach` was accounted
-#: for — its bus is closed on the way down — but the Git status feed was not, and it waits on a
-#: filesystem change. With the desktop app open, `daemon stop` therefore never returned and
-#: `daemon restart` refused to start a successor; with the app closed, the same daemon exited in
-#: two seconds. Enumerating the streams that need closing is what produced that gap, so this is
-#: the other shape: one signal, and every stream that can outlive a request races it.
 shutting_down = asyncio.Event()
 last_written_configuration_digest: Optional[str] = None
 
-# Shared connections. One of each per process, because a stdio MCP server cannot be shared
-# across processes and an A2A card fetch should not be repeated per request.
+# Shared connections.
 mcp_manager: Any = None
 remote_agent_manager: Any = None
 composio_servers: dict = {}
-# The agent *profiles* a session could be created with, as A2A cards, rebuilt whenever the
-# agent or skill files change. Distinct from the session registry: this is what could exist,
-# that is what does.
+# The agent *profiles* a session could be created with, as A2A cards, rebuilt whenever the agent or skill files change.
 agent_cards: dict = {}
 
 # The rest of the shared machinery the browser surface reaches.
@@ -74,23 +60,10 @@ terminal_manager: Any = None
 chatgpt_login_flow: Any = None
 cursor_login_flow: Any = None
 
-# Per-session liveness the daemon learns from the event stream rather than from the registry:
-# `_running_contexts` counts the turns a session currently has in flight (a session can be live
-# but idle), and `_awaiting_input_contexts` marks the ones parked on a human decision. The
-# registry knows whether a *process* is alive; these know what it is doing.
-#
-# They sit here rather than in `frank.daemon.state`, where they used to, because both layers
-# need them: the daemon writes them from the event stream, and `_sessions_payload` reads them
-# to say which rows are running. `daemon` may import `workspace` and not the reverse, so the
-# daemon reaches these through that module's `__getattr__` and gets these very objects — while
-# a copy on the daemon side would leave the session list reading an attribute that is not there.
+# Per-session liveness the daemon learns from the event stream rather than from the registry: `_running_contexts` counts the turns a session currently has in flight (a session can be live but idle), and `_awaiting_input_contexts` marks the ones parked on a human decision.
 _running_contexts: dict[str, int] = {}
 _awaiting_input_contexts: set[str] = set()
-# The goal each live session is working toward, as its worker last reported it. Here for the
-# reason the two above are: the daemon writes it from the event stream and the session list
-# reads it. Not in the registry, and not in the database, because a goal belongs to the live
-# context — a stored one would outlive the worker pursuing it and have the interface offering
-# to call off something nobody is working on.
+# The goal each live session is working toward, as its worker last reported it.
 _session_goals: dict[str, dict] = {}
 
 # Where the daemon is listening, for the surfaces that must hand out an address.
@@ -102,9 +75,7 @@ main_loop: Any = None
 broadcaster = Broadcaster()
 
 
-# Where a workspace change has a supervision consequence. Filled in by the composition root;
-# `None` means there is no control plane to tell, which is the correct state for a workspace
-# served without one.
+# Where a workspace change has a supervision consequence.
 on_session_deleted: Optional[Callable[[str], Awaitable[Any]]] = None
 reset_live_session_runtimes: Optional[Callable[[], Awaitable[Any]]] = None
 refresh_live_session_locations: Optional[Callable[[str], Awaitable[Any]]] = None

@@ -26,9 +26,7 @@ from typing import Any, Optional, Literal
 
 from pydantic import BaseModel, Field
 
-# One key in ``Task.metadata`` holds the whole record — the same extension URI a message's turn
-# metadata uses, because it is the same extension. The harness's name belongs here, once, where
-# it means "these are Frank's attributes"; it does not belong in the field names underneath.
+# One key in ``Task.metadata`` holds the whole record — the same extension URI a message's turn metadata uses, because it is the same extension.
 from frank.protocol.metadata import METADATA_KEY
 
 TURN_STATE_KEY = METADATA_KEY
@@ -37,9 +35,7 @@ TURN_STATE_KEY = METADATA_KEY
 PENDING_INTERACTION_FIELD = "pending"
 TURN_KIND_FIELD = "kind"
 REFERENCE_TURN_IDS_FIELD = "referenceTurnIds"
-# Which session sent a peer turn's message. Carried beside the kind rather than folded into
-# it: "a peer wrote this" and "*which* peer wrote it" are different facts, and a reader that
-# wants to attribute a report needs the second one.
+# Which session sent a peer turn's message.
 PEER_SENDER_FIELD = "peerSender"
 
 
@@ -49,10 +45,6 @@ class TurnKind(StrEnum):
 
     USER = "user"
     # A message from another session — a peer reporting its result, or a parent following up.
-    # Distinct from USER because it is not the user speaking, and the difference is not
-    # cosmetic: without it a peer's report reaches the model as an instruction from the person
-    # the session is working for, and reaches the desktop client as a message rendered in the
-    # user's own style, attributing words to someone who never wrote them.
     PEER = "peer"
     AUTONOMOUS = "autonomous"
     COMPACTION = "compaction"
@@ -97,13 +89,11 @@ class ToolGate(BaseModel):
     explanation: str = ""
     reason: Optional[dict[str, Any]] = None
     questions: list[Any] = Field(default_factory=list)
-    # Permission-gate detail carried through a suspend so a resume can re-apply an
-    # "always allow" (a bash session rule / an egress approval) and a denial message.
+    # Permission-gate detail carried through a suspend so a resume can re-apply an "always allow" (a bash session rule / an egress approval) and a denial message.
     is_bash: bool = False
     deny_message: str = ""
     egress_agent: str = ""
-    # The widening being asked for, and — for a command the operating system refused — the
-    # offer to let it out of the box and what the confined run produced.
+    # The widening being asked for, and — for a command the operating system refused — the offer to let it out of the box and what the confined run produced.
     escape: Optional[dict[str, Any]] = None
     whole_disk: bool = False
     denial_evidence: str = ""
@@ -139,9 +129,7 @@ class TurnRecord(BaseModel):
     any non-turn keys the dict happens to carry."""
 
     kind: Optional[TurnKind] = None
-    # Set only on a PEER turn: the session that sent the message. Durable, because a person
-    # reading the transcript later needs to know a report came from a peer as much as one
-    # watching it arrive does.
+    # Set only on a PEER turn: the session that sent the message.
     peer_sender: str = ""
     pending: Optional[PendingInteraction] = None
     reference_task_ids: list[str] = Field(default_factory=list)

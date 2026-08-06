@@ -7,22 +7,12 @@ import { Tooltip } from "./ui/tooltip";
 import { InlineField } from "./ui/display";
 import type { DirectoryStatus } from "@/lib/use-directory-status";
 
-// The workspace's Git status: branch, working-tree dirtiness and ahead/behind for the
-// active working directory. Renders nothing unless the directory is a Git repository —
-// there is simply nothing to show for a plain folder. The hover card carries the full
-// breakdown (commit, author, staged/unstaged/untracked/conflicted counts).
-//
-// Every group is one icon and one number at the same size, which is what makes the gaps
-// between them read as equal. Dirtiness used to be a bare 8px disc instead — smaller than
-// the 12px arrows beside it, and with no shape to sit against the number, so the same
-// `gap` measured out to a visibly different space.
+// The workspace's Git status: branch, working-tree dirtiness and ahead/behind for the active working directory.
 export function GitStatusBar({ status }: { status: DirectoryStatus }) {
   const translation = useTranslations("GitStatusBar");
   const format = useFormatter();
 
-  // Spelled out in full. The bar itself is where brevity is worth paying for; the hover card
-  // is what someone opens *because* they want the detail, and an abbreviated month there is a
-  // saving nobody asked for — the year included, since a commit date is often not this one.
+  // Spelled out in full.
   const formatCommitDate = (value: string): string => {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "";

@@ -63,12 +63,7 @@ async def _reload_configuration_from_disk() -> None:
     fresh = await asyncio.to_thread(Configuration.load)
     configuration = state.global_configuration
     user_context_setting_changed = configuration.user_context.enabled != fresh.user_context.enabled
-    # Every section, from the model rather than from a list kept by hand. The list was the
-    # bug: it named twelve sections and the schema had grown to nineteen, so `toolbox`,
-    # `permission_classifier`, `telemetry`, `mcp` and `remote_agents` were read off disk into
-    # `fresh` and then dropped on the floor — a setting written to the file that took effect
-    # only at the next daemon start, with nothing saying so. Mutated in place rather than
-    # reassigned, because callers hold this object.
+    # Every section, from the model rather than from a list kept by hand.
     for name in type(fresh).model_fields:
         setattr(configuration, name, getattr(fresh, name))
     await _apply_live_credentials()

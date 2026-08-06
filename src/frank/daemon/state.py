@@ -68,9 +68,7 @@ class SessionEventBus:
             self.complete(session_id)
 
 
-# The supervision singletons: what a session's *existence* depends on. Everything the browser
-# surface needs — the database handle, the configuration, the shared clients — lives in
-# `frank.hub.state` instead, which is what lets `rest` stop importing this package.
+# The supervision singletons: what a session's *existence* depends on.
 
 registry: Any = None            # SessionRegistry
 prototype: Any = None           # PrototypeClient
@@ -78,10 +76,7 @@ lifecycle: Any = None           # SessionLifecycle
 
 event_bus = SessionEventBus()
 
-# Re-exported from the workspace layer, because these are read here constantly and a daemon
-# that had to spell out which module each singleton came from would be a daemon whose every
-# line advertised a split nobody reading it needs to think about. They are *the same objects*:
-# the composition root sets them once, on the workspace module, and this is a view of them.
+# Re-exported from the workspace layer, because these are read here constantly and a daemon that had to spell out which module each singleton came from would be a daemon whose every line advertised a split nobody reading it needs to think about.
 
 
 def __getattr__(name: str) -> Any:
@@ -97,22 +92,16 @@ def __getattr__(name: str) -> Any:
         return getattr(hub_state, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-# `_running_contexts` and `_awaiting_input_contexts` live on the workspace module and reach
-# this one through the `__getattr__` above. They are read from both layers — the daemon writes
-# them as events arrive, and the workspace builds the session list from them — and the workspace
-# cannot import this module, so the shared object has to sit on the side that both can see.
-# Strong references to in-flight title generations, so a task is not collected mid-flight.
+# `_running_contexts` and `_awaiting_input_contexts` live on the workspace module and reach this one through the `__getattr__` above.
 _title_tasks: set = set()
-# Long-lived tasks the daemon owns: the on-disk watchers, and the two background connects
-# (MCP servers, remote peers) that must never hold up boot. Held so teardown can cancel them.
+# Long-lived tasks the daemon owns: the on-disk watchers, and the two background connects (MCP servers, remote peers) that must never hold up boot.
 _watchers: list = []
 _mcp_start_task = None
 _remote_start_task = None
 # The HTTP client the push sender borrows, closed with everything else on shutdown.
 _push_client = None
 
-# The daemon's own addresses and the token that guards them, written to the runtime directory
-# at startup so a client can find them without being told.
+# The daemon's own addresses and the token that guards them, written to the runtime directory at startup so a client can find them without being told.
 daemon_socket: str = ""
 daemon_token: str = ""
 
@@ -192,14 +181,7 @@ async def wake_then_relay(record, method: str, params: dict) -> dict:
     try:
         return await relay_to_session(record, method, params)
     except SessionUnreachable:
-        # Not an edge case: this is the ordinary path for the second and every later message in
-        # a conversation. A session exits when its turn ends, so by the time the next message
-        # arrives its worker is usually gone while the record still carries that worker's pid —
-        # and `asleep`, derived from the pid, still says false. The socket is the fact and the
-        # pid is a memory, so trust the socket: record the sleep and try once more.
-        #
-        # Once, deliberately. A second failure is a session that cannot be woken at all, which
-        # is a real fault and must surface rather than turn into a retry loop.
+        # Not an edge case: this is the ordinary path for the second and every later message in a conversation.
         logger.info("session %s had no worker for %s; waking it and retrying", record.id, method)
         slept = registry.sleep(record.id)
         await _wake(slept if slept is not None else record)
@@ -227,8 +209,7 @@ async def _wake(record) -> None:
     """
     lock = _wake_locks.setdefault(record.id, asyncio.Lock())
     async with lock:
-        # Re-checked inside the lock: the client that waited on it may have been the second of
-        # two, and the first has already done this.
+        # Re-checked inside the lock: the client that waited on it may have been the second of two, and the first has already done this.
         if not record.asleep:
             return
         if lifecycle is None:
@@ -259,18 +240,10 @@ async def relay_to_session(record, method: str, params: dict) -> dict:
                 headers={"Authorization": f"Bearer {record.token}"},
             )
     except (httpx.ConnectError, httpx.ConnectTimeout, OSError) as error:
-        # Nothing accepted the connection, so there is no worker right now — either it died
-        # without being reaped, or it simply exited at the end of its turn. Its own type, so the
-        # caller can tell "no worker" apart from "the worker refused this", and act on it.
+        # Nothing accepted the connection, so there is no worker right now — either it died without being reaped, or it simply exited at the end of its turn.
         raise SessionUnreachable(f"Session {record.id} is not reachable ({error}).") from error
     except httpx.HTTPError as error:
-        # Something answered and then took too long, or the read failed partway. That is a
-        # *busy* worker, not an absent one, and the difference matters more than it looks: the
-        # recovery for an absent worker is to fork another, and forking one for a worker that is
-        # merely slow puts two processes on one session id. Both then believe they own the
-        # conversation, both write turns into it, and the person watching sees their message
-        # answered twice out of order — which is exactly what a turn running past this timeout
-        # produced, at the 120-second mark, every time.
+        # Something answered and then took too long, or the read failed partway.
         raise RuntimeError(
             f"Session {record.id} did not answer {method} in time ({error}). Its worker is "
             f"running but did not respond; the turn may still be in progress."

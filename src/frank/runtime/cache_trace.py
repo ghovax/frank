@@ -123,8 +123,7 @@ def diagnose(current: RequestTrace, previous: Optional[RequestTrace]) -> dict[st
             "index": shared,
             "current": here.identity() if here else None,
             "previous": there.identity(),
-            # Same place, same identity, different digest: the piece did not move, its contents
-            # changed. Distinguished because it is the only kind this harness can usually fix.
+            # Same place, same identity, different digest: the piece did not move, its contents changed.
             "rewritten": bool(here and here.identity() == there.identity()),
         },
         **common,

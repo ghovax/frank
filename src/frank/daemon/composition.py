@@ -63,41 +63,29 @@ async def open_shared_resources() -> None:
     hub_state.worktree_manager = SessionWorktreeManager()
     hub_state.terminal_manager = TerminalSessionManager()
 
-    # Seed the home layer (~/.agents) with editable copies of the shipped agents and skills,
-    # non-destructively. This is what makes the bundled profiles appear in a packaged build
-    # and gives each a writable copy, since the bundled originals are read-only inside the
-    # frozen application.
+    # Seed the home layer (~/.agents) with editable copies of the shipped agents and skills, non-destructively.
     seeded = await asyncio.to_thread(seed_home_agents)
     if seeded:
         logger.info("seeded home agents and skills: %s", ", ".join(seeded))
-    # Seed the digest with the file as just loaded, so the bootstrap write that
-    # `Configuration.load` may have performed is not mistaken for a manual edit by the
-    # watcher below and echoed straight back.
+    # Seed the digest with the file as just loaded, so the bootstrap write that `Configuration.load` may have performed is not mistaken for a manual edit by the watcher below and echoed straight back.
     hub_state.last_written_configuration_digest = await asyncio.to_thread(_configuration_digest)
 
     # There is no landing page, so the app always opens into a project: guarantee one exists.
     await asyncio.to_thread(_ensure_default_project)
 
-    # The tools sessions installed for themselves outlive a daemon that was killed rather than
-    # asked to stop, and a directory belonging to a session that no longer exists is only
-    # taking up space. Reaping deletes them in every ordinary case; this is the case that is
-    # not ordinary, and it is answerable only here, where the whole set of live sessions is
-    # known at once.
+    # The tools sessions installed for themselves outlive a daemon that was killed rather than asked to stop, and a directory belonging to a session that no longer exists is only taking up space.
     live_sessions = [record.id for record in state.registry.live()] if state.registry is not None else []
     swept = await asyncio.to_thread(toolbox.sweep, live_sessions)
     if swept:
         logger.info("swept %d toolbox(es) belonging to sessions that are gone", len(swept))
 
-    # Composio's hosted endpoint is folded into the ordinary MCP set rather than being a
-    # second path, so tool gating and the client manager both see it as just another server.
+    # Composio's hosted endpoint is folded into the ordinary MCP set rather than being a second path, so tool gating and the client manager both see it as just another server.
     hub_state.composio_servers = composio_mcp_servers(configuration.composio)
     configuration.mcp.servers.update(hub_state.composio_servers)
     mcp_servers = configuration.mcp.enabled_servers()
     hub_state.mcp_manager = MCPClientManager(mcp_servers) if mcp_servers else None
     if hub_state.mcp_manager is not None:
-        # Connected in the background: a slow or hung server — a cold `uvx` spawn, a stalled
-        # endpoint — must never delay the daemon's boot. Tool gating keys on the manager
-        # existing, not on live connections, so each server's tools appear as it finishes.
+        # Connected in the background: a slow or hung server — a cold `uvx` spawn, a stalled endpoint — must never delay the daemon's boot.
         state._mcp_start_task = asyncio.create_task(hub_state.mcp_manager.start())
 
     signing_root = data_directory()
@@ -118,8 +106,7 @@ async def open_shared_resources() -> None:
         allow_private=hub_state.push_configuration_store.allow_private_webhooks,
     )
 
-    # Outbound A2A to peers declared in remote-agents.json. Card resolution is best effort
-    # and started in the background, so an unreachable peer never holds up boot.
+    # Outbound A2A to peers declared in remote-agents.json.
     remote_configurations = _remote_agent_dataclasses()
     if remote_configurations:
         from frank.protocol.client import RemoteAgentManager
@@ -134,8 +121,7 @@ async def open_shared_resources() -> None:
         asyncio.create_task(_watch_agents_and_skills()),
         asyncio.create_task(_watch_configuration()),
         asyncio.create_task(_watch_ssh_hosts()),
-        # Recurring prompts. Alongside the watchers because it is the same kind of thing — a
-        # task that outlives every request and is cancelled with them on shutdown.
+        # Recurring prompts.
         asyncio.create_task(scheduler.run()),
     ]
 
@@ -229,8 +215,7 @@ async def _watch_configuration() -> None:
             watch_filter=lambda _change, changed: Path(changed).name == path.name,
             stop_event=hub_state.shutting_down,
         ):
-            # Serialised against UI-driven saves, and the digest is re-checked *inside* the
-            # lock so a save that landed while we waited is recognised as ours.
+            # Serialised against UI-driven saves, and the digest is re-checked *inside* the lock so a save that landed while we waited is recognised as ours.
             async with hub_state.configuration_lock:
                 digest = await asyncio.to_thread(digest_of)
                 if digest is not None and digest == hub_state.last_written_configuration_digest:

@@ -16,8 +16,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-# root path to built index, kept for the process's life. semble reads from disk, so a rebuild is the
-# only way to pick up edits; callers ask for that explicitly with ``reindex``.
+# root path to built index, kept for the process's life. semble reads from disk, so a rebuild is the only way to pick up edits; callers ask for that explicitly with ``reindex``.
 _indexes: dict[str, Any] = {}
 
 

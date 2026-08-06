@@ -18,8 +18,7 @@ class ScheduleCreateRequest(BaseModel):
     cron: str
     prompt: str
     agent: str
-    # No default, and that is the point: a schedule runs with nobody watching, so the mode is
-    # the one thing its author decides rather than discovers. See `ScheduleRecord`.
+    # No default, and that is the point: a schedule runs with nobody watching, so the mode is the one thing its author decides rather than discovers.
     permission_mode: str
     timezone: str
     working_directory: str = Field(default="")
@@ -35,8 +34,7 @@ def _fail(error: Exception) -> HTTPException:
 
 @router.get("/schedules")
 async def list_schedules(workspace_id: str = ""):
-    # The services are synchronous by convention here, and the write lock refuses to run on
-    # the event loop rather than deadlocking quietly. Dispatched off it, like every other route.
+    # The services are synchronous by convention here, and the write lock refuses to run on the event loop rather than deadlocking quietly.
     return {"schedules": await asyncio.to_thread(_schedules.listing, workspace_id)}
 
 

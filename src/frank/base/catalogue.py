@@ -35,13 +35,10 @@ from typing import Any, Iterable, Mapping, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
-# Instruction files a project may carry, in the order they are preferred. The first match
-# walking up from the working directory wins; ancestors are not stacked.
+# Instruction files a project may carry, in the order they are preferred.
 PROJECT_INSTRUCTION_NAMES = ("AGENTS.md", "CLAUDE.md", "CONTEXT.md")
 
-# Well-known user-wide instruction files, including two that belong to other tools. Read only
-# when a catalogue is explicitly given them, which the CLI and the daemon do and a library
-# session does not.
+# Well-known user-wide instruction files, including two that belong to other tools.
 def home_instruction_paths() -> tuple[Path, ...]:
     home = Path.home()
     return (
@@ -67,8 +64,7 @@ class CatalogueRoots:
     prompts: Optional[Path] = None
     # Where to start walking for AGENTS.md / CLAUDE.md / CONTEXT.md.
     project_directory: Optional[Path] = None
-    # Whether to also read the well-known user-wide instruction files. False for a library,
-    # because a program that imported us did not ask to inherit another tool's configuration.
+    # Whether to also read the well-known user-wide instruction files.
     include_home_instructions: bool = False
 
 
@@ -105,9 +101,7 @@ class FileCatalogue:
             return []
         return list_agent_route_names(list(self._roots.agents))
 
-    # Skills and memories, re-read each call so an edit takes effect without a restart. That
-    # liveness is a property of *this* implementation, not of the port: a catalogue built from
-    # a dictionary is static, and neither is more correct than the other.
+    # Skills and memories, re-read each call so an edit takes effect without a restart.
 
     def skills(self) -> Sequence[Any]:
         from frank.base.skills import load_skills
@@ -138,8 +132,7 @@ class FileCatalogue:
                 if not resolved.is_file() or resolved in seen:
                     continue
                 seen.add(resolved)
-                # A home-wide document governs everything, because that is where it sits — and
-                # that is also why it loses every disagreement with a project's own.
+                # A home-wide document governs everything, because that is where it sits — and that is also why it loses every disagreement with a project's own.
                 entries.append(Instruction(
                     source=str(resolved), scope=str(resolved.parent),
                     content=resolved.read_text(errors="ignore").strip(),

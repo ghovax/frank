@@ -17,8 +17,7 @@ class Base(DeclarativeBase):
     pass
 
 
-# The key of the one row in ``interface_preferences``. Named rather than spelled as a literal
-# at both the reader and the writer, which is how the two come to disagree.
+# The key of the one row in ``interface_preferences``.
 SOLE_INTERFACE = "interface"
 
 
@@ -52,22 +51,16 @@ class SessionRecord(Base):
     # How it finished, and why, for the record that outlives it.
     outcome: Mapped[str] = mapped_column(String, default="")
     exit_reason: Mapped[str] = mapped_column(Text, default="")
-    # What its tool children may touch, resolved and clamped once at creation. JSON, because it
-    # is a whole profile and nothing queries inside it.
+    # What its tool children may touch, resolved and clamped once at creation.
     sandbox: Mapped[str] = mapped_column(Text, default="")
-    # The one-time work-habits acknowledgement. Durable rather than in-memory because a worker
-    # is now per *activation* rather than per session: a slept-and-woken session would
-    # otherwise show it again every time it woke.
+    # The one-time work-habits acknowledgement.
     work_habits_acknowledged_at: Mapped[str] = mapped_column(String, default="")
     updated_at: Mapped[str] = mapped_column(String, default="")
-    # The workspace this session belongs to; the agent may address any of the workspace's
-    # locations per tool call.
+    # The workspace this session belongs to; the agent may address any of the workspace's locations per tool call.
     workspace_id: Mapped[str] = mapped_column(String, default="")
-    # Source path selected in the UI. Project-local agents/skills/instructions
-    # are resolved from here.
+    # Source path selected in the UI. Project-local agents/skills/instructions are resolved from here.
     working_directory: Mapped[str] = mapped_column(Text, default="")
-    # Actual path where shell and file tools run. For Git projects this is a
-    # per-session worktree; for non-Git directories it falls back to the source.
+    # Actual path where shell and file tools run.
     runtime_working_directory: Mapped[str] = mapped_column(Text, default="")
     worktree_strategy: Mapped[str] = mapped_column(Text, default="none")
     worktree_path: Mapped[str] = mapped_column(Text, default="")
@@ -110,11 +103,9 @@ class MachineRecord(Base):
     __tablename__ = "machines"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)  # generated uuid
-    # What this machine is called *here*. Seeded from the pairing payload, which carries the
-    # host's own name, and editable because that name is whatever DHCP left it.
+    # What this machine is called *here*.
     name: Mapped[str] = mapped_column(String, nullable=False, default="")
-    # The identity of the row: one `frank reach` is one address, so pairing the same machine
-    # again replaces its token rather than growing a second entry holding a stale one.
+    # The identity of the row: one `frank reach` is one address, so pairing the same machine again replaces its token rather than growing a second entry holding a stale one.
     endpoint: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     token: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[str] = mapped_column(String, nullable=False)
@@ -132,14 +123,6 @@ class WorkspaceRecord(Base):
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
     # The conversation a client should open when it arrives with nothing else to go on.
-    #
-    # Here rather than in a browser, because it is not a fact about a browser. Open the same
-    # workspace from a phone, a second window and the desktop app and all three mean the same
-    # conversation by "the last one" — which `localStorage` cannot express, since it would give
-    # each of them a private and diverging answer to a question about shared state.
-    #
-    # Empty when the workspace has never been opened, which is the one time landing on a blank
-    # composer is right.
     last_session_id: Mapped[str] = mapped_column(String, nullable=False, default="")
 
 
@@ -161,8 +144,7 @@ class InterfacePreferenceRecord(Base):
 
     __tablename__ = "interface_preferences"
 
-    # There is one interface, so there is one row. The column exists because a table needs a
-    # key, not because there is a second set of preferences somewhere.
+    # There is one interface, so there is one row.
     id: Mapped[str] = mapped_column(String, primary_key=True, default=SOLE_INTERFACE)
     # "system" follows the operating system; "light" and "dark" are the explicit choices.
     color_mode: Mapped[str] = mapped_column(String, nullable=False, default="system")
@@ -170,9 +152,7 @@ class InterfacePreferenceRecord(Base):
     locale: Mapped[str] = mapped_column(String, nullable=False, default="")
     # The workspace a fresh launch reopens. Empty until one has been opened.
     last_workspace_id: Mapped[str] = mapped_column(String, nullable=False, default="")
-    # Set when computer control is asked for while Accessibility is not granted. macOS only
-    # exposes the grant to a freshly started daemon, so the request has to outlive the process
-    # that took it; the interface completes it after the relaunch.
+    # Set when computer control is asked for while Accessibility is not granted. macOS only exposes the grant to a freshly started daemon, so the request has to outlive the process that took it; the interface completes it after the relaunch.
     computer_control_awaiting_grant: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
@@ -205,8 +185,7 @@ class ScheduleRecord(Base):
     permission_mode: Mapped[str] = mapped_column(String, nullable=False)
     working_directory: Mapped[str] = mapped_column(Text, nullable=False, default="")
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    # When the scheduler last acted on this, so a daemon that was down over a firing does not
-    # replay every one it missed on the next start — one catch-up run, not a stampede.
+    # When the scheduler last acted on this, so a daemon that was down over a firing does not replay every one it missed on the next start — one catch-up run, not a stampede.
     last_fired_at: Mapped[str] = mapped_column(String, nullable=False, default="")
     last_session_id: Mapped[str] = mapped_column(String, nullable=False, default="")
     last_error: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -261,8 +240,7 @@ class TerminalStateRecord(Base):
     terminal_key: Mapped[str] = mapped_column(String, primary_key=True)
     working_directory: Mapped[str] = mapped_column(Text, default="")
     scrollback: Mapped[str] = mapped_column(Text, default="")
-    # Creation time, used to order a context's terminals into stable tabs; set once on
-    # insert and never touched again (unlike updated_at, which moves on every write).
+    # Creation time, used to order a context's terminals into stable tabs; set once on insert and never touched again (unlike updated_at, which moves on every write).
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
 

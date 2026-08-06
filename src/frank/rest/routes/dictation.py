@@ -24,15 +24,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# The one transcriber this daemon owns, built on first use. Held here rather than on the hub's
-# state because nothing else in the process has any business with it, and a module global that
-# one file reads is easier to reason about than a singleton four layers can reach.
+# The one transcriber this daemon owns, built on first use.
 _transcriber = None
 _transcriber_lock = asyncio.Lock()
 
-# A ceiling on what one request may carry, in samples. Dictation is short-form by nature; this
-# is ten minutes, which is far past anything anybody dictates into a composer and well short of
-# a payload that could exhaust the daemon's memory.
+# A ceiling on what one request may carry, in samples.
 MAXIMUM_SAMPLES = 16000 * 60 * 10
 
 
@@ -126,9 +122,7 @@ async def transcribe(request: Request):
     transcriber = await _ensure_transcriber()
 
     def run() -> str:
-        # numpy is already a dependency of everything under this, and a copy is taken rather
-        # than a view: the buffer is the request body, which is released when this returns,
-        # while the samples cross a process boundary after it.
+        # numpy is already a dependency of everything under this, and a copy is taken rather than a view: the buffer is the request body, which is released when this returns, while the samples cross a process boundary after it.
         import numpy
 
         samples = numpy.frombuffer(body, dtype="<f4").astype("float32")
@@ -137,8 +131,7 @@ async def transcribe(request: Request):
     try:
         text = await asyncio.to_thread(run)
     except DictationUnavailable as error:
-        # 503 rather than 500: the request was fine, the machine could not serve it, and the
-        # message says which part — a missing package, a failed download, a wedged worker.
+        # 503 rather than 500: the request was fine, the machine could not serve it, and the message says which part — a missing package, a failed download, a wedged worker.
         raise HTTPException(status_code=503, detail=str(error)) from error
     return {"text": text}
 

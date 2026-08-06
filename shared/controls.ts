@@ -1,21 +1,4 @@
-/**
- * What every runtime setting offers, and how each choice looks.
- *
- * The desktop has exactly two control shapes and no others: a **toggle** — a chip whose label,
- * glyph and colour all change with its state — and a **select** — a chip that opens a list of
- * options, each with a label and a sentence saying what it does. Every setting is one of the two.
- * There is not a switch anywhere in it.
- *
- * The phone had switches, which is why it looked like a different application: a switch says
- * "on/off" and nothing about what on *means*, so the state had to be re-explained beside it in
- * words the desktop does not use. Both clients now build their controls from the definitions
- * here — same options, same order, same labels, same colours — and differ only in how a list is
- * presented, which is a popover on a desktop and a sheet on a phone because that is what those
- * platforms have.
- *
- * Colours are palette names and glyphs are glyph names, resolved per client exactly as in
- * `tools.ts`.
- */
+/** What every runtime setting offers, and how each choice looks. */
 
 import { labels, type Namespace } from "./labels";
 import type { GlyphName } from "./tools";
@@ -49,11 +32,7 @@ export type SandboxEnforceValue = "required" | "off";
 export type WorktreeStrategyValue = "none" | "branch" | "worktree";
 export type BooleanValue = "on" | "off";
 
-/**
- * Who answers when a call asks to reach past the box the session runs in. Everything inside that
- * box runs without asking anybody, so this is not a spectrum of how much the agent may do — it is
- * one question: when it wants out, are you the one who says yes.
- */
+/** Who answers when a call asks to reach past the box the session runs in. */
 export const PERMISSION_MODES: ChoiceSet<PermissionModeValue> = {
   namespace: "SessionControls",
   titleNamespace: "SettingsDialog",
@@ -77,12 +56,7 @@ export const PERMISSION_MODES: ChoiceSet<PermissionModeValue> = {
   ],
 };
 
-/**
- * Whether a session's tool children are confined to the filesystem it was given.
- *
- * `off` is red rather than neutral, deliberately: it is the one setting here whose "off" removes
- * a boundary rather than a convenience.
- */
+/** Whether a session's tool children are confined to the filesystem it was given. */
 export const SANDBOX_ENFORCE: ChoiceSet<SandboxEnforceValue> = {
   namespace: "SessionControls",
   titleNamespace: "SettingsDialog",

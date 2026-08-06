@@ -46,8 +46,7 @@ async def upload_file(file: UploadFile = File(...)):
     upload_id = f"upload-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
     uploads_root = uploads_directory()
     uploads_root.mkdir(parents=True, exist_ok=True)
-    # Stream to a temp file while hashing, then atomically move it to its content-addressed
-    # name once the digest is known. A dedup hit (target already present) drops the temp.
+    # Stream to a temp file while hashing, then atomically move it to its content-addressed name once the digest is known.
     incoming_path = uploads_root / f".incoming-{upload_id}"
     digest = hashlib.sha256()
     size = 0
@@ -93,8 +92,7 @@ async def reference_attachment(reference: AttachmentReference):
 
     Returns the same metadata shape as /uploads so the two paths are interchangeable to the
     client. Localhost-only, like the rest of the API."""
-    # One builder, shared with `frank.Session`. Two spellings of one record is how the HTTP
-    # front door and the library front door drift, and the model reads whichever it is handed.
+    # One builder, shared with `frank.Session`.
     try:
         return await asyncio.to_thread(attachment_from_path, reference.path)
     except FileNotFoundError:

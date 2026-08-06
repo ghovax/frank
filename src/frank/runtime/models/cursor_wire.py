@@ -157,13 +157,7 @@ def message_at(fields: list[Field], number: int) -> Optional[list[Field]]:
     return parse(entry.data) if entry is not None and entry.is_message else None
 
 
-# google.protobuf.Value. Cursor carries JSON-shaped data — a tool's JSON Schema, a tool
-# call's arguments — as a serialized Value, so the two conversions below are how a
-# Python object crosses into the protocol and back.
-#
-# google.protobuf.Value: null_value=1, number_value=2, string_value=3, bool_value=4,
-# struct_value=5, list_value=6. Struct.fields=1 (map entry: key=1, value=2).
-# ListValue.values=1.
+# google.protobuf.Value.
 
 def encode_value(value: Any) -> bytes:
     if value is None:
@@ -190,9 +184,7 @@ def decode_value(data: bytes) -> Any:
         if entry.number == 1:
             return None
         if entry.number == 2 and entry.wire_type == _FIXED64:
-            # Value has one numeric case, a double, so an integer argument arrives as
-            # 5.0. Handing that back as a float would pass an integer-typed tool
-            # parameter a non-integer, so a whole number becomes one again.
+            # Value has one numeric case, a double, so an integer argument arrives as 5.0.
             number = struct.unpack("<d", entry.data)[0]
             return int(number) if number.is_integer() else number
         if entry.number == 3 and entry.is_message:
@@ -268,14 +260,11 @@ def parse_trailer(payload: bytes) -> tuple[int, str]:
     return status, message
 
 
-# The Cursor messages. Each builder names the message it serializes and each field
-# comment names the message the number belongs to, because the numbers are the contract
-# and nothing else in the tree records them.
+# The Cursor messages.
 
 # agent.v1.UserMessage.mode — the agent mode enum. AGENT is the tool-using one.
 AGENT_MODE = 1
-# The MCP server identity Frank presents its own tools under. Cursor groups tools by
-# provider, and this is the group name the model sees them in.
+# The MCP server identity Frank presents its own tools under.
 TOOL_PROVIDER = "frank"
 
 
@@ -423,11 +412,7 @@ def drop_field(message: bytes, number: int) -> bytes:
     return b"".join(kept)
 
 
-# ConversationStateStructure.pending_tool_calls. Dropped from a checkpoint before it is sent
-# back: a checkpoint is captured mid-turn, and this client ends its run the moment the model
-# calls a tool, so the state it captured can name a call that was never answered. Resuming with
-# that still listed invites the server to wait for a result nobody is going to send. The
-# maintained plugin strips the same field for the same reason after a user interrupt.
+# ConversationStateStructure.pending_tool_calls.
 PENDING_TOOL_CALLS_FIELD = 4
 
 
@@ -508,12 +493,7 @@ class BuiltinExec:
     refusal_indexes: tuple[int, ...] = ()
 
 
-# Every exec the server can ask a client to run, keyed by its args field number in
-# ``ExecServerMessage``. Completeness is the point rather than tidiness: an exec left unanswered
-# is an agent waiting for a result that never comes, so a kind missing from this table costs a
-# stalled turn. ``mcp_args`` (11) and ``request_context_args`` (10) are absent because neither is
-# a built-in tool — the first is the harness's own tools coming back, the second is a question
-# about the machine.
+# Every exec the server can ask a client to run, keyed by its args field number in ``ExecServerMessage``.
 BUILTIN_EXECS: dict[int, BuiltinExec] = {
     # ShellRejected{command, working_directory, reason}
     2: BuiltinExec("shell", 2, 4, (1, 2), (0, 1)),
@@ -535,8 +515,7 @@ BUILTIN_EXECS: dict[int, BuiltinExec] = {
     16: BuiltinExec("background_shell", 16, 3, (1, 2), (0, 1)),
     # ListMcpResourcesExecRejected{reason}
     17: BuiltinExec("list_mcp_resources", 17, 3, (1,), ()),
-    # ReadMcpResourceExecRejected{uri, reason} — args are {server, uri}, so the refusal wants
-    # the second of them and not the first
+    # ReadMcpResourceExecRejected{uri, reason} — args are {server, uri}, so the refusal wants the second of them and not the first
     18: BuiltinExec("read_mcp_resource", 18, 3, (1, 2), (1,)),
     # FetchError{url, error}
     20: BuiltinExec("fetch", 20, 2, (1,), (0,)),
@@ -628,13 +607,10 @@ class ServerMessage:
     blob_request: Optional[BlobRequest] = None
     turn_ended: bool = False
     heartbeat: bool = False
-    # An increment of generated tokens, not a running total: ``TokenDeltaUpdate`` is a delta
-    # and has to be summed across a turn.
+    # An increment of generated tokens, not a running total: ``TokenDeltaUpdate`` is a delta and has to be summed across a turn.
     output_token_delta: int = 0
     token_details: Optional[TokenDetails] = None
-    # The whole conversation state the server just published, verbatim. Opaque to this client
-    # and kept that way: its only use is being handed back to resume, so it is bytes to carry
-    # rather than a structure to understand.
+    # The whole conversation state the server just published, verbatim.
     checkpoint: bytes = b""
 
 

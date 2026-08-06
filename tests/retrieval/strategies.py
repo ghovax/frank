@@ -38,8 +38,7 @@ def _role_in_words(element: RecordedElement) -> str:
     return _ROLE_IN_WORDS.get(element.role, _ROLE_IN_WORDS.get(element.role.lower(), ""))
 
 
-# Each field an element can contribute, as the words it would contribute. Adding an entry here
-# makes a new field available to every composition below and to any future one.
+# Each field an element can contribute, as the words it would contribute.
 FIELD_SOURCES: dict[str, FieldSource] = {
     "name": lambda element: element.name,
     "url": lambda element: url_in_words(element.url),
@@ -70,9 +69,7 @@ def name_of(field_names: Iterable[str]) -> str:
     return " + ".join(field_names)
 
 
-# The compositions worth comparing. Each exists to isolate one question, and the set is designed
-# so that every field appears both present and absent alongside an otherwise identical partner —
-# without that pairing, a difference cannot be attributed to the field that caused it.
+# The compositions worth comparing.
 COMPOSITIONS: tuple[tuple[str, ...], ...] = (
     ("name",),
     ("name", "role"),
@@ -96,9 +93,7 @@ FIELDS_BY_STRATEGY: dict[str, frozenset[str]] = {
     name_of(field_names): frozenset(field_names) for field_names in COMPOSITIONS
 }
 
-# The key the browser surface builds right now, measured by calling the product rather than by
-# restating it. Named for what it is — a live reference — so that nothing here has to be renamed
-# when the composition behind it changes.
+# The key the browser surface builds right now, measured by calling the product rather than by restating it.
 LIVE_KEY_NAME = "live browser key"
 LIVE_NATIVE_KEY_NAME = "live native key"
 
@@ -128,6 +123,5 @@ def live_native_key(element: RecordedElement) -> str:
 STRATEGIES[LIVE_KEY_NAME] = live_browser_key
 STRATEGIES[LIVE_NATIVE_KEY_NAME] = live_native_key
 # Which fields each live key draws on, so a report can mark the families that score it circularly.
-# Kept in step with the functions above by the drift test in `test_encoding_strategies`.
 FIELDS_BY_STRATEGY[LIVE_KEY_NAME] = frozenset({"name", "url", "title", "value"})
 FIELDS_BY_STRATEGY[LIVE_NATIVE_KEY_NAME] = frozenset({"name", "value", "role_description"})

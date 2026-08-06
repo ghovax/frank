@@ -51,19 +51,15 @@ import { closePermissionNotification, notifyPermissionRequest, setPermissionNoti
 import { swallowed } from "@/lib/swallowed";
 import { errorMessage } from "@/lib/errors";
 
-// A Chakra Box that is also a motion component, so the right panel region can
-// animate its open/close (opacity + slide) exactly like the history sidebar on
-// the left — without losing its flex-layout props.
+// A Chakra Box that is also a motion component, so the right panel region can animate its open/close (opacity + slide) exactly like the history sidebar on the left — without losing its flex-layout props.
 const MotionBox = motion.create(Box);
 
-// The panels that can share the right-hand region. Two so far: the terminal/background pair,
-// and the work this workspace's conversations have delegated to other sessions.
+// The panels that can share the right-hand region.
 export type SidePanelKey = "background" | "delegated";
 
 const MAXIMUM_OPEN_SIDE_PANELS = 2;
 
-// One shared empty set for a caller that tracks no unread completions, so the tree panel is
-// not handed a fresh Set on every render and made to re-render for it.
+// One shared empty set for a caller that tracks no unread completions, so the tree panel is not handed a fresh Set on every render and made to re-render for it.
 const EMPTY_UNSEEN_COMPLETIONS: Set<string> = new Set();
 
 
@@ -72,35 +68,23 @@ interface ChatPanelProps {
   agents: AgentSummary[];
   agentCard?: AgentCard | null;
   onAgentChange: (agent: string) => void;
-  // When set, the workspace opens with the Settings dialog already showing this section
-  // (the Workspaces-home cog links here via `?settings=…`).
+  // When set, the workspace opens with the Settings dialog already showing this section (the Workspaces-home cog links here via `?settings=…`).
   initialSettingsSection?: string;
   initialSessionId: string | null;
-  // The session's display title (LLM-generated once the conversation has one),
-  // shown in the top bar. Absent until the session names itself.
+  // The session's display title (LLM-generated once the conversation has one), shown in the top bar.
   sessionTitle?: string;
   initialInputDraft?: string;
-  // Deletes the session by id (aborts it, drops its tasks and record, then routes
-  // the user back to a blank chat). Absent when there is no active session.
+  // Deletes the session by id (aborts it, drops its tasks and record, then routes the user back to a blank chat).
   onDeleteSession?: (sessionId: string) => void;
-  // Every session the client knows about, for the delegated-work panel — which needs the whole
-  // list, not just this conversation, because what it draws is exactly the relationships
-  // *between* sessions. The panel filters to the open workspace itself.
+  // Every session the client knows about, for the delegated-work panel — which needs the whole list, not just this conversation, because what it draws is exactly the relationships *between* sessions.
   sessions?: SessionEntry[];
-  // Sessions that finished while you were looking elsewhere, so a row in the panel carries the
-  // same unread mark it carries in the sidebar.
+  // Sessions that finished while you were looking elsewhere, so a row in the panel carries the same unread mark it carries in the sidebar.
   unseenCompletions?: Set<string>;
-  // The conversation the sidebar has selected — this one, or the one that created it. The
-  // delegated-work panel is about that conversation, so reading a delegated session does not
-  // change what the panel is showing out from under the click that opened it.
+  // The conversation the sidebar has selected — this one, or the one that created it.
   rootSessionId?: string | null;
-  // Opens a session from the panel. The page owns which conversation is open (it is in the
-  // URL), so the panel asks rather than switches.
+  // Opens a session from the panel.
   onResumeSession?: (entry: SessionEntry) => void;
-  // Which side panels are open, and how wide the region is. Held by the page rather than here
-  // because this component is remounted whenever the conversation changes — so a panel opened
-  // to pick a delegated session closed the moment it was used, which is the one gesture it
-  // exists for. Opening a conversation should change the transcript and nothing else.
+  // Which side panels are open, and how wide the region is.
   openSidePanels: SidePanelKey[];
   onOpenSidePanelsChange: (panels: SidePanelKey[]) => void;
   sidePanelWidth: number;
@@ -118,13 +102,9 @@ interface ChatPanelProps {
   onSandboxEnforceChange?: (enforce: SandboxEnforce) => void;
   worktreeStrategy?: WorktreeStrategy;
   onWorktreeStrategyChange?: (strategy: WorktreeStrategy) => void | Promise<void>;
-  // Whether this panel is ready to hold a conversation. Distinct from whether the daemon is
-  // reachable: it is also false for the moment at startup before the active session is known,
-  // which is a wait, not a failure.
+  // Whether this panel is ready to hold a conversation.
   isConnected?: boolean;
-  // Whether the daemon itself is unreachable — the one state with a remedy, and the only one
-  // that earns the error screen. Kept apart from `isConnected` because conflating them showed
-  // "not connected" every time the session list was merely still loading.
+  // Whether the daemon itself is unreachable — the one state with a remedy, and the only one that earns the error screen.
   connectionLost?: boolean;
   // Asks the page to fetch everything a lost daemon took away.
   onReconnect?: () => void;
@@ -141,8 +121,7 @@ interface ChatPanelProps {
 
 type TimelineItem =
   | { kind: "message"; message: ChatMessage }
-  // A tool_group with no messages is a reasoning ("thinking") phase. `thinkingTurns`
-  // records whether reasoning exists so a standalone Thinking row can be retained.
+  // A tool_group with no messages is a reasoning ("thinking") phase.
   | { kind: "tool_group"; id: string; messages: ChatMessage[]; thinkingTurns: number };
 
 function folderDisplayName(workingDirectory?: string): string {
@@ -154,15 +133,9 @@ function folderDisplayName(workingDirectory?: string): string {
 function timelineItems(messages: ChatMessage[]): TimelineItem[] {
   const items: TimelineItem[] = [];
   let index = 0;
-  // The first reasoning phase seen since the last non-thinking, non-tool row. It
-  // belongs to the tool batch it leads into: its id keys the group so the
-  // tools-less "thinking" heading and the tool group it becomes are the SAME
-  // element — the tools stream into the existing row instead of one row being
-  // swapped for another (which would flash a remount). A prose or user row that
-  // isn't a tool group discards it.
+  // The first reasoning phase seen since the last non-thinking, non-tool row.
   let pendingThinkingId: string | null = null;
-  // Count reasoning messages so a tools-less Thinking group can be distinguished from
-  // an empty group.
+  // Count reasoning messages so a tools-less Thinking group can be distinguished from an empty group.
   let pendingThinkingTurns = 0;
   while (index < messages.length) {
     const message = messages[index];
@@ -188,17 +161,12 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
     }
 
     const toolMessages: ChatMessage[] = [];
-    // The leading reasoning that led into this batch keys the group (stable from
-    // the pre-tool "thinking" heading onward). Reasoning phases are tallied from the
-    // leading ones plus any interleaved between this group's calls.
+    // The leading reasoning that led into this batch keys the group (stable from the pre-tool "thinking" heading onward).
     const groupKey = pendingThinkingId;
     let thinkingTurns = pendingThinkingTurns;
     pendingThinkingId = null;
     pendingThinkingTurns = 0;
-    // Gather contiguous tool calls. Reasoning ("thinking") is hidden from the
-    // timeline, so it must not split a run of tool calls either — otherwise two
-    // calls issued in successive iterations (each preceded by its own thinking)
-    // would render as separate entries instead of one group.
+    // Gather contiguous tool calls.
     while (index < messages.length) {
       const next = messages[index];
       if (next.role === "tool_call") {
@@ -213,16 +181,13 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
     }
     items.push({
       kind: "tool_group",
-      // Prefer the leading thinking id so the key is stable across the
-      // thinking-to-tools transition; fall back to the first tool otherwise.
+      // Prefer the leading thinking id so the key is stable across the thinking-to-tools transition; fall back to the first tool otherwise.
       id: groupKey ?? toolMessages[0].id,
       messages: toolMessages,
       thinkingTurns,
     });
   }
   // A reasoning phase at the tail surfaces as the live "Thinking" status line.
-  // The item is emitted here unconditionally; ToolGroup renders it only while
-  // the turn is live (keepOpen), so settled reasoning leaves no row behind.
   if (pendingThinkingId) {
     items.push({ kind: "tool_group", id: pendingThinkingId, messages: [], thinkingTurns: pendingThinkingTurns });
   }
@@ -278,33 +243,20 @@ export function ChatPanel({
   const { messages, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, abort, dequeueMessage, outboxHold, deliveringMessage, grantedPermissionMode, retryOutbox, handlePermission, handleQuestion, declineQuestion, compact } =
     useChat(agent, initialSessionId, workingDirectory, worktreeStrategy, permissionMode, sessionRunning, workspaceId);
 
-  // Single source of truth for the working directory's validity and Git status —
-  // consumed by the workspace status bar (branch/dirty/ahead-behind) and passed to the
-  // composer as `directoryValid` for its send-gate.
+  // Single source of truth for the working directory's validity and Git status — consumed by the workspace status bar (branch/dirty/ahead-behind) and passed to the composer as `directoryValid` for its send-gate.
   const { status: directoryStatus, directoryValid } = useDirectoryStatus(workingDirectory);
-  // Whether the chat body has resolved enough to render without flashing: connected,
-  // and the working directory's validity determined (not mid-check). Until then we show
-  // a neutral placeholder instead of the empty welcome and a disabled-then-enabled input, so
-  // opening a workspace doesn't flicker.
+  // Whether the chat body has resolved enough to render without flashing: connected, and the working directory's validity determined (not mid-check).
   const trimmedWorkingDirectory = (workingDirectory ?? "").trim();
   const directoryPending = !!trimmedWorkingDirectory && (directoryStatus.checking || directoryStatus.path !== trimmedWorkingDirectory);
   const chatReady = isConnected && !directoryPending;
-  // The one condition under which the transcript is actually in the DOM. Everything that
-  // touches scroll position reads it, and so does the render — they used to disagree. The
-  // render waited for `chatReady`; the layout effect below and the resize observer watched
-  // only `isHistoryLoading`. So the frame that finally put messages on screen was one
-  // neither of them ran on: nothing pinned the view and nothing was left observing the
-  // content, and opening a session landed at the top of the whole conversation.
+  // The one condition under which the transcript is actually in the DOM.
   const transcriptVisible = chatReady && !isHistoryLoading;
 
-  // The workspace's locations, for the terminal location picker (and any location-aware
-  // panels). Refreshed live when the workspace config changes.
+  // The workspace's locations, for the terminal location picker (and any location-aware panels).
   const [workspaceLocations, setWorkspaceLocations] = useState<Location[]>([]);
   useEffect(() => {
     let cancelled = false;
-    // Resolving through a promise (even for the empty-workspace case) keeps the state
-    // update off the synchronous effect path, so an empty workspace clears locations
-    // on the next microtask rather than mid-render.
+    // Resolving through a promise (even for the empty-workspace case) keeps the state update off the synchronous effect path, so an empty workspace clears locations on the next microtask rather than mid-render.
     const load = () => {
       const request = workspaceId ? getWorkspace(workspaceId) : Promise.resolve(null);
       request.then((workspace) => { if (!cancelled) setWorkspaceLocations(workspace?.locations ?? []); }).catch((caught) => swallowed({ component: "chat-panel", operation: "read a workspace" }, caught));
@@ -314,9 +266,7 @@ export function ChatPanel({
     return () => { cancelled = true; unsubscribe(); };
   }, [workspaceId]);
 
-  // On mount, fetch the stored permission mode from the server settings. This
-  // overrides the "default" fallback when no session is active, so the user's
-  // last choice persists across page reloads and new sessions.
+  // On mount, fetch the stored permission mode from the server settings.
   useEffect(() => {
     if (initialSessionId) return;
     let cancelled = false;
@@ -325,38 +275,27 @@ export function ChatPanel({
       setPermissionModeState(settings.permission_mode);
     }).catch((caught) => swallowed({ component: "chat-panel", operation: "read the settings" }, caught));
     return () => { cancelled = true; };
-  // Only run when there is no session — once the session is set, the session's own
-  // permission_mode is authoritative.
+  // Only run when there is no session — once the session is set, the session's own permission_mode is authoritative.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSessionId]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
-  // "Following" the bottom. Released the moment the user scrolls up and resumed
-  // only when they return to the bottom — so auto-scroll never grabs them.
+  // "Following" the bottom.
   const isPinnedRef = useRef(true);
   const lastScrollTopRef = useRef(0);
   const onStreamingChangeRef = useRef(onStreamingChange);
-  // Snapshot of the previous layout pass. Comparing the first key and the count
-  // tells a *top* prepend (an older page loading in) from a *bottom* append (a new
-  // turn), so the former can preserve the reader's exact viewport instead of
-  // jumping. Seeded on the first non-loading pass.
+  // Snapshot of the previous layout pass.
   const scrollMetricsRef = useRef({ scrollHeight: 0, firstKey: "", count: 0 });
   const notifiedSessionIdRef = useRef<string | null>(null);
   const backgroundPanelOpen = openSidePanels.includes("background");
   const delegatedPanelOpen = openSidePanels.includes("delegated");
   const { colorMode, toggleColorMode } = useColorMode();
-  // Whether the transcript is scrolled to (or near) the bottom. Drives the floating
-  // "jump to latest" affordance so a reader who scrolled up to read history can
-  // return to the live tail in one click instead of scrolling all the way down.
+  // Whether the transcript is scrolled to (or near) the bottom.
   const [isAtBottom, setIsAtBottom] = useState(true);
-  // A strict at-bottom flag (small threshold) that drives the transcript's bottom fade:
-  // the content fades above the composer only while there is more below the fold, and the
-  // fade lifts the moment the reader reaches the bottom so the last line is never dimmed.
+  // A strict at-bottom flag (small threshold) that drives the transcript's bottom fade: the content fades above the composer only while there is more below the fold, and the fade lifts the moment the reader reaches the bottom so the last line is never dimmed.
   const [transcriptPinned, setTranscriptPinned] = useState(true);
-  // Top-bar surfaces: the settings dialog, the delete-session confirmation, and the
-  // background-processes sheet all open from the persistent bar above the transcript.
-  // Open Settings on mount when the workspace was entered with `?settings=<section>`.
+  // Top-bar surfaces: the settings dialog, the delete-session confirmation, and the background-processes sheet all open from the persistent bar above the transcript.
   const validInitialSection: SettingsSection | null =
     initialSettingsSection === "general" || initialSettingsSection === "locations"
       || initialSettingsSection === "agents" || initialSettingsSection === "connection"
@@ -388,9 +327,7 @@ export function ChatPanel({
     onOpenSidePanelsChange([...openSidePanels.filter((openPanel) => openPanel !== panel), panel]);
   }, [openSidePanels, onOpenSidePanelsChange]);
 
-  // Pinned == the viewport is at (or within a hair of) the bottom. That single
-  // fact drives everything: pinned means follow new content, unpinned means the
-  // reader has scrolled up to read history and must never be pulled back down.
+  // Pinned == the viewport is at (or within a hair of) the bottom.
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -398,9 +335,7 @@ export function ChatPanel({
     const atBottom = distanceFromBottom <= 8;
     isPinnedRef.current = atBottom;
     setTranscriptPinned(atBottom);
-    // A larger threshold for showing the jump button than for "pinned": the button
-    // should not flash for a hair of scroll, but pinning must stay strict so the
-    // live tail never fights a reader who nudged up a pixel.
+    // A larger threshold for showing the jump button than for "pinned": the button should not flash for a hair of scroll, but pinning must stay strict so the live tail never fights a reader who nudged up a pixel.
     setIsAtBottom(distanceFromBottom <= 120);
     lastScrollTopRef.current = container.scrollTop;
   }, []);
@@ -420,8 +355,7 @@ export function ChatPanel({
   }, []);
 
   const handleSend = useCallback((text: string, dataParts?: Record<string, unknown>[]) => {
-    // Which agent runs is never assumed. A session cannot be created without one, and there
-    // is no default to reach for, so an unchosen agent is asked for rather than guessed at.
+    // Which agent runs is never assumed.
     if (!agent && !initialSessionId) {
       toaster.create({
         type: "error",
@@ -432,21 +366,13 @@ export function ChatPanel({
       return undefined;
     }
     scrollToBottom();
-    // Whether this can be sent at all is `useChat`'s to answer, not the composer's. It used to
-    // be decided here — from `messages`, one commit stale, through a ref — and passed down as a
-    // flag; a second caller of `send` a few lines below never passed it, and the flag itself
-    // was read inside a branch a parked session never reaches.
+    // Whether this can be sent at all is `useChat`'s to answer, not the composer's.
     const result = send(text, dataParts);
     scrollToBottom();
     return result;
   }, [agent, initialSessionId, scrollToBottom, send, translation]);
 
-  // A session that was clamped says so, once, and the chip follows the truth rather than the
-  // request. Silence here is what made the control feel broken: the mode read "Autonomous"
-  // while the session stopped to ask, because its agent profile capped it.
-  //
-  // Derived during render rather than assigned from an effect: the granted mode is not a second
-  // source of truth to be copied into the first, it *is* the mode once the daemon has answered.
+  // A session that was clamped says so, once, and the chip follows the truth rather than the request.
   const effectivePermissionMode = grantedPermissionMode ?? permissionMode;
   const announcedClampRef = useRef<string>("");
   useEffect(() => {
@@ -461,19 +387,14 @@ export function ChatPanel({
     });
   }, [grantedPermissionMode, onPermissionModeChange, translation]);
 
-  // The session's goal, read from the session list rather than kept here. The daemon already
-  // pushes a change to every client the moment a worker reports one, and the list is what that
-  // push refreshes — a second copy in this component could only ever be the same fact, one
-  // render later and wrong whenever the two disagreed.
+  // The session's goal, read from the session list rather than kept here.
   const activeGoal = useMemo(
     () => sessions.find((entry) => entry.sessionId === sessionId)?.goal ?? null,
     [sessions, sessionId],
   );
   const handleClearGoal = useCallback(() => {
     if (!sessionId) return;
-    // Optimism would be a lie here: whether the goal was still there to call off is the
-    // session's answer, and a turn in flight keeps running either way. So the bar clears when
-    // the daemon says it cleared, which is the same push that put it on screen.
+    // Optimism would be a lie here: whether the goal was still there to call off is the session's answer, and a turn in flight keeps running either way.
     clearSessionGoal(sessionId).catch((caught) =>
       swallowed({ component: "chat-panel", operation: "call off the goal" }, caught));
   }, [sessionId]);
@@ -489,11 +410,7 @@ export function ChatPanel({
     onSessionCreated(sessionId);
   }, [sessionId, onSessionCreated]);
 
-  // The single owner of scroll position. It runs before paint on every content
-  // change and classifies it: a *top* prepend (an older page loading in) preserves
-  // the reader's exact viewport by the height delta; everything else (a new turn,
-  // streamed text) follows the bottom, but only while pinned. This one effect
-  // replaces the old anchor + rAF tangle that fought itself and yanked the reader.
+  // The single owner of scroll position.
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
     if (!container || !transcriptVisible) return;
@@ -502,10 +419,7 @@ export function ChatPanel({
     const previous = scrollMetricsRef.current;
     const prepended = count > previous.count && firstKey !== previous.firstKey && previous.count > 0;
     if (prepended) {
-      // Older messages landed above the viewport — shift down by exactly how much
-      // taller the content got, so what the reader is looking at stays fixed (and a
-      // bottom-pinned view stays pinned). This is what makes background paging
-      // invisible.
+      // Older messages landed above the viewport — shift down by exactly how much taller the content got, so what the reader is looking at stays fixed (and a bottom-pinned view stays pinned).
       const delta = container.scrollHeight - previous.scrollHeight;
       if (delta !== 0) container.scrollTop = container.scrollTop + delta;
     } else if (isPinnedRef.current) {
@@ -515,10 +429,7 @@ export function ChatPanel({
     lastScrollTopRef.current = container.scrollTop;
   }, [messages, queuedMessages, transcriptVisible]);
 
-  // Late-growing content (images, streamed text) keeps the bottom in view
-  // — but only while pinned, so a reader who scrolled up is never dragged down.
-  // Re-runs when the transcript container actually mounts (it is absent during the
-  // loading/empty states), otherwise the observer would never attach.
+  // Late-growing content (images, streamed text) keeps the bottom in view — but only while pinned, so a reader who scrolled up is never dragged down.
   const timelineMounted = transcriptVisible && !historyError && messages.length > 0;
   useEffect(() => {
     const content = scrollContentRef.current;
@@ -534,8 +445,7 @@ export function ChatPanel({
     return () => observer.disconnect();
   }, [timelineMounted]);
 
-  // Follow the session the parent selected. A render-phase prop-change adjustment (the
-  // same pattern as previousActiveSteps below) rather than an effect, to stay lint-clean.
+  // Follow the session the parent selected.
   const [previousInitialSession, setPreviousInitialSession] = useState({ id: initialSessionId, permissionMode: initialPermissionMode });
   if (initialSessionId !== previousInitialSession.id || initialPermissionMode !== previousInitialSession.permissionMode) {
     setPreviousInitialSession({ id: initialSessionId, permissionMode: initialPermissionMode });
@@ -547,36 +457,18 @@ export function ChatPanel({
     isPinnedRef.current = true;
   }, [initialSessionId]);
 
-  // New content is followed by the layout effect above (only while pinned); this
-  // surfaces the streaming flag to the parent. The initial jump-to-bottom is also
-  // handled there: pinned starts true, so the first post-load pass lands at the
-  // bottom instantly. The turn-end chime lives further down, where it can see
-  // whether anything is waiting on the user.
+  // New content is followed by the layout effect above (only while pinned); this surfaces the streaming flag to the parent.
   useEffect(() => {
     onStreamingChangeRef.current?.(isStreaming);
   }, [isStreaming]);
 
-  // Two things at once, because the control is one control. Without a session this only
-  // chooses what the next one starts under; with a session it also changes *that* session,
-  // which the daemon applies to the turn in flight. The chip moves immediately and is
-  // corrected if the server clamps the mode (a child is never looser than its parent).
+  // Two things at once, because the control is one control.
   async function handlePermissionModeChange(nextMode: PermissionMode) {
     setPermissionModeState(nextMode);
     onPermissionModeChange?.(nextMode);
     // Persist to server settings so it survives across sessions.
     saveSettings({ permission_mode: nextMode }).catch((caught) => swallowed({ component: "chat-panel", operation: "save the settings" }, caught));
     // And raise the agent's own ceiling to match, first.
-    //
-    // A card names a mode to declare the loosest its agent may run at, and the daemon meets any
-    // request against it — so an agent pinned at `default` silently swallowed every choice
-    // looser than that: the chip moved, the server clamped it straight back, and nothing said
-    // why. Between a ceiling written once in a settings panel and a person choosing a mode with
-    // the conversation in front of them, the person is the one to believe.
-    //
-    // Awaited before the session call, because that call is where the clamp is applied: saving
-    // afterwards would let this one be clamped by the ceiling it was about to replace. Saving
-    // the card also resets the live runtimes, so the next turn builds against the new ceiling
-    // rather than the cached one.
     try {
       await saveAgentConfiguration(agent, { permission_mode: nextMode }, workingDirectory);
     } catch (caught) {
@@ -586,16 +478,11 @@ export function ChatPanel({
     setSessionPermissionMode(sessionId, nextMode)
       .then((applied) => {
         setPermissionModeState(applied);
-        // Told to the parent as well, and this is the half that was missing. The server clamps
-        // a request against the parent session and the agent profile's ceiling, so what took
-        // is not always what was asked for — and only the chip was being corrected. The page
-        // went on holding the unclamped value, which is what a *new* session would then start
-        // under: the one place the difference is silently consequential.
+        // Told to the parent as well, and this is the half that was missing.
         if (applied !== nextMode) onPermissionModeChange?.(applied);
       })
       .catch((caught) => {
-        // The session kept the mode it had, so the chip must go back to saying so rather
-        // than showing a policy that is not being enforced.
+        // The session kept the mode it had, so the chip must go back to saying so rather than showing a policy that is not being enforced.
         setPermissionModeState(permissionMode);
         onPermissionModeChange?.(permissionMode);
         toaster.create({
@@ -614,14 +501,7 @@ export function ChatPanel({
 
   const currentFolderName = folderDisplayName(workingDirectory) || translation("thisFolder");
   const renderedTimeline = useMemo(() => timelineItems(messages), [messages]);
-  // Entrance animation is reserved for rows a *live turn* just appended at the
-  // bottom — never the initial load or a background history prepend, which arrive
-  // in bulk (and, for prepends, above the fold). The rule is purely positional and
-  // so immune to state-flag timing: a row animates only if its key has never been
-  // seen AND every row after it is also unseen (i.e. it is part of the trailing run
-  // of brand-new rows at the end of the list). The first population seeds the set
-  // with everything, so nothing animates on load. `enteredKeysRef` persists across
-  // renders; the panel remounts per session (page.tsx keys it), so it resets then.
+  // Entrance animation is reserved for rows a *live turn* just appended at the bottom — never the initial load or a background history prepend, which arrive in bulk (and, for prepends, above the fold).
   const timelineKeys = renderedTimeline.map((item) => (item.kind === "tool_group" ? item.id : item.message.id));
   const timelineSessionKey = initialSessionId ?? "__new__";
   const [timelineAnimationState, setTimelineAnimationState] = useState<{
@@ -640,12 +520,7 @@ export function ChatPanel({
       ? new Set(timelineAnimationState.seen)
       : new Set<string>();
     const nextAnimated = new Set<string>();
-    // Only when this is the same transcript with something added. When a turn ends, the
-    // snapshot replays it from the store and every row is rebuilt under a different id — the
-    // live tail numbers rows by position, the replay numbers them by message. Nothing has
-    // changed on screen, but no key survives, and treating that as "all new" re-animated the
-    // whole conversation: the flash after an answer lands, with the thinking row fading in
-    // again under the reply it already produced.
+    // Only when this is the same transcript with something added.
     const survived = timelineKeys.some((key) => previousSeen.has(key));
     if (previousSeen.size > 0 && survived) {
       for (let index = timelineKeys.length - 1; index >= 0; index -= 1) {
@@ -662,16 +537,12 @@ export function ChatPanel({
     });
     animatedKeys = nextAnimated;
   }
-  // Running shell commands drive the badge on the top-bar background-processes
-  // button, so a long-running bash call is visible without opening the sheet.
+  // Running shell commands drive the badge on the top-bar background-processes button, so a long-running bash call is visible without opening the sheet.
   const runningShellCount = messages.filter((message) =>
     message.role === "tool_call" && message.content === "bash" &&
     (message.meta?.status === "running" || message.meta?.status === "input_required")
   ).length;
-  // How many sessions the open conversation has delegated, at any depth — the dot on the
-  // delegated-work button. Counted against that conversation rather than the workspace, because
-  // that is what the panel behind the button shows: a button whose dot promises something the
-  // panel does not hold is a button that teaches you to ignore it.
+  // How many sessions the open conversation has delegated, at any depth — the dot on the delegated-work button.
   const delegatedSessionCount = useMemo(() => {
     if (!rootSessionId) return 0;
     const childrenOf = new Map<string, string[]>();
@@ -688,18 +559,14 @@ export function ChatPanel({
     }
     return total;
   }, [sessions, rootSessionId]);
-  // A compaction pass is live while its timeline marker is still "running" — drives
-  // the Compact control's in-progress state (spinner + disabled).
+  // A compaction pass is live while its timeline marker is still "running" — drives the Compact control's in-progress state (spinner + disabled).
   const isCompacting = messages.some(
     (message) => message.role === "compaction" && message.meta?.status === "running"
   );
   // "Reveal" opens the session's working directory in the OS file manager.
   const revealPath = (workingDirectory || "").trim();
 
-  // "Try again" on a turn-error box re-runs the turn that failed by resending the
-  // most recent user message. The failed turn produced no lasting state, so a
-  // plain resend is the correct retry (a rate limit or provider blip clears on its
-  // own; a rejected request goes back through the same path).
+  // "Try again" on a turn-error box re-runs the turn that failed by resending the most recent user message.
   const handleRetry = useCallback(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       const candidate = messages[index];
@@ -710,18 +577,7 @@ export function ChatPanel({
     }
   }, [messages, send]);
 
-  // The first pending input-required prompt (an ask_user question or a permission
-  // approval), surfaced as an overlay above the input. Both live outside the tool
-  // card so a pending decision always grabs attention at the bottom of the chat,
-  // and resolving one reveals the next. A question takes precedence on the same
-  // card, though in practice a card carries only one.
-  //
-  // A tool call awaiting approval pauses the turn. While it is outstanding the composer stays
-  // open and queues (`useChat` holds anything typed until the decision is made), and Stop
-  // auto-denies it. Deliberately not gated on `isStreaming`: a turn parked on a permission is
-  // *not* running — the daemon sleeps the session, because the whole turn is checkpointed and
-  // holding an interpreter to wait for a person is what sleeping exists to avoid. So the one
-  // moment a decision must be shown is the moment the turn stops.
+  // The first pending input-required prompt (an ask_user question or a permission approval), surfaced as an overlay above the input.
   let pendingPrompt: (
     | { kind: "question"; question: ToolQuestion }
     | { kind: "permission"; permission: ToolPermission; title: string; detail?: string; detailPaths?: string[]; command?: string; arguments?: Record<string, unknown> }
@@ -743,20 +599,11 @@ export function ChatPanel({
         pendingPrompt = {
           kind: "permission",
           permission,
-          // Two different answers to two different questions, and a person deciding wants
-          // both: the title says what the agent is trying to do and why it wants to (the
-          // model's own `explanation`, via the same display helper the tool card uses), and
-          // the detail says what made this stop for approval.
+          // Two different answers to two different questions, and a person deciding wants both: the title says what the agent is trying to do and why it wants to (the model's own `explanation`, via the same display helper the tool card uses), and the detail says what made this stop for approval.
           title: getToolCallDisplay(name, args, tToolDisplay).label,
-          // The harness's structured reason wins, because it is the only one this interface
-          // can say in the reader's language. It used to send a finished English sentence —
-          // "Sandbox approval required: this command reads outside the working directory
-          // (/a, /b)." — which no catalogue could reach, so a Japanese window rendered an
-          // English clause with a colon and a parenthetical inside its own layout.
+          // The harness's structured reason wins, because it is the only one this interface can say in the reader's language.
           detail: permissionReasonText(permission.reason, translation) || permission.explanation || undefined,
-          // The paths travel as data, so the overlay lists them. Folding them into the
-          // sentence would join a set with a separator this component chose, which is a
-          // locale's decision — and would render several values as one.
+          // The paths travel as data, so the overlay lists them.
           detailPaths: permissionReasonPaths(permission.reason),
           command: command || undefined,
           arguments: args,
@@ -765,13 +612,7 @@ export function ChatPanel({
       }
     }
   }
-  // Audio + system-notification side of a pending decision. The attention cue
-  // plays for the first prompt in a turn, while later prompts stay silent; a
-  // permission prompt additionally raises a system notification carrying the
-  // overlay's own primary action ("Allow once") as its action button — shown
-  // only while the window is unfocused, and retracted the moment the request
-  // resolves or is superseded, so nothing stale lingers in the notification
-  // center. Strings reuse the overlay's, so the two surfaces can never drift.
+  // Audio + system-notification side of a pending decision.
   const tPermission = useTranslations("PermissionOverlay");
   const pendingPermissionId = pendingPrompt?.kind === "permission" ? pendingPrompt.permission.requestId : "";
   const pendingQuestionId = pendingPrompt?.kind === "question" ? pendingPrompt.question.requestId : "";
@@ -789,12 +630,7 @@ export function ChatPanel({
     playAttentionSound();
   }, [isStreaming, pendingPromptId]);
 
-  // The turn-end chime, on the transition to *actually finished* — the moment the composer
-  // goes back from Stop to Send. A turn that pauses for a permission or a question is not a
-  // turn that ended: `isStreaming` drops while it waits, so this used to fire the end cue and
-  // then the attention cue a beat later, two sounds for one event, several times a turn.
-  // Waiting counts as still running, so the transition is still there to catch when the answer
-  // comes and the turn really does finish.
+  // The turn-end chime, on the transition to *actually finished* — the moment the composer goes back from Stop to Send.
   const wasRunningRef = useRef(false);
   useEffect(() => {
     const running = isStreaming || !!pendingPromptId;
@@ -813,8 +649,7 @@ export function ChatPanel({
       actionLabel: tPermission("allowOnce"),
     });
   }, [pendingPermissionId, pendingPermissionBody, tPermission]);
-  // The notification's action button resolves the request exactly like the
-  // overlay's primary button would.
+  // The notification's action button resolves the request exactly like the overlay's primary button would.
   useEffect(() => {
     setPermissionNotificationHandler((requestId) => handlePermission(requestId, "allow_once"));
     return () => setPermissionNotificationHandler(null);
@@ -826,8 +661,7 @@ export function ChatPanel({
     const startWidth = sidePanelWidth;
 
     function handlePointerMove(moveEvent: globalThis.PointerEvent) {
-      // Clamp to the same bounds the region's CSS enforces (minW 360 / maxW 80vw,
-      // capped at 900) so the drag can never fight the styled limits.
+      // Clamp to the same bounds the region's CSS enforces (minW 360 / maxW 80vw, capped at 900) so the drag can never fight the styled limits.
       const nextWidth = Math.min(Math.min(900, Math.round(window.innerWidth * 0.8)), Math.max(360, startWidth + startX - moveEvent.clientX));
       onSidePanelWidthChange(nextWidth);
     }
@@ -846,9 +680,7 @@ export function ChatPanel({
   }, [sidePanelWidth, onSidePanelWidthChange]);
 
   return (
-    // Every profile name the transcript shows is resolved from this one catalogue, so a tool
-    // call cannot announce `code-investigator` while the sidebar beside it says "Code
-    // investigator" about the same agent.
+    // Every profile name the transcript shows is resolved from this one catalogue, so a tool call cannot announce `code-investigator` while the sidebar beside it says "Code investigator" about the same agent.
     <AgentNamesProvider agents={agents}>
     <Flex h="100%" minW={0} position="relative">
       <Flex direction="column" flex={1} minW={0} h="100%">
@@ -944,9 +776,7 @@ export function ChatPanel({
         <Box position="relative" flex={1} minH={0} display="flex" flexDirection="column">
         <Box ref={scrollContainerRef} flex={1} minH={0} display="flex" flexDirection="column" overflowY="auto" px={4} py={3} onScroll={handleScroll} css={transcriptPinned ? scrollFade : scrollFadeTopBottom} style={{ overflowAnchor: "none", scrollbarGutter: "stable both-edges" }}>
           {connectionLost ? (
-            // A lost daemon used to be a blank pane and a dead composer — the interface simply
-            // stopped working, and said nothing. It is a state worth naming, and the only state
-            // here whose remedy is a single button, so it gets one.
+            // A lost daemon used to be a blank pane and a dead composer — the interface simply stopped working, and said nothing.
             <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2}>
               <EmptyState.Root>
                 <EmptyState.Content>
@@ -985,12 +815,7 @@ export function ChatPanel({
               </EmptyState.Root>
             </Flex>
           ) : (
-            // Empty welcome and message timeline cross-fade properly, so sending the first message
-            // never flashes. `mode="popLayout"` pops the exiting welcome out of flow (position it
-            // absolute) so the timeline — carrying the just-sent message — takes its place at once
-            // and fades in while the welcome fades out over it; there is no blank frame between the
-            // two (which `mode="wait"` left). `initial={false}` keeps an existing session's load
-            // un-animated: only the transition from empty to timeline fades.
+            // Empty welcome and message timeline cross-fade properly, so sending the first message never flashes.
             <AnimatePresence mode="popLayout" initial={false}>
               {messages.length === 0 ? (
                 <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15, ease: "easeOut" }} style={{ width: "100%", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -1069,9 +894,7 @@ export function ChatPanel({
                     {renderedTimeline.map((item, itemIndex) => {
                         const isLastItem = itemIndex === renderedTimeline.length - 1;
                         const key = item.kind === "tool_group" ? item.id : item.message.id;
-                        // A tools-less group is a reasoning phase; it stays in the transcript as a
-                        // persistent "Thinking" row (its own record of the planning that happened),
-                        // so it is only skipped if it somehow carries neither tools nor thinking.
+                        // A tools-less group is a reasoning phase; it stays in the transcript as a persistent "Thinking" row (its own record of the planning that happened), so it is only skipped if it somehow carries neither tools nor thinking.
                         if (item.kind === "tool_group" && item.messages.length === 0 && item.thinkingTurns === 0) {
                           return null;
                         }
@@ -1087,13 +910,7 @@ export function ChatPanel({
                             streaming={isStreaming && isLastItem}
                           />
                         );
-                        // The assistant message streams its content in (the markdown animates
-                        // token by token), so its wrapper stays a plain, stable row — an entrance
-                        // animation on top of the streaming text would fight it. User messages and
-                        // tool-call groups, though, are complete the moment they appear, so they get
-                        // a single gentle fade. `animatedKeys` limits it to rows a live turn
-                        // just appended (never load or history), and `initial` only fires on mount,
-                        // so a tool group fades once — not again as its calls fill in.
+                        // The assistant message streams its content in (the markdown animates token by token), so its wrapper stays a plain, stable row — an entrance animation on top of the streaming text would fight it.
                         const isAssistantMessage = item.kind === "message" && item.message.role === "assistant";
                         if (isAssistantMessage) {
                           return (
@@ -1224,10 +1041,7 @@ export function ChatPanel({
           onSend={handleSend}
           onAbort={abort}
           isStreaming={isStreaming}
-          // Two reasons the composer is closed, kept apart because they read as different
-          // things to the person looking at it. One boolean for both meant a decision prompt
-          // reported "connecting to the server", which is not what is happening and sends
-          // somebody to check their network instead of answering the question in front of them.
+          // Two reasons the composer is closed, kept apart because they read as different things to the person looking at it.
           disabled={!isConnected}
           awaitingDecision={!!pendingPrompt}
           sessionId={sessionId}
@@ -1278,10 +1092,7 @@ export function ChatPanel({
           position={{ base: "absolute", md: "relative" }}
           inset={{ base: 0, md: "auto" }}
           zIndex={{ base: 3, md: "auto" }}
-          // Same slide + fade (and timing) as the history sidebar on the left, mirrored:
-          // the two edges of the window open and close as one family. Only transform and
-          // opacity animate — the width is applied instantly, so the resize drag never
-          // fights a tween and the transcript reflows exactly once per toggle.
+          // Same slide + fade (and timing) as the history sidebar on the left, mirrored: the two edges of the window open and close as one family.
           initial={{ opacity: 0, x: 24 }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: 24 }}

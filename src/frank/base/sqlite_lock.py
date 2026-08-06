@@ -42,16 +42,10 @@ _Result = TypeVar("_Result")
 _sqlite_write_lock = threading.Lock()
 _sqlite_lock_path: Path | None = None
 
-# In-process serialization for loop-side (async) history.db writers. Coroutines await
-# this instead of blocking a thread-pool worker on the threading lock while they wait,
-# so a burst of concurrent writers can never exhaust the default executor. Created
-# lazily on the running loop.
+# In-process serialization for loop-side (async) history.db writers.
 _async_write_lock: asyncio.Lock | None = None
 
-# background.db — background-job bookkeeping. A dedicated lock, deliberately separate
-# from the history.db lock: background.db is a different database written only from the
-# event loop, and sharing the history lock (which the async task store holds across an
-# await) would deadlock the loop the instant a background-job write raced a turn save.
+# background.db — background-job bookkeeping.
 _background_write_lock = threading.Lock()
 _background_lock_path: Path | None = None
 

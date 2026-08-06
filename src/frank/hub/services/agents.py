@@ -177,10 +177,7 @@ def _apply_agent_configuration_update(
         updated.provider = request.provider or None
     if request.reasoning_effort is not None:
         updated.reasoning_effort = request.reasoning_effort
-    # `model_fields_set`, not `is not None`, because `null` here means something: clear the
-    # ceiling. A profile names a mode to declare the loosest its agent may run at, and "no
-    # ceiling" is a state the editor has to be able to return to — with `is not None` it could
-    # only ever set one, so a ceiling was a one-way door.
+    # `model_fields_set`, not `is not None`, because `null` here means something: clear the ceiling.
     if "permission_mode" in request.model_fields_set:
         updated.permission_mode = request.permission_mode
     if request.tools_enabled is not None:

@@ -12,26 +12,17 @@ itself is a message to something, and the something is worth naming. Grouped by 
 """
 from __future__ import annotations
 
-# Frank-defined. Optional override for the outbound proxy the fetch/download tools route through;
-# falls back to the standard proxy variables below when unset.
+# Frank-defined.
 FETCH_PROXY = "FETCH_PROXY"
 
-# Set by a worker into its own environment, so that anything it spawns which is not a confined
-# tool child — an MCP server over stdio, a helper — carries the session's identity. The one
-# reader that matters is the `frank` CLI: run from inside a session, `frank create` makes a
-# *child* of that session rather than an orphan outside the tree, the reaper and the permission
-# clamp. A confined tool child does not inherit it, because the confinement builds its
-# environment from an allowlist rather than passing the parent's through.
+# Set by a worker into its own environment, so that anything it spawns which is not a confined tool child — an MCP server over stdio, a helper — carries the session's identity.
 SESSION_ID = "SESSION_ID"
 
-# Set for a tool child, and only where the session has a toolbox: the two the package manager
-# reads to install into *this session's* profile rather than the machine's. See
-# `frank.base.toolbox` for why the environment answers this instead of a flag the agent carries.
+# Set for a tool child, and only where the session has a toolbox: the two the package manager reads to install into *this session's* profile rather than the machine's.
 XDG_STATE_HOME = "XDG_STATE_HOME"
 NIX_CONFIG = "NIX_CONFIG"
 
-# Outbound proxy, host-provided. Consulted so server-initiated requests (A2A file fetches, push
-# notifications) honour the same egress path as the rest of the process.
+# Outbound proxy, host-provided.
 HTTPS_PROXY = "HTTPS_PROXY"
 ALL_PROXY = "ALL_PROXY"
 

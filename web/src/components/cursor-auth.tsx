@@ -12,21 +12,7 @@ import {
   type CursorAuthStatus,
 } from "@/lib/api";
 
-/**
- * Sign-in control for the experimental `cursor` subscription provider. Shared by the
- * Settings dialog and the model picker, exactly as its ChatGPT counterpart is.
- *
- * The two controls look alike on purpose — one button carrying the state, signed out
- * offering sign-in and signed in offering its reverse — because from here the two
- * subscriptions are the same idea, and only the server knows how differently they are
- * reached. Two differences do surface. Cursor's flow has no redirect, so nothing lands
- * back on this machine and there is no callback port to collide over: a sign-in cannot
- * fail at the start, only complete or time out. And there are no usage meters, because
- * Cursor reports no remaining allowance to a client — it says so only by refusing a turn.
- *
- * Completion is observed by polling: the frank daemon polls Cursor, and this polls the
- * daemon.
- */
+/** Sign-in control for the experimental `cursor` subscription provider. */
 export function CursorAuthControl({
   onStatusChange,
 }: {
@@ -77,8 +63,7 @@ export function CursorAuthControl({
       setAwaiting(true);
       const startedAt = Date.now();
       stopPolling();
-      // The server's own poll window is a few minutes wide; give up watching at the same
-      // point rather than leaving a spinner running against a flow that has already ended.
+      // The server's own poll window is a few minutes wide; give up watching at the same point rather than leaving a spinner running against a flow that has already ended.
       pollRef.current = window.setInterval(async () => {
         const next = await refresh().catch(() => null);
         if (next?.signed_in || Date.now() - startedAt > 300_000) {

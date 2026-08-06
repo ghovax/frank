@@ -95,27 +95,10 @@ def message_reasoning_text(message: BaseMessage) -> str:
     return _project_content_blocks(message, "reasoning", "reasoning")
 
 
-#: Where the provider's own reasoning lives on a LiteLLM message, in the form that same provider
-#: accepts back. `thinking_blocks` is Anthropic's shape — the thinking text with the **signature**
-#: Anthropic verifies cryptographically, plus `redacted_thinking` blobs it will not show anyone —
-#: and Bedrock, Vertex, Gemini, Copilot, Databricks and a dozen more routes read the same key.
-#: `reasoning_items` is the Responses shape: the encrypted item the model wrote and only the model
-#: can read.
-#:
-#: Both are opaque, and neither survives being turned into prose — which is what used to happen to
-#: them here: the text went out as `reasoning_content` and the signature went in the bin. That costs
-#: twice over. The model loses its own thinking at every tool hop and derives it again, and the
-#: prefix stops matching what the provider cached, because the reasoning *was* part of what it
-#: cached — so dropping it invalidates the conversation from that turn onward.
-#:
+#: Where the provider's own reasoning lives on a LiteLLM message, in the form that same provider accepts back.
 CARRIED_REASONING_KEYS = ("thinking_blocks", "reasoning_items")
 
-#: Which model wrote the carried reasoning. Stored beside it, because reasoning is only readable
-#: by the model that produced it: an Anthropic signature is verified against Anthropic's own key
-#: and a Responses item is encrypted to OpenAI's. Handing either to a different model is not a
-#: cache miss but a rejected request, and a session here can change model between turns. So the
-#: blob says who it belongs to, and :func:`carried_reasoning_for` hands back nothing when the
-#: reader is somebody else — the same call both the Codex CLI and OpenCode make.
+#: Which model wrote the carried reasoning.
 REASONING_MODEL_KEY = "reasoning_model"
 
 

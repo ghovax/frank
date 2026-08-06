@@ -40,38 +40,27 @@ class ToolContext:
     is :meth:`for_directory` producing a new value rather than an assignment nobody can see.
     """
 
-    # What every child process this call spawns is confined to, and the directory its
-    # `$WORKSPACE` resolves to. Resolved by the daemon at session creation and clamped there.
+    # What every child process this call spawns is confined to, and the directory its `$WORKSPACE` resolves to.
     sandbox: Profile = field(default_factory=Profile)
     workspace: str = ""
 
-    # Capability clients, built from the session's configuration. Absent means the user has
-    # not configured that provider, which each tool reports in its own words.
+    # Capability clients, built from the session's configuration.
     exa_client: Any = None
     mcp_manager: Any = None
     firecrawl_client: Any = None
     jina_api_key: str = ""
     proxy_url: str = ""
 
-    # How this session reaches its peers. Supplied by the worker, which is the layer that
-    # knows which session this is; the runtime deliberately carries no identity of its own.
+    # How this session reaches its peers.
     session_access: Any = None
 
-    # Which session this is, for the children that have to say. A shell command that reaches for
-    # the `frank` CLI creates a *child* of this session rather than an orphan, and it can only do
-    # that if it is told who its parent is. It arrives here rather than being read back out of
-    # the worker's own environment, which is the pattern this whole module exists to end: a
-    # process global is process-wide, and a worker legitimately runs two turns at once.
+    # Which session this is, for the children that have to say.
     session_id: str = ""
 
-    # The tools this session installed for itself, and where they live. `None` on a machine that
-    # cannot offer one, or when the person turned it off — and `None` is not a degraded toolbox:
-    # nothing is put on `PATH` and the agent is told nothing about installing anything.
+    # The tools this session installed for itself, and where they live.
     toolbox: Any = None
 
-    # Whether this is a second run of a command the operating system refused. The registry reads
-    # it to build the right kind of attempt: a first attempt takes no grant and cannot, so this
-    # flag is the only thing that can make a command run wider than its session.
+    # Whether this is a second run of a command the operating system refused.
     retrying: bool = False
 
     def child_environment(self, inherited: Optional[dict] = None) -> dict:

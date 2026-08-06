@@ -25,9 +25,7 @@ from tests.retrieval.evaluation import build_queries, evaluate_strategy, is_sepa
 from tests.retrieval.strategies import FIELD_SOURCES, LIVE_KEY_NAME, STRATEGIES, name_of
 
 
-# These assertions are about the browser key, so they load only browser corpora. Pooling the two
-# surfaces would score compositions on native windows that cannot supply a URL or a tooltip, which
-# would dilute exactly the fields under test.
+# These assertions are about the browser key, so they load only browser corpora.
 MEASURED_SURFACE = "web"
 
 
@@ -209,8 +207,7 @@ def test_the_role_signal_in_the_embedding_stays_too_weak_to_act_on(corpora):
             continue
         vectors = numpy.asarray(model.encode([build_text(element) or " " for element in elements],
                                              show_progress_bar=False), dtype=numpy.float32)
-        # One sample, used for both the matrix and the pairing below. Drawing them separately is
-        # the bug this test's docstring describes.
+        # One sample, used for both the matrix and the pairing below.
         vectors /= numpy.maximum(numpy.linalg.norm(vectors, axis=1, keepdims=True), 1e-9)
         similarity = vectors @ vectors.T
         same, different = [], []

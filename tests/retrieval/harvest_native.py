@@ -22,28 +22,13 @@ from tests.retrieval.corpus import Corpus, RecordedElement, write_corpus
 
 logger = logging.getLogger(__name__)
 
-# Applications worth recording if they are running: a file manager, a browser chrome, a terminal,
-# a settings window, an editor and a document viewer cover most of the shapes a native tree takes.
+# Applications worth recording if they are running: a file manager, a browser chrome, a terminal, a settings window, an editor and a document viewer cover most of the shapes a native tree takes.
 APPLICATIONS_TO_HARVEST = (
     "Finder", "Photos", "Terminal", "System Settings", "Code", "RStudio", "Claude", "Skim",
     "Reminders", "Anki",
 )
 
-# Attributes surveyed across 921 live elements and deliberately not recorded. The rule that
-# emerged is that coverage predicts nothing and *variation* predicts everything: `AXInvalid`
-# reaches a quarter of all elements and has exactly one distinct value, so it cannot tell any two
-# apart. The machine identifiers are the same failure as `id` and `class` on the browser, already
-# measured at -11 points. Kept here as a record so the survey does not have to be repeated.
-#
-#   ChromeAXNodeId    70% coverage, 639 distinct — a machine token, no words in it
-#   AXLanguage        70% coverage,   2 distinct — cannot discriminate
-#   AXInvalid         25% coverage,   1 distinct — cannot discriminate at all
-#   AXDOMIdentifier   10% coverage,  91 distinct — machine token
-#   AXIdentifier       9% coverage,  74 distinct — machine token, occasionally human
-#   AXPopupValue       5% coverage,   1 distinct — cannot discriminate
-#   AXFilename         1% coverage,  10 distinct — real content, too rare to matter here
-#   AXPlaceholderValue 0.4% coverage, 3 distinct — real prose, and the one worth revisiting:
-#                      it names empty text fields, which is exactly what a query looks for
+# Attributes surveyed across 921 live elements and deliberately not recorded.
 
 def harvest_application(surface: NativeSurface, application_name: str) -> Corpus | None:
     """Record one running application, or ``None`` if it is not running or has nothing to read.
