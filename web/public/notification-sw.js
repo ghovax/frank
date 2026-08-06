@@ -1,7 +1,4 @@
-// Service worker for actionable notifications (see src/lib/notify.ts). Its only
-// job is relaying notification clicks back to the app: an action button click
-// carries its action id, a body click carries "" — both are posted to every
-// window client along with the notification's data, and the window is focused.
+// Service worker whose only job is relaying notification clicks, with their action, back to the app.
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 
