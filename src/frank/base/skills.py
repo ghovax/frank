@@ -77,8 +77,7 @@ def enabled_skills(skills: list[Skill]) -> list[Skill]:
 
 
 def skills_for_agent(skills: list[Skill], allowed_names: list[str]) -> list[Skill]:
-    """The skills available to an agent: all of them by default, or only the
-    named subset if the agent restricts itself via its ``skills`` frontmatter."""
+    """The skills available to an agent: all of them, or the subset its ``skills`` front matter names."""
     if not allowed_names:
         return skills
     wanted = set(allowed_names)

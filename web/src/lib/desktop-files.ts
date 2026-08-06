@@ -1,8 +1,4 @@
-// Desktop-only file capture. In the Tauri app a dropped or picked file carries its
-// real OS path, which is what lets attachments be referenced *in place* (no copy). All
-// Tauri modules are imported dynamically and only under Tauri, so the static export and
-// the plain-browser build never touch them (there the composer falls back to the web
-// <input>/dataTransfer byte path).
+// Desktop-only file capture, where a dropped file carries the real OS path an attachment references.
 
 import { isTauri } from "@/lib/tauri";
 
@@ -25,10 +21,7 @@ export interface DesktopDropEvent {
   position: { x: number; y: number } | null;
 }
 
-// Subscribe to the webview's native file-drop stream. Tauri intercepts OS file drops
-// (they never reach the HTML drag events), delivering the file paths plus the pointer
-// position in *physical* pixels — converted here to CSS pixels so callers can hit-test
-// against DOM rects. Returns an unlisten function; a no-op outside Tauri.
+// The webview's native file-drop stream, its physical pixels converted so callers can hit-test.
 export async function watchDesktopFileDrop(
   onEvent: (event: DesktopDropEvent) => void,
 ): Promise<() => void> {

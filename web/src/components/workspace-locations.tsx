@@ -27,9 +27,7 @@ function draftsFrom(locations: Location[]): LocationDraft[] {
   return locations.map((location) => ({ id: location.id, value: locationToInput(location) }));
 }
 
-// The workspace-environment manager inside Settings. Each environment is an inline editable form
-// stacked above the next, with an "Add environment" button below — no list-then-edit view. Edits are
-// batched and persisted on Save (create new, update changed, delete removed).
+// The workspace-environment manager: inline editable forms, batched and persisted on Save.
 export function WorkspaceLocationsPanel({ workspaceId }: { workspaceId: string }) {
   const translation = useTranslations("WorkspaceLocationsPanel");
   const [hosts, setHosts] = useState<SshHost[]>([]);
@@ -63,8 +61,7 @@ export function WorkspaceLocationsPanel({ workspaceId }: { workspaceId: string }
         setFailedWorkspaceId(workspaceId);
         setLoadedWorkspaceId(workspaceId);
       });
-    // Only re-read hosts live — never clobber in-progress location edits from a
-    // workspaces_changed event (a save reloads explicitly).
+      // Only re-read hosts live, so a workspaces_changed event never clobbers an in-progress edit.
     const unsubscribe = subscribeEvents((event) => {
       if (event.type === "hosts_changed") {
         listSshHosts().then((nextHosts) => { if (!cancelled) setHosts(nextHosts); }).catch((caught) => swallowed({ component: "workspace-locations", operation: "list the SSH hosts" }, caught));
