@@ -14,8 +14,7 @@ export interface ColorModeProviderProps extends React.PropsWithChildren {
 }
 
 export interface UseColorModeReturn {
-  // The user's chosen preference, including "system" (follow the OS). `colorMode` is the
-  // resolved light/dark this yields right now.
+  // The chosen preference, "system" included. `colorMode` is the light or dark it resolves to now.
   theme: ColorMode | "system"
   colorMode: ColorMode
   setTheme: (theme: ColorMode | "system") => void
@@ -30,8 +29,7 @@ export function ColorModeProvider({
   defaultTheme = "system",
   forcedTheme,
 }: ColorModeProviderProps) {
-  // The daemon's answer is the state. There is no copy of it here to keep in step, which is
-  // what makes a change in another window arrive as an ordinary re-render.
+  // The daemon's answer is the state, so a change in another window arrives as an ordinary re-render.
   const { preferences, updatePreferences } = usePreferences()
   const theme = forcedTheme ?? preferences.color_mode ?? defaultTheme
   const [systemColorMode, setSystemColorMode] = React.useState<ColorMode>("light")
@@ -53,8 +51,7 @@ export function ColorModeProvider({
     document.documentElement.style.colorScheme = colorMode
   }, [colorMode])
 
-  // The general setter: persists any preference, "system" included. `setColorMode` is the
-  // narrower light/dark form kept for the toggle button and existing callers.
+  // The general setter, "system" included; `setColorMode` is the narrower form kept for the toggle.
   const setTheme = React.useCallback(
     (nextTheme: ColorMode | "system") => {
       if (forcedTheme) return

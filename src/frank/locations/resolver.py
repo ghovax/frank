@@ -1,9 +1,4 @@
-"""Resolve a location record into the two things the rest of the system needs: its
-model-facing URI (identity) and an executor (how to run tools against it).
-
-Kept pure and dependency-light — it takes a plain :class:`LocationAddress` (the fields a
-``LocationRecord`` carries), so it is unit-testable without a database or the server.
-"""
+"""Resolve a location record into its model-facing URI and an executor to run tools against it."""
 
 from __future__ import annotations
 
@@ -24,10 +19,7 @@ class LocationAddress:
 
 
 def location_uri_for(address: LocationAddress) -> str:
-    """The fully-qualified URI the agent uses as ``location``. For a remote location the
-    URI is derived from the *resolved* host (``ssh -G``), so it reflects the real
-    hostname/user/port behind the alias. If ssh is unavailable, falls back to the alias
-    as the hostname so a URI is still produced."""
+    """The URI the agent passes as ``location``, derived for a remote from the resolved host."""
     if address.kind == "local":
         return location_uri.format_local(address.base_directory)
     if address.kind == "remote":
@@ -41,8 +33,7 @@ def location_uri_for(address: LocationAddress) -> str:
 
 
 def host_is_defined(alias: str) -> bool:
-    """Whether an ssh host alias is actually declared in ~/.ssh/config — so the endpoint
-    layer can reject/flag a location that references a host that no longer exists."""
+    """Whether an ssh alias is declared in ~/.ssh/config, so a location naming a dead host can be flagged."""
     return any(host.alias == alias for host in ssh_hosts.list_ssh_hosts())
 
 
