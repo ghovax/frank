@@ -744,11 +744,7 @@ function SessionListResultView({ data }: { data: Record<string, unknown> }) {
         <InlineField key={index} label={agentName(asString(session.agent))}>
           <Flex align="center" gap={1.5} wrap="wrap">
             <Mono>{asString(session.id)}</Mono>
-            {/* `activity` is what a peer is doing right now, derived by the daemon on every
-                read: working, waiting on a person, idle, asleep (no process — the next
-                message forks one), or ended. It replaced a `status` field that tried to be
-                both this and whether the session still exists, and a separate `busy` that
-                had to be merged in to answer "is it working". */}
+            {/* `activity` is what a peer is doing right now, derived by the daemon on every read. */}
             <Pill colorPalette={PEER_ACTIVITY_PALETTE[asString(session.activity)] ?? "gray"}>
               {asString(session.activity) || asString(session.lifecycle)}
             </Pill>
@@ -958,12 +954,7 @@ function WebResultCard({ result }: { result: Record<string, unknown> }) {
   const publishedHasTime = /[T ]\d{2}:\d{2}/.test(published);
   return (
     <Card>
-      {/* A column, so each part of the result is a line. `Link` and `Mono` are both
-          inline-level boxes, and stacked as bare siblings they simply flowed into one another
-          — the title ran straight into the URL with nothing between them, and `truncate` on
-          the URL did nothing at all, since overflow does not apply to an inline box. As flex
-          items they are blockified, which puts each on its own line and gives the ellipsis a
-          box to happen in. */}
+      {/* A column, so each part of the result is a line and the ellipsis has a box to happen in. */}
       <Flex direction="column" gap={1} minW={0}>
         {url ? (
           // Sized to its own text rather than stretched across the card, so the link is not a click target over empty space.

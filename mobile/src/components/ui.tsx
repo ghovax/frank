@@ -99,17 +99,7 @@ export function Button({
         style,
       ]}
     >
-      {/*
-        A busy button is a spinner alone, centred — not a spinner beside the label it replaces.
-        Showing both put the spinner where the icon had been, which is left of centre and
-        *stays* left of centre while it turns: it reads as a spinner mounted off its own axis
-        rather than as a centred one. Chakra's `loading` does the same thing on the desktop,
-        and for the same reason.
-
-        The size is pinned to the icon's so the button does not resize when it starts: an
-        `ActivityIndicator` is intrinsically 20pt against a 16pt glyph, and the four points
-        moved every control beside it.
-      */}
+      {/* A busy button is a centred spinner alone, pinned to the icon's size so the button does not resize. */}
       {busy ? (
         <View style={[styles.busy, { height: iconSize }]}>
           <ActivityIndicator size="small" color={foreground} />

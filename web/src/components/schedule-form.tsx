@@ -162,8 +162,7 @@ export function ScheduleForm({
         </Flex>
       </ScheduleField>
 
-      {/* Beside the expression, not below the prompt. `0 9 * * MON-FRI` is meaningless without
-          the clock it is read against, so the two belong to one question. */}
+      {/* Beside the expression rather than below the prompt, since an expression is meaningless without its clock. */}
       <ScheduleField label={translation("labelTimezone")}>
         <TimezoneSelect
           value={draft.timezone}
@@ -178,11 +177,7 @@ export function ScheduleForm({
                   onChange={(event) => setDraft({ ...draft, prompt: event.target.value })} />
       </ScheduleField>
 
-      {/* One per row rather than side by side. Sharing the width gave each control half a
-          dialog, which the controls themselves did not need — but the permission hint did: the
-          sentence explaining that an unattended run under manual approvals parks on the first
-          decision and waits forever was wrapping to four lines in a narrow column, which is how
-          a warning turns into wallpaper. */}
+      {/* One per row, so the permission hint has the width its sentence needs. */}
       <ScheduleField label={translation("labelAgent")}>
         <AgentSelectControl
           layout="field"

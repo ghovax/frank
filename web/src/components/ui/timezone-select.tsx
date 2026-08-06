@@ -120,10 +120,7 @@ export function TimezoneSelect({
             <Combobox.Empty>{placeholder}</Combobox.Empty>
             {collection.items.map((item) => (
               <Combobox.Item item={item} key={item.zone}>
-                {/* The identifier, then its marks pushed to the trailing edge. Separated by
-                    layout rather than by punctuation: a `·` between two short strings is a
-                    character doing a column's job, and it reads as noise once there are three
-                    of them in a row. */}
+                {/* The identifier, then its marks pushed to the trailing edge, separated by layout rather than punctuation. */}
                 <Combobox.ItemText>{item.label}</Combobox.ItemText>
                 <Flex align="center" gap={3} ms="auto" flexShrink={0} color="fg.muted" fontSize="xs">
                   {item.current && currentLabel ? <Span>{currentLabel}</Span> : null}

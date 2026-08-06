@@ -288,8 +288,7 @@ export function BackgroundJobsPanel({
 
       <Box flex={1} minH={0} position="relative" overflow="hidden">
         <Flex position="absolute" inset={0} direction="column" visibility={activeView === "terminal" ? "visible" : "hidden"}>
-          {/* Terminal tabs — the shared PanelTab, plus a "＋" to spawn a new terminal and
-              the location switcher, all at one height. */}
+          {/* Terminal tabs, plus a control to spawn a new terminal and the location switcher, all at one height. */}
           <Flex px={4} py={2} overflowX="auto" flexShrink={0}>
             <Flex gap={1.5} align="center">
               {terminals.map((key, index) => {
@@ -346,8 +345,7 @@ export function BackgroundJobsPanel({
               )}
             </Flex>
           </Flex>
-          {/* Every terminal stays mounted so switching tabs never drops a live shell;
-              only the active one is visible. */}
+          {/* Every terminal stays mounted so switching tabs never drops a live shell; only the active one shows. */}
           <Box position="relative" flex={1} minH={0}>
             {terminals.map((key) => {
               const terminalLocation = locationForTerminal(key);

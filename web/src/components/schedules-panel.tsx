@@ -138,10 +138,7 @@ export function SchedulesPanel({ workspaceId, agents }: { workspaceId: string; a
             <Flex align="center" gap={2}>
               <Pill colorPalette={schedule.enabled ? "teal" : "gray"}>{schedule.cron}</Pill>
               <Text fontWeight="medium">{schedule.name}</Text>
-              {/* Read off the same choice set the picker is built from, rather than colouring a
-                  raw string. It said `auto` in orange and printed whatever the server stored,
-                  so a mode added or renamed anywhere else arrived here as an untranslated
-                  identifier in grey. */}
+              {/* Read off the same choice set the picker is built from, rather than colouring a raw string. */}
               <PermissionModePill mode={schedule.permission_mode} />
             </Flex>
             <Text fontSize="xs" color="fg.muted" truncate>{schedule.prompt}</Text>

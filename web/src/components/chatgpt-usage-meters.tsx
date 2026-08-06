@@ -45,8 +45,7 @@ export function ChatGPTUsageMeters({ usage }: { usage: ChatGPTUsage | null }) {
     <Box>
       <HStack justify="space-between" mb={1.5} gap={4}>
         <Text textStyle="fieldLabel">{translation("usageTitle")}</Text>
-        {/* The plan is why a percentage is what it is. Without it a high number reads as
-            inexplicable — a free-tier allowance is small, so most of it goes quickly. */}
+        {/* The plan is why a percentage is what it is, since a small allowance goes quickly. */}
         {usage?.plan_type ? (
           <Text fontSize="xs" color="fg.muted">{planLabel(translation, usage.plan_type)}</Text>
         ) : null}

@@ -104,9 +104,7 @@ export function TreeRow({
           </Box>
         ) : null}
 
-        {/* The label fills the row and carries the activation, so clicking anywhere that is not
-            the chevron or an action opens the thing named. A plain button rather than a div:
-            it is reachable by keyboard and announced as what it is. */}
+        {/* The label fills the row and carries the activation, as a real button so it is reachable by keyboard. */}
         <Button
           type="button"
           variant="plain"
@@ -155,9 +153,7 @@ export function TreeRow({
         ) : null}
       </Flex>
 
-      {/* The nested rows hang off the same hairline every disclosure body in the app uses,
-          placed so the line descends from the centre of the chevron above it rather than from
-          somewhere near it. */}
+      {/* The nested rows hang off the hairline every disclosure body uses, descending from the chevron's centre. */}
       {expanded ? (
         <Box
           ml={`${RAIL_OFFSET}px`}

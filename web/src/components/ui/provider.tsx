@@ -119,8 +119,7 @@ export function Provider(props: ColorModeProviderProps) {
   return (
     <ClientOnly fallback={null}>
       <ChakraProvider value={system}>
-        {/* Nothing below renders until the daemon has said what it remembers: the theme and
-            the locale are read from that answer. */}
+        {/* Nothing below renders until the daemon has said what it remembers, since the theme and locale come from it. */}
         <PreferencesProvider>
           <LocaleProvider>
             <ColorModeProvider {...props} />

@@ -406,11 +406,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
         },
       }}
     >
-      {/* Inline math uses single `$…$` (the prompt instructs the model to emit it
-          that way), display math uses `$$…$$`. remark-math's single-dollar heuristic
-          only matches a `$` immediately followed by non-space text and a matching
-          closing `$`, so bare currency ("$5", "~$9–16", "€50") does not misfire.
-          `strict: false` keeps KaTeX from spamming warnings on the rest. */}
+      {/* Single dollars are inline math and double are display, with the heuristic tight enough that currency does not misfire. */}
       <ReactMarkdown
         remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
         rehypePlugins={[[rehypeKatex, { strict: false }]]}

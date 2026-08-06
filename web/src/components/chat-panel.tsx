@@ -684,10 +684,7 @@ export function ChatPanel({
     <AgentNamesProvider agents={agents}>
     <Flex h="100%" minW={0} position="relative">
       <Flex direction="column" flex={1} minW={0} h="100%">
-        {/* Persistent top bar: session identity on the left, session tools on the
-            right. Always visible so the controls have a stable home; the title
-            fills in once the session names itself, matching the sidebar default
-            until then. */}
+        {/* Persistent top bar: session identity on the left, session tools on the right. */}
         <Flex align="center" gap={2} px={2} h={TOP_BAR_HEIGHT} flexShrink={0} minW={0}>
           {onToggleHistory ? (
             <Tooltip content={historyOpen ? translation("hideConversations") : translation("showConversations")} openDelay={300}>
@@ -709,9 +706,7 @@ export function ChatPanel({
           </Text>
           <GitStatusBar status={directoryStatus} />
           <Flex align="center" gap={1} flexShrink={0}>
-            {/* What this workspace's conversations have handed to other sessions. The dot
-                marks a workspace where something actually has been delegated — until then
-                there is nothing behind this button to look at. */}
+            {/* What this workspace's conversations have handed to other sessions, with a dot only when something has. */}
             <ToolbarAction
               label={translation("delegatedWork")}
               icon={<LuGitBranch size={14} />}
@@ -728,10 +723,7 @@ export function ChatPanel({
               indicator={runningShellCount > 0}
               onClick={() => setSidePanelOpen("background", !backgroundPanelOpen)}
             />
-            {/* Light/dark, switched here rather than only from three screens into Settings.
-                It is the one setting people change on a whim — because the room got dark, not
-                because they are configuring anything — so it belongs where they already are.
-                The label names what the click does, not the state it is in. */}
+            {/* Light and dark, switched here because it is the one setting people change on a whim. */}
             <ToolbarAction
               label={colorMode === "dark" ? translation("switchToLight") : translation("switchToDark")}
               icon={colorMode === "dark" ? <LuSun size={14} /> : <LuMoon size={14} />}
@@ -819,45 +811,15 @@ export function ChatPanel({
             <AnimatePresence mode="popLayout" initial={false}>
               {messages.length === 0 ? (
                 <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15, ease: "easeOut" }} style={{ width: "100%", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-                  {/* The same `80rem` centred column as the transcript, the composer and the
-                      approval overlay. Without it the welcome grew with the window while
-                      everything else stayed put, so on a wide display the skills and tools ran
-                      far outside the chat. No `px` of its own either: the scroller already pads,
-                      and a second inset put this list 10px inside the composer instead of flush.
-
-                      Vertically it sits in the middle of whatever room there is, rather than
-                      being pushed down by a fixed inset. It used to carry 80px above and 48px
-                      below on a desktop width — numbers that were only ever right for one window
-                      height, so on a tall window the block hung near the top under a band of
-                      nothing, and on a short one those 128px pushed the skills under the fold and
-                      made an empty conversation scroll.
-
-                      `my="auto"` rather than `justify="center"` on purpose: this lives in a
-                      scroll container, and auto margins are defined to collapse to zero when the
-                      free space runs out, so tall content still starts at the top and stays
-                      reachable instead of being centred off the top edge. What is left is a small
-                      floor, which only applies when there is nothing to spare. */}
-                  {/* One rhythm for the sections, and it is `6` because that is the gap the
-                      capability sections keep between themselves (`AgentSkills` puts `mt={6}`
-                      between skills and tools). Set to anything else here — it was `10` — and
-                      the first gap is wider than the ones after it, so the environments read as
-                      belonging to the heading rather than as the first of three peers. The
-                      heading keeps its own extra space below, because a title is not a peer of
-                      the sections under it. */}
+                  {/* The same centred column as the transcript, sitting in the middle of whatever room there is. */}
+                  {/* One rhythm for the sections, matching the gap the capability sections keep between themselves. */}
                   <Flex direction="column" align="stretch" gap={6} w="full" maxW="80rem" mx="auto" my="auto" py={{ base: 4, md: 6 }}>
-                    {/* The blank-conversation state inside a workspace: no brand lockup (that lives
-                        on the Workspaces home) — the build prompt, then what this workspace can
-                        reach and what the agent can do, as sections. */}
+                    {/* The blank-conversation state inside a workspace: the prompt, then what it can reach and what the agent can do. */}
                     <Heading as="h2" fontSize="3xl" fontWeight="semibold" textAlign="center" mb={4}>
                       {translation("buildPrompt", { folder: currentFolderName })}
                     </Heading>
 
-                    {/* The environments read as a section, like the skills and tools under them,
-                        rather than as a centred caption hanging off the heading. They are the same
-                        kind of thing — what this conversation has available — so they get the same
-                        grammar: the section's own icon, a left-aligned heading with a line saying
-                        what it is, and the list beneath it. Centred and unlabelled, sitting tight
-                        under the title, it read as a subtitle of the question instead. */}
+                    {/* The locations read as a section like the ones under them, with the same icon, heading and list. */}
                     {workspaceLocations.length > 0 && (
                       <Box w="100%" minW={0}>
                         <SectionHeader
@@ -878,19 +840,9 @@ export function ChatPanel({
                 </motion.div>
               ) : (
                 <motion.div key="timeline" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15, ease: "easeOut" }} style={{ width: "100%" }}>
-                  {/* gap 2.5 (10px): tight enough that a tool-activity line and the prose
-                      around it read as one document, while user bubbles — carrying their own
-                      fill — still mark the turn boundaries. */}
+                  {/* Tight enough that a tool line and the prose around it read as one document, with bubbles marking turns. */}
                   <VStack ref={scrollContentRef} gap={2.5} align="stretch" w="full" maxW="80rem" mx="auto">
-                    {/* No `AnimatePresence` around these rows, and that is the point rather than
-                        an omission. Its whole job is to keep a removed child mounted long enough
-                        to animate it out, and a transcript row must never animate out — see
-                        `FadeIn`. Left in place it would do nothing except offer the next person a
-                        working `exit` prop, which is how the transcript acquired its snap-back in
-                        the first place: `popLayout` was added to contain a jump, the jump was
-                        actually one tool call rendering as two rows, and the containment hid the
-                        real bug for weeks. A row appears when it exists and is gone when it does
-                        not. */}
+                    {/* No presence wrapper, deliberately: a transcript row appears when it exists and is gone when it does not. */}
                     {renderedTimeline.map((item, itemIndex) => {
                         const isLastItem = itemIndex === renderedTimeline.length - 1;
                         const key = item.kind === "tool_group" ? item.id : item.message.id;
@@ -929,15 +881,7 @@ export function ChatPanel({
                           </FadeIn>
                         );
                     })}
-                    {/* A message the session has not taken yet, drawn as the message it already
-                        is. What it says differently it says in its footer: a message being
-                        handed over right now is not waiting for anything, so it carries no
-                        label at all — calling the few milliseconds of an ordinary send "queued"
-                        reported a wait that was not happening. The rest name which wait they are
-                        in. "Queued" is waiting behind the work. "Waiting for your decision" is
-                        waiting behind *you*, and answering the prompt above is what sends it.
-                        "Couldn't reach the session" is a fault, and it offers the retry rather
-                        than sitting there looking patient. */}
+                    {/* A message the session has not taken yet, drawn as the message it is, with its footer naming the wait. */}
                     {queuedMessages.map((message, index) => (
                       <UserMessageCard
                         key={message.id}
@@ -982,16 +926,8 @@ export function ChatPanel({
         )}
         </Box>
 
-        {/* The approval/question overlay sits in the same 80rem centered column as the messages
-            and composer, so it reads as a card in the chat column instead of a bar spanning the
-            whole panel. No overflow clipping here — that would slice the card's drop shadow. */}
-        {/* One owner for the transition, keyed by the request being asked about. The overlays
-            used to wrap themselves in an `AnimatePresence` whose child had no key, while this
-            parent mounted and unmounted them outright — so exit could never run, and every new
-            prompt replayed the entrance from nothing. `mode="wait"` makes a replacing prompt
-            wait for the outgoing one to finish, so two decisions can never be on screen at
-            once; `initial={false}` keeps a prompt that is already pending on load from
-            animating in as though it had just arrived. */}
+        {/* The overlay sits in the same centred column as the messages, with no clipping to slice its shadow. */}
+        {/* One owner for the transition, keyed by the request, so two decisions are never on screen at once. */}
         <AnimatePresence mode="wait" initial={false}>
           {pendingPrompt && (
             <FadeIn key={pendingPromptId} seconds={0.15}>
@@ -1016,15 +952,8 @@ export function ChatPanel({
             </FadeIn>
           )}
         </AnimatePresence>
-        {/* The composer wrapper mirrors the transcript scroll container's horizontal geometry
-            — same px, and the scrollbar gutter reserved via overflow:hidden + scrollbar-gutter
-            stable both-edges — so the input's 80rem column co-centers with the messages above it
-            at every width. `both-edges` reserves the gutter symmetrically (left AND right) so the
-            centered column stays on the panel's true centre and the left/right insets match,
-            rather than a single-edge gutter nudging everything off-centre. */}
-        {/* The bottom padding is the phone's home indicator, which sits over the last few
-            millimetres of the screen and would otherwise sit over the send button. Zero
-            everywhere else. */}
+        {/* The composer mirrors the transcript's horizontal geometry, with the scrollbar gutter reserved on both edges. */}
+        {/* The bottom padding is the phone's home indicator, and zero everywhere else. */}
         {chatReady && (
         <Box
           px={4}
@@ -1033,9 +962,7 @@ export function ChatPanel({
           style={{ scrollbarGutter: "stable both-edges" }}
         >
         <Box w="full" maxW="80rem" mx="auto">
-        {/* Above the composer, because it is the state you are typing *into*: a session with a
-            goal is one that will keep working after this turn, and the person deciding what to
-            say next is the person who should see that — and be able to end it. */}
+        {/* Above the composer, because a session with a goal is one the person typing should see and be able to end. */}
         {activeGoal && <GoalBar goal={activeGoal} onClear={handleClearGoal} />}
         <ChatInput
           onSend={handleSend}
@@ -1072,10 +999,7 @@ export function ChatPanel({
         )}
       </Flex>
 
-      {/* The right region: every open panel tiles into a resizable 2D grid. It sits flush to
-          the chat (no gutter column) so the chat content keeps symmetric left/right padding;
-          the resize handle overlaps the boundary as an absolute strip rather than consuming a
-          column of space — mirroring the left sidebar's handle. */}
+      {/* The right region tiles every open panel into a resizable grid, flush to the chat with an overlapping handle. */}
       <AnimatePresence initial={false}>
       {openSidePanels.length > 0 && (
         <MotionBox

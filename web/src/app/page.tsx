@@ -725,11 +725,7 @@ function Workspace() {
         )}
       </AnimatePresence>
 
-      {/* The chat is the base surface, not a card — it fills the remaining space flush to
-          the window edges while the side panels float above it. Overflow stays visible so the
-          right-hand panels (which live inside here and sit flush to this box's top edge) can
-          render their top drop-shadow up into the shell's top padding instead of having it
-          clipped — mirroring the left sidebar, which floats in the non-clipping shell. */}
+      {/* The chat is the base surface rather than a card, with overflow visible so the panels' shadows are not clipped. */}
       <Box
         flex={1}
         minW={0}

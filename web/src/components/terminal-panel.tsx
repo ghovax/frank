@@ -292,9 +292,7 @@ export function TerminalSurface({
       overflow="hidden"
       position="relative"
     >
-      {/* The xterm host is positioned with explicit insets rather than padding: xterm's
-          FitAddon sizes itself to host.clientWidth/Height, so insetting the host box
-          directly is what gives the terminal even breathing room on every edge. */}
+      {/* The host is positioned with insets rather than padding, since the fit addon sizes itself to the host box. */}
       <Box
         ref={hostRef}
         position="absolute"
