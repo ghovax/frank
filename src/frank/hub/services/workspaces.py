@@ -1,5 +1,4 @@
-"""Workspace domain: workspace and location CRUD, the SSH host registry, and the macOS
-permission probes (full-disk-access, accessibility)."""
+"""Workspace domain: workspace and location CRUD, the SSH host registry, and the macOS permission probes."""
 
 from __future__ import annotations
 
@@ -68,11 +67,7 @@ def _create_workspace(request: WorkspaceCreateRequest) -> dict[str, Any]:
 
 
 def _ensure_default_project() -> None:
-    """Guarantee the app has a location-backed grouping on a fresh install.
-
-    The initial location targets the daemon user's home directory. This is a no-op once any
-    workspace exists, so it never changes user-created groupings.
-    """
+    """Guarantee a location-backed grouping on a fresh install, and a no-op once any workspace exists."""
     assert state.session_factory is not None
     with sqlite_write_lock():
         database_session = state.session_factory()
@@ -99,12 +94,7 @@ def _ensure_default_project() -> None:
 
 
 def _remember_last_session(workspace_id: str, session_id: str) -> bool:
-    """Record which conversation a workspace was last opened at.
-
-    Written by whichever client opened it, and read by all of them. The session is checked to
-    belong to this workspace rather than taken on trust: a client that had drifted could
-    otherwise point a workspace at a conversation in another one, and the next launch would open
-    somewhere its own sidebar does not list."""
+    """Record where a workspace was last opened, checking the session belongs to it rather than trusting."""
     assert state.session_factory is not None
     with sqlite_write_lock():
         database_session = state.session_factory()
@@ -133,11 +123,7 @@ def _workspace_count() -> int:
 
 
 def _full_disk_access_granted() -> bool:
-    """Whether *this* process can read Full-Disk-Access-protected data, tested by trying to
-    read a byte of the user's TCC database (a canonical FDA-gated file). Reflects the reality
-    the user-context probe faces: in the packaged app FDA is attributed to Frank.app (the
-    responsible parent of the daemon), so this flips true once the user grants it. Any
-    permission/OS error means no access."""
+    """Whether this process can read Full-Disk-Access data, tested against the TCC database itself."""
     protected = Path.home() / "Library" / "Application Support" / "com.apple.TCC" / "TCC.db"
     try:
         with open(protected, "rb") as handle:
@@ -148,8 +134,7 @@ def _full_disk_access_granted() -> bool:
 
 
 def _open_full_disk_access_settings() -> None:
-    """Open System Settings straight to the Full Disk Access pane so the user can add Frank in
-    one hop. Best-effort; a non-macOS or failed ``open`` is simply a no-op."""
+    """Open System Settings at the Full Disk Access pane. Best-effort, and a no-op off macOS."""
     with suppress(OSError, subprocess.SubprocessError):
         subprocess.run(
             ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"],
@@ -158,9 +143,7 @@ def _open_full_disk_access_settings() -> None:
 
 
 def _delete_workspace(workspace_id: str) -> bool:
-    """Delete a workspace and everything under it: its locations, its sessions, and the
-    per-(session, location) worktree records. (Remote worktree teardown over SSH is a
-    follow-up — the DB rows go now.)"""
+    """Delete a workspace and everything under it: locations, sessions, and worktree records."""
     assert state.session_factory is not None
     with sqlite_write_lock():
         database_session = state.session_factory()
@@ -225,8 +208,7 @@ def _update_location(location_id: str, request: LocationInput) -> dict[str, Any]
             record.host_alias = next_host_alias
             record.base_directory = next_base_directory
             record.permission_mode = request.permission_mode or "ask"
-            # The name follows the connection, so re-derive it (deduped, excluding this row)
-            # whenever the connection changes.
+        # The name follows the connection, so re-derive it whenever the connection changes.
             record.name = _derive_location_name(
                 database_session, record.workspace_id, record.kind, record.base_directory, record.host_alias, exclude_id=record.id
             )
@@ -271,7 +253,5 @@ def _hosts_payload() -> dict[str, list[dict[str, Any]]]:
 
 
 async def _reset_all_runtimes() -> None:
-    """Drop every live session's cached runtime so the next turn rebuilds its chat model.
-    Used when the ChatGPT sign-in state changes, which lives in a token file rather than the
-    configuration, so the config watcher never fires for it."""
+    """Drop every cached runtime, for a change the configuration watcher cannot see — a sign-in token."""
     await state.reset_runtimes()
