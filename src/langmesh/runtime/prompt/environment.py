@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import os
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from langmesh.base import environment_variables
 import platform
 from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Optional, Sequence
+from langmesh.base.paths import state_directory
 from langmesh.base.serialization import compact
+
+logger = logging.getLogger(__name__)
 
 
 # Command-line wrappers/keywords to skip when finding the real command a history line ran.
@@ -1006,7 +1014,58 @@ def _shell_setup() -> dict:
     return profile
 
 
+#: How long a snapshot of the machine stays good enough to send without rebuilding it.
+_USER_CONTEXT_TTL_SECONDS = 6 * 60 * 60
+_user_context_refresh = threading.Lock()
+
+
+def _user_context_cache_path() -> Path:
+    return state_directory() / "user_context.json"
+
+
 def probe_user_context() -> str:
+    """The last snapshot of how the user works, refreshed behind the turn because building one costs seconds."""
+    cached = _read_user_context_cache()
+    if cached is None or time.time() - cached.get("built_at", 0) > _USER_CONTEXT_TTL_SECONDS:
+        _refresh_user_context_later()
+    return compact(cached["payload"]) if cached and cached.get("payload") else ""
+
+
+def _read_user_context_cache() -> Optional[dict]:
+    try:
+        cached = json.loads(_user_context_cache_path().read_text())
+    except (OSError, ValueError):
+        return None
+    return cached if isinstance(cached, dict) and isinstance(cached.get("payload"), dict) else None
+
+
+def _refresh_user_context_later() -> None:
+    """Rebuild the snapshot on a thread of its own, so no turn ever waits for `system_profiler`."""
+    if not _user_context_refresh.acquire(blocking=False):
+        return
+
+    def rebuild() -> None:
+        try:
+            payload = _build_user_context()
+            path = _user_context_cache_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(compact({"built_at": time.time(), "payload": payload}))
+        except Exception:  # noqa: BLE001 — a snapshot that cannot be built is not worth a failed turn
+            logger.debug("could not refresh the user-context snapshot", exc_info=True)
+        finally:
+            _user_context_refresh.release()
+
+    threading.Thread(target=rebuild, name="user-context-refresh", daemon=True).start()
+
+
+def warm_user_context() -> None:
+    """Build the snapshot now if there is none or it is stale, so the first message never pays for it."""
+    cached = _read_user_context_cache()
+    if cached is None or time.time() - cached.get("built_at", 0) > _USER_CONTEXT_TTL_SECONDS:
+        _refresh_user_context_later()
+
+
+def _build_user_context() -> dict:
     """An opt-in snapshot of who the user is and how they work on this machine, as far as local metadata allows."""
     home = Path.home()
     payload: dict = {}
@@ -1033,36 +1092,49 @@ def probe_user_context() -> str:
             recent_roots.append(candidate)
     existing_roots = [root for root in recent_roots if root.is_dir()]
 
-    # Simple sections keyed by their probe: only non-empty results are attached.
-    for key, value in (
-        ("home_dotfiles", _home_dotfiles()),
-        ("recent_files", _recent_files(existing_roots)),
-        ("recently_active_directories", _recent_directories(existing_roots)),
-        ("shell_activity", _shell_activity_timeline()),
-        ("system_uptime", _system_uptime()),
-        ("hardware", _hardware_profile()),
-        ("hardware_status", _hardware_status()),
-        ("appearance", _appearance()),
-        ("locale", _locale_profile()),
-        ("git_identity", _git_identity()),
-        ("tooling", _tooling_preferences()),
-        ("shell_setup", _shell_setup()),
-        ("homebrew", _homebrew_packages()),
-        ("editor_extensions", _editor_extensions()),
-        ("default_apps", _default_handlers()),
-        ("bluetooth_devices", _bluetooth_devices()),
-        ("file_type_activity", _file_type_activity()),
-        ("recently_used_files", _recently_used_files()),
-        ("installed_applications", _installed_applications()),
-        ("dock_applications", _dock_applications()),
-        ("login_items", _login_items()),
-        ("running_applications", _running_applications()),
-        ("running_app_durations_hours", _running_app_durations()),
-        ("app_launch_counts", _spotlight_app_usage()),
-        ("app_usage_hours_last_week", _app_usage()),
-    ):
-        if value:
-            payload[key] = value
-    payload.update(_browser_site_activity())
+    # Each probe is its own subprocess or scan and none needs another's answer, so they run together:
+    # sequentially the slowest few decided the total, and `system_profiler` alone was most of it.
+    sections = (
+        ("home_dotfiles", _home_dotfiles),
+        ("recent_files", lambda: _recent_files(existing_roots)),
+        ("recently_active_directories", lambda: _recent_directories(existing_roots)),
+        ("shell_activity", _shell_activity_timeline),
+        ("system_uptime", _system_uptime),
+        ("hardware", _hardware_profile),
+        ("hardware_status", _hardware_status),
+        ("appearance", _appearance),
+        ("locale", _locale_profile),
+        ("git_identity", _git_identity),
+        ("tooling", _tooling_preferences),
+        ("shell_setup", _shell_setup),
+        ("homebrew", _homebrew_packages),
+        ("editor_extensions", _editor_extensions),
+        ("default_apps", _default_handlers),
+        ("bluetooth_devices", _bluetooth_devices),
+        ("file_type_activity", _file_type_activity),
+        ("recently_used_files", _recently_used_files),
+        ("installed_applications", _installed_applications),
+        ("dock_applications", _dock_applications),
+        ("login_items", _login_items),
+        ("running_applications", _running_applications),
+        ("running_app_durations_hours", _running_app_durations),
+        ("app_launch_counts", _spotlight_app_usage),
+        ("app_usage_hours_last_week", _app_usage),
+        (None, _browser_site_activity),
+    )
+    with ThreadPoolExecutor(max_workers=min(12, len(sections))) as pool:
+        futures = [(key, pool.submit(probe)) for key, probe in sections]
+        for key, future in futures:
+            try:
+                value = future.result()
+            except Exception:  # noqa: BLE001 — one probe failing must not lose the rest of the snapshot
+                logger.debug("user-context probe %s failed", key, exc_info=True)
+                continue
+            if not value:
+                continue
+            if key is None:
+                payload.update(value)
+            else:
+                payload[key] = value
 
-    return compact(payload)
+    return payload

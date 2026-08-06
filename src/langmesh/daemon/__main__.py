@@ -264,6 +264,11 @@ async def _serve() -> int:
     _reclaim_socket()
 
     hub_state.global_configuration = Configuration.load()
+    if hub_state.global_configuration.user_context.enabled:
+        # Built here, in the background, so the first message of a conversation never waits on it.
+        from langmesh.runtime.prompt.environment import warm_user_context
+
+        warm_user_context()
     # Ask once at boot whether this machine can enforce a profile, on macOS by running one rather than by looking for the binary.
     confinement_state = confinement.probe()
     if confinement_state["backend"]:
