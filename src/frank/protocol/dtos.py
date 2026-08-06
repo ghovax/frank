@@ -1,10 +1,4 @@
-"""HTTP request/response models for the Frank server.
-
-The Pydantic DTOs the FastAPI routes accept and return. Extracted into their own leaf module
-so a route depends on the request/response contract directly rather than importing it from the
-old ``app.py`` monolith — the back-import that once left these models referenced only as
-unresolved string annotations, crashing the routes that used them.
-"""
+"""The request and response models the routes accept and return."""
 
 from __future__ import annotations
 
@@ -30,8 +24,7 @@ class AgentInfo(BaseModel):
     title: str = ""
     # What the agent is for — shown as the subtitle in the UI's agent picker.
     description: str = ""
-    # The agent's resolved ``provider/model`` identifier, or empty when it has none.
-    # Empty means the agent is misconfigured; per-turn model selection is per-agent.
+    # The agent's resolved model identifier, or empty when it is misconfigured.
     model: str = ""
 
 
@@ -48,8 +41,7 @@ class AgentConfigurationResponse(BaseModel):
     model: str = ""
     provider: str = ""
     reasoning_effort: str = "high"
-    # `None` where the card sets no ceiling, which is what most cards do. The settings editor
-    # shows it as "no ceiling" rather than inventing one, because a value here is read as a bound.
+    # `None` where the card sets no ceiling, shown as such rather than as an invented bound.
     permission_mode: Literal["ask", "automatic"] | None = None
     tools_enabled: list[str]
     tools_disabled: list[str]
@@ -74,8 +66,7 @@ class AgentConfigurationUpdateRequest(BaseModel):
 
 
 class AgentsList(BaseModel):
-    """The agent profiles a folder resolves. Deliberately without a default: nothing here
-    ranks one profile above another, because which agent runs is always an explicit choice."""
+    """The agent profiles a folder resolves, deliberately without a default."""
 
     agents: list[AgentInfo]
 
@@ -108,9 +99,7 @@ class SettingsUpdateRequest(BaseModel):
 
 
 class SandboxUpdateRequest(BaseModel):
-    """A change to what tool children may do. Free-form because the surface is the configuration's
-    own — `enforce`, `filesystem`, `network`, `limits`, `umask`, `nice` — and validating it twice
-    would mean two definitions of one shape."""
+    """A change to what tool children may do, free-form because the configuration validates it."""
 
     sandbox: dict
 
@@ -126,12 +115,7 @@ class ComputerControlUpdateRequest(BaseModel):
 
 
 class SettingValueRequest(BaseModel):
-    """One setting, addressed by the dotted path it is written under in the configuration file.
-
-    `value` is whatever that setting holds — a boolean, a number, a string, a list — so it is
-    typed as the schema will type it, at the moment it is validated against the schema. A
-    request model per setting is what this replaces, and what made a hundred and twenty of them
-    unreachable from anywhere but a text editor."""
+    """One setting, addressed by the dotted path it is written under."""
 
     path: str
     value: Any = None
@@ -181,12 +165,7 @@ class WorkspaceCreateRequest(BaseModel):
 
 
 class InterfacePreferencesUpdateRequest(BaseModel):
-    """A partial change to how the interface looks and where it opens.
-
-    Every field is optional and only the ones present are written: the theme toggle knows
-    nothing about the locale, and making it send one would let a stale copy overwrite a change
-    another window made between the read and the write.
-    """
+    """A partial change to how the interface looks, writing only the fields present."""
 
     color_mode: Literal["system", "light", "dark"] | None = None
     locale: str | None = None
@@ -207,14 +186,12 @@ class MachineNameRequest(BaseModel):
 
 
 class WorkspaceLastSessionRequest(BaseModel):
-    """Which conversation a workspace was last opened at. The empty string means none — what a
-    client sends when it lands on a workspace with nothing to reopen."""
+    """Which conversation a workspace was last opened at, with empty meaning none."""
 
     session_id: str = ""
 
 
 class AttachmentReference(BaseModel):
-    """A local file the user attached by its real OS path (the Tauri desktop app
-    hands over the path; the sandboxed web build cannot and falls back to /uploads)."""
+    """A local file attached by its real path, which the sandboxed web build cannot do."""
 
     path: str

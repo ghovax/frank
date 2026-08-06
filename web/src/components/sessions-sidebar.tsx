@@ -1,17 +1,6 @@
 "use client";
 
-// The chat-history sidebar as a self-contained unit: the workspaces list, a new-session
-// row, and each workspace's sorted sessions (status dot + marquee title + options menu),
-// one flat list. It owns nothing about layout (the
-// page wraps it in the resizable panel, and the collapsed state wraps the very same component
-// in a hover popover), so the list looks and behaves identically wherever it is shown.
-//
-// It lists the conversations you started, and only those. A session composes by creating
-// peers, so its children are ordinary sessions — but nesting them here showed one row where
-// eight conversations existed, and listing them flat filled the sidebar with rows nobody
-// began. Both are answers to a question this list is not asking: it answers "which
-// conversation do I want", and what those conversations went and delegated is the
-// delegated-work panel's to answer.
+// The chat-history sidebar as a self-contained unit: workspaces, a new-session row, and their sessions.
 
 import { Alert, Box, Button, Flex, IconButton, Input, Kbd, Menu, Text, VStack } from "@chakra-ui/react";
 import { swallowed } from "@/lib/swallowed";
@@ -34,13 +23,9 @@ import { TreeRow } from "./ui/tree-row";
 import { toaster } from "./ui/toaster";
 import { errorMessage } from "@/lib/errors";
 
-// A session row, its status vocabulary and its hover card all live in `session-row.tsx`,
-// shared with the session-tree panel so a conversation reads the same in both.
+// A session row, its status vocabulary and its hover card live together, shared with the tree panel.
 
-// The workspace hover card follows the Git bar's shape — a titled heading with the glyph that
-// stands for the thing, then label/value rows — because that is already the vocabulary this
-// interface uses for "here is what I know about this", and a second one would only make the
-// two harder to read.
+// The workspace hover card follows the Git bar's shape, which is already this interface's vocabulary.
 
 function WorkspaceHoverCard({
   label, workspace, sessionCount,
@@ -73,12 +58,9 @@ function WorkspaceHoverCard({
 
 export type SessionSort = "recent" | "active";
 
-// Row geometry, shared by the New-session row, the session rows, and the footer so their
-// leading glyphs, text, and left edge all line up on one grid — the reference sidebar's
-// single-column rhythm. Kept as constants (not magic numbers repeated per element).
+// Row geometry shared by every row here, so their glyphs, text and left edge line up on one grid.
 const ROW_MINIMUM_H = "30px";
-// Just wide enough to hold the 14px row glyph / 8px status dot centered — kept tight so
-// titles hug the left edge of the pill rather than floating in from a wide empty gutter.
+// Just wide enough to hold the row glyph centred, so titles hug the pill's left edge.
 const LEADING_SLOT = "14px";
 
 export function SessionsSidebar({
@@ -108,8 +90,7 @@ export function SessionsSidebar({
   onNewChat: () => void;
   onResume: (entry: SessionEntry) => void;
   onDeleteSession: (entry: SessionEntry) => void;
-  // The profiles a schedule can be given. Passed down rather than fetched here: the sidebar
-  // has no other reason to know what an agent is, and the parent already holds the list.
+  // The profiles a schedule can be given, passed down because the parent already holds the list.
   agents: AgentSummary[];
 }) {
   const translation = useTranslations("SessionsSidebar");
@@ -184,9 +165,7 @@ export function SessionsSidebar({
   const visibleWorkspaces = workspaces
     .map((workspace) => ({
       workspace,
-      // Only the conversations *you* started. A session a session created is real work and is
-      // listed — in the delegated-work panel, under the conversation that asked for it. Here it
-      // would be a row nobody began, indistinguishable from one that was.
+      // Only the conversations you started; a session a session created is listed in the delegated panel.
       sessions: shownSessions.filter(
         (session) => session.workspaceId === workspace.id && !session.parentSessionId,
       ),
@@ -303,9 +282,7 @@ export function SessionsSidebar({
                   textStyle="fieldLabel"
                   gap={1}
                   size="2xs"
-                  // The menu returns focus to this trigger on close, which fires a stray
-                  // focus-visible ring even after a pointer selection. Swap the ring for a
-                  // subtle background so keyboard focus still reads without the harsh outline.
+                  // The menu returns focus here on close, so the ring is swapped for a background that reads either way.
                   _focusVisible={{ outline: "none", boxShadow: "none", bg: "bg.subtle" }}
                 >
                   <LuArrowDownUp size={12} />
@@ -329,10 +306,7 @@ export function SessionsSidebar({
           </Box>
         </Flex>
         {!sessionsLoaded || workspaces.length === 0 ? null : visibleWorkspaces.length === 0 ? (
-          // The same alert the settings panel uses, rather than a line of muted text. A search
-          // that found nothing is a state to report, not a caption: as plain text it read as a
-          // row of the list that happened to be greyed out, which is the one thing it must not
-          // look like in a list of rows.
+          // The same alert the settings panel uses, since a search that found nothing is a state rather than a caption.
           <Alert.Root status="info" size="sm" borderRadius="md" my={2} alignItems="center">
             <Alert.Indicator />
             <Alert.Content minW={0}>
