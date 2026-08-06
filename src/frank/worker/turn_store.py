@@ -63,19 +63,32 @@ class DaemonTurnStore(TaskStore):
     # The extra surface a turn uses, beyond what a2a asks for.
 
     async def save_turn_state(
-        self, session_id: str, turn_id: str, messages: list, session_state: Optional[dict] = None
+        self,
+        session_id: str,
+        turn_id: str,
+        messages: list,
+        session_state: Optional[dict] = None,
+        inherited_snapshot_id: str = "",
     ) -> None:
         await self._call(
             "turn.save_state",
-            session_id=session_id, turn_id=turn_id, messages=messages, session_state=session_state,
+            session_id=session_id,
+            turn_id=turn_id,
+            messages=messages,
+            session_state=session_state,
+            inherited_snapshot_id=inherited_snapshot_id,
         )
 
     async def save_session_state(self, session_id: str, session_state: dict) -> None:
         """Write the durable goal/task state alone, for a change that happened between turns."""
         await self._call("turn.save_session_state", session_id=session_id, session_state=session_state)
 
-    async def load_checkpoint(self, session_id: str) -> list:
-        return await self._call("turn.load_checkpoint", session_id=session_id) or []
+    async def load_checkpoint(self, session_id: str) -> dict:
+        return await self._call("turn.load_checkpoint", session_id=session_id) or {
+            "messages": [],
+            "inherited_snapshot_id": "",
+            "inherited_message_count": 0,
+        }
 
     async def load_session_state(self, session_id: str) -> dict:
         return await self._call("turn.load_session_state", session_id=session_id) or {}

@@ -204,7 +204,7 @@ async def _session_create(params: dict) -> dict:
 
     if inherited_conversation:
         try:
-            await state.turn_store.save_turn_state(record.id, "", inherited_conversation)
+            await state.turn_store.seed_inherited_conversation(record.id, inherited_conversation)
         except Exception as exception:
             logger.exception("could not seed inherited conversation for session %s", record.id)
             state.registry.forget(record.id)

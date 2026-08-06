@@ -44,6 +44,7 @@ async def _turn_save_state(params: dict) -> dict:
         str(params.get("turn_id") or ""),
         params.get("messages") or [],
         params.get("session_state"),
+        str(params.get("inherited_snapshot_id") or ""),
     )
     return {"saved": True}
 

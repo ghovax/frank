@@ -153,6 +153,7 @@
     "hideConversations": "Hide conversations",
     "hideConversationsSidebar": "Hide conversations sidebar",
     "history": "History",
+    "inheritedContextBoundary": "Earlier context inherited · child conversation starts here",
     "jumpToLatest": "Jump to latest",
     "loadConversationErrorDescription": "The transcript failed to load. Check the connection and try again.",
     "loadConversationErrorTitle": "Couldn’t load this conversation",

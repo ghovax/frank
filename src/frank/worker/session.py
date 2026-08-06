@@ -518,8 +518,11 @@ class SessionExecutor(AgentExecutor):
         if runtime is None:
         # Restore a persisted conversation the first time a context is seen, so the agent resumes with its history.
             if session_id not in self._conversations:
-            # The model-facing conversation is the store's per-context checkpoint, the one durable turn surface.
-                restored = messages_from_dict(await self._turn_store.load_checkpoint(session_id))
+                # The model-facing conversation is the store's per-context checkpoint, the one durable turn surface.
+                checkpoint = await self._turn_store.load_checkpoint(session_id)
+                state.inherited_snapshot_id = str(checkpoint.get("inherited_snapshot_id") or "")
+                state.inherited_message_count = int(checkpoint.get("inherited_message_count") or 0)
+                restored = messages_from_dict(checkpoint.get("messages") or [])
                 if restored:
                     self._conversations[session_id] = restored
         # Bound to the process-wide history for this context, so a turn picks up where the last left off.

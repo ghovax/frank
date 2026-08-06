@@ -153,6 +153,7 @@
     "hideConversations": "会話を隠す",
     "hideConversationsSidebar": "会話サイドバーを隠す",
     "history": "履歴",
+    "inheritedContextBoundary": "以前の文脈を継承 · 子会話はここから始まります",
     "jumpToLatest": "最新へ移動",
     "loadConversationErrorDescription": "トランスクリプトの読み込みに失敗しました。接続を確認して、もう一度お試しください。",
     "loadConversationErrorTitle": "この会話を読み込めませんでした",

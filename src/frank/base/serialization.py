@@ -3,6 +3,7 @@ r"""One spelling of JSON everywhere: no padding, and real UTF-8 rather than `\uX
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 from typing import Any
 
 from frank.base.tuning import Tunable, active_tuning, clip_to_tokens
@@ -15,6 +16,12 @@ def compact(payload: Any, **kwargs: Any) -> str:
     """`json.dumps` with nothing spent on whitespace or escapes."""
     kwargs.setdefault("ensure_ascii", False)
     return json.dumps(payload, separators=_SEPARATORS, **kwargs)
+
+
+def conversation_snapshot_id(messages: list[dict[str, Any]]) -> str:
+    """A stable content address for a serialized model conversation."""
+    encoded = compact(messages, sort_keys=True).encode("utf-8")
+    return sha256(encoded).hexdigest()
 
 
 def upstream_detail(body: str) -> str:

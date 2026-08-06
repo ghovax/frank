@@ -77,7 +77,7 @@ class PeerSessions:
     async def create(
         self, *, agent: str, working_directory: str, inherited_conversation: list[dict[str, Any]],
     ) -> dict:
-        """Make a peer with a copy of this session's conversation. It is not named here: a session is named after the first thing it is asked to do."""
+        """Make a peer that inherits this session's conversation through a shared snapshot. It is not named here: a session is named after the first thing it is asked to do."""
         result = await self._call(
             "session.create",
             agent=agent,
