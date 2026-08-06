@@ -11,18 +11,10 @@ from pydantic import Field, ValidationError, create_model
 from langmesh.base.configuration import PromptLoader
 from langmesh.base.serialization import compact
 from langmesh.runtime.tools import context as tool_context
-from langmesh.runtime.tools.registry import EXPLANATION
+from langmesh.runtime.tools.registry import EXPLANATION, tool_description as _description
 
-# A tool's description is model-facing prose, so it lives in a prompt template like every other piece.
+# The prompts these tools speak with. What they tell the *model* is a description, and lives with every other one.
 _PROMPTS = PromptLoader(Path(__file__).resolve().parent.parent / "prompts")
-
-
-def _description(tool_name: str) -> str:
-    text = _PROMPTS.load(f"tool_{tool_name}", {}).strip()
-    if not text:
-        # An empty description is a tool handed over with no idea what it does, so fail at import instead.
-        raise ValueError(f"No description template for the {tool_name!r} tool.")
-    return text
 
 
 @runtime_checkable
@@ -80,6 +72,7 @@ async def _create_session(
 
 
 async def _message_session(session: str, message: str, explanation: str = "") -> str:
+    """Hand a session a message, reporting a peer parked on a decision as an error rather than a delivery."""
     access = tool_context.current().session_access
     if access is None:
         return _unavailable("message_session_error")
@@ -102,6 +95,7 @@ async def _message_session(session: str, message: str, explanation: str = "") ->
 
 
 async def _read_session(session: str, explanation: str = "") -> str:
+    """One session's record as it stands, for orienting rather than for waiting on."""
     access = tool_context.current().session_access
     if access is None:
         return _unavailable("read_session_error")
@@ -116,6 +110,7 @@ async def _read_session(session: str, explanation: str = "") -> str:
 
 
 async def _list_sessions(explanation: str = "") -> str:
+    """This session's own subtree, which is the only part of the machine it is answerable for."""
     access = tool_context.current().session_access
     if access is None:
         return _unavailable("list_sessions_error")
@@ -127,6 +122,7 @@ async def _list_sessions(explanation: str = "") -> str:
 
 
 async def _list_remote_agents(explanation: str = "") -> str:
+    """The agents registered on other hosts, with the health of each, since an unreachable one is not a choice."""
     access = tool_context.current().session_access
     if access is None:
         return _unavailable("list_remote_agents_error")
@@ -138,6 +134,7 @@ async def _list_remote_agents(explanation: str = "") -> str:
 
 
 async def _message_remote_agent(name: str, message: str, explanation: str = "") -> str:
+    """One exchange with an agent on another host, whose reply is the whole of what comes back."""
     access = tool_context.current().session_access
     if access is None:
         return _unavailable("message_remote_agent_error")

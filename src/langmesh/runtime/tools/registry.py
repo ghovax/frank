@@ -510,6 +510,14 @@ def load_skill(name: str, explanation: str = Field(..., description=EXPLANATION)
 # What each tool tells the model, read from `descriptions/*.md` at import rather than from a docstring.
 _DESCRIPTIONS = PromptLoader(Path(__file__).parent / "descriptions")
 
+
+def tool_description(tool_name: str) -> str:
+    """One tool's model-facing description, for a tool built too late to be given one at import."""
+    text = _DESCRIPTIONS.load(tool_name, {}).strip()
+    if not text:
+        raise ValueError(f"No description file in runtime/tools/descriptions for the {tool_name!r} tool.")
+    return text
+
 _DESCRIBED = (
     bash, search_web, list_mcp_tools, call_mcp_tool, list_mcp_resources, read_mcp_resource,
     wait_for, read_turn, set_tasks, update_tasks, update_goal, read_file, search_code,
