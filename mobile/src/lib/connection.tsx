@@ -1,19 +1,4 @@
-/**
- * Which machines this phone knows, which one it is talking to, and whether it can reach it.
- *
- * Plural, and that is the shape of the whole file. A phone that can reach one Frank is a phone
- * pointed at a desk; the point of reaching a machine over a tailnet is that there may be several
- * of them and you are not next to any of them. So a pairing is not *the* pairing — it is one
- * entry in a set, and choosing between them is an ordinary thing to do rather than a repair.
- *
- * A machine is identified by its address. One `frank reach` is one endpoint, so pairing the same
- * machine twice updates the entry it already has rather than growing a second one with a stale
- * token — which is what makes re-pairing after `frank reach rotate` do the obvious thing.
- *
- * Nothing is raced or discovered. The address a machine gives is its name on the tailnet, and
- * that does not change; an earlier version carried a ranked list of addresses and tried them in
- * turn, which was machinery for coping with addresses that stop working.
- */
+/** Which machines this phone knows, which one it is talking to, and whether it can reach it. */
 
 import * as SecureStore from "expo-secure-store";
 import {
@@ -60,14 +45,7 @@ interface ConnectionValue {
   forget: (endpoint: string) => Promise<void>;
   /** Ask the active machine again whether it is there. */
   reconnect: () => void;
-  /**
-   * Call a machine something else, on this phone only.
-   *
-   * The pairing arrives carrying the host's own name, which is whatever DHCP and the ISP left it
-   * — `Giovannis-MBP`, and worse on some networks. That is a fine default and a poor label, and
-   * the machine is not the right place to fix it: the name is what *this* phone calls it, and
-   * another device pairing with the same Mac may reasonably call it something else.
-   */
+  /** Call a machine something else, on this phone only, since the paired name is whatever DHCP left it. */
   rename: (endpoint: string, name: string) => Promise<void>;
 }
 
@@ -83,16 +61,7 @@ export class PairingError extends Error {
   }
 }
 
-/**
- * Read a `frank://pair#…` link, or a bare base64 payload pasted out of one.
- *
- * Throws rather than returning null: every caller is a person who just scanned or pasted
- * something, and being told which way it was wrong is the only useful thing to say.
- *
- * What it throws is a key into `PairScreen`, not a sentence. This is a plain module with no hook
- * to reach the catalogue through, and an English sentence written here would be one no screen
- * could translate — the language of a message belongs to whatever is about to show it.
- */
+/** Read a pairing link or a bare payload, throwing rather than returning null so the person is told why. */
 export function parsePairing(input: string): Pairing {
   const trimmed = input.trim();
   const fragment = trimmed.includes("#") ? trimmed.slice(trimmed.indexOf("#") + 1) : trimmed;
@@ -121,12 +90,7 @@ export function parsePairing(input: string): Pairing {
   };
 }
 
-/**
- * Secrets go to the keychain, not to AsyncStorage — these are bearer tokens with full control of
- * somebody's laptop. On web there is no keychain, and `expo-secure-store` says so by being
- * unavailable; the browser build is a development surface, so it falls back to `localStorage`
- * rather than refusing to run.
- */
+/** Secrets go to the keychain rather than ordinary storage, and the web has neither. */
 const store = {
   async read(): Promise<Pairing[]> {
     const raw = Platform.OS === "web"
@@ -137,8 +101,7 @@ const store = {
       const parsed = JSON.parse(raw);
       return Array.isArray(parsed) ? (parsed as Pairing[]).filter((entry) => entry?.endpoint && entry?.token) : [];
     } catch {
-      // Unreadable is the same as absent: there is nothing to salvage from a corrupt token, and
-      // the way out — pair again — is the same either way.
+      // Unreadable is the same as absent, since the way out is pairing again either way.
       return [];
     }
   },
@@ -165,18 +128,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
     const controller = new AbortController();
     attempt.current = controller;
     setStatus("connecting");
-    // In a browser there is nothing to probe with.
-    //
-    // A page cannot ask whether another origin is there: the request is cross-origin, the reach
-    // listener answers no `access-control-allow-origin` because it is not meant to be scripted
-    // from arbitrary pages, and what comes back is an opaque failure indistinguishable from a
-    // machine that is asleep. Reporting that as "not answering" was worse than useless — it sent
-    // people to go and wake a machine that was wide awake.
-    //
-    // So on web the pairing is taken at its word and the browser is left to find out, which it
-    // does perfectly well: opening the endpoint either shows Frank or shows the browser's own
-    // "cannot connect", and that is a truthful answer arrived at by something that is actually
-    // allowed to ask.
+    // In a browser there is nothing to probe with, because a page cannot ask whether another origin is there.
     const answer = Platform.OS === "web"
       ? "ok"
       : await probe(machine.endpoint, machine.token, controller.signal);
@@ -189,8 +141,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
       setStatus("rejected");
       return;
     }
-    // Configured before the status changes, so nothing renders as "online" with the API still
-    // pointing at the previous machine.
+    // Configured before the status changes, so nothing renders as online while the API points elsewhere.
     configure(machine.endpoint, machine.token);
     setStatus("online");
   }, []);
@@ -203,9 +154,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, []);
 
-  // A phone that has been in a pocket has had its streams dropped and possibly its network
-  // changed. Coming back to the foreground is the moment to find out whether the machine it was
-  // talking to is still there, and it costs one request when the answer is yes.
+  // Coming back to the foreground is the moment to find out whether the machine is still reachable.
   const activeRef = useRef<Pairing | null>(null);
   useEffect(() => { activeRef.current = active; }, [active]);
   useEffect(() => {
@@ -216,8 +165,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
   }, [connect]);
 
   const add = useCallback(async (next: Pairing) => {
-    // Keyed on the address, so pairing the same machine again replaces its token rather than
-    // leaving a second entry holding one that no longer works.
+    // Keyed on the address, so pairing the same machine again replaces its token rather than adding one.
     const merged = [...machines.filter((entry) => entry.endpoint !== next.endpoint), next];
     await store.write(merged);
     setMachines(merged);
