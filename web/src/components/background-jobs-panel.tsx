@@ -22,22 +22,18 @@ import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
 import { ActivityIcon, ActivitySpinner } from "./ui/activity-icon";
 import { Pill } from "./ui/pill";
 
-// A shell command surfaced from the transcript, carried in the exact shape the
-// ToolCall component consumes so each row renders as a real tool call.
+// A shell command from the transcript, in the exact shape the tool-call component consumes.
 interface ShellJob {
   toolCallId: string;
   name: string;
   arguments: Record<string, unknown>;
-  // Absent when the event carried none. Not defaulted to `completed` here: a job whose
-  // status is unknown is not a job that finished, and the display layer decides how to
-  // render an absence — inventing one at the parse site made every such job look done.
+  // Absent when the event carried none, since an unknown status is not a finished job.
   status?: ToolEventStatus;
   result: unknown;
   timestamp: string;
   running: boolean;
   canBackground: boolean;
-  // Already detached (the model ran it with background=true, or the user pushed a
-  // foreground command to the background).
+  // Already detached, whether by the model or by the user pushing a foreground command to the background.
   backgrounded: boolean;
 }
 
@@ -105,9 +101,7 @@ function mergeTasks(messageTasks: ShellJob[], liveTasks: ShellJob[]): ShellJob[]
     .sort((first, second) => second.timestamp.localeCompare(first.timestamp));
 }
 
-// A running shell command: the tool card plus the actions that only make sense
-// while it is live — pushing a still-blocking foreground command to the
-// background, or stopping it outright.
+// A running shell command, with the actions that only make sense while it is live.
 function RunningTaskRow({ task, sessionId }: { task: ShellJob; sessionId: string | null }) {
   const translation = useTranslations("BackgroundJobsPanel");
   const [busy, setBusy] = useState<"stop" | "background" | null>(null);
@@ -175,8 +169,7 @@ function RunningTaskRow({ task, sessionId }: { task: ShellJob; sessionId: string
   );
 }
 
-// A fresh, unique terminal key. Module-level (not called during render) so the
-// impurity of Date.now/Math.random stays out of the component body.
+// A fresh terminal key, minted at module level so its impurity stays out of the component body.
 function newTerminalKey(): string {
   return `terminal-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
@@ -199,9 +192,7 @@ export function BackgroundJobsPanel({
   const tasks = useMemo(() => shellJobsFromMessages(messages), [messages]);
   const [backgroundJobs, setBackgroundJobs] = useState<BackgroundJob[]>([]);
   const [activeView, setActiveView] = useState<"terminal" | "processes">("terminal");
-  // The set of terminals for this session's context, and which one is on top. Restored
-  // from the server on mount/context change so tabs survive reloads. "main" is the
-  // canonical key for the first terminal created in an empty context.
+  // The terminals for this session's context and which is on top, restored so tabs survive a reload.
   const [terminals, setTerminals] = useState<string[]>(["main"]);
   const [activeTerminal, setActiveTerminal] = useState<string>("main");
   // The location each terminal targets (by id); defaults to the workspace's first location.
@@ -252,9 +243,7 @@ export function BackgroundJobsPanel({
     };
   }, [sessionId, workingDirectory]);
 
-  // A terminal's environment is chosen when it's created (via the "＋" menu when there is
-  // more than one location) and fixed for its life — a shell on host A and a shell on
-  // host B are simply different terminals, so the location is not changed mid-session.
+  // A terminal's location is chosen when it is created and fixed for its life.
   function addTerminal(locationId?: string) {
     const key = newTerminalKey();
     setTerminals((current) => [...current, key]);

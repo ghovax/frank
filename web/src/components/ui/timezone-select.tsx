@@ -1,18 +1,6 @@
 "use client";
 
-// Choosing the zone a schedule's clock runs in.
-//
-// It was a free-text field, which is the wrong control for a value out of a closed set of 444
-// identifiers nobody spells from memory — `America/New_York` has an underscore rule, a
-// capitalisation rule and a region prefix. The field's real behaviour was: type something
-// plausible, save, and let the daemon reject it, after which a schedule fires unattended for
-// months on whatever the retry produced.
-//
-// The list is the platform's own (`Intl.supportedValuesOf`), not a table shipped here that would
-// go stale the next time a country changes its rules. Each row carries the zone's offset *right
-// now*, because the identifier alone does not answer the question anybody actually has — "is
-// that the one I mean" — and an offset reading `GMT+2` in summer and `GMT+1` in winter is the
-// honest answer for a zone that observes daylight saving.
+// Choosing the zone a schedule's clock runs in, from a closed set rather than by free text.
 
 import { Combobox, Flex, Portal, Span, useFilter, useListCollection } from "@chakra-ui/react";
 import { useMemo } from "react";
@@ -30,18 +18,6 @@ interface ZoneOption {
 }
 
 // Shown in the identifier's own shape, with only its underscores spaced.
-//
-// The structure is the standard and stays: region first, `/`, then the place — what IANA
-// publishes, what the daemon stores, what croniter reads, and what the schedule list shows
-// afterwards. An earlier pass here rewrote `Africa/Addis_Ababa` as `Addis Ababa — Africa`, which
-// invented a format nothing else uses and reordered the halves so a row no longer matched the
-// value it stood for.
-//
-// The underscore is the one part worth touching. It is an artefact of a format that had to be
-// filename-safe in 1986, it carries no meaning a reader needs, and it is the single thing that
-// makes the list read as machine output. Spacing it changes nothing about the identity — the
-// value sent and stored is still `Africa/Addis_Ababa` — and a search for `addis ababa` now finds
-// it, which it could not before.
 function offsetOf(zone: string, at: Date): string {
   try {
     const parts = new Intl.DateTimeFormat("en", { timeZone: zone, timeZoneName: "shortOffset" }).formatToParts(at);
@@ -73,9 +49,7 @@ function zoneOptions(): ZoneOption[] {
       offset: offsetOf(zone, now),
       current: zone === machineZone,
     }))
-    // The machine's own zone first, because it is the answer nine times in ten and scrolling to
-    // it alphabetically is absurd. The rest in the order IANA lists them, which is alphabetical
-    // by identifier — the same order the reader is scanning.
+    // The machine's own zone first, since it is the answer nine times in ten, then IANA's own order.
     .sort((left, right) => {
       if (left.current !== right.current) return left.current ? -1 : 1;
       return left.zone.localeCompare(right.zone);
@@ -104,27 +78,20 @@ export function TimezoneSelect({
   /** How the machine's own zone is marked in the list. */
   currentLabel?: string;
 }) {
-  // Built once: 444 zones each formatted for their current offset is real work, and the
-  // offsets do not move while a dialog is open.
+  // Built once, because formatting 444 zones is real work and the offsets do not move while a dialog is open.
   const options = useMemo(() => zoneOptions(), []);
-  // `contains` rather than `startsWith`: people search for the city, not the region, so `Rome`
-  // finds Rome and `Africa` finds the continent. Base sensitivity so case and accents do not
-  // matter — `sao paulo` should find São Paulo.
+  // Contains rather than starts-with, since people search for the city rather than the region.
   const { contains } = useFilter({ sensitivity: "base" });
   const { collection, filter } = useListCollection<ZoneOption>({
     initialItems: options,
     itemToString: (item) => item.label,
     itemToValue: (item) => item.zone,
     filter: contains,
-    // 444 rows would be mounted on every keystroke otherwise. Nobody scrolls past the first
-    // dozen matches of a search they are typing; they narrow it instead.
+    // 444 rows would be mounted on every keystroke otherwise, and nobody scrolls past the first dozen.
     limit: 50,
   });
 
-  // Seeded from the value, which is the fix for a field that opened blank. The draft carries
-  // the machine's zone from the moment the form is created, but a combobox shows its *input*
-  // text rather than its selection — so without this the schedule had a perfectly good zone
-  // that the person could not see, and no way to tell it apart from having chosen nothing.
+  // Seeded from the value, which is the fix for a field that opened blank.
   const selected = options.find((option) => option.zone === value);
 
   return (
