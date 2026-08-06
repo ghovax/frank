@@ -33,7 +33,9 @@ class SessionAccess(Protocol):
     working_directory: str
     permission_mode: str
 
-    async def create(self, *, agent: str, working_directory: str) -> dict: ...
+    async def create(
+        self, *, agent: str, working_directory: str, inherited_conversation: list[dict[str, Any]],
+    ) -> dict: ...
     async def send(self, session_id: str, text: str) -> None: ...
     async def get(self, session_id: str) -> dict: ...
     async def children(self) -> list[dict]: ...
@@ -60,9 +62,11 @@ async def _create_session(
     if access is None:
         return _unavailable("create_session_error")
     try:
+        conversation_snapshot = tool_context.current().conversation_snapshot
         record = await access.create(
             agent=agent,
             working_directory=working_directory or access.working_directory,
+            inherited_conversation=conversation_snapshot() if conversation_snapshot is not None else [],
         )
     except Exception as exception:  # noqa: BLE001 — surfaced to the model as a tool result
         return compact({"code": "create_session_error", "status": "error", "message": str(exception)})

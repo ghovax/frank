@@ -74,13 +74,16 @@ class PeerSessions:
 
     # The SessionAccess surface the runtime's tools call.
 
-    async def create(self, *, agent: str, working_directory: str) -> dict:
-        """Make a peer. It is not named here: a session is named after the first thing it is asked to do."""
+    async def create(
+        self, *, agent: str, working_directory: str, inherited_conversation: list[dict[str, Any]],
+    ) -> dict:
+        """Make a peer with a copy of this session's conversation. It is not named here: a session is named after the first thing it is asked to do."""
         result = await self._call(
             "session.create",
             agent=agent,
             working_directory=working_directory,
-        # No mode is sent: the daemon gives a child its parent's, narrowed by the profile's ceiling.
+            inherited_conversation=inherited_conversation,
+            # No mode is sent: the daemon gives a child its parent's, narrowed by the profile's ceiling.
             parent=self.session_id,
         )
         return result.get("session") or result

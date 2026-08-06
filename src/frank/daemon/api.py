@@ -49,6 +49,18 @@ def _require(params: dict, name: str) -> str:
     return value
 
 
+def _inherited_conversation(params: dict) -> list[dict[str, Any]]:
+    """Validate a model-facing conversation snapshot supplied for a child session."""
+    inherited_conversation = params.get("inherited_conversation")
+    if inherited_conversation is None:
+        return []
+    if not isinstance(inherited_conversation, list) or not all(
+        isinstance(message, dict) for message in inherited_conversation
+    ):
+        raise RpcError("inherited_conversation must be a list of serialized messages")
+    return inherited_conversation
+
+
 def _session(session_id: str) -> SessionRecord:
     record = state.registry.get(session_id) if state.registry else None
     if record is None:
@@ -147,6 +159,13 @@ async def _session_create(params: dict) -> dict:
     parent = state.registry.get(parent_id) if parent_id else None
     if parent_id and parent is None:
         raise RpcError(f"No parent session {parent_id!r}.", status_code=404, code="no_such_session")
+    inherited_conversation = _inherited_conversation(params)
+    if inherited_conversation and parent is None:
+        raise RpcError("A conversation can only be inherited from a parent session.")
+    if inherited_conversation and state.turn_store is None:
+        raise RpcError(
+            "The conversation store is unavailable.", status_code=503, code="store_unavailable",
+        )
 
     configured = getattr(getattr(state.global_configuration, "agent", None), "permission_mode", "")
 
@@ -182,6 +201,20 @@ async def _session_create(params: dict) -> dict:
         title=str(params.get("title") or ""),
         created_at=_now(),
     )
+
+    if inherited_conversation:
+        try:
+            await state.turn_store.save_turn_state(record.id, "", inherited_conversation)
+        except Exception as exception:
+            logger.exception("could not seed inherited conversation for session %s", record.id)
+            state.registry.forget(record.id)
+            with contextlib.suppress(Exception):
+                await state.turn_store.delete_session(record.id)
+            raise RpcError(
+                "The parent conversation could not be inherited.",
+                status_code=503,
+                code="conversation_inheritance_failed",
+            ) from exception
 
     # Where the session will run, decided here: a worktree strategy puts its tools somewhere else.
     from frank.hub.services.sessions import _ensure_session_workspace

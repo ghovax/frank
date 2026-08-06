@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextvars
 from dataclasses import dataclass, field, replace
-from typing import Any, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence
 
 from frank.base import environment_variables
 from frank.base.confinement import Grant, Profile
@@ -27,6 +27,7 @@ class ToolContext:
 
     # How this session reaches its peers, supplied by the worker; the runtime holds no identity.
     session_access: Any = None
+    conversation_snapshot: Optional[Callable[[], list[dict[str, Any]]]] = None
 
     # Which session this is, so a child reaching for the CLI creates a child of it rather than an orphan.
     session_id: str = ""
