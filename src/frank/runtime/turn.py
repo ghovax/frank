@@ -437,8 +437,7 @@ class _RunsTurns:
 
             messages = self._build_turn_messages()
 
-            # Phase 1 — the model call. Yields the thinking/answer stream and hands back
-            # the assembled response, or a terminal (cancelled) / steering condition.
+            # The model call: yields the stream and hands back the assembled response, or a terminal condition.
             call = _ModelCallOutcome()
             try:
                 async for event in self._stream_model_call(messages, call):

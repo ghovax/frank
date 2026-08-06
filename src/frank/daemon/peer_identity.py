@@ -100,8 +100,7 @@ def unix_peer_protocol():
             super().connection_made(transport)
             process_id = peer_process_id(transport)
             if process_id:
-                # Stands in for the (host, port) a TCP peer would have. Every request on this
-                # connection reads it back out of the scope.
+                # Stands in for the address a TCP peer would have, read back out of the scope by every request.
                 self.client = (UNIX_PEER, process_id)
 
     return PeerAwareProtocol

@@ -1,20 +1,4 @@
-/**
- * The machines this phone knows, and the way into one of them.
- *
- * This is the app's home, and it is the answer to a question the interface cannot answer for
- * itself: *which* Frank. The interface belongs to one machine — it is served by that machine, it
- * talks to that machine, and it has no idea the others exist — so choosing between them is the
- * one navigation that has to live in the shell.
- *
- * Which is why it is the root of the stack rather than a panel over the top. Tapping a machine
- * pushes the interface, and the edge swipe every iOS app already has brings you back here. That
- * costs the page its own back gesture, which it can afford: it is a single-page application with
- * its own history controls, and it never needed a gesture to move within itself.
- *
- * A phone with one machine paired still sees this screen. The alternative was to skip it when
- * there is only one, and that trades a tap for a surprise — a screen that appears the day you
- * pair a second machine, in a place you have never seen it.
- */
+/** The machines this phone knows, and the way into one of them. */
 
 import { router } from "expo-router";
 import { Plus, Trash2 } from "lucide-react-native";
@@ -39,18 +23,11 @@ export default function MachinesScreen() {
     setBusy(machine.endpoint);
     select(machine.endpoint);
     router.push("/interface");
-    // Cleared on the way out rather than on arrival: the push is synchronous and the probe is
-    // not, so a spinner left running here would still be turning behind the screen on top of it.
+    // Cleared on the way out rather than on arrival, since the push is synchronous and the probe is not.
     setTimeout(() => setBusy(""), 600);
   };
 
-  /**
-   * Confirmed, because forgetting a machine throws away its token.
-   *
-   * There is no undo — the token is the only copy this phone has, and getting another means
-   * being at the machine to run `frank reach pair`. A swipe that quietly did this would be a
-   * gesture whose cost is a walk to another room.
-   */
+  /** Confirmed, because forgetting a machine throws away the only copy of its token. */
   const confirmForget = (machine: Pairing) => {
     SystemAlert.alert(
       translation("forgetTitle", { machine: machine.name }),
@@ -84,8 +61,7 @@ export default function MachinesScreen() {
             <Row
               key={machine.endpoint}
               title={machine.name}
-              // The address, because it is what distinguishes two machines a person has given
-              // similar names, and because seeing it is how you notice you paired the wrong one.
+              // The address, because it is what distinguishes two machines with similar names.
               subtitle={machine.endpoint.replace(/^https:\/\//, "")}
               onPress={() => open(machine)}
               trailing={
