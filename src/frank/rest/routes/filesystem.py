@@ -46,9 +46,7 @@ async def save_message_history(body: dict):
 @router.post("/directory/validate")
 async def validate_directory(request: DirectoryValidationRequest):
     """Validate that a path is an existing absolute directory and report Git workspace availability."""
-    # The git probes below spawn subprocesses that can block for seconds (a slow or
-    # networked repository), so the whole thing runs off the event loop — a blocking
-    # subprocess on the loop thread would freeze every other request until it returns.
+    # Off the loop: a git probe can block for seconds and would freeze every other request.
     return await asyncio.to_thread(_validate_directory_payload, request.directory.strip())
 
 
