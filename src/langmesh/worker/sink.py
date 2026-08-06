@@ -45,13 +45,13 @@ from langmesh.runtime.turn_events import (
 )
 
 class _TextPartBuffer:
-    """Coalesce adjacent text chunks onto a frame clock, so what is emitted follows time rather than arrivals."""
+    """Coalesce adjacent text chunks onto the display's clock: 60 a second, which is what the browser can draw."""
 
     def __init__(
         self,
         emit: Callable[[tuple[str, ...], str], Awaitable[None]],
         *,
-        flush_interval: float = 0.041667,
+        flush_interval: float = 0.016667,
         flush_size: int = 512,
     ):
         self._emit = emit

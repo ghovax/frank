@@ -39,6 +39,7 @@ from langmesh.runtime.turn_events import (
     TextChunk,
     Thinking,
     ThinkingDone,
+    ToolCall,
     TurnEvent,
 )
 from langchain_core.messages import (
@@ -519,6 +520,8 @@ class _RunsTurns:
         thinking_started_at = time.monotonic()
         thinking_done_emitted = False
         response_chunks: list[AIMessageChunk] = []
+        # Calls already announced from the stream, so the completed message does not announce them twice.
+        announced_tool_calls: set[str] = set()
         aborted_for_steering = False
         # A generation span, started rather than made current so it is safe to hold across yields.
         generation_span = _telemetry.start_span(
@@ -552,6 +555,18 @@ class _RunsTurns:
                 if chunk is _STREAM_EXHAUSTED:
                     break
                 response_chunks.append(chunk)
+                # A call is announced the moment the model names it, not when its arguments finish: writing a
+                # large argument is seconds during which the turn would otherwise show nothing at all.
+                for named in getattr(chunk, "tool_call_chunks", None) or []:
+                    name = (named or {}).get("name") or ""
+                    identifier = (named or {}).get("id") or ""
+                    if not name or not identifier or identifier in announced_tool_calls:
+                        continue
+                    announced_tool_calls.add(identifier)
+                    if not thinking_done_emitted:
+                        thinking_done_emitted = True
+                        yield ThinkingDone(duration_ms=int((time.monotonic() - thinking_started_at) * 1000))
+                    yield ToolCall(name=name, arguments=None, id=identifier)
                 for content_delta in message_content_deltas(chunk):
                     if content_delta.kind == "text":
                         if not thinking_done_emitted:
