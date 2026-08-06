@@ -134,7 +134,7 @@ async def terminal_websocket(
                 "recoverable": False,
             })
     except Exception as exception:
-    # Logged, since everything this handler knew used to leave through the socket that was failing.
+    # Logged, since the socket that failed is the only other way anything this handler knows would leave.
         logger.exception("terminal websocket failed (key=%s, directory=%s)", terminal_key, working_directory)
         with suppress(Exception):
             await websocket.send_json({

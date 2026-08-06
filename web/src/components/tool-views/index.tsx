@@ -222,7 +222,7 @@ const GOAL_OUTCOME_KEYS: Record<string, string> = {
 
 // Translation keys for raw argument and result labels, falling back to the raw key when unmapped.
 const FIELD_LABEL_KEYS: Record<string, string> = {
-  // The goal tool, whose fields used to fall through unmapped and be labelled with their own raw keys.
+  // The goal tool, whose fields would otherwise fall through and be labelled with their own raw keys.
   status: "fieldStatus",
   goal: "goal",
   previous_goal: "previousGoal",
