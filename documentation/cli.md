@@ -32,9 +32,10 @@ frank create [-a AGENT] [-C DIRECTORY] [-m MODE] [-p PROJECT] [-P PARENT] [-t TI
 |------|--------------|
 | `-a`, `--agent` | **Required.** The agent profile to run. There is no default: which agent does the work is the one thing nothing can guess for you. |
 | `-C`, `--directory` | The working directory. Project-local agents, skills and MCP servers are resolved from here. |
-| `-m`, `--mode` | `default`, `permissive`, `classify`, or `read_only`. The mode a session *starts* under; the person running it can change it later, and the change reaches the turn in flight. `classify` is the one for unattended work: it never asks. |
+| `-m`, `--mode` | `ask` or `auto` — who answers when a call asks to reach past the session's confinement. The mode a session *starts* under; the person running it can change it later, and the change reaches the turn in flight. `auto` is the one for unattended work: it never asks. |
+| `--read-only` | Give the session a confinement with nowhere writable. Not a mode: the operating system refuses every write. |
 | `-p`, `--project` | The project this session belongs to. |
-| `-P`, `--parent` | The session creating this one. Without `--mode` the child **inherits the parent's**; either way it is clamped to no looser a mode than its parent, and is reaped when the parent ends. A parent running `classify` can only create children that also run `classify`, because a child that stops to ask would be asking nobody. Defaults to `$SESSION_ID`, which every session exports — so this command run from inside a session creates a child of it rather than an orphan. |
+| `-P`, `--parent` | The session creating this one. Without `--mode` the child **inherits the parent's**; either way it is clamped to no looser a mode than its parent, and is reaped when the parent ends. A parent running `auto` can only create children that also run `auto`, because a child that stops to ask would be asking nobody. Defaults to `$SESSION_ID`, which every session exports — so this command run from inside a session creates a child of it rather than an orphan. |
 | `-t`, `--title` | A label for the session list. Left unset, the session names itself after its first message. |
 
 This is the **only** place a session's configuration is set. Nothing changes its agent, its directory, or its permission mode afterwards. That immutability makes a session's authority something you can reason about. A later call cannot widen it.
@@ -146,7 +147,7 @@ frank schedule list | show <id> | pause <id> | resume <id> | delete <id> | run <
 ```shell
 frank schedule create "morning triage" \
   --cron "0 9 * * MON-FRI" --prompt "Summarise anything that broke overnight." \
-  -a general-assistant -w "$PWD" -m read_only
+  -a general-assistant -w "$PWD" -m auto --read-only
 ```
 
 `--mode` is **required**, and that is deliberate: nobody is watching when this fires, so an unstated permission mode is one nobody chose. `--timezone` takes an IANA name and defaults to this machine's, so a cron line means the hour you meant rather than the hour UTC meant.
@@ -276,7 +277,7 @@ ssh workstation frank daemon endpoint
 | `frank configure --all` | Every setting there is, with its default |
 | `frank configure` | Only what you have changed |
 | `frank configure agent.permission_mode` | Read one |
-| `frank configure agent.permission_mode read_only` | Set one |
+| `frank configure agent.permission_mode auto` | Set one |
 | `frank configure agent.permission_mode --unset` | Remove one, back to its default |
 
 `--all` walks the **schema**. It therefore lists every setting that exists, not only the ones somebody wrote down. The output is a JSON object of dotted path to `{about, default, current}`. That is usually what you want. To read the file shows only the part you already know about. A setting left at its default was otherwise invisible.

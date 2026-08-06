@@ -123,7 +123,7 @@ When you enable Composio, it joins the ordinary MCP set. It is not a second path
 ```yaml
 sandbox:   { enforce: "required" }
 workspace: { strategy: "none" }
-agent:     { permission_mode: "default" }
+agent:     { permission_mode: "ask" }
 computer_control: { enabled: false }
 user_context:     { enabled: false }
 toolbox:          { enabled: true }
@@ -175,7 +175,9 @@ The shipped defaults keep credential and configuration directories readable. To 
 
 `/tmp` is listed beside `$TMPDIR` because on macOS the two are different places: `$TMPDIR` expands to a per-user directory under `/var/folders`. A writable set that named only `$TMPDIR` refused `/tmp`, which is the scratch path every convention points at and the first one anything reaches for.
 
-**Asking for more.** An agent that needs a path outside these lists asks for it, on the call that needs it, with `access_request`. The request goes through the same rules, classifier and approval prompt as anything else. An approval holds for the rest of that session, and it never reaches a peer: a session it creates clamps against the *configured* profile, not the granted one.
+**Asking for more.** An agent that needs a path outside these lists asks for it, on the call that needs it, with `access_request`. That request is the *only* thing that raises a prompt: work inside the confinement runs without interrupting anybody, because the boundary is already drawn and the operating system holds it. An approval holds for the rest of that session, and it never reaches a peer: a session it creates clamps against the *configured* profile, not the granted one.
+
+**When a command hits the wall.** A command the operating system refuses is not simply failed. Its first run was confined and could not have been otherwise, so whatever it managed before the refusal it did inside the box — which makes it safe to offer a second run with more reach. Under `ask` you are shown the command and what the refusal looked like; under `auto` the reviewer answers. The offer is "let this one command reach past the workspace", because neither backend reports *which* path it refused, and there is nothing narrower to honestly offer. Your `deny` list still holds through it.
 
 `grantable` lists the paths an agent may be given without a prompt. It is empty by default, so every request is asked about. A path under `deny` is never grantable, whatever `grantable` says — that list is what you declared off-limits before the session started, and nothing decided at runtime reaches past it.
 
@@ -200,16 +202,20 @@ It also clamps the confinement against the session that created it. Path sets in
 
 ### Permission modes
 
+A session's mode says **who answers** when a call asks to reach past its confinement. It says nothing about what the session may do — that is the `sandbox` block above, and the operating system enforces it.
+
 | Mode | Behaviour |
 |------|-----------|
-| `default` | Follow the per-command rules; ask about anything they do not name. |
-| `permissive` | The same rules, but an unnamed command runs. Only the risk the model declared escalates: `low` runs, `medium` and `high` ask. No classifier, so no extra model call. |
-| `classify` | A classifier settles every call the barrier could not, and **never asks**: it allows or denies. For work nobody is watching. A denial reaches the agent as a refused tool call, with a reason it can work around. A session in this mode can only create peers in it, since a peer that stopped to ask would be asking nobody. |
-| `read_only` | Allow reads; deny writes and side effects. The session's confinement is narrowed to match, so the kernel refuses a write the command scan did not catch. |
+| `ask` | The person running the session answers. The turn parks until they do. |
+| `auto` | A reviewer answers: it allows the request or refuses it, and never asks. For work nobody is watching. A refusal reaches the agent as a refused tool call, with a reason it can work around. |
 
-They are listed from the most asking to the least, which is the order restrictiveness runs in and the order a session moves along as it earns trust. There is **no bypass mode**, and no standing "always allow": the only runtime decisions are allow-once and deny. A session's mode is chosen when the harness creates it and can be changed afterwards by the person running it; a session can never change its own. A session created by another is never looser than its parent, and tightening a session tightens the subtree it created.
+There is **no bypass mode**, and no standing "always allow": the only runtime decisions are allow-once and deny. A session's mode is chosen when the harness creates it and can be changed afterwards by the person running it; a session can never change its own. A session created by another is never looser than its parent, and tightening a session tightens the subtree it created.
 
-Three tools take per-call rules on each agent, and they are the three whose calls can be named: `bash` by its command (`sudo *: deny`, `rm *: ask`, …), `mcp` by `server.tool` (`*.delete_*: deny`), and `screen` by the primitive a script reaches for (`evaluate: deny`). The longest matching pattern wins. A `deny` refuses the call outright in every mode, including `classify` — a classifier may not overrule a rule you wrote. See [Agents and skills](agents-and-skills.md).
+**A read-only session** is not a mode. It is a confinement with nowhere writable — `frank create --read-only`, or a `sandbox:` block on the agent profile that lists no `writable` paths. Nothing about a command's text decides it, so there is no spelling of a write that gets past.
+
+Three tools take per-call rules on each agent, and they are the three whose calls can be named: `bash` by its command (`sudo *: deny`, `rm -rf *: ask`, …), `mcp` by `server.tool` (`*.delete_*: deny`), and `screen` by the primitive a script reaches for (`evaluate: deny`). The longest matching pattern wins. A `deny` refuses the call outright in both modes — a reviewer may not overrule a rule you wrote. See [Agents and skills](agents-and-skills.md).
+
+`bash` ships with a short list of prefixes already set to `ask` or `deny`, because the confinement answers "where can this reach" and not "how much of the workspace survives this": `rm -rf .` is entirely inside the boundary, and so is `git reset --hard`. Your own entry at the same pattern replaces the shipped one, so writing `"rm -rf *": allow` turns it off.
 
 ## Conversation compaction
 

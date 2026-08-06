@@ -9,4 +9,3 @@ Arguments:
   - content: The full text to write.
   - location: Which workspace location receives the file — its URI or its name, from the locations in your context. Defaults to the local filesystem. Pass it only to reach a different, remote location.
   - explanation: A short reason for the write, in the words the user reads.
-  - risk: "low" for a new file, "medium" for a broad rewrite, "high" where the content is hard to reconstruct.

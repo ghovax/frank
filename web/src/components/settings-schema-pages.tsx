@@ -44,7 +44,7 @@ const SECTION_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   workspace: LuFolderGit2,
   sandbox: LuShield,
   toolbox: LuPackage,
-  permission_classifier: LuScale,
+  permission_reviewer: LuScale,
   compaction: LuLayers,
   user_context: LuUser,
   computer_control: LuMonitor,

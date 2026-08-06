@@ -72,16 +72,3 @@ export function taskStateKind(state: string): StatusKind {
       return "unknown";
   }
 }
-
-/**
- * How risky the harness judged a tool call, as a palette name. `low` is deliberately grey: a
- * colour on every approval teaches people to ignore the colour.
- */
-export const RISK_PALETTE: Record<string, string> = { high: "red", medium: "orange", low: "gray" };
-
-/** The catalogue key naming each risk level, so the badge reads "Medium risk" and not `medium`. */
-export const RISK_LABEL_KEY: Record<string, string> = {
-  high: "riskHigh",
-  medium: "riskMedium",
-  low: "riskLow",
-};

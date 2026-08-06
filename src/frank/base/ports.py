@@ -75,9 +75,8 @@ class SuspensionGate:
     question.
 
     ``kind`` discriminates (``"permission"`` | ``"question"``); the permission fields
-    (``tool_name``/``arguments``/``command``/``explanation``/``reason``/``risk``) and the
-    question field (``questions``) are
-    populated per kind. A typed carrier so a reader takes ``gate.kind`` rather than an untyped
+    (``tool_name``/``arguments``/``command``/``explanation``/``reason``) and the question field
+    (``questions``) are populated per kind. A typed carrier so a reader takes ``gate.kind`` rather than an untyped
     ``gate.get("kind")`` off a bare dict.
 
     It lives here rather than beside the turn events because it is the vocabulary the
@@ -101,14 +100,19 @@ class SuspensionGate:
     # own language (a ``PermissionReason``, or the plain dict it survives persistence as).
     # ``Any`` because the typed shape belongs to the protocol, which is above this module.
     reason: Any = None
-    risk: str = ""
     questions: list[dict[str, Any]] = field(default_factory=list)
     is_bash: bool = False
     deny_message: str = ""
     egress_agent: str = ""
     # The widening a call is asking for, carried so that approving the gate records exactly what
     # was approved rather than re-parsing the arguments to guess at it.
-    access_request: Any = None
+    escape: Any = None
+    # Whether approving means "let this one command reach past the workspace", which is what a
+    # command the operating system refused is offered.
+    whole_disk: bool = False
+    denial_evidence: str = ""
+    refused_result: Any = None
+    grants_screen_mutations: bool = False
 
 
 @dataclass(frozen=True)

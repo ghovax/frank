@@ -284,7 +284,7 @@ class SandboxConfiguration(Section):
 
     enforce: Literal["required", "preferred", "off"] = Field("required")
     filesystem: FilesystemConfiguration = Field(default_factory=FilesystemConfiguration)
-    network: bool = Field(True)
+    network: bool = Field(False)
     limits: dict[str, int] = Field(default={
             "RLIMIT_CORE": 0,
             "RLIMIT_FSIZE": 8 * 1024 * 1024 * 1024,
@@ -474,13 +474,12 @@ class ComputerControlConfiguration(Section):
     retrieval: RetrievalConfiguration = Field(default_factory=RetrievalConfiguration)
 
 
-class PermissionClassifierConfiguration(Section):
-    """The model call that settles a tool call nobody is there to be asked about.
+class PermissionReviewerConfiguration(Section):
+    """The model call that answers a gate where nobody is there to answer it.
 
-    It runs on the session's own model — one judge that knows the same world the agent does —
-    but not at the session's own reasoning effort. Judging one command against a page of rules
-    is not the work the agent's effort was chosen for, and it happens once per ambiguous call:
-    at the agent's setting a classifying session pays a long think for every command it runs."""
+    It runs on the session's own model, so one judge knows the same world the agent does, but
+    not at the session's own reasoning effort: weighing one request against a page of rules is
+    not the work that setting was chosen for."""
 
     reasoning_effort: Literal["minimal", "low", "medium", "high"] = Field("low")
 
@@ -700,7 +699,7 @@ class ProviderCredential(Section):
 class AgentDefaults(Section):
     """What a session gets when its creator did not say."""
 
-    permission_mode: Literal["default", "permissive", "classify", "read_only"] = Field("default")
+    permission_mode: Literal["ask", "auto"] = Field("ask")
 
 
 class Configuration(Section):
@@ -720,7 +719,7 @@ class Configuration(Section):
     user_context: UserContextConfiguration = Field(default_factory=UserContextConfiguration)
     computer_control: ComputerControlConfiguration = Field(default_factory=ComputerControlConfiguration)
     toolbox: ToolboxConfiguration = Field(default_factory=ToolboxConfiguration)
-    permission_classifier: PermissionClassifierConfiguration = Field(default_factory=PermissionClassifierConfiguration)
+    permission_reviewer: PermissionReviewerConfiguration = Field(default_factory=PermissionReviewerConfiguration)
     dictation: DictationConfiguration = Field(default_factory=DictationConfiguration)
     tuning: TuningConfiguration = Field(default_factory=TuningConfiguration)
     composio: ComposioConfiguration = Field(default_factory=ComposioConfiguration)
@@ -897,9 +896,7 @@ class NamedToolPermissions(BaseModel):
 
     `bash` matches patterns against the segments of a command line, which is a shape only a
     shell has. An MCP call and a screen script each have a simpler identity — `server.tool` and
-    the primitive a script reaches for — and both were left with no rules at all: whatever a
-    person had configured, these two paths reported "ask" to the barrier and to the classifier,
-    every time. So a `deny` written for one of them was not merely unmatched, it was unread.
+    the primitive a script reaches for — and this is what a rule is written against for both.
 
     Longest matching pattern wins, as with commands, so a specific rule beats a broad one
     however they are ordered in the file.
@@ -926,156 +923,60 @@ class BashToolConfiguration(BaseModel):
     _SHELL_SPLIT = re.compile(r"\s*(?:&&|\|\||[;|])\s*")
     _SUBSHELL = re.compile(r"\$\((.+?)\)|`(.+?)`")
 
-    # File-writing output redirection: `> f`, `>> f`, `&> f`, `>| f`, `1> f` —
-    # but not fd duplications (`2>&1`, `>&2`) or throwaway devices.
-    _REDIRECT = re.compile(
-        r"(?<![0-9>&<])(?:&>{1,2}|>\||[0-9]?>{1,2})\s*(?!&)(?!/dev/(?:null|stderr|stdout|fd/))\S"
-    )
+    #: Commands whose damage is not bounded by the confinement, and what to do about each.
+    #:
+    #: The box answers "where can this reach", and for almost every command that is the whole
+    #: question. It does not answer "how much of the workspace survives this": `rm -rf .` is
+    #: entirely inside the boundary, and so is `git reset --hard`. Nothing about a path list can
+    #: see the difference between a build that writes eleven files and a command that removes
+    #: the tree it was pointed at.
+    #:
+    #: So this list exists, it is short, and it is the only place a command's *text* decides
+    #: anything. It is not a classifier and does not try to be: each entry is a prefix somebody
+    #: could have written themselves in `tools.bash.permissions`, seeded here because a person
+    #: should not have to think of them before the first destructive command rather than after.
+    #: A person's own rules are merged over the top and win, so any of these can be turned off
+    #: by writing `allow` for the same prefix.
+    DESTRUCTIVE_DEFAULTS: ClassVar[dict[str, str]] = {
+        "rm -rf *": "ask",
+        "rm -fr *": "ask",
+        "rm -r *": "ask",
+        "git reset --hard*": "ask",
+        "git clean -*": "ask",
+        "git push --force*": "ask",
+        "git push -f*": "ask",
+        "sudo *": "ask",
+        "chmod -R *": "ask",
+        "chown -R *": "ask",
+        "dd *": "ask",
+        "mkfs*": "deny",
+        "shutdown*": "deny",
+        "reboot*": "deny",
+    }
 
-    # Heads that only read state. Dual-use tools (sed/find/curl/wget/tar/git/
-    # xargs) and runtimes (python/node/...) are handled separately, not here.
-    _READ_ONLY_HEADS = frozenset({
-        "cat", "bat", "tac", "nl", "less", "more", "head", "tail", "ls", "dir",
-        "vdir", "tree", "wc", "sort", "uniq", "cut", "paste", "comm", "join",
-        "column", "fold", "rev", "tr", "expand", "unexpand", "grep", "egrep",
-        "fgrep", "rg", "ag", "ack", "fd", "fdfind", "locate", "mlocate", "stat",
-        "file", "du", "df", "pwd", "echo", "printf", "date", "cal", "which",
-        "type", "whereis", "printenv", "ps", "pgrep", "uname", "whoami", "id",
-        "groups", "hostname", "uptime", "free", "vmstat", "lsof", "netstat",
-        "ss", "dig", "nslookup", "host", "ping", "traceroute", "mtr", "md5sum",
-        "sha1sum", "sha256sum", "sha512sum", "b2sum", "cksum", "diff", "cmp",
-        "colordiff", "basename", "dirname", "realpath", "readlink", "test",
-        "true", "false", "sleep", "seq", "jq", "yq", "xxd", "od", "strings",
-        "hexdump", "ldd", "nm", "objdump", "readelf", "size", "man", "tldr",
-        "info", "history", "help", "base64",
-    })
-    # Heads that always modify state (writes, installs, privileged operations).
-    _MUTATING_HEADS = frozenset({
-        "rm", "rmdir", "mv", "cp", "link", "ln", "mkdir", "touch", "install",
-        "truncate", "dd", "chmod", "chown", "chgrp", "chattr", "shred",
-        "mkfifo", "mknod", "rsync", "scp", "sftp", "ftp", "tee", "ed", "ex",
-        "vi", "vim", "nano", "emacs", "zip", "unzip", "gzip", "gunzip", "bzip2",
-        "bunzip2", "xz", "unxz", "7z", "kill", "killall", "pkill", "mount",
-        "umount", "mkfs", "fdisk", "parted", "crontab", "at", "systemctl",
-        "service", "launchctl", "reboot", "shutdown", "halt", "poweroff",
-        "pip", "pip3", "pipx", "npm", "pnpm", "yarn", "cargo", "gem",
-        "composer", "brew", "apt", "apt-get", "dpkg", "yum", "dnf", "zypper",
-        "pacman", "apk", "nix-env", "make", "cmake", "ninja", "gradle", "mvn",
-        "psql", "mysql", "mongo", "redis-cli", "sqlite3", "useradd", "userdel",
-        "groupadd", "passwd", "uv",
-    })
-    # git subcommands that only read.
-    _GIT_READ_SUBCOMMANDS = frozenset({
-        "log", "show", "diff", "status", "branch", "tag", "blame", "rev-parse",
-        "ls-files", "ls-tree", "cat-file", "describe", "remote", "config",
-        "grep", "shortlog", "reflog", "whatchanged", "name-rev", "for-each-ref",
-        "symbolic-ref", "rev-list", "count-objects", "var", "show-ref",
-        "merge-base", "help", "version",
-    })
-    # Benign wrappers that prefix the real command and can be skipped over.
-    _COMMAND_WRAPPERS = frozenset({
-        "env", "nohup", "nice", "time", "stdbuf", "command", "builtin", "exec",
-        "setsid", "ionice", "timeout", "watch", "xargs",
-    })
+    @property
+    def effective_permissions(self) -> dict[str, str]:
+        """The rules actually in force: the destructive seeds, with the person's own over them.
 
-    def read_only_assessment(self, command: str) -> tuple[str, str]:
-        """Classify a command for read-only enforcement.
-
-        Returns ``(classification, detail)`` where classification is one of:
-        ``"read_only"`` — provably non-mutating; ``"mutating"`` — a write,
-        install, or privileged action was detected (``detail`` names it); or
-        ``"unknown"`` — could not be classified statically (e.g. a script or
-        runtime), in which case the caller defers to the model's own
-        ``read_only`` declaration. Stronger than a flat prefix denylist: it
-        tokenises each segment (including subshells), understands dual-use tools
-        (sed/find/curl/wget/tar/git/xargs) and file redirections, and treats
-        unrecognised commands as unknown rather than silently allowing them.
-        """
-        seen_unknown = False
-        for segment in self._extract_segments(command):
-            classification, detail = self._assess_segment(segment)
-            if classification == "mutating":
-                return ("mutating", detail)
-            if classification == "unknown":
-                seen_unknown = True
-        return ("unknown", "") if seen_unknown else ("read_only", "")
-
-    def _assess_segment(self, segment: str) -> tuple[str, str]:
-        if self._REDIRECT.search(segment):
-            return ("mutating", "output redirection to a file")
-        try:
-            tokens = shlex.split(segment)
-        except ValueError:
-            tokens = segment.split()
-        index = 0
-        while index < len(tokens):
-            token = tokens[index]
-            if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", token):  # FOO=bar env prefix
-                index += 1
-                continue
-            if token in self._COMMAND_WRAPPERS and token != "xargs":
-                index += 1
-                continue
-            break
-        if index >= len(tokens):
-            return ("read_only", "")
-        head = tokens[index].split("/")[-1]
-        arguments = tokens[index + 1:]
-        return self._classify_command(head, arguments)
-
-    def _classify_command(self, head: str, arguments: list[str]) -> tuple[str, str]:
-        if head in ("sudo", "su", "doas"):
-            return ("mutating", head)
-        if head in self._MUTATING_HEADS:
-            return ("mutating", head)
-        if head in ("sed", "perl"):
-            if any(re.match(r"^-[A-Za-z]*i", argument) or argument.startswith("--in-place") for argument in arguments):
-                return ("mutating", f"{head} in-place edit")
-            return ("read_only", "")
-        if head == "gawk":
-            return ("mutating", "gawk in-place") if any("inplace" in argument for argument in arguments) else ("read_only", "")
-        if head == "awk":
-            return ("read_only", "")
-        if head == "find":
-            mutating_actions = {"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprintf", "-fls"}
-            return ("mutating", "find with -delete/-exec") if any(argument in mutating_actions for argument in arguments) else ("read_only", "")
-        if head == "curl":
-            writers = {"-o", "-O", "--output", "--remote-name", "-J", "--remote-header-name", "--create-dirs", "--dump-header"}
-            return ("mutating", "curl writing to a file") if any(argument in writers for argument in arguments) else ("read_only", "")
-        if head == "wget":
-            for position, argument in enumerate(arguments):
-                if argument in ("-O-", "-qO-", "--output-document=-"):
-                    return ("read_only", "")
-                if argument in ("-O", "--output-document") and position + 1 < len(arguments) and arguments[position + 1] == "-":
-                    return ("read_only", "")
-            return ("mutating", "wget writing to a file")
-        if head == "tar":
-            if any((argument.startswith("-") and "t" in argument and "x" not in argument and "c" not in argument) or argument == "--list" for argument in arguments):
-                return ("read_only", "")
-            return ("mutating", "tar create/extract")
-        if head == "git":
-            subcommand = next((argument for argument in arguments if not argument.startswith("-")), "")
-            return ("read_only", "") if subcommand in self._GIT_READ_SUBCOMMANDS else ("mutating", f"git {subcommand}".strip())
-        if head == "xargs":
-            inner = next((argument for argument in arguments if not argument.startswith("-")), "").split("/")[-1]
-            if inner and (inner in self._MUTATING_HEADS or inner in ("sed", "tee", "sudo", "rm")):
-                return ("mutating", f"xargs {inner}")
-            if inner in self._READ_ONLY_HEADS:
-                return ("read_only", "")
-            return ("unknown", "")
-        if head in self._READ_ONLY_HEADS:
-            return ("read_only", "")
-        return ("unknown", "")
+        Merged rather than concatenated, so a person who writes `"rm -rf *": "allow"` gets
+        exactly that — their entry replaces the seed at the same key instead of sitting beside
+        it and losing to whichever the match happened to prefer."""
+        return {**self.DESTRUCTIVE_DEFAULTS, **self.permissions}
 
     def evaluate_permission(self, command: str, unmatched: str = "allow") -> str:
-        """The configured decision for ``command``. ``unmatched`` is returned when no
-        pattern matches — "allow" for a normal turn, but "ask" for a delegated agent under the
-        interactive policy, so an unlisted command escalates rather than running."""
+        """The configured decision for ``command``. ``unmatched`` is returned when no pattern
+        matches, which for a shell command is "allow": the confinement is what stands in front
+        of an unlisted command, and stopping to ask about every one of them is how a person
+        learns to approve without reading.
+
+        Longest matching pattern wins, so a specific rule beats a broad one however they are
+        ordered in the file."""
         segments = self._extract_segments(command)
+        rules = self.effective_permissions
         best_match_length = 0
         best_decision = unmatched
         for segment in segments:
-            for pattern, decision in self.permissions.items():
+            for pattern, decision in rules.items():
                 if self._segment_matches(segment, pattern):
                     if not best_match_length or len(pattern) > best_match_length:
                         best_match_length = len(pattern)
@@ -1169,21 +1070,10 @@ class AgentConfiguration(BaseModel):
     model: Optional[str] = None
     provider: Optional[str] = None
     reasoning_effort: str = "high"
-    # default: per-command permission rules, and anything unmatched is asked about.
-    # permissive: the same rules, but an unmatched command runs and only the risk the model
-    # declared escalates — medium or high asks, low does not. No classifier, no model call.
-    # classify: the default rules plus a classifier that settles every ambiguous call itself,
-    # allowing or denying and never asking. read_only: hard-block all writes. No bypass mode.
-    # `None` means the card has no opinion, and that is the default — the same convention as
-    # `sandbox` below, and for the same reason.
-    #
-    # This used to default to `"default"`, which is a *value*, and the control plane reads it as
-    # the loosest mode the profile allows. So every card that simply did not mention permissions
-    # — which is all of them — imposed a ceiling of `default`, and `permissive` and `classify`
-    # were unreachable: a person picked one, the daemon clamped it straight back,
-    # and the chip returned to "Ask for approval" with no explanation. A card that wants to bound
-    # its agent still says so and is still obeyed; silence is no longer a bound.
-    permission_mode: Optional[Literal["default", "permissive", "classify", "read_only"]] = None
+    # A ceiling: the loosest mode a session running this profile may ever have. `None` means the
+    # card has no opinion, which is the default and the same convention as `sandbox` below — a
+    # value here bounds every session that runs the profile, so silence must not be a bound.
+    permission_mode: Optional[Literal["ask", "auto"]] = None
 
     # An agent's own confinement, narrowing the global one. An investigator and a build agent
     # genuinely want different filesystems, and the harness already accepts that agents differ in

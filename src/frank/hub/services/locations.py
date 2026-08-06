@@ -39,7 +39,7 @@ def _serialize_location(record: LocationRecord) -> dict[str, Any]:
         "host_known": host_known,
         "base_directory": record.base_directory,
         "uri": uri,
-        "permission_mode": record.permission_mode or "default",
+        "permission_mode": record.permission_mode or "ask",
         "created_at": record.created_at,
     }
 
@@ -140,7 +140,7 @@ def _add_location_row(database_session, workspace_id: str, location_input: Locat
         kind=kind,
         host_alias=host_alias,
         base_directory=base_directory,
-        permission_mode=location_input.permission_mode or "default",
+        permission_mode=location_input.permission_mode or "ask",
         created_at=_iso_now(),
     )
     database_session.add(record)
@@ -193,7 +193,7 @@ def _resolve_session_locations(session_id: str) -> list[dict[str, Any]] | None:
                 "kind": location.kind,
                 "base_directory": location.base_directory,
                 "host_alias": location.host_alias or "",
-                "permission_mode": location.permission_mode or "default",
+                "permission_mode": location.permission_mode or "ask",
             })
         return resolved or None
     finally:

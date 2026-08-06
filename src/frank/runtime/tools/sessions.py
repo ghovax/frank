@@ -222,13 +222,10 @@ def build_create_session_tool(agent_names: list[str]) -> BaseTool:
         # Absent is how "the same as mine" is said, which a schema expresses by leaving a field
         # out rather than by offering an empty string among the choices.
         #
-        # There is deliberately no `permission_mode`. How much a session may do without a person
-        # is the person's policy, not a parameter for the thing being governed to set: a peer
-        # works the way its creator works, narrowed by whatever ceiling its agent profile
-        # declares, and both of those are decided outside this call. Offering the choice also
-        # meant the modes had to be explained to a model that has no use for the vocabulary — it
-        # declares a risk and a reason for each call, and what is done with that is not its
-        # business.
+        # There is deliberately no `permission_mode`. Who answers for a session is the person's
+        # policy, not a parameter for the thing being governed to set: a peer works the way its
+        # creator works, narrowed by whatever ceiling its agent profile declares, and both of
+        # those are decided outside this call.
         working_directory=(
             Optional[str],
             Field(default=None, description="Where the peer works. Omit to use your working directory."),

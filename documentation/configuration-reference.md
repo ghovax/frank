@@ -21,7 +21,7 @@ What a session runs under when its creator does not say.
 
 | Setting | Type | Default | What it is for |
 |---|---|---|---|
-| `agent.permission_mode` | `default` / `permissive` / `classify` / `read_only` | `default` | How much a session may do without asking you, unless its agent profile caps it lower. |
+| `agent.permission_mode` | `ask` / `auto` | `ask` | Who answers when a session asks to reach past its confinement, unless its agent profile caps it lower. |
 
 
 ## Workspaces
@@ -59,13 +59,13 @@ Whether a session may install the tools it needs into a profile of its own.
 | `toolbox.enabled` | boolean | `true` | Let each session install the tools it needs into a package profile of its own, deleted with the session. |
 
 
-## Permission classifier
+## Permission reviewer
 
 The model call that decides a tool call nobody is there to be asked about.
 
 | Setting | Type | Default | What it is for |
 |---|---|---|---|
-| `permission_classifier.reasoning_effort` | `minimal` / `low` / `medium` / `high` | `low` | How hard the judge thinks about one tool call. It weighs a command against a page of rules, which is not what an agent's own effort is for. |
+| `permission_reviewer.reasoning_effort` | `minimal` / `low` / `medium` / `high` | `low` | How hard the judge thinks about one request. It weighs one widening against a page of rules, which is not what an agent's own effort is for. |
 
 
 ## Conversation compaction
@@ -252,7 +252,7 @@ How large, how many, and how patient the tools are.
 | `tuning.defaults.goal_blocked_turns` | integer | `3` | How many times the same condition must stop a goal before the agent may report it blocked. One failure is not an impasse, and a goal abandoned on the first refusal is one nobody asked to abandon. |
 | `tuning.defaults.warm_workers` | integer | `2` | How many session workers to keep started and waiting. |
 | `tuning.defaults.session_title_attempts` | integer | `3` | How many times a session asks the model to name itself before giving up. |
-| `tuning.defaults.permission_classifier_attempts` | integer | `3` | How many times the permission classifier is asked before its silence counts as a refusal. |
+| `tuning.defaults.permission_reviewer_attempts` | integer | `3` | How many times the permission reviewer is asked before its silence counts as a refusal. |
 | `tuning.defaults.prototype_start_seconds` | number | `120.0` | How long the daemon waits for the prototype to start and accept a connection. The prototype itself imports nothing heavy; it starts the workers that do, and keeps a couple of them started ahead of demand. |
 | `tuning.defaults.prototype_restart_seconds` | number | `5.0` | How long the daemon waits before trying again after the prototype failed to restart. |
 | `tuning.defaults.session_idle_sleep_seconds` | number | `18000.0` | How long a session keeps its process after its last turn before it sleeps. |

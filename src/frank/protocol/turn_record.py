@@ -85,7 +85,7 @@ def reconcile_action(kind: Optional[TurnKind], state: str, *, input_required: st
 class ToolGate(BaseModel):
     """One human decision a turn is blocked on: a permission request for a tool call, or a
     question posed to the user. ``kind`` discriminates (``"permission"`` | ``"question"``); the
-    permission fields (``command``/``explanation``/``risk``) and the question field
+    permission fields (``command``/``explanation``/``reason``) and the question field
     (``questions``) are populated per kind. Every field is declared and typed — the durable
     twin of the in-process :class:`~frank.runtime.turn_events.SuspensionGate`, so a suspend
     round-trips through it with no ``extra="allow"`` catch-all."""
@@ -95,13 +95,20 @@ class ToolGate(BaseModel):
     tool_call_id: str = ""
     command: str = ""
     explanation: str = ""
-    risk: str = ""
+    reason: Optional[dict[str, Any]] = None
     questions: list[Any] = Field(default_factory=list)
     # Permission-gate detail carried through a suspend so a resume can re-apply an
     # "always allow" (a bash session rule / an egress approval) and a denial message.
     is_bash: bool = False
     deny_message: str = ""
     egress_agent: str = ""
+    # The widening being asked for, and — for a command the operating system refused — the
+    # offer to let it out of the box and what the confined run produced.
+    escape: Optional[dict[str, Any]] = None
+    whole_disk: bool = False
+    denial_evidence: str = ""
+    refused_result: Any = None
+    grants_screen_mutations: bool = False
 
     @property
     def is_question(self) -> bool:

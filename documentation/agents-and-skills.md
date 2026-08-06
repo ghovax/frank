@@ -30,7 +30,7 @@ enabled: true
 model: mimo-v2.5
 provider: opencode
 reasoning_effort: high
-permission_mode: default
+permission_mode: ask
 tools:
   bash:
     enabled: true

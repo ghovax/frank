@@ -3,7 +3,7 @@
 A tool call may target a workspace *location* (the local machine or a configured SSH
 remote); these types capture the resolved location, the per-call execution policy threaded
 through as an immutable value (so concurrent calls never cross working directories or
-permission flags), and the structured decisions the bash permission classifier emits.
+permission flags), and the structured verdict the permission reviewer emits.
 """
 
 from __future__ import annotations
@@ -52,16 +52,12 @@ class CallExecutionPolicy:
     working_directory: str
     mode: PermissionMode
 
-    # The permission flags every tool call consults, derived from the one resolved mode so
-    # they can never disagree. Kept as properties because the read sites are many and simple.
     @property
-    def read_only(self) -> bool:
-        return self.mode.is_read_only
-
-
-    @property
-    def classifies(self) -> bool:
-        return self.mode.is_classifying
+    def asks(self) -> bool:
+        """Whether a gate raised by this call goes to a person. The complement is the reviewer,
+        which answers for itself. Derived from the one resolved mode so nothing can disagree
+        with it."""
+        return self.mode.asks
 
     @property
     def is_remote(self) -> bool:
@@ -75,11 +71,14 @@ _LOCATION_TOOLS = frozenset({"bash", "read_file", "write_file", "edit_file", "se
 
 
 class PermissionDecision(BaseModel):
-    """What the classifier decided about one tool call.
+    """What the reviewer decided about one request to reach past the confinement.
 
-    Two outcomes, and asking a person is not among them. The classifier used to answer
-    `auto_approve` or `escalate`, which made it an assistant to a human decision — and a mode
-    whose whole purpose is to run without one. Its verdict is now the verdict."""
+    Two outcomes, and asking a person is not among them: the reviewer only ever runs where
+    there is nobody to ask, so escalating would be escalating to no one.
+
+    ``risk`` is the reviewer's own reading, not the agent's. That distinction is the whole of
+    why a risk field is acceptable here and was not on the tool call: this one is produced by
+    something being asked to judge, and the thing it judges cannot see it."""
 
     action: Literal["allow", "deny"]
     explanation: str

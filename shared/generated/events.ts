@@ -151,7 +151,6 @@ export interface PermissionRequestEvent {
   kind: "permission_request";
   reason?: PermissionReason | null;
   request_id: string;
-  risk?: string;
   timestamp?: string;
   tool_call_id?: string;
   tool_name?: string;

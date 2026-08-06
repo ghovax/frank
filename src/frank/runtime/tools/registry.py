@@ -26,11 +26,9 @@ EXPLANATION = "A concise, user-facing reason this action is needed for the curre
 
 #: What a call reaches for beyond the confinement it already has, and whether it changes anything.
 #:
-#: One argument where there were two. `read_only` used to be a separate flag answering "does this
-#: mutate", weighed only where the static scan of the command could not decide — a narrow job,
-#: carried by a wire of its own. `access_request` answers the same question and a larger one with
-#: it: not merely whether the call writes, but *where* it reaches. That is the version worth
-#: asking, because reach is structural and checkable where a bare boolean was neither.
+#: It answers two things at once: whether the call writes, and where it reaches. Reach is the
+#: one that matters, because it is structural and checkable where a bare "does this mutate"
+#: boolean is neither.
 #:
 #: It is a difference against the profile, never an inventory of the call. A command working
 #: inside what the session already holds omits it, which is nearly every command, so the ordinary
@@ -124,7 +122,6 @@ async def bash(
     location: str = "",
     access_request: dict[str, Any] | None = Field(None, description=ACCESS_REQUEST),
     explanation: str = Field(..., description=EXPLANATION),
-    risk: Literal["low", "medium", "high"] = "low",
     background: bool = False,
     timeout: float = Tunable.bash_sync_window_seconds.default,
 ) -> str:
@@ -133,20 +130,12 @@ async def bash(
 
     active = tool_context.current()
     profile, workspace = active.sandbox, active.workspace
-    # The tool's own log has to land somewhere the profile permits, or bash fails on its
-    # bookkeeping rather than on anything that was asked of it.
-    #
-    # The workspace is not a fallback, and that is the whole of a bug worth naming. A profile
-    # that permits nowhere writable — every `read_only` session has exactly that — resolved to
-    # no scratch directory, and the workspace was next in line, so every command a read-only
-    # reviewer ran dropped a `bash-<id>.log` into the tree it is forbidden to modify. The
-    # sandbox did not stop it because the log is written by *this* process, not by the confined
-    # child: forty-nine of them accumulated in a source tree during one review.
-    #
-    # So the last resort is the system temporary directory, which is scratch by definition and
-    # is thrown away. If a profile denies even reading that back, the command still ran and the
-    # output still reaches the model inline; only the file is lost, which is the right thing to
-    # lose.
+    # The tool's own log lands somewhere the profile permits, or bash fails on its bookkeeping
+    # rather than on anything that was asked of it. The workspace is deliberately not the
+    # fallback: a profile permitting nowhere else would otherwise drop a `bash-<id>.log` into
+    # the tree the session is working in. The last resort is the system temporary directory,
+    # which is scratch by definition; if the profile denies even that, the command still ran and
+    # its output still reaches the model inline.
     _scratch = _confinement.temporary_directory(profile, workspace=workspace)
     output_path = Path(_scratch or tempfile.gettempdir()) / f"{new_id('bash')}.log"
     process_holder: dict[str, Any] = {}
@@ -171,7 +160,8 @@ async def bash(
         # profile — so `nix profile add nixpkgs#jq` needs no path, no flag and no variable, and
         # a missing tool has an ordinary ending instead of becoming a wall to route around.
         spawn = _confinement.spawn_recipe(
-            profile, workspace=workspace, extra_environment=active.child_environment(),
+            _confinement.first_attempt(profile, workspace=workspace),
+            workspace=workspace, extra_environment=active.child_environment(),
         )
         process = await asyncio.create_subprocess_exec(
             # The command still runs through a shell — the confinement prefix wraps that shell,
@@ -285,7 +275,6 @@ async def bash(
             "location": location,
             "access_request": access_request,
             "explanation": explanation,
-            "risk": risk,
             "background": background,
         },
         # Correlate the job with its tool call from the start, so the user can
@@ -407,7 +396,6 @@ async def call_mcp_tool(
     arguments: dict[str, Any] | None = None,
     access_request: dict[str, Any] | None = Field(None, description=ACCESS_REQUEST),
     explanation: str = Field(..., description=EXPLANATION),
-    risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/call_mcp_tool.md."""
     try:
@@ -522,7 +510,6 @@ def edit_file(
     location: str = "",
     replace_all: bool = False,
     explanation: str = Field(..., description=EXPLANATION),
-    risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/edit_file.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -534,7 +521,6 @@ def write_file(
     content: str,
     location: str = "",
     explanation: str = Field(..., description=EXPLANATION),
-    risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/write_file.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -572,7 +558,6 @@ async def control_screen(
     script: str,
     target: str = "",
     explanation: str = Field(..., description=EXPLANATION),
-    risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/control_screen.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")

@@ -405,10 +405,6 @@
   },
   "PermissionOverlay": {
     "approvalNeeded": "Approval needed",
-    "riskHigh": "High",
-    "riskMedium": "Medium",
-    "riskLow": "Low",
-    "riskBadge": "{level} risk",
     "deny": "Deny (1)",
     "allowOnce": "Allow once (2)"
   },
@@ -466,18 +462,6 @@
     "computerControlOn": "Can control apps",
     "dictationOff": "Typing only",
     "dictationOn": "Voice input",
-    "permissionClassifyDescription": "A classifier settles every action on its own — it allows or denies, and never asks you",
-    "permissionClassifyLabel": "Allow or deny on its own",
-    "permissionClassifyName": "Autonomous",
-    "permissionDefaultDescription": "Follow your rules and ask before anything risky",
-    "permissionDefaultLabel": "Ask me first",
-    "permissionDefaultName": "Ask first",
-    "permissionPermissiveDescription": "Run what the model calls low-risk; ask about medium and high",
-    "permissionPermissiveLabel": "Ask when risky",
-    "permissionPermissiveName": "Ask when risky",
-    "permissionReadOnlyDescription": "Reads run; every change is denied",
-    "permissionReadOnlyLabel": "Allow reads only",
-    "permissionReadOnlyName": "Read-only",
     "sandboxGlobal": "Global access",
     "sandboxRestricted": "Restricted access",
     "sandboxUnavailable": "Unenforceable here",
@@ -496,7 +480,13 @@
     "worktreeNoneDescription": "Run in the selected environment. No branch or worktree is created",
     "worktreeNoneLabel": "Current checkout",
     "worktreeNoneTitle": "Run in the selected checkout without creating a session branch or worktree",
-    "worktreeStrategyFallbackTitle": "Session isolation strategy"
+    "worktreeStrategyFallbackTitle": "Session isolation strategy",
+    "permissionAskLabel": "Ask me first",
+    "permissionAskName": "Ask first",
+    "permissionAskDescription": "Anything that reaches past the session's confinement stops for you",
+    "permissionAutoLabel": "Decide without me",
+    "permissionAutoName": "Autonomous",
+    "permissionAutoDescription": "A reviewer answers those requests on its own — it allows or refuses, and never asks you"
   },
   "SessionsSidebar": {
     "activeFirst": "Active first",
@@ -571,7 +561,7 @@
       "_": "Session toolbox",
       "enabled": "Let a session install its own tools"
     },
-    "permission_classifier": {
+    "permission_reviewer": {
       "_": "Permission classifier",
       "reasoning_effort": "Reasoning effort"
     },
@@ -719,7 +709,7 @@
         "oauth_poll_interval_seconds": "OAuth poll interval (seconds)",
         "open_url_seconds": "Open URL (seconds)",
         "output_tokens": "Inline tool output (tokens)",
-        "permission_classifier_attempts": "Permission classifier attempts",
+        "permission_reviewer_attempts": "Permission reviewer attempts",
         "prototype_restart_seconds": "Prototype restart (seconds)",
         "prototype_start_seconds": "Prototype start (seconds)",
         "read_lines": "Lines a read returns",
@@ -757,7 +747,7 @@
   "SettingsAbout": {
     "agent": {
       "_": "What a session runs under when its creator does not say.",
-      "permission_mode": "How much a session may do without asking you, unless its agent profile caps it lower."
+      "permission_mode": "Who answers when a session asks to reach past its confinement, unless its agent profile caps it lower."
     },
     "workspace": {
       "_": "Where a session's tools run.",
@@ -782,7 +772,7 @@
       "_": "Whether a session may install the tools it needs into a profile of its own.",
       "enabled": "Let each session install the tools it needs into a package profile of its own, deleted with the session."
     },
-    "permission_classifier": {
+    "permission_reviewer": {
       "_": "The model call that decides a tool call nobody is there to be asked about.",
       "reasoning_effort": "How hard the judge thinks about one tool call. It weighs a command against a page of rules, which is not what an agent's own effort is for."
     },
@@ -928,7 +918,7 @@
         "oauth_poll_interval_seconds": "First pause between asks of whether a browser sign-in has completed; it widens from here.",
         "open_url_seconds": "How long handing a URL to the system browser waits.",
         "output_tokens": "Tokens of inline output one tool may return before the rest overflows to a file.",
-        "permission_classifier_attempts": "How many times the permission classifier is asked before its silence counts as a refusal.",
+        "permission_reviewer_attempts": "How many times the permission reviewer is asked before its silence counts as a refusal.",
         "prototype_restart_seconds": "How long the daemon waits before trying again after the prototype failed to restart.",
         "prototype_start_seconds": "How long the daemon waits for the prototype to start and accept a connection. The prototype itself imports nothing heavy; it starts the workers that do, and keeps a couple of them started ahead of demand.",
         "read_lines": "Lines a file read returns when no explicit limit is given.",
@@ -966,10 +956,8 @@
   "SettingsChoices": {
     "agent": {
       "permission_mode": {
-        "default": "Ask about anything unusual",
-        "permissive": "Ask only about risky work",
-        "classify": "Allow or deny on its own",
-        "read_only": "Read only"
+        "ask": "Ask me first",
+        "auto": "Decide without me"
       }
     },
     "workspace": {
@@ -986,7 +974,7 @@
         "off": "Do not confine"
       }
     },
-    "permission_classifier": {
+    "permission_reviewer": {
       "reasoning_effort": {
         "minimal": "Minimal",
         "low": "Low",
@@ -1293,10 +1281,6 @@
     "recovery": "Recovery",
     "result": "Result",
     "results": "Results",
-    "risk": "Risk",
-    "riskHigh": "High",
-    "riskLow": "Low",
-    "riskMedium": "Medium",
     "searchFailed": "Search failed",
     "searchScore": "Score",
     "secondsValue": "{value}s",

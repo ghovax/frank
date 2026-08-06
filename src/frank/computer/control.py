@@ -144,7 +144,7 @@ async def run_control_script(
         if profile is not None else None
     )
     spawn = confinement.spawn_recipe(
-        child_profile, workspace=workspace,
+        confinement.first_attempt(child_profile, workspace=workspace), workspace=workspace,
         # No permitted scratch means the child is told about none. A profile that grants no
         # writable directory should produce a child that cannot write, not one pointed at a
         # directory the session itself was refused.

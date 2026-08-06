@@ -1,6 +1,6 @@
 # Tools
 
-A session acts through tools, and every tool call goes through the [permission engine](configuration.md#permission-modes). Under the interactive modes a risky call pauses and reaches you as a prompt in the app, or as `frank allow` / `frank deny` in the terminal. Under `classify` it never pauses: the classifier allows or denies it. The description the model reads is in the repo: a docstring in `src/frank/runtime/tools/registry.py` for most tools, a template in `src/frank/runtime/prompts/tool_*.md` for the peer-session ones.
+A session acts through tools, and every tool call runs inside the session's [confinement](configuration.md#the-sandbox). A call that stays inside it runs without asking anybody. A call that asks to reach past it pauses under `ask` and reaches you as a prompt in the app, or as `frank allow` / `frank deny` in the terminal; under `auto` it never pauses, and the reviewer allows or refuses it. The description the model reads is in the repo: a docstring in `src/frank/runtime/tools/registry.py` for most tools, a template in `src/frank/runtime/prompts/tool_*.md` for the peer-session ones.
 
 There is no delegation tool and no in-process sub-agent. A session that needs a peer creates one with `create_session`, which reaches the same control plane your terminal does. See [Composing with other sessions](#composing-with-other-sessions).
 
@@ -115,7 +115,7 @@ Frank reads structure, not pixels: there is no screenshot path for computer use.
 > [!NOTE]
 > Typing fills a field without submitting unless the agent explicitly asks to — so it never posts a form by accident.
 
-**What counts as changing something.** The permission classifier reads the script. It decides whether the script only looks, or also acts. It scans for the primitives that change state: `click`, `type`, `choose`, `upload`, `drag`, `evaluate`, `press`, `navigate`, `new_tab` and `close_tab`.
+**What counts as changing something.** A script's own calls are read for the primitives that change state: `click`, `type`, `choose`, `upload`, `drag`, `evaluate`, `press`, `navigate`, `new_tab`, `close_tab`, `caret` and `select`. A script that names none of them runs with only the reading primitives in its namespace, so there is nothing to decide. One that names any is put to whoever decides for the session, unless a `screen` rule already names that primitive.
 
 Finding, reading, listing tabs and frames, and switching between tabs are all reads. `evaluate` is on the acting side, because it runs arbitrary JavaScript in a page you are signed in to. `navigate` is there too, because on many sites a URL *is* a command: `/logout`, `/unsubscribe?token=…`, `/items/12/delete`. Nothing that reads primitive names alone can tell those from a page worth reading. In an ordinary session, the harness examines a script that acts; it does not block it. In a [read-only session](configuration.md#permission-modes) it refuses the script outright.
 

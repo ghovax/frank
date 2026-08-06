@@ -62,7 +62,7 @@ class SqliteSessionStore:
                     agent=row.agent,
                     working_directory=row.working_directory or "",
                     runtime_working_directory=row.runtime_working_directory or "",
-                    permission_mode=row.permission_mode or "default",
+                    permission_mode=row.permission_mode or "ask",
                     sandbox=_decode_sandbox(row.sandbox or ""),
                     workspace_id=row.workspace_id or "",
                     parent=row.parent or "",

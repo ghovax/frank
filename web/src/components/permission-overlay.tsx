@@ -20,9 +20,7 @@ import type { ToolPermission } from "@/lib/tool-event";
 import { MarkdownContent } from "./markdown-content";
 import { MonoList } from "./ui/display";
 import { ToolLocationBadge } from "./tool-call";
-import { RISK_LABEL_KEY, RISK_PALETTE as SHARED_RISK_PALETTE } from "@shared/status";
 
-import { Pill } from "./ui/pill";
 import { Pre } from "./ui/semantic";
 
 // The only runtime decisions that exist: deny, or allow this one call. A standing allow
@@ -43,15 +41,10 @@ interface PermissionOverlayProps {
   detailPaths?: string[];
   command?: string;
   // The tool call's arguments, so the overlay can badge a remote `location` — a user
-  // approving an operation should see *where* it runs, not just its risk.
+  // approving an operation should see where it runs.
   arguments?: Record<string, unknown>;
   onPermission: (requestId: string, decision: RuntimeDecision) => void;
 }
-
-// Shared, because the phone shows the same badge and had been showing a bare lowercase
-// `medium` where this says "Medium risk".
-const RISK_PALETTE = SHARED_RISK_PALETTE;
-const RISK_KEY = RISK_LABEL_KEY;
 
 export function PermissionOverlay({ permission, title, detail, detailPaths, command, arguments: toolArguments, onPermission }: PermissionOverlayProps) {
   const translation = useTranslations("PermissionOverlay");
@@ -77,8 +70,6 @@ export function PermissionOverlay({ permission, title, detail, detailPaths, comm
   useEffect(() => {
     boxRef.current?.focus();
   }, []);
-
-  const risk = permission.risk ? String(permission.risk).toLowerCase() : "";
 
   return (
         <Box
@@ -110,11 +101,6 @@ export function PermissionOverlay({ permission, title, detail, detailPaths, comm
             </Flex>
             <Flex align="center" gap={2} flexShrink={0}>
               <ToolLocationBadge arguments={toolArguments} />
-              {risk && (
-                <Pill colorPalette={RISK_PALETTE[risk] ?? "gray"}>
-                  {translation("riskBadge", { level: RISK_KEY[risk] ? translation(RISK_KEY[risk] as Parameters<typeof translation>[0]) : risk })}
-                </Pill>
-              )}
             </Flex>
           </Flex>
 

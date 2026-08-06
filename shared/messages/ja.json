@@ -405,10 +405,6 @@
   },
   "PermissionOverlay": {
     "approvalNeeded": "承認が必要です",
-    "riskHigh": "高",
-    "riskMedium": "中",
-    "riskLow": "低",
-    "riskBadge": "{level}リスク",
     "deny": "拒否 (1)",
     "allowOnce": "1回だけ許可 (2)"
   },
@@ -466,18 +462,6 @@
     "computerControlOn": "アプリを操作可能",
     "dictationOff": "キーボードのみ",
     "dictationOn": "音声で入力",
-    "permissionClassifyDescription": "分類器がすべての操作を自ら判断し、許可または拒否します。あなたに確認することはありません",
-    "permissionClassifyLabel": "自分で許可または拒否",
-    "permissionClassifyName": "自律",
-    "permissionDefaultDescription": "ルールに従い、リスクのある操作の前に確認します",
-    "permissionDefaultLabel": "先に確認する",
-    "permissionDefaultName": "都度確認",
-    "permissionPermissiveDescription": "低リスクと判断された操作は実行し、中・高リスクのみ確認します",
-    "permissionPermissiveLabel": "リスクがあるときに確認",
-    "permissionPermissiveName": "危険な操作のみ確認",
-    "permissionReadOnlyDescription": "読み取りは実行し、変更はすべて拒否します",
-    "permissionReadOnlyLabel": "読み取りのみ許可",
-    "permissionReadOnlyName": "読み取り専用",
     "sandboxGlobal": "全体アクセス",
     "sandboxRestricted": "制限付きアクセス",
     "sandboxUnavailable": "この環境では強制できません",
@@ -496,7 +480,13 @@
     "worktreeNoneDescription": "選択した環境で実行します。ブランチやワークツリーは作成されません",
     "worktreeNoneLabel": "現在のチェックアウト",
     "worktreeNoneTitle": "セッションブランチやワークツリーを作成せずに、選択したチェックアウトで実行します",
-    "worktreeStrategyFallbackTitle": "セッション分離戦略"
+    "worktreeStrategyFallbackTitle": "セッション分離戦略",
+    "permissionAskLabel": "先に確認する",
+    "permissionAskName": "都度確認",
+    "permissionAskDescription": "セッションの制限範囲を超える要求は、すべてあなたに確認します",
+    "permissionAutoLabel": "自分で判断する",
+    "permissionAutoName": "自律",
+    "permissionAutoDescription": "レビュアーがその要求を自ら判断し、許可または拒否します。あなたに確認することはありません"
   },
   "SessionsSidebar": {
     "activeFirst": "アクティブ順",
@@ -571,7 +561,7 @@
       "_": "セッションのツール",
       "enabled": "セッション専用ツールを許可"
     },
-    "permission_classifier": {
+    "permission_reviewer": {
       "_": "権限の判定",
       "reasoning_effort": "推論の深さ"
     },
@@ -719,7 +709,7 @@
         "oauth_poll_interval_seconds": "サインイン確認の初回間隔（秒）",
         "open_url_seconds": "URL をブラウザに渡す待ち時間（秒）",
         "output_tokens": "ツール出力の埋め込み量（トークン）",
-        "permission_classifier_attempts": "権限判定の試行回数",
+        "permission_reviewer_attempts": "権限レビューの試行回数",
         "prototype_restart_seconds": "プロトタイプ再起動の待ち時間（秒）",
         "prototype_start_seconds": "プロトタイプ起動の待ち時間（秒）",
         "read_lines": "読み取りが返す行数",
@@ -757,7 +747,7 @@
   "SettingsAbout": {
     "agent": {
       "_": "エージェントの既定値。",
-      "permission_mode": "あなたに確認せずセッションができることの範囲。エージェントのプロファイルがより厳しければそちらが優先されます。"
+      "permission_mode": "セッションが制限範囲を超えて手を伸ばそうとしたとき、誰が答えるか。エージェントのプロファイルがより厳しければそちらが優先されます。"
     },
     "workspace": {
       "_": "セッションが作業する場所。",
@@ -782,7 +772,7 @@
       "_": "セッションが自分で導入するツール。",
       "enabled": "各セッションが必要なツールを自分専用のプロファイルに導入できるようにします。セッションと共に削除されます。"
     },
-    "permission_classifier": {
+    "permission_reviewer": {
       "_": "あなたに確認できないときにツール呼び出しを判定するモデル。",
       "reasoning_effort": "1 回のツール呼び出しを判定するときの推論の深さ。ルールと突き合わせるだけなので、エージェント本体ほどの深さは要りません。"
     },
@@ -928,7 +918,7 @@
         "oauth_poll_interval_seconds": "サインインが完了したかを確認する最初の間隔。ここから広がっていきます。",
         "open_url_seconds": "URL をシステムのブラウザに渡す処理の待ち時間。",
         "output_tokens": "1 つのツールがそのまま返せる出力量。超えた分はファイルに退避されます。",
-        "permission_classifier_attempts": "権限の判定を何回まで求めるか。これを超えた無応答は拒否として扱われます。",
+        "permission_reviewer_attempts": "権限のレビューを何回まで求めるか。これを超えた無応答は拒否として扱われます。",
         "prototype_restart_seconds": "プロトタイプの再起動に失敗したあと、次に試すまでの待ち時間。",
         "prototype_start_seconds": "プロトタイプが起動して接続を受け付けるまで待つ時間。プロトタイプ自体は重い読み込みをせず、実際に読み込むワーカーを事前に用意します。",
         "read_lines": "行数の指定がないときにファイル読み取りが返す行数。",
@@ -966,10 +956,8 @@
   "SettingsChoices": {
     "agent": {
       "permission_mode": {
-        "default": "通常と異なる操作は確認",
-        "permissive": "危険な操作のみ確認",
-        "classify": "自動で許可・拒否",
-        "read_only": "読み取り専用"
+        "ask": "先に確認する",
+        "auto": "自分で判断する"
       }
     },
     "workspace": {
@@ -986,7 +974,7 @@
         "off": "制限しない"
       }
     },
-    "permission_classifier": {
+    "permission_reviewer": {
       "reasoning_effort": {
         "minimal": "最小",
         "low": "低",
@@ -1293,10 +1281,6 @@
     "recovery": "復旧",
     "result": "結果内容",
     "results": "結果",
-    "risk": "リスク",
-    "riskHigh": "高",
-    "riskLow": "低",
-    "riskMedium": "中",
     "searchFailed": "検索に失敗しました",
     "searchScore": "スコア",
     "secondsValue": "{value}秒",

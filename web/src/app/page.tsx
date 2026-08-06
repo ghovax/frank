@@ -184,7 +184,7 @@ function Workspace() {
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelProviders, setModelProviders] = useState<ProviderOption[]>([]);
   const [recentModels, setRecentModels] = useState<{ id: string; name: string; provider: string }[]>([]);
-  const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionMode>("default");
+  const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionMode>("ask");
   const [compactionReclaimAtFraction, setCompactionReclaimAtFraction] = useState(0.85);
   const [historyOpen, setHistoryOpen] = useState(true);
   // The right-hand panels, held here rather than inside ChatPanel because that component is

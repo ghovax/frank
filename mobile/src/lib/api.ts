@@ -12,7 +12,7 @@
 
 import { fetch as streamingFetch } from "expo/fetch";
 
-export type PermissionMode = "default" | "permissive" | "classify" | "read_only";
+export type PermissionMode = "ask" | "auto";
 export type WorktreeStrategy = "none" | "branch" | "worktree";
 
 /** Where this app is pointed, and what proves it may be. Set by the connection layer. */

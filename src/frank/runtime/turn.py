@@ -17,6 +17,7 @@ from frank.runtime.internals import (
     _detect_workspace,
     _ModelCallOutcome,
     _PhaseStep,
+    _PreflightGate,
     _STOP,
     _STREAM_EXHAUSTED,
     _stream_next,
@@ -31,9 +32,11 @@ from frank.base.memories import memories_payload
 from frank.base.message_content import message_content_deltas, message_text
 from frank.base.model_errors import ContextWindowExceeded, over_context_window
 from frank.base.skills import enabled_skills, skills_for_agent, skills_payload
+from frank.base.confinement import Denial
 from frank.runtime.turn_events import (
     Checkpoint,
     Done,
+    RetryRequested,
     Steering,
     Suspended,
     SuspensionGate,
@@ -70,22 +73,18 @@ class _RunsTurns:
         """The workspace's locations as the model sees them: the `location` URI to pass, plus
         name/kind/base_directory so it can choose the right one per tool call.
 
-        What it does *not* carry is the permission mode in force. It used to, and that was the
-        policy layer talking to the thing it governs: the model was reading `classify` or
-        `read_only` off its own context every turn, which is knowledge it has no use for and
-        should not be reasoning about. Its job is to say what a call does and how risky it is;
-        deciding what may run on that basis happens above it and is none of its business.
+        What it does not carry is the permission policy in force: that is the layer above
+        talking to the thing it governs, and the model has no use for it.
 
-        What is left is the one thing it can act on. `writable` is an affordance, not a policy —
-        a location it cannot change is worth knowing about, because otherwise it plans work that
-        will be refused — and it names no mechanism and reveals no judgement."""
+        `writable` is an affordance rather than a policy — a location it cannot change is worth
+        knowing about, because otherwise it plans work that will be refused."""
         return [
             {
                 "location": resolved.uri,
                 "name": resolved.name,
                 "kind": resolved.kind,
                 "base_directory": resolved.base_directory,
-                "writable": not self._call_policy(resolved).read_only,
+                "writable": resolved.is_remote or self.writes_anywhere,
             }
             for resolved in self._locations.values()
         ]
@@ -193,7 +192,7 @@ class _RunsTurns:
                 if instruction_files else ""
             )
             # One statement of how to think, rendered into both places that want it — this
-            # prompt and the permission classifier's — so the two cannot drift into telling two
+            # prompt and the permission reviewer's — so the two cannot drift into telling two
             # models two different things about the same habit.
             thinking_language = self._prompt_loader.load("thinking_language", {}).strip()
             self._cached_system_prompt = self._prompt_loader.load("system_prompt", {
@@ -375,20 +374,12 @@ class _RunsTurns:
             if not target_registry.warm():
                 return {"reading": message_loader("computer")("screen_warming")}
 
-            # A read-only session is shown only the primitives it may actually run. Listing one
-            # the permission layer will refuse advertises a capability and then denies it, which
-            # is the same defect as any other promise the code does not keep.
             from frank.computer import workflows
 
-            block = target_registry.context_block(
-                # The session's effective mode, not the agent profile's. Those are different
-                # whenever a session is created more restrictive than its profile, which is the
-                # ordinary case for `read_only` — profiles rarely set one. Asking the profile
-                # meant a read-only session was shown `click`, `type` and `evaluate` as things it
-                # could do, which is the advertise-then-refuse defect this filter exists to
-                # prevent, in the one situation it was written for.
-                mutating_allowed=not self.is_read_only,
-            )
+            # Every primitive the surface implements is listed. What a given script may call is
+            # decided per call, from what that script asks to do, so filtering the vocabulary
+            # here would hide a capability the very next call could legitimately be granted.
+            block = target_registry.context_block()
             # What somebody has already worked out and saved, so a task that has been solved once
             # is imported rather than derived again. Read off the files without importing them —
             # this runs every turn, and importing user code to find out its name would run that
@@ -932,6 +923,24 @@ class _RunsTurns:
         yield Done(text=final_text, stop_reason="completed")
         step.directive = _STOP
 
+    async def _rerun_answered(
+        self, tool_calls, turn_tool_calls_log, turn_tool_results_log, outcomes, decisions,
+    ):
+        """Run the calls a retry answer settled, once the rest of the batch has finished.
+
+        Only the calls carrying a decision that is not a replay: everything else already ran,
+        and its outcome is in ``outcomes`` where the caller left it."""
+        pending = [
+            call for call in tool_calls
+            if (decision := decisions.get(call["id"])) is not None and decision.completed is None
+        ]
+        if not pending:
+            return
+        async for event in self._drain_tools_concurrently(
+            pending, turn_tool_calls_log, turn_tool_results_log, outcomes, decisions,
+        ):
+            yield event
+
     async def _run_tool_batch(
         self, response: AIMessageChunk, recorded_user_message: str,
         turn_tool_calls_log: list[dict], turn_tool_results_log: list[dict], step: _PhaseStep,
@@ -973,10 +982,53 @@ class _RunsTurns:
             # approved, so it can drop calls and can never introduce one.
             if not self._hooks.empty:
                 tool_calls = await self._hooks.before_tools(tool_calls)
+            retries: list[_PreflightGate] = []
             async for event in self._drain_tools_concurrently(
                 tool_calls, turn_tool_calls_log, turn_tool_results_log, outcomes, decisions,
             ):
+                if isinstance(event, RetryRequested):
+                    # Never yielded onward: a client draws its prompt from the suspension below,
+                    # and this event exists only to carry the refusal out of the tool task.
+                    gate = self.retry_gate(
+                        tool_call_id=event.id, command=event.command,
+                        denial=Denial(kind=event.denial_kind, evidence=event.denial_evidence),
+                        explanation=event.explanation,
+                    )
+                    gate.refused_result = event.result
+                    gate.tool_name = "bash"
+                    gate.arguments = {"command": event.command, "explanation": event.explanation}
+                    retries.append(gate)
+                    continue
                 yield event
+            if retries:
+                # The batch has finished; some of it ran. Every completed call carries its result
+                # into the plan so the resumed batch replays it rather than running it twice, and
+                # the refused ones carry their gate instead.
+                for tool_call_id, plan in plans.items():
+                    plan.gates = []
+                    plan.refusal = None
+                    plan.completed = (
+                        {"result": outcomes[tool_call_id].get("content")}
+                        if tool_call_id in outcomes else None
+                    )
+                for gate in retries:
+                    plan = plans[gate.tool_call_id]
+                    plan.completed = None
+                    plan.gates = [gate]
+                gates = [SuspensionGate(**gate.to_dict()) for gate in retries]
+                answered = await self._answer_gates(gates)
+                if len(answered) < len(gates):
+                    yield Suspended(
+                        interactions=[gate for gate in gates if gate.request_id not in answered],
+                        plans={tool_call_id: plan.to_dict() for tool_call_id, plan in plans.items()},
+                    )
+                    step.directive = _STOP
+                    return
+                async for event in self._rerun_answered(
+                    tool_calls, turn_tool_calls_log, turn_tool_results_log, outcomes,
+                    self._resolve_tool_decisions(plans, answered),
+                ):
+                    yield event
         self._append_tool_results(response, outcomes)
         yield Checkpoint()
 

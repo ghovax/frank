@@ -69,6 +69,11 @@ class ToolContext:
     # nothing is put on `PATH` and the agent is told nothing about installing anything.
     toolbox: Any = None
 
+    # Whether this is a second run of a command the operating system refused. The registry reads
+    # it to build the right kind of attempt: a first attempt takes no grant and cannot, so this
+    # flag is the only thing that can make a command run wider than its session.
+    retrying: bool = False
+
     def child_environment(self, inherited: Optional[dict] = None) -> dict:
         """What a child process needs beyond the confinement's own environment: who it belongs
         to, and — when this session has a toolbox — its own tools on `PATH` with the package
@@ -107,11 +112,20 @@ class ToolContext:
             return self
         profile = self.sandbox
         for grant in grants:
-            profile = profile.widened(
-                reads=grant.reads, writes=grant.writes,
-                network=grant.network, workspace=self.workspace,
-            )
+            profile = profile.with_grant(grant, workspace=self.workspace)
         return replace(self, sandbox=profile)
+
+    def for_retry(self, grant: "Grant") -> "ToolContext":
+        """This context for a second run of a command the operating system refused.
+
+        Separate from :meth:`with_grants` because the two have different lifetimes: a session's
+        grants stand until it ends, and this one covers one re-run of one command and is gone
+        with the context it was bound into."""
+        return replace(
+            self,
+            sandbox=self.sandbox.with_grant(grant, workspace=self.workspace),
+            retrying=True,
+        )
 
     def for_directory(self, directory: str) -> "ToolContext":
         """This context with its workspace repointed, for a call that runs somewhere else.

@@ -908,7 +908,6 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
         // The harness's own reason, as facts. Rendered into a sentence by whoever draws the
         // prompt, in the language they are drawing it in.
         reason: event.reason ?? undefined,
-        risk: event.risk || undefined,
       };
       const attachedPermission = state.messages.some(
         (message) => message.role === "tool_call" && String(message.meta?.toolCallId ?? "") === toolCallId
@@ -1081,7 +1080,7 @@ export function useChat(
   initialSessionId: string | null = null,
   workingDirectory?: string,
   worktreeStrategy: WorktreeStrategy = "none",
-  permissionMode: PermissionMode = "default",
+  permissionMode: PermissionMode = "ask",
   // Whether a turn is currently running on this session (from the server-tracked
   // running set). Drives the live subscribe stream when we are viewing — but not
   // driving — it.

@@ -685,7 +685,7 @@ export async function refreshRemoteAgent(name: string): Promise<{ health: string
 export const METADATA_KEY = "urn:frank:ext:turn:v1";
 export const CONTENT_BLOCK_METADATA_KEY = "urn:frank:ext:content-block:v1";
 
-export type PermissionMode = "default" | "permissive" | "classify" | "read_only";
+export type PermissionMode = "ask" | "auto";
 export type WorktreeStrategy = "none" | "branch" | "worktree";
 
 export interface AgentSummary {
@@ -1164,7 +1164,7 @@ export async function savePreferences(changes: Partial<InterfacePreferences>): P
 export async function fetchSettings(): Promise<Settings> {
   const response = await apiFetch(`/settings`);
   if (!response.ok) {
-    return { permission_mode: "default", exa_api_key: "", composio_api_key: "", jina_api_key: "", firecrawl_api_key: "", web_fetch_proxy_url: "", sandbox: DEFAULT_SANDBOX, sandbox_backend: { backend: "", detail: "" }, user_context_enabled: false, computer_control_enabled: false, toolbox_enabled: false, toolbox_available: false, dictation_enabled: false, worktree_strategy: "none", compaction: DEFAULT_COMPACTION, providers: {} };
+    return { permission_mode: "ask", exa_api_key: "", composio_api_key: "", jina_api_key: "", firecrawl_api_key: "", web_fetch_proxy_url: "", sandbox: DEFAULT_SANDBOX, sandbox_backend: { backend: "", detail: "" }, user_context_enabled: false, computer_control_enabled: false, toolbox_enabled: false, toolbox_available: false, dictation_enabled: false, worktree_strategy: "none", compaction: DEFAULT_COMPACTION, providers: {} };
   }
   return (await response.json()) as Settings;
 }
@@ -1555,7 +1555,7 @@ export async function sessionCreate(input: SessionCreateInput, options?: ApiRequ
     agent: input.agent,
     working_directory: input.workingDirectory ?? "",
     worktree_strategy: input.worktreeStrategy ?? "none",
-    permission_mode: input.permissionMode ?? "default",
+    permission_mode: input.permissionMode ?? "ask",
     workspace_id: input.workspaceId ?? "",
     ...(input.parent ? { parent: input.parent } : {}),
   }, options);

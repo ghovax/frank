@@ -8,13 +8,13 @@ Everything a session needs can be built in code:
 
 ```python
 import asyncio
-from frank import AgentConfiguration, Catalogue, Session
+from frank import AgentConfiguration, Catalogue, FilesystemConfiguration, SandboxConfiguration, Session
 
 reviewer = AgentConfiguration(
     name="reviewer",
     description="Reads a change and reports what it would break.",
     system_prompt="You review changes. Name the risk, or say there is none.",
-    permission_mode="read_only",
+    sandbox=SandboxConfiguration(filesystem=FilesystemConfiguration(writable=[])),
     provider="anthropic",
     model="claude-opus-4-5",
 )
@@ -95,7 +95,7 @@ Everything durable is a constructor argument with an interface behind it. The de
 | `agent` | `str` name **or** an `AgentConfiguration` you build | — (required) | The agent itself: prompt, model, permission mode, which built-in tools it has |
 | `tools` | LangChain [`BaseTool`](https://python.langchain.com/docs/concepts/tools/) | None | Tools the agent gains, on top of the harness's |
 | `permissions` | A `PermissionEvaluator`-shaped object | The built-in rule engine | Whether a call is gated at all |
-| `tool_risk` | `"none"`/`"low"`/`"medium"`/`"high"` | `"medium"` | What a supplied tool is gated at |
+| `supplied_tool_gate` | `"ask"` / `"none"` | `"ask"` | Whether a supplied tool raises a gate before it runs |
 | `transcript` | `frank.Transcript` | `MemoryTranscript` | Where the record of completed turns goes |
 | `credentials` | `frank.Credentials` | A `0600` file under XDG | Where account tokens live (bypassed entirely by `model=`) |
 | `locations` | `LocationExecutor` records | Local, at `directory` | Where tools may run — SSH, containers |
@@ -148,7 +148,7 @@ async with Session(reviewer, directory="/srv/checkout", tools=[open_incidents]) 
 
 A supplied tool goes through the *same* preamble as every built-in: permission resolved, location resolved, policy applied. The extension point is the handler, not the pipeline. Two consequences follow:
 
-- **It is gated at `tool_risk`, which defaults to `"medium"`.** The permission engine classifies by tool name, and it does not know yours. There is no honest way to infer what your tool does. The default is *ask*, so a new tool cannot silently widen what a session may do. Set `tool_risk="none"` to say otherwise deliberately.
+- **It is gated unless you say otherwise.** The permission engine recognises calls by tool name, and it does not know yours, so there is no honest way to infer what it does. The default is *ask*, so a new tool cannot silently widen what a session may do. Set `supplied_tool_gate="none"` to say otherwise deliberately.
 - **It cannot shadow a built-in.** A tool named `bash` that is not this harness's `bash` is a confinement surprise, not an extension point. A name collision therefore resolves to ours.
 - **The agent profile's `tools_enabled` list does not filter it.** That list narrows the *harness's* capabilities, and someone wrote it before your program existed. Otherwise a supplied tool disappears for every agent that names an explicit list.
 
@@ -157,14 +157,14 @@ A supplied tool goes through the *same* preamble as every built-in: permission r
 `agent=` takes a name to load from disk *or* an `AgentConfiguration` you construct. With a constructed one, nothing on the machine is consulted — the agent is a value your program owns:
 
 ```python
-from frank import AgentConfiguration, BashToolConfiguration, Session, ToolsConfiguration
+from frank import AgentConfiguration, BashToolConfiguration, FilesystemConfiguration, SandboxConfiguration, Session, ToolsConfiguration
 
 reviewer = AgentConfiguration(
     name="reviewer",
     provider="anthropic",
     model="claude-sonnet-4",
     system_prompt="You review code. Be terse.",
-    permission_mode="read_only",
+    sandbox=SandboxConfiguration(filesystem=FilesystemConfiguration(writable=[])),
     tools_enabled=["read_file", "search_code"],
     tools=ToolsConfiguration(
         disabled=["fetch_url"],
@@ -270,7 +270,7 @@ from frank import Approval, Session
 
 class AllowReads:
     async def decide(self, gate):
-        if gate.kind == "permission" and gate.risk in ("", "low"):
+        if gate.kind == "permission" and set(gate.escape.writes) <= {"/tmp/build"}:
             return Approval(allow=True, reason="Reads are pre-approved for this job.")
         return None
 

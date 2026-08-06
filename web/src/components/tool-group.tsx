@@ -15,7 +15,7 @@ import { DisclosureRow } from "./ui/disclosure-row";
 import { ActivityIcon } from "./ui/activity-icon";
 import type { ToolEvent } from "@/lib/tool-event";
 import { hasBackgroundJobId, toolStatus } from "@/lib/tool-event";
-import { ToolCall, ToolCallDetail, ToolLocationBadge, ToolRiskBadges, collapsedHeadingLocation, toolCallDetail } from "./tool-call";
+import { ToolCall, ToolCallDetail, ToolLocationBadge, ToolAccessBadges, collapsedHeadingLocation, toolCallDetail } from "./tool-call";
 
 // Shared, grouped/collapsible run of contiguous tool calls — the single source
 // of truth for how a batch of tool calls reads. The group is a single line of
@@ -224,7 +224,7 @@ export const ToolGroup = memo(function ToolGroup({
           is gone for a one-call group, and these are the one thing on it the heading did not
           already say — so they move up rather than disappearing. They are safety markers; a
           simplification that quietly drops them is not a simplification. */}
-      {soleTool ? <ToolRiskBadges name={soleTool.name} arguments={soleTool.arguments} /> : null}
+      {soleTool ? <ToolAccessBadges name={soleTool.name} arguments={soleTool.arguments} /> : null}
       <AnimatePresence initial={false}>
         {tally.order.map((name) => {
           const display = getToolCallDisplay(name, undefined, tDisplay);

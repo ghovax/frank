@@ -16,7 +16,9 @@ So say up front what an interactive command would have asked.
 
 Where a step truly needs a person — a credential, a decision only they can make, a confirmation the tool insists on — do not try to run it anyway. Ask with `ask_user`, or tell the user what to run themselves.
 
-**Say what the command reaches.** Give a clear `explanation` and an honest `risk`. Use `access_request` to state whether the command changes anything, and to ask for a path or for the network beyond what your confinement already allows. Your context lists that confinement, so read it first: a write outside it fails with a permission error that names no path.
+**Say what the command reaches.** Give a clear `explanation`. Use `access_request` to state whether the command changes anything, and to ask for a path or for the network beyond what your confinement already allows. Your context lists that confinement, so read it first: a write outside it fails with a permission error that names no path.
+
+Inside that confinement you are not interrupted, so there is no reason to narrow what you run in the hope of being asked less. Ask for the narrowest reach that does the work, and only when the work is genuinely outside the box: a request wider than the explanation justifies is refused on its own.
 
 **Prefer a specialized tool** for finding files, searching content, reading files, editing, writing, fetching a URL, and downloading. Use `bash` for tests, builds, git, processes, package management, pipelines, and work that has no dedicated tool.
 
@@ -27,6 +29,5 @@ Arguments:
   - location: Which workspace location runs the command — its URI or its name, from the locations listed in your context. Defaults to the local filesystem. Pass it only to reach a different, remote location.
   - access_request: What this call needs beyond what the session already holds. Omit it where the command works inside the confinement listed in your context, which is the usual case. When present it must set `mutates`. Use `writes` and `reads` for paths outside the confinement, and `network` only where the confinement denies the network.
   - explanation: Why the task needs this command.
-  - risk: One of "low", "medium" or "high". Judge the damage the command could do. Low for a command that only reads, medium for one that changes something, high for one that destroys something.
   - background: Run the command in the background instead of waiting for it. Use this for long work whose result you do not need now.
   - timeout: How many seconds to wait for the command before it moves to the background, where its result reaches you when it finishes. Raise it for a command you want to wait longer for. It does not kill the command.

@@ -78,7 +78,7 @@ class SessionRecord(Base):
     worktree_error: Mapped[str] = mapped_column(Text, default="")
     title: Mapped[str] = mapped_column(Text, default="")
     # Per-session permission mode for future turns and frontend hydration.
-    permission_mode: Mapped[str] = mapped_column(Text, default="default")
+    permission_mode: Mapped[str] = mapped_column(Text, default="ask")
     input_draft: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[str] = mapped_column(String, nullable=False)
 
@@ -220,7 +220,7 @@ class LocationRecord(Base):
     """A named place a workspace runs tools in: the home server's own filesystem
     (``kind="local"``) or a remote reached over SSH (``kind="remote"``, referencing a
     ``~/.ssh/config`` host alias). ``permission_mode`` is the one execution policy a
-    location carries (``read_only`` etc. is enforced per tool call); ``name`` is derived
+    location carries, and it can only tighten the session's; ``name`` is derived
     from the connection (host alias / folder), not user-entered. The model-facing location
     URI is generated from the resolved connection, not stored (so it can't go stale)."""
 
@@ -232,7 +232,7 @@ class LocationRecord(Base):
     kind: Mapped[str] = mapped_column(Text, nullable=False)  # "local" | "remote"
     host_alias: Mapped[str] = mapped_column(Text, default="")  # SSH alias for remotes
     base_directory: Mapped[str] = mapped_column(Text, nullable=False)
-    permission_mode: Mapped[str] = mapped_column(Text, default="default")
+    permission_mode: Mapped[str] = mapped_column(Text, default="ask")
     created_at: Mapped[str] = mapped_column(String, nullable=False)
 
     __table_args__ = (Index("idx_locations_workspace", "workspace_id"),)

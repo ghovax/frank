@@ -3,7 +3,7 @@
 import { Box, Button, createListCollection, Flex, Portal, Select, Span, Text } from "@chakra-ui/react";
 import { useMemo, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
-import { LuBadgeCheck, LuBox, LuCheck, LuCircleSlash, LuEye, LuGitBranch, LuGitFork, LuGlobe, LuHand, LuHardDrive, LuMic, LuMousePointerClick, LuPackage, LuUser, LuUserSearch, LuZap } from "react-icons/lu";
+import { LuBadgeCheck, LuBox, LuCheck, LuCircleSlash, LuGitBranch, LuGitFork, LuGlobe, LuHand, LuHardDrive, LuMic, LuMousePointerClick, LuPackage, LuUser, LuUserSearch, LuZap } from "react-icons/lu";
 import type { PermissionMode } from "@/lib/api";
 
 export type WorktreeStrategyValue = "none" | "branch" | "worktree";
@@ -50,33 +50,19 @@ function fitMarkers(id: string | undefined, labelHidden: boolean, hasArrow: bool
 
 function permissionAppearance(permissionMode: PermissionMode) {
   return {
-    default: {
+    ask: {
       icon: <LuHand size={13} />,
       color: "fg.subtle",
       background: "bg",
       borderColor: "border",
       colorPalette: undefined,
     },
-    permissive: {
-      icon: <LuZap size={13} />,
-      color: "orange.fg",
-      background: "orange.subtle",
-      borderColor: "orange.muted",
-      colorPalette: "orange",
-    },
-    classify: {
+    auto: {
       icon: <LuBadgeCheck size={13} />,
       color: "blue.fg",
       background: "blue.subtle",
       borderColor: "blue.muted",
       colorPalette: "blue",
-    },
-    read_only: {
-      icon: <LuEye size={13} />,
-      color: "green.fg",
-      background: "green.subtle",
-      borderColor: "green.muted",
-      colorPalette: "green",
     },
   }[permissionMode] ?? {
     icon: <LuHand size={13} />,
@@ -234,10 +220,8 @@ export function PermissionModeControl({
 }) {
   const translation = useTranslations("SessionControls");
   const permissionChoices: { value: PermissionMode; label: string; description: string; icon: ReactNode; colorPalette?: "blue" | "green" | "orange" }[] = [
-    { value: "default", label: translation("permissionDefaultLabel"), description: translation("permissionDefaultDescription"), icon: <LuHand size={13} /> },
-    { value: "permissive", label: translation("permissionPermissiveLabel"), description: translation("permissionPermissiveDescription"), icon: <LuZap size={13} />, colorPalette: "orange" },
-    { value: "classify", label: translation("permissionClassifyLabel"), description: translation("permissionClassifyDescription"), icon: <LuBadgeCheck size={13} />, colorPalette: "blue" },
-    { value: "read_only", label: translation("permissionReadOnlyLabel"), description: translation("permissionReadOnlyDescription"), icon: <LuEye size={13} />, colorPalette: "green" },
+    { value: "ask", label: translation("permissionAskLabel"), description: translation("permissionAskDescription"), icon: <LuHand size={13} /> },
+    { value: "auto", label: translation("permissionAutoLabel"), description: translation("permissionAutoDescription"), icon: <LuBadgeCheck size={13} />, colorPalette: "blue" },
   ];
   const UNSET = "__unset__";
   const permissionItems = [
@@ -247,9 +231,9 @@ export function PermissionModeControl({
   const metrics = controlMetrics(layout);
   const markers = fitMarkers(fitted ? "permission" : undefined, labelHidden, true);
   const collection = createListCollection({ items: permissionItems });
-  const selectedAppearance = permissionAppearance(value ?? "default");
+  const selectedAppearance = permissionAppearance(value ?? "ask");
   const selectedLabel = permissionItems.find((item) => item.value === (value ?? UNSET))?.label
-    ?? translation("permissionDefaultLabel");
+    ?? translation("permissionAskLabel");
 
   return (
     <Select.Root

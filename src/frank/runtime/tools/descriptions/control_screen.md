@@ -148,4 +148,3 @@ Arguments:
   - script: The Python to run.
   - target: The window or tab to run it in, by the id from the target list. Required.
   - explanation: Why the task needs this.
-  - risk: How much damage this could do. Higher for an action that changes state.

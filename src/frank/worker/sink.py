@@ -276,7 +276,7 @@ class _TurnEventSink:
                             tool_call_id=gate.tool_call_id,
                             tool_name=gate.tool_name, arguments=gate.arguments,
                             command=gate.command, explanation=gate.explanation,
-                            reason=gate.reason, risk=gate.risk,
+                            reason=gate.reason,
                         )))
                 return await self._suspend(interactions, plans)
             case Error():

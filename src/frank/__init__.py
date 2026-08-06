@@ -37,14 +37,14 @@ to join. See :mod:`frank.base.ports`::
 
     from frank import Approval, Session
 
-    class AllowReads:
+    class AllowScratch:
         async def decide(self, gate):
-            if gate.risk in ("", "low"):
-                return Approval(allow=True, reason="read-only work is pre-approved")
+            if set(gate.escape.writes) <= {"/tmp/build"}:
+                return Approval(allow=True, reason="the build directory is pre-approved")
             return None  # anything else still asks a human
 
     async def review() -> None:
-        async with Session(assistant, directory="/srv/checkout", approvals=AllowReads()) as session:
+        async with Session(assistant, directory="/srv/checkout", approvals=AllowScratch()) as session:
             print(await session.ask("what changed here recently?"))
 
 **Attachments.** A file is handed over by path, the same act as dragging one into the desktop
@@ -80,6 +80,8 @@ from frank.base.configuration import (
     AgentConfiguration,
     BashToolConfiguration,
     Configuration,
+    FilesystemConfiguration,
+    SandboxConfiguration,
     ToolsConfiguration,
 )
 from frank.base.permission_mode import PermissionMode
@@ -153,6 +155,7 @@ __all__ = [
     "Configuration",
     "Done",
     "EventType",
+    "FilesystemConfiguration",
     "Instruction",
     "JobStore",
     "Mcp",
@@ -163,6 +166,7 @@ __all__ = [
     "MemoryTranscript",
     "Observation",
     "Observer",
+    "SandboxConfiguration",
     "PermissionMode",
     "Session",
     "ScheduleError",
@@ -291,7 +295,7 @@ class Session:
         # Extension, as distinct from configuration: tools the agent gains, and where it may
         # run them.
         tools: Sequence[Any] = (),
-        tool_risk: str = "medium",
+        supplied_tool_gate: str = "ask",
         # The three seams around a turn. Each defaults to what the harness has always done,
         # so a caller who passes none of them sees no change.
         hooks: Sequence[Any] = (),
@@ -344,7 +348,7 @@ class Session:
         self._transcript = _require(Transcript, transcript, "transcript") or MemoryTranscript()
         self._credentials = _require(Credentials, credentials, "credentials")
         self._tools = list(tools)
-        self._tool_risk = tool_risk
+        self._supplied_tool_gate = supplied_tool_gate
         self._permissions = permissions
         self._hooks = list(hooks)
         self._pipeline = list(pipeline)
@@ -437,7 +441,7 @@ class Session:
                 approvals=self._approvals,
                 transcript=self._transcript,
                 tools=self._tools,
-                tool_risk=self._tool_risk,
+                supplied_tool_gate=self._supplied_tool_gate,
                 permissions=self._permissions,
                 hooks=self._hooks,
                 pipeline=self._pipeline,
