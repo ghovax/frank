@@ -1,22 +1,4 @@
-"""Durable record of background jobs, so an interrupted long-running task can
-survive a server restart.
-
-Background jobs (slow bash, web searches, document parses) run as in-memory
-``asyncio`` tasks. That is fine while the process lives, but a restart loses any
-job that was still running — and, worse, any job that *finished* while the model
-was idle but whose result had not yet been delivered as an autonomous wake. This
-store persists both, so on startup the harness can:
-
-* **deliver** results that completed-but-were-never-delivered (just wake the
-  context), and
-* **recover** jobs that were still running — re-issuing the idempotent ones
-  (a web search, a cache-backed parse) and abandoning-with-a-note the ones that
-  are unsafe to repeat (an arbitrary shell command).
-
-The in-memory :class:`~frank.runtime.background.BackgroundJobs` remains the source
-of truth for *live* scheduling; this store mirrors it for durability and is the
-authority only across a restart.
-"""
+"""The durable record of background jobs, so an interrupted task survives a restart."""
 
 from __future__ import annotations
 
@@ -50,19 +32,7 @@ def background_database_path() -> Path:
 
 
 def reap_orphaned_process_groups(store: "JobStore | None" = None) -> int:
-    """Kill process groups left behind by a previous, unclean shutdown.
-
-    Catchable termination (SIGTERM/SIGINT/SIGHUP/normal exit) kills every tracked process
-    group directly. A SIGKILL or a hard crash cannot run any handler, so a long background
-    shell subtree — a dev server, a watcher — can survive as an orphan holding a port. Each job
-    records its process-group id when it starts; this kills any group still marked running, so
-    orphans never accumulate across restarts. Answers with how many groups were signalled.
-
-    It lives here rather than in the runtime because the caller has to be a process that starts
-    *before* any session and does not import the runtime, which is the daemon exactly. It spent
-    its whole life in `runtime/background.py` with no caller at all, which is why the orphans it
-    describes have in fact been accumulating.
-    """
+    """Kill process groups left behind by a previous, unclean shutdown."""
     killed = 0
     for process_group in (store or get_background_job_store()).orphaned_process_groups():
         try:
@@ -96,14 +66,7 @@ def _json_load(value: str | None, fallback: Any = None) -> Any:
 
 
 class BackgroundJobStore:
-    """SQLite-backed mirror of every background job's lifecycle.
-
-    Charter: this store owns background-job lifecycle and OS process-group reaping — it is NOT
-    turn state. A turn's durable control-state and conversation live in the
-    :class:`~frank.daemon.persistence.turn_store.AppendOnlyTaskStore` (as a :class:`~frank.protocol.turn_record.TurnRecord`
-    and a checkpoint). This is a deliberately separate subsystem — results-durable and
-    execution-ephemeral, additionally recovering running jobs and reaping orphaned process groups
-    on restart — so it is not folded into the task store, and the two are never confused for one."""
+    """A SQLite mirror of every background job's lifecycle, which is not turn state."""
 
     def __init__(self, database_path: Path | None = None):
         self.database_path = database_path or background_database_path()
@@ -153,14 +116,7 @@ class BackgroundJobStore:
                 }
                 if "process_group" not in existing_columns:
                     connection.execute("ALTER TABLE background_jobs ADD COLUMN process_group INTEGER")
-                # Indices matched to the hot queries:
-                #  - undelivered_jobs / has_undelivered_jobs (run after every turn and
-                #    on startup) filter (session_id, agent_name, status);
-                #  - running_jobs(agent) and contexts_with_undelivered filter
-                #    (agent_name, status);
-                #  - running_jobs() / orphaned_process_groups filter status alone.
-                # The first covers session_id-only prefixes too, so no separate
-                # (session_id, status) index is needed.
+                # Indices matched to the hot queries, so the startup and per-turn scans stay cheap.
                 connection.execute(
                     "CREATE INDEX IF NOT EXISTS idx_background_jobs_context_agent_status "
                     "ON background_jobs(session_id, agent_name, status)"
@@ -205,8 +161,7 @@ class BackgroundJobStore:
                 )
 
     def record_process_group(self, job_id: str, process_group: int) -> None:
-        """Record the OS process-group id of a job's shell subtree once it has
-        started, so :func:`reap_orphaned_processes` can kill it after a crash."""
+        """Record a job's process group once its shell subtree has started, so a reaper can kill it after a crash."""
         with background_sqlite_write_lock():
             with self._connect() as connection:
                 connection.execute(
@@ -246,8 +201,7 @@ class BackgroundJobStore:
         return self._rows_where("status = ? AND agent_name = ?", (STATUS_RUNNING, agent_name))
 
     def orphaned_process_groups(self) -> list[int]:
-        """Process groups of jobs still marked running from a previous, unclean
-        shutdown — the orphans a reaper must kill on startup."""
+        """Process groups of jobs still marked running from an unclean shutdown."""
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT DISTINCT process_group FROM background_jobs WHERE status = ? AND process_group IS NOT NULL",
@@ -256,8 +210,7 @@ class BackgroundJobStore:
         return [row["process_group"] for row in rows if row["process_group"]]
 
     def undelivered_jobs(self, session_id: str, agent_name: str) -> list[dict[str, Any]]:
-        """A context's jobs that carry a result the model has not yet seen — whether
-        they completed normally or were abandoned by a restart."""
+        """A context's jobs carrying a result the model has not yet seen."""
         return self._rows_where(
             "session_id = ? AND agent_name = ? AND status IN (?, ?)",
             (session_id, agent_name, STATUS_COMPLETED, STATUS_ABANDONED),
@@ -272,8 +225,7 @@ class BackgroundJobStore:
         return row is not None
 
     def contexts_with_undelivered(self, agent_name: str) -> list[str]:
-        """Distinct contexts of an agent that have any deliverable-but-undelivered
-        result — the ones to wake on startup."""
+        """Distinct contexts of an agent with a deliverable result, which are the ones to wake on startup."""
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT DISTINCT session_id FROM background_jobs WHERE agent_name = ? AND status IN (?, ?)",

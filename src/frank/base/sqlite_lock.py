@@ -1,31 +1,4 @@
-"""SQLite write coordination across coroutines, threads, and backend processes.
-
-SQLite permits only one writer. WAL improves read/write overlap, but concurrent
-writers still serialize. This module makes that serialization explicit inside the
-server process and across accidental multiple server processes pointing at the same
-database file.
-
-The hard constraint is that **the event loop must never block on a synchronous
-lock.** The task store's async writer holds the history-database lock across an
-``await`` (its transaction), so any *synchronous* acquire of the same lock on the
-loop thread would deadlock the whole server — the loop can never run the code that
-releases it. Therefore:
-
-- Loop-side writers use :func:`acquire_sqlite_write_lock` / :func:`release_sqlite_write_lock`,
-  which serialize on an ``asyncio.Lock`` (a waiting coroutine suspends rather than
-  parking a thread-pool worker) and take the cross-process file lock in a worker.
-- Off-loop writers (background threads, or sync helpers dispatched through
-  ``asyncio.to_thread``) use the synchronous :func:`sqlite_write_lock` context
-  manager. They may block their own thread; they must never run on the loop thread.
-  That last sentence used to be the whole of the enforcement, and it was not enough:
-  the rule held across seventeen call sites until one of them was reached from a
-  coroutine, and the server hung with no clue as to why. :func:`sqlite_write_lock`
-  now refuses to run on a thread with a running event loop, so breaking the rule
-  raises at the call site that broke it instead of stopping every session at once.
-- ``background.db`` (background-job bookkeeping) is a *separate* database written
-  only from the event loop, so it gets its own lock via :func:`background_sqlite_write_lock`.
-  Sharing the history-database lock would reintroduce exactly the loop deadlock above.
-"""
+"""SQLite write coordination across coroutines, threads and backend processes."""
 
 from __future__ import annotations
 
@@ -42,16 +15,10 @@ _Result = TypeVar("_Result")
 _sqlite_write_lock = threading.Lock()
 _sqlite_lock_path: Path | None = None
 
-# In-process serialization for loop-side (async) history.db writers. Coroutines await
-# this instead of blocking a thread-pool worker on the threading lock while they wait,
-# so a burst of concurrent writers can never exhaust the default executor. Created
-# lazily on the running loop.
+# In-process serialization for the async history writers, which suspend rather than parking a thread.
 _async_write_lock: asyncio.Lock | None = None
 
-# background.db — background-job bookkeeping. A dedicated lock, deliberately separate
-# from the history.db lock: background.db is a different database written only from the
-# event loop, and sharing the history lock (which the async task store holds across an
-# await) would deadlock the loop the instant a background-job write raced a turn save.
+# A dedicated lock for the background database, written only from its own path.
 _background_write_lock = threading.Lock()
 _background_lock_path: Path | None = None
 
@@ -93,19 +60,7 @@ def _release_file_locks(thread_lock: threading.Lock, lock_handle) -> None:
 
 
 def _refuse_on_event_loop() -> None:
-    """Raise if this thread is running an event loop.
-
-    The deadlock this prevents is not a race — it is certain whenever the two overlap.
-    The async history writer holds this same lock across its transaction's ``await``,
-    and only the loop can run the code that releases it; so a synchronous acquire *on*
-    the loop waits for something that cannot happen until it stops waiting. Every
-    session, every stream and every page load stop with it, and a stack trace shows only
-    a thread parked on a mutex.
-
-    ``get_running_loop`` is the exact discriminator: it succeeds only on a thread
-    currently running a loop, so a worker started by ``asyncio.to_thread`` passes and
-    a coroutine does not.
-    """
+    """Raise if this thread is running an event loop, since the deadlock it prevents is certain rather than a race."""
     try:
         asyncio.get_running_loop()
     except RuntimeError:
@@ -119,11 +74,7 @@ def _refuse_on_event_loop() -> None:
 
 @contextmanager
 def sqlite_write_lock():
-    """Synchronous history.db write lock, for callers running OFF the event loop
-    (background threads or sync helpers dispatched through ``asyncio.to_thread``).
-
-    Refuses to run on the loop thread rather than trusting the caller, because the
-    alternative is a server that stops answering with nothing in the log."""
+    """The synchronous history write lock, for callers running off the event loop."""
     _refuse_on_event_loop()
     lock_handle = _acquire_file_locks(_sqlite_write_lock, _sqlite_lock_path)
     try:
@@ -134,10 +85,7 @@ def sqlite_write_lock():
 
 @contextmanager
 def background_sqlite_write_lock():
-    """Synchronous background.db write lock — a dedicated lock kept separate from the
-    history.db lock, so a background-job write on the event loop never waits on the
-    task store's across-await hold. background.db writes are serialized by the single
-    event-loop thread anyway; this lock only guards against a second backend process."""
+    """The synchronous background write lock, kept separate so one never waits on the other."""
     lock_handle = _acquire_file_locks(_background_write_lock, _background_lock_path)
     try:
         yield
@@ -153,9 +101,7 @@ def _get_async_write_lock() -> asyncio.Lock:
 
 
 class SqliteWriteToken:
-    """The handle returned by :func:`acquire_sqlite_write_lock`; pass it to
-    :func:`release_sqlite_write_lock`. Per-call, so overlapping acquisitions never
-    clobber one shared module global."""
+    """The handle returned by the async acquire, per call so overlapping acquisitions cannot clobber one another."""
 
     __slots__ = ("_async_lock", "_file_handle", "_released")
 
@@ -175,13 +121,7 @@ class SqliteWriteToken:
 
 
 async def acquire_sqlite_write_lock() -> SqliteWriteToken:
-    """Serialize an event-loop history.db writer without ever blocking the loop.
-
-    Awaits an ``asyncio.Lock`` — a waiting coroutine suspends rather than parking a
-    thread-pool worker — then takes the cross-thread/cross-process file lock in a
-    worker. Because the async lock admits one writer at a time, only a single worker
-    is ever used for acquisition, so a write burst cannot saturate the default
-    executor. Returns a token to pass to :func:`release_sqlite_write_lock`."""
+    """Serialize an event-loop history writer without ever blocking the loop."""
     async_lock = _get_async_write_lock()
     await async_lock.acquire()
     try:

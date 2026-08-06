@@ -1,5 +1,4 @@
-"""Location domain: the location/workspace serialization and session-location resolution
-primitives shared by the workspaces service."""
+"""The location domain: serialization, and the session-location resolution the workspace service shares."""
 
 from __future__ import annotations
 
@@ -23,8 +22,7 @@ def _location_address(record: LocationRecord) -> LocationAddress:
 
 
 def _serialize_location(record: LocationRecord) -> dict[str, Any]:
-    """A location for the API: its generated URI (identity), derived name, connection, and
-    its one execution policy (permission_mode)."""
+    """A location for the API: its generated URI, derived name, connection and execution policy."""
     try:
         uri = location_uri_for(_location_address(record))
     except Exception:
@@ -65,10 +63,7 @@ def _serialize_workspace(record: WorkspaceRecord, database_session, *, with_loca
 
 
 def _derive_location_name(database_session, workspace_id: str, kind: str, base_directory: str, host_alias: str, *, exclude_id: str = "") -> str:
-    """The agent-facing name for a location, derived from its connection (not user-entered):
-    the SSH host alias for a remote, the base directory's folder name for a local (falling
-    back to "local"/"remote"). Deduplicated within the workspace with a numeric suffix so two
-    locations never collide on the name the agent addresses them by."""
+    """The agent-facing name for a location, derived from its connection rather than entered."""
     if kind == "remote":
         base = (host_alias or "").strip() or "remote"
     else:
@@ -86,9 +81,7 @@ def _derive_location_name(database_session, workspace_id: str, kind: str, base_d
 
 
 def _location_pair_conflict(first: tuple[str, str, str], second: tuple[str, str, str]) -> str | None:
-    """The overlap message for a single pair of normalized (machine, path, raw) locations,
-    or ``None`` if they don't conflict. They conflict only on the same machine, when the two
-    directories are identical or one is nested inside the other."""
+    """The overlap message for one pair of locations, or `None` when they do not conflict."""
     (machine_a, path_a, raw_a), (machine_b, path_b, raw_b) = first, second
     if machine_a != machine_b or not path_a or not path_b:
         return None
@@ -102,10 +95,7 @@ def _location_pair_conflict(first: tuple[str, str, str], second: tuple[str, str,
 
 
 def _locations_conflict_message(entries: list[tuple[str, str, str]]) -> str | None:
-    """A human message for the first pair of locations that overlap on the same machine —
-    identical base directories, or one nested inside another — which is redundant and
-    ambiguous for the agent to address. ``entries`` is a list of (kind, host_alias,
-    base_directory); locations on different machines never conflict, even with the same path."""
+    """A message for the first pair of locations that overlap on the same machine."""
     normalized = [
         (
             f"remote:{(host or '').strip()}" if kind == "remote" else "local",
@@ -148,8 +138,7 @@ def _add_location_row(database_session, workspace_id: str, location_input: Locat
 
 
 def _workspace_id_for_location(location_id: str) -> str:
-    """Which workspace a location belongs to, or ``""`` if there is no such row. Read before a
-    delete, because afterwards there is nothing left to ask whose sessions need telling."""
+    """Which workspace a location belongs to, read before a delete while there is still something to ask."""
     if state.session_factory is None:
         return ""
     database_session = state.session_factory()
@@ -161,10 +150,7 @@ def _workspace_id_for_location(location_id: str) -> str:
 
 
 def _resolve_session_locations(session_id: str) -> list[dict[str, Any]] | None:
-    """The runtime-shaped locations for a session's workspace: each entry carries the
-    generated URI and the *effective* execution settings (own value, else workspace
-    default). Returns ``None`` when the session has no workspace (so the runtime falls back
-    to a single local location). Synchronous DB read — the executor calls it off-loop."""
+    """The runtime-shaped locations for a session's workspace, with each entry's effective settings."""
     if state.session_factory is None:
         return None
     database_session = state.session_factory()
