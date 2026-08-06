@@ -702,15 +702,7 @@ def _dedupe_paths(paths: Iterable[Path]) -> list[Path]:
 
 
 class NamedToolPermissions(BaseModel):
-    """Per-call permission rules for a tool whose calls have a *name*.
-
-    `bash` matches patterns against the segments of a command line, which is a shape only a
-    shell has. An MCP call and a screen script each have a simpler identity — `server.tool` and
-    the primitive a script reaches for — and this is what a rule is written against for both.
-
-    Longest matching pattern wins, as with commands, so a specific rule beats a broad one
-    however they are ordered in the file.
-    """
+    """Per-call permission rules for a tool whose calls have a name."""
 
     permissions: dict[str, str] = {}
 
@@ -734,19 +726,6 @@ class BashToolConfiguration(BaseModel):
     _SUBSHELL = re.compile(r"\$\((.+?)\)|`(.+?)`")
 
     #: Commands whose damage is not bounded by the confinement, and what to do about each.
-    #:
-    #: The box answers "where can this reach", and for almost every command that is the whole
-    #: question. It does not answer "how much of the workspace survives this": `rm -rf .` is
-    #: entirely inside the boundary, and so is `git reset --hard`. Nothing about a path list can
-    #: see the difference between a build that writes eleven files and a command that removes
-    #: the tree it was pointed at.
-    #:
-    #: So this list exists, it is short, and it is the only place a command's *text* decides
-    #: anything. It is not a classifier and does not try to be: each entry is a prefix somebody
-    #: could have written themselves in `tools.bash.permissions`, seeded here because a person
-    #: should not have to think of them before the first destructive command rather than after.
-    #: A person's own rules are merged over the top and win, so any of these can be turned off
-    #: by writing `allow` for the same prefix.
     DESTRUCTIVE_DEFAULTS: ClassVar[dict[str, str]] = {
         "rm -rf *": "ask",
         "rm -fr *": "ask",
@@ -766,21 +745,11 @@ class BashToolConfiguration(BaseModel):
 
     @property
     def effective_permissions(self) -> dict[str, str]:
-        """The rules actually in force: the destructive seeds, with the person's own over them.
-
-        Merged rather than concatenated, so a person who writes `"rm -rf *": "allow"` gets
-        exactly that — their entry replaces the seed at the same key instead of sitting beside
-        it and losing to whichever the match happened to prefer."""
+        """The rules actually in force: the destructive seeds, with the person's own over them."""
         return {**self.DESTRUCTIVE_DEFAULTS, **self.permissions}
 
     def evaluate_permission(self, command: str, unmatched: str = "allow") -> str:
-        """The configured decision for ``command``. ``unmatched`` is returned when no pattern
-        matches, which for a shell command is "allow": the confinement is what stands in front
-        of an unlisted command, and stopping to ask about every one of them is how a person
-        learns to approve without reading.
-
-        Longest matching pattern wins, so a specific rule beats a broad one however they are
-        ordered in the file."""
+        """The configured decision for `command`, with `unmatched` returned when no pattern matches."""
         segments = self._extract_segments(command)
         rules = self.effective_permissions
         best_match_length = 0
@@ -794,8 +763,7 @@ class BashToolConfiguration(BaseModel):
         return best_decision
 
     def command_matches(self, command: str, patterns: Iterable[str]) -> bool:
-        """Whether any segment of ``command`` matches any of ``patterns`` — the same
-        matching used for configured rules, reused for session-scoped allowlists."""
+        """Whether any segment of `command` matches any of `patterns`."""
         segments = self._extract_segments(command)
         return any(
             self._segment_matches(segment, pattern)
@@ -805,11 +773,7 @@ class BashToolConfiguration(BaseModel):
         )
 
     def _extract_segments(self, command: str) -> list[str]:
-        """Split a command string into individual segments to check.
-
-        Splits on shell operators (&&, ||, ;, |) and extracts the contents
-        of subshells ($(...) and backticks).
-        """
+        """Split a command into segments, on shell operators and through subshells."""
         segments = [segment.strip() for segment in self._SHELL_SPLIT.split(command) if segment.strip()]
         for match in self._SUBSHELL.finditer(command):
             inner = (match.group(1) or match.group(2)).strip()
@@ -828,34 +792,16 @@ class BashToolConfiguration(BaseModel):
 
 
 class ToolsConfiguration(BaseModel):
-    """Which of the harness's tools an agent has, and how the ones with settings behave.
-
-    Three tools have settings of their own, and they are the three whose calls can be told
-    apart from one another: `bash` by its command, `mcp` by `server.tool`, and `screen` by the
-    primitive a script reaches for. Each carries a permission table. Every other tool is on or
-    off, which `disabled` says uniformly rather than by inventing a section per tool that would
-    carry one field.
-
-    Two ways to narrow the roster, and they are complements rather than duplicates.
-    `tools_enabled` on the agent is an *allow-list*: naming one tool means naming all of them,
-    which is right for an agent defined by a small capability set. `disabled` is a *deny-list*:
-    it takes the full roster and removes from it, which is right when an agent should have
-    everything except shell access. Using both means a tool must survive each.
-    """
+    """Which of the harness's tools an agent has, and how the ones with settings behave."""
 
     bash: BashToolConfiguration = BashToolConfiguration()
-    # The other two tools whose calls can be named, and so can be ruled on. Empty means no rule,
-    # which leaves the barrier's own default in force exactly as before.
+    # The other two tools whose calls can be named and ruled on; empty leaves the default in force.
     mcp: NamedToolPermissions = NamedToolPermissions()
     screen: NamedToolPermissions = NamedToolPermissions()
     disabled: list[str] = Field(default_factory=list)
 
     def is_enabled(self, tool_name: str) -> bool:
-        """Whether this agent may use `tool_name` at all.
-
-        `bash.enabled` is honoured here rather than being a second mechanism: it predates
-        `disabled`, it is what the settings interface writes, and a switch that a person can
-        see and set must actually do something."""
+        """Whether this agent may use `tool_name` at all."""
         if tool_name in self.disabled:
             return False
         if tool_name == "bash" and not self.bash.enabled:
@@ -871,12 +817,9 @@ class AgentConfiguration(BaseModel):
     description: str = ""
     role: str = ""
     enabled: bool = True
-    # Names of the skills (files in the skills directory) this agent may use.
-    # Empty means every available skill is offered to the agent by default.
+    # The skills this agent may use; empty offers every available one.
     skills: list[str] = []
-    # The model and its provider are separate fields, mirroring the global config:
-    # a human editing an AGENT.md sees both explicitly. ``model_identifier``
-    # recombines them into the ``provider/model`` form the factory expects.
+    # The model and its provider are separate fields, recombined into an identifier where one is wanted.
     model: Optional[str] = None
     provider: Optional[str] = None
     reasoning_effort: str = "high"
