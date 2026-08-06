@@ -1,13 +1,4 @@
-"""A session's own endpoint: the socket everything talks to once it holds the address.
-
-The surface is small on purpose — send a message, answer a gate, cancel a turn, read the
-card. Anything that is not driving *this* session is the daemon's business, not a session's.
-
-Every request must carry the session's capability token. The socket file is already
-restricted to the user, so this guards the boundary that matters here: one session reaching
-another it was never handed. A peer that was given an address and a token can drive it; a
-process that merely guessed an id cannot.
-"""
+"""A session's own endpoint: send a message, answer a gate, cancel a turn, read the card."""
 
 from __future__ import annotations
 
@@ -26,8 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def build_app(session) -> FastAPI:
-    """The ASGI app a worker serves on its unix socket. ``session`` is the live
-    :class:`SessionExecutor` this process is."""
+    """The ASGI app a worker serves on its unix socket, for the live executor this process is."""
 
     app = FastAPI(title=f"frank-session-{session.session_id}")
 
@@ -39,12 +29,7 @@ def build_app(session) -> FastAPI:
 
     @app.get("/.well-known/agent-card.json")
     async def agent_card() -> JSONResponse:
-        """Discovery stays open: a card says what this session is, and a peer has to be able
-        to read it before it has been handed anything. It carries no conversation content.
-
-        This is the only well-known card Frank serves. The daemon does not have one, because
-        the daemon is not an agent — answering there would mean electing some profile to
-        speak for it, which is a default agent by another name."""
+        """Discovery stays open, since a peer must read a card before it has been handed anything; it carries no content."""
         return JSONResponse(session.card_payload())
 
     @app.post("/rpc")
@@ -77,8 +62,7 @@ def build_app(session) -> FastAPI:
 
 
 def _message_parts(params: dict) -> list[Part]:
-    """Build the message's parts from either prose or an explicit part list, so a caller can
-    send plain text without constructing the A2A shape by hand."""
+    """Build the message's parts from prose or an explicit list, so a caller can send plain text."""
     explicit = params.get("parts")
     if isinstance(explicit, list) and explicit:
         parts: list[Part] = []
@@ -88,20 +72,7 @@ def _message_parts(params: dict) -> list[Part]:
             if entry.get("kind") == "text":
                 parts.append(Part(root=TextPart(text=str(entry.get("text", "")))))
             else:
-                # The part's `data`, not the part. This wrapped the whole entry — `kind`
-                # included — so what reached the model and the store was
-                # `{"kind": "data", "data": {"urn:…": {…}}}`: the real payload one level
-                # deeper than every reader looks for it.
-                #
-                # Nothing raised. `part_payload` looks up the extension key, finds it absent,
-                # and answers `{}` — so an attached file became an empty structured payload
-                # in silence. The model was never told about it, and the client's chip
-                # vanished the moment the optimistic message was replaced by the echo it
-                # could no longer read attachments out of.
-                #
-                # A caller may still send a bare payload object with no `data` key; that is
-                # what a hand-written A2A client does, and it was the only shape that worked
-                # before, so it keeps working.
+                # The part's `data` rather than the part, so the payload does not arrive one level too deep.
                 payload = entry.get("data") if isinstance(entry.get("data"), dict) else entry
                 parts.append(Part(root=DataPart(data=dict(payload))))
         if parts:
@@ -110,14 +81,8 @@ def _message_parts(params: dict) -> list[Part]:
 
 
 async def _send(session, params: dict) -> dict:
-    """Drive a turn with this message.
-
-    A message that arrives while the session is mid-turn is injected at the turn's next safe
-    point rather than starting a second one — that is what makes a peer's question reach a
-    working session instead of waiting for it to go idle."""
-    # A session parked on a human decision takes no new turn. Starting one discards the parked
-    # turn — with whatever work it had already done, and with the question the person was being
-    # asked — and the sender is told nothing. Refusing says what is true and leaves both intact.
+    """Drive a turn with this message, injecting it into a running turn rather than starting a second one."""
+    # A session parked on a decision takes no new turn, since starting one would discard the parked turn silently.
     parked = await session.pending_decision()
     if parked and not session.is_running:
         return {"accepted": False, "awaiting_input": True, "waiting_on": parked}
@@ -127,18 +92,13 @@ async def _send(session, params: dict) -> dict:
             for entry in (params.get("parts") or [])
             if isinstance(entry, dict) and entry.get("kind") == "text"
         ) or str(params.get("text", ""))
-        # The sender's own id for this message, carried through so the steering event can name
-        # it. A client that showed the message the moment it typed it needs to recognise its own
-        # copy when the session echoes it back, and text alone cannot do that.
+        # The sender's own id for this message, so a client can recognise its own copy when the session echoes it.
         message_id = str((params.get("metadata") or {}).get("messageId") or "")
-        # Who sent it, carried into the running turn. Without this the injection path could not
-        # tell a peer's report from a person's steering, and everything that arrived mid-turn was
-        # shown as the user's own words — including the daemon's notice that a child had died.
+        # Who sent it, carried into the running turn, so a peer's report is not shown as the user's own words.
         peer_sender = str((params.get("metadata") or {}).get(Metadata.PEER_SENDER) or "")
         if session.inject(text, message_id, peer_sender):
             return {"accepted": True, "injected": True}
-        # The turn ended between the check and the injection; fall through and start a fresh
-        # one rather than silently dropping the message.
+        # The turn ended between the check and the injection, so start a fresh one rather than dropping the message.
     turn_id = await session.start_turn(_message_parts(params), dict(params.get("metadata") or {}))
     return {"accepted": True, "injected": False, "turn_id": turn_id}
 
@@ -162,8 +122,7 @@ async def _respond(session, params: dict) -> dict:
 async def _cancel(session, params: dict) -> dict:
     tool_call_id = str(params.get("tool_call_id") or "")
     if tool_call_id:
-        # The facade method, not the context-keyed one underneath it: a worker is one session,
-        # so the id is implicit here and passing only the tool call would be a missing argument.
+        # The facade method rather than the context-keyed one, since a worker is one session and its id is implicit.
         return {"cancelled": session.abort_tool_call(tool_call_id)}
     return {"cancelled": session.abort()}
 
@@ -177,8 +136,7 @@ async def _abort_input(session, _params: dict) -> dict:
 
 
 async def _clear_goal(session, _params: dict) -> dict:
-    """The person called the goal off. Dropping it is what stops the session opening further
-    turns for itself — see :meth:`SessionExecutor.clear_goal`."""
+    """The person called the goal off, which is what stops the session opening further turns for itself."""
     return {"cleared": session.clear_goal(session.session_id)}
 
 
@@ -195,35 +153,23 @@ async def _detach_job(session, params: dict) -> dict:
 
 
 async def _set_locations(session, params: dict) -> dict:
-    """The workspace's environments were edited under a live session. The daemon re-resolved
-    them and sends the whole set, because an edit can rename or repoint one as easily as add
-    one."""
+    """The workspace's locations were edited, and the whole re-resolved set is sent because an edit can repoint one."""
     entries = params.get("locations")
     return {"locations": session.set_locations(entries if isinstance(entries, list) else None)}
 
 
 async def _set_permission_mode(session, params: dict) -> dict:
-    """The person changed this session's approval policy while it runs. The daemon has already
-    clamped it and written it to the record; this is what makes it true for the turn currently
-    in flight rather than only for the next one."""
+    """The person changed this session's approval policy while it runs, making it true for the turn in flight."""
     return {"permission_mode": await session.set_permission_mode(str(params.get("permission_mode") or ""))}
 
 
 async def _reset(session, _params: dict) -> dict:
-    """Settings changed under a live session. Drop the cached runtime so the next turn rebuilds
-    it against the new configuration, rather than the session keeping the model and tool set it
-    happened to start with."""
+    """Settings changed under a live session, so drop the cached runtime and rebuild on the next turn."""
     session.reset_runtimes()
     return {"ok": True}
 
 
-# Every verb this socket answers, in one table.
-#
-# The same shape the control plane's `METHODS` and the ingest intake use, and for the same
-# reason: what a surface accepts is a list, and a list is a thing you can read, enumerate and
-# test. This was a chain of `if method == ...` returning its own `JSONResponse` per arm, which
-# meant the envelope and the error handling were rewritten at every verb and the surface could
-# only be discovered by reading the whole chain. The wrapping now happens once, above.
+# Every verb this socket answers, in one table, as the control plane and the intake do.
 METHODS: dict[str, Callable[[Any, dict], Awaitable[dict]]] = {
     "message/send": _send,
     "input/respond": _respond,
