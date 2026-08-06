@@ -49,8 +49,7 @@ export interface CompactionEvent {
   tokens_before?: number;
 }
 /**
- * Session-lifetime running totals (monotonic), distinct from the per-call figures
- * on :class:`TokenUsageEvent` which describe only the latest model call.
+ * Session-lifetime running totals, distinct from the per-call figures that describe only the latest call.
  *
  * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "CumulativeUsage".
@@ -100,11 +99,7 @@ export interface McpEvent {
   tool_call_id: string;
 }
 /**
- * The one-line JSON metadata header prepended to every tool result the model reads —
- * inline as a ToolMessage (``kind="tool_result"``) or, for a background completion, as an
- * append-only system message (``kind="background_result"``). The tool's raw output body
- * follows the header after a blank line, delivered **as-is**: prose stays prose (never
- * re-encoded into an escaped JSON string), structured output stays JSON.
+ * The one-line JSON header prepended to every tool result the model reads.
  *
  * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "ModelToolResult".
@@ -121,17 +116,7 @@ export interface ModelToolResult {
   tool_name: string;
 }
 /**
- * Why approval is needed, as data rather than as a sentence.
- *
- * The harness used to build the sentence itself — "Sandbox approval required: this command
- * reads outside the working directory (/a, /b)." — and hand a client the finished English.
- * That put user-facing prose in the one place that cannot translate it: the daemon has no
- * locale, the string never reached the message catalogue, and a Japanese interface rendered
- * an English clause with a colon and a parenthetical in the middle of its own layout.
- *
- * So the harness states the *facts* and the client writes the sentence. `kind` selects the
- * message; the paths ride as data the message interpolates. A reason the client does not
- * recognise falls back to the model's own explanation, which is prose either way.
+ * Why approval is needed, as data rather than a sentence, so a client can say it in its own language.
  *
  * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "PermissionReason".
@@ -168,11 +153,7 @@ export interface PrefixDivergence {
   rewritten?: boolean;
 }
 /**
- * Which piece of a request a cache measurement is talking about.
- *
- * Fields rather than a formatted label, so a consumer can count how often the tool schemas
- * move or which role tends to be rewritten. ``position`` is the index within the conversation,
- * or ``-1`` for the parts a request has only one of.
+ * Which piece of a request a cache measurement is about, as fields rather than a formatted label.
  *
  * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "TracedSegment".
@@ -272,9 +253,7 @@ export interface ToolCallEvent {
   tool_name: string;
 }
 /**
- * Correlational + timing facts about a tool call. Shown in the UI and — per the
- * product decision — kept visible to the model too, so it can reason about what it
- * ran and when.
+ * Correlational and timing facts about a tool call, kept visible to the model as well as the interface.
  *
  * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "ToolMetadata".
@@ -302,8 +281,7 @@ export interface ToolResultEvent {
   tool_name: string;
 }
 /**
- * The structured per-turn context injected at the end of the message list: the current time,
- * where the agent is, its goal, its tasks, and its background work.
+ * The per-turn context injected at the end of the message list: the time, the place, the goal, the tasks, the work.
  *
  * This interface was referenced by `FrankEvents`'s JSON-Schema
  * via the `definition` "TurnContext".
