@@ -8,15 +8,23 @@ import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import { Canvas } from "./ui/semantic";
 import { expected, swallowed } from "@/lib/swallowed";
 
-// Render PDFs with PDF.js (to a <canvas>) rather than relying on the browser's built-in PDF plugin in an <iframe> — that path is inconsistent across browsers and does not work at all in some webviews (e.g.
+// Render PDFs with PDF.js (to a <canvas>) rather than relying on the browser's
+// built-in PDF plugin in an <iframe> — that path is inconsistent across browsers
+// and does not work at all in some webviews (e.g. WKWebView), which is why a PDF
+// attachment previously showed only a blank/"open" placeholder. Canvas rendering is
+// identical everywhere and lets us do both the hover thumbnail and the full viewer.
 
-// The worker must be configured before getDocument().
+// The worker must be configured before getDocument(). `new URL(..., import.meta.url)`
+// makes the bundler emit the worker as an asset and hands back its real URL, so this
+// works under the Next build and the static export alike.
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
   import.meta.url,
 ).toString();
 
-// Cache the fetched bytes per URL so repeated hovers (and the hover-to-lightbox hand-off) don't re-download the file. getDocument transfers the buffer it is given, so every open gets a fresh copy of the cached bytes.
+// Cache the fetched bytes per URL so repeated hovers (and the hover-to-lightbox
+// hand-off) don't re-download the file. getDocument transfers the buffer it is
+// given, so every open gets a fresh copy of the cached bytes.
 const pdfBytesCache = new Map<string, Promise<ArrayBuffer>>();
 
 function loadPdfBytes(url: string): Promise<ArrayBuffer> {
@@ -37,7 +45,10 @@ async function openDocument(url: string): Promise<PDFDocumentProxy> {
   return pdfjsLib.getDocument({ data: new Uint8Array(bytes.slice(0)) }).promise;
 }
 
-// Render one page into a canvas, fitted to `cssWidth` and sharp on HiDPI screens.
+// Render one page into a canvas, fitted to `cssWidth` and sharp on HiDPI screens. Returns the
+// pdf.js RenderTask so the caller can cancel it: a resize re-fires this, and two overlapping
+// renders on the same canvas corrupt it (the tell-tale symptom is a page drawn upside down),
+// so the previous task must be cancelled before the next begins.
 function renderPageToCanvas(
   page: Awaited<ReturnType<PDFDocumentProxy["getPage"]>>,
   canvas: HTMLCanvasElement,
@@ -110,7 +121,8 @@ export function PdfThumbnail({ url, width = 240 }: { url: string; width?: number
   );
 }
 
-// One page inside the full document view.
+// One page inside the full document view. Rendered lazily (only once near the
+// viewport) so a long PDF does not rasterize every page up front.
 function PdfPageView({
   document,
   pageNumber,
@@ -125,7 +137,8 @@ function PdfPageView({
   const holderRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [visible, setVisible] = useState(eager);
-  // A portrait-A4 ratio keeps the placeholder roughly page-shaped before render, so the scroll height is stable and lazy pages don't jump as they appear.
+  // A portrait-A4 ratio keeps the placeholder roughly page-shaped before render, so
+  // the scroll height is stable and lazy pages don't jump as they appear.
   const [aspect, setAspect] = useState(1.414);
 
   useEffect(() => {
@@ -157,7 +170,8 @@ function PdfPageView({
       renderTask = renderPageToCanvas(page, canvasRef.current, width);
       await renderTask?.promise;
     })().catch((caught) => swallowed({ component: "pdf-view", operation: "render a page" }, caught));
-    // Cancel an in-flight render before the next width re-runs this, so two renders never touch the same canvas at once (which is what flips the page upside down on resize).
+    // Cancel an in-flight render before the next width re-runs this, so two renders never
+    // touch the same canvas at once (which is what flips the page upside down on resize).
     return () => {
       cancelled = true;
       renderTask?.cancel();
@@ -180,7 +194,8 @@ function PdfPageView({
   );
 }
 
-// The whole PDF, one page under the next, scrollable — used in the click-to-open lightbox.
+// The whole PDF, one page under the next, scrollable — used in the click-to-open
+// lightbox. Fits pages to the container width and re-fits on resize.
 export function PdfDocumentView({ url }: { url: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [documentState, setDocumentState] = useState<{
@@ -220,7 +235,8 @@ export function PdfDocumentView({ url }: { url: string }) {
       const available = element.clientWidth - 24;
       setPageWidth(Math.max(240, Math.min(900, available)));
     };
-    // Coalesce the burst of resize callbacks to one width update per frame, so a drag-resize re-fits smoothly instead of thrashing the page renders.
+    // Coalesce the burst of resize callbacks to one width update per frame, so a drag-resize
+    // re-fits smoothly instead of thrashing the page renders.
     const measure = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(apply);

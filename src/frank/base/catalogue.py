@@ -1,4 +1,29 @@
-"""Where the prompt's material comes from, and the two obvious places it comes from."""
+"""Where the prompt's material comes from, and the two obvious places it comes from.
+
+:class:`FileCatalogue` is what the harness has always done — walk a set of `.agents` roots for
+agents, skills, memories, instructions and prompt templates — moved behind the
+:class:`~frank.base.ports.Catalogue` interface rather than being the only possibility. The
+path-walking is *correct* for a person's machine; what changed is that it is now a choice.
+
+:class:`DictCatalogue` is the other obvious one: everything supplied in code, nothing read from
+disk. It exists because "build a session entirely in memory" is the thing an embedder most
+often wants and the thing that was hardest to do, and because a default that only exists in
+prose is a default nobody gets.
+
+## The roots are an argument now
+
+`FileCatalogue` takes the directories it searches rather than deriving them, and that is the
+whole point of the file. The old resolution baked the home directory in at four levels, and
+one of them read *other products'* configuration::
+
+    Path.home() / ".config" / "opencode" / "AGENTS.md"
+    Path.home() / ".claude" / "CLAUDE.md"
+
+A library that acquires those because it was imported is not a library anyone can embed. So
+`frankd` and the CLI construct a catalogue with the full set — there, the person running it is
+the person those files belong to, and inheriting them is the feature — while
+:func:`project_catalogue` gives an embedded harness the working directory and nothing else.
+"""
 
 from __future__ import annotations
 
@@ -10,10 +35,13 @@ from typing import Any, Iterable, Mapping, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
-# Instruction files a project may carry, in the order they are preferred.
+# Instruction files a project may carry, in the order they are preferred. The first match
+# walking up from the working directory wins; ancestors are not stacked.
 PROJECT_INSTRUCTION_NAMES = ("AGENTS.md", "CLAUDE.md", "CONTEXT.md")
 
-# Well-known user-wide instruction files, including two that belong to other tools.
+# Well-known user-wide instruction files, including two that belong to other tools. Read only
+# when a catalogue is explicitly given them, which the CLI and the daemon do and a library
+# session does not.
 def home_instruction_paths() -> tuple[Path, ...]:
     home = Path.home()
     return (
@@ -26,7 +54,12 @@ def home_instruction_paths() -> tuple[Path, ...]:
 
 @dataclass(frozen=True)
 class CatalogueRoots:
-    """The directories a :class:`FileCatalogue` searches, as a value the caller assembles."""
+    """The directories a :class:`FileCatalogue` searches, as a value the caller assembles.
+
+    Separated from the catalogue itself so that "which roots" is a decision made once, by the
+    layer that knows whether it is serving a person or embedded in a program, rather than
+    re-derived at each lookup from configuration nobody passed in.
+    """
 
     agents: tuple[Path, ...] = ()
     skills: tuple[Path, ...] = ()
@@ -34,7 +67,8 @@ class CatalogueRoots:
     prompts: Optional[Path] = None
     # Where to start walking for AGENTS.md / CLAUDE.md / CONTEXT.md.
     project_directory: Optional[Path] = None
-    # Whether to also read the well-known user-wide instruction files.
+    # Whether to also read the well-known user-wide instruction files. False for a library,
+    # because a program that imported us did not ask to inherit another tool's configuration.
     include_home_instructions: bool = False
 
 
@@ -71,7 +105,9 @@ class FileCatalogue:
             return []
         return list_agent_route_names(list(self._roots.agents))
 
-    # Skills and memories, re-read each call so an edit takes effect without a restart.
+    # Skills and memories, re-read each call so an edit takes effect without a restart. That
+    # liveness is a property of *this* implementation, not of the port: a catalogue built from
+    # a dictionary is static, and neither is more correct than the other.
 
     def skills(self) -> Sequence[Any]:
         from frank.base.skills import load_skills
@@ -102,7 +138,8 @@ class FileCatalogue:
                 if not resolved.is_file() or resolved in seen:
                     continue
                 seen.add(resolved)
-                # A home-wide document governs everything, because that is where it sits — and that is also why it loses every disagreement with a project's own.
+                # A home-wide document governs everything, because that is where it sits — and
+                # that is also why it loses every disagreement with a project's own.
                 entries.append(Instruction(
                     source=str(resolved), scope=str(resolved.parent),
                     content=resolved.read_text(errors="ignore").strip(),
@@ -118,7 +155,11 @@ class FileCatalogue:
         return entries
 
     def _project_instruction(self) -> Optional[Path]:
-        """The nearest instruction file at or above the project directory."""
+        """The nearest instruction file at or above the project directory.
+
+        Stops at the home directory so a search starting outside the home tree does not walk to
+        the filesystem root, and takes the first ancestor that has one rather than stacking
+        every ancestor's."""
         if self._roots.project_directory is None:
             return None
         try:
@@ -147,7 +188,21 @@ class FileCatalogue:
 
 
 class Catalogue:
-    """Everything supplied in code, nothing read from disk."""
+    """Everything supplied in code, nothing read from disk.
+
+    For a program that builds its own agent, ships its own skills, or wants a session whose
+    prompt it fully controls — and for a test that would otherwise depend on whatever happens
+    to be in the developer's home directory.
+
+    Not a dataclass, deliberately: the protocol answers `agents()`, `skills()`, `memories()`
+    and `instructions()` as methods, and a caller writes those same words as keywords. Taking
+    them in the constructor and holding them privately lets both be the plain word, rather
+    than one of them carrying a suffix to get out of the other's way.
+
+    Prompt templates fall back to the packaged ones unless `prompts` overrides them by name,
+    because replacing the system prompt is a thing to opt into rather than a thing to be
+    required to reproduce.
+    """
 
     def __init__(
         self,
@@ -197,7 +252,11 @@ def packaged_prompts_directory() -> Path:
 
 
 def machine_catalogue(configuration: Any, working_directory: str = "") -> FileCatalogue:
-    """The catalogue a person's machine has: every root, including the home ones."""
+    """The catalogue a person's machine has: every root, including the home ones.
+
+    What `frankd` and the CLI use. Reading `~/.agents` and the well-known instruction files is
+    the *feature* here — the person running the daemon is the person those files describe.
+    """
     return FileCatalogue(CatalogueRoots(
         agents=_as_paths(configuration.agent_directories_for(working_directory)),
         skills=_as_paths(configuration.skill_directories_for(working_directory)),
@@ -209,7 +268,13 @@ def machine_catalogue(configuration: Any, working_directory: str = "") -> FileCa
 
 
 def project_catalogue(configuration: Any, working_directory: str) -> FileCatalogue:
-    """The catalogue an embedded harness gets: the working directory, and nothing of $HOME."""
+    """The catalogue an embedded harness gets: the working directory, and nothing of $HOME.
+
+    The bundled agents and skills are still there — they ship with the package and are what
+    makes a default agent exist at all — but `~/.agents`, `~/.claude/CLAUDE.md` and
+    `~/.config/opencode/AGENTS.md` are not. A program that imported Frank did not ask to
+    inherit the machine's opinions, or another product's.
+    """
     from frank.base.configuration import BUNDLED_DOTAGENTS_ROOT
 
     local = Path(working_directory).expanduser()

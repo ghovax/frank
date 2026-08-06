@@ -17,12 +17,16 @@ import { ActivityIcon, ActivitySpinner } from "./ui/activity-icon";
 interface ChatMessageProps {
   message: ChatMessage;
   // Re-run the turn that produced a server error (resends the last user message).
+  // Only wired for error rows.
   onRetry?: () => void;
-  // This is the last row and the turn is live, so its assistant text is still streaming in — drives the newly-arrived-token animation.
+  // This is the last row and the turn is live, so its assistant text is still streaming
+  // in — drives the newly-arrived-token animation. Only ever true for one row.
   streaming?: boolean;
 }
 
-// The structured, safe error category the server hands the UI for a failed turn (a rejected request, a rate limit, a provider outage).
+// The structured, safe error category the server hands the UI for a failed turn
+// (a rejected request, a rate limit, a provider outage). Never the raw provider
+// text — only a title + user-actionable message.
 interface FriendlyError {
   code: string;
   title: string;
@@ -36,7 +40,10 @@ interface FriendlyWarning {
   message: string;
 }
 
-// A server/turn error rendered as its own distinct block — not disguised as an assistant message.
+// A server/turn error rendered as its own distinct block — not disguised as an
+// assistant message. A bordered danger box with the alert triangle, a semibold title,
+// the message below as rendered markdown, and a "Try again" action, so the user
+// reads it as a system failure with a clear next step rather than model prose.
 function ErrorMessageCard({ message, onRetry }: { message: ChatMessage; onRetry?: () => void }) {
   const translation = useTranslations("ChatMessage");
   const error = message.meta?.error as FriendlyError | undefined;
@@ -126,9 +133,18 @@ function ToolMessageCard({ message }: ChatMessageProps) {
   );
 }
 
-/** A message the session has not taken yet: what it is waiting behind, and what can be done about it. */
+/**
+ * A message the session has not taken yet: what it is waiting behind, and what can be done
+ * about it.
+ *
+ * The words come from the panel rather than from here. A wait is a fact about the *queue* —
+ * "waiting for your decision" is about a permission prompt three rows up, not about this
+ * message — and the queue is the panel's to describe.
+ */
 export interface QueuedMessageState {
-  /** The wait, in words. */
+  /** The wait, in words. Empty while the message is actually being handed over, which is not a
+   * wait: saying "queued" about the few milliseconds of an ordinary send reports a fault that
+   * is not happening. */
   status: string;
   /** The wait is a failure to reach the session rather than a place in a line. */
   failed?: boolean;
@@ -138,7 +154,20 @@ export interface QueuedMessageState {
   retryLabel?: string;
 }
 
-/** What is under a message you sent: when it was sent, and the small things you can do to it. */
+/**
+ * What is under a message you sent: when it was sent, and the small things you can do to it.
+ *
+ * These live here, on the message, rather than beside it. The delete control used to sit in the
+ * gutter to the left of a *queued* message and nowhere else, so it took horizontal room that the
+ * message did not have once it was accepted — every message you sent jumped sideways the moment
+ * the session took it. Anything drawn beside a message is room the message loses; anything drawn
+ * under it is not, which is the whole reason this is a footer.
+ *
+ * On a pointer, the buttons are revealed by hovering the message — a transcript of your own
+ * words with a row of controls under every one of them reads as a form, not a conversation. They
+ * are always there, so nothing moves when they appear. A queued message keeps them visible
+ * regardless, because one of them deletes and an invisible destructive control is a trap.
+ */
 function MessageFooter({ content, sentAt, queued }: { content: string; sentAt: string; queued?: QueuedMessageState }) {
   const translation = useTranslations("ChatMessage");
   const format = useFormatter();
@@ -156,7 +185,8 @@ function MessageFooter({ content, sentAt, queued }: { content: string; sentAt: s
       if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
       copiedTimer.current = window.setTimeout(() => setCopied(false), 1500);
     } catch (caught) {
-      // A clipboard write the browser or the person declined.
+      // A clipboard write the browser or the person declined. There is nothing to recover and
+      // nothing worth interrupting them about.
       swallowed({ component: "chat-message", operation: "copy a message" }, caught);
     }
   };
@@ -170,7 +200,8 @@ function MessageFooter({ content, sentAt, queued }: { content: string; sentAt: s
       align="center"
       gap={1}
       color="fg.subtle"
-      // The controls are laid out from the right, so the one nearest the message is the one most likely to be wanted, and the row grows leftwards into empty space.
+      // The controls are laid out from the right, so the one nearest the message is the one
+      // most likely to be wanted, and the row grows leftwards into empty space.
       justify="flex-end"
     >
       {queued ? (
@@ -183,7 +214,9 @@ function MessageFooter({ content, sentAt, queued }: { content: string; sentAt: s
           </Flex>
         ) : null
       ) : dated ? (
-        // The time of day, with the whole instant behind it.
+        // The time of day, with the whole instant behind it. A transcript is read in one
+        // sitting and the day is almost always today, so the date would be four words of noise
+        // on every message to be right about the few that are not.
         <Text
           textStyle="fieldLabel"
           pe={1}
@@ -212,6 +245,20 @@ function MessageFooter({ content, sentAt, queued }: { content: string; sentAt: s
 }
 
 // A message addressed to this session: the person's own, or one a peer sent it.
+//
+// One card for both. They are the same thing structurally — an inbound message that starts a
+// turn — and a peer's used to have a card of its own that had drifted into a poorer version of
+// this one: no attachments, no collapse for a long report, and a left border where everything
+// else in the transcript uses a bubble. What actually distinguishes them is authorship, and a
+// banner says that in words, which is both more legible than a different shape and the only part
+// a reader needs. The sending session's id is not shown: it identifies a process, and nobody
+// reading a conversation is addressing one.
+//
+// A message still in the queue is this card too, and that is the point of `queued`. It used to
+// be a second, poorer rendering — a dashed box with plain text where this one renders markdown,
+// and a delete button in the gutter beside it — so a message visibly changed shape and position
+// the moment the session accepted it. One card cannot do that: what an undelivered message says
+// differently, it says in the footer and in its border, neither of which occupies different room.
 export function UserMessageCard({
   message,
   banner = "",
@@ -246,7 +293,8 @@ export function UserMessageCard({
           position="relative"
           overflow="hidden"
           maxH={expanded ? "none" : `${COLLAPSE_HEIGHT}px`}
-          // Dashed and a shade back while it is still ours to withdraw.
+          // Dashed and a shade back while it is still ours to withdraw. Same border width and
+          // same padding as a delivered one, so the difference is only ever in the ink.
           bg={queued ? "bg.subtle" : "bg.muted"}
           border="1px solid"
           borderStyle={queued ? "dashed" : "solid"}
@@ -305,7 +353,9 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onRetry,
       const contentBlocks = message.contentBlocks.filter((contentBlock) => contentBlock.content.trim());
       if (contentBlocks.length === 0) return null;
       return (
-        // No horizontal inset: the assistant's prose shares the same left edge as the tool-activity lines (which have none), so text and tools line up.
+        // No horizontal inset: the assistant's prose shares the same left edge as the
+        // tool-activity lines (which have none), so text and tools line up. A stray px
+        // here pushed the markdown ~4px inward of them.
         <Box alignSelf="flex-start">
           <Flex direction="column" gap={3}>
             {contentBlocks.map((contentBlock, contentBlockIndex) => (
@@ -320,7 +370,9 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onRetry,
       );
     }
 
-    // "thinking" is never rendered as a transcript row — reasoning is surfaced as a compact live status instead (see ChatPanel / ToolGroup).
+    // "thinking" is never rendered as a transcript row — reasoning is surfaced as
+    // a compact live status instead (see ChatPanel / ToolGroup). Any thinking
+    // message that reaches here falls through to the default no-op.
 
     case "tool_call": {
       return (
@@ -331,7 +383,9 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onRetry,
     }
 
     case "error":
-      // A turn failure is a system event, not the model's words — so it renders as its own dedicated error box (danger triangle, semibold title, message, retry), never as assistant-style prose with a hand-aligned inline icon.
+      // A turn failure is a system event, not the model's words — so it renders as
+      // its own dedicated error box (danger triangle, semibold title, message, retry),
+      // never as assistant-style prose with a hand-aligned inline icon.
       return (
         <Box alignSelf="flex-start" w="100%">
           <ErrorMessageCard message={message} onRetry={onRetry} />
@@ -347,6 +401,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onRetry,
 
     case "compaction": {
       // A full-width divider marking where the earlier context was summarized away.
+      // "running" is the live "Compacting…" state; "done" is the settled separator.
       const running = message.meta?.status === "running";
       const before = Number(message.meta?.messagesBefore ?? 0);
       const after = Number(message.meta?.messagesAfter ?? 0);
@@ -385,7 +440,8 @@ interface ChatToolGroupProps {
 }
 
 export const ChatToolGroup = memo(function ChatToolGroup({ messages, keepOpen }: ChatToolGroupProps) {
-  // Map the persisted tool-call messages to the ToolEvent shape the shared ToolGroup renders.
+  // Map the persisted tool-call messages to the ToolEvent shape the shared
+  // ToolGroup renders.
   const tools: ToolEvent[] = messages.map((message) => ({
     name: message.content,
     arguments: message.meta?.arguments as Record<string, unknown> | undefined,

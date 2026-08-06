@@ -1,4 +1,14 @@
-"""Run a ``control_screen`` script in a killable subprocess and bridge its primitive calls back to the live surface."""
+"""Run a ``control_screen`` script in a killable subprocess and bridge its primitive calls back to
+the live surface. The model's Python runs in :mod:`frank.computer.control_child` — a disposable
+child that holds no state — and every ``click``/``type``/``evaluate`` it makes arrives here as a
+JSON request, is performed against the real surface on its serial worker (trusted input, full
+actionability), and is answered. A wall-clock timeout kills the child; rlimits bound its CPU and
+memory; a crash or runaway loop dies with it and never touches the worker.
+
+The bridge is generic over a ``dispatch`` coroutine ``(name, args, kwargs) -> result`` so the
+executor can be exercised without a browser or a Mac in the loop — the surface wiring lives in the
+tool handler, not here.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -16,16 +26,37 @@ from frank.base.tuning import Tunable, active_tuning
 
 logger = logging.getLogger("frank.computer.control")
 
-# Model-facing control messages live in messages/control/*.md, loaded here so the child (which holds no Frank code) can report bare facts and leave the prose to the loader.
+# Model-facing control messages live in messages/control/*.md, loaded here so the child (which
+# holds no Frank code) can report bare facts and leave the prose to the loader.
 message = message_loader("control")
 
 
-#: The role name the frozen executable answers to for this child.
+#: The role name the frozen executable answers to for this child. Dispatched in
+#: `packaging/entry.py`, deliberately before the runtime is imported.
 CONTROL_CHILD_ROLE = "control-child"
 
 
 def _child_command(request_write: int, reply_read: int) -> list[str]:
-    """How to launch the disposable child, from a checkout and from the packaged app alike."""
+    """How to launch the disposable child, from a checkout and from the packaged app alike.
+
+    From a checkout it is the script, run by the interpreter: launching it by *path* rather than
+    as ``-m frank.computer.control_child`` is what keeps it stdlib-only, since running it as a
+    module would import the ``frank.computer`` package on the way in.
+
+    Frozen, ``sys.executable`` is the ``frank`` binary rather than an interpreter, and handing a
+    binary the path of a ``.py`` file makes it parse that path as a subcommand. It did:
+
+        frank: error: argument command: invalid choice:
+        '/Applications/Frank.app/…/frank/computer/control_child.py'
+
+    — which came back to the model as the screen helper failing to start, for every screen action,
+    in the packaged app only. From a checkout the same code worked perfectly, because there
+    ``sys.executable`` really is a Python. Every other process this project starts already had
+    this branch (`cli.client`, `daemon.prototype`, `worker.prototype`); this one did not.
+
+    So the frozen build is asked by *role*. It carries the sources on disk and a Python to run
+    them with, and `entry.py` answers this role before importing anything of the runtime — which
+    is what keeps the child as thin as the checkout's."""
     numbers = [str(request_write), str(reply_read)]
     if getattr(sys, "frozen", False):
         return [sys.executable, CONTROL_CHILD_ROLE, *numbers]
@@ -34,10 +65,16 @@ def _child_command(request_write: int, reply_read: int) -> list[str]:
 
 
 class _NotPermitted(Exception):
-    """A primitive this session may not run."""
+    """A primitive this session may not run. Its own type so the pump can answer it with the
+    message that says what *is* available, rather than with a bare exception name."""
 
 def _script_ceiling() -> float:
-    """The child's wall-clock limit, and the base of an ordered stack."""
+    """The child's wall-clock limit, and the base of an ordered stack.
+
+    The surface's guard and its worker thread each sit a margin above this, so a script can
+    never outlive the machinery waiting on it. They used to be three independent constants that
+    happened to be equal, which meant raising one made the guard fire first, drop the connection
+    and leave the surface half-dead."""
     return active_tuning().duration(Tunable.control_script_seconds)
 
 Dispatch = Callable[[str, list, dict], Awaitable[Any]]
@@ -56,7 +93,9 @@ async def run_control_script(
     dependency_roots: Optional[list[str]] = None,
     library_roots: Optional[list[str]] = None,
 ) -> dict:
-    """Execute ``script`` in a child process, servicing its primitive calls via ``dispatch``, and return the child's result dict (``{ok, value?, stdout?, error?, traceback?}``)."""
+    """Execute ``script`` in a child process, servicing its primitive calls via ``dispatch``, and
+    return the child's result dict (``{ok, value?, stdout?, error?, traceback?}``). On timeout the
+    child is killed and a timeout payload is returned instead."""
     timeout = timeout if timeout is not None else _script_ceiling()
     permitted = frozenset(primitives or ())
     request_read, request_write = os.pipe()   # child to parent (primitive calls)
@@ -64,23 +103,41 @@ async def run_control_script(
 
     configuration = {
         "script": script,
-        # Which names exist in the script's namespace.
+        # Which names exist in the script's namespace. The surface decides, because the surface is
+        # the only thing that knows what it can do.
         "primitives": list(primitives or ()),
-        # The place the script drives, so the child can hand it a bound `screen` rather than making every call name a target the tool argument already settled.
+        # The place the script drives, so the child can hand it a bound `screen` rather than
+        # making every call name a target the tool argument already settled.
         "target": target,
-        # The workflow directories, put on the child's import path so a workflow somebody saved is importable by name instead of having to be pasted in as text.
+        # The workflow directories, put on the child's import path so a workflow somebody saved
+        # is importable by name instead of having to be pasted in as text.
         "import_roots": list(import_roots or ()),
-        # The environments those directories' own projects were installed into — appended rather than prepended, so a skill's dependencies are reachable without any of them being able to decide what the rest of this process imports.
+        # The environments those directories' own projects were installed into — appended rather
+        # than prepended, so a skill's dependencies are reachable without any of them being able
+        # to decide what the rest of this process imports.
         "dependency_roots": list(dependency_roots or ()),
-        # Directories holding shared libraries those dependencies ship with them.
+        # Directories holding shared libraries those dependencies ship with them. Sent as paths
+        # for the child to load rather than as `DYLD_FALLBACK_LIBRARY_PATH`, because macOS strips
+        # every `DYLD_*` variable from the environment when the protected `/usr/bin/sandbox-exec`
+        # is executed — measured: `TMPDIR` arrives from this same dictionary and the `DYLD_` one
+        # does not. The child loads them itself, after the sandbox is already in force.
         "library_roots": list(library_roots or ()),
-        # CPU seconds only.
+        # CPU seconds only. Address space is the confinement profile's `RLIMIT_AS` now — this
+        # used to set it too, from its own constant, so two mechanisms raced for one rlimit.
         "limits": {"cpu_seconds": int(timeout) + 5},
     }
 
-    # How the child is launched.
+    # How the child is launched. The two pipe fds go on argv (not via the environment, which would
+    # leak them into every subprocess); the configuration is handed over on the reply pipe below.
     child_command = _child_command(request_write, reply_read)
-    # Strictly less than the session holds.
+    # Strictly less than the session holds. Everything this child can do is bridged to this
+    # process over the two pipes below — a click, a find, an evaluate are all JSON requests the
+    # parent performs — so it needs no network at all and nowhere to write but a temporary
+    # directory. Derived from the session's profile rather than configured separately: two
+    # profiles to configure would be two profiles to get wrong.
+    # A directory of this child's own, never the workspace. `temporary_directory` would hand back
+    # the session's own tree when the profile permits nowhere else, and a child narrowed to "the
+    # whole source tree" is not narrowed at all — see `confinement.private_scratch`.
     scratch = confinement.private_scratch(profile, workspace=workspace, prefix="frank-screen-")
     child_profile = (
         profile.narrowed(writable=[scratch] if scratch else [], network=False, workspace=workspace)
@@ -88,7 +145,9 @@ async def run_control_script(
     )
     spawn = confinement.spawn_recipe(
         confinement.first_attempt(child_profile, workspace=workspace), workspace=workspace,
-        # No permitted scratch means the child is told about none.
+        # No permitted scratch means the child is told about none. A profile that grants no
+        # writable directory should produce a child that cannot write, not one pointed at a
+        # directory the session itself was refused.
         extra_environment={"TMPDIR": scratch, "PWD": scratch} if scratch else None,
     )
     process = await asyncio.create_subprocess_exec(
@@ -97,7 +156,13 @@ async def run_control_script(
         pass_fds=(request_write, reply_read),
         env=spawn.environment,
         preexec_fn=spawn.preexec,
-        # Its own scratch directory, not the session's.
+        # Its own scratch directory, not the session's. A child inherits the working directory
+        # otherwise, and the narrowing has just taken that directory out of its readable set — so
+        # `os.getcwd()` raises `PermissionError`, and any library that calls it while being
+        # imported fails on a line that has nothing to do with anything the script asked for.
+        # `rich` does exactly that on its first line and took `httpx` down with it, which took
+        # down every skill that speaks HTTP. Working somewhere it can actually look is also the
+        # honest arrangement for a process whose whole job is bridged to its parent.
         cwd=scratch or None,
     )
     # The parent keeps only its own ends; the child holds the others.
@@ -118,7 +183,11 @@ async def run_control_script(
             try:
                 call = json.loads(line)
                 name = call["call"]
-                # The permitted set is checked here, where it arrives, rather than being left to whatever `dispatch` a caller happened to pass.
+                # The permitted set is checked here, where it arrives, rather than being left to
+                # whatever `dispatch` a caller happened to pass. This function is handed the
+                # vocabulary already; making the refusal depend on the closure agreeing to do it
+                # too is one more thing to remember, and something nobody remembers is not a
+                # boundary. It costs a set lookup per primitive call.
                 if permitted and name not in permitted:
                     raise _NotPermitted(name)
                 value = await dispatch(name, call.get("args", []), call.get("kwargs", {}))
@@ -132,7 +201,10 @@ async def run_control_script(
 
     pump_task = asyncio.create_task(pump())
     try:
-        # Keep stderr.
+        # Keep stderr. It used to be discarded into `_`, so a child that died before it could
+        # write its JSON — no Accessibility grant, a sandbox denial, a failed import — was
+        # reported as "produced no result" with the one line that said why thrown away, and
+        # nothing in the log either. The reason the child gives is the whole diagnosis.
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
         process.kill()
@@ -142,13 +214,16 @@ async def run_control_script(
         pump_task.cancel()
         _quietly_close(requests)
         _quietly_close(replies)
-        # The scratch directory was made for this one run and nothing outlives it: whatever the script left there is unreachable the moment the child is gone, and a directory per call would otherwise accumulate one per screen action for as long as the machine is up.
+        # The scratch directory was made for this one run and nothing outlives it: whatever the
+        # script left there is unreachable the moment the child is gone, and a directory per call
+        # would otherwise accumulate one per screen action for as long as the machine is up.
         if scratch:
             shutil.rmtree(scratch, ignore_errors=True)
 
     result = _parse_result(stdout, stderr, process.returncode)
     if result.get("error_code") == "syntax_error":
-        # The interpreter's rendering when there is one — it carries the offending line and the caret, which is what the error is actually fixed from — and the bare facts otherwise.
+        # The interpreter's rendering when there is one — it carries the offending line and the
+        # caret, which is what the error is actually fixed from — and the bare facts otherwise.
         rendered = str(result.get("rendered") or "").strip()
         if not rendered:
             rendered = f"SyntaxError: {result.get('detail', '')} (line {result.get('line', '')})"
@@ -177,7 +252,8 @@ def _quietly_close(stream: Any) -> None:
         pass
 
 
-# Recognised ways the child dies before it can speak.
+# Recognised ways the child dies before it can speak. Each is a real condition with a
+# different remedy, so each says its own thing rather than all of them sharing one apology.
 def _explain_silent_exit(complaint: str) -> str:
     lowered = complaint.lower()
     if "operation not permitted" in lowered or "sandbox" in lowered:
@@ -197,7 +273,11 @@ def _explain_silent_exit(complaint: str) -> str:
             "The screen-control helper stopped before it could report anything, and said "
             "nothing about why — it was most likely killed as it started."
         )
-    # The child's own words, not a summary of them.
+    # The child's own words, not a summary of them. This used to point at a log the model cannot
+    # read, discarding the one thing that would have let it fix its script: a `NameError` naming
+    # the undefined primitive arrived as "the daemon log says why", so a model that had simply
+    # written a name wrong was told its screen access had failed, and concluded it lacked
+    # permissions it had all along.
     return f"The screen-control helper stopped before it could report a result. It said:\n{complaint}"
 
 
@@ -205,12 +285,16 @@ def _parse_result(stdout: Optional[bytes], stderr: Optional[bytes] = None, exit_
     text = (stdout or b"").decode("utf-8", "replace").strip()
     complaint = (stderr or b"").decode("utf-8", "replace").strip()
     if not text:
-        # The child writes its JSON last, so empty stdout means it never got there.
+        # The child writes its JSON last, so empty stdout means it never got there. Whatever it
+        # said on the way out is the reason, and it is reported rather than summarised away.
         logger.warning(
             "control_screen produced no result (exit code %s): %s",
             exit_code, complaint[-2000:] or "(nothing on stderr either)",
         )
         # The child's own words go to the log, where they are wanted, and not into the answer.
+        # Handing raw stderr back as the tool's error put a sandbox denial in front of a person
+        # as a sentence about a Python executable — true, useless, and not their vocabulary.
+        # What reaches the model is what happened and what can be done about it.
         return {"ok": False, "error": _explain_silent_exit(complaint), "exit_code": exit_code}
     try:
         return json.loads(text)

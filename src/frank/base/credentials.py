@@ -1,4 +1,27 @@
-"""ChatGPT-subscription authentication for the ``chatgpt`` model provider."""
+"""ChatGPT-subscription authentication for the ``chatgpt`` model provider.
+
+This is the *experimental*, unofficial route that lets a ChatGPT Plus/Pro/Team
+subscription pay for model calls instead of an API key. There is no official
+OpenAI API for it — the only way is to present ourselves to OpenAI's OAuth as the
+Codex CLI (its public ``client_id``) and then call the Codex-only endpoint
+``chatgpt.com/backend-api/codex/responses`` (see :mod:`frank.runtime.models.codex`).
+
+Consequences, kept deliberately visible:
+  * It rides on Codex's public client id and the account-scoped tokens Codex
+    itself mints. OpenAI can invalidate this pattern at any time (Anthropic banned
+    the equivalent for Claude in Feb 2026); treat it as fragile, not stable.
+  * The tokens here are password-equivalent. They are stored in the OAuth token
+    directory as ``oauths/chatgpt.json`` (mode 0600), deliberately **outside**
+    ``configuration.yaml`` — the config file is watched/digest-synced and would
+    thrash on every silent token refresh, and secrets do not belong in the synced
+    single-source-of-truth.
+
+The OAuth flow is the standard authorization-code + PKCE dance. Because OpenAI
+registered Codex's ``redirect_uri`` as ``http://localhost:1455/auth/callback``, we
+must catch the browser redirect on that exact loopback address — so a short-lived
+loopback server is spun up for the duration of one sign-in rather than reusing the
+Frank server's own port.
+"""
 
 from __future__ import annotations
 
@@ -23,7 +46,9 @@ import httpx
 from frank.base.paths import oauth_token_path
 from frank.base.tuning import Tunable, active_tuning
 
-# Codex's public OAuth client and endpoints.
+# Codex's public OAuth client and endpoints. The client id is not a secret — it is
+# the same value the Codex CLI ships — and reusing it is exactly what makes the
+# consent screen mint a ChatGPT-subscription-scoped token for us.
 CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"
 TOKEN_URL = "https://auth.openai.com/oauth/token"
@@ -37,13 +62,16 @@ SCOPE = "openid profile email offline_access"
 
 PROVIDER = "chatgpt"
 
-# Serializes token refreshes: many concurrent turns can each notice an expiring token at once, and we want exactly one refresh + write, not a stampede.
+# Serializes token refreshes: many concurrent turns can each notice an expiring
+# token at once, and we want exactly one refresh + write, not a stampede.
 _refresh_lock = asyncio.Lock()
 
 
 @dataclass
 class ChatGPTTokens:
-    """The persisted result of a successful sign-in."""
+    """The persisted result of a successful sign-in. ``account_id`` is the
+    ChatGPT account the calls bill against (sent as the ``ChatGPT-Account-Id``
+    header); ``expires_at`` is epoch seconds for the access token."""
 
     access_token: str
     refresh_token: str
@@ -61,7 +89,12 @@ def auth_file_path() -> Path:
 
 
 class FileCredentials:
-    """Tokens in a `0600` file under the user's data directory — the default store."""
+    """Tokens in a `0600` file under the user's data directory — the default store.
+
+    Password-equivalent material, so the mode is not decoration. This is the right store for a
+    person's machine and the wrong one for a program that keeps its secrets elsewhere, which is
+    why it is now one implementation of :class:`~frank.base.ports.Credentials` rather than the
+    only possibility."""
 
     def load(self) -> Optional[ChatGPTTokens]:
         path = auth_file_path()
@@ -81,7 +114,9 @@ class FileCredentials:
         auth_file_path().unlink(missing_ok=True)
 
 
-# Which store the process uses.
+# Which store the process uses. A `ContextVar` rather than a module global for the reason every
+# other per-session value in this tree is one: two sessions in one interpreter may legitimately
+# hold different credentials, and the last caller must not win.
 _store: contextvars.ContextVar[Any] = contextvars.ContextVar(
     "frank_credentials", default=None
 )
@@ -105,7 +140,8 @@ _DEFAULT_STORE = FileCredentials()
 
 
 def load_tokens() -> Optional[ChatGPTTokens]:
-    """Load the stored tokens, or ``None`` when signed out."""
+    """Load the stored tokens, or ``None`` when signed out. Synchronous file IO —
+    call via ``asyncio.to_thread`` from the event loop."""
     return credentials().load()
 
 
@@ -138,7 +174,8 @@ def _code_challenge(verifier: str) -> str:
 
 
 def _decode_jwt_claims(token: str) -> dict:
-    """Decode a JWT payload without verifying the signature — we only read the account id / email claims OpenAI put there, we are not trusting them for auth."""
+    """Decode a JWT payload without verifying the signature — we only read the
+    account id / email claims OpenAI put there, we are not trusting them for auth."""
     try:
         _header, payload, _signature = token.split(".")
         return json.loads(_b64url_decode(payload))
@@ -147,7 +184,8 @@ def _decode_jwt_claims(token: str) -> dict:
 
 
 def _extract_account_id(claims: dict) -> str:
-    """The ChatGPT account id lives under OpenAI's namespaced auth claim; fall back to a couple of shapes seen in the wild."""
+    """The ChatGPT account id lives under OpenAI's namespaced auth claim; fall back
+    to a couple of shapes seen in the wild."""
     auth = claims.get("https://api.openai.com/auth") or {}
     if isinstance(auth, dict):
         account_id = auth.get("chatgpt_account_id") or auth.get("account_id")
@@ -157,7 +195,9 @@ def _extract_account_id(claims: dict) -> str:
 
 
 def _tokens_from_payload(payload: dict, previous: Optional[ChatGPTTokens] = None) -> ChatGPTTokens:
-    """Build a :class:`ChatGPTTokens` from a token-endpoint response, carrying over fields a refresh response may omit (a refresh often returns no new id/refresh token)."""
+    """Build a :class:`ChatGPTTokens` from a token-endpoint response, carrying over
+    fields a refresh response may omit (a refresh often returns no new id/refresh
+    token)."""
     id_token = payload.get("id_token") or (previous.id_token if previous else "")
     claims = _decode_jwt_claims(id_token) if id_token else {}
     account_id = _extract_account_id(claims) or (previous.account_id if previous else "")
@@ -199,7 +239,9 @@ async def _refresh(tokens: ChatGPTTokens) -> ChatGPTTokens:
 
 
 async def valid_tokens() -> ChatGPTTokens:
-    """Return a live, non-expired token set, refreshing and re-persisting first when the access token is at or near expiry."""
+    """Return a live, non-expired token set, refreshing and re-persisting first when
+    the access token is at or near expiry. Raises ``ChatGPTAuthError`` when signed
+    out or when a refresh fails (e.g. the subscription was revoked)."""
     tokens = await asyncio.to_thread(load_tokens)
     if tokens is None:
         raise ChatGPTAuthError(
@@ -227,7 +269,8 @@ class ChatGPTAuthError(RuntimeError):
     """Raised when a ChatGPT-subscription call cannot be authenticated."""
 
 
-# The HTML shown in the browser tab after the OAuth redirect, kept in a sibling asset (with a {{message}} placeholder) rather than inline in the code.
+# The HTML shown in the browser tab after the OAuth redirect, kept in a sibling
+# asset (with a {{message}} placeholder) rather than inline in the code.
 _CALLBACK_PAGE_PATH = Path(__file__).resolve().parent / "assets" / "chatgpt_callback.html"
 
 
@@ -242,7 +285,9 @@ def _callback_page(message: str) -> str:
 
 
 class ChatGPTLoginFlow:
-    """One browser sign-in."""
+    """One browser sign-in. ``authorize_url`` is opened by the client; the redirect
+    lands on a loopback server this flow owns for its lifetime, which exchanges the
+    code, persists the tokens, and completes :meth:`wait`."""
 
     def __init__(self) -> None:
         self._code_verifier = _generate_code_verifier()
@@ -270,13 +315,16 @@ class ChatGPTLoginFlow:
         return f"{AUTHORIZE_URL}?{urllib.parse.urlencode(params)}"
 
     async def start(self) -> None:
-        """Bind the loopback callback server."""
+        """Bind the loopback callback server. Raises ``OSError`` if port 1455 is
+        already taken (e.g. a concurrent Codex or Frank sign-in)."""
         self._server = HTTPServer((REDIRECT_HOST, REDIRECT_PORT), self._build_handler())
         # Bound so the serve loop wakes periodically to honour the overall timeout.
         self._server.timeout = 0.5
 
     async def wait(self, timeout: float = 300.0) -> ChatGPTTokens:
-        """Await the browser redirect, exchange the code, persist and return the tokens."""
+        """Await the browser redirect, exchange the code, persist and return the
+        tokens. The blocking one-shot HTTP server runs off the event loop; the token
+        exchange runs on it. Always closes the loopback server afterwards."""
         assert self._server is not None, "start() must be called before wait()"
         try:
             code = await asyncio.to_thread(self._serve_until_callback, timeout)
@@ -287,7 +335,9 @@ class ChatGPTLoginFlow:
             await self.close()
 
     def _serve_until_callback(self, timeout: float) -> str:
-        """Handle requests on the loopback until the OAuth callback arrives (ignoring stray hits like ``/favicon.ico``), then return the authorization code."""
+        """Handle requests on the loopback until the OAuth callback arrives (ignoring
+        stray hits like ``/favicon.ico``), then return the authorization code. Runs in
+        a worker thread; raises :class:`ChatGPTAuthError` on timeout or a bad callback."""
         assert self._server is not None
         deadline = time.monotonic() + timeout
         while not self._captured:
@@ -330,7 +380,8 @@ class ChatGPTLoginFlow:
         return CallbackHandler
 
     def _callback_failure(self, query: dict[str, list[str]]) -> Optional[str]:
-        """A human-readable reason the callback is unusable, or ``None`` when it carries a valid, state-matched authorization code."""
+        """A human-readable reason the callback is unusable, or ``None`` when it
+        carries a valid, state-matched authorization code."""
         if (error := query.get("error", [""])[0]):
             return f"Authorization failed: {error}"
         if query.get("state", [""])[0] != self._state:

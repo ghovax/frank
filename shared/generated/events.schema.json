@@ -55,7 +55,7 @@
     },
     "CumulativeUsage": {
       "additionalProperties": false,
-      "description": "Session-lifetime running totals (monotonic), distinct from the per-call figures on :class:`TokenUsageEvent` which describe only the latest model call.",
+      "description": "Session-lifetime running totals (monotonic), distinct from the per-call figures\non :class:`TokenUsageEvent` which describe only the latest model call.",
       "properties": {
         "cache_read_tokens": {
           "default": 0,
@@ -191,7 +191,7 @@
     },
     "ModelToolResult": {
       "additionalProperties": false,
-      "description": "The one-line JSON metadata header prepended to every tool result the model reads \u2014 inline as a ToolMessage (``kind=\"tool_result\"``) or, for a background completion, as an append-only system message (``kind=\"background_result\"``).",
+      "description": "The one-line JSON metadata header prepended to every tool result the model reads \u2014\ninline as a ToolMessage (``kind=\"tool_result\"``) or, for a background completion, as an\nappend-only system message (``kind=\"background_result\"``). The tool's raw output body\nfollows the header after a blank line, delivered **as-is**: prose stays prose (never\nre-encoded into an escaped JSON string), structured output stays JSON.",
       "properties": {
         "background_job_id": {
           "anyOf": [
@@ -276,7 +276,7 @@
     },
     "PermissionReason": {
       "additionalProperties": false,
-      "description": "Why approval is needed, as data rather than as a sentence.",
+      "description": "Why approval is needed, as data rather than as a sentence.\n\nThe harness used to build the sentence itself \u2014 \"Sandbox approval required: this command\nreads outside the working directory (/a, /b).\" \u2014 and hand a client the finished English.\nThat put user-facing prose in the one place that cannot translate it: the daemon has no\nlocale, the string never reached the message catalogue, and a Japanese interface rendered\nan English clause with a colon and a parenthetical in the middle of its own layout.\n\nSo the harness states the *facts* and the client writes the sentence. `kind` selects the\nmessage; the paths ride as data the message interpolates. A reason the client does not\nrecognise falls back to the model's own explanation, which is prose either way.",
       "properties": {
         "kind": {
           "type": "string"
@@ -618,7 +618,7 @@
     },
     "ToolMetadata": {
       "additionalProperties": false,
-      "description": "Correlational + timing facts about a tool call.",
+      "description": "Correlational + timing facts about a tool call. Shown in the UI and \u2014 per the\nproduct decision \u2014 kept visible to the model too, so it can reason about what it\nran and when.",
       "properties": {
         "background_job_id": {
           "anyOf": [
@@ -735,7 +735,7 @@
     },
     "TracedSegment": {
       "additionalProperties": false,
-      "description": "Which piece of a request a cache measurement is talking about.",
+      "description": "Which piece of a request a cache measurement is talking about.\n\nFields rather than a formatted label, so a consumer can count how often the tool schemas\nmove or which role tends to be rewritten. ``position`` is the index within the conversation,\nor ``-1`` for the parts a request has only one of.",
       "properties": {
         "kind": {
           "default": "",
@@ -757,7 +757,7 @@
     },
     "TurnContext": {
       "additionalProperties": false,
-      "description": "The structured per-turn context injected at the end of the message list: the current time, where the agent is, its goal, its tasks, and its background work.",
+      "description": "The structured per-turn context injected at the end of the message list: the current time,\nwhere the agent is, its goal, its tasks, and its background work.",
       "properties": {
         "background": {
           "tsType": "Record<string, unknown>"

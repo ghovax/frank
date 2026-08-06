@@ -6,7 +6,14 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ProviderDefinition:
-    """One routable LLM provider."""
+    """One routable LLM provider.
+
+    The ``litellm_prefix`` is the default LiteLLM model prefix (the segment before
+    the first ``/`` in the model string LiteLLM receives). A catalog model can
+    override it when a gateway serves different models through different protocols.
+    ``credential_identifier`` lets related gateways share one stored API key; an
+    empty value means that the provider's own identifier owns the credential.
+    """
 
     identifier: str
     name: str
@@ -17,12 +24,22 @@ class ProviderDefinition:
     uses_custom_base_url: bool = False
     credential_identifier: str = ""
     # Whether this provider is surfaced as a pickable source of models in the UI.
+    # The opencode gateway and any custom server are; the bare "custom" bucket is
+    # addressed by the custom provider instead.
     selectable: bool = True
-    # A "native" provider is not routed through LiteLLM at all — it has its own chat-model implementation and its own (non-API-key) auth.
+    # A "native" provider is not routed through LiteLLM at all — it has its own
+    # chat-model implementation and its own (non-API-key) auth. The two experimental
+    # subscription providers are the only ones: ``chatgpt`` signs in over OAuth and calls
+    # Codex's Responses endpoint directly (see frank.runtime.models.codex), and ``cursor``
+    # signs in over Cursor's own login flow and drives its agent service (see
+    # frank.runtime.models.cursor). For both, ``litellm_prefix`` is meaningless and
+    # credential resolution is bypassed.
     native: bool = False
 
 
-# The order here is the order models are grouped in the picker.
+# The order here is the order models are grouped in the picker. OpenCode's two
+# gateways come first, followed by first-party clouds, SaaS providers, and the
+# user's own server.
 PROVIDERS: dict[str, ProviderDefinition] = {
     provider.identifier: provider
     for provider in [
@@ -49,12 +66,16 @@ PROVIDERS: dict[str, ProviderDefinition] = {
             litellm_prefix="anthropic",
             env_vars=("ANTHROPIC_API_KEY",),
         ),
-        # The three big clouds' own resale of the frontier models.
+        # The three big clouds' own resale of the frontier models. Each carries the same
+        # families as a first-party provider but bills through an existing cloud account, which
+        # for most organisations is the only way they are reachable at all.
         ProviderDefinition(
             identifier="amazon_bedrock",
             name="Amazon Bedrock",
             litellm_prefix="bedrock",
-            # Bedrock's own API keys first, then the classic access-key pair.
+            # Bedrock's own API keys first, then the classic access-key pair. Only presence is
+            # read here — LiteLLM picks the whole credential set out of the environment itself,
+            # including the region and any assumed role, which is more than one string can carry.
             env_vars=("AWS_BEARER_TOKEN_BEDROCK", "AWS_ACCESS_KEY_ID"),
         ),
         ProviderDefinition(
@@ -66,7 +87,9 @@ PROVIDERS: dict[str, ProviderDefinition] = {
         ProviderDefinition(
             identifier="google_vertex_anthropic",
             name="Claude on Vertex AI",
-            # The same LiteLLM route: it reads Claude on Vertex from the model id rather than from a separate provider.
+            # The same LiteLLM route: it reads Claude on Vertex from the model id rather than
+            # from a separate provider. Kept as its own entry because models.dev lists it as one,
+            # so its catalogue arrives separately and the picker can say which cloud is billing.
             litellm_prefix="vertex_ai",
             env_vars=("GOOGLE_APPLICATION_CREDENTIALS", "VERTEXAI_PROJECT"),
             credential_identifier="google_vertex",
@@ -76,7 +99,8 @@ PROVIDERS: dict[str, ProviderDefinition] = {
             name="Azure OpenAI",
             litellm_prefix="azure",
             env_vars=("AZURE_API_KEY",),
-            # Every Azure account has its own resource host, so there is no default worth registering — the base URL is the deployment.
+            # Every Azure account has its own resource host, so there is no default worth
+            # registering — the base URL is the deployment.
             uses_custom_base_url=True,
         ),
         ProviderDefinition(
@@ -98,7 +122,9 @@ PROVIDERS: dict[str, ProviderDefinition] = {
             env_vars=("OPENAI_API_KEY",),
         ),
         ProviderDefinition(
-            # Experimental: pay for model calls with a ChatGPT subscription instead of an API key, by impersonating the Codex CLI.
+            # Experimental: pay for model calls with a ChatGPT subscription instead of
+            # an API key, by impersonating the Codex CLI. Unlocked by an OAuth sign-in
+            # (Settings), not a stored key; routed through its own model client.
             identifier="chatgpt",
             name="ChatGPT Subscription Plan",
             litellm_prefix="",
@@ -106,7 +132,10 @@ PROVIDERS: dict[str, ProviderDefinition] = {
             native=True,
         ),
         ProviderDefinition(
-            # Experimental: pay for model calls with a Cursor subscription instead of an API key, by using the login flow Cursor's own CLI uses.
+            # Experimental: pay for model calls with a Cursor subscription instead of an
+            # API key, by using the login flow Cursor's own CLI uses. Unlocked by an
+            # OAuth sign-in (Settings), not a stored key; routed through its own model
+            # client, which reduces Cursor's agent service to a single chat turn.
             identifier="cursor",
             name="Cursor Subscription Plan",
             litellm_prefix="",

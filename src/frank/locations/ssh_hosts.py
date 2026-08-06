@@ -1,4 +1,17 @@
-"""The SSH host registry, sourced from ``~/.ssh/config`` — the OS-level source of truth."""
+"""The SSH host registry, sourced from ``~/.ssh/config`` — the OS-level source of truth.
+
+Two steps, both leaning on the system ``ssh`` (consistent with the multiplexed-OpenSSH
+execution model, no third-party SSH library):
+
+  1. Parse the config file(s) for the literal ``Host`` aliases the user has defined
+     (following ``Include`` directives; wildcard patterns like ``*`` are skipped since
+     they are not concrete, connectable hosts).
+  2. Resolve each alias with ``ssh -G <alias>``, which applies the full effective config
+     (Include, Match, defaults) and yields the real hostname/user/port/identity.
+
+The home server references these aliases from location records; it never owns or edits
+them — editing a host means editing ``~/.ssh/config`` (which is file-watched).
+"""
 
 from __future__ import annotations
 
@@ -14,7 +27,8 @@ _PATTERN_CHARACTERS = set("*?!")
 
 @dataclass(frozen=True)
 class SshHost:
-    """A connectable host from the SSH config: its ``alias`` (what we ssh to, so config fidelity is preserved) plus the resolved coordinates ``ssh -G`` reported."""
+    """A connectable host from the SSH config: its ``alias`` (what we ssh to, so config
+    fidelity is preserved) plus the resolved coordinates ``ssh -G`` reported."""
 
     alias: str
     hostname: str
@@ -24,7 +38,8 @@ class SshHost:
 
 
 def _config_paths(config_path: Path, _seen: set[Path] | None = None) -> list[Path]:
-    """The config file plus every file it pulls in via ``Include`` (glob-expanded, relative paths resolved against the including file's directory, then ~/.ssh)."""
+    """The config file plus every file it pulls in via ``Include`` (glob-expanded,
+    relative paths resolved against the including file's directory, then ~/.ssh)."""
     seen = _seen if _seen is not None else set()
     resolved = config_path.expanduser()
     if resolved in seen or not resolved.is_file():
@@ -76,7 +91,8 @@ def _literal_aliases(config_path: Path) -> list[str]:
 
 
 def resolve_host(alias: str, *, timeout: float = 5.0) -> SshHost | None:
-    """Resolve one alias via ``ssh -G``."""
+    """Resolve one alias via ``ssh -G``. Returns ``None`` if ssh is unavailable or the
+    alias cannot be resolved. Does not connect — ``-G`` only prints effective config."""
     try:
         completed = subprocess.run(
             ["ssh", "-G", alias],

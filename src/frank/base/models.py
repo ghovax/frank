@@ -18,24 +18,36 @@ from frank.base.providers import (
 
 @dataclass(frozen=True)
 class ModelDefinition:
-    """A pickable model."""
+    """A pickable model. The ``identifier`` is the canonical, provider-namespaced
+    technical id a user references the model by (``anthropic/claude-sonnet-4``,
+    ``opencode/deepseek-v4-flash``); ``name`` is the user-facing label from the
+    models.dev catalog, falling back to the raw model suffix when no display name
+    is available (the frontend renders those in monospace).
+    """
 
     identifier: str
     name: str
     provider: str
     # Capabilities from the models.dev catalog, used to gate and annotate the UI.
+    # ``attachment`` is whether the model accepts file attachments at all; ``vision``
+    # is whether image input is supported; ``input_modalities`` is the raw list
+    # (``text``, ``image``, ``pdf``, ``audio``, …) for finer-grained display.
     attachment: bool = False
     vision: bool = False
     input_modalities: tuple[str, ...] = ()
     # Maximum input context in tokens, from the models.dev catalog (0 = unknown).
+    # Used for the "how full is the context" gauge; the native chatgpt and cursor
+    # providers rely on this since they have no LiteLLM model-info map to consult.
     context_length: int = 0
     # ISO release date (YYYY-MM-DD) from the models.dev catalog, or "" if unknown.
+    # The picker sorts newest-first on this instead of alphabetically.
     release_date: str = ""
     # A per-model override for gateways that expose several wire protocols.
     litellm_prefix: str = ""
 
 
-# Map models.dev provider IDs to our local provider identifiers. models.dev uses kebab-case; we use snake_case (or the original provider name).
+# Map models.dev provider IDs to our local provider identifiers.
+# models.dev uses kebab-case; we use snake_case (or the original provider name).
 _GATEWAY_LITELLM_PREFIXES = {
     "@ai-sdk/openai-compatible": "openai",
     "@ai-sdk/openai": "openai/responses",
@@ -97,7 +109,11 @@ _MODELS_DEV_PROVIDER_MAP: dict[str, str] = {
 
 
 def _catalog() -> list[ModelDefinition]:
-    """Model catalog from models.dev's open-source API."""
+    """Model catalog from models.dev's open-source API.
+
+    Best-effort — returns an empty list when the API is unreachable so the harness
+    can still start without a model catalog.
+    """
     MODELS_DEV_URL = "https://models.dev/api.json"
     try:
         response = httpx.get(MODELS_DEV_URL, timeout=5)
@@ -119,7 +135,12 @@ def _catalog() -> list[ModelDefinition]:
         if get_provider_definition(local_id) is None:
             continue
         for model_id, model_info in provider_info.get("models", {}).items():
-            # Stripped, because the catalogue is a community-maintained file and some of its names carry a leading or trailing space.
+            # Stripped, because the catalogue is a community-maintained file and some of its
+            # names carry a leading or trailing space. A name is laid out beside a provider,
+            # an icon and a set of capability glyphs, and a space at either end pushes it off
+            # the alignment every other row keeps. Done here rather than where it is drawn:
+            # the name is also sorted on, matched against and written into a session record,
+            # and one of those would have kept the space.
             name = (model_info.get("name", "") or model_id).strip() or model_id
             identifier = f"{local_id}/{model_id}"
             modalities = model_info.get("modalities") or {}
@@ -153,6 +174,11 @@ def _catalog() -> list[ModelDefinition]:
 
 
 # Which OpenAI models the ChatGPT-subscription (Codex) endpoint currently serves.
+# Ported from opencode's codex plugin (packages/opencode/src/plugin/openai/codex.ts):
+# a small allow/deny set plus "GPT version > 5.4". The set moves over time, so we
+# keep the *rule* in sync with that reference rather than hand-maintaining a model
+# list — every model's name, context window, and modalities still ride in from the
+# models.dev catalog automatically, so no metadata is hand-rolled here.
 _CODEX_ALLOWED_MODELS = frozenset({"gpt-5.5", "gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"})
 _CODEX_DISALLOWED_MODELS = frozenset({"gpt-5.5-pro"})
 
@@ -167,7 +193,10 @@ def _codex_eligible(model_suffix: str) -> bool:
 
 
 def _chatgpt_models(base: list[ModelDefinition]) -> list[ModelDefinition]:
-    """The experimental ``chatgpt`` subscription models, derived from the OpenAI entries in the live models.dev catalog filtered to the codex-eligible set — so new GPT-5.x models appear automatically as models.dev learns of them, with their real names and context windows, instead of a stale hand-written list."""
+    """The experimental ``chatgpt`` subscription models, derived from the OpenAI
+    entries in the live models.dev catalog filtered to the codex-eligible set — so
+    new GPT-5.x models appear automatically as models.dev learns of them, with their
+    real names and context windows, instead of a stale hand-written list."""
     chatgpt: list[ModelDefinition] = []
     for model in base:
         if model.provider != "openai":
@@ -188,13 +217,39 @@ def _chatgpt_models(base: list[ModelDefinition]) -> list[ModelDefinition]:
     return chatgpt
 
 
-# The ``cursor`` provider contributes nothing here, and that is the design rather than an omission.
+# The ``cursor`` provider contributes nothing here, and that is the design rather than an
+# omission. Its models cannot come from models.dev, which has no Cursor provider and could not
+# describe one: a Cursor model id carries its reasoning effort (``claude-4.6-opus-high``) and
+# names Cursor's own Composer family, neither of which exists in a catalog of direct-API
+# models. So the account is asked instead — ``GetUsableModels`` for the ids a plan serves and
+# ``AvailableModels`` for their context windows — and the ``/models`` endpoint appends what
+# comes back. Until a user signs in there is nothing truthful to list, so nothing is listed;
+# the picker shows the provider, its sign-in control, and no models. A hand-written stand-in
+# would only be a guess about somebody else's subscription wearing the catalog's clothes.
 _catalogue_cache: list[ModelDefinition] | None = None
 _catalogue_lock = threading.Lock()
 
 
 def list_models() -> list[ModelDefinition]:
-    """The model catalogue, fetched on first use and then cached for the process."""
+    """The model catalogue, fetched on first use and then cached for the process.
+
+    This is a function rather than a module-level list for a reason that is not style.
+    Building the catalogue performs a blocking HTTP GET to models.dev, and doing that at
+    *import* time made every process that imports this module — which is every process
+    that imports the runtime — pay a second of startup, depend on a reachable third-party
+    host, and silently end up with an empty catalogue when offline.
+
+    It also broke the invariant the prototype rests on. On macOS that fetch spawns two
+    persistent native network threads, and a multi-threaded parent cannot legally
+    ``fork()``: the child aborts inside the Objective-C runtime with a message that reads
+    like a CoreFoundation verdict and is not one. Deferring the fetch is what keeps the
+    prototype single-threaded up to the moment it forks, and the fetch then happens in the
+    child, where threads are nobody's problem.
+
+    Best-effort by design: an unreachable models.dev yields an empty catalogue rather than
+    an exception, and the result — empty or not — is cached, so a failed fetch does not
+    retry on every call. :func:`clear_catalogue_cache` is how a caller asks for another try.
+    """
     global _catalogue_cache
     if _catalogue_cache is not None:
         return list(_catalogue_cache)
@@ -206,7 +261,10 @@ def list_models() -> list[ModelDefinition]:
 
 
 def clear_catalogue_cache() -> None:
-    """Drop the cached catalogue so the next :func:`list_models` refetches."""
+    """Drop the cached catalogue so the next :func:`list_models` refetches.
+
+    For a process that started offline and now has a network, and for the settings surface
+    after a provider changes."""
     global _catalogue_cache
     _catalogue_cache = None
 
@@ -219,7 +277,9 @@ def find_model(model_identifier: str) -> ModelDefinition | None:
 
 
 def provider_and_suffix(model_identifier: str) -> tuple[str, str] | None:
-    """Split a model id into its provider id and the model suffix (everything after the first ``/``)."""
+    """Split a model id into its provider id and the model suffix (everything after
+    the first ``/``). The suffix may itself contain slashes (OpenRouter's
+    ``anthropic/claude-sonnet-4``), so only the first slash is significant."""
     if "/" not in model_identifier:
         return None
     provider_identifier, suffix = model_identifier.split("/", 1)
@@ -227,7 +287,11 @@ def provider_and_suffix(model_identifier: str) -> tuple[str, str] | None:
 
 
 def available_models(configured_keys: dict[str, str]) -> list[ModelDefinition]:
-    """Catalog entries whose provider has a resolvable credential."""
+    """Catalog entries whose provider has a resolvable credential. A provider is
+    unlocked by an explicit configured key or any of its env vars. Native providers
+    (``chatgpt``, ``cursor``) are excluded here — their availability is resolved
+    per-model against the live subscription list by the ``/models`` endpoint, not by a
+    key."""
     unlocked_providers = {
         provider.identifier
         for provider in PROVIDERS.values()
@@ -239,7 +303,20 @@ def available_models(configured_keys: dict[str, str]) -> list[ModelDefinition]:
 
 
 def _gateway_api_base(provider_base_url: str, litellm_prefix: str) -> str:
-    """The base URL to hand LiteLLM for a gateway that speaks several wire protocols."""
+    """The base URL to hand LiteLLM for a gateway that speaks several wire protocols.
+
+    A gateway like OpenCode Zen serves Anthropic, Gemini and OpenAI traffic from one host, so the
+    provider's base URL names the host and the model's protocol decides the path. LiteLLM builds
+    that path itself for every protocol *except* one, and the exception is the reason this exists:
+    for `anthropic` it appends `/v1/messages` unless the base already ends that way, which would
+    turn `…/zen/v1` into `…/zen/v1/v1/messages`. Ending the base at `/v1/messages` ourselves is
+    what makes that append a no-op.
+
+    Gemini deliberately gets nothing. LiteLLM's `_check_custom_proxy` already renders a custom
+    Gemini base as `{base}/models/{model}:{generateContent|streamGenerateContent}` — including
+    picking the streaming verb per call — so composing that path here would double it, and would
+    also need a second base URL just to carry the streaming variant.
+    """
     if litellm_prefix == "anthropic":
         return f"{provider_base_url.rstrip('/')}/messages"
     return provider_base_url
@@ -259,7 +336,12 @@ def resolve_litellm(
     if definition is None:
         raise ValueError(f"Unknown provider in model id: {model_identifier!r}")
     catalog_model = find_model(model_identifier)
-    # The catalogue's prefix is an *override*, set only where one gateway serves several wire protocols; every other model leaves it empty, meaning "the provider's own".
+    # The catalogue's prefix is an *override*, set only where one gateway serves several wire
+    # protocols; every other model leaves it empty, meaning "the provider's own". Reading it as
+    # the answer whenever a catalogue entry existed dropped the prefix entirely — `anthropic/
+    # claude-sonnet-4-5` resolved to `/claude-sonnet-4-5`, which routes nowhere. It only bites
+    # once the catalogue is warm, so a cold start looked fine and every provider in models.dev
+    # broke the moment it was fetched.
     litellm_prefix = (catalog_model.litellm_prefix if catalog_model else "") or definition.litellm_prefix
     provider_base_url = (
         resolve_base_url(provider_identifier, configured_bases)

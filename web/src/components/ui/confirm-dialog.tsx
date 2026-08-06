@@ -1,6 +1,9 @@
 "use client";
 
-// A small confirmation dialog: a title, a muted body message, and a Cancel + confirm footer.
+// A small confirmation dialog: a title, a muted body message, and a Cancel + confirm
+// footer. The confirm button is red for destructive actions (`danger`) or blue otherwise,
+// with an optional leading icon. Every "are you sure?" prompt in the app is one of these,
+// so the alertdialog shell + footer live here once instead of being re-spelled each time.
 
 import { Button, Dialog, Portal, Text } from "@chakra-ui/react";
 import type { ReactNode } from "react";

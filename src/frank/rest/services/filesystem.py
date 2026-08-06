@@ -1,4 +1,5 @@
-"""Filesystem domain: git-status probing and change-watching, directory validation, and the native folder picker."""
+"""Filesystem domain: git-status probing and change-watching, directory validation, and the
+native folder picker."""
 
 from __future__ import annotations
 
@@ -393,7 +394,9 @@ def _run_tk_folder_picker() -> subprocess.CompletedProcess[str] | None:
 
 
 def _accessibility_granted() -> bool:
-    """Whether this process may read the accessibility tree and control other apps — the permission the screen tools need."""
+    """Whether this process may read the accessibility tree and control other apps — the
+    permission the screen tools need. Imported lazily: the module pulls in PyObjC, and loading
+    that eagerly anywhere would make the prototype unsafe to fork."""
     try:
         from frank.computer import permissions
 

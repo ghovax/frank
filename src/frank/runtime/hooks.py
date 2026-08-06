@@ -1,4 +1,15 @@
-"""Running a turn's hooks, and the ones that ship."""
+"""Running a turn's hooks, and the ones that ship.
+
+A hook sees a turn as it runs and may bound it. The runner here is the part that makes that
+safe: a hook is someone else's code on the turn's critical path, and a turn must not fail
+because something watching it did. So every call is wrapped, a raising hook is logged and
+skipped, and a hook that returns nothing usable leaves the value it was given untouched.
+
+`MaximumToolCalls` is in this file rather than in a caller's, and that is the point. A seam
+whose first user is the harness itself is a seam of the right shape — had the cap been a
+`maximum_tool_calls=` argument, the loop would be hardcoding one policy and the next policy
+would need another argument.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +20,12 @@ logger = logging.getLogger(__name__)
 
 
 class MaximumToolCalls:
-    """Stop a turn from making more than `maximum` tool calls."""
+    """Stop a turn from making more than `maximum` tool calls.
+
+    Counts across the whole turn, not per batch, because a turn that makes twenty batches of
+    one call is the case a ceiling exists for. Reaching the cap truncates the batch rather
+    than raising: the model sees fewer results, and ends its turn on what it has.
+    """
 
     def __init__(self, maximum: int) -> None:
         if maximum < 0:
@@ -58,7 +74,9 @@ class HookRunner:
                 logger.warning("%s.before_tools raised; skipping it", type(hook).__name__, exc_info=True)
                 continue
             if isinstance(returned, list):
-                # A hook narrows and never widens.
+                # A hook narrows and never widens. Anything it added that the barrier did not
+                # approve is dropped here rather than trusted, so a careless hook cannot turn
+                # into a permission bypass.
                 approved = {id(call) for call in calls}
                 calls = [call for call in returned if id(call) in approved]
         return calls

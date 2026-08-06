@@ -1,6 +1,16 @@
 "use client";
 
-// A prominent overlay that appears above the chat input when a tool call needs the user's approval (a permission request).
+// A prominent overlay that appears above the chat input when a tool call needs
+// the user's approval (a permission request). Mirrors QuestionOverlay so the two
+// input-required prompts read and behave identically — the user cannot miss it,
+// and it takes focus for keyboard shortcuts. Moved out of the tool card (where it
+// used to render inline) so a pending approval always grabs attention at the
+// bottom of the chat, even when the triggering card is scrolled out of view.
+//
+// It does not close the composer. The session is parked, not gone: a message typed
+// while this is up is queued and sent as soon as the decision is made, so the
+// prompt is the only thing waiting on the person, and their own next thought is
+// not.
 
 import { Box, Button, Flex, Text } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
@@ -13,18 +23,25 @@ import { ToolLocationBadge } from "./tool-call";
 
 import { Pre } from "./ui/semantic";
 
-// The only runtime decisions that exist: deny, or allow this one call.
+// The only runtime decisions that exist: deny, or allow this one call. A standing allow
+// would quietly write a rule into the session's policy from inside a prompt about one
+// command; the policy is edited where policy lives — the permission mode under the composer,
+// and the command rules in Settings — so the overlay never offers one.
 type RuntimeDecision = "deny" | "allow_once";
 
 interface PermissionOverlayProps {
   permission: ToolPermission;
-  // A short label for what is being approved (the tool's own display label, e.g. the command or the explanation) plus an optional longer detail line.
+  // A short label for what is being approved (the tool's own display label, e.g.
+  // the command or the explanation) plus an optional longer detail line.
   title: string;
   detail?: string;
   // The paths the reason names, rendered as a list rather than folded into `detail`.
+  // A set of paths is several values, and joining them into a sentence both hides that
+  // and hard-codes a separator that belongs to a locale.
   detailPaths?: string[];
   command?: string;
-  // The tool call's arguments, so the overlay can badge a remote `location` — a user approving an operation should see where it runs.
+  // The tool call's arguments, so the overlay can badge a remote `location` — a user
+  // approving an operation should see where it runs.
   arguments?: Record<string, unknown>;
   onPermission: (requestId: string, decision: RuntimeDecision) => void;
 }
@@ -114,7 +131,9 @@ export function PermissionOverlay({ permission, title, detail, detailPaths, comm
                 p={2}
                 m={0}
                 flexShrink={0}
-                // Sideways only: the command is held on one line per line deliberately, so a long line scrolls across rather than wrapping into something that no longer looks like what will run.
+                // Sideways only: the command is held on one line per line deliberately, so a
+                // long line scrolls across rather than wrapping into something that no longer
+                // looks like what will run.
                 overflowX="auto"
                 whiteSpace="pre"
               >

@@ -2,10 +2,14 @@ import { asRecord } from "./coerce";
 
 export type ToolEventStatus = "running" | "completed" | "done" | "failed" | "input_required";
 
-// A human-in-the-loop approval attached to the tool call that triggered it (e.g. a sandbox read outside the working directory).
+// A human-in-the-loop approval attached to the tool call that triggered it (e.g.
+// a sandbox read outside the working directory). Lives on the same card so the
+// command — and, once approved, its output — read together.
 export type PermissionDecision = "deny" | "allow_once";
 
-// Why approval is needed, as facts rather than as a finished sentence.
+// Why approval is needed, as facts rather than as a finished sentence. The harness sends
+// this instead of English prose so the interface writes the sentence in its own language;
+// `kind` selects the message and `paths` are interpolated into it.
 export interface PermissionReason {
   kind: string;
   paths?: string[];
@@ -13,7 +17,8 @@ export interface PermissionReason {
 
 export interface ToolPermission {
   requestId: string;
-  // Prose the harness did not author — the reviewer's verdict, or the model's own account of itself.
+  // Prose the harness did not author — the reviewer's verdict, or the model's own account of
+  // itself. Untranslatable by construction, and shown as it came.
   explanation?: string;
   reason?: PermissionReason;
   decision?: PermissionDecision;
@@ -33,7 +38,8 @@ export interface QuestionItem {
   custom?: boolean;
 }
 
-// One answer per question: a selected label, a list of labels (multi-select), or the custom text the user typed.
+// One answer per question: a selected label, a list of labels (multi-select),
+// or the custom text the user typed.
 export type QuestionAnswer = string | string[];
 
 export interface ToolQuestion {
@@ -59,7 +65,8 @@ export function isSameToolEvent(event: ToolEvent, name: string, toolCallId: stri
   return idMatches || fallbackMatches;
 }
 
-// Narrow an arbitrary value to a known tool-event status (or undefined) — for the raw status strings that arrive on wire events.
+// Narrow an arbitrary value to a known tool-event status (or undefined) — for the
+// raw status strings that arrive on wire events.
 export function toolStatus(status: unknown): ToolEventStatus | undefined {
   return status === "running" || status === "completed" || status === "done" || status === "failed" || status === "input_required"
     ? status
@@ -70,7 +77,18 @@ export function hasBackgroundJobId(result: unknown): boolean {
   return String(asRecord(result).job_id ?? "").trim().length > 0;
 }
 
-// The harness's structured reason as a sentence, in the caller's language, or "" when there is none or the interface does not recognise the kind.
+// The harness's structured reason as a sentence, in the caller's language, or "" when there
+// is none or the interface does not recognise the kind.
+//
+// This exists so that no user-facing sentence is ever assembled on the server. The daemon has
+// no locale: prose built there reaches every interface in one language and never passes
+// through the message catalogue, which is how "Sandbox approval required: …" ended up inside
+// a Japanese window. The harness sends `kind` and the paths; whoever draws the prompt writes
+// the sentence.
+//
+// The sentence only. The paths are *data*, and they render as a list beside it — never joined
+// into the message. A separator is a locale's decision, not a component's, and a set of paths
+// flattened into one string reads as one value when it is several.
 export type PermissionReasonTranslator = (
   key: "reasonReadsOutsideWorkspace" | "reasonAccessRequest",
   values: { count: number },
@@ -88,7 +106,9 @@ export function permissionReasonText(
     case "access_request":
       return translation("reasonAccessRequest", { count });
     default:
-      // An unknown kind is a newer harness talking to an older interface.
+      // An unknown kind is a newer harness talking to an older interface. Saying nothing lets
+      // the model's own explanation stand, which is better than inventing a sentence for a
+      // reason this build does not understand.
       return "";
   }
 }

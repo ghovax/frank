@@ -1,4 +1,5 @@
-// Value coercion helpers: tool/event payloads and API responses arrive as `unknown` and need typed accessors.
+// Value coercion helpers: tool/event payloads and API responses arrive as `unknown`
+// and need typed accessors. One home for these so they are not re-defined per file.
 
 export function asString(value: unknown): string {
   if (typeof value === "string") return value;

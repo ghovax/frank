@@ -12,13 +12,16 @@ import { InlineField } from "./ui/display";
 import { Tooltip } from "./ui/tooltip";
 import { Frame } from "./ui/semantic";
 
-// Whether an attachment is a raster/vector image we can render inline (a thumbnail on the chip, the full picture in the hover thumbnail and the lightbox).
+// Whether an attachment is a raster/vector image we can render inline (a thumbnail
+// on the chip, the full picture in the hover thumbnail and the lightbox). Prefers the
+// mime type the upload reported, falling back to the filename extension.
 function isImageAttachment(attachment: MessageAttachment): boolean {
   if (attachment.mimeType.startsWith("image/")) return true;
   return /\.(png|jpe?g|gif|webp|bmp|svg|avif|ico|tiff?)$/i.test(attachment.filename);
 }
 
-// Whether an attachment is a PDF — rendered inline via the browser's built-in viewer (an iframe), both in the hover thumbnail and the lightbox.
+// Whether an attachment is a PDF — rendered inline via the browser's built-in
+// viewer (an iframe), both in the hover thumbnail and the lightbox.
 function isPdfAttachment(attachment: MessageAttachment): boolean {
   if (attachment.mimeType === "application/pdf") return true;
   return /\.pdf$/i.test(attachment.filename);
@@ -38,7 +41,9 @@ function formatFileSize(bytes: number): string {
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unitIndex]}`;
 }
 
-// One attachment as a chip: a thumbnail (or a file-type icon), its name, and an optional remove control.
+// One attachment as a chip: a thumbnail (or a file-type icon), its name, and an
+// optional remove control. Shared by the composer and the transcript so a chip looks
+// identical whether it is about to be sent or was sent long ago.
 function MediaChipCard({
   thumbnail,
   filename,
@@ -187,7 +192,8 @@ export function AttachmentChip({
       <Icon size={40} />
     </Box>
   );
-  // The same key/value hover card the git-status indicator uses — carrying whatever metadata the attachment has.
+  // The same key/value hover card the git-status indicator uses — carrying whatever
+  // metadata the attachment has.
   const tooltip = (
     <Box whiteSpace="nowrap">
       <Text fontWeight="semibold" mb={1} color="fg" maxW={80} truncate>{attachment.filename}</Text>

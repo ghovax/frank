@@ -17,7 +17,13 @@ import type { ToolEvent } from "@/lib/tool-event";
 import { hasBackgroundJobId, toolStatus } from "@/lib/tool-event";
 import { ToolCall, ToolCallDetail, ToolLocationBadge, ToolAccessBadges, collapsedHeadingLocation, toolCallDetail } from "./tool-call";
 
-// Shared, grouped/collapsible run of contiguous tool calls — the single source of truth for how a batch of tool calls reads.
+// Shared, grouped/collapsible run of contiguous tool calls — the single source
+// of truth for how a batch of tool calls reads. The group is a single line of
+// text in the transcript: the most recent call's icon and label (shimmering while
+// live), then a compact tally of the tools used and any
+// status/file chips — all hugging the text like a sentence, not a card. Opening
+// it hangs the individual call lines off a hairline left rule, the same visual
+// grammar the calls themselves (and markdown blockquotes) use.
 
 // Tally tools by name while preserving first-seen order.
 function tallyTools(tools: ToolEvent[]): { order: string[]; counts: Map<string, number> } {
@@ -31,7 +37,8 @@ function tallyTools(tools: ToolEvent[]): { order: string[]; counts: Map<string, 
   return { order, counts };
 }
 
-// One tally chip in the group heading — the shared Pill carrying BOTH the icon and its count, so each tool/status reads as a single unit.
+// One tally chip in the group heading — the shared Pill carrying BOTH the icon and its
+// count, so each tool/status reads as a single unit.
 function TallyBadge({
   icon,
   count,
@@ -52,7 +59,8 @@ function TallyBadge({
   );
 }
 
-// Map a tool's icon color ("blue.fg", "green.fg", … or "fg.muted") to a Chakra colorPalette, so each tool's tally badge carries that tool's own accent as its background — not a flat gray.
+// Map a tool's icon color ("blue.fg", "green.fg", … or "fg.muted") to a Chakra colorPalette,
+// so each tool's tally badge carries that tool's own accent as its background — not a flat gray.
 function paletteFromIconColor(iconColor: string): string {
   return iconColor.endsWith(".fg") ? iconColor.slice(0, -3) : "gray";
 }
@@ -63,7 +71,8 @@ interface FileChange {
   deletions: number;
 }
 
-// Extract file paths and diff stats from tool arguments.
+// Extract file paths and diff stats from tool arguments. Accumulates changes per
+// file across multiple edit_file / write_file calls in the same group.
 function extractFileChanges(tools: ToolEvent[]): FileChange[] {
   const changes = new Map<string, FileChange>();
   for (const tool of tools) {
@@ -94,7 +103,9 @@ function extractFileChanges(tools: ToolEvent[]): FileChange[] {
 
 interface ToolGroupProps {
   tools: ToolEvent[];
-  // When true, the group stays expanded even after all calls complete — used by the chat timeline to keep the latest group open until the assistant's text response actually arrives, rather than collapsing the instant tools finish.
+  // When true, the group stays expanded even after all calls complete — used by
+  // the chat timeline to keep the latest group open until the assistant's text
+  // response actually arrives, rather than collapsing the instant tools finish.
   keepOpen?: boolean;
 }
 
@@ -112,42 +123,70 @@ export const ToolGroup = memo(function ToolGroup({
   const inputRequired = inputRequiredCount > 0;
   const failedCount = tools.filter((tool) => toolStatus(tool.status) === "failed").length;
   const active = runningCount > 0 || backgroundCount > 0 || inputRequired || keepOpen;
-  // Tri-state so the group can be toggled either way from its auto default: null = never touched (follow the default), else the user's explicit open/closed choice.
+  // Tri-state so the group can be toggled either way from its auto default: null =
+  // never touched (follow the default), else the user's explicit open/closed choice.
   const [manualOverride, setManualOverride] = useState<boolean | null>(null);
   const bodyOpen = manualOverride ?? false;
 
-  // Extract file changes from tool arguments for the heading: when the group includes file operations (edit_file, write_file) it shows the changed file with its extension icon and diff stat, alongside the status chips.
+  // Extract file changes from tool arguments for the heading: when the group includes
+  // file operations (edit_file, write_file) it shows the changed file with its
+  // extension icon and diff stat, alongside the status chips.
   const fileChanges = useMemo(() => extractFileChanges(tools), [tools]);
   const hasFileChanges = fileChanges.length > 0;
-  // The left icon owns the latest call.
+  // The left icon owns the latest call. The trailing tally therefore counts only
+  // earlier calls, preventing the latest tool from appearing twice in the same row.
   const tally = useMemo(() => tallyTools(tools.slice(0, -1)), [tools]);
-  // The status line shows the most recent tool's own label (its explanation), animated as work streams in and left in place when the batch finishes — more informative than a static "Still working" / "Actions taken".
+  // The status line shows the most recent tool's own label (its explanation),
+  // animated as work streams in and left in place when the batch finishes — more
+  // informative than a static "Still working" / "Actions taken".
   const latestTool = tools[tools.length - 1];
   const headingDisplay = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments, tDisplay) : null;
   const HeadingIcon = headingDisplay?.icon ?? LuBrain;
   const headingIconColor = headingDisplay?.iconColor ?? "purple.fg";
-  // When the batch touched a single remote place, badge the collapsed heading with it (local-only batches show nothing — local is the implied default).
+  // When the batch touched a single remote place, badge the collapsed heading with it
+  // (local-only batches show nothing — local is the implied default).
   const groupLocation = useMemo(() => collapsedHeadingLocation(tools.map((tool) => tool.arguments)), [tools]);
   const latestLabel = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments, tDisplay).label : "";
   // A tools-less group is a "thinking before acting" phase and owns the leading brain icon.
   const thinkingOnly = tools.length === 0;
   const headingText = latestLabel || (thinkingOnly ? translation("thinking") : active ? translation("working") : translation("actionsTaken"));
-  // A group of exactly one call skips the per-call line and opens straight onto that call's detail.
+  // A group of exactly one call skips the per-call line and opens straight onto that call's
+  // detail. The line was a duplicate of the heading — the heading already carries that call's
+  // icon, label and location, because with one call it *is* that call — so opening the group
+  // showed a row saying what you had just read, with the thing you actually wanted behind a
+  // second chevron. One expansion, one thing revealed.
   const soleTool = tools.length === 1 ? tools[0] : null;
   const soleDetail = soleTool ? toolCallDetail(soleTool.name, soleTool.arguments, soleTool.result, soleTool.status) : null;
-  // Any call can be opened, including a single one.
+  // Any call can be opened, including a single one. The rule used to be "more than one",
+  // on the reasoning that one call is already represented by the summary row — but the row
+  // carries the call's *label*, and the body carries what it did: the script, the output, the
+  // error and its traceback. A lone failing call was therefore the one case where none of that
+  // could be reached, which is precisely when a person most wants it.
+  //
+  // A lone call with nothing to show is the exception, and it has to be: with the per-call
+  // line gone there is no longer anything to put inside, so an openable group would reveal an
+  // empty rail — the very defect `toolCallDetail` exists to decide away.
   const interactive = soleTool ? !!soleDetail?.collapsible : tools.length > 0;
 
-  // Status chips surface states that need separate attention.
+  // Status chips surface states that need separate attention. Running and completed calls
+  // carry no chip: the live shimmer already communicates activity, while the settled line
+  // speaks for itself.
   const statusChips = [
     inputRequiredCount > 0 && { kind: "input_required" as StatusKind, count: inputRequiredCount, title: translation("inputRequired") },
     failedCount > 0 && { kind: "failed" as StatusKind, count: failedCount, title: translation("failedCount", { count: failedCount }) },
     backgroundCount > 0 && { kind: "background" as StatusKind, count: backgroundCount, title: translation("backgroundCount", { count: backgroundCount }) },
   ].filter((chip): chip is { kind: StatusKind; count: number; title: string } => Boolean(chip));
 
-  // The animated label slot: the latest tool's label crossfades as work streams in, with both labels in the same grid cell so nothing reflows, and shimmers while active.
+  // The animated label slot: the latest tool's label crossfades as work streams in,
+  // with both labels in the same grid cell so nothing reflows, and shimmers while active.
+  // `minmax(0,1fr)` lets it truncate with an ellipsis.
   const titleSlot = (
-    // The shimmer belongs to this box, not to the label inside it.
+    // The shimmer belongs to this box, not to the label inside it. A CSS animation restarts
+    // whenever its element mounts, and the label below is keyed by its own text so that a new
+    // tool crossfades in — so the gradient was starting over partway through every time the
+    // batch moved on, which reads as the animation stuttering rather than running. This box
+    // outlives every label it shows. `background-clip: text` still paints only glyphs,
+    // because it clips to the text of descendants too.
     <Box
       minW={0}
       display="grid"
@@ -175,7 +214,8 @@ export const ToolGroup = memo(function ToolGroup({
     </Box>
   );
 
-  // The heading's chip cluster: prior-tool tallies, any file-change chip, the remote badge, and status chips — all animated in/out.
+  // The heading's chip cluster: prior-tool tallies, any file-change chip, the remote
+  // badge, and status chips — all animated in/out.
   const hasBadges = tally.order.length > 0 || statusChips.length > 0
     || fileChanges.length > 0 || !!groupLocation || !!soleTool;
   const badgeSlot = (
@@ -259,7 +299,9 @@ export const ToolGroup = memo(function ToolGroup({
         followTailKey={tools.length}
         icon={<Box color={headingIconColor}><HeadingIcon /></Box>}
         title={titleSlot}
-        // `undefined`, not an empty fragment, when the group has nothing to badge.
+        // `undefined`, not an empty fragment, when the group has nothing to badge. A fragment is
+        // truthy, so `DisclosureRow` rendered its badge Flex — which carries a gap — and the
+        // chevron sat a few pixels right of where it does on a row that genuinely has no badges.
         badges={hasBadges ? badgeSlot : undefined}
       >
         {!interactive ? undefined : soleTool ? (

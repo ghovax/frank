@@ -25,12 +25,15 @@ import { Section } from "./ui/semantic";
 import { errorMessage } from "@/lib/errors";
 import { usePreferences } from "@/lib/preferences";
 
-// The panel's own pages, plus `configuration:<section>` for each section of the configuration file.
+// The panel's own pages, plus `configuration:<section>` for each section of the configuration
+// file. A string rather than a union, because the second set is not knowable here: it is
+// whatever the schema has, which is the point of it.
 export type SettingsSection = string;
 
 import type { SettingRowDef, SettingsPage } from "@/lib/settings-model";
 
-// A titled section: a heading over a stack of rows separated by hairline dividers (the trailing full-width block, if any, sits beneath the rows).
+// A titled section: a heading over a stack of rows separated by hairline dividers (the
+// trailing full-width block, if any, sits beneath the rows).
 function SettingsSection({ title, children }: { title?: string; children: ReactNode }) {
   return (
     <Section mb={8} _last={{ mb: 0 }}>
@@ -42,7 +45,8 @@ function SettingsSection({ title, children }: { title?: string; children: ReactN
   );
 }
 
-// One settings row: label (+ description) on the left, control on the right.
+// One settings row: label (+ description) on the left, control on the right. A `stacked`
+// row drops the control to its own line for wide inputs.
 function SettingRow({ title, description, children, layout = "row" }: { title: string; description?: string; children: ReactNode; layout?: "row" | "stacked" }) {
   const stacked = layout === "stacked";
   return (
@@ -63,6 +67,7 @@ function SettingRow({ title, description, children, layout = "row" }: { title: s
 }
 
 // A dialog for entering API credentials and configuring runtime/agent behavior.
+// Saving applies everything live (no restart).
 export function SettingsDialog({
   open,
   onOpenChange,
@@ -119,15 +124,19 @@ export function SettingsDialog({
   const [computerControlEnabled, setComputerControlEnabled] = useState(false);
   const [toolboxEnabled, setToolboxEnabled] = useState(false);
   const [savedToolboxEnabled, setSavedToolboxEnabled] = useState(false);
-  // Whether the machine can offer a toolbox at all.
+  // Whether the machine can offer a toolbox at all. Not a setting — a fact about the machine —
+  // so it disables the row and explains itself rather than silently accepting a change nothing
+  // would honour.
   const [toolboxAvailable, setToolboxAvailable] = useState(false);
   const [savedComputerControlEnabled, setSavedComputerControlEnabled] = useState(false);
   const [dictationEnabled, setDictationEnabled] = useState(false);
   const [savedDictationEnabled, setSavedDictationEnabled] = useState(false);
   // Whether the server can read Full-Disk-Access-protected data (Screen Time, Safari history).
+  // `null` while unknown; drives the banner shown when user-context is on but FDA is missing.
   const [fullDiskAccess, setFullDiskAccess] = useState<boolean | null>(null);
   const [accessibilityGranted, setAccessibilityGranted] = useState<boolean | null>(null);
-  // The grant flow: after "Grant access" opens System Settings, returning focus to the app offers a one-click restart (macOS only reflects the grant to the server on a fresh launch).
+  // The grant flow: after "Grant access" opens System Settings, returning focus to the app
+  // offers a one-click restart (macOS only reflects the grant to the server on a fresh launch).
   const [awaitingGrantReturn, setAwaitingGrantReturn] = useState(false);
   const [restartPromptOpen, setRestartPromptOpen] = useState(false);
   const [exaApiKey, setExaApiKey] = useState("");
@@ -144,7 +153,9 @@ export function SettingsDialog({
   const [agentConfiguration, setAgentConfiguration] = useState<AgentConfiguration | null>(null);
   const [savedAgentConfiguration, setSavedAgentConfiguration] = useState<AgentConfiguration | null>(null);
   const [agentError, setAgentError] = useState("");
-  // The agent+folder the config was last resolved for.
+  // The agent+folder the config was last resolved for. `agentLoading` is derived from
+  // it rather than set synchronously in the fetch effect, so loading is simply "the
+  // request in flight hasn't landed yet" — no cascading setState inside the effect.
   const [loadedAgentKey, setLoadedAgentKey] = useState("");
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -187,7 +198,11 @@ export function SettingsDialog({
         setToolboxEnabled(settings.toolbox_enabled);
         setSavedToolboxEnabled(settings.toolbox_enabled);
         setToolboxAvailable(settings.toolbox_available);
-        // Dictation was the one field of this payload nobody read.
+        // Dictation was the one field of this payload nobody read. Both halves stayed at the
+        // `false` they were initialised with, so the control said "Typing only" however the
+        // daemon was configured — while the composer, which asks `/dictation` directly, showed
+        // the microphone and dictated perfectly well. The setting was not broken; it was never
+        // being told what it was.
         setDictationEnabled(settings.dictation_enabled);
         setSavedDictationEnabled(settings.dictation_enabled);
         setExaApiKey(settings.exa_api_key);
@@ -207,9 +222,12 @@ export function SettingsDialog({
     };
   }, [open]);
 
-  // Check Full Disk Access only when it's relevant (user-context on), and re-check whenever the window regains focus — so returning from the System Settings pane refreshes the banner without a manual step.
+  // Check Full Disk Access only when it's relevant (user-context on), and re-check whenever
+  // the window regains focus — so returning from the System Settings pane refreshes the banner
+  // without a manual step.
   useEffect(() => {
-    // Only relevant while the dialog is open with user-context on; the banner is gated on `userContextEnabled` too, so no reset is needed when it's off (avoids a sync setState).
+    // Only relevant while the dialog is open with user-context on; the banner is gated on
+    // `userContextEnabled` too, so no reset is needed when it's off (avoids a sync setState).
     if (!open || !userContextEnabled) return;
     let cancelled = false;
     const check = () => { void fetchFullDiskAccess().then((granted) => { if (!cancelled) setFullDiskAccess(granted); }); };
@@ -218,7 +236,10 @@ export function SettingsDialog({
     return () => { cancelled = true; window.removeEventListener("focus", check); };
   }, [open, userContextEnabled]);
 
-  // Accessibility powers the computer-use tool, and must be granted *before* the feature can be enabled — so it is checked whenever the dialog is open (not gated on the toggle), the grant banner shows by default while it is missing, and the toggle stays disabled until it is present.
+  // Accessibility powers the computer-use tool, and must be granted *before* the feature can be
+  // enabled — so it is checked whenever the dialog is open (not gated on the toggle), the grant
+  // banner shows by default while it is missing, and the toggle stays disabled until it is
+  // present. Re-checked on window focus so returning from the System Settings pane updates live.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -228,7 +249,10 @@ export function SettingsDialog({
     return () => { cancelled = true; window.removeEventListener("focus", check); };
   }, [open]);
 
-  // After "Grant access" sends the user to System Settings, re-check accessibility whenever focus returns and only offer the restart once it is actually detected as granted — the permission then takes effect on a fresh launch of the server.
+  // After "Grant access" sends the user to System Settings, re-check accessibility whenever focus
+  // returns and only offer the restart once it is actually detected as granted — the permission
+  // then takes effect on a fresh launch of the server. Returning without granting (just looking,
+  // or toggling something else) must NOT pop the restart dialog.
   useEffect(() => {
     if (!awaitingGrantReturn) return;
     const onFocus = () => {
@@ -244,7 +268,8 @@ export function SettingsDialog({
     return () => window.removeEventListener("focus", onFocus);
   }, [awaitingGrantReturn]);
 
-  // Latest field values, mirrored into a ref so the live-sync subscription below can read them without re-subscribing on every keystroke.
+  // Latest field values, mirrored into a ref so the live-sync subscription below can
+  // read them without re-subscribing on every keystroke.
   const fieldsRef = useRef({
     permissionMode, savedPermissionMode, sandboxEnforce, savedSandboxEnforce,
     worktreeStrategy, savedWorktreeStrategy, autoCompaction, savedAutoCompaction,
@@ -270,7 +295,11 @@ export function SettingsDialog({
     };
   });
 
-  // Live sync while the dialog is open: when the configuration changes elsewhere (a manual edit to the file, another window, or the server), move each field's saved baseline to the new truth and update the visible value ONLY for fields the user has not touched — so an external change appears in real time without clobbering an in-progress edit.
+  // Live sync while the dialog is open: when the configuration changes elsewhere (a
+  // manual edit to the file, another window, or the server), move each field's saved
+  // baseline to the new truth and update the visible value ONLY for fields the user has
+  // not touched — so an external change appears in real time without clobbering an
+  // in-progress edit. (`settings_changed` is debounced+deduplicated on the server.)
   useEffect(() => {
     if (!open) return;
     return subscribeEvents((event) => {
@@ -301,13 +330,17 @@ export function SettingsDialog({
     });
   }, [open]);
 
-  // Initialise the settings agent when the dialog is open and none is chosen yet — this also covers agents arriving after the dialog opened.
+  // Initialise the settings agent when the dialog is open and none is chosen yet — this
+  // also covers agents arriving after the dialog opened. Adjusting state during render
+  // (rather than in an effect) is the sanctioned pattern here; the `!settingsAgent` guard
+  // makes it a one-shot that converges, so it never loops.
   if (open && !settingsAgent) {
     const nextAgent = selectedAgent || agents[0]?.id || "";
     if (nextAgent) setSettingsAgent(nextAgent);
   }
 
-  // Live sync of the agent section when an agent config file changes on disk.
+  // Live sync of the agent section when an agent config file changes on disk. Skipped
+  // while the user has unsaved agent edits, so their in-progress changes are preserved.
   const agentSyncRef = useRef({ settingsAgent, workingDirectory, agentDirty });
   useEffect(() => {
     agentSyncRef.current = { settingsAgent, workingDirectory, agentDirty };
@@ -327,11 +360,15 @@ export function SettingsDialog({
     });
   }, [open]);
 
-  // The agent+folder the config should reflect while the dialog is open.
+  // The agent+folder the config should reflect while the dialog is open. `agentLoading`
+  // is derived: the request is in flight until `loadedAgentKey` catches up to this.
   const agentRequestKey = open && settingsAgent ? `${settingsAgent}\u0000${workingDirectory}` : "";
   const agentLoading = agentRequestKey !== "" && loadedAgentKey !== agentRequestKey;
 
-  // Load the selected agent's configuration whenever the open dialog's agent or folder changes.
+  // Load the selected agent's configuration whenever the open dialog's agent or folder
+  // changes. The effect only sets state when the fetch resolves, so there is no
+  // synchronous loading-flag cascade — the derived `agentLoading` covers the in-flight
+  // window (masking any stale error until the new result lands).
   useEffect(() => {
     if (!agentRequestKey) return;
     let cancelled = false;
@@ -468,7 +505,10 @@ export function SettingsDialog({
   // Soft top/bottom fades on the content pane, matching the sessions sidebar's scroll edges.
   const { containerRef: contentScrollRef, onScroll: onContentScroll, fade: contentFade } = useScrollEdgeFade();
 
-  // Every setting modeled as data so the search box can match titles/descriptions across sections.
+  // Every setting modeled as data so the search box can match titles/descriptions across
+  // sections. A "page" is one left-nav entry; it holds titled sections of rows (title +
+  // description on the left, control on the right) plus optional full-width blocks for the
+  // richer editors that aren't a single control (locations, agent permissions, connection).
   const grantAlerts = ((userContextEnabled && fullDiskAccess === false) || accessibilityGranted === false) ? (
     <Flex direction="column" gap={1.5}>
       {userContextEnabled && fullDiskAccess === false && (
@@ -489,7 +529,9 @@ export function SettingsDialog({
             <Alert.Description fontSize="xs">{translation("computerControlBody")}</Alert.Description>
           </Alert.Content>
           <Button colorPalette="orange" variant="solid" flexShrink={0} onClick={() => {
-            // Recorded on the daemon, not here: the grant only reaches a freshly started daemon, so the request has to outlive this page — and after the relaunch it is the daemon that still knows it was asked for.
+            // Recorded on the daemon, not here: the grant only reaches a freshly started
+            // daemon, so the request has to outlive this page — and after the relaunch it is
+            // the daemon that still knows it was asked for.
             updatePreferences({ computer_control_awaiting_grant: true });
             setAwaitingGrantReturn(true);
             void openAccessibilitySettings();
@@ -511,7 +553,9 @@ export function SettingsDialog({
     layout: "stacked",
   });
 
-  // The generated rows render through the panel's own row component, passed in rather than imported the other way: a row is the panel's shape, and the page that builds them should not have to know how one is drawn.
+  // The generated rows render through the panel's own row component, passed in rather than
+  // imported the other way: a row is the panel's shape, and the page that builds them should
+  // not have to know how one is drawn.
   const renderSettingRow = useCallback((row: SettingRowDef) => (
     <SettingRow key={row.key} title={row.title} description={row.description} layout={row.layout}>{row.control}</SettingRow>
   ), []);
@@ -567,7 +611,8 @@ export function SettingsDialog({
       id: "locations" as SettingsSection, label: translation("tabLocations"), icon: <LuServer size={14} />,
       sections: [{ title: translation("tabLocations"), rows: [], block: <WorkspaceLocationsPanel workspaceId={workspaceId} /> }],
     }] : []),
-    // Only with a workspace, like the environments tab and for the same reason: a schedule belongs to one, and there is nothing to show or create without it.
+    // Only with a workspace, like the environments tab and for the same reason: a schedule belongs
+    // to one, and there is nothing to show or create without it.
     ...(workspaceId ? [{
       id: "schedules" as SettingsSection, label: translation("tabSchedules"), icon: <LuClock size={14} />,
       sections: [{ title: translation("tabSchedules"), rows: [], block: <SchedulesPanel workspaceId={workspaceId} agents={agents} /> }],
@@ -577,7 +622,10 @@ export function SettingsDialog({
       sections: [
         {
           title: translation("agent"),
-          // The same picker the composer uses, because it picks the same thing: which agent profile runs.
+          // The same picker the composer uses, because it picks the same thing: which agent
+          // profile runs. A plain select here listed the names with none of their descriptions,
+          // so choosing between them in the one place you go to *edit* them was the one place
+          // you could not see what they were.
           rows: [{ key: "profile", title: translation("profile"), control: <Box w="280px"><AgentSelectControl layout="field" agents={agents} value={settingsAgent} onChange={setSettingsAgent} placeholder={translation("chooseAgent")} /></Box> }],
           block: agentLoading ? (
             <Flex align="center" gap={2} color="fg.muted" fontSize="sm" py={3}><Spinner size="xs" />{translation("loadingAgentConfiguration")}</Flex>
@@ -592,11 +640,17 @@ export function SettingsDialog({
     },
   ];
 
-  // Everything else the configuration file holds, as one entry in the rail after the pages a person actually visits.
+  // Everything else the configuration file holds, as one entry in the rail after the pages a
+  // person actually visits. Appended rather than merged into the curated pages above: those
+  // exist because a few settings are worth a control of their own — a permission mode is not a
+  // string, it is four buttons and a sentence about each — and the rest are worth exactly what
+  // the schema says they are. It is absent until the daemon answers, so the rail never shows a
+  // page with nothing in it.
   const pages = configurationPage ? [...curatedPages, configurationPage] : curatedPages;
   const activePage = pages.find((page) => page.id === section) ?? pages[0];
   const rowMatches = (row: SettingRowDef) => `${row.title} ${row.description ?? ""}`.toLowerCase().includes(query);
-  // When searching, collapse every page's sections into just those with matching rows, so results read as a flat filtered list regardless of which nav entry they live under.
+  // When searching, collapse every page's sections into just those with matching rows, so
+  // results read as a flat filtered list regardless of which nav entry they live under.
   const searchSections = searching
     ? pages.flatMap((page) => page.sections
         .map((section) => ({ ...section, rows: section.rows.filter(rowMatches), block: undefined }))
@@ -611,7 +665,9 @@ export function SettingsDialog({
         <Dialog.Positioner>
           <Dialog.Content
             data-layout="settings-dialog"
-            // Full-bleed on a narrow screen rather than inset by 8px: a dialog that is nearly the whole viewport reads as a dialog that failed to fit, and the 8px of backdrop around it is 8px the content could have used.
+            // Full-bleed on a narrow screen rather than inset by 8px: a dialog that is nearly
+            // the whole viewport reads as a dialog that failed to fit, and the 8px of backdrop
+            // around it is 8px the content could have used. Wide, it stays a card.
             w={{ base: "100%", md: "min(900px, calc(100vw - 48px))" }}
             maxW={{ base: "100%", md: "900px" }}
             h={{ base: "100dvh", md: "min(760px, calc(100vh - 48px))" }}
@@ -725,6 +781,10 @@ export function SettingsDialog({
                                 padding; a standalone block (no rows) sits flush under the heading. */}
                             {pageSection.block ? (
                               // Settings owns the content width, and every panel fills it.
+                              // Each panel used to pick its own — 520, 560, 640 — so the
+                              // Environments panel stopped short of the pane while its neighbours
+                              // reached the edge, and the measure changed as you moved between
+                              // tabs.
                               <Box pt={pageSection.rows.length > 0 ? 4 : 0} w="100%" maxW="640px">
                                 {pageSection.block}
                               </Box>
@@ -779,11 +839,15 @@ export function SettingsDialog({
       confirmLabel={translation("restartConfirm")}
       maxW="420px"
       onConfirm={() => void (async () => {
-        // Two processes, two restarts.
+        // Two processes, two restarts. The daemon is the one macOS has to re-evaluate — the
+        // trust check is cached per process and its workers are re-execs of it — and it is no
+        // longer this app's child, so restarting the window alone would leave the grant unseen.
+        // Restart it first, then reload the window against the successor.
         try {
           await restartDaemon();
         } catch {
-          // A daemon that cannot be asked is one the user will have to restart themselves; reloading the window is still the right second half, so carry on.
+          // A daemon that cannot be asked is one the user will have to restart themselves;
+          // reloading the window is still the right second half, so carry on.
         }
         await restartApp();
       })()}

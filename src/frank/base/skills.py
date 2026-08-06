@@ -1,4 +1,13 @@
-"""File-based skills."""
+"""File-based skills.
+
+A skill is just a file: ``.agents/skills/<name>.md`` or
+``.agents/skills/<name>/SKILL.md`` with a stable ``name``, human-facing
+``title``, and ``description`` in its frontmatter and instructions in its body.
+Skills are auto-discovered, broadcast on every agent's A2A AgentCard, and listed
+in every agent's system context so agents are aware of them by default. To use a
+skill, an agent reads its file (progressive disclosure) and follows the
+instructions.
+"""
 
 from __future__ import annotations
 
@@ -56,7 +65,16 @@ def _as_directories(directories: str | Path | Iterable[str | Path]) -> list[Path
 
 
 def load_skills(skills_directory: str | Path | Iterable[str | Path]) -> list[Skill]:
-    """Discover skill files, deduplicated by skill name."""
+    """Discover skill files, deduplicated by skill name.
+
+    Directories are processed in order; later entries override earlier entries.
+    This lets project-local ``.agents/skills`` replace a global ``~/.agents/skills``
+    skill with the same name.
+
+    Disabled skills are still returned (carrying ``enabled=False``) so the UI can
+    show them greyed out; callers that build the agent's actual capability set use
+    :func:`enabled_skills` to drop them.
+    """
     skills: dict[str, Skill] = {}
     for directory in _as_directories(skills_directory):
         if not directory.is_dir():
@@ -77,7 +95,8 @@ def enabled_skills(skills: list[Skill]) -> list[Skill]:
 
 
 def skills_for_agent(skills: list[Skill], allowed_names: list[str]) -> list[Skill]:
-    """The skills available to an agent: all of them by default, or only the named subset if the agent restricts itself via its ``skills`` frontmatter."""
+    """The skills available to an agent: all of them by default, or only the
+    named subset if the agent restricts itself via its ``skills`` frontmatter."""
     if not allowed_names:
         return skills
     wanted = set(allowed_names)

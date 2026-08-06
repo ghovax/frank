@@ -1,4 +1,22 @@
-"""The location execution primitive: run shell commands and move files against a location, whether it is the home server's own filesystem or a remote reached over SSH."""
+"""The location execution primitive: run shell commands and move files against a
+location, whether it is the home server's own filesystem or a remote reached over SSH.
+
+The remote executor shells out to the system ``ssh`` with a per-host **ControlMaster**
+socket, so the first connection is reused (multiplexed) by every later command and file
+transfer — matching the "multiplexed OpenSSH, nothing installed on the remote" model.
+Commands run through a login shell (``bash -lc``) in the location's base directory, so
+the remote's own environment (PATH, tool shims) is in effect — the same reasoning as the
+local terminal login-env work.
+
+Beyond raw command execution, the executor is the *filesystem abstraction* the file
+tools (``read_file``, ``edit_file``, ``write_file``, ``bash``)
+are written against: path resolution, text IO, glob matching (mtime-sorted), and regex
+search all go through it, so local and remote tool calls share one result-building code
+path in ``file_tools`` and differ only in which executor carries the primitives.
+
+These are synchronous primitives; the async runtime calls them off-loop (``to_thread``),
+consistent with the rest of the server's blocking-work discipline.
+"""
 
 from __future__ import annotations
 
@@ -16,13 +34,19 @@ from pathlib import Path
 
 from frank.base.tuning import Tunable, active_tuning
 
-# Baseline command and connect ceilings.
+# Baseline command and connect ceilings. These are safety valves against a dead process or link,
+# not accuracy caps; the active timeout knob scales them at each subprocess boundary
+# (``active_tuning().scale_timeout``), so a slow machine or link can widen them from the config.
 DEFAULT_TIMEOUT = 120.0
 DEFAULT_CONNECT_TIMEOUT = 16.0
-# Keep the multiplexed master alive briefly after the last use so bursts of tool calls reuse one connection without holding it open forever.
+# Keep the multiplexed master alive briefly after the last use so bursts of tool calls
+# reuse one connection without holding it open forever.
 CONTROL_PERSIST_SECONDS = 120
 
-# How many matches a single file may contribute and how many remote paths are listed before glob matching are listing budgets that scale with the live model context window; they are read per call from ``active_tuning()`` (grep_per_file / remote_listing).
+# How many matches a single file may contribute and how many remote paths are listed before glob
+# matching are listing budgets that scale with the live model context window; they are read per
+# call from ``active_tuning()`` (grep_per_file / remote_listing). The total per-search match cap
+# likewise comes from the tuning policy and is passed in by the file tools.
 
 
 @dataclass
@@ -37,7 +61,8 @@ class CommandResult:
 
 
 def _login_script(command: str, cwd: str, env: dict[str, str] | None) -> str:
-    """A single shell script: cd into the base dir, export any extra env, run the command."""
+    """A single shell script: cd into the base dir, export any extra env, run the
+    command. Shell-quoted so it is safe to hand to ``bash -lc`` on either side."""
     prefix = ""
     if env:
         prefix = "".join(f"export {name}={shlex.quote(str(value))}; " for name, value in env.items())
@@ -45,7 +70,9 @@ def _login_script(command: str, cwd: str, env: dict[str, str] | None) -> str:
 
 
 def glob_to_regex(pattern: str) -> str:
-    """Translate a ``Path.glob``-style pattern (``**``, ``*``, ``?``) to a regex over ``/``-separated relative paths, so remote glob matching mirrors the local ``Path.glob`` semantics: ``**`` crosses directory boundaries, ``*``/``?`` do not."""
+    """Translate a ``Path.glob``-style pattern (``**``, ``*``, ``?``) to a regex over
+    ``/``-separated relative paths, so remote glob matching mirrors the local
+    ``Path.glob`` semantics: ``**`` crosses directory boundaries, ``*``/``?`` do not."""
     parts: list[str] = []
     index = 0
     while index < len(pattern):
@@ -69,7 +96,8 @@ def glob_to_regex(pattern: str) -> str:
 
 
 def _include_glob_to_regex(pattern: str) -> str:
-    """Translate a simple *filename* glob (``*`` and ``?`` only) to a regex — the ``include`` filter matches file names, never paths."""
+    """Translate a simple *filename* glob (``*`` and ``?`` only) to a regex — the
+    ``include`` filter matches file names, never paths."""
     translated = []
     for char in pattern:
         if char == "*":
@@ -82,7 +110,10 @@ def _include_glob_to_regex(pattern: str) -> str:
 
 
 def _prune_gitignored(base: Path, paths: list[Path]) -> list[Path]:
-    """Drop the paths excluded by ``base``'s ``.gitignore`` chain, asking ``git`` itself so the answer matches what the user sees."""
+    """Drop the paths excluded by ``base``'s ``.gitignore`` chain, asking ``git`` itself
+    so the answer matches what the user sees. Only the non-ripgrep fallback needs this —
+    ripgrep applies the ignore rules while it walks. A no-op outside a git repo or when
+    ``git`` is unavailable, so a plain directory still globs normally."""
     if not paths:
         return paths
     try:
@@ -106,7 +137,8 @@ def _prune_gitignored(base: Path, paths: list[Path]) -> list[Path]:
 class LocationExecutor(abc.ABC):
     """Run commands and read/write/search files against one location."""
 
-    #: Whether this executor operates on the home server's own filesystem.
+    #: Whether this executor operates on the home server's own filesystem. The file
+    #: tools use it for local-only guards (home-directory search refusal).
     is_local: bool = False
 
     @abc.abstractmethod
@@ -117,7 +149,9 @@ class LocationExecutor(abc.ABC):
 
     @abc.abstractmethod
     def run_bytes(self, command: str, cwd: str, *, timeout: float = DEFAULT_TIMEOUT) -> bytes:
-        """Run a command and return its raw (undecoded) stdout bytes, raising ``OSError`` on a non-zero exit."""
+        """Run a command and return its raw (undecoded) stdout bytes, raising ``OSError``
+        on a non-zero exit. Needed for binary output like ``git cat-file blob`` that the
+        text-decoding ``run`` would corrupt."""
 
     @abc.abstractmethod
     def write_bytes(self, path: str, data: bytes) -> None: ...
@@ -133,15 +167,20 @@ class LocationExecutor(abc.ABC):
 
     @abc.abstractmethod
     def resolve(self, base_directory: str, file_path: str) -> str:
-        """Resolve a tool's possibly-relative ``file_path`` against the location's base directory, expanding ``~``, and return the absolute path string."""
+        """Resolve a tool's possibly-relative ``file_path`` against the location's
+        base directory, expanding ``~``, and return the absolute path string."""
 
     @abc.abstractmethod
     def glob_files(self, base_directory: str, pattern: str, limit: int, include_ignored: bool = False) -> list[str]:
-        """Absolute paths of files under ``base_directory`` matching the glob ``pattern``, newest (by mtime) first, capped at ``limit``."""
+        """Absolute paths of files under ``base_directory`` matching the glob
+        ``pattern``, newest (by mtime) first, capped at ``limit``. Honors the
+        location's ``.gitignore`` unless ``include_ignored`` is set."""
 
     @abc.abstractmethod
     def grep(self, pattern: str, target: str, include: str | None, maximum_results: int, include_ignored: bool = False) -> list[str]:
-        """``path:line:content`` matches of regex ``pattern`` under the absolute ``target`` path, optionally filtered by an ``include`` filename glob."""
+        """``path:line:content`` matches of regex ``pattern`` under the absolute
+        ``target`` path, optionally filtered by an ``include`` filename glob. Honors
+        the location's ``.gitignore`` unless ``include_ignored`` is set."""
 
     def read_text(self, path: str) -> str:
         return self.read_bytes(path).decode("utf-8", errors="replace")
@@ -207,10 +246,15 @@ class LocalExecutor(LocationExecutor):
             raise FileNotFoundError(f"Directory does not exist: {base}")
         regex = re.compile(glob_to_regex(pattern))
         if shutil.which("rg"):
-            # ripgrep does the walk: `rg --files` honors the full .gitignore/.ignore chain and skips .git and hidden files, and `--sortr modified` yields newest-first.
+            # ripgrep does the walk: `rg --files` honors the full .gitignore/.ignore chain
+            # and skips .git and hidden files, and `--sortr modified` yields newest-first.
+            # We match the caller's glob against those results ourselves rather than through
+            # `rg -g`, because an rg glob is a whitelist that overrides .gitignore — a broad
+            # pattern like `**/*` would otherwise drag build output and dependencies back in.
             command = ["rg", "--files", "--sortr", "modified"]
             if include_ignored:
-                # Reach what the project excludes — both gitignored and hidden (dot) files. rg keeps .git internals out even with --hidden, so those still never appear.
+                # Reach what the project excludes — both gitignored and hidden (dot) files.
+                # rg keeps .git internals out even with --hidden, so those still never appear.
                 command += ["--no-ignore", "--hidden"]
             result = subprocess.run(
                 command,
@@ -230,7 +274,8 @@ class LocalExecutor(LocationExecutor):
                     if len(matched) >= limit:
                         break
             return matched
-        # Fallback when ripgrep is unavailable: Path.glob, dropping .git always and (unless include_ignored) the gitignored paths, via `git check-ignore`.
+        # Fallback when ripgrep is unavailable: Path.glob, dropping .git always and (unless
+        # include_ignored) the gitignored paths, via `git check-ignore`.
         candidates = [match for match in base.glob(pattern) if not match.is_dir() and ".git" not in match.parts]
         if not include_ignored:
             candidates = _prune_gitignored(base, candidates)
@@ -274,7 +319,8 @@ class LocalExecutor(LocationExecutor):
             candidates = [root]
         else:
             walked = [path for path in root.rglob("*") if path.is_file() and ".git" not in path.parts]
-            # Honor .gitignore on the fallback path too (unless include_ignored), so ripgrep's presence never changes which files a search can see.
+            # Honor .gitignore on the fallback path too (unless include_ignored), so ripgrep's
+            # presence never changes which files a search can see.
             candidates = walked if include_ignored else _prune_gitignored(root, walked)
         results: list[str] = []
         for file in candidates:
@@ -297,20 +343,28 @@ class LocalExecutor(LocationExecutor):
 
 
 class SshExecutor(LocationExecutor):
-    """Executes on a remote host over a multiplexed SSH connection."""
+    """Executes on a remote host over a multiplexed SSH connection. ``alias`` is the
+    ``~/.ssh/config`` Host alias (so the connection inherits that host's full config)."""
 
     is_local = False
 
     def __init__(self, alias: str, control_directory: Path | None = None):
         self.alias = alias
-        # Runtime state, so it lives with the other sockets rather than in a dot-directory in $HOME: the OS clears the runtime directory on logout, which is exactly the lifetime a multiplexed control socket should have.
+        # Runtime state, so it lives with the other sockets rather than in a dot-directory in
+        # $HOME: the OS clears the runtime directory on logout, which is exactly the lifetime a
+        # multiplexed control socket should have. `ssh_control_directory` also guarantees the
+        # result is short enough to bind, which is the part that was wrong here.
         self._control_directory = control_directory or ssh_control_directory()
         self._control_directory.mkdir(parents=True, exist_ok=True)
         self._home_directory: str | None = None
         self._ripgrep_available: bool | None = None
 
     def _mux_options(self) -> list[str]:
-        # Our own digest of the alias, not ssh's `%C`.
+        # Our own digest of the alias, not ssh's `%C`. `%C` is a full SHA-1, so under a macOS
+        # `$TMPDIR` the ControlPath came to 111 bytes against the 104-byte unix socket limit and
+        # ssh refused every connection — `ControlPath too long` — which made every remote
+        # environment unreachable on the one platform this ships for. See
+        # `paths.ssh_control_identifier`.
         control_path = str(self._control_directory / ssh_control_identifier(self.alias))
         return [
             "-o", "ControlMaster=auto",
@@ -329,7 +383,9 @@ class SshExecutor(LocationExecutor):
         )
 
     def ssh_argv(self, command: str, cwd: str, env: dict[str, str] | None = None) -> list[str]:
-        """The exact ssh argv a ``run`` would execute — the runtime wraps a remote ``bash`` tool call in this so the normal local bash machinery (sync ceiling, backgrounding, output capping) drives the remote command."""
+        """The exact ssh argv a ``run`` would execute — the runtime wraps a remote
+        ``bash`` tool call in this so the normal local bash machinery (sync ceiling,
+        backgrounding, output capping) drives the remote command."""
         remote = f"bash -lc {shlex.quote(_login_script(command, cwd, env))}"
         return ["ssh", *self._mux_options(), self.alias, remote]
 
@@ -395,7 +451,8 @@ class SshExecutor(LocationExecutor):
         return posixpath.normpath(path)
 
     def _has_ripgrep(self) -> bool:
-        """Whether ripgrep is on the remote (memoized)."""
+        """Whether ripgrep is on the remote (memoized). Both glob and grep prefer it so a
+        remote location honors its .gitignore chain exactly as the local one does."""
         if self._ripgrep_available is None:
             probe = self._ssh("command -v rg", timeout=DEFAULT_CONNECT_TIMEOUT)
             self._ripgrep_available = probe.returncode == 0
@@ -404,7 +461,11 @@ class SshExecutor(LocationExecutor):
     def glob_files(self, base_directory: str, pattern: str, limit: int, include_ignored: bool = False) -> list[str]:
         regex = re.compile(glob_to_regex(pattern))
         if self._has_ripgrep():
-            # ripgrep does the walk: `rg --files` honors the remote's .gitignore/.ignore chain (and skips .git and hidden files) and `--sortr modified` yields newest-first.
+            # ripgrep does the walk: `rg --files` honors the remote's .gitignore/.ignore
+            # chain (and skips .git and hidden files) and `--sortr modified` yields
+            # newest-first. As on the local side we match the glob against the results
+            # ourselves — an `rg -g` glob overrides .gitignore, so `**/*` would drag the
+            # excluded tree back in.
             no_ignore = " --no-ignore --hidden" if include_ignored else ""
             listing = self.run(f"rg --files --sortr modified{no_ignore}", base_directory)
             if listing.returncode not in (0, 1):  # 1 == the tree has no files
@@ -421,7 +482,8 @@ class SshExecutor(LocationExecutor):
                     if len(paths) >= limit:
                         break
             return paths
-        # Fallback without ripgrep: list the tree with find (.git excluded) and glob-match locally.
+        # Fallback without ripgrep: list the tree with find (.git excluded) and glob-match
+        # locally. Without ripgrep the rest of the .gitignore chain is not applied.
         listing = self.run(
             f"find . -type f -not -path '*/.git/*' 2>/dev/null | head -{active_tuning().amount(Tunable.remote_listing)}",
             base_directory,
@@ -430,7 +492,8 @@ class SshExecutor(LocationExecutor):
             raise FileNotFoundError(listing.stderr.strip() or f"Directory does not exist: {base_directory}")
         relative = [line[2:] for line in listing.stdout.splitlines() if line.startswith("./")]
         matched = [path for path in relative if regex.fullmatch(path)][:limit]
-        # Newest-first, matching the local contract. xargs -0 chunks very large sets (sorting within chunks only), which is acceptable at this cap.
+        # Newest-first, matching the local contract. xargs -0 chunks very large
+        # sets (sorting within chunks only), which is acceptable at this cap.
         if len(matched) > 1:
             stdin = "\0".join(matched).encode("utf-8")
             sorted_run = self._ssh(
@@ -447,7 +510,9 @@ class SshExecutor(LocationExecutor):
         return [path if path.startswith("/") else f"{base}/{path}" for path in matched]
 
     def grep(self, pattern: str, target: str, include: str | None, maximum_results: int, include_ignored: bool = False) -> list[str]:
-        # Prefer ripgrep on the remote so the regex dialect matches the local tool and the .gitignore chain is honored; otherwise fall back to POSIX ERE via `grep -E` (never BRE, whose unescaped `+`/`?` silently match nothing and read as false "not found").
+        # Prefer ripgrep on the remote so the regex dialect matches the local tool and the
+        # .gitignore chain is honored; otherwise fall back to POSIX ERE via `grep -E` (never
+        # BRE, whose unescaped `+`/`?` silently match nothing and read as false "not found").
         quoted_pattern = shlex.quote(pattern)
         quoted_target = shlex.quote(target)
         per_file_limit = active_tuning().amount(Tunable.grep_per_file)
@@ -474,7 +539,10 @@ class SshExecutor(LocationExecutor):
         return stdout.splitlines()[:maximum_results]
 
     def connect(self, *, timeout: float = DEFAULT_CONNECT_TIMEOUT) -> CommandResult:
-        """Establish (or reuse) the ControlMaster and confirm the host is reachable and authenticated — the pre-flight run when a project is opened."""
+        """Establish (or reuse) the ControlMaster and confirm the host is reachable and
+        authenticated — the pre-flight run when a project is opened. Interactive auth is
+        allowed to surface here (no BatchMode); a failure returns a non-zero result whose
+        stderr explains why (unreachable, auth required, …)."""
         completed = self._ssh("true", timeout=timeout, extra_options=["-o", f"ConnectTimeout={int(timeout)}"])
         return CommandResult(
             completed.returncode,
@@ -502,6 +570,8 @@ class SshExecutor(LocationExecutor):
         )
 
     def terminal_argv(self, base_directory: str) -> list[str]:
-        """The ssh argv for an interactive login shell on the remote, in ``base_directory``, over the shared multiplexed connection (`-tt` forces a PTY)."""
+        """The ssh argv for an interactive login shell on the remote, in ``base_directory``,
+        over the shared multiplexed connection (`-tt` forces a PTY). Reuses this host's
+        ControlMaster, so it shares the connection with tool execution."""
         remote_command = f"cd {shlex.quote(base_directory)} 2>/dev/null; exec ${{SHELL:-/bin/bash}} -l"
         return ["ssh", "-tt", *self._mux_options(), self.alias, remote_command]

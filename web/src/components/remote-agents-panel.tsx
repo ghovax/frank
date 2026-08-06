@@ -79,7 +79,9 @@ function draftToInput(draft: Draft): RemoteAgentInput {
   };
 }
 
-// Agents on other hosts, reached by message rather than created here.
+// Agents on other hosts, reached by message rather than created here. Lists them with a
+// live health pill and an inline form to add one. Secrets are write-only (never returned),
+// and remote-agents.json is the source of truth, so hand-editing that file works too.
 export function RemoteAgentsPanel() {
   const [agents, setAgents] = useState<RemoteAgent[]>([]);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
@@ -94,7 +96,10 @@ export function RemoteAgentsPanel() {
     }
   }, []);
 
-  // Read the list once, then follow the daemon.
+  // Read the list once, then follow the daemon. The first read is awaited here rather than
+  // handed to `reload`, so the state lands after the round trip and can be dropped when the
+  // panel is closed before it answers — the version that fired `reload` and forgot about it
+  // would set state on an unmounted panel.
   useEffect(() => {
     let cancelled = false;
     void (async () => {

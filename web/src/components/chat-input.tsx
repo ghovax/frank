@@ -34,19 +34,23 @@ import { useFittedRow } from "@/lib/use-fitted-row";
 import { errorMessage } from "@/lib/errors";
 
 interface ChatInputProps {
-  // Returns the session id when the send created one, which the composer ignores — it is the caller's business, not the input's.
+  // Returns the session id when the send created one, which the composer ignores — it is
+  // the caller's business, not the input's.
   onSend: (text: string, dataParts?: Record<string, unknown>[]) => void | Promise<void | string>;
   onAbort: () => void | Promise<void>;
   isStreaming: boolean;
   // The connection is gone. Nothing can be sent, and saying why is the point.
   disabled?: boolean;
-  // A decision prompt is open.
+  // A decision prompt is open. The composer is closed for a different reason and says a
+  // different thing: the turn is waiting on the person, not on the network.
   awaitingDecision?: boolean;
   sessionId?: string | null;
   initialDraft?: string;
   onDraftChange?: (draft: string) => void;
   workingDirectory?: string;
-  // Whether the working directory is a valid path (resolved once at the workspace level).
+  // Whether the working directory is a valid path (resolved once at the workspace
+  // level). Gates send and colours the composer border; the composer no longer
+  // validates the directory itself.
   directoryValid?: boolean;
   agents: { id: string; name: string; title?: string; description?: string }[];
   selectedAgent: string;
@@ -54,27 +58,53 @@ interface ChatInputProps {
   models: ModelOption[];
   modelProviders: ProviderOption[];
   recentModels?: { id: string; name: string; provider: string }[];
-  // The active agent's configured model identifier (provider/model).
+  // The active agent's configured model identifier (provider/model). Drives the
+  // composer chip and the attachment/vision gates. The chip reconfigures the
+  // active agent's model via onAgentModelChange, so a change affects every
+  // session running that agent — not just this conversation.
   agentModel?: string;
   onAgentModelChange: (modelIdentifier: string) => void | Promise<void>;
-  // The session's permission mode and its change handler (persists + reflects on the server).
+  // The session's permission mode and its change handler (persists + reflects on the
+  // server). Surfaced here as a selector beside agent/model so it's adjustable inline.
   permissionMode?: PermissionMode;
   onPermissionModeChange?: (mode: PermissionMode) => void;
-  // Whether this machine confines what tools may touch, and whether it can.
+  // Whether this machine confines what tools may touch, and whether it can. Surfaced beside the
+  // permission mode because the two answer one question together — what this session is allowed
+  // to do — and half of it living three screens into Settings meant the riskier half was the
+  // half nobody saw.
   sandboxEnforce?: SandboxEnforce;
   sandboxBackend?: string;
   onSandboxEnforceChange?: (enforce: SandboxEnforce) => void;
   // Running token totals for the session, summed from the model's reported usage.
+  // Null until the first turn reports usage.
   tokenUsage?: TokenUsage | null;
-  // Compact the conversation now (summarize the older history).
+  // Compact the conversation now (summarize the older history). Shown once a
+  // session has real context to compact.
   onCompact?: () => void;
-  // True while a compaction pass is running, so the Compact control reflects the in-progress state (spinner + disabled) rather than inviting another click.
+  // True while a compaction pass is running, so the Compact control reflects the
+  // in-progress state (spinner + disabled) rather than inviting another click.
   isCompacting?: boolean;
-  // The share of the context window at which the server starts reclaiming on its own (compaction.reclaim_at_fraction).
+  // The share of the context window at which the server starts reclaiming on its own
+  // (compaction.reclaim_at_fraction). The manual button appears at half of it, so there is
+  // always a stretch where compacting is a choice rather than something already done for you.
+  //
+  // It used to appear once the session had more *user messages* than the server's keep-recent
+  // count — which measured the wrong thing entirely. An unattended run is one instruction and
+  // hundreds of tool results, so the count stayed at one while the context filled, and the
+  // button stayed hidden through exactly the session that needed it.
   compactionReclaimAtFraction: number;
 }
 
 // What the selectors row gives up, and in what order, when it cannot hold everything.
+//
+// Least load-bearing first. The rule throughout is that a hidden label leaves an icon and a
+// colour, which still say which control this is — so the question at each step is only which
+// *word* is carrying the least. The provider is implied by the model beside it; the capability
+// glyphs and the exact token counts are detail nobody navigates by; "Compact" is a fold icon that
+// already looks like folding. Of the two toggles the sandbox goes first, its icon being the most
+// literal of any here — a globe against a box, in red against green. The two identity labels go
+// last because they are the two facts a person actually reads before sending, and the context
+// percentage goes last of all: it is the whole of what that chip says at a glance.
 const COMPOSER_FIT_ORDER = [
   "model-provider",
   "model-capabilities",
@@ -87,7 +117,9 @@ const COMPOSER_FIT_ORDER = [
   "context-percent",
 ] as const;
 
-// A filling circle for how full the model's context window is.
+// A filling circle for how full the model's context window is. The arc grows with
+// the fill fraction and shifts colour as it approaches the limit (blue -> amber ->
+// red) so a nearly-full context reads at a glance. Sized 13px to match the icons.
 function ContextFillRing({ fraction }: { fraction: number }) {
   const clamped = Math.max(0, Math.min(1, fraction));
   const radius = 5.5;
@@ -119,12 +151,18 @@ function ContextFillRing({ fraction }: { fraction: number }) {
   );
 }
 
-// The ChatGPT/Codex plan usage for the token view, but only when the active model is on the chatgpt provider.
+// The ChatGPT/Codex plan usage for the token view, but only when the active model is
+// on the chatgpt provider. Refreshed on each turn's falling edge (streaming
+// true -> false): the server re-snapshots the plan limits from that turn's response
+// headers, so the meters are current right after each send/receive.
 function useChatGPTUsage(agentModel: string | undefined, isStreaming: boolean): ChatGPTUsage | null {
   const isChatGPT = !!agentModel && agentModel.startsWith("chatgpt/");
   const [usage, setUsage] = useState<ChatGPTUsage | null>(null);
 
   // Fetch whenever the model is on the chatgpt provider and no turn is streaming.
+  // That single condition covers both mount and the falling edge of each turn
+  // (streaming true -> false) — which is exactly when the server has re-snapshotted
+  // the plan limits from that turn's response headers.
   useEffect(() => {
     if (!isChatGPT || isStreaming) return;
     let cancelled = false;
@@ -141,7 +179,10 @@ function useChatGPTUsage(agentModel: string | undefined, isStreaming: boolean): 
   return isChatGPT ? usage : null;
 }
 
-// The context-usage chip: a fill ring + percent, then the current context size against the model's window.
+// The context-usage chip: a fill ring + percent, then the current context size
+// against the model's window. It reflects the latest exchange actually occupying
+// the window (not the cumulative session sum, which lives in the tooltip). On the
+// chatgpt provider the tooltip also carries the account's plan usage (5h + weekly).
 function ContextUsageChip({
   tokenUsage,
   chatgptUsage,
@@ -149,7 +190,8 @@ function ContextUsageChip({
 }: {
   tokenUsage?: TokenUsage | null;
   chatgptUsage?: ChatGPTUsage | null;
-  /** Which of this chip's parts the row has had to give up. */
+  /** Which of this chip's parts the row has had to give up. The ring is not among them: it is
+   * the whole of what this says at a glance, and it is already only 13px wide. */
   hidden: ReadonlySet<string>;
 }) {
   const translation = useTranslations("ChatInput");
@@ -221,7 +263,9 @@ function ContextUsageChip({
       <Flex
         align="center"
         gap={1.5}
-        // The house control height, not a number.
+        // The house control height, not a number. This chip sits in a row of buttons and was
+        // pinned to 32px while they grow to 40 on a coarse pointer, so on a phone it was the one
+        // thing in that row an eye could pick out as the wrong size.
         h="var(--control-height)"
         px={2}
         borderRadius="md"
@@ -286,7 +330,11 @@ export function ChatInput({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
-  // Closed only when there is nothing to talk to.
+  // Closed only when there is nothing to talk to. An open decision does *not* close it: the
+  // session is parked, not gone, and a message typed at a parked session is queued and sent the
+  // moment the decision is made — the same bargain as typing at a running turn, which this
+  // composer has always accepted. Refusing the keystrokes instead made the interface argue with
+  // someone who had a thought while the prompt sat there, and left them nowhere to put it.
   const composerClosed = disabled;
   const [inputValue, setInputValue] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -301,12 +349,16 @@ export function ChatInput({
   const [stopPending, setStopPending] = useState(false);
   const [compactConfirmOpen, setCompactConfirmOpen] = useState(false);
   const { rowRef: selectorsRowRef, hidden: hiddenLabels } = useFittedRow(COMPOSER_FIT_ORDER);
-  // Dictation, which is off until somebody turns it on in Settings — so the microphone is absent rather than disabled when they have not.
+  // Dictation, which is off until somebody turns it on in Settings — so the microphone is
+  // absent rather than disabled when they have not. `recording` holds the take in progress:
+  // the button is a toggle, and what a toggle owns is the thing it can stop.
   const [dictationEnabled, setDictationEnabled] = useState(false);
   const [dictationState, setDictationState] = useState<DictationState>("idle");
   const [recording, setRecording] = useState<Dictation | null>(null);
   const [transcribing, setTranscribing] = useState(false);
-  // The composer's file-attach affordance is gated on the agent model's capabilities (models.dev): a text-only model cannot process attachments, so offering to attach is misleading.
+  // The composer's file-attach affordance is gated on the agent model's
+  // capabilities (models.dev): a text-only model cannot process attachments, so
+  // offering to attach is misleading. Unknown/custom models are not blocked.
   const effectiveModelId = agentModel;
   const visionSupported = modelSupportsVision(models, effectiveModelId);
   const attachmentTooltipContent = (
@@ -332,7 +384,11 @@ export function ChatInput({
     latestInputValueRef.current = inputValue;
   }, [inputValue]);
 
-  // Seed the composer from the session's stored draft.
+  // Seed the composer from the session's stored draft. The draft is fetched from its own
+  // endpoint now (the session registry no longer carries it), so it can land after this
+  // composer has already mounted for the session — hence the second condition, which
+  // accepts a late arrival only while the box is still untouched and never overwrites
+  // what the user has begun typing.
   useEffect(() => {
     const isNewSession = persistedDraftKeyRef.current !== draftKey;
     if (!isNewSession && !(initialDraft && latestInputValueRef.current === "")) return;
@@ -379,7 +435,8 @@ export function ChatInput({
     };
   }, [workingDirectory]);
 
-  // Web path: the browser only ever hands us file *bytes*, so a sandboxed build (or a remote-server connection, where a local path is meaningless) uploads them.
+  // Web path: the browser only ever hands us file *bytes*, so a sandboxed build (or a
+  // remote-server connection, where a local path is meaningless) uploads them.
   async function handleFiles(files: FileList | File[]) {
     const selected = Array.from(files);
     if (selected.length === 0) return;
@@ -389,14 +446,16 @@ export function ChatInput({
         const uploaded = await uploadFile(file);
         setAttachments((current) => [...current, uploaded]);
       } catch {
-        // The send button stays disabled only while uploads are in flight; a failed upload simply does not become an attachment.
+        // The send button stays disabled only while uploads are in flight; a failed
+        // upload simply does not become an attachment.
       } finally {
         setUploadingCount((current) => Math.max(0, current - 1));
       }
     }
   }
 
-  // Desktop path: the file is referenced by its real OS path, in place — no copy.
+  // Desktop path: the file is referenced by its real OS path, in place — no copy. Only
+  // valid when the server is this machine; otherwise the byte path above is used.
   async function attachByPaths(paths: string[]) {
     if (paths.length === 0) return;
     setUploadingCount((current) => current + paths.length);
@@ -412,7 +471,11 @@ export function ChatInput({
     }
   }
 
-  // Whether the microphone is offered, and what the model behind it is doing.
+  // Whether the microphone is offered, and what the model behind it is doing. Asking with
+  // `prepare` also starts the load, so the weights come up while the composer is simply on
+  // screen — by the time anybody presses the button it is usually already warm. Polled only
+  // while it is actually loading: there is nothing to watch once it is ready, and a poll that
+  // outlives its question is a poll nobody remembers adding.
   useEffect(() => {
     let cancelled = false;
     let timer: number | undefined;
@@ -439,14 +502,19 @@ export function ChatInput({
     };
   }, []);
 
-  // Stop the microphone if the composer goes away mid-recording.
+  // Stop the microphone if the composer goes away mid-recording. Without it the tracks stay
+  // open and the browser keeps showing the machine as listening, which is the one bug in this
+  // area a person would rightly find alarming.
   const recordingRef = useRef<Dictation | null>(null);
   useEffect(() => {
     recordingRef.current = recording;
   }, [recording]);
   useEffect(() => () => recordingRef.current?.cancel(), []);
 
-  // The dictation toggle.
+  // The dictation toggle. Press once to start, again to stop: on stop the samples go to the
+  // daemon, which transcribes them on this machine, and the text is *appended to what is
+  // already typed* rather than replacing it — dictation is another way to write into the box,
+  // not a separate box.
   async function handleDictationClick() {
     if (transcribing) return;
     const active = recording;
@@ -486,8 +554,16 @@ export function ChatInput({
     }
   }
 
-  // The attach button: on the desktop app talking to a local server, open the native picker and reference the chosen files by path; otherwise fall back to the web <input>, which yields bytes to upload.
-  /** What to tell somebody about a dictation that did not happen. */
+  // The attach button: on the desktop app talking to a local server, open the native
+  // picker and reference the chosen files by path; otherwise fall back to the web
+  // <input>, which yields bytes to upload.
+  /**
+   * What to tell somebody about a dictation that did not happen.
+   *
+   * `DictationRecordingError` carries a catalogue key because the module that raises it has no
+   * hook to translate with. Anything else — a transcription the daemon refused, a network that
+   * went — already arrives as a sentence in the person's language, and is passed through.
+   */
   function dictationReason(caught: unknown): string {
     if (caught instanceof DictationRecordingError) {
       return translation(caught.message as Parameters<typeof translation>[0], caught.values);
@@ -504,7 +580,12 @@ export function ChatInput({
     fileInputRef.current?.click();
   }
 
-  // Native (Tauri) file drops never reach the HTML drag events — they arrive on the webview's own drop stream with real paths.
+  // Native (Tauri) file drops never reach the HTML drag events — they arrive on the
+  // webview's own drop stream with real paths. We keep the latest drop action in a ref
+  // so the listener can register once yet always call the current closure. A drop only
+  // becomes an in-place attachment when it lands over the composer *and* the server is
+  // local; over a remote server a local path is meaningless, so the drop is ignored
+  // (the attach button still works, falling back to a byte upload).
   const desktopDropRef = useRef<(paths: string[]) => void>(() => {});
   useEffect(() => {
     desktopDropRef.current = (paths: string[]) => {
@@ -518,7 +599,10 @@ export function ChatInput({
     if (!isTauri()) return;
     let cancelled = false;
     let unlisten: (() => void) | undefined;
-    // A file dropped ANYWHERE on the window attaches to this composer — matching the desktop convention (drop a file on the chat = attach it).
+    // A file dropped ANYWHERE on the window attaches to this composer — matching the
+    // desktop convention (drop a file on the chat = attach it). An earlier version
+    // only accepted drops landing exactly on the small composer box, so most drops
+    // silently did nothing; the composer border still lights up (dragActive) as the cue.
     void watchDesktopFileDrop((event) => {
       if (event.phase === "leave") {
         setDragActive(false);
@@ -547,7 +631,8 @@ export function ChatInput({
 
   async function handleSubmit() {
     const trimmed = inputValue.trim();
-    // A typed message is always required — an attachment is context on top of what you say, never a substitute for it.
+    // A typed message is always required — an attachment is context on top of what you
+    // say, never a substitute for it. No auto-injected placeholder text.
     if (!trimmed) return;
     if (!directoryValid) return;
     if (uploadingCount > 0) return;
@@ -594,7 +679,8 @@ export function ChatInput({
     }
     if (event.key === "ArrowUp" && messageHistory.length > 0 && inputRef.current?.selectionStart === 0) {
       event.preventDefault();
-      // Save the current draft when first navigating up, so it can be restored when the user navigates back down past all history items.
+      // Save the current draft when first navigating up, so it can be
+      // restored when the user navigates back down past all history items.
       if (historyIndex === -1) {
         draftInputRef.current = inputValue;
       }
@@ -702,7 +788,9 @@ export function ChatInput({
               size="sm"
               variant="outline"
               placeholder={
-                // Ordered by what the person can do about it.
+                // Ordered by what the person can do about it. A lost connection closes the
+                // composer; an open decision does not, and the placeholder says what happens to
+                // what you type rather than telling you not to type it.
                 disabled
                   ? translation("placeholderConnecting")
                   : awaitingDecision
@@ -712,7 +800,10 @@ export function ChatInput({
                       : attachments.length > 0
                         ? translation("placeholderAttachments")
                         : isCompacting
-                          // Compaction is a turn, so the streaming placeholder claimed a message would be queued "for the next turn" while the only turn running was the fold.
+                          // Compaction is a turn, so the streaming placeholder claimed a message
+                          // would be queued "for the next turn" while the only turn running was
+                          // the fold. It is queued, and it drains when the fold is done — which
+                          // is what this says instead.
                           ? translation("placeholderCompacting")
                           : isStreaming
                             ? translation("placeholderStreaming")
@@ -763,12 +854,17 @@ export function ChatInput({
                   aria-label={recording ? translation("dictationStop") : translation("dictationStart")}
                   onClick={() => void handleDictationClick()}
                   size="sm"
-                  // Recording is a state the machine is in, not a button that happens to be pressed, so it is coloured rather than merely outlined — there must be no way to leave a microphone open without noticing.
+                  // Recording is a state the machine is in, not a button that happens to be
+                  // pressed, so it is coloured rather than merely outlined — there must be no
+                  // way to leave a microphone open without noticing.
                   variant={recording ? "solid" : "outline"}
                   colorPalette={recording ? "red" : undefined}
                   bg={recording ? undefined : "bg"}
                   borderColor={recording ? undefined : "border"}
-                  // The spinner covers both waits a person can be in: the model coming up, and the recording being turned into words.
+                  // The spinner covers both waits a person can be in: the model coming up, and
+                  // the recording being turned into words. Disabled while it loads rather than
+                  // hidden — a button that vanishes and reappears is harder to trust than one
+                  // that says it is not ready yet.
                   loading={transcribing || dictationState === "loading"}
                   disabled={composerClosed || !directoryValid || dictationState === "loading"}
                 >
@@ -803,7 +899,11 @@ export function ChatInput({
                 variant="solid"
                 loading={stopPending}
                 loadingText={translation("stopping")}
-                // Not while the conversation is being folded.
+                // Not while the conversation is being folded. Compaction runs as a turn, so
+                // `isStreaming` is true throughout it and Stop was offered for something it does
+                // not describe: the model is not working on the request, the harness is making
+                // room to keep working on it. Pressing it interrupted housekeeping the session
+                // would then have to do again.
                 disabled={stopPending || isCompacting}
                 title={isCompacting ? translation("stopUnavailableWhileCompacting") : undefined}
               >
@@ -910,7 +1010,9 @@ export function ChatInput({
               {...(hiddenLabels.has("compact") ? { "data-fit-collapsed": "" } : {})}
               variant="outline"
               h="var(--control-height)"
-              // Stated rather than inherited, like the model chip's: the button recipe's own gap is not the 6px every other control in this row uses, and it is the number that is cancelled when this button gives up its word.
+              // Stated rather than inherited, like the model chip's: the button recipe's own gap
+              // is not the 6px every other control in this row uses, and it is the number that is
+              // cancelled when this button gives up its word.
               gap={1.5}
               px={2}
               justifyContent="center"

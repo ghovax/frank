@@ -1,4 +1,11 @@
-/** The shell every screen sits in. */
+/**
+ * The shell every screen sits in.
+ *
+ * Four things happen here and nowhere else: the typefaces are loaded, the message catalogue and
+ * the theme are provided, and the pairing is read off the keychain. The last of those decides what the app is: without one
+ * there is nothing to show but the pairing screen, so `index` redirects rather than each screen
+ * having to check.
+ */
 
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
@@ -19,7 +26,8 @@ export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts(FONT_SOURCES);
 
   useEffect(() => {
-    // Hidden on either outcome.
+    // Hidden on either outcome. A typeface that will not load is a worse-looking app, not a
+    // reason to hold a splash screen in front of somebody forever.
     if (fontsLoaded || fontError) SplashScreen.hideAsync().catch(() => {});
   }, [fontsLoaded, fontError]);
 

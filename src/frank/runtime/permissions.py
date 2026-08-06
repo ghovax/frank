@@ -1,4 +1,4 @@
-"""The AgentRuntime permission concern (a mixin composed into AgentRuntime)."""
+"""Carrying out the boundary's verdict: raising gates, reviewing them, recording grants, offering retries."""
 from __future__ import annotations
 
 from frank.runtime.internals import (
@@ -27,7 +27,7 @@ from frank.base.tuning import Tunable, active_tuning
 
 logger = logging.getLogger(__name__)
 
-# The state-changing control_screen primitives.
+# The screen primitives that change something. The set the gate is about, and the one the bridge sends.
 MUTATING_SCREEN_PRIMITIVES = frozenset({
     "click", "type", "choose", "upload", "drag",
     "evaluate", "press", "navigate",
@@ -37,7 +37,7 @@ MUTATING_SCREEN_PRIMITIVES = frozenset({
 
 
 def _screen_primitive(func: ast.expr) -> str:
-    """The primitive a call node names, however the script spells it."""
+    """The primitive a call node names, bare or through ``screen``."""
     if isinstance(func, ast.Attribute):
         return func.attr
     if isinstance(func, ast.Name):
@@ -46,11 +46,11 @@ def _screen_primitive(func: ast.expr) -> str:
 
 
 def _screen_mutations(script: str) -> tuple[str, ...]:
-    """The state-changing primitives a script calls, in the order they first appear."""
+    """The state-changing primitives a script calls. Decides who is asked, never what is available."""
     try:
         tree = ast.parse(script)
     except SyntaxError:
-        # Nothing to decide: the tool will fail to run this, and refusing to name a primitive is not the same as naming one.
+        # Unparseable: the tool will fail to run it, so there is nothing to name.
         return ()
     found: list[str] = []
     for node in ast.walk(tree):
@@ -67,10 +67,10 @@ class _DecidesPermissions:
     # ---- the reviewer -------------------------------------------------------------------
 
     def _reviewer_model(self):
-        """The model that reviews a request: the session's own, thinking less."""
+        """The model that reviews a request: the session's own, at a lower effort, built once."""
         if self._reviewer_llm is not None:
             return self._reviewer_llm
-        # A caller that handed this runtime a model object rather than naming one — the library front door does exactly that — has no identifier to rebuild from, so the judge is that same object at whatever effort it was built with.
+        # A caller that passed a model object has no identifier to rebuild from, so the judge is that object.
         identifier = self.effective_model_identifier
         if not identifier:
             self._reviewer_llm = self._llm
@@ -88,7 +88,7 @@ class _DecidesPermissions:
         return self._reviewer_llm
 
     async def _review(self, gate: _PreflightGate) -> PermissionDecision:
-        """The reviewer's verdict on one gate."""
+        """The reviewer's verdict on one gate. Takes a gate, so it cannot reach a call that raised none."""
         context = compact({
             "tool": gate.tool_name,
             "working_directory": self._working_directory,
@@ -102,7 +102,7 @@ class _DecidesPermissions:
             },
             "model_explanation": gate.arguments.get("explanation", "") or gate.explanation,
             "confinement": self._sandbox.describe(workspace=self._working_directory),
-            # Present only for a second run: the first was refused by the operating system, and a reviewer that did not know that would be judging a command that appears to have simply failed.
+            # Only on a second run, so the reviewer knows the command hit a wall rather than merely failed.
             **({"refused_by_the_sandbox": gate.denial_evidence} if gate.denial_evidence else {}),
             "allowed_actions": ["allow", "deny"],
         })
@@ -113,7 +113,7 @@ class _DecidesPermissions:
                 if getattr(self._tool_context, "toolbox", None) is not None else ""
             ),
         })
-        # Instructions and subject as separate messages.
+        # Instructions and subject as separate messages: some providers reject a request with no input.
         model = self._reviewer_model().bind_tools([PermissionDecision], tool_choice="auto")
         request = [SystemMessage(content=prompt), HumanMessage(content=context)]
         attempts = active_tuning().amount(Tunable.permission_reviewer_attempts)
@@ -140,7 +140,7 @@ class _DecidesPermissions:
                     attempt, attempts, exc_info=True,
                 )
                 continue
-            # A reason is not decoration: it is the whole of what the agent is told, and a verdict without one cannot be acted on.
+            # A verdict with no reason cannot be acted on. A failed attempt, not a refusal — the next may supply it.
             if not decision.explanation.strip():
                 logger.warning(
                     "the permission reviewer gave no reason for its decision (attempt %d of %d)",
@@ -158,7 +158,7 @@ class _DecidesPermissions:
     # ---- grants -------------------------------------------------------------------------
 
     def _record_grant(self, grant: Grant) -> None:
-        """Remember an approved widening for the rest of the session."""
+        """Remember an approved widening for the session, so one grant is not re-asked on every command."""
         self._access_grants.append(grant)
         self._record_event("access_granted", {
             "reads": list(grant.reads), "writes": list(grant.writes),
@@ -167,7 +167,7 @@ class _DecidesPermissions:
         })
 
     def _granted_profile(self):
-        """The session's confinement with every standing grant folded in."""
+        """The session's confinement with every standing grant folded in. What an escape is measured against."""
         profile = self._sandbox
         for grant in self._access_grants:
             profile = profile.with_grant(grant, workspace=self._working_directory or "")
@@ -176,7 +176,7 @@ class _DecidesPermissions:
     # ---- ids ----------------------------------------------------------------------------
 
     def _new_permission_request_id(self, tool_call_id: str = "") -> str:
-        """The id a person's answer is filed under. Derived from the call, not minted fresh."""
+        """The id an answer is filed under, derived from the call so a replanned gate is the same gate."""
         return f"perm-{self._session_id}-{tool_call_id or uuid.uuid4()}"
 
     def _new_question_request_id(self, tool_call_id: str = "") -> str:
@@ -184,7 +184,7 @@ class _DecidesPermissions:
         return f"q-{self._session_id}-{tool_call_id or uuid.uuid4()}"
 
     def _new_retry_request_id(self, tool_call_id: str) -> str:
-        """The id for a second run of a command the operating system refused."""
+        """The id for a second run, distinct from the preflight id since both can exist in one turn."""
         return f"retry-{self._session_id}-{tool_call_id}"
 
     # ---- the planner --------------------------------------------------------------------
@@ -192,14 +192,14 @@ class _DecidesPermissions:
     async def _preflight_permissions(
         self, tool_calls: list[dict]
     ) -> tuple[dict[str, _ToolPlan], list[_PreflightGate]]:
-        """Resolve the verdict for every tool call in a batch BEFORE any tool runs, so a pause can be checkpointed durably (concurrent tools cannot be re-run on resume without re-doing their side effects)."""
+        """Every call's verdict, resolved before any tool runs, so a pause can be checkpointed durably."""
         plans: dict[str, _ToolPlan] = {}
         pending: list[_PreflightGate] = []
         for tool_call_data in tool_calls:
             plan = await self._plan_call(
                 tool_call_data["name"], tool_call_data["args"], tool_call_data["id"],
             )
-            # Stamp the call's identity onto every gate it raised, here rather than at each construction site.
+            # A gate is raised before its call is announced, so it carries what is being asked for.
             for gate in plan.gates:
                 gate.tool_name = tool_call_data["name"]
                 gate.arguments = dict(tool_call_data["args"] or {})
@@ -210,7 +210,7 @@ class _DecidesPermissions:
     async def _plan_call(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
     ) -> _ToolPlan:
-        """The verdict for one tool call: refused, gated, or cleared to run."""
+        """The verdict for one call. One path for every tool; only the rule table and the escape differ."""
         plan = _ToolPlan(tool_call_id=tool_call_identifier)
         schema = self._tool_schemas.get(tool_name)
         if schema is not None:
@@ -223,14 +223,14 @@ class _DecidesPermissions:
             try:
                 resolved_location = self._resolve_location(location_value)
             except ToolLocationError:
-                # A bad location is an execution error, surfaced by _execute_tool; there is no permission decision to make, so the batch runs and errors there.
+                # A bad location is an execution error, raised by _execute_tool rather than decided here.
                 return plan
         policy = self._call_policy(resolved_location)
         explanation = str(tool_arguments.get("explanation", "") or "")
 
         # ask_user is the one call that is a question rather than an act.
         if tool_name == "ask_user":
-            # Not offered under `automatic` — the tool is left out of the session's set entirely — so this is the second lock rather than the first.
+            # The second lock: the tool is already withheld under `automatic`, but a stale plan could still name it.
             if not policy.asks:
                 plan.refusal = self._refusal(self._prompt_loader.load("nobody_to_ask", {}))
                 return plan
@@ -242,12 +242,12 @@ class _DecidesPermissions:
             return plan
 
         subject, rule = self._rule_for(tool_name, tool_arguments)
-        # A remote location runs on somebody else's machine, where this machine's confinement says nothing.
+        # A remote call has no box here to escape, so the rules are the whole policy.
         profile = None if policy.is_remote else self._granted_profile()
         request, _ = parse_access_request(tool_arguments.get("access_request"))
         escape = escape_of(request, profile, workspace=policy.working_directory)
 
-        # A screen script has a confinement of its own — the primitives its child was handed — so "reaching outside" means asking to change something rather than only look.
+        # A screen script's box is the primitives it was handed, so escaping it means changing something.
         mutations: tuple[str, ...] = ()
         if tool_name == "control_screen":
             mutations = _screen_mutations(str(tool_arguments.get("script", "") or ""))
@@ -278,7 +278,7 @@ class _DecidesPermissions:
             is_bash=(tool_name == "bash"),
             deny_message=self._deny_message(tool_name),
         )
-        # Under `automatic` the gate is answered here rather than put to somebody.
+        # Under `automatic` every gate goes to the reviewer; one that skipped it would park the session.
         if not policy.asks:
             decision = await self._review(gate)
             if decision.action == "allow":
@@ -300,7 +300,7 @@ class _DecidesPermissions:
         return plan
 
     def _rule_for(self, tool_name: str, tool_arguments: dict) -> tuple[str, str]:
-        """What the person's configuration says about this call: ``(subject, decision)``."""
+        """What the configuration says about this call. The subject differs by tool, because the calls do."""
         tools = self._agent_configuration.tools
         if tool_name == "bash":
             command = str(tool_arguments.get("command", "") or "")
@@ -313,7 +313,7 @@ class _DecidesPermissions:
             subject = mutations[0] if mutations else "read"
             return subject, tools.screen.decide(subject, unmatched=RULE_ASK if mutations else RULE_ALLOW)
         if tool_name in self._extra_tools:
-            # A tool the caller supplied.
+            # A supplied tool is unknown to the engine, so it is asked about unless the caller said otherwise.
             return tool_name, RULE_ALLOW if self._supplied_tool_gate == "none" else RULE_ASK
         return tool_name, RULE_ALLOW
 
@@ -346,7 +346,7 @@ class _DecidesPermissions:
         }
 
     def _approve(self, gate: _PreflightGate, *, by: str, plan: Optional[_ToolPlan] = None) -> None:
-        """Carry out what approving this gate means."""
+        """Carry out what approving a gate means, in one place, since it can grant two different things."""
         if gate.escape or gate.whole_disk:
             self._record_grant(confinement.approved(
                 confinement.AccessRequest(
@@ -365,7 +365,7 @@ class _DecidesPermissions:
     def _resolve_tool_decisions(
         self, plans: dict[str, _ToolPlan], answers: dict[str, Any]
     ) -> dict[str, _ResolvedToolDecision]:
-        """Collapse the preflight plans plus any answers into one verdict per tool."""
+        """Plans plus answers into one verdict per tool. A tool runs only if every gate it raised was approved."""
         decisions: dict[str, _ResolvedToolDecision] = {}
         for tool_call_id, plan in plans.items():
             decision = _ResolvedToolDecision(tool_call_id=tool_call_id)
@@ -385,7 +385,7 @@ class _DecidesPermissions:
                 approved = answer is not None and str(answer) != "deny"
                 if not approved:
                     if gate.refused_result is not None:
-                        # A refused retry is not a refused call: the command ran, inside its box, and what the model is owed is what actually happened rather than a sentence about an approval it never had.
+                        # A refused retry still owes the model what the confined run actually did.
                         decision.completed = {"result": gate.refused_result}
                         break
                     decision.approved = False
@@ -395,7 +395,7 @@ class _DecidesPermissions:
                         "reason": None,
                     }
                     break
-                # Approved.
+                # Recorded here, the only point that knows somebody said yes; preflight alone grants nothing.
                 self._approve(gate, by=confinement.APPROVED_BY_PERSON)
                 if gate.grants_screen_mutations:
                     decision.screen_mutations = True
@@ -413,7 +413,7 @@ class _DecidesPermissions:
     def retry_gate(
         self, *, tool_call_id: str, command: str, denial: confinement.Denial, explanation: str,
     ) -> _PreflightGate:
-        """The gate a command raises after the operating system refused it."""
+        """The gate a refused command raises. The offer is whole-disk because no backend reports the path."""
         return _PreflightGate(
             request_id=self._new_retry_request_id(tool_call_id),
             tool_call_id=tool_call_id, kind="permission", command=command,
@@ -424,12 +424,12 @@ class _DecidesPermissions:
         )
 
     async def reconsider_gate(self, gate) -> str:
-        """Decide a gate the session is *already parked on*, under the mode it is under now."""
+        """Re-decide a gate the session is parked on, under the mode now in force."""
         if self._call_policy(None).asks:
             # Interactive: a question is exactly what a person is for.
             return ""
         if gate.kind == "question":
-            # `ask_user` has nobody to answer it now, and a reviewer cannot answer for the person it was addressed to.
+            # A reviewer cannot answer for the person an `ask_user` was addressed to.
             return "deny"
         decision = await self._review(_PreflightGate.from_dict(
             gate.to_dict() if hasattr(gate, "to_dict") else vars(gate)
@@ -437,7 +437,7 @@ class _DecidesPermissions:
         return "allow" if decision.action == "allow" else "deny"
 
     async def decide_retry(self, gate: _PreflightGate) -> tuple[str, Optional[Grant]]:
-        """What to do with a retry gate: ``("ask", None)``, ``("run", grant)`` or ``("refuse", None)``."""
+        """What to do with a retry gate: ask, run with a grant, or refuse. Three answers, not an optional grant."""
         if self._call_policy(None).asks:
             return "ask", None
         decision = await self._review(gate)

@@ -6,7 +6,8 @@ import type { ChatGPTUsage } from "@/lib/api";
 
 type Translator = ReturnType<typeof useTranslations<"ChatGPTAuthControl">>;
 
-// The 5h/weekly split is not pinned to a fixed slot across accounts, so label a window by its own length rather than trusting a "primary"/"secondary" position.
+// The 5h/weekly split is not pinned to a fixed slot across accounts, so label a
+// window by its own length rather than trusting a "primary"/"secondary" position.
 function windowLabel(translation: Translator, minutes: number): string {
   if (minutes === 10080) return translation("usageWeekly");
   if (minutes % 1440 === 0) return translation("usageDaysShort", { count: minutes / 1440 });
@@ -14,7 +15,9 @@ function windowLabel(translation: Translator, minutes: number): string {
   return translation("usageMinutesShort", { count: minutes });
 }
 
-// The plan the account is on, as the provider reports it.
+// The plan the account is on, as the provider reports it. A plan with no label is shown as it
+// came rather than hidden: an unfamiliar plan is still worth seeing, and inventing a name for
+// it would be worse than passing the provider's through.
 function planLabel(translation: Translator, planType: string): string {
   switch (planType) {
     case "free": return translation("usagePlanFree");
@@ -32,14 +35,25 @@ function meterColor(percent: number): string {
   return "green.500";
 }
 
-/** The account's ChatGPT/Codex rate-limit meters (a rolling window and the weekly window). */
+/**
+ * The account's ChatGPT/Codex rate-limit meters (a rolling window and the weekly
+ * window). Values are captured from the last turn's `x-codex-*` headers, so before
+ * the first turn after sign-in there is nothing to show — hence the pending notice.
+ *
+ * Shared by the Settings sign-in control and the chat-input token view, so labels
+ * stay in the one `ChatGPTAuthControl` namespace regardless of the host surface.
+ */
 export function ChatGPTUsageMeters({ usage }: { usage: ChatGPTUsage | null }) {
   const translation = useTranslations("ChatGPTAuthControl");
-  // relativeTime owns the "in 3 hours" wording — locale-correct, rounded, and pluralized — so the reset countdown is not hand-rolled from day/hour/minute math.
+  // relativeTime owns the "in 3 hours" wording — locale-correct, rounded, and
+  // pluralized — so the reset countdown is not hand-rolled from day/hour/minute
+  // math. `useNow` supplies the reference point and re-renders it on an interval so
+  // the countdown stays live while the panel is open.
   const format = useFormatter();
   const now = useNow({ updateInterval: 60 * 1000 });
   const windows = usage?.windows ?? [];
-  // Nothing is captured until the first turn after sign-in, so hide the section entirely rather than showing a placeholder.
+  // Nothing is captured until the first turn after sign-in, so hide the section
+  // entirely rather than showing a placeholder.
   if (windows.length === 0) return null;
   return (
     <Box>
@@ -54,7 +68,8 @@ export function ChatGPTUsageMeters({ usage }: { usage: ChatGPTUsage | null }) {
       <Stack gap={2.5}>
         {windows.map((window) => {
           const percent = Math.min(Math.max(window.used_percent, 0), 100);
-          // resets_at is a unix timestamp in seconds; show the countdown only while it is still in the future (a past/absent reset just hides the row).
+          // resets_at is a unix timestamp in seconds; show the countdown only while
+          // it is still in the future (a past/absent reset just hides the row).
           const resetsAt = window.resets_at ? new Date(window.resets_at * 1000) : null;
           const resets = resetsAt && resetsAt.getTime() > now.getTime()
             ? format.relativeTime(resetsAt, now)

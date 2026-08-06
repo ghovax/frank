@@ -1,4 +1,30 @@
-"""The macOS Accessibility (AX) tree — the accurate way to read and drive app UI."""
+"""The macOS Accessibility (AX) tree — the accurate way to read and drive app UI.
+
+This is the workhorse. It reads any running app's semantic UI (every button, field,
+menu item, its role, name, value, state and on-screen frame) and acts on elements
+directly (press a button, set a text field's value). Because AX actions target a
+specific element in a specific process, they never move the user's cursor or steal the
+keyboard: that is the containment guarantee.
+
+The data is taken as the system returns it: each element's real AX attributes (AXRole,
+AXTitle, AXValue, …) are read and passed through, filtered only by which elements are
+worth including and which attributes are populated. No parallel vocabulary, no
+renamed roles, no synthesized element ids — the caller references an element by its
+position in the returned list.
+
+Speed comes from two levers. One batched IPC round-trip per node
+(AXUIElementCopyMultipleAttributeValues) reads every attribute at once instead of a
+call each. And the app itself is asked what is on screen — AXVisibleChildren /
+AXVisibleRows return only the currently-visible descendants — so a scrolled list of ten
+thousand rows costs the handful actually shown. Geometry uses CoreGraphics (CGRect*),
+and the only bound is cycle detection (a visited set, since AX trees can contain
+reference cycles) plus the per-message timeout that guards against a hung app.
+
+Interactivity is universal: there is no allowlist of "clickable" roles. Anything that is
+not a pure structural container is included, so custom and third-party controls come
+through too; whether an element can be pressed is decided at act-time from its real AX
+action list.
+"""
 from __future__ import annotations
 
 import threading
@@ -17,7 +43,23 @@ from frank.base.tuning import Tunable, active_tuning
 
 
 def _resolve_symbols_before_any_thread_exists() -> None:
-    """Touch every AX function this module calls, once, at import — on one thread."""
+    """Touch every AX function this module calls, once, at import — on one thread.
+
+    ``ApplicationServices`` is a pyobjc *lazy* module: an attribute is looked up in a metadata map
+    and cached into the module on first access, and that path is not thread-safe. Two threads
+    first-touching the same symbol race, and the loser gets ``KeyError`` — which surfaces as
+    ``The action failed ('AXUIElementCreateApplication')``, because ``str(KeyError('X'))`` is
+    ``"'X'"``, quotes and all.
+
+    This module builds exactly that race and builds it once per process: ``_ready_snapshot`` calls
+    ``start_prewarm()``, which spawns a thread that immediately calls ``prime_accessibility`` ->
+    ``AXUIElementCreateApplication``, and then walks into ``snapshot_app`` -> the same symbol. It
+    is a first-use-only failure, which is why it struck once in a recorded session and never
+    again, and why it looked like the application was not ready — it had nothing to do with the
+    application. Measured at 2 failures in 60 fresh processes.
+
+    Resolving here means the cache is warm before any thread exists, so there is no first touch
+    left to race."""
     for symbol in (
         "AXUIElementCreateApplication", "AXUIElementCreateSystemWide",
         "AXUIElementCopyAttributeValue", "AXUIElementCopyAttributeValues",
@@ -38,9 +80,12 @@ ROLE = "AXRole"
 SUBROLE = "AXSubrole"
 TITLE = "AXTitle"
 DESCRIPTION = "AXDescription"
-# What the application calls this kind of control, in prose the system itself writes: "increment arrow button", "close button", "disclosure triangle".
+# What the application calls this kind of control, in prose the system itself writes:
+# "increment arrow button", "close button", "disclosure triangle". Present on every element,
+# and the only words some controls have — see the fallback in `engine._element_name`.
 ROLE_DESCRIPTION = "AXRoleDescription"
-# The prompt text shown inside an empty field ("Search", "Filter").
+# The prompt text shown inside an empty field ("Search", "Filter"). Rare across all elements, but
+# text fields are disproportionately what a query looks for, and an empty one has nothing else.
 PLACEHOLDER = "AXPlaceholderValue"
 HELP = "AXHelp"
 VALUE = "AXValue"
@@ -59,18 +104,26 @@ MAIN_WINDOW = "AXMainWindow"
 FOCUSED_WINDOW = "AXFocusedWindow"
 FOCUSED_ELEMENT = "AXFocusedUIElement"
 
-# The text attributes an editable element exposes: its own contents (AXValue), the current selection as a substring, and the selection as a (location, length) range.
+# The text attributes an editable element exposes: its own contents (AXValue), the current
+# selection as a substring, and the selection as a (location, length) range. Setting the range
+# moves the caret or selects text; setting the selected text inserts at the caret or replaces the
+# selection. These are the accessible, VoiceOver-grade way to edit text without synthesizing keys.
 SELECTED_TEXT = "AXSelectedText"
 SELECTED_TEXT_RANGE = "AXSelectedTextRange"
 NUMBER_OF_CHARACTERS = "AXNumberOfCharacters"
 
-# One batched read pulls all of these in a single IPC round-trip per node.
+# One batched read pulls all of these in a single IPC round-trip per node. AXFrame is the
+# element's rectangle in one value; AXVisibleChildren/AXVisibleRows let the app report
+# what is on screen so we never descend into scrolled-away content.
 BATCH_ATTRIBUTES = [
     ROLE, SUBROLE, TITLE, DESCRIPTION, HELP, ROLE_DESCRIPTION, PLACEHOLDER, VALUE, ENABLED, SELECTED,
     FRAME, POSITION, SIZE, VISIBLE_CHILDREN, VISIBLE_ROWS, CHILDREN,
 ]
 
-# Pure containers: not included on their own (they carry no action or information), but always descended through to reach the real controls inside them.
+# Pure containers: not included on their own (they carry no action or information), but
+# always descended through to reach the real controls inside them. Table rows and cells
+# are structure here too — we descend through them and include the text/controls they
+# hold, one line per item instead of row+cell+text triples.
 STRUCTURAL_ROLES = frozenset({
     "AXGroup", "AXSplitGroup", "AXScrollArea", "AXLayoutArea", "AXLayoutItem",
     "AXUnknown", "AXToolbar", "AXTabGroup", "AXList", "AXOutline", "AXTable",
@@ -79,7 +132,9 @@ STRUCTURAL_ROLES = frozenset({
     "AXApplication", "AXWindow",
 })
 
-# Text nodes carry their content in AXValue and have no control subtree, so they are included when they have text and not descended into.
+# Text nodes carry their content in AXValue and have no control subtree, so they are
+# included when they have text and not descended into. Decorative nodes are included only
+# when they carry a real name (a labeled image can be a button; an unlabeled one is chrome).
 TEXT_ROLES = frozenset({"AXStaticText", "AXHeading", "AXText"})
 DECORATIVE_ROLES = frozenset({
     "AXImage", "AXProgressIndicator", "AXBusyIndicator", "AXValueIndicator",
@@ -93,12 +148,17 @@ RECT_TYPE = getattr(AS, "kAXValueCGRectType", getattr(AS, "kAXValueTypeCGRect", 
 ERROR_VALUE_TYPE = getattr(AS, "kAXValueAXErrorType", getattr(AS, "kAXValueTypeAXError", 5))
 RANGE_TYPE = getattr(AS, "kAXValueCFRangeType", getattr(AS, "kAXValueTypeCFRange", 4))
 
-# A single message to a wedged app must not block the walk forever.
+# A single message to a wedged app must not block the walk forever. This is a safety valve against
+# a hung process, not an accuracy cap: a healthy element answers in well under a millisecond, so a
+# generous ceiling never drops a real one. The ceiling lives in the central tuning policy
+# (``accessibility_messaging_seconds``, scaled by the timeout knob), read at each call site.
 
 
 @dataclass
 class Element:
-    """One included node, holding the raw AX attribute values the system returned plus the handle and geometry needed to act on it."""
+    """One included node, holding the raw AX attribute values the system returned plus
+    the handle and geometry needed to act on it. Empty attributes stay as-is (empty
+    string / None); the caller filters them when presenting."""
     role: str
     subrole: str
     title: str
@@ -112,12 +172,18 @@ class Element:
     depth: int
     handle: Any  # AXUIElementRef: fast path for acting within the same observe cycle
     path: tuple[int, ...]  # child-index path from the app root, for re-resolution
-    # The real AX actions this node supports (AXPress, AXConfirm, …), so the caller can tell a clickable control from an inert label without a separate act-time round-trip.
+    # The real AX actions this node supports (AXPress, AXConfirm, …), so the caller can tell
+    # a clickable control from an inert label without a separate act-time round-trip. Empty
+    # for text and pure containers, which are never queried for actions.
     actions: list[str] = field(default_factory=list)
     # What the system calls this kind of control, in its own prose ("increment arrow button").
+    # Defaulted because it is the newest attribute here and every existing construction site
+    # predates it; it is the last fallback for a name, never a first choice.
     role_description: str = ""
     placeholder: str = ""
-    # A region is a container the shallow walk chose not to expand: it stands in for its subtree and carries how many on-screen children wait inside, so the caller can drill into it.
+    # A region is a container the shallow walk chose not to expand: it stands in for its
+    # subtree and carries how many on-screen children wait inside, so the caller can drill
+    # into it. None on ordinary leaf elements.
     child_count: Optional[int] = None
 
 
@@ -141,14 +207,16 @@ def _string(value: Any) -> str:
 
 
 def _primitive(value: Any) -> Any:
-    """A value fit to hand back as-is: real AX values that are strings/numbers/bools pass through; anything else (an element reference, an unbridged object) becomes None."""
+    """A value fit to hand back as-is: real AX values that are strings/numbers/bools pass
+    through; anything else (an element reference, an unbridged object) becomes None."""
     if isinstance(value, bool) or isinstance(value, (str, int, float)):
         return value
     return None
 
 
 def _geometry(value: Any) -> Any:
-    """Unwrap an AXValue carrying a CGRect/CGPoint/CGSize into its CoreGraphics struct, or None for error placeholders and other types."""
+    """Unwrap an AXValue carrying a CGRect/CGPoint/CGSize into its CoreGraphics struct, or
+    None for error placeholders and other types."""
     try:
         value_type = AS.AXValueGetType(value)
     except Exception:
@@ -166,7 +234,8 @@ def _geometry(value: Any) -> Any:
 
 
 def _read(element: Any) -> Optional[dict[str, Any]]:
-    """Batched single-round-trip read of every attribute we care about, with AX error placeholders normalized to None."""
+    """Batched single-round-trip read of every attribute we care about, with AX error
+    placeholders normalized to None."""
     error, values = AS.AXUIElementCopyMultipleAttributeValues(element, BATCH_ATTRIBUTES, 0, None)
     if error != 0 or values is None:
         return None
@@ -184,7 +253,8 @@ def _read(element: Any) -> Optional[dict[str, Any]]:
 
 
 def _frame_of(attributes: dict[str, Any]) -> Any:
-    """The element's rectangle as a CGRect: AXFrame when the app provides it (one value), otherwise composed from AXPosition + AXSize when a batch is missing AXFrame."""
+    """The element's rectangle as a CGRect: AXFrame when the app provides it (one value),
+    otherwise composed from AXPosition + AXSize when a batch is missing AXFrame."""
     frame_value = attributes.get(FRAME)
     if frame_value is not None:
         rect = _geometry(frame_value)
@@ -200,7 +270,26 @@ def _frame_of(attributes: dict[str, Any]) -> Any:
 
 
 def rectangle(frame: Any) -> Optional[dict[str, int]]:
-    """A CGRect as plain integers, or ``None`` when there is no rectangle worth reporting."""
+    """A CGRect as plain integers, or ``None`` when there is no rectangle worth reporting.
+
+    Whole points, because the question this answers is "which of these two is the one I meant" and
+    no one distinguishes controls by a third of a pixel. An empty rect answers ``None`` rather than
+    four zeros: an element the application never laid out has no position, and saying so as
+    ``0, 0, 0, 0`` would read as the top-left corner of the screen.
+
+    **No Retina scaling is applied, and none should be.** Every coordinate this harness touches
+    lives in one global *points* space: accessibility frames, ``CGWindowListCopyWindowInfo``
+    bounds, and the points ``CGEventCreateMouseEvent`` is posted at. The backing scale factor is
+    applied below all of them, by the window server, so multiplying here would land a click at
+    twice its intended offset on a Retina display and leave it correct on an external one.
+
+    Measured on a machine with both, rather than reasoned about: 22 of 22 windows agreed exactly
+    between accessibility and the window server — including one on the 1× external display —
+    and a cursor warped to a named point landed on it exactly at 2×, at 1×, and near the origin.
+
+    The trap, if somebody later goes looking: ``CGDisplayPixelsWide`` returns **points** despite
+    its name (1728 on the display whose real panel is 3456 wide). ``CGDisplayModeGetPixelWidth``
+    is the one that returns pixels. Neither belongs in this path."""
     if frame is None or Quartz.CGRectIsEmpty(frame):
         return None
     return {
@@ -210,7 +299,9 @@ def rectangle(frame: Any) -> Optional[dict[str, int]]:
 
 
 def _child_nodes(attributes: dict[str, Any]) -> list[Any]:
-    """The descendants the app considers on screen."""
+    """The descendants the app considers on screen. AXVisibleRows (tables/outlines) and
+    AXVisibleChildren (scroll areas) collapse huge scrolled lists to what is shown; the
+    full child list is used when the app does not report visibility."""
     rows = attributes.get(VISIBLE_ROWS)
     if rows:
         return list(rows)
@@ -227,7 +318,13 @@ def _single(element: Any, attribute: str) -> Any:
 
 
 def _pids_showing_a_window() -> set[int]:
-    """Which processes are actually displaying something, according to the window server."""
+    """Which processes are actually displaying something, according to the window server.
+
+    Asked because an application can be running more than once. macOS reports each instance
+    separately, and only one of them may own the window a person is looking at — the others are
+    alive with nothing on screen. Accessibility is per process, so reading the wrong instance
+    returns an empty tree that looks exactly like an app refusing to expose itself.
+    """
     import Quartz
 
     try:
@@ -247,7 +344,15 @@ def _pids_showing_a_window() -> set[int]:
 
 
 def find_app_pid(name: str) -> Optional[int]:
-    """Resolve a running app to its PID by localized name or bundle id (case-insensitive; substring on the name)."""
+    """Resolve a running app to its PID by localized name or bundle id (case-insensitive;
+    substring on the name). Returns None if it is not running.
+
+    When several instances match, the one showing a window wins. It used to be whichever macOS
+    listed first, which for an app left running with no window and then reopened was the empty
+    one — and the empty one reads as zero elements, indistinguishable from an app that will not
+    expose itself at all. That mistake cost several wrong theories about RStudio, whose real
+    interface was 144 elements deep in the process nobody was asking.
+    """
     needle = name.strip().lower()
     running_apps = AppKit.NSWorkspace.sharedWorkspace().runningApplications()
     matches = [
@@ -283,14 +388,22 @@ def app_name_for_pid(pid: int) -> str:
 
 
 def running_app_names() -> list[str]:
-    """The regular (Dock-visible) apps currently running, by name — the situational awareness a person gets from glancing at the Dock, so the model knows what it can switch to."""
+    """The regular (Dock-visible) apps currently running, by name — the situational awareness a
+    person gets from glancing at the Dock, so the model knows what it can switch to."""
     regular = AppKit.NSApplicationActivationPolicyRegular
     apps = AppKit.NSWorkspace.sharedWorkspace().runningApplications()
     names = [_string(app.localizedName()) for app in apps if app.activationPolicy() == regular]
     return [name for name in names if name]
 
 
-# The only bridge between the two things that describe a window.
+# The only bridge between the two things that describe a window. Accessibility knows what a
+# window *is* — apps publish exactly their real windows, one entry each — while CoreGraphics
+# knows what the system has *numbered*, which includes every compositing layer: title bars,
+# shadows, sheet backdrops. Measured on one ordinary machine, CoreGraphics reported 19 layers
+# for RStudio's single window and 21 for Finder's five. So AX decides what exists and CG
+# supplies the identity, and `_AXUIElementGetWindow` is the only call that joins them. It is
+# unprefixed-private but ABI-stable and has been the standard answer for a decade; there is no
+# public equivalent, and the alternative — matching by frame — breaks on two stacked windows.
 _WINDOW_ID_SIGNATURE = b"i^{__AXUIElement=}o^I"
 _window_id_lock = threading.Lock()
 _window_id_function: Optional[Any] = None
@@ -325,7 +438,13 @@ def _window_id_of(window: Any) -> Optional[int]:
 
 @dataclass(frozen=True)
 class WindowRecord:
-    """One window an application publishes, as accessibility describes it."""
+    """One window an application publishes, as accessibility describes it.
+
+    ``document`` and ``main`` are here because a title is not an identity: two Finder windows
+    were both called "Applications", neither was main, and nothing else was reported — so the
+    model had no way to choose between them and no way to say which one it had chosen. A window
+    that holds a file says which file, and an application says which of its windows is the main
+    one; both are free, and together they separate almost everything a title cannot."""
 
     window_id: int
     title: str
@@ -336,7 +455,14 @@ class WindowRecord:
 
 
 def application_root(pid: int) -> Any:
-    """An application's AX root, with the messaging timeout set and its rich tree asked for."""
+    """An application's AX root, with the messaging timeout set and its rich tree asked for.
+
+    Every read of an application goes through here, because every read needs the same three
+    things and the one path that skipped the third was wrong in a way nothing caught: a fresh
+    ``windows_of`` asked Electron apps for their windows *before* setting ``AXManualAccessibility``,
+    and an Electron app publishes nothing until it is asked. RStudio — eleven real windows — came
+    back with none, was reported as "does not publish its windows to accessibility", and became
+    unaddressable, which is the exact opposite of true."""
     root = AS.AXUIElementCreateApplication(pid)
     AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.accessibility_messaging_seconds))
     enable_rich_accessibility(root)
@@ -344,7 +470,16 @@ def application_root(pid: int) -> Any:
 
 
 def windows_of(pid: int) -> list[WindowRecord]:
-    """Every real window an application publishes, with the id the window server minted for it."""
+    """Every real window an application publishes, with the id the window server minted for it.
+
+    This is what makes a window addressable. The title comes from ``AXTitle`` rather than from
+    ``kCGWindowName`` deliberately: the CoreGraphics name requires the Screen Recording grant,
+    which this harness has never asked for, while ``AXTitle`` needs only Accessibility — the
+    grant computer control already requires and already checks. One permission instead of two,
+    for the same words.
+
+    An empty list means the app publishes nothing readable *or* Accessibility is not granted.
+    The caller distinguishes them; this function does not guess."""
     records: list[WindowRecord] = []
     seen: set[int] = set()
     for window in _published_windows(application_root(pid)):
@@ -370,7 +505,15 @@ def windows_of(pid: int) -> list[WindowRecord]:
 
 
 def _published_windows(root: Any) -> list[Any]:
-    """Every window an application exposes, however it chooses to expose them."""
+    """Every window an application exposes, however it chooses to expose them.
+
+    ``AXWindows`` is the usual answer and it is not the only one: RStudio does not publish that
+    attribute at all — its application element offers ``AXChildren``, ``AXMainWindow`` and
+    ``AXFocusedWindow`` instead. Reading the one attribute and treating its absence as *this
+    application has no windows* turned five real windows into a row saying RStudio "does not
+    publish its windows to accessibility", which was both wrong and the reason a whole task could
+    not be started. Ask every way, keep whatever answers, and let the window-server id decide
+    what is a duplicate."""
     candidates: list[Any] = list(_single(root, WINDOWS) or [])
     candidates.extend(
         child for child in (_single(root, CHILDREN) or [])
@@ -401,7 +544,9 @@ MENU_ITEM_CHARACTER = "AXMenuItemCmdChar"
 MENU_ITEM_MODIFIERS = "AXMenuItemCmdModifiers"
 MENU_ITEM_VIRTUAL_KEY = "AXMenuItemCmdVirtualKey"
 
-# AXMenuItemCmdModifiers is a bitfield, and Command is inverted: the bit means *not* Command, because Command is the default for a menu shortcut.
+# AXMenuItemCmdModifiers is a bitfield, and Command is inverted: the bit means *not* Command,
+# because Command is the default for a menu shortcut. Everything downstream reads a chord string,
+# so the inversion is undone exactly here rather than being a fact every caller has to remember.
 _MENU_MODIFIER_BITS = ((1, "shift"), (2, "option"), (4, "control"))
 
 # The virtual key codes macOS uses for menu items that have no character (function keys, arrows).
@@ -415,7 +560,18 @@ _MENU_VIRTUAL_KEYS = {
 
 
 def _menu_chord(item: Any) -> str:
-    """The chord a menu item advertises, spelled the way ``press`` accepts it, or ``""``."""
+    """The chord a menu item advertises, spelled the way ``press`` accepts it, or ``""``.
+
+    Read attribute by attribute rather than out of :func:`_read`'s batch. The batch exists to make
+    a tree walk one round-trip per node and its attribute list is fixed; the menu-command
+    attributes are not in it, so every item looked like it had no shortcut and the whole menu
+    pruned itself to nothing — an empty answer that looked exactly like an application with no
+    shortcuts to advertise.
+
+    A character in the private-use range is AppKit's glyph for a key that has no character at all
+    (the arrows, the function keys, Home, Page Up). Spelling it verbatim would hand back
+    ``cmd+``, which ``press`` cannot parse and no one can read, so the virtual key code is
+    the answer for those."""
     character = _string(_single(item, MENU_ITEM_CHARACTER))
     if len(character) == 1 and 0xF700 <= ord(character) <= 0xF8FF:
         character = ""
@@ -434,7 +590,24 @@ def _menu_chord(item: Any) -> str:
 
 
 def shortcuts_of(pid: int, *, limit: int = 400) -> list[dict[str, Any]]:
-    """The application's menu bar, as a tree, with the chord each item advertises."""
+    """The application's menu bar, as a tree, with the chord each item advertises.
+
+    This exists because a model asked to reach RStudio's Help pane pressed ``Control+3`` from
+    memory, got the Environment pane, and had no way to find out what the real shortcut was — the
+    menu bar was never part of what a read returned, so the application's own published answer to
+    "how do I get there" was the one thing it could not see. Guessing was not carelessness; it was
+    the only option on offer.
+
+    A menu *is* a tree, so it is returned as one: ``{"title": "View", "items": [{"title": "Panes",
+    "items": [{"title": "Help", "keys": "cmd+shift+3"}]}]}``. Flattening it to ``"View > Panes >
+    Help"`` would invent a path syntax nobody else here speaks and make the caller parse it back
+    out of punctuation to learn what contains what — the same trade that turned a window's list of
+    lines into one newline-joined blob.
+
+    Branches with no shortcut anywhere beneath them are dropped: the whole menu bar is hundreds of
+    items, and what makes this answerable is that only a fraction of them advertise a chord. Each
+    ``keys`` is spelled the way ``press`` accepts it, so acting on one needs no translation step
+    where a mistake could enter."""
     root = application_root(pid)
     menu_bar = _single(root, MENU_BAR)
     if menu_bar is None:
@@ -453,7 +626,8 @@ def shortcuts_of(pid: int, *, limit: int = 400) -> list[dict[str, Any]]:
             chord = _menu_chord(child)
             if chord:
                 counted += 1
-            # A submenu is a child *menu* holding the items, so the walk goes through it either way; an item with neither a chord nor a chord below it is not an answer to anything.
+            # A submenu is a child *menu* holding the items, so the walk goes through it either
+            # way; an item with neither a chord nor a chord below it is not an answer to anything.
             items = branch(child, depth + 1)
             if not chord and not items:
                 continue
@@ -463,7 +637,8 @@ def shortcuts_of(pid: int, *, limit: int = 400) -> list[dict[str, Any]]:
             if items:
                 node["items"] = items
             nodes.append(node if node.get("title") or node.get("keys") else {"items": items})
-        # An untitled wrapper (the anonymous AXMenu under every menu-bar item) is not a level anybody means; lift its contents so the tree matches the menus a person sees.
+        # An untitled wrapper (the anonymous AXMenu under every menu-bar item) is not a level
+        # anybody means; lift its contents so the tree matches the menus a person sees.
         lifted: list[dict[str, Any]] = []
         for node in nodes:
             if set(node) == {"items"}:
@@ -476,13 +651,28 @@ def shortcuts_of(pid: int, *, limit: int = 400) -> list[dict[str, Any]]:
 
 
 def enable_rich_accessibility(root: Any) -> None:
-    """Ask an app that gates its accessibility tree to build the full one."""
+    """Ask an app that gates its accessibility tree to build the full one.
+
+    Chromium-based apps (every Electron app — VS Code, Obsidian, Slack, …) expose only
+    their window chrome until a client sets AXManualAccessibility; setting it lights up
+    their entire tree (VS Code goes from 3 elements to hundreds). The build is
+    asynchronous — a background app finishes it the next time it pumps its run loop —
+    but once built it persists, so later background reads see the full tree.
+
+    Only AXManualAccessibility is set, deliberately: the other AT handshake,
+    AXEnhancedUserInterface, makes some apps reposition their windows, which would
+    disturb the user. This attribute has no visual effect. Browsers enable their web
+    content on their own once they see sustained accessibility queries. Best-effort:
+    apps that don't implement the attribute return an error we ignore."""
     with suppress(Exception):
         AS.AXUIElementSetAttributeValue(root, "AXManualAccessibility", kCFBooleanTrue)
 
 
 def prime_accessibility(pid: int) -> None:
-    """Switch on an app's rich accessibility tree ahead of a read, so a later read meets a tree that is already built instead of racing its asynchronous construction."""
+    """Switch on an app's rich accessibility tree ahead of a read, so a later read meets a tree that
+    is already built instead of racing its asynchronous construction. Idempotent and cheap (setting
+    AXManualAccessibility again is a no-op once the tree is up); called by the pre-warm watcher when
+    an app comes to the front. Best-effort: an app that ignores the handshake is left as it was."""
     root = AS.AXUIElementCreateApplication(pid)
     AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.accessibility_messaging_seconds))
     enable_rich_accessibility(root)
@@ -516,7 +706,8 @@ _prewarmer = _Prewarmer()
 
 
 def start_prewarm() -> None:
-    """Start the pre-warm watcher if it is not already running."""
+    """Start the pre-warm watcher if it is not already running. Idempotent; the native surface calls
+    it on first use, so the daemon only runs when computer control is actually exercised."""
     _prewarmer.start()
 
 
@@ -527,7 +718,8 @@ def _window_roots(root: Any, window: str) -> list[Any]:
         main = _single(root, MAIN_WINDOW) or _single(root, FOCUSED_WINDOW)
         return [main] if main else list(_single(root, WINDOWS) or [])
     if window and window != "focused":
-        # Anything else is a window title (or a substring of one): target the matching window, so the model can pick one window from another by name rather than by its role.
+        # Anything else is a window title (or a substring of one): target the matching window,
+        # so the model can pick one window from another by name rather than by its role.
         needle = window.strip().lower()
         matched = [window for window in (_single(root, WINDOWS) or []) if needle in _string(_single(window, TITLE)).lower()]
         if matched:
@@ -537,7 +729,9 @@ def _window_roots(root: Any, window: str) -> list[Any]:
 
 
 def _includes(role: str, has_name: bool, has_value: bool) -> bool:
-    """Whether an element is worth returning on its own."""
+    """Whether an element is worth returning on its own. Structural containers never are;
+    text is when it has content; a decorative node is when it is named; everything else
+    (any control, standard or custom) is."""
     if role in STRUCTURAL_ROLES:
         return False
     if role in DECORATIVE_ROLES:
@@ -547,7 +741,19 @@ def _includes(role: str, has_name: bool, has_value: bool) -> bool:
     return True
 
 
-# There is no depth limit.
+# There is no depth limit. There was one — four levels — and it was measured to hide most of
+# every interface: named elements went up 3.8x in Finder, 10x in System Settings and 59x in
+# Chrome when it was removed, because the things a person names sit below the things that
+# merely contain them. A window's own rows were stubs.
+#
+# It was also a guard on the wrong quantity. Depth does not predict what a walk costs: Photos
+# bottoms out at depth 6 and takes 0.41s, while Claude reaches depth 35 in 0.19s — twice as
+# deep, half the time. Cost tracks how quickly an app answers accessibility queries, so the
+# budget below is in seconds, which is the thing actually being protected. Any fixed depth
+# would be a number that truncates some app: 16 looked generous until Claude needed 35.
+#
+# The walk is already protected from a tree that does not end: a visited set breaks reference
+# cycles, and anything off screen is skipped with its subtree.
 _WALK_BUDGET_EXCEEDED = "walk_budget_exceeded"
 
 
@@ -562,7 +768,8 @@ def _make_element(
     as_region: bool = False,
     child_count: Optional[int] = None,
 ) -> Element:
-    """Build an Element from an already-read attribute batch."""
+    """Build an Element from an already-read attribute batch. Actions are queried only for
+    real controls — never for text, or for a region that only stands in for its subtree."""
     center = None
     if frame is not None and not Quartz.CGRectIsEmpty(frame):
         center = (Quartz.CGRectGetMidX(frame), Quartz.CGRectGetMidY(frame))
@@ -589,7 +796,8 @@ def _make_element(
 
 
 def _push_children(stack: list, children: list[Any], depth: int, path: tuple[int, ...]) -> None:
-    """Push a node's children so the stack yields them in document order (reversed on the way in), tagging each with its next depth and child-index path."""
+    """Push a node's children so the stack yields them in document order (reversed on the
+    way in), tagging each with its next depth and child-index path."""
     stack.extend(
         (children[index], depth + 1, path + (index,))
         for index in range(len(children) - 1, -1, -1)
@@ -601,7 +809,14 @@ def _collect(
     window_rect: Any,
     budget_seconds: float,
 ) -> tuple[list[Element], int, bool]:
-    """Walk the seed nodes into a flat element list, shallow-first, until the tree ends or the budget does."""
+    """Walk the seed nodes into a flat element list, shallow-first, until the tree ends or the
+    budget does.
+
+    Shallow-first matters when the budget runs out: what is kept is the top of the tree, which
+    is what a person would name first. A structural container still holding unwalked children
+    when the walk stops becomes a region stand-in carrying its child count, so a truncated read
+    says it is truncated instead of looking merely empty. Iterative traversal keeps it fast; a
+    visited set breaks AX reference cycles."""
     elements: list[Element] = []
     seen: set[Any] = set()
     deadline = time.perf_counter() + budget_seconds
@@ -609,7 +824,8 @@ def _collect(
     stack: list[tuple[Any, int, tuple[int, ...]]] = list(reversed(seeds))
     while stack:
         if time.perf_counter() > deadline:
-            # Everything still queued is unread.
+            # Everything still queued is unread. Each becomes a stand-in carrying its child
+            # count, so a truncated read is visibly truncated rather than quietly short.
             exhausted = True
             for pending_node, pending_depth, pending_path in reversed(stack):
                 pending = _read(pending_node)
@@ -632,7 +848,8 @@ def _collect(
 
         role = _string(attributes.get(ROLE))
         frame = _frame_of(attributes)
-        # A real rectangle that does not intersect the window is off screen: skip it and its subtree.
+        # A real rectangle that does not intersect the window is off screen: skip it and its
+        # subtree. A frameless or empty-rect node is a container we still descend.
         if frame is not None and window_rect is not None and not Quartz.CGRectIsEmpty(frame):
             if not Quartz.CGRectIntersectsRect(frame, window_rect):
                 continue
@@ -652,7 +869,8 @@ def _collect(
         has_value = value not in (None, "")
         if _includes(role, has_name, has_value):
             elements.append(_make_element(node, attributes, role, frame, depth, path))
-        # Text carries no control subtree: its content is its value, and anything nested inside is presentation.
+        # Text carries no control subtree: its content is its value, and anything nested inside
+        # is presentation. Everything else is descended into, however far down it goes.
         if role in TEXT_ROLES:
             continue
         _push_children(stack, children, depth, path)
@@ -668,7 +886,10 @@ def snapshot_app(
     root_handle: Any = None,
     root_path: tuple[int, ...] = (),
 ) -> Snapshot:
-    """Walk one app's AX tree into a flat, shallow-first list of on-screen elements, each carrying its raw AX attributes and actions."""
+    """Walk one app's AX tree into a flat, shallow-first list of on-screen elements, each
+    carrying its raw AX attributes and actions. ``window`` scopes it ("focused", "main",
+    "all"); ``root_handle``/``root_path`` re-root the walk at a previously-seen region so the
+    model can drill into it."""
     started = time.perf_counter()
     root = application_root(pid)
     app_name = app_name_for_pid(pid)
@@ -702,7 +923,8 @@ def snapshot_app(
 
 
 def action_names(element: Any) -> list[str]:
-    """The AX actions an element actually supports (e.g."""
+    """The AX actions an element actually supports (e.g. AXPress, AXConfirm, AXPick), read
+    at act-time so the walk stays one round-trip per node."""
     error, names = AS.AXUIElementCopyActionNames(element, None)
     if error != 0 or names is None:
         return []
@@ -710,7 +932,10 @@ def action_names(element: Any) -> list[str]:
 
 
 def resolve_from_path(pid: int, path: tuple[int, ...]) -> Any:
-    """Re-resolve an element from a fresh app root by its child-index path."""
+    """Re-resolve an element from a fresh app root by its child-index path. Handles go
+    stale when an app relayouts or relaunches; this rebuilds a live handle so an action a
+    beat after the observe still lands on the right control. Uses the same visible-child
+    traversal that produced the path."""
     root = application_root(pid)
     if not path:
         return root
@@ -745,7 +970,8 @@ def text_value(element: Any) -> Optional[str]:
 
 
 def set_selected_range(element: Any, location: int, length: int) -> bool:
-    """Set the selection (or, with length 0, place the caret)."""
+    """Set the selection (or, with length 0, place the caret). Returns False when the element does
+    not support a settable selection range, so the caller can fall back."""
     if not attribute_settable(element, SELECTED_TEXT_RANGE):
         return False
     value = AS.AXValueCreate(RANGE_TYPE, NSMakeRange(location, length))
@@ -755,7 +981,8 @@ def set_selected_range(element: Any, location: int, length: int) -> bool:
 
 
 def set_selected_text(element: Any, text: str) -> bool:
-    """Replace the current selection with ``text`` (inserting at the caret when the selection is empty)."""
+    """Replace the current selection with ``text`` (inserting at the caret when the selection is
+    empty). Returns False when the element does not support it, so the caller can fall back."""
     if not attribute_settable(element, SELECTED_TEXT):
         return False
     return AS.AXUIElementSetAttributeValue(element, SELECTED_TEXT, text) == 0

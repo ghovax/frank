@@ -38,7 +38,12 @@ async def add_machine(request: MachineRequest):
 
 @router.get("/machines/{machine_id}/address")
 async def machine_url(machine_id: str):
-    """The URL that opens this machine, token included."""
+    """The URL that opens this machine, token included.
+
+    Separate from the list on purpose. A credential should be handed over at the moment somebody
+    chooses to use it, not attached to every render of a settings panel — so the list is safe to
+    log, inspect and hold in memory, and this is the one call that is not.
+    """
     address = await asyncio.to_thread(machine_address, machine_id)
     if not address:
         raise HTTPException(status_code=404, detail="No such machine.")

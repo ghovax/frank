@@ -7,14 +7,18 @@ import { locationTargetLabel, workspaceLabel } from "@shared/workspace";
 import { Tooltip } from "./ui/tooltip";
 import type { Location } from "@/lib/api";
 
-// The naming moved to `@shared/workspace`, because the phone names the same workspaces and its own version rendered `giovannigravili +1` — a name plus a count of the names it left out.
+// The naming moved to `@shared/workspace`, because the phone names the same workspaces and its
+// own version rendered `giovannigravili +1` — a name plus a count of the names it left out.
+// Re-exported so every existing caller keeps its import path.
 export { locationTargetLabel, workspaceLabel };
 
 export function locationTargetAddress(location: Pick<Location, "base_directory" | "uri">): string {
   return location.uri || location.base_directory;
 }
 
-// The connection status of a location as a dot colour: local is always available (green); a remote is blue when its SSH host alias resolves in ~/.ssh/config, orange when it doesn't (so the location can't be reached).
+// The connection status of a location as a dot colour: local is always available (green);
+// a remote is blue when its SSH host alias resolves in ~/.ssh/config, orange when it doesn't
+// (so the location can't be reached).
 export function locationStatusColor(location: Pick<Location, "kind" | "host_known">): string {
   if (location.kind === "local") return "green.solid";
   if (!location.host_known) return "orange.solid";
@@ -26,7 +30,9 @@ export function LocationStatusDot({ location }: { location: Location }) {
   return <Box boxSize="2" borderRadius="full" flexShrink={0} bg={locationStatusColor(location)} />;
 }
 
-// A full location chip: status dot + name, with the location's address (URI) revealed in a hover card.
+// A full location chip: status dot + name, with the location's address (URI) revealed in a
+// hover card. No "available/configured" state text — the dot colour already carries status,
+// and the redundant host alias is folded into the address rather than shown as a second label.
 export function LocationChip({ location }: { location: Location }) {
   const translation = useTranslations("LocationStatus");
   const color = locationStatusColor(location);

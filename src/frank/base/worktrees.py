@@ -1,4 +1,9 @@
-"""Session workspace strategies."""
+"""Session workspace strategies.
+
+The source project remains the scope for project-local agents, skills,
+instructions, memories, and MCP configuration. The runtime directory is where
+shell and file tools execute.
+"""
 
 from __future__ import annotations
 
@@ -160,7 +165,14 @@ class SessionWorktreeManager:
         raise RuntimeError(f"Could not create session worktree: {stderr}")
 
     def _base_ref(self, repository_root: Path) -> str:
-        """Resolve the ref that new session branches and worktrees branch from."""
+        """Resolve the ref that new session branches and worktrees branch from.
+
+        Sessions always branch from the repository's main line, never from the
+        currently checked-out ref. Otherwise starting a session while a previous
+        session branch is checked out would stack the new branch on top of it,
+        chaining session branches indefinitely. Prefer a local ``main`` (then
+        ``master``), fall back to the remote's default branch, and only as a last
+        resort use the current ``HEAD``."""
         for candidate in ("main", "master"):
             if self._branch_exists(repository_root, candidate):
                 return candidate

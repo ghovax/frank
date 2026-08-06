@@ -1,4 +1,23 @@
-"""The ChatGPT subscription's account state: which models it serves, and what it has left."""
+"""The ChatGPT subscription's account state: which models it serves, and what it has left.
+
+Both are properties of an *account*, not of a session or of a model call, which is why they
+live here beside the token store that already owns that account's credentials rather than
+inside the chat model that happens to observe them.
+
+Keeping them out of `runtime` earns two things. The browser surface reads all four of these to
+render Settings, and it was the only reason anything above the runtime imported it — so the
+layer table can now say plainly that nothing does. And a snapshot written by one caller and
+read by another is exactly the shape the layering checker refuses inside `runtime`, correctly:
+a value taken from a caller and parked at module scope. It is legitimate here because the thing
+being described is genuinely one per process — a machine has one signed-in account, and two
+sessions billing it share its limits.
+
+The catalogue is the authoritative answer to "which models actually work": a subscription
+serves a plan-specific subset, where the models.dev catalogue is the offline superset the
+interface greys against. The usage snapshot has no cheaper source than a turn — the limits ride
+on `/responses` reply headers and the `/models` GET does not carry them — so it is only as
+fresh as the last turn and is absent until the first one after signing in.
+"""
 
 from __future__ import annotations
 
@@ -14,13 +33,37 @@ from frank.base.credentials import ChatGPTAuthError, ChatGPTTokens, valid_tokens
 from frank.base.tuning import Tunable, active_tuning
 
 RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
-# The account's live, plan-specific model catalogue.
+# The account's live, plan-specific model catalogue. Same host and auth as the responses
+# endpoint; `client_version` gates each model by its `minimal_client_version`, hiding any model
+# whose floor is above what we claim. This is a *floor to clear*, not a cosmetic string: newer
+# models raise their floor over time (gpt-5.4 needs 0.98, gpt-5.5 needs 0.124, the gpt-5.6-*
+# family needs 0.144), so it must track a current Codex CLI version or the newer models
+# silently vanish from the catalogue.
 MODELS_URL = "https://chatgpt.com/backend-api/codex/models"
 CLIENT_VERSION = "0.144.4"
-# Identifies the client to the endpoint, and it is checked.
+# Identifies the client to the endpoint, and it is checked. The endpoint admits only
+# first-party originators — `codex_cli_rs`, `codex_vscode`, `codex_sdk_ts`, or a value
+# starting with `Codex` — and refuses everything else, so this is the Codex CLI's own default
+# rather than a name of ours. It did once accept any value, which is why opencode shipped
+# `originator: opencode` and why this file used to say no impersonation was required; that
+# stopped being true, and opencode now rewrites the header to this same value.
+#
+# `USER_AGENT` below is the other half of the same check: the two are gated *together*, so
+# sending a Codex originator beside a `frank/…` user-agent fails the pair — mid-stream, with a
+# `server_error` that reads like backend trouble rather than like a rejected client, which is
+# the worst way for this to break because it looks like someone else's outage.
 ORIGINATOR = "codex_cli_rs"
 
-# The documented shape of the Codex CLI's user-agent is `codex_cli_rs/<version> (<os> <os version>; <arch>)`, with a transport token appended that varies by call path — so it is omitted here rather than guessed, and readers of this header are advised to match on the `codex_cli_rs/` prefix in any case.
+# The documented shape of the Codex CLI's user-agent is
+# `codex_cli_rs/<version> (<os> <os version>; <arch>)`, with a transport token appended that
+# varies by call path — so it is omitted here rather than guessed, and readers of this header
+# are advised to match on the `codex_cli_rs/` prefix in any case.
+#
+# Every value in it is real: the version is `CLIENT_VERSION` above, which is already maintained
+# against current Codex releases because the model catalogue gates on it, and the platform
+# fields are this machine's. Nothing here is a plausible-looking invention, which is the line
+# this file and the Cursor client both hold — a fabricated version invites trust it has not
+# earned, while a true one that is merely incomplete does not.
 USER_AGENT = (
     f"codex_cli_rs/{CLIENT_VERSION} "
     f"({platform.system()} {platform.release()}; {platform.machine()})"
@@ -28,7 +71,22 @@ USER_AGENT = (
 
 
 def request_headers(tokens: ChatGPTTokens, session_id: str = "") -> dict[str, str]:
-    """The header set the endpoint expects: a bearer token, the account to bill, an originator and User-Agent naming us, the conversation this request belongs to, and the streaming negotiation."""
+    """The header set the endpoint expects: a bearer token, the account to bill, an originator
+    and User-Agent naming us, the conversation this request belongs to, and the streaming
+    negotiation.
+
+    `session-id` is the conversation's id, and it is the whole of why prompt caching worked or
+    did not. It used to be a fresh `uuid4()` per request — described in this docstring as "a
+    per-request session id", which is what it was and exactly what it should never have been.
+    The endpoint routes a cache lookup by it, so a new id every call sent every call to a shard
+    that had never seen the prefix: measured across three sessions, every request after the
+    first carried a byte-identical, strictly-extending prefix and still read zero cached tokens,
+    with one 5,632-token partial that landed whenever a random id happened to repeat a route.
+
+    The Codex CLI sends its conversation id here (`build_session_headers`), and the same value
+    again as `prompt_cache_key`. So do we. A caller with no conversation — the models catalogue
+    fetch — still gets a random one, because a request that is not part of a conversation has
+    no prefix to find and nothing to gain by pretending otherwise."""
     return {
         "Authorization": f"Bearer {tokens.access_token}",
         "ChatGPT-Account-Id": tokens.account_id,
@@ -45,7 +103,12 @@ _models_cache_lock = asyncio.Lock()
 
 
 async def fetch_subscription_models() -> dict[str, dict[str, Any]]:
-    """The account's live model catalogue as ``{slug: {"name", "context"}}``."""
+    """The account's live model catalogue as ``{slug: {"name", "context"}}``.
+
+    Answers with an empty mapping when signed out or on any failure — network, auth, parse — so
+    callers fall back to the static list. Cached briefly because the interface polls this and it
+    must not be a network round-trip each time.
+    """
     global _models_cache
     ttl = active_tuning().duration(Tunable.model_catalogue_ttl_seconds)
     if _models_cache is not None and time.monotonic() - _models_cache[0] < ttl:
@@ -83,12 +146,16 @@ async def fetch_subscription_models() -> dict[str, dict[str, Any]]:
 
 
 def cached_subscription_models() -> dict[str, dict[str, Any]]:
-    """The last catalogue fetched, with no network round-trip, or empty if never fetched."""
+    """The last catalogue fetched, with no network round-trip, or empty if never fetched.
+
+    For synchronous callers that only want the freshest *known* value. The interface polls the
+    model list constantly, so it is warm in practice."""
     return _models_cache[1] if _models_cache is not None else {}
 
 
 def clear_subscription_models_cache() -> None:
-    """Drop the cached catalogue, so the next read reflects a fresh sign-in or sign-out immediately rather than waiting out the time to live."""
+    """Drop the cached catalogue, so the next read reflects a fresh sign-in or sign-out
+    immediately rather than waiting out the time to live."""
     global _models_cache
     _models_cache = None
 
@@ -113,7 +180,10 @@ def _header_bool(value: Optional[str]) -> bool:
 
 
 def capture_usage_headers(headers: httpx.Headers) -> None:
-    """Snapshot the account's rate-limit state from a reply's ``x-codex-*`` headers."""
+    """Snapshot the account's rate-limit state from a reply's ``x-codex-*`` headers.
+
+    A no-op when they are absent, which some error paths are, so it never replaces a good
+    snapshot with an empty one."""
     global _usage_snapshot
     if "x-codex-primary-window-minutes" not in headers and "x-codex-plan-type" not in headers:
         return
@@ -128,7 +198,9 @@ def capture_usage_headers(headers: httpx.Headers) -> None:
             after = _header_int(headers.get(f"x-codex-{key}-reset-after-seconds"))
             resets_at = now + after if after is not None else None
         windows.append({
-            # The label is derived on the client from `window_minutes`, localised — the five-hour and weekly mapping is not pinned to primary and secondary, and this layer stays free of presentation and locale.
+            # The label is derived on the client from `window_minutes`, localised — the
+            # five-hour and weekly mapping is not pinned to primary and secondary, and this
+            # layer stays free of presentation and locale.
             "key": key,
             "used_percent": _header_float(headers.get(f"x-codex-{key}-used-percent")) or 0.0,
             "window_minutes": window_minutes,
@@ -148,7 +220,8 @@ def capture_usage_headers(headers: httpx.Headers) -> None:
 
 
 def get_usage_snapshot() -> Optional[dict[str, Any]]:
-    """The most recent rate-limit snapshot captured from a turn, or ``None`` when no turn has run since signing in — the headers ride only on responses replies."""
+    """The most recent rate-limit snapshot captured from a turn, or ``None`` when no turn has
+    run since signing in — the headers ride only on responses replies."""
     return _usage_snapshot
 
 

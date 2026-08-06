@@ -1,4 +1,8 @@
-"""Compiling an agent definition into the A2A AgentCard a session advertises."""
+"""Compiling an agent definition into the A2A AgentCard a session advertises.
+
+Every session serves its card at the well-known path, so a peer that holds the session's
+address can discover what it is and what it can do without any out-of-band registry.
+"""
 
 from __future__ import annotations
 
@@ -22,9 +26,18 @@ def build_agent_card(
     available_skills: list[Skill],
     base_url: str,
 ) -> AgentCard:
-    """Compile an agent's markdown definition into the AgentCard its session advertises."""
+    """Compile an agent's markdown definition into the AgentCard its session advertises.
+
+    Each running session serves this at its own well-known path, so it is independently
+    discoverable by whoever holds its address.
+
+    The agent's available skills (discovered from the skills directory) are
+    advertised on the card; if there are none, a single default skill describing
+    the agent's role is synthesised so the card always carries at least one skill.
+    """
     display_name = configuration.display_name
-    # What the profile's own confinement permits.
+    # What the profile's own confinement permits. A card with no sandbox of its own has not
+    # said, which is not the same as saying it may not write.
     sandbox = getattr(configuration, "sandbox", None)
     writes = sandbox is None or bool(sandbox.filesystem.writable)
     capability = (
