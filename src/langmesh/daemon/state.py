@@ -82,14 +82,19 @@ daemon_token: str = ""
 
 
 async def reset_live_session_runtimes() -> None:
-    """Tell every running session to rebuild its runtime on the next turn."""
+    """Tell every running session to rebuild its runtime on the next turn.
+
+    The ones with a process, not every live record: a sleeping session holds no runtime to
+    drop, and builds one from the current configuration when a message next forks it a worker.
+    Relaying to it cannot arrive — there is nothing on the socket — so the reach is the set of
+    workers, which `running()` is, and not the set of records, which outlives them."""
     if registry is None:
         return
-    live = list(registry.live())
-    if not live:
+    running = registry.running()
+    if not running:
         return
     await asyncio.gather(
-        *(relay_to_session(record, "session/reset", {}) for record in live),
+        *(relay_to_session(record, "session/reset", {}) for record in running),
         return_exceptions=True,
     )
 

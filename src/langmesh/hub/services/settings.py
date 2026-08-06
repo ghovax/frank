@@ -6,6 +6,7 @@ from langmesh.hub.brokers.composio import composio_mcp_servers
 from langmesh.base.configuration import Configuration, save_api_keys
 from langmesh.base.paths import configuration_file_path
 from langmesh.base.mcp_client import MCPClientManager
+from langmesh.base.serialization import compact
 from typing import Optional
 import asyncio
 import hashlib
@@ -22,12 +23,30 @@ async def _apply_live_credentials() -> None:
         configuration.mcp.servers.update(state.composio_servers)
     else:
         configuration.mcp.servers.pop(configuration.composio.server_name, None)
+    mcp_servers = configuration.mcp.enabled_servers()
+    # Only when the servers themselves changed. Every write used to close every connection and open
+    # it again — new subprocesses, new handshakes — so setting an unrelated number cost as much as
+    # editing the servers, and the cost was paid while the caller waited.
+    fingerprint = _mcp_server_fingerprint(mcp_servers)
+    if fingerprint == state.mcp_server_fingerprint and state.mcp_manager is not None:
+        return
     if state.mcp_manager is not None:
         await state.mcp_manager.aclose()
-    mcp_servers = configuration.mcp.enabled_servers()
     state.mcp_manager = MCPClientManager(mcp_servers) if mcp_servers else None
     if state.mcp_manager is not None:
         await state.mcp_manager.start()
+    state.mcp_server_fingerprint = fingerprint
+
+
+def _mcp_server_fingerprint(servers: dict) -> str:
+    """What the MCP connections are built from, as one comparable string."""
+    return compact(
+        {
+            name: server.model_dump(mode="json") if hasattr(server, "model_dump") else server
+            for name, server in sorted(servers.items())
+        },
+        sort_keys=True,
+    )
 
 
 def _configuration_digest() -> Optional[str]:
