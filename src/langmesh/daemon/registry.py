@@ -9,11 +9,10 @@ import hmac
 import os
 import secrets
 from dataclasses import dataclass, field, replace
-from pathlib import Path
 from typing import Any, Iterator, Optional
 
 from langmesh.base.identifiers import new_id
-from langmesh.base.paths import runtime_directory, session_socket_path
+from langmesh.base.paths import runtime_directory
 
 # Does this session still exist? Durable, and the registry's own answer.
 LIVE = "live"
@@ -82,7 +81,7 @@ class SessionRecord:
     exit_reason: str = ""
 
     # The process, if there is one right now; zero means asleep and the next message forks a worker.
-    pid: int = 0
+    hosted: bool = False
     # Set when the session is parked on a decision, rebuilt on restart from the turn store where the suspension lives.
     awaiting_input: bool = False
     # Set while a turn is in flight, purely in memory because a stored value outlives the kill that ended it.
@@ -94,17 +93,13 @@ class SessionRecord:
         return token_for(self.id)
 
     @property
-    def socket_path(self) -> Path:
-        return session_socket_path(self.id)
-
-    @property
     def is_live(self) -> bool:
         return self.lifecycle == LIVE
 
     @property
     def asleep(self) -> bool:
-        """Live, but with no process. The next message to it forks one."""
-        return self.is_live and self.pid == 0
+        """Live, but with no executor. The next message to it builds one."""
+        return self.is_live and not self.hosted
 
     @property
     def activity(self) -> str:
@@ -113,7 +108,7 @@ class SessionRecord:
             return ENDED_ACTIVITY
         if self.awaiting_input:
             return WAITING
-        if self.pid == 0:
+        if not self.hosted:
             return ASLEEP
         if self.busy:
             return WORKING
@@ -135,7 +130,6 @@ class SessionRecord:
             "workspace_id": self.workspace_id,
             "permission_mode": self.permission_mode,
             "sandbox": self.sandbox,
-            "pid": self.pid,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "exit_reason": self.exit_reason,
@@ -150,9 +144,9 @@ class SessionRegistry:
         self._store = store
 
     def restore(self, records: list[SessionRecord]) -> None:
-        """Adopt the durable records at boot, each with no process, which is what a live session asleep is."""
+        """Adopt the durable records at boot, each unhosted, which is what a live session asleep is."""
         for record in records:
-            self._sessions[record.id] = replace(record, pid=0, busy=False)
+            self._sessions[record.id] = replace(record, hosted=False, busy=False)
 
     def _persist(self, record: SessionRecord) -> None:
         """Write a record durably from a thread that may block, never from a coroutine."""
@@ -215,9 +209,9 @@ class SessionRegistry:
     def live(self) -> list[SessionRecord]:
         return [record for record in self._sessions.values() if record.is_live]
 
-    def running(self) -> list[SessionRecord]:
-        """Live sessions that currently have a process. The ones a shutdown must reap."""
-        return [record for record in self._sessions.values() if record.is_live and record.pid]
+    def hosted_records(self) -> list[SessionRecord]:
+        """Live sessions this daemon is holding an executor for."""
+        return [record for record in self._sessions.values() if record.is_live and record.hosted]
 
     def children_of(self, session_id: str) -> list[SessionRecord]:
         return [record for record in self._sessions.values() if record.parent == session_id]
@@ -278,15 +272,15 @@ class SessionRegistry:
             lifecycle=ENDED,
             outcome=outcome,
             exit_reason=reason,
-            pid=0,
+            hosted=False,
             busy=False,
             awaiting_input=False,
             updated_at=updated_at,
         )
 
     def sleep(self, session_id: str, *, updated_at: str = "") -> Optional[SessionRecord]:
-        """Note that a live session no longer has a process. It stays live; it is now asleep."""
-        return self.mark(session_id, pid=0, busy=False, updated_at=updated_at)
+        """Note that a live session no longer has an executor. It stays live; it is now asleep."""
+        return self.mark(session_id, hosted=False, busy=False, updated_at=updated_at)
 
     def forget(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
@@ -295,4 +289,4 @@ class SessionRegistry:
 
 
 # Fields that describe a process rather than a session, and are therefore never written down.
-_VOLATILE_FIELDS = frozenset({"pid", "busy", "awaiting_input"})
+_VOLATILE_FIELDS = frozenset({"hosted", "busy", "awaiting_input"})

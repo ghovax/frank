@@ -34,18 +34,18 @@ from langmesh.protocol.dtos import (
     SettingsUpdateRequest,
     UserContextUpdateRequest,
 )
-from langmesh.hub.services import workspaces as _workspaces
+from langmesh.commons.services import workspaces as _workspaces
 from langmesh.rest.services import filesystem as _system
-from langmesh.hub import state
-from langmesh.hub.services.broadcast import _publish_broadcast
-from langmesh.hub.services.sessions import _normalize_permission_mode, _reset_work_habits_acknowledgements
-from langmesh.hub.services.agents import _recent_models
-from langmesh.hub.services.settings import (
+from langmesh.commons import state
+from langmesh.commons.services.broadcast import _publish_broadcast
+from langmesh.commons.services.sessions import _normalize_permission_mode, _reset_work_habits_acknowledgements
+from langmesh.commons.services.agents import _recent_models
+from langmesh.commons.services.settings import (
     _apply_live_credentials,
     _persist_configuration,
     _reload_configuration_from_disk,
 )
-from langmesh.hub.services.workspaces import _reset_all_runtimes
+from langmesh.commons.services.workspaces import _reset_all_runtimes
 
 router = APIRouter()
 

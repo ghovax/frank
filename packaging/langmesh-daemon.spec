@@ -1,10 +1,7 @@
 # PyInstaller spec that freezes LangMesh into one self-contained binary you install. It is a
-# single image with three entry points — `langmesh` (the CLI), `langmeshd` (the daemon) and
-# `prototype` (the process sessions are forked out of) — selected by the first argument,
-# because the prototype must be a re-exec of the *same signed binary* for macOS to treat it as
-# the same code identity and keep one Accessibility grant covering every session. Sessions
-# themselves are forks of the prototype, and a fork inherits the parent's signature, so the
-# whole fleet stays one TCC row without any session ever being exec'd.
+# single image with two entry points — `langmesh` (the CLI) and `langmeshd` (the daemon) —
+# selected by the first argument. Every session runs inside the daemon, so the whole fleet is
+# one signed binary and one TCC row, and macOS keeps a single Accessibility grant covering it.
 #
 # The desktop app used to bundle the result of this as a resource and spawn it. It no longer
 # does: the app is a client of a daemon it neither contains nor starts, so this produces the

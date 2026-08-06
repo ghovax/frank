@@ -21,7 +21,7 @@ Then follow the [Development guide](documentation/development.md) to run the dae
 - **Never commit secrets.** API keys go in `~/.config/langmesh/configuration.yaml` or environment variables, never in a tracked file. See [Security notes](SECURITY.md).
 - **Match the surrounding code.** Follow the existing naming, comment density, and structure; don't introduce a new style.
 - **Keep changes focused.** One logical change per pull request, with a clear description of what and why.
-- Run the checks that apply to your change before opening a PR: `uv run ruff check` for the harness, `bun run lint` and `bun run build` in `web/`. Two invariants are invisible in a diff and worth checking by hand — the daemon never imports the runtime, and `computer/` is never imported at module level, because both are what keep the prototype safe to fork.
+- Run the checks that apply to your change before opening a PR: `uv run ruff check` for the harness, `bun run lint` and `bun run build` in `web/`. One invariant is invisible in a diff and worth checking by hand — `computer/` is never imported at module level, because the screen stack is heavy and most sessions never touch it.
 
 ## Reporting bugs and proposing features
 

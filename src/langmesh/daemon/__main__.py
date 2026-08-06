@@ -1,4 +1,4 @@
-"""`langmeshd`, the control plane: it owns the registry, the prototype and the stores, and serves one API over a socket and loopback."""
+"""`langmeshd`, the control plane: it owns the registry, the sessions and the stores, and serves one API over a socket and loopback."""
 
 from __future__ import annotations
 
@@ -251,11 +251,11 @@ async def _serve() -> int:
     from langmesh.base.background_store import reap_orphaned_process_groups
     from langmesh.base.configuration import Configuration
     from langmesh.daemon import state
-    from langmesh.hub import state as hub_state
+    from langmesh.commons import state as commons_state
     from langmesh.daemon.composition import close_shared_resources, open_shared_resources
     from langmesh.daemon.lifecycle import SessionLifecycle
     from langmesh.daemon.peer_identity import unix_peer_protocol
-    from langmesh.daemon.prototype import PrototypeClient
+    from langmesh.daemon.host import SessionHost
     from langmesh.daemon.persistence.sessions import SqliteSessionStore
     from langmesh.daemon.registry import SessionRegistry
 
@@ -263,12 +263,12 @@ async def _serve() -> int:
         return await _defer_to_running_daemon()
     _reclaim_socket()
 
-    hub_state.global_configuration = Configuration.load()
-    if hub_state.global_configuration.user_context.enabled:
+    commons_state.global_configuration = Configuration.load()
+    if commons_state.global_configuration.user_context.enabled:
         # Built here, in the background, so the first message of a conversation never waits on it.
         from langmesh.runtime.prompt.environment import warm_user_context
 
-        warm_user_context(hub_state.global_configuration.user_context.refresh_hours)
+        warm_user_context(commons_state.global_configuration.user_context.refresh_hours)
     # Ask once at boot whether this machine can enforce a profile, on macOS by running one rather than by looking for the binary.
     confinement_state = confinement.probe()
     if confinement_state["backend"]:
@@ -280,7 +280,7 @@ async def _serve() -> int:
         )
     state.daemon_token = secrets.token_urlsafe(32)
     state.daemon_socket = str(daemon_socket_path())
-    hub_state.daemon_port = _free_port()
+    commons_state.daemon_port = _free_port()
 
     await _open_stores()
 
@@ -290,36 +290,34 @@ async def _serve() -> int:
         logger.info("reaped %d orphaned process group(s) from a previous run", orphans)
 
     # The registry is durable, so a restart ends every session's process rather than every session.
-    hub_state.session_store = SqliteSessionStore(hub_state.session_factory)
-    state.registry = SessionRegistry(store=hub_state.session_store)
-    restored = await asyncio.to_thread(hub_state.session_store.load_all)
+    commons_state.session_store = SqliteSessionStore(commons_state.session_factory)
+    state.registry = SessionRegistry(store=commons_state.session_store)
+    restored = await asyncio.to_thread(commons_state.session_store.load_all)
     state.registry.restore(restored)
     live = [record for record in restored if record.is_live]
     if live:
         logger.info("restored %d session(s), %d of them still live and asleep", len(restored), len(live))
-    # The prototype and the lifecycle know about each other in both directions, wired here because this is the composition root.
-    state.prototype = PrototypeClient(
-        on_exit=lambda report: state.lifecycle.on_session_exit(report),
-        on_lost=lambda: state.lifecycle.on_prototype_lost(),
-    )
+    # The host holds the executors and the lifecycle drives them, wired here because this is the composition root.
+    state.host = SessionHost()
+    # Imported at boot rather than when the first session is built, since that import is seconds and this is not a hot path.
+    import langmesh.worker.session  # noqa: F401
+    # How a call from a session's tool child is attributed back to that session.
+    from langmesh.runtime import background as runtime_background
+
+    runtime_background.note_child_group = state.host.note_child_group
     state.lifecycle = SessionLifecycle(
         state.registry,
-        state.prototype,
+        state.host,
         on_change=lambda: state.broadcaster.publish({"type": "sessions_changed"}),
     )
     # The two places a workspace change has a supervision consequence, filled in only where there is a control plane to tell.
     from langmesh.daemon.pending_input import settle_and_reap
 
-    hub_state.on_session_deleted = settle_and_reap
-    hub_state.reset_live_session_runtimes = state.reset_live_session_runtimes
-    hub_state.refresh_live_session_locations = state.refresh_workspace_locations
+    commons_state.on_session_deleted = settle_and_reap
+    commons_state.reset_live_session_runtimes = state.reset_live_session_runtimes
+    commons_state.refresh_live_session_locations = state.refresh_workspace_locations
 
-    # Best effort: a machine that cannot start the prototype still serves every read and says so in `daemon.status`.
-    try:
-        await state.prototype.start()
-    except Exception:  # noqa: BLE001 — a daemon without a prototype is degraded, not dead
-        logger.error("the prototype could not be started, new sessions will fail", exc_info=True)
-    # Built after the stores and the prototype, and after the port is known, because the file-URL signer signs against it.
+    # Built after the stores, and after the port is known, because the file-URL signer signs against it.
     await open_shared_resources()
 
     app = build_app()
@@ -334,7 +332,7 @@ async def _serve() -> int:
     )
     tcp_server = announcing(
         uvicorn.Config(
-            app, host=LOOPBACK_HOST, port=hub_state.daemon_port,
+            app, host=LOOPBACK_HOST, port=commons_state.daemon_port,
             log_level="warning", access_log=False, log_config=None,
         )
     )
@@ -356,7 +354,7 @@ async def _serve() -> int:
         """Wait for a signal, then stop both servers from inside the loop, which is the only place `should_exit` is observed."""
         await stopping.wait()
         # Streams first, servers second, since an open response holds the connection until it yields its last frame.
-        hub_state.shutting_down.set()
+        commons_state.shutting_down.set()
         state.event_bus.complete_all()
         state.broadcaster.close()
         socket_server.should_exit = True
@@ -371,13 +369,13 @@ async def _serve() -> int:
         both_ready.cancel()
         await serving
         return 1
-    _write_handshake(state.daemon_token, hub_state.daemon_port)
+    _write_handshake(state.daemon_token, commons_state.daemon_port)
     # One line on stdout and then close it, since whoever started the daemon is waiting to read exactly this.
     with contextlib.suppress(OSError, ValueError):
-        sys.stdout.write(json.dumps({"ready": True, "pid": os.getpid(), "port": hub_state.daemon_port}) + "\n")
+        sys.stdout.write(json.dumps({"ready": True, "pid": os.getpid(), "port": commons_state.daemon_port}) + "\n")
         sys.stdout.flush()
         sys.stdout.close()
-    logger.info("langmeshd listening on %s and %s:%d", state.daemon_socket, LOOPBACK_HOST, hub_state.daemon_port)
+    logger.info("langmeshd listening on %s and %s:%d", state.daemon_socket, LOOPBACK_HOST, commons_state.daemon_port)
 
     try:
         await serving
@@ -386,8 +384,6 @@ async def _serve() -> int:
         # Sessions must not outlive their supervisor, which can no longer persist anything for them.
         with contextlib.suppress(Exception):
             await state.lifecycle.aclose()
-        with contextlib.suppress(Exception):
-            await state.prototype.aclose()
         with contextlib.suppress(Exception):
             await close_shared_resources()
         _clear_handshake()
@@ -402,8 +398,8 @@ async def _open_stores() -> None:
 
     from langmesh.base.paths import database_file_path
     from langmesh.base.sqlite_lock import configure_sqlite_lock, sqlite_write_lock
-    from langmesh.hub import state as hub_state
-    from langmesh.hub.database import _apply_history_schema
+    from langmesh.commons import state as commons_state
+    from langmesh.commons.database import _apply_history_schema
     from langmesh.daemon.persistence.turn_store import AppendOnlyTaskStore
 
     database_path = database_file_path()
@@ -423,10 +419,10 @@ async def _open_stores() -> None:
             _apply_history_schema(sync_engine)
 
     await asyncio.to_thread(_initialize)
-    hub_state.session_factory = sessionmaker(bind=sync_engine)
-    hub_state.async_engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}", connect_args={"timeout": 30})
+    commons_state.session_factory = sessionmaker(bind=sync_engine)
+    commons_state.async_engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}", connect_args={"timeout": 30})
 
-    @event.listens_for(hub_state.async_engine.sync_engine, "connect")
+    @event.listens_for(commons_state.async_engine.sync_engine, "connect")
     def _async_pragmas(dbapi_connection, _record):  # noqa: ANN001
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
@@ -434,10 +430,10 @@ async def _open_stores() -> None:
         cursor.execute("PRAGMA busy_timeout=30000")
         cursor.close()
 
-    hub_state.turn_store = AppendOnlyTaskStore(hub_state.async_engine)
-    await hub_state.turn_store.initialize()
+    commons_state.turn_store = AppendOnlyTaskStore(commons_state.async_engine)
+    await commons_state.turn_store.initialize()
     # A turn mid-execution when the daemon stopped cannot be resurrected, so it is marked interrupted rather than left running.
-    interrupted = await hub_state.turn_store.reconcile_orphaned_turns()
+    interrupted = await commons_state.turn_store.reconcile_orphaned_turns()
     if interrupted:
         logger.warning("marked %d interrupted turn(s) from a previous run", len(interrupted))
 

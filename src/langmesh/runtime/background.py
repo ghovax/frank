@@ -423,3 +423,12 @@ def unbind_tool_call_id(token: contextvars.Token) -> None:
 
 def current_tool_call_id() -> str:
     return _current_tool_call_id.get()
+
+#: Set by whoever hosts sessions, so a tool child's process group can be attributed back to its session.
+note_child_group = None
+
+
+def record_child_group(session_id: str, group: int) -> None:
+    """Tell the host which group a session's tool child leads, if anything is listening."""
+    if note_child_group is not None and session_id and group:
+        note_child_group(session_id, group)

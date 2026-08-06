@@ -7,7 +7,7 @@ import asyncio
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from langmesh.hub.services import schedules as _schedules
+from langmesh.commons.services import schedules as _schedules
 
 router = APIRouter()
 
@@ -81,11 +81,11 @@ async def delete_schedule(schedule_id: str):
 async def run_schedule(schedule_id: str):
     """Fire now without moving the window, so a wrong agent name is found before six tomorrow morning."""
     from langmesh.daemon import scheduler
-    from langmesh.hub.database import ScheduleRecord
-    from langmesh.hub import state as hub_state
+    from langmesh.commons.database import ScheduleRecord
+    from langmesh.commons import state as commons_state
 
     def _detached():
-        database_session = hub_state.session_factory()
+        database_session = commons_state.session_factory()
         try:
             found = database_session.get(ScheduleRecord, schedule_id)
             if found is not None:

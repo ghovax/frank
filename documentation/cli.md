@@ -12,7 +12,7 @@ The daemon starts itself on your first command. There is no mandatory "start the
 
 ## The shape of it
 
-A **session** is one OS process running one agent. You create it empty, send it work, and read what it produced. Creating and working are separate steps on purpose: the same session takes a second task, can be attached to, and can be inspected in between.
+A **session** is one durable conversation running one agent. You create it empty, send it work, and read what it produced. Creating and working are separate steps on purpose: the same session takes a second task, can be attached to, and can be inspected in between.
 
 ```shell
 id=$(langmesh create --agent general-assistant --directory ~/code/project)
@@ -243,24 +243,21 @@ The app is addressed by bundle identifier rather than by name, so renaming or mo
 
 `serve` makes LangMesh available; `daemon` is the lifecycle of the process behind it. One verb rather than two for the first: starting the daemon and serving the interface were never separately useful, and having both `serve` and `web` meant two names for "make this reachable". Any other command starts a daemon on demand anyway, so `serve` is for wanting it up, in front of you, on its own.
 
-`restart` **keeps your sessions**. Each one loses its process and comes back asleep, picking up where it left off on the next message; `sessions_slept` says how many that was. It exists because macOS caches the Accessibility trust check per process.
+`restart` **keeps your sessions**. Each one loses its executor and comes back asleep, picking up where it left off on the next message; `sessions_slept` says how many that was. It exists because macOS caches the Accessibility trust check per process.
 
-A daemon that was already running when you granted the permission therefore never sees it. The prototype it forks sessions from is a re-exec of it, so neither do the sessions. The desktop app asks for the same thing over the control plane, with `daemon.restart`. That makes the grant flow one click, because a restart of the window does not restart the harness.
+A daemon that was already running when you granted the permission therefore never sees it, and neither do the sessions it hosts. The desktop app asks for the same thing over the control plane, with `daemon.restart`. That makes the grant flow one click, because a restart of the window does not restart the harness.
 
 `stop` and `restart` signal the process group; they do not call the API. A daemon wedged badly enough to need stopping may not answer its own socket.
 
 ### Inspecting it
 
-`langmesh daemon status` reports whether the daemon is up, how many sessions it knows about, and the prototype's health:
+`langmesh daemon status` reports whether the daemon is up and how many sessions it knows about, including how many it is hosting right now:
 
 ```console
 $ langmesh daemon status
-{"ok":true,"sessions":{"live":64,"total":73},"prototype":{"alive":true,"pid":30054,
- "threads":1,"frozen_objects":18422,"sessions":0},"port":56826,
+{"ok":true,"sessions":{"live":64,"total":73,"hosted":2},"port":56826,
  "image":{"executable":"…/langmesh","frozen":true}}
 ```
-
-`threads` and `frozen_objects` are the two invariants that fail silently. The prototype must be single-threaded to fork at all, and its heap must be frozen or the saving disappears without anything breaking.
 
 `status` never starts anything — a status check that silently launched the service could never report the absence it was asked about. Pass `--start` if you want that.
 

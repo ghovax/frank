@@ -1,4 +1,4 @@
-"""The daemon's process-wide singletons, and the one place a command is relayed to a session."""
+"""The daemon's process-wide singletons, and the one place a session's verb is called."""
 
 from __future__ import annotations
 
@@ -6,9 +6,6 @@ import asyncio
 import logging
 from typing import Any
 
-import httpx
-
-from langmesh.base.serialization import upstream_detail
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +48,7 @@ class SessionEventBus:
 # The supervision singletons: what a session's existence depends on, as distinct from what the browser surface needs.
 
 registry: Any = None            # SessionRegistry
-prototype: Any = None           # PrototypeClient
+host: Any = None                # SessionHost
 lifecycle: Any = None           # SessionLifecycle
 
 event_bus = SessionEventBus()
@@ -61,10 +58,10 @@ event_bus = SessionEventBus()
 
 def __getattr__(name: str) -> Any:
     """Read a workspace singleton through this module, resolved lazily because they are set after this one is imported."""
-    from langmesh.hub import state as hub_state
+    from langmesh.commons import state as commons_state
 
-    if hasattr(hub_state, name):
-        return getattr(hub_state, name)
+    if hasattr(commons_state, name):
+        return getattr(commons_state, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 # The running and awaiting sets live on the workspace module and reach this one through the lookup above.
@@ -82,14 +79,11 @@ daemon_token: str = ""
 
 
 async def reset_live_session_runtimes() -> None:
-    """Tell the sessions that have a worker to rebuild their runtime; a sleeping one has none to drop."""
-    if registry is None:
-        return
-    running = registry.running()
-    if not running:
+    """Tell the sessions being hosted to rebuild their runtime; a record with no executor has none to drop."""
+    if host is None:
         return
     await asyncio.gather(
-        *(relay_to_session(record, "session/reset", {}) for record in running),
+        *(dispatch_to_session(session_id, "session/reset", {}) for session_id in host.hosted()),
         return_exceptions=True,
     )
 
@@ -98,11 +92,11 @@ async def refresh_workspace_locations(workspace_id: str) -> None:
     """Tell every live session in a workspace that its locations have changed."""
     if registry is None or not workspace_id:
         return
-    from langmesh.hub.services.locations import _resolve_session_locations
+    from langmesh.commons.services.locations import _resolve_session_locations
 
     live = [
         record for record in registry.live()
-        if record.workspace_id == workspace_id and not record.asleep
+        if record.workspace_id == workspace_id and host is not None and host.hosts(record.id)
     ]
     if not live:
         return
@@ -115,62 +109,35 @@ async def refresh_workspace_locations(workspace_id: str) -> None:
 
 
 async def wake_then_relay(record, method: str, params: dict) -> dict:
-    """Forward a command to a session, forking it a worker first if it has none."""
-    if record.asleep:
+    """Forward a command to a session, building its executor first if this daemon is not hosting it yet."""
+    if host is not None and not host.hosts(record.id):
         await _wake(record)
-    try:
-        return await relay_to_session(record, method, params)
-    except SessionUnreachable:
-        # Not an edge case but the ordinary path, since a session exits when its turn ends.
-        logger.info("session %s had no worker for %s; waking it and retrying", record.id, method)
-        slept = registry.sleep(record.id)
-        await _wake(slept if slept is not None else record)
-        return await relay_to_session(slept if slept is not None else record, method, params)
-
-
-class SessionUnreachable(RuntimeError):
-    """No worker answered on the session's socket, which is recoverable by waking, unlike a refusal."""
+    return await dispatch_to_session(record.id, method, params)
 
 
 _wake_locks: dict[str, asyncio.Lock] = {}
 
 
 async def _wake(record) -> None:
-    """Give a sleeping session a worker again, from the record that already holds everything the assignment needs."""
+    """Give a session an executor again, from the record that already holds everything the build needs."""
     lock = _wake_locks.setdefault(record.id, asyncio.Lock())
     async with lock:
         # Re-checked inside the lock, since the waiter may be the second of two and the first has already done this.
-        if not record.asleep:
+        if host is not None and host.hosts(record.id):
             return
         if lifecycle is None:
-            raise RuntimeError(f"Session {record.id} is asleep and there is nothing to wake it.")
+            raise RuntimeError(f"Session {record.id} has no executor and there is nothing to build one.")
         if not await lifecycle.start(record):
-            raise RuntimeError(
-                f"Session {record.id} is asleep and could not be woken; see the daemon log."
-            )
+            raise RuntimeError(f"Session {record.id} could not be started; see the daemon log.")
+
+
+async def dispatch_to_session(session_id: str, method: str, params: dict) -> dict:
+    """Call one of a hosted session's verbs, which is what used to cross a socket."""
+    if host is None:
+        raise RuntimeError("This daemon is hosting nothing.")
+    return await host.dispatch(session_id, method, params)
 
 
 async def relay_to_session(record, method: str, params: dict) -> dict:
-    """Forward a client's command to the session that owns it, with the token derived from its id."""
-    transport = httpx.AsyncHTTPTransport(uds=str(record.socket_path))
-    payload = {"method": method, "params": {key: value for key, value in params.items() if key != "id"}}
-    try:
-        async with httpx.AsyncClient(transport=transport, timeout=120.0) as client:
-            response = await client.post(
-                "http://session/rpc",
-                json=payload,
-                headers={"Authorization": f"Bearer {record.token}"},
-            )
-    except (httpx.ConnectError, httpx.ConnectTimeout, OSError) as error:
-        # Nothing accepted the connection, so there is no worker right now, which is its own recoverable case.
-        raise SessionUnreachable(f"Session {record.id} is not reachable ({error}).") from error
-    except httpx.HTTPError as error:
-        # Something answered and then took too long, which is a busy worker rather than an absent one.
-        raise RuntimeError(
-            f"Session {record.id} did not answer {method} in time ({error}). Its worker is "
-            f"running but did not respond; the turn may still be in progress."
-        ) from error
-    if response.status_code >= 400:
-        raise RuntimeError(f"Session {record.id} rejected {method}: {upstream_detail(response.text)}")
-    body = response.json()
-    return body.get("result", body)
+    """Address a session by its record, which is how every caller outside this module reaches one."""
+    return await dispatch_to_session(record.id, method, params)

@@ -292,11 +292,7 @@ tuning:
     open_url_seconds: 5.0
 
     # Session and daemon lifecycle, in seconds. `session_idle_sleep_seconds` is five hours.
-    warm_workers: 2
-    prototype_start_seconds: 120.0
-    prototype_restart_seconds: 5.0
     session_idle_sleep_seconds: 18000.0
-    session_start_seconds: 60.0
     daemon_startup_seconds: 45.0
     control_plane_call_seconds: 60.0
     daemon_probe_interval_seconds: 0.05

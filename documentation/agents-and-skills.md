@@ -48,7 +48,7 @@ You are the senior researcher. You do not take bullshit...
 
 There used to be a `configuration.json` beside it holding the model preset, the permission ceiling and the tool toggles — in camelCase, while the frontmatter was snake_case. Loading an agent meant merging the two, so the same fact had two spellings and two places to be wrong. Settings edits this file directly, and leaves the prompt body untouched.
 
-Each agent is a profile a session can be created with, and a running session serves [A2A](https://github.com/google/A2A) on its own socket. A session that needs a peer creates one with its `create_session` tool, over the control plane your terminal uses. See [Tools](tools.md#composing-with-other-sessions) for how a peer reports back.
+Each agent is a profile a session can be created with, and the daemon serves [A2A](https://github.com/google/A2A) for every session it hosts. A session that needs a peer creates one with its `create_session` tool, over the control plane your terminal uses. See [Tools](tools.md#composing-with-other-sessions) for how a peer reports back.
 
 The peer answers the same way, by messaging the session that created it. Bundled agents:
 

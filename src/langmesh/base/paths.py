@@ -13,7 +13,6 @@ CONFIGURATION_FILENAME = "configuration.yaml"
 DATABASE_FILENAME = "history.db"
 BACKGROUND_DATABASE_FILENAME = "background.db"
 DAEMON_SOCKET_FILENAME = "langmeshd.sock"
-PROTOTYPE_SOCKET_FILENAME = "prototype.sock"
 DAEMON_TOKEN_FILENAME = "token"
 DAEMON_PORT_FILENAME = "port"
 
@@ -153,15 +152,7 @@ def session_socket_identifier(session_id: str) -> str:
     return hashlib.sha256(session_id.encode()).hexdigest()[:16]
 
 
-def session_socket_path(session_id: str) -> Path:
-    path = runtime_directory() / "sessions"
-    path.mkdir(parents=True, exist_ok=True)
-    return _within_socket_limit(path / f"{session_socket_identifier(session_id)}.sock")
 
-
-def prototype_socket_path() -> Path:
-    """Where the daemon reaches the prototype, 0600 because anything speaking it can fork arbitrary agent code."""
-    return _within_socket_limit(runtime_directory() / PROTOTYPE_SOCKET_FILENAME)
 
 
 def daemon_token_path() -> Path:

@@ -30,7 +30,9 @@ class Skill(BaseModel):
 
 
 def _parse_skill(path: Path) -> Skill:
-    content = path.read_text()
+    from langmesh.base.file_cache import parsed_file
+
+    content = parsed_file(path, lambda each: each.read_text()) or ""
     match = _FRONTMATTER.match(content)
     if match:
         frontmatter = yaml.safe_load(match.group(1)) or {}

@@ -10,8 +10,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from langmesh.base.sqlite_lock import sqlite_write_lock
-from langmesh.hub import state
-from langmesh.hub.database import MachineRecord
+from langmesh.commons import state
+from langmesh.commons.database import MachineRecord
 
 # The scheme `langmesh reach` prints, accepted with or without it.
 PAIRING_PREFIX = "langmesh://pair#"

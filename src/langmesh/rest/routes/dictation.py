@@ -7,9 +7,9 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request
 
-from langmesh.hub import state
-from langmesh.hub.services.broadcast import _publish_broadcast
-from langmesh.hub.services.settings import _persist_configuration
+from langmesh.commons import state
+from langmesh.commons.services.broadcast import _publish_broadcast
+from langmesh.commons.services.settings import _persist_configuration
 from langmesh.protocol.dtos import DictationUpdateRequest
 
 logger = logging.getLogger(__name__)

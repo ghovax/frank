@@ -251,13 +251,9 @@ How large, how many, and how patient the tools are.
 | `tuning.defaults.accessibility_messaging_seconds` | number | `2.0` | How long one accessibility message to an application waits, so a hung application costs a moment rather than the whole action. |
 | `tuning.defaults.goal_continuation_turns` | integer | `12` | How many turns in a row a session may open for its own goal before it stops and waits for the person. |
 | `tuning.defaults.goal_blocked_turns` | integer | `3` | How many times the same condition must stop a goal before the agent may report it blocked. One failure is not an impasse, and a goal abandoned on the first refusal is one nobody asked to abandon. |
-| `tuning.defaults.warm_workers` | integer | `2` | How many session workers to keep started and waiting. |
 | `tuning.defaults.session_title_attempts` | integer | `3` | How many times a session asks the model to name itself before giving up. |
 | `tuning.defaults.permission_reviewer_attempts` | integer | `3` | How many times the permission reviewer is asked before its silence counts as a refusal. |
-| `tuning.defaults.prototype_start_seconds` | number | `120.0` | How long the daemon waits for the prototype to start and accept a connection. The prototype itself imports nothing heavy; it starts the workers that do, and keeps a couple of them started ahead of demand. |
-| `tuning.defaults.prototype_restart_seconds` | number | `5.0` | How long the daemon waits before trying again after the prototype failed to restart. |
 | `tuning.defaults.session_idle_sleep_seconds` | number | `18000.0` | How long a session keeps its process after its last turn before it sleeps. |
-| `tuning.defaults.session_start_seconds` | number | `60.0` | How long the daemon waits for a forked session to bind its socket and report ready. |
 | `tuning.defaults.daemon_startup_seconds` | number | `45.0` | How long a command waits for a daemon it just started to become reachable. |
 | `tuning.defaults.control_plane_call_seconds` | number | `60.0` | How long one call to the daemon waits. |
 | `tuning.defaults.model_catalogue_ttl_seconds` | number | `60.0` | How long the list of available models is cached. |
@@ -349,14 +345,8 @@ How alike two screen queries must be, as a cosine in the retrieval model's own s
 
 How long resolving a frame reference waits. Deliberately well below the action timeout: a frame that has gone waits out its budget rather than erroring, and listing every frame would otherwise stall on the one that left.
 
-### `tuning.defaults.prototype_start_seconds`
-
-How long the daemon waits for the prototype to start and accept a connection. The prototype itself imports nothing heavy; it starts the workers that do, and keeps a couple of them started ahead of demand.
 
 ### `tuning.defaults.session_idle_sleep_seconds`
 
 How long a session keeps its process after its last turn before it sleeps. Five hours by default: long enough that a working day of on-and-off use never pays a wake, short enough that a machine left overnight is not holding interpreters for conversations nobody returned to.
 
-### `tuning.defaults.warm_workers`
-
-How many session workers to keep started and waiting. A worker spends about two and a half seconds importing the runtime before it can serve, and none of that work depends on which session it becomes — so some are started ahead of demand and a new session is handed one instead of waiting. Raise it if several sessions are often created at once. One is the minimum: a session created with the pool empty starts its own worker and waits for the import, which is what every session did before the pool existed.

@@ -6,14 +6,14 @@ Six terms carry most of the meaning here, and four of them are LangMesh's own.
 
 | Term | What it means |
 |---|---|
-| **Session** | One conversation with an agent. It is a durable record, and it has an OS process only while it is working. |
+| **Session** | One conversation with an agent. It is a durable record, and the daemon holds a live executor for it only while it is working. |
 | **Turn** | One exchange within a session: a message in, the model's work, and everything it said and did before it stopped. A session has many turns over its life. |
 | **Harness** | The code between the model and your machine — the turn loop, the tools, the prompts, the permissions. `langmesh.Session` is the harness, and everything else here is built on it. |
 | **Control plane** | The daemon's API. Every client reaches a session through it, so a caller is identified and scoped in exactly one place. |
 | **Location** | Where a session's tools actually run: this machine, or an SSH host. Distinct from its working directory, which is *where* on that location. |
 | **Peer** | A session created by another session. Not a special kind of thing — an ordinary session, addressed the way you address any session. |
 
-[A2A](https://github.com/google/A2A) is Agent-to-Agent, Google's JSON-RPC protocol for one agent to call another. Each session serves it on its own socket, so a peer and a person reach a session the same way.
+[A2A](https://github.com/google/A2A) is Agent-to-Agent, Google's JSON-RPC protocol for one agent to call another. The daemon serves it for every session it hosts, so a peer and a person reach a session the same way.
 
 ## The four layers
 
@@ -21,9 +21,9 @@ Each layer uses the one below it and adds a single thing — the [documentation 
 
 The bottom layer is the whole of the harness. A program can embed it and never start a daemon; see [As a library](library.md). Everything below in this document is what the three layers above add.
 
-LangMesh is one executable entered four ways. `langmesh` is the command a person runs and `langmeshd` is the daemon. `prototype` is the process the daemon forks sessions from, and `session` is one session worker.
+LangMesh is one executable entered two ways. `langmesh` is the command a person runs and `langmeshd` is the daemon that hosts the sessions.
 
-They are the same image, not four binaries, for two reasons. Packaging stays a single specification. A worker launched as a re-exec also carries the same code identity as the signed application bundle. One macOS Accessibility grant therefore covers every session, instead of prompting once per worker.
+They are the same image, not two binaries, for two reasons. Packaging stays a single specification, and every session runs inside the daemon, so the whole fleet carries the signed application bundle's code identity. One macOS Accessibility grant therefore covers everything, instead of prompting once per session.
 
 ```mermaid
 flowchart BT
@@ -39,9 +39,7 @@ flowchart BT
         Stores["Sole writer:<br/>history.db"]
     end
 
-    Prototype["Prototype — the runtime,<br/>imported once and frozen"]
-
-    subgraph Session["A session — one OS process"]
+    subgraph Session["A session — hosted inside the daemon"]
         Executor["Agent loop<br/>(LangChain)"]
         Permissions["Permission engine"]
         Tools["Tools: shell, files, web,<br/>screen control, MCP"]
@@ -53,10 +51,8 @@ flowchart BT
     App -->|loopback TCP + token| Daemon
     Peer -->|unix socket| Daemon
     Daemon --> Registry & Lifecycle & Stores
-    Lifecycle -->|asks it to fork| Prototype
-    Prototype -->|fork| Session
-    Prototype -->|reports each exit| Lifecycle
-    Daemon -->|relays A2A to its socket| Session
+    Lifecycle -->|builds and holds| Session
+    Daemon -->|calls its verbs directly| Session
     Session -->|writes through the daemon| Stores
     Executor --> Permissions --> Tools
     Executor <--> ModelProvider
@@ -64,31 +60,29 @@ flowchart BT
 
 ## Sessions
 
-A **session** is a durable record, with an OS process only while it is working. The harness creates it empty, then drives it by messages over its life. Creation and work are separate steps. You can therefore send the same session a second task, attach to it, and inspect it between them.
+A **session** is a durable record, with a live executor only while it is working. The harness creates it empty, then drives it by messages over its life. Creation and work are separate steps. You can therefore send the same session a second task, attach to it, and inspect it between them.
 
-The process is an activity, not the session. An idle session sleeps immediately: its worker stops, and its record and its conversation stay. The next message forks it a new worker from the prototype, in about 60 ms.
+Being hosted is an activity, not the session. An idle session sleeps immediately: its executor is dropped, and its record and its conversation stay. The next message builds it a new one, in tens of milliseconds.
 
-There is deliberately no linger window. At that price, a 12 MB interpreter held alive for a message that may not come pays continuously to avoid paying occasionally. A session parked on a permission prompt is the clearest case. The suspension is already fully on disk. To hold an interpreter for a person who may take hours bought nothing.
+There is deliberately no linger window. An executor held alive for a message that may not come pays continuously to avoid paying occasionally, and rebuilding one is cheap. A session parked on a permission prompt is the clearest case: the suspension is already fully on disk, so holding anything for a person who may take hours buys nothing.
 
-Two consequences follow. A daemon restart ends every session's *process* and no session at all. The harness derives the capability token from the session id; it does not store it. A woken session must get the same token that its creator got.
+Two consequences follow. A daemon restart ends every session's *executor* and no session at all. The harness derives the capability token from the session id; it does not store it. A woken session must get the same token that its creator got.
 
-Each session serves [A2A](https://github.com/google/A2A) (JSON-RPC) on **its own unix socket** in the runtime directory, and the daemon is what talks to it. Every client reaches the daemon, and the daemon relays: the terminal, the desktop app, another session. There is therefore one place that identifies a caller, scopes it to its own subtree, and records it. A session's socket being real and addressable is what makes that relay a thin hop rather than a reimplementation, but nothing bypasses it today.
+The daemon serves [A2A](https://github.com/google/A2A) (JSON-RPC) for every session it hosts, and every client reaches the daemon: the terminal, the desktop app, another session. There is therefore one place that identifies a caller, scopes it to its own subtree, and records it, and calling a session's verb is a direct call rather than a hop across a socket.
 
 There is no in-process delegation: a session that needs a peer creates an ordinary session and messages it. See [Tools](tools.md#composing-with-other-sessions). A child appears in `langmesh ps`, can be attached to, and is reaped when its parent ends.
 
-Isolation is a property of the process. A process becomes one session and stays that session for the rest of its life.
-
-Nothing reuses it, and it never serves a second session. No path exists by which one session's state reaches another's. That holds under forking too. A fork copies the prototype, which ran no agent and holds no session state. A fork never copies another session.
+Isolation is a property of the executor and the context it runs in. An executor belongs to one session for the whole of its life, and the tool context is bound per task, so no path exists by which one session's state reaches another's. What sessions do share is the daemon's process: a native crash takes the daemon rather than one session. That is the price of a session costing a fraction of a millisecond instead of seconds.
 
 ## The daemon
 
-`langmeshd` is deliberately thin — it runs no agents, and it never imports the runtime. It owns:
+`langmeshd` owns everything there can only sensibly be one of, and hosts the sessions themselves. It owns:
 
 - the **registry** of sessions (identity, parent, permission mode, status);
-- the **lifecycle**: asking the prototype to fork a session, hearing about crashes, and reaping a subtree parent-last so a child never outlives its parent;
-- the **databases**, as the sole writer — workers persist by posting to the daemon's ingest surface, so there is exactly one process writing SQLite;
+- the **lifecycle**: building a session's executor, dropping it when the session sleeps, and reaping a subtree parent-last so a child never outlives its parent;
+- the **databases**, as the sole writer — sessions persist through the daemon's ingest surface, so there is exactly one process writing SQLite;
 - the shared **brokers**: events, terminals, file leases, workspaces, signed file URLs, push notifications, and remote agents — everything there can only sensibly be one of;
-- the **prototype**, which it starts, supervises and restarts. It is a separate process, not a part of the daemon, for a reason the layering makes unavoidable. Whatever forks a session must already have imported the runtime. The daemon must never import the runtime. If the prototype dies, live sessions are untouched — they are independent processes — and only new sessions wait, for as long as the restart takes.
+- the **sessions themselves**, each an executor it builds, holds and drops. Hosting them is why the daemon imports the runtime at boot: that import costs seconds, and paying it once at startup is what makes building a session cost a fraction of a millisecond.
 
 It serves one API two ways:
 

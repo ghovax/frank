@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from langmesh.base.configuration import Configuration
 from langmesh.base.mcp_client import MCPClientManager
-from langmesh.hub import state
+from langmesh.commons import state
 
 
 async def _reload_mcp() -> None:

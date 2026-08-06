@@ -3,7 +3,7 @@
 # (packaging/create-signing-cert.sh), so the daemon has a STABLE code identity across rebuilds.
 #
 # There are two now, and only one of them matters for permissions. The daemon — not the desktop
-# app — is the process that calls the macOS Accessibility API, because a session worker is a
+# app — is the process that calls the macOS Accessibility API, because every session runs inside it and is a
 # re-exec of it, and TCC lists whichever process exercises the permission. The daemon ships as
 # "LangMesh Computer Use.app", whose Info.plist carries the *same* CFBundleName ("LangMesh") and
 # identifier (com.ghovax.langmesh) as the desktop app. Signed with the same persistent cert it

@@ -8,7 +8,7 @@ Detailed guides for installing, configuring, understanding, and developing LangM
 |---|---|---|
 | `langmesh.Session` | The harness: turn loop, tools, prompts, permissions | Nothing. Every value is one you passed |
 | `langmesh.daemon.machine` | Turns a home directory into what `Session` takes | The XDG paths, and your `.agents` |
-| `langmeshd` | Supervision: a process per session, a socket each, the databases | Everything, and it is the right place to |
+| `langmeshd` | Supervision: the live sessions, the register of what exists, the databases | Everything, and it is the right place to |
 | `langmesh`, and the app | Clients of the daemon | Where the daemon is |
 
 Start with the layer you are actually using.

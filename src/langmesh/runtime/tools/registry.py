@@ -131,7 +131,12 @@ async def bash(
         process_id = process.pid
         # Persist the group id, so a subtree orphaned by a crash is reaped on the next startup.
         try:
-            current_background_jobs().store.record_process_group(job_id, os.getpgid(process_id))
+            group = os.getpgid(process_id)
+            current_background_jobs().store.record_process_group(job_id, group)
+            # And tell the host, which is how a call this child makes is attributed back to this session.
+            from langmesh.runtime.background import record_child_group
+
+            record_child_group(active.session_id, group)
         except (ProcessLookupError, OSError):
             pass
 

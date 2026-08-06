@@ -39,18 +39,18 @@ def peer_process_id(transport) -> int:
 
 
 def session_for_process(process_id: int) -> Optional[str]:
-    """The session a process belongs to: a worker leads its session, so its descendants report its pid."""
+    """The session a process belongs to, by the group its tool child leads, which the daemon recorded when it spawned it."""
     from langmesh.daemon import state
 
-    if process_id <= 0 or state.registry is None:
+    if process_id <= 0 or state.host is None:
         return None
-    try:
-        leader = os.getsid(process_id)
-    except (OSError, ProcessLookupError):
-        return None
-    for record in state.registry.live():
-        if record.pid and record.pid == leader:
-            return record.id
+    for resolve in (os.getpgid, os.getsid):
+        try:
+            owner = state.host.session_of_group(resolve(process_id))
+        except (OSError, ProcessLookupError):
+            return None
+        if owner:
+            return owner
     return None
 
 

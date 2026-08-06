@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from langmesh.hub import state
+from langmesh.commons import state
 
 
 def _notify_filesystem_lease_state() -> None:

@@ -11,11 +11,11 @@ from langmesh.protocol.dtos import (
     WorkspaceCreateRequest,
     WorkspaceLastSessionRequest,
 )
-from langmesh.hub import state
-from langmesh.hub.services import workspaces as _workspaces
-from langmesh.hub.services.broadcast import _publish_broadcast
-from langmesh.hub.services.locations import _workspace_id_for_location
-from langmesh.hub.services.workspaces import _create_location, _create_workspace, _delete_location, _delete_workspace, _hosts_payload, _remember_last_session, _workspace_name, _workspace_payload, _workspaces_payload, _update_location
+from langmesh.commons import state
+from langmesh.commons.services import workspaces as _workspaces
+from langmesh.commons.services.broadcast import _publish_broadcast
+from langmesh.commons.services.locations import _workspace_id_for_location
+from langmesh.commons.services.workspaces import _create_location, _create_workspace, _delete_location, _delete_workspace, _hosts_payload, _remember_last_session, _workspace_name, _workspace_payload, _workspaces_payload, _update_location
 
 router = APIRouter()
 

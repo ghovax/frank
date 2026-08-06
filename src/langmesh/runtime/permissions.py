@@ -10,7 +10,7 @@ from langmesh.runtime.internals import (
 from langmesh.base import confinement
 from langmesh.base.confinement import Grant, parse_access_request
 from langmesh.protocol.events import PermissionReason
-from langmesh.runtime.boundary import Escape, RULE_ALLOW, RULE_ASK, RULE_DENY, escape_of, verdict_for
+from langmesh.runtime.boundary import RULE_ALLOW, RULE_ASK, escape_of, verdict_for
 from langmesh.runtime.locations import (
     _LOCATION_TOOLS,
     PermissionDecision,

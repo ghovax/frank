@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from langmesh.hub.brokers.composio import composio_mcp_servers
+from langmesh.commons.brokers.composio import composio_mcp_servers
 from langmesh.base.configuration import Configuration, save_api_keys
 from langmesh.base.paths import configuration_file_path
 from langmesh.base.mcp_client import MCPClientManager
@@ -10,8 +10,8 @@ from langmesh.base.serialization import compact
 from typing import Optional
 import asyncio
 import hashlib
-from langmesh.hub import state
-from langmesh.hub.services.sessions import _reset_work_habits_acknowledgements
+from langmesh.commons import state
+from langmesh.commons.services.sessions import _reset_work_habits_acknowledgements
 
 
 async def _apply_live_credentials() -> None:

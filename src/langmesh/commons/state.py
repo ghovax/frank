@@ -1,11 +1,11 @@
-"""What the hub layer shares: the database, the configuration, and the shared clients."""
+"""What the commons layer shares: the database, the configuration, and the shared clients."""
 
 from __future__ import annotations
 
 import asyncio
 from typing import Any, Awaitable, Callable, Optional
 
-from langmesh.hub.broadcast_bus import Broadcaster
+from langmesh.commons.broadcast_bus import Broadcaster
 
 # The database the workspace reads and writes, and the machine's configuration.
 session_factory: Any = None

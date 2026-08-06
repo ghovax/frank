@@ -112,7 +112,7 @@ async def _sleep_after_idle(session_id: str, delay: float) -> None:
     if state.lifecycle is None or state.registry is None:
         return
     record = state.registry.get(session_id)
-    if record is None or not record.is_live or not record.pid or record.busy:
+    if record is None or not record.is_live or not record.hosted or record.busy:
         return
     logger.info("session %s idle for %.0fs; sleeping it", session_id, delay)
     await state.lifecycle.sleep(session_id)
@@ -123,7 +123,7 @@ def _sleep_when_idle(session_id: str) -> None:
     if state.lifecycle is None:
         return
     record = state.registry.get(session_id) if state.registry is not None else None
-    if record is None or not record.is_live or not record.pid:
+    if record is None or not record.is_live or not record.hosted:
         return
     cancel_idle_sleep(session_id)
     delay = active_tuning().duration(Tunable.session_idle_sleep_seconds)
@@ -132,7 +132,7 @@ def _sleep_when_idle(session_id: str) -> None:
 
 async def _session_claim_work_habits(params: dict) -> dict:
     """The once-per-session work-habits acknowledgement, claimed atomically because a worker is per activation."""
-    from langmesh.hub.services.sessions import claim_work_habits_acknowledgement
+    from langmesh.commons.services.sessions import claim_work_habits_acknowledgement
 
     session_id = str(params.get("session_id") or "")
     claimed = await asyncio.to_thread(claim_work_habits_acknowledgement, session_id)
@@ -189,7 +189,7 @@ async def _session_usage(params: dict) -> dict:
 
 async def _session_title(params: dict) -> dict:
     """A title a session generated for itself, produced in the worker because it means calling a model."""
-    from langmesh.hub.services.sessions import _set_session_title
+    from langmesh.commons.services.sessions import _set_session_title
 
     session_id = str(params.get("session_id") or "")
     title = str(params.get("title") or "").strip()

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Freeze the harness (packaging/entry.py) into "LangMesh Computer Use.app" — the daemon, the CLI, and every
-# session worker as one self-contained image, entered by its first argument.
+# daemon that hosts them as one self-contained image, entered by its first argument.
 #
 # This used to be a *sidecar*: the desktop app bundled the result as a resource and spawned it,
 # which made the window the harness's parent process. It does not any more. The app is a client
@@ -8,7 +8,7 @@
 # inside something else. The output stays in packaging/dist/ and is installed from there.
 #
 # The .app wrapper is not packaging decoration. macOS attributes a permission to the code identity
-# of the process that exercises it; the process calling the Accessibility API is a session worker,
+# of the process that exercises it; the process calling the Accessibility API is the daemon,
 # which is a re-exec of the daemon, which is this image. Carrying the same CFBundleName and
 # identifier as the desktop app and signed with the same certificate, the whole fleet folds into
 # one stable "LangMesh" row in Privacy > Accessibility that survives rebuilds. A bare binary would

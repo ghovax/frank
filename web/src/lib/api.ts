@@ -1275,7 +1275,6 @@ export interface SessionSummary {
   working_directory: string;
   workspace_id: string;
   permission_mode: PermissionMode;
-  pid: number;
   created_at: string;
   updated_at: string;
   exit_reason: string;

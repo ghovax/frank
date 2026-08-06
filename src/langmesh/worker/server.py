@@ -1,64 +1,16 @@
-"""A session's own endpoint: send a message, answer a gate, cancel a turn, read the card."""
+"""A session's verbs: send a message, answer a gate, cancel a turn, reset its runtime."""
 
 from __future__ import annotations
 
 import logging
-import secrets
 from typing import Any, Awaitable, Callable
 
 from a2a.types import DataPart, Part, TextPart
 
 from langmesh.protocol.metadata import Metadata
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
 
 
 logger = logging.getLogger(__name__)
-
-
-def build_app(session) -> FastAPI:
-    """The ASGI app a worker serves on its unix socket, for the live executor this process is."""
-
-    app = FastAPI(title=f"langmesh-session-{session.session_id}")
-
-    def authorized(request: Request) -> bool:
-        header = request.headers.get("Authorization", "")
-        if not header.startswith("Bearer "):
-            return False
-        return secrets.compare_digest(header[len("Bearer "):], session.token)
-
-    @app.get("/.well-known/agent-card.json")
-    async def agent_card() -> JSONResponse:
-        """Discovery stays open, since a peer must read a card before it has been handed anything; it carries no content."""
-        return JSONResponse(session.card_payload())
-
-    @app.post("/rpc")
-    async def rpc(request: Request) -> JSONResponse:
-        if not authorized(request):
-            return JSONResponse({"error": {"code": "unauthorized", "message": "Bad or missing token."}}, status_code=401)
-        try:
-            payload = await request.json()
-        except Exception:
-            return JSONResponse({"error": {"code": "invalid_json", "message": "Body must be JSON."}}, status_code=400)
-
-        method = str(payload.get("method") or "")
-        params = payload.get("params") or {}
-        if not isinstance(params, dict):
-            return JSONResponse({"error": {"code": "invalid_request", "message": "params must be an object."}}, status_code=400)
-
-        handler = METHODS.get(method)
-        if handler is None:
-            return JSONResponse({"error": {"code": "no_such_method", "message": f"Unknown method {method!r}."}}, status_code=404)
-        try:
-            return JSONResponse({"result": await handler(session, params)})
-        except Exception as error:  # noqa: BLE001 — one bad call must not kill the session
-            logger.exception("session call %s failed", method)
-            return JSONResponse(
-                {"error": {"code": "internal_error", "message": f"{method} failed: {error}"}},
-                status_code=500,
-            )
-
-    return app
 
 
 def _message_parts(params: dict) -> list[Part]:
@@ -169,7 +121,7 @@ async def _reset(session, _params: dict) -> dict:
     return {"ok": True}
 
 
-# Every verb this socket answers, in one table, as the control plane and the intake do.
+# Every verb a session answers, in one table, as the control plane and the intake do.
 METHODS: dict[str, Callable[[Any, dict], Awaitable[dict]]] = {
     "message/send": _send,
     "input/respond": _respond,

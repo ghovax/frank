@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from langmesh.base.sqlite_lock import sqlite_write_lock
-from langmesh.hub.database import SessionRecord as SessionRow
+from langmesh.commons.database import SessionRecord as SessionRow
 from langmesh.daemon.registry import LIVE, SessionRecord
 
 logger = logging.getLogger(__name__)

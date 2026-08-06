@@ -30,7 +30,7 @@ Neither is needed for plain chat or the file, shell, and web tools.
 
 ## Option 2 — Build from source
 
-LangMesh is **two artifacts**, built independently, because the app is a *client* of the daemon rather than its container. That bundle carries the harness, the `langmesh` command, `langmeshd` and every session worker in one signed image. The app is a window that finds a daemon and talks to it. Build them in either order; neither build triggers the other.
+LangMesh is **two artifacts**, built independently, because the app is a *client* of the daemon rather than its container. That bundle carries the harness, the `langmesh` command and `langmeshd`, which hosts every session, in one signed image. The app is a window that finds a daemon and talks to it. Build them in either order; neither build triggers the other.
 
 You need [Nix](https://nixos.org) (the flake devshell pins everything else, `uv` included) and optionally [direnv](https://direnv.net).
 

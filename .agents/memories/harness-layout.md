@@ -8,7 +8,7 @@ tags: configuration, dotagents, mcp, layering
 
 ## The package tree
 
-One executable, three entry points, selected by the first argument in `src/langmesh/__main__.py`: `langmesh` (the CLI), `langmeshd` (the daemon), and `prototype` (the process sessions are forked out of). There is no `worker` entry point — a session is a fork, never an exec. `packaging/entry.py` at the repository root is the same entry for the frozen build.
+One executable, two entry points, selected by the first argument in `src/langmesh/__main__.py`: `langmesh` (the CLI) and `langmeshd` (the daemon). A session is an object the daemon holds, not a process, so there is no entry point for one. `packaging/entry.py` at the repository root is the same entry for the frozen build.
 
 ```
 src/langmesh/
@@ -17,8 +17,8 @@ src/langmesh/
 ├── protocol/    A2A cards, DTOs, the wire contract
 ├── cli/         the `langmesh` command and its renderers
 ├── workspace/   projects, locations, settings, agents, terminals — none of it supervision
-├── daemon/      langmeshd: registry, lifecycle, prototype client, the turn store
-├── worker/      a session process (its socket server and executor), and the prototype
+├── daemon/      langmeshd: registry, lifecycle, the session host, the turn store
+├── worker/      what a session is made of: its executor, its verbs, its turn loop
 ├── runtime/     the agent loop, prompts, tools, models
 ├── computer/    macOS screen-control bridges (native apps + Chrome)
 ├── locations/   where files live (local, SSH, containers)
@@ -27,9 +27,9 @@ src/langmesh/
 
 The layering is `base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, with `rest` above the daemon. Four invariants ride on it, none of them visible in a diff:
 
-- **The daemon never imports `runtime`.** That weight is what the prototype carries, and it is why the prototype is a separate process the daemon talks to over a socket rather than something it calls.
-- **`computer/` is never imported at module level.** It pulls in PyObjC, which initialises CoreFoundation, which cannot survive a `fork()` on macOS.
-- **Nothing reaches the network at import.** A catalogue fetch at module scope left two native threads behind, and a multi-threaded process cannot fork; the child aborted with a message naming CoreFoundation, which was not the cause. `threading.enumerate()` cannot see native threads — the prototype counts with mach `task_threads` and refuses to fork unless the answer is 1.
+- **The daemon imports `runtime` at boot**, because it hosts the sessions that use it. That import is seconds, which is why it happens at startup rather than when the first session is built.
+- **`computer/` is never imported at module level.** It pulls in PyObjC, which is heavy, and most sessions never touch the screen.
+- **Nothing reaches the network at import.** A catalogue fetch at module scope blocks the daemon's boot behind a stranger's endpoint, and every session waits on that boot.
 - **Nothing under `runtime/` parks a caller's argument in a module global**, installs a signal handler, or registers an exit hook. The runtime is a library, and one process may host more than one session.
 
 A package's `__main__.py` is exempt from the layer table: it is the composition root, and assembling a program means reaching across layers. It is *not* exempt from the network-at-import rule, because that cost lands on every importer.

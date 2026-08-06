@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from langmesh.hub.services import schedules as schedule_service
+from langmesh.commons.services import schedules as schedule_service
 from langmesh.base.errors import describe
 from langmesh.base.serialization import compact
 

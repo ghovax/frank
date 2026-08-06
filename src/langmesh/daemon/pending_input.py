@@ -23,13 +23,13 @@ async def _abort_pending_input(session_id: str) -> bool:
 
 async def settle_and_reap(session_id: str) -> None:
     """What deleting a record means for the session: settle what it is parked on, then end it."""
-    from langmesh.hub import state as hub_state
+    from langmesh.commons import state as commons_state
 
     await _abort_pending_input(session_id)
     state._awaiting_input_contexts.discard(session_id)
     if state.lifecycle is not None:
         await state.lifecycle.reap(session_id, reason="session deleted")
-    hub_state.broadcaster.publish({"type": "sessions_changed"})
+    commons_state.broadcaster.publish({"type": "sessions_changed"})
 
 
 __all__ = ["settle_and_reap"]

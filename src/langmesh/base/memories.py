@@ -29,7 +29,9 @@ def _as_directories(directories: str | Path | Iterable[str | Path]) -> list[Path
 
 
 def _parse_memory(path: Path) -> Memory:
-    content = path.read_text()
+    from langmesh.base.file_cache import parsed_file
+
+    content = parsed_file(path, lambda each: each.read_text()) or ""
     match = _FRONTMATTER.match(content)
     if not match:
         first_line = next((line.strip() for line in content.splitlines() if line.strip()), "")

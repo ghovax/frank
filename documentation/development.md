@@ -2,7 +2,7 @@
 
 LangMesh has three parts:
 
-- The **Python image**: one executable, entered as `langmesh`, `langmeshd`, `prototype`, or `session`. It carries the harness.
+- The **Python image**: one executable, entered as `langmesh` or `langmeshd`. It carries the harness.
 - The **Next.js web UI**.
 - The **Tauri desktop shell**. In development you run the daemon and the UI directly. The packaged app is built only for releases.
 
@@ -35,9 +35,9 @@ The [`langmesh` command](cli.md) is the full surface. To run the daemon in the f
 uv run python -m langmesh langmeshd
 ```
 
-One image, three entry points, chosen by the first argument: `langmesh` (the CLI), `langmeshd` (the daemon), `prototype` (the process sessions are forked out of). A bare launch lands in the CLI, which is why the daemon has to be asked for. `langmesh daemon stop` takes down a foreground daemon and its sessions with it.
+One image, two entry points, chosen by the first argument: `langmesh` (the CLI) and `langmeshd` (the daemon, which hosts the sessions). A bare launch lands in the CLI, which is why the daemon has to be asked for. `langmesh daemon stop` takes down a foreground daemon and its sessions with it.
 
-A session is `fork()` **and then** `exec()` back into the same image, through the `session` entry point. The fork is what makes it cheap; the exec is what makes it safe. On macOS, a forked child that has not exec'd cannot use Network.framework or the Objective-C runtime. A session without the exec cannot reach a model at all.
+A session is an object the daemon builds and holds, not a process. Creating one costs about as much as constructing the object, which is why there is no pool of anything waiting.
 
 It listens on a unix socket in your runtime directory. For GUI clients it also listens on an ephemeral loopback port. `langmesh daemon endpoint` reports the port and the capability token.
 
@@ -69,12 +69,10 @@ Useful scripts (in `web/`):
 - `bun run build` — production static export (to `web/out`).
 - `bun run build:events` — regenerate the TypeScript event schema from the Python models (`scripts/generate_event_schema.py`). Run this whenever the event contract changes.
 
-Outside `web/` the package layering runs `base`, then `protocol`, then `computer`/`locations`, then `runtime`, then `worker`, with the daemon never importing the runtime. Three invariants ride on it. All three are really one invariant about the prototype, which is the process every session is forked out of. None of them is visible in a diff. Check each one by hand when you touch its area:
+Outside `web/` the package layering runs `base`, then `protocol`, then `computer`/`locations`, then `runtime`, then `worker`. The daemon sits on top and hosts the sessions, so it imports the runtime at boot. Two invariants ride on the layering, and neither is visible in a diff. Check each by hand when you touch its area:
 
-- **`computer/` is never imported at module level.** It pulls in PyObjC, which initialises CoreFoundation, which genuinely cannot survive a `fork()` on macOS.
-- **Nothing reaches the network at import.** This is the half that actually bit. A catalogue fetch at module scope left two *native* threads in the process, and a multi-threaded process cannot legally fork. The failure then surfaces far from its cause, which is why this is checked rather than assumed.
-
-`threading.enumerate()` cannot see those threads; only the kernel's count can. The prototype therefore measures with mach `task_threads`, and refuses to fork when the answer is not 1.
+- **`computer/` is never imported at module level.** It pulls in PyObjC, which is heavy, and most sessions never drive the screen.
+- **Nothing reaches the network at import.** A catalogue fetch at module scope blocks the daemon's boot behind a stranger's endpoint, and every session waits on that boot.
 - **The runtime keeps no process-wide state.** Nothing under `runtime/` parks a caller's argument in a module global. Nothing installs a signal handler or registers an exit hook. The runtime is a library now, and one process may host more than one session.
 
 A new setting is a field on the configuration model, and then three things that are not in the code with it. The schema walk finds the field on its own, so `langmesh configure` and the settings panel both have it from the moment it exists — but the panel draws it with **a label and a sentence from `shared/messages/*.json`**, in every locale, and the [configuration reference](configuration-reference.md) needs **a row**. What a setting is called and what it is for are words to translate, so they live where the rest of the interface's words live; the schema carries only what a setting *is*.
@@ -93,7 +91,7 @@ Start the daemon first, in either order but before you expect the window to work
 
 Two vocabularies, and they are not the same thing.
 
-**A log message is an event name.** Lowercase, no terminal punctuation, and the facts go in fields rather than into the sentence — `logger.info("session %s takes warm worker pid %d", …)`. This is what makes a line groupable: the message is a label you filter on, not prose you read. Acronyms and proper nouns keep their capitals wherever they fall, including first (`MCP server %r failed to start`), because those are spellings rather than casing.
+**A log message is an event name.** Lowercase, no terminal punctuation, and the facts go in fields rather than into the sentence — `logger.info("session %s sleeping after %.0fs idle", …)`. This is what makes a line groupable: the message is a label you filter on, not prose you read. Acronyms and proper nouns keep their capitals wherever they fall, including first (`MCP server %r failed to start`), because those are spellings rather than casing.
 
 **Human copy is prose.** The interface catalog, an `HTTPException` `detail`, an `RpcError`, CLI output: sentence case with terminal punctuation, because a person reads it as a sentence. A fragment used as a label or a chip — `high risk`, `waiting`, `write` — stays lowercase; it is not a sentence.
 
@@ -105,7 +103,7 @@ The interface follows the same split: `swallowed({ component, operation }, error
 
 There are **two artifacts**, built independently, because the app is a client of the daemon rather than its container. Building one never rebuilds the other.
 
-Build the daemon first. It is one image with three entry points: the daemon, the CLI, and the prototype. Set `FORCE=1` to rebuild when the freshness guard says the build is current.
+Build the daemon first. It is one image with two entry points: the daemon and the CLI. Set `FORCE=1` to rebuild when the freshness guard says the build is current.
 
 ```shell
 packaging/build-daemon.sh
@@ -131,7 +129,7 @@ For the full step-by-step with expected output, see [Installation](installation.
 
 ### Stable code-signing (recommended)
 
-The screen-control tools (`control_screen`) need the macOS **Accessibility** grant, which is tied to code identity. Every session worker is a re-exec of the daemon binary for exactly this reason — one grant covers the fleet. Both artifacts carry the same `CFBundleName` and identifier, so signing both with one persistent identity keeps them a single **LangMesh** row that survives rebuilds:
+The screen-control tools (`control_screen`) need the macOS **Accessibility** grant, which is tied to code identity. Every session runs inside the daemon for exactly this reason — one grant covers the fleet. Both artifacts carry the same `CFBundleName` and identifier, so signing both with one persistent identity keeps them a single **LangMesh** row that survives rebuilds:
 
 Create the self-signed identity in your login keychain once:
 
@@ -168,11 +166,10 @@ The repository ships **no unit-test suite**. It ships a **verification battery**
 
 Each stage gets its own temporary XDG roots and its own daemon and cleans up after itself, so a run touches nothing of yours. Exit status is the number of failures.
 
-Two stages need a real machine and are skipped elsewhere, which is the reason to run this locally at least once. `macos-fork` answers the three questions that only macOS can answer:
+Two stages need a real machine and are skipped elsewhere, which is the reason to run this locally at least once. `macos-confinement` answers the questions that only macOS can answer:
 
-- May a forked child initialise CoreFoundation?
-- Does the Accessibility grant follow a fork?
-- Does `sandbox-exec` still work from a child?
+- Does the Accessibility grant cover the daemon that asks for it?
+- Does `sandbox-exec` still confine a tool child?
 
 It also counts threads with mach. That is the only way to see the threads that make a fork illegal.
 
@@ -191,13 +188,13 @@ Beyond the battery: lint with `uv run ruff check`, and drive the affected path t
 | `computer/` | macOS screen-control bridges: native apps and Chrome |
 | `locations/` | Where files live: local, SSH, containers |
 | `runtime/` | The agent loop, prompts, tools, models |
-| `worker/` | A session process, and the prototype it is forked from |
+| `worker/` | What a session is made of: its executor, its verbs, its turn loop |
 | `__init__.py` | The library surface: `langmesh.Session` and its seams |
 | `workspace/` | Projects, locations, settings, terminals — beside the rest, not above |
-| `daemon/` | `langmeshd`: registry, lifecycle, prototype client, machine loaders |
+| `daemon/` | `langmeshd`: registry, lifecycle, the session host, machine loaders |
 | `rest/` | The REST surface the browser uses; never imports `daemon` |
 | `cli/` | The `langmesh` command and its renderers |
-| `__main__.py` | argv dispatch: `langmesh`, `langmeshd`, `prototype`, `session` |
+| `__main__.py` | argv dispatch: `langmesh`, `langmeshd` |
 
 **Everything else:**
 

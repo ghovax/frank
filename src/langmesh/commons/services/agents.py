@@ -19,8 +19,8 @@ from langmesh.base.skills import load_skills, skills_for_agent
 from langmesh.base.sqlite_lock import sqlite_write_lock
 from pathlib import Path
 import langmesh.base.configuration as _configuration
-from langmesh.hub import state
-from langmesh.hub.database import ModelHistoryRecord
+from langmesh.commons import state
+from langmesh.commons.database import ModelHistoryRecord
 
 
 def _catalogue_base_url() -> str:
@@ -118,10 +118,40 @@ def _agent_directories_for_request(working_directory: str) -> list[Path]:
     )
 
 
+#: Profiles as last read from disk, emptied by the same watcher that rebuilds the cards.
+_resolved_profiles: dict[tuple[str, tuple[str, ...]], tuple[Path, _configuration.AgentConfiguration]] = {}
+
+
+#: Which profiles exist, per set of directories, held on the same terms as the parsed ones.
+_available_agents: dict[tuple[str, ...], list[str]] = {}
+
+
+def forget_resolved_profiles() -> None:
+    """Drop the parsed profiles and the listings, because the files behind them changed."""
+    _resolved_profiles.clear()
+    _available_agents.clear()
+
+
+def available_agent_names(directories) -> list[str]:
+    """Which profiles these directories offer, read from disk once and held until the watcher says otherwise."""
+    key = tuple(str(directory) for directory in directories)
+    names = _available_agents.get(key)
+    if names is None:
+        names = [entry["id"] for entry in _configuration.list_agents(directories)]
+        _available_agents[key] = names
+    return names
+
+
 def _agent_configuration_for_request(agent_name: str, working_directory: str) -> tuple[Path, _configuration.AgentConfiguration]:
+    """A profile parsed from disk once and held until the watcher says the files moved."""
     directories = _agent_directories_for_request(working_directory)
-    path = agent_configuration_path(agent_name, directories)
-    return path, load_agent_configuration(agent_name, directories)
+    key = (agent_name, tuple(str(directory) for directory in directories))
+    held = _resolved_profiles.get(key)
+    if held is None:
+        held = (agent_configuration_path(agent_name, directories),
+                load_agent_configuration(agent_name, directories))
+        _resolved_profiles[key] = held
+    return held
 
 
 def _agent_configuration_payload(agent_name: str, working_directory: str) -> AgentConfigurationResponse:
@@ -185,6 +215,7 @@ def _normalized_permissions(permissions: dict[str, str]) -> dict[str, str]:
 def _reload_agent_cards() -> None:
     """Recompile the catalogue of profile cards, which is a different thing from the sessions themselves."""
     assert state.global_configuration is not None
+    forget_resolved_profiles()
     catalogue = {}
     for agent_name in list_agent_route_names(state.global_configuration.agent_directories()):
         try:

@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from langmesh.base.sqlite_lock import sqlite_write_lock
-from langmesh.hub import state
-from langmesh.hub.database import SOLE_INTERFACE, InterfacePreferenceRecord
+from langmesh.commons import state
+from langmesh.commons.database import SOLE_INTERFACE, InterfacePreferenceRecord
 
 # What a fresh install answers with, stated once so the route and the columns cannot disagree.
 DEFAULTS: dict[str, Any] = {

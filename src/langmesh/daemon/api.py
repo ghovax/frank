@@ -77,7 +77,7 @@ def _assert_session_known(session_id: str) -> None:
 
 def _assert_agent_exists(agent: str, working_directory: str) -> None:
     """Refuse a session for a profile that is not there, rather than failing on its first message."""
-    from langmesh.base.configuration import list_agents
+    from langmesh.commons.services.agents import available_agent_names
 
     configuration = state.global_configuration
     if configuration is None:
@@ -87,7 +87,7 @@ def _assert_agent_exists(agent: str, working_directory: str) -> None:
         if working_directory
         else configuration.agent_directories()
     )
-    available = [entry["id"] for entry in list_agents(directories)]
+    available = available_agent_names(directories)
     if agent not in available:
         known = ", ".join(sorted(available)) or "none found"
         raise RpcError(
@@ -106,7 +106,7 @@ def _public(record: SessionRecord) -> dict:
 def _resolve_sandbox(agent: str, working_directory: str, parent, read_only: bool = False) -> dict:
     """The confinement a new session gets: the machine's, narrowed by the agent's, clamped by its creator's."""
     from langmesh.base import confinement
-    from langmesh.hub.services.agents import _agent_configuration_for_request
+    from langmesh.commons.services.agents import _agent_configuration_for_request
 
     configured = getattr(state.global_configuration, "sandbox", None)
     profile = configured.to_profile() if configured is not None else confinement.Profile()
@@ -138,7 +138,7 @@ def _resolve_sandbox(agent: str, working_directory: str, parent, read_only: bool
 
 def _agent_permission_ceiling(agent: str, working_directory: str) -> Optional[PermissionMode]:
     """The loosest mode the agent's profile allows, or ``None`` when it cannot be read."""
-    from langmesh.hub.services.agents import _agent_configuration_for_request
+    from langmesh.commons.services.agents import _agent_configuration_for_request
 
     try:
         _, configuration = _agent_configuration_for_request(agent, working_directory)
@@ -217,7 +217,7 @@ async def _session_create(params: dict) -> dict:
             ) from exception
 
     # Where the session will run, decided here: a worktree strategy puts its tools somewhere else.
-    from langmesh.hub.services.sessions import _ensure_session_workspace
+    from langmesh.commons.services.sessions import _ensure_session_workspace
 
     try:
         workspace = await asyncio.to_thread(
@@ -245,7 +245,6 @@ async def _session_create(params: dict) -> dict:
     return {
         "id": record.id,
         "token": record.token,
-        "socket": str(record.socket_path),
         "agent": record.agent,
         "parent": record.parent,
         "permission_mode": record.permission_mode,
@@ -311,11 +310,11 @@ async def _session_end(params: dict) -> dict:
     return {"killed": record.id, "reaped": reaped}
 
 
-async def _tell_worker_permission_mode(record: SessionRecord) -> None:
-    """Push a mode down to a live worker. A sleeping session needs none: its next worker reads the record."""
+async def _tell_session_permission_mode(record: SessionRecord) -> None:
+    """Push a mode into a hosted session. A sleeping one needs none: its next executor reads the record."""
     if record.asleep or not record.is_live:
         return
-    with contextlib.suppress(Exception):  # a worker mid-teardown simply reads it on the next fork
+    with contextlib.suppress(Exception):  # a session mid-teardown simply reads it when it is next built
         await state.relay_to_session(record, "session/permission-mode", {
             "permission_mode": record.permission_mode,
         })
@@ -355,7 +354,7 @@ async def _session_permission_mode(params: dict) -> dict:
         state.registry.mark(descendant.id, permission_mode=str(clamped), updated_at=_now())
         changed.append(descendant)
     for altered in changed:
-        await _tell_worker_permission_mode(altered)
+        await _tell_session_permission_mode(altered)
     if changed:
         state.broadcaster.publish({"type": "sessions_changed"})
     return {
@@ -404,7 +403,7 @@ async def _session_goal_clear(params: dict) -> dict:
 
 
 async def _jobs_list(params: dict) -> dict:
-    """What background work a session has in flight, read from the process running it."""
+    """What background work a session has in flight, read from the executor hosting it."""
     record = _session(_require(params, "id"))
     return await state.wake_then_relay(record, "jobs/list", params)
 
@@ -523,14 +522,10 @@ def _remote_text_parts(event: Any) -> list[str]:
 async def _daemon_status(_params: dict) -> dict:
     assert state.registry is not None
     live = state.registry.live()
-    # The prototype's own numbers: a second thread or an unfrozen heap makes forking unsafe, silently.
-    prototype = await state.prototype.refresh_status() if state.prototype else {
-        "alive": False, "pid": 0, "threads": 0, "frozen_objects": 0, "sessions": 0,
-    }
+    hosted = state.host.hosted() if state.host is not None else []
     return {
         "ok": True,
-        "sessions": {"live": len(live), "total": len(state.registry.all())},
-        "prototype": prototype,
+        "sessions": {"live": len(live), "total": len(state.registry.all()), "hosted": len(hosted)},
         "socket": str(state.daemon_socket),
         "port": state.daemon_port,
         # Which image is serving, since two `langmesh` can share a runtime directory and the first one owns it.
@@ -541,7 +536,7 @@ async def _daemon_status(_params: dict) -> dict:
 async def _daemon_restart(_params: dict) -> dict:
     """Replace this daemon with a fresh one, since macOS caches the Accessibility trust check per process."""
     assert state.registry is not None
-    running = len(state.registry.running())
+    hosted = len(state.registry.hosted_records())
 
     async def replace() -> None:
         # `execv` rather than spawn-and-exit: it keeps the pid, so no successor races the lock file.
@@ -553,7 +548,7 @@ async def _daemon_restart(_params: dict) -> dict:
         os.execv(sys.executable, [sys.executable, *_daemon_argv()])
 
     asyncio.get_running_loop().create_task(replace())
-    return {"restarting": True, "sessions_slept": running}
+    return {"restarting": True, "sessions_slept": hosted}
 
 
 def _daemon_argv() -> list[str]:
@@ -565,14 +560,14 @@ def _daemon_argv() -> list[str]:
 
 async def _workspace_list(params: dict) -> dict:
     """Every workspace and its locations, here because the CLI turns a path into an id and speaks no REST."""
-    from langmesh.hub.services.workspaces import _workspaces_payload
+    from langmesh.commons.services.workspaces import _workspaces_payload
 
     return await asyncio.to_thread(_workspaces_payload)
 
 
 async def _schedule_create(params: dict) -> dict:
     """Write down a recurring prompt, validated now rather than at a first firing days away."""
-    from langmesh.hub.services import schedules
+    from langmesh.commons.services import schedules
 
     try:
         return await asyncio.to_thread(
@@ -591,14 +586,14 @@ async def _schedule_create(params: dict) -> dict:
 
 
 async def _schedule_list(params: dict) -> dict:
-    from langmesh.hub.services import schedules
+    from langmesh.commons.services import schedules
 
     listing = await asyncio.to_thread(schedules.listing, str(params.get("workspace_id") or ""))
     return {"schedules": listing}
 
 
 async def _schedule_get(params: dict) -> dict:
-    from langmesh.hub.services import schedules
+    from langmesh.commons.services import schedules
 
     try:
         return await asyncio.to_thread(schedules.get, _require(params, "id"))
@@ -607,7 +602,7 @@ async def _schedule_get(params: dict) -> dict:
 
 
 async def _schedule_enable(params: dict) -> dict:
-    from langmesh.hub.services import schedules
+    from langmesh.commons.services import schedules
 
     try:
         return await asyncio.to_thread(
@@ -617,7 +612,7 @@ async def _schedule_enable(params: dict) -> dict:
 
 
 async def _schedule_delete(params: dict) -> dict:
-    from langmesh.hub.services import schedules
+    from langmesh.commons.services import schedules
 
     schedule_id = _require(params, "id")
     try:
@@ -630,12 +625,12 @@ async def _schedule_delete(params: dict) -> dict:
 async def _schedule_run(params: dict) -> dict:
     """Fire one now without moving its window, so a wrong agent name is found before tomorrow morning."""
     from langmesh.daemon import scheduler
-    from langmesh.hub import state as hub_state
-    from langmesh.hub.database import ScheduleRecord
-    from langmesh.hub.services import schedules
+    from langmesh.commons import state as commons_state
+    from langmesh.commons.database import ScheduleRecord
+    from langmesh.commons.services import schedules
 
     schedule_id = _require(params, "id")
-    database_session = hub_state.session_factory()
+    database_session = commons_state.session_factory()
     try:
         record = database_session.get(ScheduleRecord, schedule_id)
         if record is None:

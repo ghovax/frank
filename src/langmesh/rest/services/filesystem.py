@@ -393,7 +393,7 @@ def _run_tk_folder_picker() -> subprocess.CompletedProcess[str] | None:
 
 
 def _accessibility_granted() -> bool:
-    """Whether this process may control other apps. Imported lazily, since PyObjC makes the prototype unforkable."""
+    """Whether this process may control other apps. Imported lazily, since PyObjC is heavy and rarely needed."""
     try:
         from langmesh.computer import permissions
 

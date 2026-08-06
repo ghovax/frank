@@ -20,8 +20,8 @@ import pwd
 import signal
 import struct
 import termios
-from langmesh.hub import state
-from langmesh.hub.database import SessionRecord, TerminalStateRecord
+from langmesh.commons import state
+from langmesh.commons.database import SessionRecord, TerminalStateRecord
 
 
 def _terminal_directory(session_id: str, working_directory: str) -> Path:

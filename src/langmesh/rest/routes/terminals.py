@@ -1,14 +1,14 @@
 """Terminals routes."""
 
 from __future__ import annotations
-from langmesh.hub.brokers.terminals import TerminalSession, _delete_terminal_state, _list_terminal_states, _terminal_context_for_request, _terminal_directory
+from langmesh.commons.brokers.terminals import TerminalSession, _delete_terminal_state, _list_terminal_states, _terminal_context_for_request, _terminal_directory
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from contextlib import suppress
 from pathlib import Path
 import asyncio
 import json
 import logging
-from langmesh.hub import state
+from langmesh.commons import state
 
 logger = logging.getLogger(__name__)
 

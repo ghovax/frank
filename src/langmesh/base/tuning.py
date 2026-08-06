@@ -121,13 +121,9 @@ class Tunable(Enum):
     goal_blocked_turns = Default(3, Scaling.NONE)
 
     # The control plane and the processes it supervises.
-    warm_workers = Default(2, Scaling.NONE)
     session_title_attempts = Default(3, Scaling.NONE)
     permission_reviewer_attempts = Default(3, Scaling.NONE)
-    prototype_start_seconds = Default(120.0, Scaling.TIME)
-    prototype_restart_seconds = Default(5.0, Scaling.TIME)
     session_idle_sleep_seconds = Default(18000.0, Scaling.TIME)
-    session_start_seconds = Default(60.0, Scaling.TIME)
     daemon_startup_seconds = Default(45.0, Scaling.TIME)
     control_plane_call_seconds = Default(60.0, Scaling.TIME)
     model_catalogue_ttl_seconds = Default(60.0, Scaling.TIME)

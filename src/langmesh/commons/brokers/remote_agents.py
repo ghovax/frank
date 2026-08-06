@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from langmesh.base.configuration import Configuration
 from langmesh.protocol.client import RemoteAgentAuth, RemoteAgentConfiguration, RemoteAgentManager
-from langmesh.hub import state
+from langmesh.commons import state
 
 
 def _remote_agent_dataclasses() -> dict[str, RemoteAgentConfiguration]:

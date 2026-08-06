@@ -7,8 +7,8 @@ from langmesh.protocol.dtos import (
     MCPResourceReadRequest,
     MCPToolCallRequest,
 )
-from langmesh.hub import state
-from langmesh.hub.brokers.mcp_servers import _ensure_mcp_servers_for
+from langmesh.commons import state
+from langmesh.commons.brokers.mcp_servers import _ensure_mcp_servers_for
 
 router = APIRouter()
 

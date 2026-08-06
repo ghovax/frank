@@ -69,11 +69,11 @@ A library session is an object, not a process. It has none of the three properti
 |---|---|---|
 | Addressable from outside | No | Yes — a socket, a token, `langmesh send` |
 | Outlives the program that made it | No | Yes |
-| Crash-isolated | No — a tool that exhausts memory takes you with it | Yes — one process per session |
+| Crash-isolated | No — a tool that exhausts memory takes you with it | No — sessions share the daemon's process |
 | Peers (`create_session` and friends) | Only if you supply `peers` | Yes |
 | Confinement of tool children | **Identical** | **Identical** |
 
-Confinement surprises people, so here it is plainly. A session process was never sandboxed; its *tool children* are, and a child is confined at the moment it is spawned. That is the same code on both paths.
+Confinement surprises people, so here it is plainly. A session was never sandboxed; its *tool children* are, and a child is confined at the moment it is spawned. That is the same code on both paths, and it is why hosting sessions together costs nothing in confinement.
 
 ## The seams
 
@@ -449,4 +449,4 @@ Reach for `langmeshd` when you want one of these:
 - Crash isolation between sessions.
 - Peer composition. Those are what a control plane is *for*, and none of them can be had from an object in your process.
 
-The two are the same harness. A daemon session is this same runtime, in a process forked from the prototype, with a socket in front of it.
+The two are the same harness. A daemon session is this same runtime, built and held inside the daemon, with a durable record and an address in front of it.

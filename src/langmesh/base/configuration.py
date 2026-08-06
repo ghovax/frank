@@ -8,7 +8,6 @@ from langmesh.base import environment_variables
 from langmesh.base.tuning import Scaling
 import re
 from fnmatch import fnmatch
-import shlex
 import shutil
 import sys
 from pathlib import Path
@@ -944,10 +943,13 @@ class PromptLoader:
         self._extension = extension
 
     def load(self, template_name: str, variables: dict[str, str]) -> str:
+        """A template rendered with these variables, its text read from disk only when the file has changed."""
+        from langmesh.base.file_cache import parsed_file
+
         path = self._directory / f"{template_name}.{self._extension}"
-        if not path.exists():
+        content = parsed_file(path, lambda each: each.read_text())
+        if content is None:
             return ""
-        content = path.read_text()
         return self._replace_variables(content, variables, template_name)
 
     @classmethod
