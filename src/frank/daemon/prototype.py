@@ -1,27 +1,4 @@
-"""The daemon's end of the prototype: start it, keep it alive, ask it for sessions.
-
-This is a client, not the prototype. The prototype itself lives in `worker/prototype.py`
-because it must import the runtime, and the daemon must never — which is precisely why it is
-a separate process rather than a function call. Everything here speaks to it over a unix
-socket in newline-delimited JSON, and nothing here imports anything the prototype imports.
-
-Three responsibilities, and they are all consequences of that separation:
-
-**Supervision.** The daemon spawns the prototype and restarts it if it dies. A dead prototype
-does not affect live sessions — they are independent processes, reparented to init, still
-serving on their own sockets. Only *new* sessions block, and only for as long as the restart
-takes.
-
-**Forking.** `fork_session` is the replacement for claiming a warm worker. It writes the
-assignment and waits for the child to report that its socket is accepting connections, which
-is the same acknowledgement the old worker wrote to stdout and for the same reason: a client
-that sends immediately after `create` must not race the bind.
-
-**Exit reporting.** The daemon cannot `waitpid` a process it did not fork, so it cannot watch
-a session die the way it used to. The prototype can, because it is the parent, and it reports
-each exit here. `pidfd_open` on Linux and `kqueue` on macOS would also work; reporting needs
-no platform-specific syscall and the prototype had to exist anyway.
-"""
+"""The daemon's end of the prototype: start it, keep it alive, and ask it for sessions."""
 
 from __future__ import annotations
 
@@ -43,15 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def prototype_command() -> list[str]:
-    """How to launch the prototype.
-
-    Deliberately a re-exec of *this* executable rather than a separate binary or a bare
-    interpreter. In the packaged application the daemon runs as a signed helper inside the app
-    bundle, and macOS attributes the Accessibility grant to that code identity; a prototype
-    launched by any other path would be a different identity and would prompt the user for its
-    own grant. Re-execing the same image is what keeps one grant covering the fleet — and
-    because every session is a fork of this process, the grant reaches them too.
-    """
+    """How to launch the prototype, as a re-exec of this executable so it inherits the code signature."""
     if getattr(sys, "frozen", False):
         return [sys.executable, "prototype"]
     return [sys.executable, "-m", "frank", "prototype"]
@@ -92,24 +61,19 @@ class PrototypeClient:
     ) -> None:
         self._environment = environment
         self._on_exit = on_exit
-        # Called when the prototype dies unexpectedly, which is also the death of every session
-        # it had forked — they hold lifelines to it. Nothing else can report those deaths, since
-        # the process that forked them is the one that has gone.
+        # Called when the prototype dies, which is also the death of every session it had forked.
         self._on_lost = on_lost
         self._process: Optional[asyncio.subprocess.Process] = None
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
         self._pump: Optional[asyncio.Task] = None
         self._supervisor: Optional[asyncio.Task] = None
-        # fork token -> the future waiting for *that* fork's readiness. Keyed by fork rather
-        # than by session, because a session is forked afresh for every turn and its
-        # incarnations must not be able to answer for one another.
+        # Fork token to the future waiting for that fork's readiness, keyed by fork because a session has many.
         self._awaiting: dict[str, asyncio.Future] = {}
         self._lock = asyncio.Lock()
         self._closed = False
         self._status: dict[str, Any] = {}
-        # Set by the pump when a status report lands, so `refresh_status` can wait for the
-        # answer instead of for a guess at how long the answer takes.
+        # Set by the pump when a status report lands, so a refresh waits for the answer rather than for a guess.
         self._status_arrived = asyncio.Event()
 
     # Starting the prototype, and taking it down.
@@ -130,11 +94,7 @@ class PrototypeClient:
         await self._end_process()
 
     async def _end_process(self) -> None:
-        """Stop the prototype and wait for it to go, killing it if it will not.
-
-        Waiting matters rather than being tidy: the prototype's exit is what closes the
-        lifelines its sessions hold, so returning before it has actually gone would be
-        returning while the sessions are still running."""
+        """Stop the prototype and wait for it to go, since its exit is what closes its sessions' lifelines."""
         process, self._process = self._process, None
         if process is None or process.returncode is not None:
             return
@@ -162,11 +122,7 @@ class PrototypeClient:
         return self._process.pid if self._process is not None else 0
 
     def status(self) -> dict[str, Any]:
-        """What `daemon.status` reports about the prototype.
-
-        `frozen` is not decoration: `gc.freeze()` being forgotten or reverted costs most of
-        the memory saving and breaks nothing, so a zero here is the only way anyone would
-        find out. `threads` is the invariant the whole design rests on."""
+        """What `daemon.status` reports about the prototype, including whether its heap was frozen."""
         return {
             "alive": self.alive,
             "pid": self.pid,
@@ -188,10 +144,7 @@ class PrototypeClient:
             await self._attach()
 
     async def _spawn(self) -> None:
-        # A prototype that is still alive is ended before its replacement starts. Reaching here
-        # while one is running means the connection to it broke without the process dying —
-        # rare, but the descriptor being overwritten was the only thing holding it, so it and
-        # every session under it would have been left with nothing that could ever reach them.
+        # A prototype still alive is ended before its replacement starts.
         await self._end_process()
         socket_path = prototype_socket_path()
         with contextlib.suppress(OSError):
@@ -200,18 +153,14 @@ class PrototypeClient:
             self._process = await asyncio.create_subprocess_exec(
                 *prototype_command(),
                 env={**os.environ, **(self._environment or {})},
-                # Its own process group, so signalling the daemon's group does not take the
-                # prototype — and through it every session — down as collateral.
+                # Its own process group, so signalling the daemon's group does not take every session down with it.
                 start_new_session=True,
             )
         except OSError as error:
             raise PrototypeUnavailable(f"could not start the prototype: {error}") from error
 
     async def _attach(self) -> None:
-        """Connect to the prototype's socket, waiting for it to appear.
-
-        The prototype binds only after importing the runtime, which is the five seconds this
-        whole design exists to pay once, so the wait is generous."""
+        """Connect to the prototype's socket, waiting generously because it binds only after importing the runtime."""
         socket_path = prototype_socket_path()
         deadline = asyncio.get_running_loop().time() + active_tuning().duration(
             Tunable.prototype_start_seconds
@@ -274,9 +223,7 @@ class PrototypeClient:
             self._status = message
             self._status_arrived.set()
             return
-        # Every report about a child carries the token its fork was given, and that — never the
-        # session id — is what finds the waiter. One session id covers every process the
-        # conversation has ever had; a token covers exactly one.
+        # Every report carries the token its fork was given, which is what finds the waiter where a session id could not.
         fork = str(message.get("fork") or "")
         if event in ("ready", "failed"):
             waiter = self._awaiting.pop(fork, None)
@@ -289,10 +236,7 @@ class PrototypeClient:
                     )))
             return
         if event == "exited":
-            # A session that never became ready exits too; settling its waiter here is what
-            # stops `fork_session` waiting out its whole timeout for a process already gone.
-            # Keyed by token, an exit can only ever settle the fork it actually belongs to —
-            # a dead predecessor cannot fail the successor that replaced it.
+            # A session that never became ready exits too, so settling its waiter here stops a full timeout wait.
             waiter = self._awaiting.pop(fork, None)
             if waiter is not None and not waiter.done():
                 waiter.set_exception(
@@ -314,19 +258,7 @@ class PrototypeClient:
     # Keeping the prototype alive.
 
     async def _supervise(self) -> None:
-        """Restart the prototype if it dies.
-
-        Every session it had forked ends with it, through the lifeline each one holds. That is
-        deliberate, and it replaces an arrangement where they carried on: a session outlives its
-        prototype perfectly well as a *process* — it has its own socket and the daemon talks to
-        it directly — but nothing can ever report its death again, because the only process that
-        could was the one that just died. The daemon would show it running until the machine was
-        rebooted, and a replacement prototype cannot adopt it: it is not its parent, so it cannot
-        wait on it.
-
-        So a dead prototype costs the sessions that were running, and they come back as records
-        rather than as processes, which they were built to do. What it must not cost is a set of
-        workers nobody can see or stop."""
+        """Restart the prototype if it dies, every session it had forked having ended with it."""
         while not self._closed:
             process = self._process
             if process is None:
@@ -336,9 +268,7 @@ class PrototypeClient:
                 return
             logger.error("the prototype exited with status %s; restarting", code)
             await self._fail_everyone_waiting("the prototype died before the session started")
-            # Before the restart, and before anything is forked into the replacement: the
-            # sessions that died with it must be accounted for while it is still clear which
-            # ones they were.
+            # Before the restart, while it is still clear which sessions died with it.
             if self._on_lost is not None:
                 with contextlib.suppress(Exception):
                     result = self._on_lost()
@@ -359,19 +289,12 @@ class PrototypeClient:
     # Asking for a session.
 
     async def fork_session(self, assignment: dict[str, Any]) -> int:
-        """Fork a session and answer with its process id once it is serving.
-
-        Raises :class:`PrototypeUnavailable` when the session could not be started, which the
-        caller turns into a failed session record rather than a daemon-level error."""
+        """Fork a session and answer with its process id once it is serving."""
         session_id = str(assignment.get("session_id") or "")
         if not session_id:
             raise PrototypeUnavailable("an assignment must name its session")
         await self._ensure_running()
-        # This fork's own name. A session id names the *conversation*, and a conversation
-        # outlives many processes — one per turn, since a session exits when its turn ends. So
-        # a report keyed by session id says nothing about *which* incarnation it describes, and
-        # the previous worker's `exited`, arriving after its replacement was forked, settled the
-        # replacement's waiter and failed the wake. The token names one child, once.
+        # This fork's own name, since a session id names the conversation and a conversation outlives many processes.
         fork = uuid.uuid4().hex
         waiter: asyncio.Future = asyncio.get_running_loop().create_future()
         self._awaiting[fork] = waiter
@@ -388,11 +311,7 @@ class PrototypeClient:
     async def refresh_status(self) -> dict[str, Any]:
         """Ask the prototype what it looks like right now, for `daemon.status`."""
         with contextlib.suppress(PrototypeUnavailable, OSError, asyncio.TimeoutError):
-            # Wait for the report itself rather than for a length of time. This slept twenty
-            # milliseconds and then took whatever had arrived — right almost always over a local
-            # socket, and silently answering with the *previous* snapshot whenever a loaded
-            # machine took longer. The pump sets this the moment the reply lands, so the ordinary
-            # case is quicker than the sleep was and the slow case is correct instead of stale.
+            # Wait for the report itself rather than for a length of time.
             self._status_arrived.clear()
             await self._request({"command": "status"})
             await asyncio.wait_for(self._status_arrived.wait(), timeout=1.0)
