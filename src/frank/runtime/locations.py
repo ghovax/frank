@@ -1,4 +1,4 @@
-"""Value types for tool-call location resolution and permission decisions."""
+"""Value types for resolving a call's location and carrying its execution policy."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from frank.locations.executor import LocationExecutor
 
 @dataclass
 class ResolvedLocation:
-    """A workspace location resolved for execution: its identity (uri/name), the executor that runs tools against it (local subprocess or multiplexed SSH), the base directory tools treat as cwd, and its effective execution policy."""
+    """A location resolved for execution: its identity, its executor, its base directory, its mode."""
 
     uri: str
     name: str
@@ -33,7 +33,7 @@ class ToolLocationError(ValueError):
 
 @dataclass(frozen=True)
 class CallExecutionPolicy:
-    """The effective execution policy for ONE tool call: the resolved location it targets (``None`` for tools that do not address a location), the directory its shell/file work runs in, and the permission flags in force."""
+    """One call's execution policy, threaded as a value so concurrent calls cannot cross locations."""
 
     location: ResolvedLocation | None
     working_directory: str
@@ -41,7 +41,7 @@ class CallExecutionPolicy:
 
     @property
     def asks(self) -> bool:
-        """Whether a gate raised by this call goes to a person."""
+        """Whether a gate raised by this call goes to a person rather than the reviewer."""
         return self.mode.asks
 
     @property
@@ -49,12 +49,12 @@ class CallExecutionPolicy:
         return self.location is not None and self.location.is_remote
 
 
-# The tools that operate on a location's filesystem/shell and therefore resolve against a location (``search_code`` indexes the location's root; it is local-only, so a remote root simply yields no results).
+# The tools that act on a location's filesystem or shell, and so resolve against one.
 _LOCATION_TOOLS = frozenset({"bash", "read_file", "write_file", "edit_file", "search_code", "download_file"})
 
 
 class PermissionDecision(BaseModel):
-    """What the reviewer decided about one request to reach past the confinement."""
+    """The reviewer's verdict. Its ``risk`` is its own reading, which the agent cannot see and did not supply."""
 
     action: Literal["allow", "deny"]
     explanation: str

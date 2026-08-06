@@ -3,7 +3,19 @@
 
 import { expected } from "@/lib/swallowed";
 
-// The desktop app hands cues to macOS so they sound native and follow the system output settings.
+// The desktop app hands cues to macOS so they sound native and follow the
+// system output settings. Browser and non-macOS builds retain two quiet Web Audio
+// motifs as a portable fallback:
+//   • turn end — a rising fourth (D5 up to G5), "your result is ready";
+//   • attention — a rising major third (C5 up to E5), a warm prompt for the first
+//     decision that needs attention during a turn.
+//
+// Browsers keep an AudioContext suspended until a user gesture, so the app
+// calls primeSounds() once at startup: it arms a one-shot listener that
+// creates/resumes the context on the first pointer or key interaction, and
+// every later cue plays immediately. A cue that fires while the context is
+// still suspended is dropped silently — a missed chime is better than a
+// stale one bursting out on the next click.
 
 let context: AudioContext | null = null;
 
@@ -32,7 +44,8 @@ function audioContext(): AudioContext | null {
     // Audio is blocked until the page has been interacted with.
     return null;
   }
-  // Autoplay policy routinely refuses this until the page has been interacted with, and the consequence is silence rather than a fault.
+  // Autoplay policy routinely refuses this until the page has been interacted with, and the
+  // consequence is silence rather than a fault.
   if (context.state === "suspended") {
     void context.resume().catch((caught) => expected("a suspended audio context may refuse to resume", caught));
   }

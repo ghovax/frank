@@ -1,6 +1,19 @@
 "use client";
 
-// One session, as a row.
+// One session, as a row. Two surfaces render it: the sidebar, which lists the conversations
+// you started, and the delegated-work panel, which nests what those conversations created. It
+// lives here rather than in either of them because a session must look and behave the same
+// wherever it is shown — the same status dot, the same marquee title, the same hover card and
+// the same ⋯ menu.
+//
+// The geometry is `TreeRow`'s and not this file's: the chevron column, the glyph column and
+// the label all line up with the workspace rows above them because they are literally the same
+// row. What a surface chooses is whether its list reserves a disclosure column, which it says
+// once for the whole list rather than once per row.
+//
+// The strings stay in the `SessionsSidebar` namespace. They are the vocabulary of a session
+// row, and a second copy under a second name would mean two translations of "Awaiting input"
+// that could drift apart while describing the same dot.
 
 import { Box, Flex, IconButton, Menu, Span, Text } from "@chakra-ui/react";
 import { useFormatter, useTranslations } from "next-intl";
@@ -13,12 +26,15 @@ import { PERMISSION_MODES } from "@shared/controls";
 import { InlineField } from "./ui/display";
 import { TreeRow, type TreeRowDisclosure } from "./ui/tree-row";
 
-// What a session is doing, as the daemon derives it.
+// What a session is doing, as the daemon derives it. Distinct from whether it *exists*,
+// which is `lifecycle` and is the durable half: a session with no process is asleep, not
+// gone, and the next message to it forks a new worker in about 60ms.
 export type SessionActivity = "working" | "waiting" | "idle" | "asleep" | "ended";
 
 export interface SessionEntry {
   sessionId: string;
-  // The session that created this one, empty for a session the user started.
+  // The session that created this one, empty for a session the user started. A session
+  // composes by creating peers, and this is the edge the tree panel is built out of.
   parentSessionId: string;
   workspaceId: string;
   agent: string;
@@ -38,10 +54,17 @@ export interface SessionEntry {
   goal: SessionGoal | null;
 }
 
-// Extra left-shift, beyond the raw overflow, so a fully-scrolled title comes to rest with its end clear of the row's trailing ⋯ actions rather than sliding underneath them.
+// Extra left-shift, beyond the raw overflow, so a fully-scrolled title comes to rest with
+// its end clear of the row's trailing ⋯ actions rather than sliding underneath them. The
+// button is 32px wide, so this is that plus a margin, and it matches the clear zone of the
+// hover mask in globals.css — the two describe the same edge and drifted apart once already.
 const MARQUEE_TAIL_CLEARANCE = 44;
 
-// The hover card.
+// The hover card. It follows the Git bar's shape — a titled heading with the glyph that
+// stands for the thing, then label/value rows — because that is already the vocabulary this
+// interface uses for "here is what I know about this", and a second one would only make the
+// two harder to read. A row's own tooltip used to be its title repeated back, which told a
+// reader nothing they were not already looking at.
 export function SessionHoverCard({
   entry, statusLabel, agents,
 }: { entry: SessionEntry; statusLabel: string; agents: AgentSummary[] }) {
@@ -50,7 +73,12 @@ export function SessionHoverCard({
   const format = useFormatter();
   const title = entry.title || translation("untitledConversation");
   const created = new Date(entry.createdAt);
-  // Both of these are identifiers on the wire and names on screen.
+  // Both of these are identifiers on the wire and names on screen. The agent's own name comes
+  // from the catalogue rather than from the session row, which only ever stored the id; the
+  // permission mode is read out of the one definition every client already builds its controls
+  // from, so the sidebar cannot come to call a mode something the picker does not.
+  // `title` is the agent's own name; `name` is its slug, and reads as a code beside a
+  // human-written conversation title. The same order the agent picker uses.
   const agent = agents.find((candidate) => candidate.id === entry.agent);
   const agentName = agent?.title || agent?.name || entry.agent;
   const permissionKey = PERMISSION_MODES.choices.find((choice) => choice.value === entry.permissionMode)?.labelKey;
@@ -83,7 +111,15 @@ export function SessionHoverCard({
   );
 }
 
-// The status a session's dot reflects.
+// The status a session's dot reflects. "working" means it is doing something — a soft
+// pulsing gray dot, shown even while it's the active session ("not finished yet"). "done"
+// means it finished since you last looked — a solid blue dot, suppressed for the active
+// session (you're already looking at it). Plus the two alerts: a crashed session, and one
+// parked on a decision only you can make.
+//
+// A sleeping or idle session shows no dot at all — there is nothing to report, and a mark
+// against every row would say nothing while making the few that matter harder to find. The
+// dot sits at the row's leading edge and takes no space when absent.
 export type SessionIndicator = "working" | "problem" | "attention" | "done";
 
 export function sessionIndicator(
@@ -113,7 +149,11 @@ const ACTIVITY_LABEL_KEY: Record<SessionActivity, string> = {
   ended: "statusEnded",
 };
 
-// A session title that scrolls its overflow on hover (see `.sidebar-title` in globals.css).
+// A session title that scrolls its overflow on hover (see `.sidebar-title` in globals.css). It
+// measures how far the text overruns its box, adds the tail clearance, and hands the CSS both
+// the travel distance and a matching duration (a fixed 50px/s, the reference's cadence) so long
+// and short titles scroll at the same speed. The mask/animation itself is pure CSS, driven by
+// the row hover.
 export function MarqueeTitle({ text }: { text: string }) {
   const outerRef = useRef<HTMLSpanElement>(null);
   const innerRef = useRef<HTMLSpanElement>(null);
@@ -136,7 +176,10 @@ export function MarqueeTitle({ text }: { text: string }) {
     <Span
       ref={outerRef}
       className="sidebar-title"
-      // The sidebar sits one step below the app's default text size: it is a list to scan, not prose to read, and a smaller face fits more of a title before the marquee has to do any work.
+      // The sidebar sits one step below the app's default text size: it is a list to scan,
+      // not prose to read, and a smaller face fits more of a title before the marquee has to
+      // do any work. The workspace row above matches this deliberately, so a name and the
+      // conversations under it read as one list rather than two.
       textStyle="xs"
       data-overflow={overflow > 0 ? "true" : undefined}
       style={{
@@ -149,7 +192,8 @@ export function MarqueeTitle({ text }: { text: string }) {
   );
 }
 
-// The row itself: a status dot, the title, and the ⋯ menu, on the shared tree grid.
+// The row itself: a status dot, the title, and the ⋯ menu, on the shared tree grid. Clicking
+// anywhere that is not the chevron or the menu opens the conversation.
 export function SessionRow({
   entry,
   agents,
@@ -166,7 +210,9 @@ export function SessionRow({
   agents: AgentSummary[];
   isActive: boolean;
   unseenCompletions: Set<string>;
-  // Present only in a list where something can expand — the delegated-work panel.
+  // Present only in a list where something can expand — the delegated-work panel. The sidebar
+  // lists conversations that never nest and passes nothing, so it spends no width on a column
+  // that would always be empty.
   disclosure?: TreeRowDisclosure;
   onDisclosureChange?: (open: boolean) => void;
   badges?: ReactNode;
@@ -212,7 +258,11 @@ export function SessionRow({
           </Box>
         </Tooltip>
       }
-      // The status rides at the row's trailing edge, with any count the surface passes.
+      // The status rides at the row's trailing edge, with any count the surface passes. Leading,
+      // it held a column open on every quiet row and pushed each title in by a slot for a mark
+      // most of them never show — and the moment a session started working, the whole list
+      // stepped sideways. At the trailing edge it appears and disappears against the margin,
+      // and the ⋯ takes its place on hover.
       badges={(badges || indicator) ? (
         <>
           {badges}
@@ -229,7 +279,10 @@ export function SessionRow({
         </>
       ) : undefined}
       actions={
-        // No `data-row-actions` marker here: the row owns the reveal, and a second copy of the marker on a *descendant* was hidden by the same rule that shows the slot — so the menu sat inside a visible wrapper with `display: none` of its own, and no amount of hovering produced a ⋯.
+        // No `data-row-actions` marker here: the row owns the reveal, and a second copy of the
+        // marker on a *descendant* was hidden by the same rule that shows the slot — so the
+        // menu sat inside a visible wrapper with `display: none` of its own, and no amount of
+        // hovering produced a ⋯.
         <Box>
           <DropdownMenu
             trigger={

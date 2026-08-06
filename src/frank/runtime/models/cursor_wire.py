@@ -1,4 +1,31 @@
-"""The Cursor agent protocol, on the wire."""
+"""The Cursor agent protocol, on the wire.
+
+Cursor's subscription has no HTTP+JSON chat endpoint. What it has is a Connect-RPC
+service, ``agent.v1.AgentService``, speaking protocol buffers, and everything a client
+wants — send a turn, receive text, receive a tool call, answer a tool call — is a field
+in one of two envelope messages, ``AgentClientMessage`` and ``AgentServerMessage``.
+
+This module is that protocol and nothing else: the wire codec, the framing, and the
+handful of messages :mod:`frank.runtime.models.cursor` needs to build and read. The
+chat model above it never sees a tag or a varint.
+
+**Why hand-rolled and not generated.** Cursor's ``agent.proto`` is a five-hundred-message
+file describing an entire coding agent — every built-in tool, its arguments, its
+results, its rejections. Generating it would put fifteen thousand lines of machine
+output in the tree to use perhaps thirty messages of it, and would add a protobuf
+runtime to a dependency list that has no other use for one. The wire format is simple
+enough that a couple of hundred lines covers the parts in play, and writing them out
+makes the field numbers visible where the code uses them, which is exactly where you
+want them when the protocol shifts underneath you. Every number below was read off the
+current descriptor rather than inferred from traffic; the field comments name the
+message so a future reader can re-check them against a newer one.
+
+**Framing.** Connect and gRPC-web both prefix each message with five bytes — one flag
+byte, then a big-endian length — and a stream is a sequence of those. The trailer frame
+sets bit 7 of the flag byte and carries HTTP-style ``grpc-status``/``grpc-message``
+lines instead of a message, which is how a call reports failure after the response
+headers have already said 200.
+"""
 
 from __future__ import annotations
 
@@ -59,7 +86,8 @@ def text(number: int, value: str) -> bytes:
 
 @dataclass(frozen=True)
 class Field:
-    """One field as it appeared on the wire."""
+    """One field as it appeared on the wire. ``data`` is set for length-delimited and
+    fixed-width fields, ``number_value`` for varints."""
 
     number: int
     wire_type: int
@@ -88,7 +116,12 @@ def _read_varint(data: bytes, offset: int) -> tuple[int, int]:
 
 
 def parse(data: bytes) -> list[Field]:
-    """Every field of a serialized message, in wire order."""
+    """Every field of a serialized message, in wire order.
+
+    Unknown fields come back like any other rather than being an error: this parses
+    messages from a service that adds fields continuously, and a reader that only looks
+    at the numbers it knows survives that. A wire type we cannot skip safely ends the
+    parse, because guessing a length would desynchronise everything after it."""
     fields: list[Field] = []
     offset = 0
     while offset < len(data):
@@ -124,7 +157,13 @@ def message_at(fields: list[Field], number: int) -> Optional[list[Field]]:
     return parse(entry.data) if entry is not None and entry.is_message else None
 
 
-# google.protobuf.Value.
+# google.protobuf.Value. Cursor carries JSON-shaped data — a tool's JSON Schema, a tool
+# call's arguments — as a serialized Value, so the two conversions below are how a
+# Python object crosses into the protocol and back.
+#
+# google.protobuf.Value: null_value=1, number_value=2, string_value=3, bool_value=4,
+# struct_value=5, list_value=6. Struct.fields=1 (map entry: key=1, value=2).
+# ListValue.values=1.
 
 def encode_value(value: Any) -> bytes:
     if value is None:
@@ -151,7 +190,9 @@ def decode_value(data: bytes) -> Any:
         if entry.number == 1:
             return None
         if entry.number == 2 and entry.wire_type == _FIXED64:
-            # Value has one numeric case, a double, so an integer argument arrives as 5.0.
+            # Value has one numeric case, a double, so an integer argument arrives as
+            # 5.0. Handing that back as a float would pass an integer-typed tool
+            # parameter a non-integer, so a whole number becomes one again.
             number = struct.unpack("<d", entry.data)[0]
             return int(number) if number.is_integer() else number
         if entry.number == 3 and entry.is_message:
@@ -186,7 +227,11 @@ def frame(payload: bytes, flags: int = 0) -> bytes:
 
 @dataclass
 class Deframer:
-    """Turns a byte stream into whole frames, holding a partial tail between feeds."""
+    """Turns a byte stream into whole frames, holding a partial tail between feeds.
+
+    A streaming response arrives in chunks that have nothing to do with message
+    boundaries, so the buffer here is the whole point: :meth:`feed` yields only frames
+    that have fully arrived and keeps the remainder for the next chunk."""
 
     _buffer: bytearray = dataclass_field(default_factory=bytearray)
 
@@ -203,7 +248,8 @@ class Deframer:
 
 
 def parse_trailer(payload: bytes) -> tuple[int, str]:
-    """The ``(grpc-status, grpc-message)`` a trailer frame reports."""
+    """The ``(grpc-status, grpc-message)`` a trailer frame reports. Status 0 is success;
+    anything else is the real outcome of a call whose headers already said 200."""
     status = 0
     message = ""
     for line in payload.decode("utf-8", "replace").splitlines():
@@ -222,11 +268,14 @@ def parse_trailer(payload: bytes) -> tuple[int, str]:
     return status, message
 
 
-# The Cursor messages.
+# The Cursor messages. Each builder names the message it serializes and each field
+# comment names the message the number belongs to, because the numbers are the contract
+# and nothing else in the tree records them.
 
 # agent.v1.UserMessage.mode — the agent mode enum. AGENT is the tool-using one.
 AGENT_MODE = 1
-# The MCP server identity Frank presents its own tools under.
+# The MCP server identity Frank presents its own tools under. Cursor groups tools by
+# provider, and this is the group name the model sees them in.
 TOOL_PROVIDER = "frank"
 
 
@@ -236,7 +285,10 @@ def bidi_request_id(request_id: str) -> bytes:
 
 
 def bidi_append_request(request_id: str, sequence: int, payload: bytes) -> bytes:
-    """aiserver.v1.BidiAppendRequest — one client message pushed into an open stream."""
+    """aiserver.v1.BidiAppendRequest — one client message pushed into an open stream.
+
+    The payload is hex, not bytes: this request carries a serialized
+    ``AgentClientMessage`` in a *string* field, so it has to survive as text."""
     return (
         text(1, payload.hex())
         + blob(2, bidi_request_id(request_id))
@@ -281,7 +333,13 @@ def user_message(body: str, message_id: str) -> bytes:
 
 
 def conversation_state(root_prompt_blob_ids: list[bytes]) -> bytes:
-    """agent.v1.ConversationStateStructure — a fresh conversation's state."""
+    """agent.v1.ConversationStateStructure — a fresh conversation's state.
+
+    Only ``root_prompt_messages_json`` is set, and it holds blob *ids*: the system
+    prompt travels as a blob the server asks for by id over the KV channel rather than
+    inline. Turns are deliberately left empty — their ``user_message`` fields are blob
+    references too, and referring to blobs a fresh conversation has never stored is
+    what produces "blob not found"."""
     return b"".join(blob(1, blob_id) for blob_id in root_prompt_blob_ids)
 
 
@@ -291,7 +349,14 @@ def model_details(model_id: str) -> bytes:
 
 
 def requested_model(model_id: str, maximum_mode: bool, parameters: list[tuple[str, str]]) -> bytes:
-    """agent.v1.RequestedModel — which model answers, by its *server* id and parameters."""
+    """agent.v1.RequestedModel — which model answers, by its *server* id and parameters.
+
+    The companion to ``model_details`` rather than a replacement: that one names the model the
+    way a picker does, this one names the variant the way the backend routes it. A model
+    discovered through ``AvailableModels`` has a distinct ``serverModelName`` and a set of
+    parameter values (reasoning effort, context size, Fast) that select one variant among
+    several sharing that name, and max mode is a flag rather than a parameter. Sending only
+    ``model_details`` reaches the default variant; sending this reaches the one asked for."""
     parts = [text(1, model_id), boolean(2, maximum_mode)]
     parts.extend(blob(3, text(1, key) + text(2, value)) for key, value in parameters)
     return b"".join(parts)
@@ -331,7 +396,12 @@ def agent_run_request(
 
 
 def drop_field(message: bytes, number: int) -> bytes:
-    """A serialized message with one field number removed, byte-for-byte otherwise."""
+    """A serialized message with one field number removed, byte-for-byte otherwise.
+
+    Splices rather than re-encodes. Round-tripping through :func:`parse` would be shorter and
+    wrong: this walks messages written by somebody else's server, and re-serializing means
+    re-deciding every encoding choice in them — a fixed-width field, a non-minimal varint, a
+    field this version does not know — where the only correct answer is to copy the bytes."""
     kept: list[bytes] = []
     offset = 0
     while offset < len(message):
@@ -353,7 +423,11 @@ def drop_field(message: bytes, number: int) -> bytes:
     return b"".join(kept)
 
 
-# ConversationStateStructure.pending_tool_calls.
+# ConversationStateStructure.pending_tool_calls. Dropped from a checkpoint before it is sent
+# back: a checkpoint is captured mid-turn, and this client ends its run the moment the model
+# calls a tool, so the state it captured can name a call that was never answered. Resuming with
+# that still listed invites the server to wait for a result nobody is going to send. The
+# maintained plugin strips the same field for the same reason after a user interrupt.
 PENDING_TOOL_CALLS_FIELD = 4
 
 
@@ -368,23 +442,36 @@ def client_message_run(run_request: bytes) -> bytes:
 
 
 def client_message_exec_result(exec_id_number: int, exec_id: str, result_field: int, result: bytes) -> bytes:
-    """agent.v1.AgentClientMessage carrying an ``ExecClientMessage``."""
+    """agent.v1.AgentClientMessage carrying an ``ExecClientMessage``.
+
+    ``result_field`` is the field number of the specific result inside
+    ``ExecClientMessage`` — 11 for ``mcp_result``, 2 for ``shell_result``, and so on —
+    which is what makes one builder enough for every tool the server can ask us to run."""
     exec_message = scalar(1, exec_id_number) + text(15, exec_id) + blob(result_field, result)
     return blob(2, exec_message)
 
 
 def client_message_stream_close(exec_id_number: int) -> bytes:
-    """agent.v1.AgentClientMessage carrying ``ExecClientControlMessage.stream_close``."""
+    """agent.v1.AgentClientMessage carrying ``ExecClientControlMessage.stream_close``.
+
+    Every exec result is followed by one of these: the result says what happened, the
+    close says nothing further is coming on that exec's channel."""
     return blob(5, blob(1, scalar(1, exec_id_number)))
 
 
 def client_message_kv(kv_id: int, result_field: int, result: bytes) -> bytes:
-    """agent.v1.AgentClientMessage carrying a ``KvClientMessage``."""
+    """agent.v1.AgentClientMessage carrying a ``KvClientMessage``.
+
+    ``result_field`` is 2 for ``get_blob_result`` and 3 for ``set_blob_result``."""
     return blob(3, scalar(1, kv_id) + blob(result_field, result))
 
 
 def mcp_success_result(body: str, is_error: bool) -> bytes:
-    """agent.v1.McpResult carrying success — one text content item."""
+    """agent.v1.McpResult carrying success — one text content item.
+
+    ``is_error`` is MCP's own notion: the call ran and the tool reported a failure,
+    which is different from the call not happening. Frank's failing tools produce text,
+    so they arrive here rather than as ``McpError``."""
     content_item = blob(1, text(1, body))  # McpToolResultContentItem.text carries McpTextContent.text
     return blob(1, blob(1, content_item) + boolean(2, is_error))
 
@@ -396,7 +483,23 @@ def mcp_rejected_result(reason: str) -> bytes:
 
 @dataclass(frozen=True)
 class BuiltinExec:
-    """One of Cursor's own agent tools, and how this client answers a request to run it."""
+    """One of Cursor's own agent tools, and how this client answers a request to run it.
+
+    The agent reaches for these regardless of what the client offered, because its toolset is
+    decided server-side. Every field here exists to answer one of two questions: how to hand the
+    request to the harness so it runs under the harness's rules, and how to refuse it in the
+    protocol's own terms when it cannot be handed over at all.
+
+    ``result_field`` is the result's number inside ``ExecClientMessage``. ``refusal_field`` is the
+    number, inside that result, of the variant that means "not done" — the protocol calls it
+    ``rejected`` for tools a client may decline, ``error`` for ones it may only fail, and
+    ``failure`` for one. All three have the same shape from here: some identifying strings, then a
+    reason.
+
+    ``argument_fields`` are the args-message field numbers worth reading. ``refusal_indexes`` are
+    which of those, in order, the refusal wants before its reason — a separate list because the
+    two do not always agree. ``read_mcp_resource`` takes a server and a uri but its refusal names
+    only the uri."""
 
     label: str
     result_field: int
@@ -405,7 +508,12 @@ class BuiltinExec:
     refusal_indexes: tuple[int, ...] = ()
 
 
-# Every exec the server can ask a client to run, keyed by its args field number in ``ExecServerMessage``.
+# Every exec the server can ask a client to run, keyed by its args field number in
+# ``ExecServerMessage``. Completeness is the point rather than tidiness: an exec left unanswered
+# is an agent waiting for a result that never comes, so a kind missing from this table costs a
+# stalled turn. ``mcp_args`` (11) and ``request_context_args`` (10) are absent because neither is
+# a built-in tool — the first is the harness's own tools coming back, the second is a question
+# about the machine.
 BUILTIN_EXECS: dict[int, BuiltinExec] = {
     # ShellRejected{command, working_directory, reason}
     2: BuiltinExec("shell", 2, 4, (1, 2), (0, 1)),
@@ -427,7 +535,8 @@ BUILTIN_EXECS: dict[int, BuiltinExec] = {
     16: BuiltinExec("background_shell", 16, 3, (1, 2), (0, 1)),
     # ListMcpResourcesExecRejected{reason}
     17: BuiltinExec("list_mcp_resources", 17, 3, (1,), ()),
-    # ReadMcpResourceExecRejected{uri, reason} — args are {server, uri}, so the refusal wants the second of them and not the first
+    # ReadMcpResourceExecRejected{uri, reason} — args are {server, uri}, so the refusal wants
+    # the second of them and not the first
     18: BuiltinExec("read_mcp_resource", 18, 3, (1, 2), (1,)),
     # FetchError{url, error}
     20: BuiltinExec("fetch", 20, 2, (1,), (0,)),
@@ -441,7 +550,10 @@ BUILTIN_EXECS: dict[int, BuiltinExec] = {
 
 
 def refused_result(builtin: BuiltinExec, arguments: list[str], reason: str) -> bytes:
-    """A tool result whose only populated variant is the one meaning "not done"."""
+    """A tool result whose only populated variant is the one meaning "not done".
+
+    The identifying strings the variant names are echoed back before the reason, so the agent's
+    own transcript records what it was refused rather than just that something was."""
     leading = [arguments[index] for index in builtin.refusal_indexes if index < len(arguments)]
     body = b"".join(text(position + 1, value) for position, value in enumerate(leading))
     return blob(builtin.refusal_field, body + text(len(leading) + 1, reason))
@@ -451,7 +563,8 @@ def refused_result(builtin: BuiltinExec, arguments: list[str], reason: str) -> b
 
 @dataclass
 class ToolCall:
-    """An MCP tool call the model made: Frank's tool name, its arguments, and the id Cursor will match our result to."""
+    """An MCP tool call the model made: Frank's tool name, its arguments, and the id
+    Cursor will match our result to."""
 
     call_id: str
     tool_name: str
@@ -460,7 +573,11 @@ class ToolCall:
 
 @dataclass
 class ExecRequest:
-    """The server asking the client to run something."""
+    """The server asking the client to run something.
+
+    ``tool_call`` is set when the model called one of the harness's own tools. ``builtin`` is set
+    when it reached for one of Cursor's, in which case ``arguments`` holds that exec's strings in
+    the order :attr:`BuiltinExec.argument_fields` names them."""
 
     exec_id_number: int
     exec_id: str
@@ -485,7 +602,12 @@ class BlobRequest:
 
 @dataclass
 class TokenDetails:
-    """What a conversation currently costs, as the server accounts for it."""
+    """What a conversation currently costs, as the server accounts for it.
+
+    ``used_tokens`` is the conversation's context fill — the prompt side, not a total — and
+    ``maximum_tokens`` is the window it is filling. The second is the only place the protocol
+    states a model's context window at all: it is absent from the model list, so this is
+    where a real number comes from rather than a guess about the model's family."""
 
     used_tokens: int = 0
     maximum_tokens: int = 0
@@ -493,7 +615,11 @@ class TokenDetails:
 
 @dataclass
 class ServerMessage:
-    """One ``AgentServerMessage``, reduced to what the chat model acts on."""
+    """One ``AgentServerMessage``, reduced to what the chat model acts on.
+
+    Everything else the envelope can carry — step timings, interaction queries — is dropped
+    here rather than upstream, so the model's stream loop reads as a short list of things
+    that can happen in a turn."""
 
     text_delta: str = ""
     thinking_delta: str = ""
@@ -502,10 +628,13 @@ class ServerMessage:
     blob_request: Optional[BlobRequest] = None
     turn_ended: bool = False
     heartbeat: bool = False
-    # An increment of generated tokens, not a running total: ``TokenDeltaUpdate`` is a delta and has to be summed across a turn.
+    # An increment of generated tokens, not a running total: ``TokenDeltaUpdate`` is a delta
+    # and has to be summed across a turn.
     output_token_delta: int = 0
     token_details: Optional[TokenDetails] = None
-    # The whole conversation state the server just published, verbatim.
+    # The whole conversation state the server just published, verbatim. Opaque to this client
+    # and kept that way: its only use is being handed back to resume, so it is bytes to carry
+    # rather than a structure to understand.
     checkpoint: bytes = b""
 
 
@@ -529,7 +658,10 @@ def _parse_mcp_args(data: bytes) -> ToolCall:
 
 
 def _parse_tool_call(data: bytes) -> Optional[ToolCall]:
-    """agent.v1.ToolCall becomes a tool call, when it is the MCP variant (field 15)."""
+    """agent.v1.ToolCall becomes a tool call, when it is the MCP variant (field 15).
+
+    A built-in tool call is not one of ours to execute, so it is not reported here; it
+    arrives separately as an exec request and is declined there."""
     mcp = message_at(parse(data), 15)
     if mcp is None:
         return None
@@ -620,7 +752,11 @@ def _parse_kv_server_message(data: bytes) -> Optional[BlobRequest]:
 
 
 def _parse_token_details(state_structure: bytes) -> Optional[TokenDetails]:
-    """agent.v1.ConversationStateStructure gives its ``token_details``, when it carries any."""
+    """agent.v1.ConversationStateStructure gives its ``token_details``, when it carries any.
+
+    The checkpoint is otherwise ignored: it is the whole conversation state, and this client
+    does not resume conversations, so the token accounting is the only part of it that says
+    something a turn needs."""
     details = message_at(parse(state_structure), 5)  # token_details
     if details is None:
         return None

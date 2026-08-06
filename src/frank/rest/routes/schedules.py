@@ -18,7 +18,8 @@ class ScheduleCreateRequest(BaseModel):
     cron: str
     prompt: str
     agent: str
-    # No default, and that is the point: a schedule runs with nobody watching, so the mode is the one thing its author decides rather than discovers.
+    # No default, and that is the point: a schedule runs with nobody watching, so the mode is
+    # the one thing its author decides rather than discovers. See `ScheduleRecord`.
     permission_mode: str
     timezone: str
     working_directory: str = Field(default="")
@@ -34,7 +35,8 @@ def _fail(error: Exception) -> HTTPException:
 
 @router.get("/schedules")
 async def list_schedules(workspace_id: str = ""):
-    # The services are synchronous by convention here, and the write lock refuses to run on the event loop rather than deadlocking quietly.
+    # The services are synchronous by convention here, and the write lock refuses to run on
+    # the event loop rather than deadlocking quietly. Dispatched off it, like every other route.
     return {"schedules": await asyncio.to_thread(_schedules.listing, workspace_id)}
 
 
@@ -79,7 +81,10 @@ async def delete_schedule(schedule_id: str):
 
 @router.post("/schedules/{schedule_id}/run")
 async def run_schedule(schedule_id: str):
-    """Fire now, without waiting for the window and without moving it."""
+    """Fire now, without waiting for the window and without moving it.
+
+    So a schedule can be tried the moment it is written rather than at six tomorrow morning,
+    which is the only way to find out that the agent name was wrong before it matters."""
     from frank.daemon import scheduler
     from frank.hub.database import ScheduleRecord
     from frank.hub import state as hub_state

@@ -13,14 +13,18 @@ import { Pill } from "./ui/pill";
 import { InlineField } from "./ui/display";
 import { MarkdownContent } from "./markdown-content";
 
-// Renders a capability's display title: the human title when present, otherwise a fallback to its identifier rendered in monospace to signal it is an id, not a display title.
+// Renders a capability's display title: the human title when present, otherwise a
+// fallback to its identifier rendered in monospace to signal it is an id, not a
+// display title.
 function CapabilityTitle({ title, identifier }: { title?: string | null; identifier: string }) {
   const display = (title ?? "").trim();
   if (display && display !== identifier) return <>{display}</>;
   return <Span fontFamily="var(--app-font-mono)" fontWeight="medium">{identifier}</Span>;
 }
 
-// MCP tool descriptions come from Python docstrings, whose Arguments:/ Returns:/etc. sections duplicate the tool's input schema.
+// MCP tool descriptions come from Python docstrings, whose Arguments:/
+// Returns:/etc. sections duplicate the tool's input schema. For the
+// capability browser we only show the human-readable summary above it.
 const DOCSTRING_SECTION = /\n[ \t]*(Arguments|Parameters|Params|Returns|Yields|Raises|Examples?|Notes?|See Also|References|Todo|Warnings?)(\s*\([^)]*\))?\s*:/i;
 
 function docstringSummary(description: string): string {
@@ -28,12 +32,16 @@ function docstringSummary(description: string): string {
   return match ? description.slice(0, match.index ?? 0).trim() : description.trim();
 }
 
-// Comparator that pushes disabled capabilities (skills or servers) to the end while preserving the relative order of everything else.
+// Comparator that pushes disabled capabilities (skills or servers) to the end
+// while preserving the relative order of everything else.
 function disabledLast(first: { enabled?: boolean }, second: { enabled?: boolean }): number {
   return Number(first.enabled === false) - Number(second.enabled === false);
 }
 
-// Shows the selected agent's A2A AgentCard skills — broadcast from the served agent and rendered as collapsible rows, so you can see what an agent can do — plus the tools exposed by the configured MCP servers, grouped per server.
+// Shows the selected agent's A2A AgentCard skills — broadcast from the served
+// agent and rendered as collapsible rows, so you can see what an agent can do —
+// plus the tools exposed by the configured MCP servers, grouped per server.
+// Every row starts collapsed to keep the empty state uncluttered.
 export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null; workingDirectory?: string }) {
   const translation = useTranslations("AgentSkills");
   const [mcpServers, setMcpServers] = useState<McpServerTools[]>([]);
@@ -41,7 +49,10 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
 
   useEffect(() => {
     let cancelled = false;
-    // Skills and MCP servers are both scoped to the selected folder (home globals plus that folder's own `.agents`), so refetch whenever the folder changes.
+    // Skills and MCP servers are both scoped to the selected folder (home globals
+    // plus that folder's own `.agents`), so refetch whenever the folder changes.
+    // Skills are listed independently of any agent, so a folder's global skills
+    // still appear even when it has no agents.
     const loadCapabilities = () => {
       fetchSkills(workingDirectory)
         .then((skills) => {
@@ -55,7 +66,8 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
         .catch((caught) => swallowed({ component: "agent-skills", operation: "list the MCP tools" }, caught));
     };
     loadCapabilities();
-    // Skills and MCP servers reload live (their files are watched server-side); refetch when the server signals a change so they stay current.
+    // Skills and MCP servers reload live (their files are watched server-side);
+    // refetch when the server signals a change so they stay current.
     const unsubscribe = subscribeEvents((event) => {
       if (event.type === "agents_changed") loadCapabilities();
     });
@@ -65,7 +77,8 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
     };
   }, [workingDirectory]);
 
-  // Disabled capabilities are shown greyed out but sorted to the bottom of their list so they do not clutter the active ones (stable: relative order is kept).
+  // Disabled capabilities are shown greyed out but sorted to the bottom of their
+  // list so they do not clutter the active ones (stable: relative order is kept).
   const skillsById = new Map<string, AgentSkill>();
   for (const skill of card?.skills ?? []) {
     skillsById.set(skill.id, skill);
@@ -75,23 +88,30 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
   }
   const skills = [...skillsById.values()].sort(disabledLast);
   const hasSkills = skills.length > 0;
-  // Disabled servers are shown (greyed out) rather than hidden; enabled servers still connecting (no tools yet) stay hidden until they advertise something.
+  // Disabled servers are shown (greyed out) rather than hidden; enabled servers
+  // still connecting (no tools yet) stay hidden until they advertise something.
   const toolServers = mcpServers
     .filter((server) => server.enabled === false || server.tools.length > 0)
     .sort(disabledLast);
   const hasTools = toolServers.length > 0;
   if (!hasSkills && !hasTools) return null;
 
-  // Split each list into the global capabilities (from ~/.agents) and the ones the selected folder contributes itself, so the two scopes can be shown apart.
+  // Split each list into the global capabilities (from ~/.agents) and the ones the
+  // selected folder contributes itself, so the two scopes can be shown apart. The
+  // scope labels only appear once the folder actually adds something workspace-local;
+  // a plain folder (only globals, e.g. home) stays an unlabelled flat list.
   const globalSkills = skills.filter((skill) => skill.scope !== "workspace");
   const workspaceSkills = skills.filter((skill) => skill.scope === "workspace");
   const globalServers = toolServers.filter((server) => server.scope !== "workspace");
   const workspaceServers = toolServers.filter((server) => server.scope === "workspace");
 
-  // The home folder has no workspace scope of its own, so its "This workspace" group (which would always be empty) is suppressed — only real workspace folders show it.
+  // The home folder has no workspace scope of its own, so its "This workspace" group
+  // (which would always be empty) is suppressed — only real workspace folders show it.
 
   return (
-    // `minW={0}` because this sits in a centred flex column: a flex item's default minimum is the width of its content, so a long skill name or server identifier widened the whole panel past the 80rem column the chat is laid out in, instead of ellipsizing inside it.
+    // `minW={0}` because this sits in a centred flex column: a flex item's default minimum is
+    // the width of its content, so a long skill name or server identifier widened the whole panel
+    // past the 80rem column the chat is laid out in, instead of ellipsizing inside it.
     <Box w="100%" minW={0} maxW="100%" pb={4}>
       {hasSkills && (
         <>
@@ -125,7 +145,8 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
   );
 }
 
-// One agent skill, collapsed by default.
+// One agent skill, collapsed by default. A disabled skill is greyed out and inert;
+// a skill with no description or examples is a plain, non-expanding line.
 function SkillCard({ skill }: { skill: AgentSkill }) {
   const translation = useTranslations("AgentSkills");
   const enabled = skill.enabled !== false;
@@ -161,7 +182,8 @@ function SkillCard({ skill }: { skill: AgentSkill }) {
   );
 }
 
-// One MCP server's tools, collapsed by default.
+// One MCP server's tools, collapsed by default. A disabled server is greyed out and
+// inert; an enabled server shows its tool count and expands to the tool rows.
 function McpServerGroup({ server }: { server: McpServerTools }) {
   const translation = useTranslations("AgentSkills");
   const enabled = server.enabled !== false;

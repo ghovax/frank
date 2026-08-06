@@ -1,6 +1,11 @@
 "use client";
 
-// A prominent overlay that appears above the chat input when the agent asks the user a question.
+// A prominent overlay that appears above the chat input when the agent asks the
+// user a question. Replaces the inline tool-card rendering so the user cannot
+// miss it. Renders one question at a time with navigation between multiple
+// questions, and blocks chat input until all questions are answered. Each
+// question can be skipped individually, and the whole prompt can be dismissed
+// (a decline) — which tells the model the user chose not to answer and stops.
 
 import { Box, Button, Flex, IconButton, Input, Text } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
@@ -12,7 +17,8 @@ import { MarkdownContent } from "./markdown-content";
 interface QuestionOverlayProps {
   question: ToolQuestion;
   onQuestion: (requestId: string, answers: QuestionAnswer[]) => void;
-  // Dismiss the whole prompt without answering (a decline).
+  // Dismiss the whole prompt without answering (a decline). Undefined hides the
+  // close affordance.
   onDismiss?: (requestId: string) => void;
 }
 
@@ -41,7 +47,9 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
         [index]: active.includes(label) ? active.filter((value) => value !== label) : [...active, label],
       };
     });
-    // Auto-advance for single-choice (non-multiple) questions: selecting an option moves to the next question.
+    // Auto-advance for single-choice (non-multiple) questions: selecting an option
+    // moves to the next question. This is navigation convenience, not auto-submit
+    // — the user still presses Submit when all questions are ready.
     if (!multiple && index === current && current < total - 1) {
       const isDeselection = previouslySelected.length === 1 && previouslySelected[0] === label;
       if (!isDeselection) {
@@ -50,7 +58,9 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
     }
   }
 
-  // The answer for one question: its typed custom text, else the selected label(s), else empty.
+  // The answer for one question: its typed custom text, else the selected
+  // label(s), else empty. A skipped question always resolves to an empty answer
+  // so the model sees it was deliberately left unanswered.
   function answerFor(index: number): QuestionAnswer {
     if (skipped[index]) return items[index].multiple ? [] : "";
     const text = (custom[index] ?? "").trim();

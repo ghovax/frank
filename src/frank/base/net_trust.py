@@ -1,4 +1,23 @@
-"""Shared outbound-request trust guard (anti-SSRF)."""
+"""Shared outbound-request trust guard (anti-SSRF).
+
+Any place the harness fetches a URL a peer influenced — an inbound ``FileWithUri``, a
+client-registered push-notification webhook, a remote agent's advertised card URL — must
+refuse a target that resolves into a private/loopback/link-local range, or the peer can
+make the harness reach internal services (cloud metadata, an intranet host) on its behalf.
+
+The check resolves the hostname and inspects the *resolved IP addresses*, not the hostname
+string — a DNS name pointing at ``169.254.169.254`` is exactly the bypass a string check
+misses. IP literals are checked directly. Callers that legitimately need a private target
+(a Frank-to-Frank loopback test) opt in explicitly with ``allow_private``.
+
+Against a DNS rebind — a name that passes the check and then rebinds to a private IP before
+the socket connects — :func:`resolve_public_ips` plus :func:`pin_to_ip` let a caller pin the
+connection to the exact address it verified (rewriting the URL host to the IP while preserving
+the ``Host`` header and TLS SNI), closing the window entirely. Pinning is skipped only when an
+egress proxy is configured (the proxy does its own DNS/connect), where resolving and rejecting
+*every* returned address plus the independent origin check in the remote-agent path remain the
+guards.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +27,8 @@ from urllib.parse import urlparse
 
 
 class UntrustedHostError(Exception):
-    """A URL's host is malformed, unresolvable, or resolves into a private/loopback range the caller did not opt into."""
+    """A URL's host is malformed, unresolvable, or resolves into a private/loopback range
+    the caller did not opt into."""
 
 
 _LOOPBACK_NAMES = {"localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopback"}
@@ -26,7 +46,8 @@ def _is_blocked(address: ipaddress._BaseAddress) -> bool:
 
 
 def _resolved_addresses(host: str) -> list[ipaddress._BaseAddress]:
-    """Every IP ``host`` resolves to (the literal itself when it is already an IP)."""
+    """Every IP ``host`` resolves to (the literal itself when it is already an IP).
+    Raises :class:`UntrustedHostError` if it cannot be resolved."""
     try:
         return [ipaddress.ip_address(host)]
     except ValueError:
@@ -47,7 +68,9 @@ def _resolved_addresses(host: str) -> list[ipaddress._BaseAddress]:
 
 
 def assert_public_host(host: str, *, allow_private: bool = False) -> None:
-    """Raise :class:`UntrustedHostError` unless ``host`` resolves entirely to public addresses (or ``allow_private`` is set)."""
+    """Raise :class:`UntrustedHostError` unless ``host`` resolves entirely to public
+    addresses (or ``allow_private`` is set). Every resolved address must pass — a name that
+    resolves to one public and one loopback address is rejected."""
     host = (host or "").lower()
     if not host:
         raise UntrustedHostError("missing host")
@@ -63,7 +86,8 @@ def assert_public_host(host: str, *, allow_private: bool = False) -> None:
 
 
 def assert_public_url(url: str, *, allow_private: bool = False, schemes: frozenset[str] = frozenset({"http", "https"})) -> None:
-    """Raise :class:`UntrustedHostError` unless ``url`` is an ``http(s)`` URL whose host resolves to public addresses (or ``allow_private`` is set)."""
+    """Raise :class:`UntrustedHostError` unless ``url`` is an ``http(s)`` URL whose host
+    resolves to public addresses (or ``allow_private`` is set)."""
     parsed = urlparse(url)
     if parsed.scheme not in schemes:
         raise UntrustedHostError(f"unsupported scheme {parsed.scheme!r} in {url!r}")
@@ -71,7 +95,9 @@ def assert_public_url(url: str, *, allow_private: bool = False, schemes: frozens
 
 
 def resolve_public_ips(url: str, *, allow_private: bool = False) -> tuple[str, list[str]]:
-    """Assert ``url``'s host resolves entirely to public addresses (or ``allow_private``), and return ``(hostname, [ip strings])``."""
+    """Assert ``url``'s host resolves entirely to public addresses (or ``allow_private``), and
+    return ``(hostname, [ip strings])``. The caller pins the connection to one of the returned
+    IPs so a rebind between this check and the socket connect cannot swap in a private target."""
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
         raise UntrustedHostError(f"unsupported scheme {parsed.scheme!r} in {url!r}")
@@ -90,7 +116,11 @@ def resolve_public_ips(url: str, *, allow_private: bool = False) -> tuple[str, l
 
 
 def pin_to_ip(url: str, ip: str, hostname: str) -> tuple[str, dict, dict]:
-    """Rewrite ``url`` to connect to the already-verified ``ip`` while keeping the real ``hostname`` for routing and TLS."""
+    """Rewrite ``url`` to connect to the already-verified ``ip`` while keeping the real
+    ``hostname`` for routing and TLS. Returns ``(pinned_url, headers, extensions)`` to pass to
+    httpx: the URL's host becomes the IP (so the socket goes to the checked address, defeating a
+    rebind), a ``Host`` header preserves virtual-host routing, and the ``sni_hostname`` extension
+    makes TLS present and validate the certificate against the real hostname, not the IP."""
     parsed = urlparse(url)
     netloc_ip = f"[{ip}]" if ":" in ip else ip
     if parsed.port:

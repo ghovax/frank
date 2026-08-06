@@ -1,4 +1,9 @@
-"""Session-scoped filesystem mutation leases."""
+"""Session-scoped filesystem mutation leases.
+
+The backend allows multiple chat sessions to run at once. Read-only work can run
+freely, but writes need a coordination point so one session cannot edit a file or
+worktree while another mutating operation is in progress.
+"""
 
 from __future__ import annotations
 

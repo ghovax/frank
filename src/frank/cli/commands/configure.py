@@ -1,4 +1,25 @@
-"""`frank configure`: read and change what the daemon and its sessions start with."""
+"""`frank configure`: read and change what the daemon and its sessions start with.
+
+Settings live in one YAML file, and until now the only way to change them was to edit that
+file by hand or open the desktop app. This exposes the same values to the terminal, addressed
+by dotted path, so a setting can be inspected, changed, and scripted without either.
+
+What it lists comes from the *schema*, not from the file. Reading the file could only ever
+show what somebody had already written down — which is the part they know about — so every
+setting left at its default was invisible, and the way to discover one was to read the source.
+Walking the schema instead means a setting exists in the listing from the moment it exists in
+the code, along with what it ships at and what it is for.
+
+Changes apply to what starts *next*. A running session keeps the configuration it was built
+with — the same guarantee its permission mode carries — so nothing here can reach into work
+already in flight and change the rules underneath it.
+
+Output is plumbing, like every other verb: a listing is a JSON object keyed by dotted path,
+and reading one setting prints its value bare, with the explanation on stderr so a script
+reading stdout never has to strip it. Values are printed as they are stored, credentials
+included — this reads a file the user owns, and deciding on their behalf what they may see of
+their own configuration is not this command's business.
+"""
 
 from __future__ import annotations
 
@@ -22,14 +43,24 @@ logger = logging.getLogger("frank.configure")
 
 
 def _known(path: str):
-    """The schema's entry for a dotted path, or ``None`` if it defines none."""
+    """The schema's entry for a dotted path, or ``None`` if it defines none.
+
+    Without this, a typo — or a setting that has since been removed, like the default agent —
+    is written to the file, listed back, and silently does nothing. A setting that cannot take
+    effect should be refused at the point it is set, not discovered when the behaviour never
+    changes.
+
+    Open-ended maps (`providers`, `mcp.servers`) accept any key at their level and are walked
+    through into the model of their values, so `providers.anthropic.api_key` resolves."""
     from frank.base.configuration_schema import setting_for
 
     return setting_for(path)
 
 
 def _everything(data: dict) -> dict:
-    """Every setting the schema defines, with what it ships at and what this machine currently runs on."""
+    """Every setting the schema defines, with what it ships at and what this machine currently
+    runs on. The whole point of `--all`: what a person wants to know is what they *could*
+    change, and that is a property of the code, not of their file."""
     from frank.base.configuration_schema import leaf_settings
 
     listing: dict[str, dict] = {}
@@ -53,7 +84,11 @@ def run(arguments) -> int:
         return 0
 
     if arguments.setting is None:
-        # No argument: what this machine has actually been set to, as one object — the short answer to "what have I changed?".
+        # No argument: what this machine has actually been set to, as one object — the short
+        # answer to "what have I changed?". `--all` is the long answer, and says so on stderr
+        # rather than on stdout, which carries the values. A key the schema no longer defines
+        # is inert; it is still listed, because it is in the file and hiding it would make an
+        # unremovable setting invisible. `--unset` is how it goes away.
         print(compact(dict(sorted(_flatten(data)))))
         logger.info("(what is set; `frank configure --all` lists every setting with its default)")
         return 0
@@ -64,10 +99,15 @@ def run(arguments) -> int:
             value = _read(data, arguments.setting)
         except KeyError:
             if known is None:
-                # A name the schema does not have will never do anything at all.
+                # A name the schema does not have will never do anything at all. Nothing on
+                # stdout: there is no value to print, and a reader must not mistake an
+                # explanation for one.
                 logger.info(f"frank: no setting named {arguments.setting!r}")
                 return 1
-            # A real setting simply not in the file runs on what the code ships.
+            # A real setting simply not in the file runs on what the code ships. Printing that
+            # value rather than nothing is what makes reading a setting mean the same thing
+            # whether or not somebody happened to write it down — and printing *only* it is what
+            # makes `$(frank configure …)` in a script mean the value.
             value = known.default
         print(compact(value) if isinstance(value, (dict, list)) else value)
         return 0
@@ -81,7 +121,8 @@ def run(arguments) -> int:
         logger.info(f"frank: {arguments.setting} would not be valid: {invalid}")
         return 1
     _save(data)
-    # Echoing the stored value rather than the argument shows how it was interpreted, so a `true` that landed as a string is visible immediately instead of at the next boot.
+    # Echoing the stored value rather than the argument shows how it was interpreted, so a
+    # `true` that landed as a string is visible immediately instead of at the next boot.
     stored = _read(data, arguments.setting)
     print(compact(stored) if isinstance(stored, (dict, list)) else stored)
     return 0
@@ -97,5 +138,6 @@ def run_unset(arguments) -> int:
         logger.info(f"frank: {arguments.setting} cannot be removed: {invalid}")
         return 1
     _save(data)
-    # Nothing on stdout: removing a setting has no value to report, and the exit code already says whether it happened.
+    # Nothing on stdout: removing a setting has no value to report, and the exit code already
+    # says whether it happened.
     return 0

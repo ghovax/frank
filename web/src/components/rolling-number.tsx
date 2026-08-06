@@ -10,7 +10,12 @@ function normalizedValue(value: number): number {
   return Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
 }
 
-// Slot-machine cadence: the counter advances one discrete notch per interval (each notch rolls the digits) rather than easing continuously from start to target.
+// Slot-machine cadence: the counter advances one discrete notch per interval
+// (each notch rolls the digits) rather than easing continuously from start to
+// target. Stepping in intervals reads as "changes landing in real time" — the
+// number visibly ticks up as more of the diff streams in, instead of gliding to
+// the final value all at once. Capping the tick count keeps a large jump from
+// dragging: a big delta simply takes bigger steps, not longer.
 const SLOT_TICK_INTERVAL_MS = 75;
 const SLOT_MAXIMUM_TICKS = 16;
 
@@ -47,7 +52,8 @@ function useAnimatedValue(target: number): { displayValue: number } {
       return;
     }
 
-    // Fire the first notch immediately so the counter reacts the instant a change lands, then keep ticking on the interval until it reaches the target.
+    // Fire the first notch immediately so the counter reacts the instant a change
+    // lands, then keep ticking on the interval until it reaches the target.
     interval = window.setInterval(advance, SLOT_TICK_INTERVAL_MS);
     advance();
     return () => window.clearInterval(interval);
@@ -58,7 +64,11 @@ function useAnimatedValue(target: number): { displayValue: number } {
 
 const DIGITS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-// One odometer digit: a vertical 0–9 strip inside a 1em window that translates to bring the target digit into view.
+// One odometer digit: a vertical 0–9 strip inside a 1em window that translates to bring the
+// target digit into view. Because it is a pure transform toward a declarative target (no
+// AnimatePresence mount/exit), the shown digit always settles on the exact value — a roll can
+// never leave a digit parked off-screen (the old per-digit enter animation could, which is why
+// "10" sometimes rendered as "1"). A newly-appearing digit mounts already at its resting offset.
 const Digit = memo(function Digit({ digit }: { digit: number }) {
   const prefersReducedMotion = useReducedMotion();
   const safeDigit = Number.isFinite(digit) ? Math.min(9, Math.max(0, Math.round(digit))) : 0;
@@ -113,7 +123,8 @@ export const RollingNumber = memo(function RollingNumber({
       whiteSpace="nowrap"
     >
       {digits.map((digit, index) => (
-        // Keyed by place (units, tens, …) so each column stays put and rolls in place; a new higher place mounts already at its resting offset.
+        // Keyed by place (units, tens, …) so each column stays put and rolls in place; a new
+        // higher place mounts already at its resting offset.
         <Digit key={digits.length - index - 1} digit={digit} />
       ))}
     </Span>

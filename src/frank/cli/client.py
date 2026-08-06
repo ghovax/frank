@@ -1,4 +1,10 @@
-"""Talking to the daemon, and starting it if it is not there."""
+"""Talking to the daemon, and starting it if it is not there.
+
+The CLI finds the daemon the way anything else does: a socket, a port, and a token in the
+runtime directory. If none of that is there it starts the daemon and waits — the same
+autostart a container runtime does, so the first command a user types works without a
+separate "start the service" step.
+"""
 
 from __future__ import annotations
 
@@ -26,7 +32,10 @@ def _read_token() -> str:
 
 
 def daemon_is_up() -> bool:
-    """Whether something is actually listening, rather than whether a socket file exists."""
+    """Whether something is actually listening, rather than whether a socket file exists.
+
+    A daemon that was killed leaves its socket behind, so existence proves nothing; only a
+    connection does."""
     path = daemon_socket_path()
     if not path.exists() or not _read_token():
         return False
@@ -44,7 +53,12 @@ def _daemon_command() -> list[str]:
 
 
 def ensure_daemon() -> None:
-    """Start the daemon if it is not already up, and wait until it answers."""
+    """Start the daemon if it is not already up, and wait until it answers.
+
+    Readiness is read from the daemon itself: it writes one line to stdout the moment both of
+    its listeners are accepting connections, and closes the stream. Waiting on that line means
+    the first command after an autostart proceeds exactly when the daemon is usable, rather
+    than at whatever interval a poll happened to choose."""
     if daemon_is_up():
         return
     try:
@@ -54,7 +68,8 @@ def ensure_daemon() -> None:
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
             text=True,
-            # Detached, so the daemon outlives the command that started it — otherwise every CLI invocation would take the fleet down with it on exit.
+            # Detached, so the daemon outlives the command that started it — otherwise every
+            # CLI invocation would take the fleet down with it on exit.
             start_new_session=True,
         )
     except OSError as error:
@@ -70,7 +85,10 @@ def ensure_daemon() -> None:
 
 
 def _await_announcement(daemon: subprocess.Popen) -> Optional[dict]:
-    """The daemon's one-line readiness announcement, or ``None`` if it never arrives."""
+    """The daemon's one-line readiness announcement, or ``None`` if it never arrives.
+
+    The read runs on a worker thread so the timeout is real: a blocking `readline` on a daemon
+    that wedged before announcing would otherwise hang the command with no way out."""
     if daemon.stdout is None:
         return None
     with ThreadPoolExecutor(max_workers=1) as pool:
@@ -124,7 +142,9 @@ def stream(path: str):
     ) as client:
         with client.stream("GET", f"http://daemon{path}") as response:
             if response.status_code >= 400:
-                # An event stream that was refused still parses as "no frames", so without this an `attach` to a session that does not exist ends instantly and silently — reading, wrongly, as a session with nothing to say.
+                # An event stream that was refused still parses as "no frames", so without
+                # this an `attach` to a session that does not exist ends instantly and
+                # silently — reading, wrongly, as a session with nothing to say.
                 response.read()
                 try:
                     message = response.json()["error"]["message"]
@@ -133,7 +153,11 @@ def stream(path: str):
                 raise DaemonError(message)
             buffer = ""
             for chunk in response.iter_text():
-                # Server-sent events separate frames with a blank line, and the wire form of that is CRLF — which is what the server actually sends.
+                # Server-sent events separate frames with a blank line, and the wire form of
+                # that is CRLF — which is what the server actually sends. Splitting on "\n\n"
+                # alone matched nothing at all against "\r\n\r\n", so every frame stayed in the
+                # buffer and `attach` sat silent for the life of the stream. Normalising first
+                # accepts either spelling, which is what the format allows.
                 buffer += chunk.replace("\r\n", "\n")
                 while "\n\n" in buffer:
                     frame, buffer = buffer.split("\n\n", 1)

@@ -11,7 +11,7 @@ from frank.protocol.events import PermissionReason
 
 @dataclass(frozen=True)
 class Escape:
-    """What one call asks for beyond the confinement it already has."""
+    """What one call asks for beyond its confinement. Empty means it stays inside, and raises nothing."""
 
     reads: tuple[str, ...] = ()
     writes: tuple[str, ...] = ()
@@ -30,7 +30,7 @@ class Escape:
         if self.network:
             wanted.append("reach the network")
         asked = "; ".join(wanted) or "reach beyond its confinement"
-        # The reason is the model's own, and it is the only thing that makes the path meaningful.
+        # The model's own reason, without which the path has no purpose attached to it.
         return f"Needs to {asked} — {explanation}" if explanation else f"Needs to {asked}"
 
 
@@ -40,7 +40,7 @@ def escape_of(
     *,
     workspace: str = "",
 ) -> Escape:
-    """What ``request`` asks for that ``profile`` does not already permit."""
+    """What ``request`` asks for that ``profile`` does not already permit, by containment."""
     if request is None or not request.wants_widening or profile is None:
         return Escape()
     readable = tuple(profile.filesystem.readable) + tuple(profile.filesystem.writable)
@@ -66,7 +66,7 @@ class Verdict:
         return self.kind == "run"
 
 
-#: Where a rule's decision may land.
+#: Where a rule's decision may land, in the words a person writes in their configuration.
 RULE_ALLOW = "allow"
 RULE_ASK = "ask"
 RULE_DENY = "deny"
@@ -79,7 +79,7 @@ def verdict_for(
     profile: Optional[Profile],
     workspace: str = "",
 ) -> Verdict:
-    """The decision on one call. Pure, total, and blind to anything the model said about itself."""
+    """The decision on one call, from the rule, the deny list, the escape, and what is pre-cleared."""
     if rule == RULE_DENY:
         return Verdict(
             kind="refuse",
@@ -132,7 +132,7 @@ def _refused_by_deny_list(escape: Escape, profile: Profile, *, workspace: str) -
 
 
 def _pre_cleared(escape: Escape, profile: Optional[Profile], *, workspace: str) -> bool:
-    """Whether every path this escape names sits inside what a person pre-approved."""
+    """Whether every path this escape names was pre-approved. All-or-nothing, and never the network."""
     if profile is None or escape.network:
         return False
     return profile.grants_without_asking(escape.reads + escape.writes, workspace=workspace)

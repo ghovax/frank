@@ -3,7 +3,22 @@
 
 import { swallowed } from "@/lib/swallowed";
 
-// System notifications for tool calls awaiting a decision, with the suggested action ("Allow once" — the same primary the on-screen overlay defaults to) as a notification action button where the platform supports it.
+// System notifications for tool calls awaiting a decision, with the suggested
+// action ("Allow once" — the same primary the on-screen overlay defaults to)
+// as a notification action button where the platform supports it.
+//
+// Tiered by capability, degrading gracefully:
+//   1. Service worker + showNotification gives real action buttons (Chrome/Edge);
+//      clicks come back via postMessage and route to the registered handler.
+//   2. Plain Notification has no buttons; clicking the body focuses the app,
+//      where the overlay is already waiting.
+//   3. No Notification API (e.g. a webview without a notification bridge) is a
+//      silent no-op; the in-app overlay and attention sound still fire.
+//
+// Notifications are only shown while the window is unfocused — the overlay
+// already owns the focused case — and are closed programmatically the moment
+// the request is resolved from anywhere, so stale "Approval needed" toasts
+// never linger in the notification center.
 
 const PERMISSION_TAG_PREFIX = "frank-permission-";
 const APPROVE_ACTION = "approve";
@@ -13,7 +28,8 @@ let actionHandler: PermissionActionHandler | null = null;
 let listenerAttached = false;
 const notificationTokens = new Map<string, symbol>();
 
-// The app's live decision callback (rebound as sessions change).
+// The app's live decision callback (rebound as sessions change). Kept as a
+// single mutable slot because notifications outlive React renders.
 export function setPermissionNotificationHandler(handler: PermissionActionHandler | null): void {
   actionHandler = handler;
 }
@@ -45,7 +61,8 @@ async function swRegistration(): Promise<ServiceWorkerRegistration | null> {
         if (payload?.type !== "frank-notification-click") return;
         const requestId = payload.data?.requestId;
         if (payload.action === APPROVE_ACTION && requestId) actionHandler?.(requestId);
-        // A body click just focuses the app (the worker already did); the overlay is on screen with the full context and both choices.
+        // A body click just focuses the app (the worker already did); the
+        // overlay is on screen with the full context and both choices.
       });
     }
     return registration;

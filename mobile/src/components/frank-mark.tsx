@@ -1,4 +1,10 @@
-/** The Frank mark, as `react-native-svg` draws it. */
+/**
+ * The Frank mark, as `react-native-svg` draws it.
+ *
+ * The same path data as `web/src/components/ui/frank-mark.tsx`, which is the point: it is the
+ * mark, not a picture of the mark, so it takes whatever colour it is given and needs no second
+ * asset for the dark theme.
+ */
 
 import Svg, { Ellipse, Path } from "react-native-svg";
 

@@ -1,5 +1,23 @@
 
-// Where the daemon lives, and what proves we may talk to it.
+// Where the daemon lives, and what proves we may talk to it. The CLI and agents reach
+// `frankd` over its unix socket, but a webview has no such transport, so the daemon also
+// serves its control plane on a loopback TCP listener for GUI clients, gated by a
+// capability token. Both the address and the token are resolved at runtime rather than
+// baked in, because the desktop app can point at the local daemon or at a remote one
+// reached through an SSH tunnel — and those are *different daemons with different
+// tokens*. Resolution order for the address:
+//   1. an explicit target set via `setApiBase` (a connection the user activated), then
+//   2. the endpoint the Tauri shell reports (`daemon_endpoint`), then
+//   3. `frank web`'s runtime descriptor, when this page is served by it, then
+//   4. a build-time default from NEXT_PUBLIC_API_BASE, then
+//   5. the conventional local daemon address.
+// The connection layer (profiles UI / local store) writes the explicit target.
+// The port `frank serve` binds, and therefore the only port a browser can guess. It is
+// stated once because it is really the CLI's number — `serve`'s `--port` default in
+// `frank/cli/__main__.py` — and the two were allowed to disagree once already: the server
+// moved to 8824 while every client here still said 8823, which left the browser interface
+// unable to reach a local daemon at all while the packaged app, which reads the real port
+// out of the runtime directory, carried on working and hid it.
 import { setFaultSender, swallowed } from "./swallowed";
 
 export const LOCAL_DAEMON_PORT = 8824;
@@ -9,6 +27,19 @@ const DEFAULT_API_BASE =
   (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_API_BASE : "") || LOCAL_DAEMON_URL;
 
 // The token a *development* page presents, and only ever a development page.
+//
+// The daemon writes its port and its token to 0600 files in the runtime directory. The Tauri
+// shell reads both and hands them over; a browser tab can read neither, so `bun run dev` at
+// :3000 had no way to address the daemon at all — it guessed the conventional port, which the
+// daemon never binds (it takes an ephemeral one), and presented no token, which the control
+// plane requires. Every list came back empty and nothing said why.
+// `scripts/web-development.sh` asks the daemon for its endpoint and passes it in.
+//
+// Gated on `NODE_ENV` rather than trusted to be unset: `NEXT_PUBLIC_*` values are inlined at
+// build time, so a production export built on a machine where this happened to be exported
+// would carry a live capability token inside a shipped bundle. The comparison is against a
+// literal Next replaces at build time, so in a production build this whole branch is
+// eliminated and the string cannot appear in the output.
 const DEVELOPMENT_TOKEN =
   typeof process !== "undefined" && process.env.NODE_ENV !== "production"
     ? process.env.NEXT_PUBLIC_TOKEN || ""
@@ -20,13 +51,22 @@ function runningInTauri(): boolean {
 
 let API_BASE = DEFAULT_API_BASE;
 
-// The token for the daemon we are actually talking to.
+// The token for the daemon we are actually talking to. Two sources, and the distinction
+// matters: the *local* token is the one the Tauri shell reads out of the runtime
+// directory of this machine, and it authenticates nothing on a remote host. A connection
+// profile therefore carries its own token, and when one is activated it wins — otherwise
+// every SSH-tunnelled daemon would be handed the local machine's secret and answer 401.
+// Seeded from the development token above, which is empty in every build that is not a
+// developer's own. The Tauri shell overwrites it with the real one below.
 let localDaemonToken = DEVELOPMENT_TOKEN;
 let daemonEndpointPromise: Promise<void> | null = null;
 
 async function resolveDaemonEndpoint(): Promise<void> {
   if (!runningInTauri()) {
-    // Served by `frank web`?
+    // Served by `frank web`? That server proxies the daemon at its own origin, attaching the
+    // token itself, so the right base is the empty string — relative, same-origin, no token in
+    // the page and no need to know the daemon's ephemeral port. Any other static host does not
+    // answer this and falls through to the build-time default, unchanged.
     try {
       const response = await fetch("/__frank/runtime.json", { cache: "no-store" });
       if (response.ok) {
@@ -44,24 +84,36 @@ async function resolveDaemonEndpoint(): Promise<void> {
     if (endpoint?.url) API_BASE = endpoint.url.replace(/\/+$/, "");
     localDaemonToken = endpoint?.token ?? "";
   } catch {
-    // The shell could not report an endpoint (the daemon is not up yet).
+    // The shell could not report an endpoint (the daemon is not up yet). Leave the
+    // defaults in place; the request that follows fails and the launcher surfaces it.
   }
 }
 
 // Resolved once and memoized, because every request would otherwise pay an IPC round trip.
+// Memoized for the life of *a daemon*, though, not of the page — see `forgetDaemonEndpoint`.
 function ensureDaemonEndpoint(): Promise<void> {
   if (!daemonEndpointPromise) daemonEndpointPromise = resolveDaemonEndpoint();
   return daemonEndpointPromise;
 }
 
-/** Drop the memoized endpoint so the next request resolves it again. */
+/**
+ * Drop the memoized endpoint so the next request resolves it again.
+ *
+ * A daemon mints a fresh token at boot and binds an ephemeral port, so both change when it
+ * restarts — and the memo held the old pair for as long as the page lived. Every subsequent
+ * request carried a token the new daemon had never issued. It went unnoticed on the REST paths,
+ * which reconnect through code that re-reads it, and was unmissable on the terminal, whose
+ * websocket handshake answers a wrong token with a bare 403 and whose retry loop then tried the
+ * same wrong token once a second.
+ */
 export function forgetDaemonEndpoint(): void {
   daemonEndpointPromise = null;
 }
 
 export interface ApiRequestOptions {
   apiBase?: string;
-  // The token to present, when the request is aimed at a daemon other than the active one — a health probe against a saved profile before it has been activated.
+  // The token to present, when the request is aimed at a daemon other than the active
+  // one — a health probe against a saved profile before it has been activated.
   token?: string;
 }
 
@@ -77,7 +129,9 @@ function requestToken(options?: ApiRequestOptions): string {
   return options?.token ?? localDaemonToken;
 }
 
-// The token as a query parameter, for the transports that cannot carry a header: a WebSocket handshake, and any URL the browser itself loads (an iframe's src, an <img>, a download).
+// The token as a query parameter, for the transports that cannot carry a header: a
+// WebSocket handshake, and any URL the browser itself loads (an iframe's src, an <img>,
+// a download). Everything else goes through `apiFetch` and gets the header.
 function withDaemonToken(url: string, options?: ApiRequestOptions): string {
   const token = requestToken(options);
   if (!token) return url;
@@ -85,7 +139,9 @@ function withDaemonToken(url: string, options?: ApiRequestOptions): string {
 }
 
 function websocketUrl(path: string, options?: ApiRequestOptions): string {
-  // An empty base means this page is served by `frank web`, which proxies the daemon at its own origin — so that origin is the base.
+  // An empty base means this page is served by `frank web`, which proxies the daemon at its
+  // own origin — so that origin is the base. `new URL(path, "/")` would throw: a relative
+  // string is not a valid base, and a websocket URL has to be absolute regardless.
   const base = apiBase(options)
     || (typeof window !== "undefined" ? window.location.origin : "");
   const url = new URL(path, `${base}/`);
@@ -93,7 +149,8 @@ function websocketUrl(path: string, options?: ApiRequestOptions): string {
   return withDaemonToken(url.toString(), options);
 }
 
-// The single door every request goes through, so the capability token is attached in exactly one place and cannot be forgotten at a call site.
+// The single door every request goes through, so the capability token is attached in
+// exactly one place and cannot be forgotten at a call site.
 async function apiFetch(path: string, options: RequestInit & ApiRequestOptions = {}): Promise<Response> {
   const { apiBase: baseOverride, token: tokenOverride, headers, ...request } = options;
   await ensureDaemonEndpoint();
@@ -107,7 +164,11 @@ async function apiFetch(path: string, options: RequestInit & ApiRequestOptions =
   });
 }
 
-// The daemon's control plane: one POST carrying `{method, params}`.
+// The daemon's control plane: one POST carrying `{method, params}`. Lifecycle and reads
+// are answered by the daemon itself; a data-plane command (`session.send`, `.cancel`,
+// `.respond`) is relayed by the daemon to the owning session's socket, because a webview
+// cannot reach that socket. The CLI talks to the socket directly instead — same API,
+// different transport.
 async function rpc<T>(
   method: string,
   params: Record<string, unknown> = {},
@@ -121,7 +182,8 @@ async function rpc<T>(
     signal: options.signal,
   });
   const payload = await response.json().catch(() => ({})) as { result?: T; error?: { code?: string; message?: string } };
-  // The daemon answers with `{result}` or `{error}`; its message names what actually went wrong (no such session, session not running), which is worth more than the status code.
+  // The daemon answers with `{result}` or `{error}`; its message names what actually went
+  // wrong (no such session, session not running), which is worth more than the status code.
   if (!response.ok || payload.error) {
     throw new Error(payload.error?.message || `${method} failed (${response.status})`);
   }
@@ -130,7 +192,9 @@ async function rpc<T>(
 
 // The address the client is currently talking to.
 
-// Async, unlike its siblings, and for the reason `apiFetch` is: the token has to be resolved before it can be attached.
+// Async, unlike its siblings, and for the reason `apiFetch` is: the token has to be resolved
+// before it can be attached. A synchronous builder returned a URL with no token whenever the
+// panel mounted before the endpoint had been read, and a websocket with no token is a 403.
 export async function terminalWebSocketUrl(options: { sessionId?: string | null; workingDirectory?: string; terminalKey?: string; locationKind?: string; locationBaseDirectory?: string; locationHostAlias?: string; rows?: number; columns?: number } = {}): Promise<string> {
   await ensureDaemonEndpoint();
   const params = new URLSearchParams();
@@ -181,6 +245,12 @@ export async function deleteTerminal(sessionId: string | null, workingDirectory:
 }
 
 // Point the client at a daemon, with the token that authorises talking to *that* one.
+// Persists the choice so it survives reloads. Callers typically reload the app
+// afterwards so in-flight streams and caches restart cleanly against the new backend.
+//
+// The token is required rather than optional so a call site cannot quietly leave the
+// previous daemon's token in place: pass "" for the local daemon, whose token the Tauri
+// shell reads from the runtime directory instead.
 
 type CacheEntry = {
   expiresAt: number;
@@ -227,13 +297,16 @@ export function invalidateDiscoveryCache(): void {
   discoveryCache.clear();
 }
 
-// The URL that serves a local file for display — an attached image's thumbnail, a PDF preview.
+// The URL that serves a local file for display — an attached image's thumbnail, a PDF
+// preview. Each path segment is encoded but the slashes are kept, so the path survives
+// intact. Carries the daemon token like every other request from the interface.
 export function localFileUrl(path: string): string {
   const encoded = path.split("/").map(encodeURIComponent).join("/");
   return withDaemonToken(`${API_BASE}/files/${encoded}`);
 }
 
-// A generic uploaded file. Feature-agnostic: the core knows only the stored file and its metadata.
+// A generic uploaded file. Feature-agnostic: the core knows only the stored file and its
+// metadata. Skills layer their own meaning on top separately.
 export interface Attachment {
   upload_id: string;
   title: string;
@@ -255,7 +328,10 @@ export async function uploadFile(file: File): Promise<Attachment> {
   return await response.json() as Attachment;
 }
 
-// Register a user attachment that lives on the server's own filesystem *by path*, with no copy — the desktop app hands over the real OS path.
+// Register a user attachment that lives on the server's own filesystem *by path*, with
+// no copy — the desktop app hands over the real OS path. Only valid when the server and
+// the file are the same machine (a local connection); a remote-server connection must
+// upload the bytes with uploadFile instead, since a local path is meaningless there.
 export async function referenceAttachment(path: string): Promise<Attachment> {
   const response = await apiFetch(`/attachments/reference`, {
     method: "POST",
@@ -277,7 +353,9 @@ export interface SshHost {
   identity_files: string[];
 }
 
-// A named place a workspace runs tools in.
+// A named place a workspace runs tools in. `name` is derived from the connection (host
+// alias / folder), not user-entered. `permission_mode` is the one execution policy a
+// location carries. `uri` is the fully-qualified identifier the agent addresses.
 export interface Location {
   id: string;
   workspace_id: string;
@@ -297,7 +375,8 @@ export interface Workspace {
   updated_at: string;
   session_count: number;
   locations?: Location[];
-  // The conversation this workspace was last opened at, or "" for none.
+  // The conversation this workspace was last opened at, or "" for none. The daemon's memory,
+  // not the browser's — see `rememberLastSession`.
   last_session_id?: string;
 }
 
@@ -313,7 +392,12 @@ export interface WorkspaceCreateInput {
   locations: LocationInput[];
 }
 
-/** Another Frank this one knows how to reach. */
+/**
+ * Another Frank this one knows how to reach.
+ *
+ * Without its token, deliberately: `machineAddress` is the one call that hands one over, so a
+ * list that renders on screen and sits in a memory snapshot carries no credential.
+ */
 export interface Machine {
   id: string;
   name: string;
@@ -347,7 +431,15 @@ export async function addMachine(link: string): Promise<Machine> {
   return await response.json() as Machine;
 }
 
-/** The URL that opens a machine, token and all. */
+/**
+ * The URL that opens a machine, token and all.
+ *
+ * Asked for at the moment somebody chooses to go, which is the whole reason it is its own call.
+ * Going there is a *navigation* rather than a change of API base: a page cannot script another
+ * origin — `frank reach` answers no `access-control-allow-origin`, because letting arbitrary
+ * pages talk to a listener holding full control of a machine is exactly what it is guarding
+ * against — so the interface hands the browser the address and the machine serves its own.
+ */
 export async function machineAddress(machineId: string): Promise<string> {
   const response = await apiFetch(`/machines/${encodeURIComponent(machineId)}/address`);
   if (!response.ok) throw new Error(`Could not open that machine (${response.status}).`);
@@ -396,7 +488,17 @@ export async function createWorkspace(input: WorkspaceCreateInput): Promise<Work
   return await response.json() as Workspace;
 }
 
-/** Remember which conversation this workspace is open at, so the next launch lands there. */
+/**
+ * Remember which conversation this workspace is open at, so the next launch lands there.
+ *
+ * Deliberately the server's memory. The same workspace is reached from the desktop app, a
+ * browser and the phone, and "where I was" is a fact about the machine rather than about the
+ * window looking at it; kept per-client, each one reopens somewhere different, and the phone —
+ * whose storage goes whenever its webview is cleared — reopens nowhere.
+ *
+ * Fire-and-forget on purpose: nothing on screen depends on the write landing, and a failed one
+ * costs the person a reopened conversation, not their place in this one.
+ */
 export async function rememberLastSession(workspaceId: string, sessionId: string): Promise<void> {
   await apiFetch(`/workspaces/${encodeURIComponent(workspaceId)}/last-session`, {
     method: "PUT",
@@ -488,7 +590,8 @@ export interface Schedule {
   last_session_id: string;
   last_error: string;
   created_at: string;
-  // Worked out by the daemon on every read rather than stored, so it cannot go stale when the cron line or the timezone is edited.
+  // Worked out by the daemon on every read rather than stored, so it cannot go stale when the
+  // cron line or the timezone is edited.
   next_firing: string;
 }
 
@@ -498,7 +601,8 @@ export interface ScheduleInput {
   cron: string;
   prompt: string;
   agent: string;
-  // No default anywhere in this type.
+  // No default anywhere in this type. A schedule runs with nobody watching, so the mode is
+  // chosen rather than inherited — the daemon refuses one that does not state it.
   permission_mode: PermissionMode;
   timezone: string;
   working_directory: string;
@@ -518,7 +622,8 @@ export async function createSchedule(input: ScheduleInput): Promise<Schedule> {
     body: JSON.stringify(input),
   });
   if (!response.ok) {
-    // The daemon's own sentence — which cron expression, which timezone, which missing mode — rather than a status code the person then has to go and look up.
+    // The daemon's own sentence — which cron expression, which timezone, which missing mode —
+    // rather than a status code the person then has to go and look up.
     const detail = (await response.json().catch(() => null)) as { detail?: string } | null;
     throw new Error(detail?.detail || `Failed to create schedule (${response.status})`);
   }
@@ -574,6 +679,9 @@ export async function refreshRemoteAgent(name: string): Promise<{ health: string
 }
 
 // Metadata key understood by a session's A2A surface.
+// A2A convention: an extension places its attributes under one URI-namespaced key in
+// the message `metadata` map, not as bare top-level keys. Mirrors METADATA_KEY
+// / Metadata in the backend's protocol layer.
 export const METADATA_KEY = "urn:frank:ext:turn:v1";
 export const CONTENT_BLOCK_METADATA_KEY = "urn:frank:ext:content-block:v1";
 
@@ -586,7 +694,8 @@ export interface AgentSummary {
   title?: string;
   // What the agent is for — shown as the subtitle in the agent picker.
   description?: string;
-  // The agent's resolved `provider/model` identifier.
+  // The agent's resolved `provider/model` identifier. Empty means the agent is
+  // missing a runnable model configuration.
   model?: string;
 }
 
@@ -603,7 +712,14 @@ export interface AgentConfiguration {
   model: string;
   provider: string;
   reasoning_effort: string;
-  /** The loosest mode this agent allows, or `null` where it sets no ceiling — which is what a card that simply does not mention permissions means, and what most of them are. */
+  /**
+   * The loosest mode this agent allows, or `null` where it sets no ceiling — which is what a
+   * card that simply does not mention permissions means, and what most of them are.
+   *
+   * It was not nullable, so the editor below always wrote a value: opening an agent's settings
+   * and touching anything pinned a ceiling of `default`, and every mode looser than that became
+   * unreachable for that agent without anybody choosing it.
+   */
   permission_mode: PermissionMode | null;
   tools_enabled: string[];
   tools_disabled: string[];
@@ -622,7 +738,10 @@ export interface SaveAgentConfigurationPayload {
   bash?: Partial<AgentBashConfiguration>;
 }
 
-// Agents are scoped to the selected folder: the bundled (server-shipped) profiles are always present as a base, then home globals, then that folder's own `.agents/agents` (deduped), so passing `workingDirectory` is what makes the list track the chosen folder rather than the server's launch directory.
+// Agents are scoped to the selected folder: the bundled (server-shipped)
+// profiles are always present as a base, then home globals, then that folder's
+// own `.agents/agents` (deduped), so passing `workingDirectory` is what makes
+// the list track the chosen folder rather than the server's launch directory.
 export async function fetchAgents(workingDirectory?: string): Promise<AgentSummary[]> {
   const query = workingDirectory
     ? `?working_directory=${encodeURIComponent(workingDirectory)}`
@@ -671,7 +790,10 @@ export interface AgentCard {
   skills: AgentSkill[];
 }
 
-// Discovery: every served agent's A2A AgentCard (with its skills).
+// Discovery: every served agent's A2A AgentCard (with its skills). Skills are
+// scoped to the selected workspace path — the home globals plus that folder's own
+// `.agents` skills, deduped — so passing `workingDirectory` is what makes the
+// listed skills match the chosen folder rather than the server's launch directory.
 export async function fetchAgentCards(workingDirectory?: string): Promise<AgentCard[]> {
   const query = workingDirectory
     ? `?working_directory=${encodeURIComponent(workingDirectory)}`
@@ -701,20 +823,26 @@ export interface Settings {
   permission_mode: PermissionMode;
   exa_api_key: string;
   composio_api_key: string;
-  // Web-fetch engines for the fetch_url tool: Jina Reader (default, optional key) and Firecrawl (optional fallback).
+  // Web-fetch engines for the fetch_url tool: Jina Reader (default, optional key)
+  // and Firecrawl (optional fallback). Both empty is valid — Jina runs keyless.
   jina_api_key: string;
   firecrawl_api_key: string;
   // Optional proxy for the web-fetch direct tier and file downloads (IP-blocked sites).
   web_fetch_proxy_url: string;
-  // What a session's tool children may do, enforced by the operating system.
+  // What a session's tool children may do, enforced by the operating system. The paths and
+  // limits live in the configuration file, where a person edits them the way they would edit
+  // any other Unix policy; what the app surfaces is whether it is enforced at all.
   sandbox: SandboxSettings;
-  // What this machine can actually enforce with.
+  // What this machine can actually enforce with. Empty `backend` means the toggle cannot be
+  // honoured here, which the UI has to say rather than imply protection that is absent.
   sandbox_backend: { backend: string; detail: string };
-  // Opt-in: inject a snapshot of the user's machine habits (frequent folders, recent files, installed/running apps, most-visited sites) into the system prompt.
+  // Opt-in: inject a snapshot of the user's machine habits (frequent folders, recent
+  // files, installed/running apps, most-visited sites) into the system prompt. Off by default.
   user_context_enabled: boolean;
   // Opt-in: let the agent control macOS apps via the computer-use tool. Off by default.
   computer_control_enabled: boolean;
-  // Whether sessions may install tools for themselves, and whether this machine can offer it at all — a setting that is on where nothing can honour it is worth showing differently.
+  // Whether sessions may install tools for themselves, and whether this machine can offer it
+  // at all — a setting that is on where nothing can honour it is worth showing differently.
   toolbox_enabled: boolean;
   toolbox_available: boolean;
   dictation_enabled: boolean;
@@ -723,7 +851,8 @@ export interface Settings {
   providers: Record<string, ProviderCredential>;
 }
 
-// Only reached when the settings request fails outright.
+// Only reached when the settings request fails outright. `required` matches the harness's own
+// default, so a client that cannot read the settings never implies less protection than there is.
 const DEFAULT_SANDBOX: SandboxSettings = {
   enforce: "required",
   network: true,
@@ -761,15 +890,22 @@ export async function updateUserContextSetting(enabled: boolean): Promise<void> 
 }
 
 // Every setting the schema defines, with what it holds and what it is set to — and no words.
+//
+// What a setting is called and the sentence under it come from the message catalogue, keyed by
+// the same dotted path. They used to come down this wire, which made them English whatever the
+// interface was set to: a wire has no locale, so switching to Japanese translated every label
+// around them and left the descriptions in English.
 export type SettingKind = "boolean" | "integer" | "number" | "string" | "choice" | "list" | "map" | "section";
 
 export interface SettingEntry {
-  // The dotted path it is written under: how it is addressed to change it, and the key its label and description are looked up under.
+  // The dotted path it is written under: how it is addressed to change it, and the key its
+  // label and description are looked up under.
   path: string;
   kind: SettingKind;
   choices: string[];
   optional: boolean;
-  // A credential, as the field itself declares.
+  // A credential, as the field itself declares. The client masks it because the schema says so
+  // rather than because of how the path is spelled.
   secret: boolean;
   default: unknown;
   value: unknown;
@@ -789,7 +925,8 @@ export async function fetchSettingsSchema(): Promise<SettingsSectionSchema[]> {
   return data.sections ?? [];
 }
 
-// Set one setting.
+// Set one setting. The server validates it against the schema before writing, so a refusal is a
+// refusal of the value and not of the request — its message is what the person needs to read.
 export async function updateSettingValue(path: string, value: unknown): Promise<void> {
   const response = await apiFetch(`/settings/value`, {
     method: "POST",
@@ -799,13 +936,16 @@ export async function updateSettingValue(path: string, value: unknown): Promise<
   if (!response.ok) throw new Error(await refusalText(response));
 }
 
-// Put one setting back to what the code ships, by removing it from the file — which is not the same as writing the default: a setting that is not written follows the default when it moves.
+// Put one setting back to what the code ships, by removing it from the file — which is not the
+// same as writing the default: a setting that is not written follows the default when it moves.
 export async function resetSettingValue(path: string): Promise<void> {
   const response = await apiFetch(`/settings/value?path=${encodeURIComponent(path)}`, { method: "DELETE" });
   if (!response.ok) throw new Error(await refusalText(response));
 }
 
-// What the server said when it would not take a value.
+// What the server said when it would not take a value. Its own words, because it is the thing
+// that knows: "Input should be 'required', 'preferred' or 'off'" is worth reading, and a
+// generic "could not save" replaces the one useful sentence with none.
 async function refusalText(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { detail?: unknown };
@@ -835,6 +975,8 @@ export async function updateComputerControlSetting(enabled: boolean): Promise<vo
 }
 
 // Dictation: whether the composer may take speech, and what the model behind it is doing.
+// `loading` is a real state rather than a wait — the first one fetches about a gigabyte over a
+// connection nobody can predict — so the microphone is shown arriving instead of blocking.
 export type DictationState = "idle" | "loading" | "ready" | "failed";
 
 export interface DictationStatus {
@@ -845,7 +987,9 @@ export interface DictationStatus {
   failure: string;
 }
 
-// `prepare` asks the daemon to start loading the model as well as reporting on it, so the weights arrive while somebody is reading their conversation rather than while they wait with a finger on the microphone.
+// `prepare` asks the daemon to start loading the model as well as reporting on it, so the
+// weights arrive while somebody is reading their conversation rather than while they wait with
+// a finger on the microphone.
 export async function fetchDictationStatus(prepare = false): Promise<DictationStatus> {
   const response = await apiFetch(`/dictation${prepare ? "?prepare=true" : ""}`);
   const data = await response.json();
@@ -866,7 +1010,10 @@ export async function updateDictationSetting(enabled: boolean): Promise<void> {
   });
 }
 
-// Transcribe one recording, on this machine.
+// Transcribe one recording, on this machine. The body is the raw samples — mono float32 at the
+// rate the recorder captured them — rather than an encoded file, so neither side needs a codec.
+// The server's own sentence is thrown on failure: it distinguishes "the package is missing"
+// from "the download failed" from "the worker hung", and only it knows which happened.
 export async function transcribeDictation(samples: Float32Array): Promise<string> {
   const response = await apiFetch(`/dictation/transcribe`, {
     method: "POST",
@@ -874,7 +1021,9 @@ export async function transcribeDictation(samples: Float32Array): Promise<string
     body: samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength) as ArrayBuffer,
   });
   if (!response.ok) {
-    // `apiFetch` does not throw on a status, so the reason has to be lifted out here — and it is worth lifting: the alternative is telling somebody who just spoke that "something went wrong" when the server knows it was a failed download or a missing package.
+    // `apiFetch` does not throw on a status, so the reason has to be lifted out here — and it
+    // is worth lifting: the alternative is telling somebody who just spoke that "something
+    // went wrong" when the server knows it was a failed download or a missing package.
     let detail = "";
     try {
       detail = String((await response.json())?.detail ?? "");
@@ -887,7 +1036,8 @@ export async function transcribeDictation(samples: Float32Array): Promise<string
   return String(data.text ?? "");
 }
 
-// Whether the server can read Full-Disk-Access-protected data (Screen Time, Safari history) — gates the deepest user-context signals.
+// Whether the server can read Full-Disk-Access-protected data (Screen Time, Safari history) —
+// gates the deepest user-context signals. False on any error (e.g. non-macOS).
 export async function fetchFullDiskAccess(): Promise<boolean> {
   try {
     const response = await apiFetch(`/system/full-disk-access`);
@@ -905,7 +1055,8 @@ export async function openFullDiskAccessSettings(): Promise<void> {
     .catch((caught) => swallowed({ component: "api", operation: "open the Full Disk Access pane" }, caught));
 }
 
-// Whether the app can control other apps (read the accessibility tree, synthesize input) — the permission the computer-use tool needs.
+// Whether the app can control other apps (read the accessibility tree, synthesize input) —
+// the permission the computer-use tool needs. False on any error (e.g. non-macOS).
 export async function fetchAccessibility(): Promise<boolean> {
   try {
     const response = await apiFetch(`/system/accessibility`);
@@ -923,13 +1074,19 @@ export async function openAccessibilitySettings(): Promise<void> {
     .catch((caught) => swallowed({ component: "api", operation: "open the Accessibility pane" }, caught));
 }
 
-// Restart the daemon so it picks up a new Accessibility grant, then reload the window against it.
+// Restart the daemon so it picks up a new Accessibility grant, then reload the window against
+// it. Two steps, because they are two processes: macOS caches the trust check per process, and
+// the daemon is no longer the app's child, so restarting the window alone would change nothing.
+// The daemon replaces itself. Sessions survive it — the registry is durable, so each live
+// session simply loses its process and comes back asleep — and `sessions_slept` says how
+// many, so a caller can warn before asking.
 export async function restartDaemon(): Promise<{ sessions_slept: number }> {
   const result = await rpc<{ restarting: boolean; sessions_slept: number }>("daemon.restart", {});
   return { sessions_slept: result?.sessions_slept ?? 0 };
 }
 
-// Quit and relaunch the desktop app (Tauri command), so the webview reconnects to whatever daemon is listening now.
+// Quit and relaunch the desktop app (Tauri command), so the webview reconnects to whatever
+// daemon is listening now. On its own this restarts nothing but the window.
 export async function restartApp(): Promise<void> {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
@@ -944,11 +1101,14 @@ export interface ModelOption {
   name: string;
   provider: string;
   available: boolean;
-  // Capabilities from models.dev (raw snake_case as the /models endpoint sends them).
+  // Capabilities from models.dev (raw snake_case as the /models endpoint sends
+  // them). `attachment` gates the composer's file-attach button; `vision` (image
+  // input) and `input_modalities` annotate the picker.
   attachment?: boolean;
   vision?: boolean;
   input_modalities?: string[];
-  // ISO release date (YYYY-MM-DD) from models.dev, "" if unknown.
+  // ISO release date (YYYY-MM-DD) from models.dev, "" if unknown. The picker
+  // orders newest-first on this rather than alphabetically.
   release_date?: string;
 }
 
@@ -964,7 +1124,9 @@ export interface ModelsResponse {
   providers: ProviderOption[];
 }
 
-// How the interface should look and where it should open.
+// How the interface should look and where it should open. It lives in the daemon's database
+// rather than in this browser, so a tab, the desktop app and the phone are one Frank rather
+// than three that happen to look alike. The server is the source of truth; this asks it.
 export interface InterfacePreferences {
   color_mode: "system" | "light" | "dark";
   locale: string;
@@ -981,7 +1143,8 @@ export const DEFAULT_INTERFACE_PREFERENCES: InterfacePreferences = {
 
 export async function fetchPreferences(): Promise<InterfacePreferences> {
   const response = await apiFetch(`/preferences`);
-  // Every one of these has a working default, so an unreachable daemon reads as "nothing chosen yet" rather than as an error raised into the provider that renders the application.
+  // Every one of these has a working default, so an unreachable daemon reads as "nothing
+  // chosen yet" rather than as an error raised into the provider that renders the application.
   if (!response.ok) return DEFAULT_INTERFACE_PREFERENCES;
   return (await response.json()) as InterfacePreferences;
 }
@@ -1027,14 +1190,16 @@ export async function saveSettings(settings: SaveSettingsPayload): Promise<void>
   });
 }
 
-// The model catalog for the picker (with per-model availability) and the provider registry.
+// The model catalog for the picker (with per-model availability) and the provider
+// registry.
 export async function fetchModels(): Promise<ModelsResponse> {
   const response = await apiFetch(`/models`);
   if (!response.ok) return { models: [], providers: [] };
   return response.json();
 }
 
-// Recently selected models (newest first), mirroring the workspace history — so the picker can surface the models a user actually switches between at the top.
+// Recently selected models (newest first), mirroring the workspace history — so the
+// picker can surface the models a user actually switches between at the top.
 export interface RecentModel {
   id: string;
   name: string;
@@ -1049,6 +1214,11 @@ export async function fetchRecentModels(): Promise<RecentModel[]> {
 }
 
 // ChatGPT-subscription sign-in state for the `chatgpt` provider.
+// This is an OAuth session, not a stored key — the token lives server-side and
+// this only reports whether one is present and for which account.
+// One rate-limit window the ChatGPT/Codex backend enforces (a rolling 5h window
+// and a weekly window). `window_minutes` is the source of truth for labeling —
+// the 5h/weekly split isn't pinned to a fixed slot across accounts.
 export interface ChatGPTUsageWindow {
   key: string;
   used_percent: number;
@@ -1057,6 +1227,8 @@ export interface ChatGPTUsageWindow {
 }
 
 // The account's usage snapshot, captured from `x-codex-*` headers on the last turn.
+// Absent (null) until the first turn runs after sign-in — the headers only ride on
+// the responses call, so there is no cheaper source to poll.
 export interface ChatGPTUsage {
   plan_type: string;
   active_limit: string;
@@ -1077,7 +1249,9 @@ export async function fetchChatGPTAuthStatus(): Promise<ChatGPTAuthStatus> {
   return response.json();
 }
 
-// Begin sign-in: the server binds its loopback callback and returns the OpenAI authorize URL to open in a browser.
+// Begin sign-in: the server binds its loopback callback and returns the OpenAI
+// authorize URL to open in a browser. Completion arrives via a `settings_changed`
+// broadcast (or by re-polling fetchChatGPTAuthStatus).
 export async function startChatGPTLogin(): Promise<{ authorize_url: string }> {
   const response = await apiFetch(`/auth/chatgpt/start`, { method: "POST" });
   if (!response.ok) {
@@ -1091,7 +1265,10 @@ export async function signOutChatGPT(): Promise<void> {
   await apiFetch(`/auth/chatgpt`, { method: "DELETE" });
 }
 
-// Cursor-subscription sign-in state for the `cursor` provider.
+// Cursor-subscription sign-in state for the `cursor` provider. The same shape as the
+// ChatGPT status minus the usage meters: Cursor's agent service reports no remaining
+// allowance on any call this makes, so there is nothing to meter. `account` is whatever
+// the token names its subject as — an email when the claim carries one.
 export interface CursorAuthStatus {
   signed_in: boolean;
   account: string;
@@ -1103,7 +1280,10 @@ export async function fetchCursorAuthStatus(): Promise<CursorAuthStatus> {
   return response.json();
 }
 
-// Begin sign-in: the server returns Cursor's login URL to open in a browser and starts polling Cursor for completion.
+// Begin sign-in: the server returns Cursor's login URL to open in a browser and starts
+// polling Cursor for completion. There is no redirect in this flow, so nothing lands back
+// here — completion arrives via a `settings_changed` broadcast (or by re-polling
+// fetchCursorAuthStatus).
 export async function startCursorLogin(): Promise<{ authorize_url: string }> {
   const response = await apiFetch(`/auth/cursor/start`, { method: "POST" });
   if (!response.ok) {
@@ -1147,11 +1327,15 @@ export interface McpServerTools {
   name: string;
   tools: McpTool[];
   enabled?: boolean;
-  // "global" (from ~/.agents or the Composio integration) or "workspace" (from the selected folder's own mcp.json).
+  // "global" (from ~/.agents or the Composio integration) or "workspace" (from the
+  // selected folder's own mcp.json).
   scope?: "global" | "workspace";
 }
 
 // Discovery: tools exposed by each configured MCP server, for the capabilities panel.
+// Skills available in the selected folder — home globals plus that folder's own
+// `.agents/skills`, deduped — independent of any agent, so the panel can show a
+// folder's skills even when it has no agents.
 export async function fetchSkills(workingDirectory?: string): Promise<AgentSkill[]> {
   const query = workingDirectory
     ? `?working_directory=${encodeURIComponent(workingDirectory)}`
@@ -1167,7 +1351,9 @@ export async function fetchSkills(workingDirectory?: string): Promise<AgentSkill
   }
 }
 
-// MCP servers are listed for the selected folder: its own `mcp.json` plus the home globals and the global Composio integration (deduped), never the server's launch directory.
+// MCP servers are listed for the selected folder: its own `mcp.json` plus the
+// home globals and the global Composio integration (deduped), never the server's
+// launch directory. The subprocess pool is shared and grows as a union.
 export async function fetchMcpTools(workingDirectory?: string): Promise<McpServerTools[]> {
   const query = workingDirectory
     ? `?working_directory=${encodeURIComponent(workingDirectory)}`
@@ -1184,6 +1370,12 @@ export async function fetchMcpTools(workingDirectory?: string): Promise<McpServe
 }
 
 // Subscribe to live server events (e.g. agents changed). Returns an unsubscribe.
+//
+// All subscribers share ONE stream. Opening one per subscriber (many components
+// subscribe) quickly exhausted the browser's ~6-connections-per-host limit with
+// long-lived SSE streams, starving every other request to the server — most visibly, a
+// user-triggered POST could never get a connection and hung forever. A single stream
+// fans out to all local listeners instead.
 const eventListeners = new Set<(event: { type: string }) => void>();
 let sharedEventStream: { close: () => void } | null = null;
 
@@ -1212,7 +1404,8 @@ function ensureEventStream(): void {
   }, (connected) => {
     if (connected === lastReportedConnection) return;
     lastReportedConnection = connected;
-    // Whatever comes back may be a different daemon, on a different port, with a different token.
+    // Whatever comes back may be a different daemon, on a different port, with a different
+    // token. Forgetting the endpoint here is what makes the reconnection reach it.
     if (!connected) forgetDaemonEndpoint();
     connectionListeners.forEach((listener) => listener(connected));
   });
@@ -1223,7 +1416,8 @@ export function subscribeEvents(onEvent: (event: { type: string }) => void): () 
   ensureEventStream();
   return () => {
     eventListeners.delete(onEvent);
-    // Close the shared stream once nothing is listening, so it reopens cleanly (and against a possibly-changed API base) when a subscriber returns.
+    // Close the shared stream once nothing is listening, so it reopens cleanly
+    // (and against a possibly-changed API base) when a subscriber returns.
     if (eventListeners.size === 0 && sharedEventStream) {
       sharedEventStream.close();
       sharedEventStream = null;
@@ -1231,7 +1425,8 @@ export function subscribeEvents(onEvent: (event: { type: string }) => void): () 
   };
 }
 
-// The default workspace shown before the user picks anything — the server provides its folder name so the selector never has to derive one.
+// The default workspace shown before the user picks anything — the server provides
+// its folder name so the selector never has to derive one.
 export async function fetchHomeDirectory(): Promise<{ path: string; name: string }> {
   const response = await apiFetch(`/home`);
   const data = await response.json();
@@ -1239,6 +1434,7 @@ export async function fetchHomeDirectory(): Promise<{ path: string; name: string
 }
 
 // Best-effort home directory of an SSH host (for prefilling a location's base directory).
+// Returns "" if the host is unknown/unreachable — the field then stays empty for manual entry.
 export async function fetchHostHomeDirectory(alias: string): Promise<string> {
   try {
     const response = await apiFetch(`/hosts/${encodeURIComponent(alias)}/home`);
@@ -1251,11 +1447,17 @@ export async function fetchHostHomeDirectory(alias: string): Promise<string> {
   }
 }
 
-// A session as the daemon's registry knows it.
+// A session as the daemon's registry knows it. `parent` is the session that created this
+// one — a peer is an ordinary session, so the hierarchy belongs in the
+// sidebar rather than in a separate agents panel. The capability token is never listed:
+// it is handed to the creator once, at `create`.
+// What a session is working toward, as its worker last reported it. Absent when it has no
+// goal — which is most sessions, most of the time.
 export interface SessionGoal {
   text: string;
   requirements: string[];
-  // `active` while it is being worked, `blocked` when the agent reported an obstacle it cannot pass, `parked` when it ran a long stretch unattended and stopped to wait.
+  // `active` while it is being worked, `blocked` when the agent reported an obstacle it
+  // cannot pass, `parked` when it ran a long stretch unattended and stopped to wait.
   status: "active" | "blocked" | "parked";
   blocker: string;
 }
@@ -1264,9 +1466,12 @@ export interface SessionSummary {
   id: string;
   agent: string;
   parent: string;
-  // Does this session still exist? `live` or `ended`.
+  // Does this session still exist? `live` or `ended`. Durable — it survives a daemon
+  // restart, because a session is a record and only its process was ever transient.
   lifecycle: "live" | "ended";
-  // What it is doing right now, derived by the daemon and never stored: `working` (a turn is in flight), `waiting` (parked on a decision only a person can make), `idle` (has a process, doing nothing), `asleep` (no process — the next message forks one), or `ended`.
+  // What it is doing right now, derived by the daemon and never stored: `working` (a turn
+  // is in flight), `waiting` (parked on a decision only a person can make), `idle` (has a
+  // process, doing nothing), `asleep` (no process — the next message forks one), or `ended`.
   activity: "working" | "waiting" | "idle" | "asleep" | "ended";
   // How an ended session finished: `exited` or `failed`. Empty while it is live.
   outcome: string;
@@ -1299,7 +1504,9 @@ export async function fetchSession(sessionId: string, options?: ApiRequestOption
   }
 }
 
-// A session and everything created beneath it.
+// A session and everything created beneath it. The daemon returns the descendants flat,
+// each carrying its `parent`, so a caller nests them itself rather than being handed a
+// shape it would have to flatten to search.
 export interface SessionTree {
   session: SessionSummary;
   descendants: SessionSummary[];
@@ -1315,18 +1522,26 @@ export async function sessionTree(sessionId: string, options?: ApiRequestOptions
   }
 }
 
-// Create a session: one OS process running one agent, empty until it is sent a message.
+// Create a session: one OS process running one agent, empty until it is sent a
+// message. This is the single point where the agent, the directory, the permission
+// mode and the parent are fixed — `send` never changes any of them. The returned token
+// is the session's capability handle; the daemon relays on our behalf, so the GUI keeps
+// it only to identify the session it owns.
 export interface SessionCreateInput {
   agent: string;
   workingDirectory?: string;
-  // The workspace a session runs in (in place, on a branch, or in a worktree) is chosen once here, like every other piece of its configuration.
+  // The workspace a session runs in (in place, on a branch, or in a worktree) is chosen
+  // once here, like every other piece of its configuration.
   worktreeStrategy?: WorktreeStrategy;
   permissionMode?: PermissionMode;
   workspaceId?: string;
   parent?: string;
 }
 
-// `parent` and `permissionMode` come back because either may differ from what was asked for: a caller identified by its own token becomes the parent whatever it passed, and the mode is clamped against that parent.
+// `parent` and `permissionMode` come back because either may differ from what was asked
+// for: a caller identified by its own token becomes the parent whatever it passed, and the
+// mode is clamped against that parent. A creator that cannot see the clamp cannot reason
+// about what it just made.
 export interface SessionCreated {
   id: string;
   token: string;
@@ -1346,7 +1561,10 @@ export async function sessionCreate(input: SessionCreateInput, options?: ApiRequ
   }, options);
 }
 
-// Change the approval policy of a session that already exists — including one mid-turn, which reaches the very next tool call rather than the next turn.
+// Change the approval policy of a session that already exists — including one mid-turn, which
+// reaches the very next tool call rather than the next turn. The daemon answers with the mode
+// that actually took: a session is clamped to no looser than its parent (and than its agent
+// profile), so what comes back is not always what was asked for.
 export async function setSessionPermissionMode(
   sessionId: string,
   mode: PermissionMode,
@@ -1358,7 +1576,14 @@ export async function setSessionPermissionMode(
   return data.permission_mode ?? mode;
 }
 
-// What became of a message the session was handed.
+// What became of a message the session was handed. A send is not a transport question: it
+// succeeds at the HTTP layer and is still refused by the session, and the only place that says
+// so is the body.
+//
+// `accepted: false` is the session declining to take the message at all. It happens for one
+// reason today — the session is parked on a decision a person has to make, and starting a turn
+// would discard the parked one — and `waitingOn` says which decision, in the session's own
+// words, so a caller can tell somebody what to do about it instead of just failing.
 export interface SendOutcome {
   /** Whether the session took the message. When false, nothing was delivered and nothing ran. */
   accepted: boolean;
@@ -1372,7 +1597,16 @@ export interface SendOutcome {
   taskId: string;
 }
 
-// Drive a turn.
+// Drive a turn. A message to an idle session starts one; a message to a session that is
+// mid-turn is safe-point injected at the next tool boundary — which is why steering is
+// no longer a separate call. The response arrives on the attach stream, not here.
+//
+// This used to answer `task_id` alone and discard the rest, which made a refusal
+// indistinguishable from an accepted message that had not started a turn yet. A message typed
+// while a permission prompt was open went out, came back `accepted: false`, and was thrown
+// away here — the client drew it, attached, and waited for a turn that was never going to run;
+// the next rebuild from the server dropped the message, because the server had never had it.
+// `sessionRespond` next door has always read its body. This one now does too.
 export async function sessionSend(
   sessionId: string,
   parts: A2APart[],
@@ -1387,7 +1621,8 @@ export async function sessionSend(
     task_id?: string;
   }>("session.send", { id: sessionId, parts, metadata }, options);
   return {
-    // Absent means accepted: an older daemon, and every other reply on this path, says nothing when it took the message.
+    // Absent means accepted: an older daemon, and every other reply on this path, says nothing
+    // when it took the message. Only an explicit `false` is a refusal.
     accepted: data.accepted !== false,
     awaitingInput: data.awaiting_input === true,
     waitingOn: typeof data.waiting_on === "string" ? data.waiting_on : "",
@@ -1396,17 +1631,21 @@ export async function sessionSend(
   };
 }
 
-// The parts a turn carries: the typed prose plus any structured payloads (attachments), which travel as DataParts so the agent receives them as JSON rather than as prose.
+// The parts a turn carries: the typed prose plus any structured payloads (attachments),
+// which travel as DataParts so the agent receives them as JSON rather than as prose.
 export function messageParts(text: string, dataParts?: Record<string, unknown>[]): A2APart[] {
   const parts: A2APart[] = [];
   if (text) parts.push({ kind: "text", text });
-  // Wrapped, like everything else the harness puts in a `DataPart`: that dict is open and reaches a session's own A2A socket, so one namespaced key keeps ours apart from a foreign implementation's.
+  // Wrapped, like everything else the harness puts in a `DataPart`: that dict is open and
+  // reaches a session's own A2A socket, so one namespaced key keeps ours apart from a
+  // foreign implementation's.
   for (const dataPart of dataParts ?? []) parts.push({ kind: "data", data: wrapPartPayload(dataPart) });
   if (parts.length === 0) parts.push({ kind: "text", text: "" });
   return parts;
 }
 
-// One turn, read from the store — so it answers whether the session that ran it is alive or long since reaped.
+// One turn, read from the store — so it answers whether the session that ran it is alive
+// or long since reaped.
 export async function turnGet(turnId: string): Promise<A2ATurn | null> {
   if (!turnId) return null;
   try {
@@ -1418,7 +1657,9 @@ export async function turnGet(turnId: string): Promise<A2ATurn | null> {
   }
 }
 
-// Health, pool size and session counts.
+// Health, pool size and session counts. The launcher only cares that it answers at
+// all — that is the daemon's readiness signal — so the payload stays untyped here
+// rather than pinning a shape no caller reads.
 export async function daemonStatus(options?: ApiRequestOptions & { signal?: AbortSignal }): Promise<Record<string, unknown> | null> {
   try {
     return await rpc<Record<string, unknown>>("daemon.status", {}, options);
@@ -1429,7 +1670,9 @@ export async function daemonStatus(options?: ApiRequestOptions & { signal?: Abor
 }
 
 
-// Every turn a session has taken, replayed from the daemon's store — so it answers whether the session is alive or long since reaped.
+// Every turn a session has taken, replayed from the daemon's store — so it answers
+// whether the session is alive or long since reaped. Throws on failure so callers can
+// distinguish a transient error (worth a retry) from a genuinely empty session.
 export async function fetchSessionTurns(sessionId: string, signal?: AbortSignal): Promise<A2ATurn[]> {
   const data = await rpc<{ turns?: A2ATurn[] }>("session.history", { id: sessionId }, { signal });
   return data.turns ?? [];
@@ -1475,27 +1718,40 @@ export async function fetchSessionTurnsPage(
   };
 }
 
-// The outcome of resolving a pending prompt.
+// The outcome of resolving a pending prompt. `ok` means the decision/answer
+// actually reached its waiting request. `status` distinguishes the cases so the
+// caller can phrase feedback: "resolved" (delivered), "stale" (someone already
+// answered it), "unknown" (no such pending request — the turn moved on or the
+// server restarted), "error"/"network" (the call itself failed).
 export interface ResolveResult {
   ok: boolean;
   status: "resolved" | "stale" | "unknown" | "error" | "network";
 }
 
-// Answer a gate the session is parked on.
+// Answer a gate the session is parked on. The daemon relays the response to the
+// session's socket, where it lands as an `input_response` part and resumes the worker.
 async function sessionRespond(payload: Record<string, unknown>): Promise<ResolveResult> {
   try {
-    // The session answers `{resolved: boolean}` — see `worker/server.py`, which is the only thing that builds this reply.
+    // The session answers `{resolved: boolean}` — see `worker/server.py`, which is the only
+    // thing that builds this reply. This used to read a `status` string that nothing has ever
+    // sent, so `String(undefined ?? "")` matched no branch and *every* decision, including
+    // every one the session accepted, came back as an error. The person was told their
+    // approval had not been submitted while the tool it approved was already running.
     const data = await rpc<{ resolved?: unknown }>("session.respond", payload);
     if (data.resolved === true) return { ok: true, status: "resolved" };
-    // `false` is not a failure: the session had no such request pending, because the turn had already moved on or the gate was answered twice.
+    // `false` is not a failure: the session had no such request pending, because the turn had
+    // already moved on or the gate was answered twice. Nothing is wrong and nothing is owed,
+    // so the caller settles the card quietly rather than raising an alarm.
     return { ok: true, status: "stale" };
   } catch (error) {
-    // A transport failure and a rejected request read differently to the user: one is worth retrying, the other means the request is gone.
+    // A transport failure and a rejected request read differently to the user: one is
+    // worth retrying, the other means the request is gone.
     return { ok: false, status: error instanceof TypeError ? "network" : "error" };
   }
 }
 
-// Allow-always is gone with the mid-session policy it wrote to: the only runtime decisions are per-call allow-once and deny.
+// Allow-always is gone with the mid-session policy it wrote to: the only runtime
+// decisions are per-call allow-once and deny.
 export async function resolvePermission(
   sessionId: string,
   requestId: string,
@@ -1504,7 +1760,11 @@ export async function resolvePermission(
   return sessionRespond({ id: sessionId, request_id: requestId, decision });
 }
 
-// Answer a pending ask_user question.
+// Answer a pending ask_user question. `answers` is one entry per question (in
+// order); each entry is the selected label string, an array of labels for
+// multi-select, or the custom text the user typed. A skipped question is an empty
+// entry. When `declined` is true the user dismissed the whole prompt without
+// answering, and the turn is stopped.
 export async function resolveQuestion(
   sessionId: string,
   requestId: string,
@@ -1514,7 +1774,15 @@ export async function resolveQuestion(
   return sessionRespond({ id: sessionId, request_id: requestId, answers, declined });
 }
 
-// Returns whether the cancel actually reached the session.
+// Returns whether the cancel actually reached the session. A false result means the
+// turn may still be running, so the caller can tell the user rather than leave them
+// believing they stopped it.
+//
+// That is what this said, and it only ever answered the transport question: any 200 was
+// `true`, including the one where the session answers `{"cancelled": false}` because it had
+// nothing to stop. The session's own answer is the whole point of the promise above —
+// `abort_context` returns false only when there is no runtime and no resume pump, which is
+// precisely "the Stop did not reach anything".
 export async function cancelTurn(sessionId: string): Promise<boolean> {
   try {
     const result = await rpc<{ cancelled?: unknown }>("turn.cancel", { id: sessionId });
@@ -1525,7 +1793,8 @@ export async function cancelTurn(sessionId: string): Promise<boolean> {
   }
 }
 
-// Terminate a session and reap its subtree — children are sessions of their own now, so killing a parent takes the work it created with it.
+// Terminate a session and reap its subtree — children are sessions of their own now,
+// so killing a parent takes the work it created with it.
 export async function deleteSession(sessionId: string): Promise<boolean> {
   try {
     await rpc("session.end", { id: sessionId });
@@ -1536,7 +1805,9 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
   }
 }
 
-// Call off a session's goal.
+// Call off a session's goal. The session stops working toward it and stops opening turns of
+// its own; a turn already in flight finishes on its own, which is why this reports whether
+// there was a goal rather than whether the session has gone quiet.
 export async function clearSessionGoal(sessionId: string): Promise<boolean> {
   try {
     const result = await rpc<{ cleared?: boolean }>("session.goal_clear", { id: sessionId });
@@ -1557,10 +1828,13 @@ export async function compactSession(sessionId: string): Promise<boolean> {
   }
 }
 
-// Stopping one tool call is the same data-plane cancel as stopping the turn — the session has a single cancel — narrowed by the call the user pointed at, so a worker that is still mid-batch drops only that call.
+// Stopping one tool call is the same data-plane cancel as stopping the turn — the
+// session has a single cancel — narrowed by the call the user pointed at, so a worker
+// that is still mid-batch drops only that call.
 export async function abortToolCall(sessionId: string, toolCallId: string): Promise<boolean> {
   try {
-    // The session's answer, for the same reason as `cancelTurn` above: `false` here means the call was not among the ones running, so stopping it stopped nothing.
+    // The session's answer, for the same reason as `cancelTurn` above: `false` here means the
+    // call was not among the ones running, so stopping it stopped nothing.
     const result = await rpc<{ cancelled?: unknown }>("turn.cancel", { id: sessionId, tool_call_id: toolCallId });
     return result?.cancelled !== false;
   } catch (caught) {
@@ -1569,7 +1843,9 @@ export async function abortToolCall(sessionId: string, toolCallId: string): Prom
   }
 }
 
-// Detach a still-blocking foreground shell command so it keeps running in the background and the agent's turn continues (the harness is notified so the model learns the command was backgrounded rather than finished).
+// Detach a still-blocking foreground shell command so it keeps running in the
+// background and the agent's turn continues (the harness is notified so the model
+// learns the command was backgrounded rather than finished).
 export async function sendToolToBackground(sessionId: string, toolCallId: string): Promise<boolean> {
   try {
     const result = await rpc<{ backgrounded?: boolean }>("jobs.detach", {
@@ -1668,7 +1944,8 @@ export async function revealInFinder(path: string): Promise<boolean> {
   }
 }
 
-// Open the browser's remote-debugging settings page so the user can turn the switch on, when the browser tool reports it is off.
+// Open the browser's remote-debugging settings page so the user can turn the switch on, when the
+// browser tool reports it is off.
 export async function openBrowserRemoteDebugging(browserName = "chrome"): Promise<boolean> {
   try {
     const response = await apiFetch(
@@ -1709,10 +1986,13 @@ export interface A2APart {
   metadata?: Record<string, unknown>;
 }
 
-// A turn's control-state lives under one URI-namespaced key in `Task.metadata`, which is A2A's convention for an extension's attributes.
+// A turn's control-state lives under one URI-namespaced key in `Task.metadata`, which is
+// A2A's convention for an extension's attributes. The names inside it are plain: the
+// namespace has already said whose they are.
 export const TURN_STATE_KEY = "urn:frank:ext:turn:v1";
 
-// What opened a turn.
+// What opened a turn. `peer` is a message from another session — a peer reporting its
+// result, or a parent following up — and is emphatically not the user speaking.
 export type TurnKind = "user" | "peer" | "autonomous" | "compaction";
 
 export interface TurnState {
@@ -1721,7 +2001,8 @@ export interface TurnState {
   referenceTurnIds?: string[];
 }
 
-// The harness's payload inside a `DataPart`, or `{}` when the part is not ours.
+// The harness's payload inside a `DataPart`, or `{}` when the part is not ours. Same key as
+// the turn metadata, because it is the same extension.
 export function partPayload(data: Record<string, unknown> | undefined): Record<string, unknown> {
   const payload = data?.[TURN_STATE_KEY];
   return payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
@@ -1777,7 +2058,9 @@ export function parseSseFrame(frame: string): string {
     .trim();
 }
 
-// Read an SSE body frame by frame.
+// Read an SSE body frame by frame. `onFrame` receives each frame's data payload and
+// returns "stop" to end the read early (an in-band terminator, which the attach stream
+// uses so the connection closes on `done` rather than being left to time out).
 async function pumpEventStream(
   body: ReadableStream<Uint8Array>,
   onFrame: (raw: string) => void | "stop",
@@ -1801,7 +2084,10 @@ async function pumpEventStream(
   if (trailing) onFrame(trailing);
 }
 
-// A long-lived SSE subscription over `fetch`, not `EventSource`: the daemon gates every request on the capability token and EventSource cannot carry an Authorization header.
+// A long-lived SSE subscription over `fetch`, not `EventSource`: the daemon gates every
+// request on the capability token and EventSource cannot carry an Authorization header.
+// Reconnection therefore becomes ours to own — EventSource retried by itself, and the
+// shared bus relies on that to survive a daemon restart.
 function openEventStream(
   path: string,
   onData: (raw: string) => void,
@@ -1810,7 +2096,11 @@ function openEventStream(
   const controller = new AbortController();
   let closed = false;
 
-  // This loop has always reconnected on its own, once a second, forever — but it told nobody whether it was connected, so the interface could not say the daemon had gone and could not say when it came back.
+  // This loop has always reconnected on its own, once a second, forever — but it told nobody
+  // whether it was connected, so the interface could not say the daemon had gone and could not
+  // say when it came back. Reporting it is what turns a silent retry into a state a person can
+  // see. Reported on every transition rather than every attempt, so a daemon that is down for a
+  // while does not drive a render a second.
   const run = async () => {
     while (!closed) {
       try {
@@ -1823,7 +2113,8 @@ function openEventStream(
           await pumpEventStream(response.body, onData);
         }
       } catch {
-        // A deliberate close and a dropped connection arrive the same way here; the `closed` flag below is what tells them apart.
+        // A deliberate close and a dropped connection arrive the same way here; the
+        // `closed` flag below is what tells them apart.
       }
       if (closed) return;
       onHealth?.(false);
@@ -1840,10 +2131,18 @@ function openEventStream(
   };
 }
 
-// A live view of a session: `session.attach`.
+// A live view of a session: `session.attach`. The daemon sends a `snapshot` frame (the
+// compacted transcript, same shape as fetchSessionTurns), then a `live` tail of one
+// frame per emitted part, then `done` when the turn ends. This is the only response
+// path — a turn is driven by `sessionSend` and observed here, whether this client sent
+// the message or another one did.
+// `turn` and `done` are different events and the difference matters: a session goes idle
+// many times over its life, and `done` is the session itself ending. A reader that conflated
+// them would either stop watching after the first turn or wait for a process to die.
 export type SessionStreamFrame =
   | { kind: "snapshot"; turns: A2ATurn[] }
-  // A single part, as the session emitted it — the live tail is part-granular, so a turn's prose arrives as a run of text parts and never as an assembled message.
+  // A single part, as the session emitted it — the live tail is part-granular, so a turn's
+  // prose arrives as a run of text parts and never as an assembled message.
   | { kind: "live"; seq: number; part: A2APart }
   | { kind: "turn"; seq: number; running: boolean }
   | { kind: "done" };
@@ -1888,7 +2187,9 @@ export function attachSession(
 }
 
 
-// The transport for handled-error reports.
+// The transport for handled-error reports. Installed here rather than imported there, because
+// this module owns the daemon's address and its capability token — and already imports
+// `swallowed`, so the other direction would be a cycle.
 setFaultSender((fault) =>
   apiFetch("/telemetry/faults", {
     method: "POST",

@@ -1,6 +1,10 @@
 "use client";
 
-// A single toolbar / top-bar action: an icon button with a hover tooltip, an optional "active" (panel-open) state that flips it from ghost to a subtle tint, and an optional small colored status dot.
+// A single toolbar / top-bar action: an icon button with a hover tooltip, an optional
+// "active" (panel-open) state that flips it from ghost to a subtle tint, and an optional
+// small colored status dot. The chat top bar and other toolbars are built from these so
+// every action reads and behaves identically instead of re-spelling the Tooltip + button
+// + dot at each spot.
 
 import { Box, IconButton } from "@chakra-ui/react";
 import type { ReactNode } from "react";

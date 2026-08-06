@@ -1,6 +1,10 @@
 "use client";
 
-// Runtime locale for the app.
+// Runtime locale for the app. Modeled on color-mode.tsx: reads the locale the daemon has
+// stored and re-renders the whole tree with the matching messages when it changes — no
+// navigation, no route change, because locale here is a setting, not a URL segment. This is
+// the client-only next-intl wiring that a static export (output: "export", no
+// server/middleware) requires.
 
 import * as React from "react";
 import { NextIntlClientProvider } from "next-intl";
@@ -15,7 +19,8 @@ interface LocaleContextValue {
 const LocaleContext = React.createContext<LocaleContextValue | null>(null);
 
 export function LocaleProvider({ children }: React.PropsWithChildren) {
-  // The daemon's answer is the state: change the language in the desktop app and a browser window looking at the same daemon follows, with nothing here to keep in step.
+  // The daemon's answer is the state: change the language in the desktop app and a browser
+  // window looking at the same daemon follows, with nothing here to keep in step.
   const { preferences, updatePreferences } = usePreferences();
   const stored = preferences.locale;
   const locale: Locale = isLocale(stored) ? stored : DEFAULT_LOCALE;
@@ -31,7 +36,8 @@ export function LocaleProvider({ children }: React.PropsWithChildren) {
 
   const value = React.useMemo(() => ({ locale, setLocale }), [locale, setLocale]);
 
-  // A single stable `now` per mount for relativeTime; the device time zone is correct for a desktop app.
+  // A single stable `now` per mount for relativeTime; the device time zone is correct for
+  // a desktop app. Both are passed explicitly so static rendering is warning-free.
   const now = React.useMemo(() => new Date(), []);
   const timeZone =
     typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "UTC";

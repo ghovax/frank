@@ -1,4 +1,17 @@
-"""Every setting that exists, walked out of the schema rather than listed by hand."""
+"""Every setting that exists, walked out of the schema rather than listed by hand.
+
+`frank configure` used to be able to show only what a file already contained, which is exactly
+backwards: a person reaching for it wants to know what they *could* set, and the file they have
+is by definition the part they already know about. Nothing enumerated the rest, because nothing
+knew what the rest was — the settings existed as Pydantic fields and the descriptions for them
+existed as comments beside those fields, in a form no program could read.
+
+So this module walks the models to produce the list: every path there is, what it holds, what it
+ships at. What each one is *called* and what it is *for* are not here — they are words, and words
+belong in the message catalogue (`shared/messages/`) where they can be translated, and in the
+configuration reference. Keeping them beside the fields put the interface in one language
+whatever the person had chosen, and put the same sentence in the repository twice.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +25,8 @@ from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
 
-#: What a setting holds, in the vocabulary a control is chosen from.
+#: What a setting holds, in the vocabulary a control is chosen from. Derived from the
+#: annotation rather than declared, so a field that changes type cannot keep a stale control.
 KIND_SECTION = "section"    # a place to put things, not a thing itself
 KIND_BOOLEAN = "boolean"
 KIND_INTEGER = "integer"
@@ -29,15 +43,20 @@ class Setting:
 
     path: str
     default: Any
-    # A map that accepts any key — `providers`, `mcp.servers`.
+    # A map that accepts any key — `providers`, `mcp.servers`. The names under it are the
+    # user's own, so the walk stops here rather than inventing entries that do not exist yet.
     open_ended: bool = False
-    #: What it holds, so an interface can choose a control without a table of its own.
+    #: What it holds, so an interface can choose a control without a table of its own. A table
+    #: like that is the thing that goes stale: it lives away from the field, nothing checks the
+    #: two agree, and the first symptom is a checkbox writing a string into a number.
     kind: str = KIND_STRING
     #: The values a `choice` accepts, in the order the schema declares them.
     choices: tuple[str, ...] = ()
     #: Whether the field may hold nothing at all, which is not the same as holding "".
     optional: bool = False
-    #: A credential.
+    #: A credential. Declared on the field, because whether a value is a secret is a fact about
+    #: the field and not about its name — a client that guessed from the spelling would show a
+    #: token in the clear the first time somebody added one called `authorization`.
     secret: bool = False
 
 
@@ -102,7 +121,10 @@ def _choices(annotation: Any) -> tuple[str, ...]:
 
 
 def _kind_of(annotation: Any, default: Any) -> tuple[str, tuple[str, ...], bool]:
-    """What this field holds, how to offer it, and whether it may be nothing."""
+    """What this field holds, how to offer it, and whether it may be nothing.
+
+    Read from the annotation, with the default as the tie-breaker for the one case an
+    annotation cannot answer: a bare `dict` or a `list` says nothing about what goes in it."""
     inner, optional = _unwrapped(annotation)
     choices = _choices(inner)
     if choices:
@@ -127,19 +149,27 @@ def _kind_of(annotation: Any, default: Any) -> tuple[str, tuple[str, ...], bool]
     return KIND_STRING, (), optional
 
 
-# The one map whose keys are neither fixed by a model nor invented by the user: they are the names in `Tunable`.
+# The one map whose keys are neither fixed by a model nor invented by the user: they are the
+# names in `Tunable`. `_walk` enumerates them, so `_descend` must not also accept whatever it is
+# handed under this prefix — that is what let a misspelled tunable resolve as if it existed.
 TUNING_DEFAULTS = "tuning.defaults"
 
 
 def _tuning_defaults(prefix: str) -> list[Setting]:
-    """The individual tunables, expanded under ``tuning.defaults``."""
+    """The individual tunables, expanded under ``tuning.defaults``.
+
+    This is the one field whose keys are neither fixed by a model nor invented by the user:
+    they are the names in :class:`~frank.base.tuning.Tunable`, each of which already carries its
+    own shipped value and its own explanation. Enumerating them here is what lets somebody ask
+    what may go under `defaults` without reading the source."""
     from frank.base.tuning import Tunable
 
     return [
         Setting(
             path=f"{prefix}.{tunable.name}",
             default=tunable.default,
-            # Every tunable is a number: an amount, a duration, or a fraction.
+            # Every tunable is a number: an amount, a duration, or a fraction. `Default` holds
+            # the shipped value, so the value itself says which of integer and number it is.
             kind=KIND_INTEGER if isinstance(tunable.default, int) and not isinstance(tunable.default, bool) else KIND_NUMBER,
         )
         for tunable in Tunable
@@ -174,6 +204,14 @@ def _walk(model: type[BaseModel], prefix: str) -> list[Setting]:
 
 
 #: The order a person meets the sections in, from what they decide to what they tune.
+#:
+#: Declaration order is the order the *file* is written in, which is a different question and
+#: was answering this one badly: a panel built from it opened on provider credentials and put
+#: how much a session may do without asking below eighty-odd timeouts. So the sequence is
+#: stated, once, and every surface that lists settings — the panel, `frank configure --all`,
+#: the generated reference — reads the same one. A section missing from here is appended rather
+#: than dropped, because a new section must appear somewhere without anybody remembering this
+#: list exists.
 SECTION_ORDER = (
     # What the agent may do, and where.
     "agent", "workspace", "sandbox", "toolbox", "permission_reviewer",
@@ -189,7 +227,8 @@ SECTION_ORDER = (
 
 
 def settings() -> list[Setting]:
-    """Every setting, sections ordered from what a person decides to what they tune, and within a section in the order the schema declares them."""
+    """Every setting, sections ordered from what a person decides to what they tune, and within
+    a section in the order the schema declares them."""
     from frank.base.configuration import Configuration
 
     walked = _walk(Configuration, "")
@@ -198,7 +237,8 @@ def settings() -> list[Setting]:
 
 
 def leaf_settings() -> list[Setting]:
-    """Only the settings that hold a value — no section headers."""
+    """Only the settings that hold a value — no section headers. A section is a setting whose
+    path is a prefix of another's, so it is a place to put things rather than a thing itself."""
     everything = settings()
     prefixes = {setting.path.rsplit(".", 1)[0] for setting in everything if "." in setting.path}
     return [
@@ -208,7 +248,11 @@ def leaf_settings() -> list[Setting]:
 
 
 def setting_for(path: str) -> Optional[Setting]:
-    """The setting at a dotted path, or ``None`` if the schema does not define one."""
+    """The setting at a dotted path, or ``None`` if the schema does not define one.
+
+    A path under an open-ended map — ``providers.anthropic.api_key`` — resolves to the setting
+    the map's value model defines, since the key in the middle is the user's own name for one
+    of them and cannot be enumerated in advance."""
     for setting in settings():
         if setting.path == path:
             return setting
@@ -236,7 +280,8 @@ def _descend(model: type[BaseModel], segments: list[str], full_path: str) -> Opt
     if typing.get_origin(annotation) is dict:
         value_model = _model_of(typing.get_args(annotation)[1])
         if value_model is None:
-            # A map of scalars — `sandbox.limits`, `telemetry.exporter.headers`.
+            # A map of scalars — `sandbox.limits`, `telemetry.exporter.headers`. One segment
+            # past it names an entry, which is settable; anything deeper is not.
             if len(remaining) != 1:
                 return None
             shipped = _field_default(field)
@@ -244,7 +289,8 @@ def _descend(model: type[BaseModel], segments: list[str], full_path: str) -> Opt
                 path=full_path,
                     default=shipped.get(remaining[0]) if isinstance(shipped, dict) else None,
             )
-        # The next segment is the user's own name for an entry; what follows it is that entry's own field.
+        # The next segment is the user's own name for an entry; what follows it is that
+        # entry's own field.
         if not remaining[1:]:
             return Setting(path=full_path, default=None)
         return _descend(value_model, remaining[1:], full_path)

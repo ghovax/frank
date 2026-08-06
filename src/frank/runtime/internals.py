@@ -1,4 +1,4 @@
-"""Shared runtime internals extracted from agent.py."""
+"""The helpers and small dataclasses the AgentRuntime mixins share, in a leaf module so the graph stays a DAG."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -42,17 +42,17 @@ class Observation(BaseModel):
 
 
 class ObservationBatch(BaseModel):
-    """The structured memory the Observer/Reflector emits as a tool call — so the shape is guaranteed by the model's tool-calling, never scraped from free text."""
+    """The structured memory the Observer emits as a tool call, so its shape is guaranteed rather than scraped."""
 
     observations: list[Observation] = Field(default_factory=list)
 
 
-# Sentinel returned by ``_stream_next`` when an async iterator is exhausted, so a stream read can be raced against an abort inside a Task without a StopAsyncIteration propagating through it (which asyncio mishandles).
+# What ``_stream_next`` returns at the end, since a StopAsyncIteration inside a Task is mishandled.
 _STREAM_EXHAUSTED = object()
 
 
 async def _stream_next(iterator: AsyncIterator) -> Any:
-    """Return the next item from ``iterator``, or ``_STREAM_EXHAUSTED`` when it is done."""
+    """The next item, or ``_STREAM_EXHAUSTED``, so each read can be raced against the abort."""
     try:
         return await iterator.__anext__()
     except StopAsyncIteration:
@@ -63,7 +63,7 @@ def model_is_authorized(
     model_identifier: str,
     global_configuration: Configuration,
 ) -> bool:
-    """Whether we currently hold credentials to call ``model_identifier``."""
+    """Whether we hold credentials for ``model_identifier``. The one authority, mirroring ``build_chat_model``."""
     provider_identifier = model_identifier.split("/", 1)[0]
     if provider_identifier == "chatgpt":
         return is_signed_in()
@@ -81,7 +81,7 @@ def _maybe_json(value: str) -> Any:
         return value
 
 
-# Background-task handles minted by the tool registries: search_web ids carry the "search-" prefix, background bash the "bg-" prefix.
+# Background handles from the tool registries. Not A2A tasks: their results are delivered when ready.
 _BACKGROUND_HANDLE_PREFIXES = {
     "search-": "search_web",
     "bg-": "bash",
@@ -89,7 +89,7 @@ _BACKGROUND_HANDLE_PREFIXES = {
 
 
 def _coerce_mcp_arguments(value: Any) -> dict:
-    """Normalize the `arguments` of a call_mcp_tool call to a dict."""
+    """An MCP call's `arguments` as a dict, since models often emit the object as a JSON string."""
     if isinstance(value, dict):
         return value
     if isinstance(value, str) and value.strip():
@@ -103,7 +103,7 @@ def _coerce_mcp_arguments(value: Any) -> dict:
 
 
 def _background_handle_kind(turn_id: str) -> str | None:
-    """The background-task kind if ``turn_id`` is one of those handles rather than a readable A2A task; otherwise ``None``."""
+    """The background kind ``turn_id`` names, or ``None`` when it is a readable A2A task."""
     for prefix, kind in _BACKGROUND_HANDLE_PREFIXES.items():
         if turn_id.startswith(prefix):
             return kind
@@ -111,7 +111,7 @@ def _background_handle_kind(turn_id: str) -> str | None:
 
 
 def _cap_model_result_payload(result: str, *, code: str = "tool_result_truncated") -> str:
-    """Bound a model-facing tool result to the window-scaled output budget."""
+    """Bound a model-facing result to the output budget, by dropping whole fields and saying which went."""
     budget = active_tuning().amount(Tunable.output_tokens)
     _, was_truncated = clip_to_tokens(result, budget)
     if not was_truncated:
@@ -133,7 +133,7 @@ def _cap_model_result_payload(result: str, *, code: str = "tool_result_truncated
     def over(fields: dict) -> bool:
         return clip_to_tokens(rendered_with(fields), budget)[1]
 
-    # Largest first, so the fewest fields are lost — but never the ones that say what happened.
+    # Largest first, but never the fields that say what happened: a failure is what a model can act on.
     essential = {"ok", "error", "error_code", "code", "status"}
     for key in sorted(kept, key=lambda key: len(compact(kept[key])), reverse=True):
         if not over(kept):
@@ -144,7 +144,7 @@ def _cap_model_result_payload(result: str, *, code: str = "tool_result_truncated
     if not over(kept):
         return rendered_with(kept)
 
-    # What is left is essential and still too large, which means one field is enormous on its own — a script that raised with a page's worth of records interpolated into its message.
+    # One field enormous on its own: clip its text in place, so the result keeps its shape.
     for key in sorted(kept, key=lambda key: len(compact(kept[key])), reverse=True):
         if not over(kept) or not isinstance(kept[key], str):
             continue
@@ -159,7 +159,7 @@ def _cap_model_result_payload(result: str, *, code: str = "tool_result_truncated
 
 
 def message_tokens(message: Any) -> int:
-    """How much of the context window one conversation message occupies."""
+    """How much window one message occupies, counting the tool calls and results sent with it."""
     from frank.base.message_content import message_text
 
     total = count_tokens(message_text(message))
@@ -208,7 +208,7 @@ _MODEL_PROMPT_LOADER = PromptLoader(Path(__file__).parent / "prompts")
 def _model_visible_tool_result(
     content: str, metadata: dict[str, Any], status: str, code: str | None = None, *, kind: str = "tool_result",
 ) -> str:
-    """The canonical model-facing tool result: a one-line JSON metadata header, a blank line, then the tool's raw output body."""
+    """A model-facing tool result: a one-line JSON header, a blank line, then the tool's output as-is."""
     header: dict[str, Any] = {
         "kind": kind,
         "tool_name": metadata.get("tool_name", ""),
@@ -227,7 +227,7 @@ def _model_visible_tool_result(
 
 
 def _model_result_status(content: str, *, ok: bool, backgrounded: bool) -> tuple[str, str | None]:
-    """The (status, code) for a model-facing tool result."""
+    """The (status, code) for a model-facing result: failed is error, backgrounded is still running."""
     parsed = _maybe_json(content)
     code = parsed.get("code") if isinstance(parsed, dict) else None
     if not ok:
@@ -238,7 +238,7 @@ def _model_result_status(content: str, *, ok: bool, backgrounded: bool) -> tuple
 
 
 def _detect_workspace(working_directory: str) -> tuple[str, bool]:
-    """Return ``(worktree_root, is_git_repo)``."""
+    """``(worktree_root, is_git_repo)``, walking up for a ``.git`` marker and falling back to the directory."""
     base = Path(working_directory).expanduser().resolve() if working_directory else Path.cwd().resolve()
     current = base
     while True:
@@ -251,7 +251,7 @@ def _detect_workspace(working_directory: str) -> tuple[str, bool]:
 
 
 def _container_origins(annotation: Any) -> set:
-    """The container origins (``list`` and/or ``dict``) an annotation can be, seen through Optional/Union wrappers."""
+    """The container origins an annotation can be, so a string argument can be JSON-parsed or not."""
     import types as types_module
     import typing
 
@@ -270,7 +270,7 @@ def _container_origins(annotation: Any) -> set:
 
 
 def _coerce_structured_arguments(schema: Any, arguments: dict) -> dict:
-    """Models frequently serialize array/object tool arguments as a JSON *string* rather than a native value (e.g."""
+    """Parse arguments a model serialized as JSON strings back into the containers the schema types."""
     if not isinstance(arguments, dict):
         return arguments
     model_fields = getattr(schema, "model_fields", {})
@@ -297,7 +297,7 @@ def _coerce_structured_arguments(schema: Any, arguments: dict) -> dict:
 
 
 def _escape_to_dict(escape: Any) -> dict:
-    """An :class:`~frank.runtime.boundary.Escape` as plain data."""
+    """An :class:`~frank.runtime.boundary.Escape` as plain data, since this is about to be JSON."""
     return {
         "reads": list(escape.reads),
         "writes": list(escape.writes),
@@ -306,7 +306,7 @@ def _escape_to_dict(escape: Any) -> dict:
 
 
 def _escape_from_dict(data: Any) -> Any:
-    """The inverse."""
+    """The inverse, passing through a value that is already an ``Escape``."""
     from frank.runtime.boundary import Escape
 
     if isinstance(data, Escape):
@@ -321,18 +321,18 @@ def _escape_from_dict(data: Any) -> Any:
 
 @dataclass
 class _PreflightGate:
-    """One human-in-the-loop interaction a tool call needs before it can run: a permission prompt or an ``ask_user`` question."""
+    """One interaction a call needs before it can run: a permission prompt, or an ``ask_user`` question."""
 
     request_id: str
     tool_call_id: str
     kind: str  # "permission" | "question"
-    # The call this gate stands in front of.
+    # The call this gate stands in front of, since it is shown before that call is announced.
     tool_name: str = ""
     arguments: dict = field(default_factory=dict)
     command: str = ""
-    # Why approval is needed, from the rules or the boundary.
+    # Why approval is needed, as against ``arguments["explanation"]``, which is why the model wants the call.
     explanation: str = ""
-    # Why approval is needed, as facts rather than as a sentence, so the client writes the prose in its own language.
+    # The same, as facts rather than prose, so a client writes the sentence in its own language.
     reason: Any = None
     questions: list = field(default_factory=list)
     # A bash command approval remembers an "always allow" as a session rule.
@@ -341,19 +341,19 @@ class _PreflightGate:
     deny_message: str = ""
     # For an egress gate, the remote agent name (an "always allow" is remembered).
     egress_agent: str = ""
-    # The widening being asked for.
+    # The widening asked for, carried so approving records exactly what the planner worked out.
     escape: Any = field(default_factory=lambda: _escape_from_dict(None))
-    # Whether approving this means "let this one command reach past the workspace".
+    # Whether approving lets this one command reach past the workspace. Set only by a retry gate.
     whole_disk: bool = False
-    # What the refusal looked like, for a retry gate.
+    # What the refusal looked like, so the reviewer judges a command that hit a wall.
     denial_evidence: str = ""
-    # What the confined run produced.
+    # What the confined run produced, which a refused retry still owes the model.
     refused_result: Any = None
     # Whether approving this lets a screen script call the primitives that change something.
     grants_screen_mutations: bool = False
 
     def to_dict(self) -> dict:
-        """Every field, as plain JSON-safe data."""
+        """Every field as plain data: this dict crosses to a client and into the durable plan, so an omission disappears."""
         return {
             "request_id": self.request_id, "tool_call_id": self.tool_call_id, "kind": self.kind,
             "tool_name": self.tool_name, "arguments": self.arguments,
@@ -378,7 +378,7 @@ class _PreflightGate:
             reason=data.get("reason"),
             questions=list(data.get("questions", []) or []), is_bash=bool(data.get("is_bash", False)),
             deny_message=str(data.get("deny_message", "")), egress_agent=str(data.get("egress_agent", "")),
-            # Rebuilt as the real thing rather than left as a dict: what reads it on the way back is `_approve`, which takes `.reads`, `.writes` and `.network` off it.
+            # Rebuilt as the real thing: `_approve` reads `.reads`, `.writes` and `.network` off it.
             escape=_escape_from_dict(data.get("escape")),
             whole_disk=bool(data.get("whole_disk", False)),
             denial_evidence=str(data.get("denial_evidence", "")),
@@ -389,16 +389,16 @@ class _PreflightGate:
 
 @dataclass
 class _ToolPlan:
-    """The preflight verdict for one tool call."""
+    """The verdict for one call: a refusal, some gates, or neither. Computed once, so execution only carries it out."""
 
     tool_call_id: str
     refusal: Optional[dict] = None  # {"code", "message", "denied_injection", "raw_command", "reason"}
     gates: list[_PreflightGate] = field(default_factory=list)
-    # Whether a screen script may call the primitives that change something.
+    # Whether a screen script may change something. False by default, so the narrow set is what a call gets.
     screen_mutations: bool = False
     # Set when this call is a second run of a command the operating system refused.
     retry_grant: Any = None
-    # The outcome of a call that already ran, held across a suspension so the resumed batch replays it instead of running the tool a second time.
+    # A finished call's outcome, held across a suspension so the resumed batch replays rather than re-runs.
     completed: Optional[dict] = None
 
     @property
@@ -435,7 +435,7 @@ class _ToolPlan:
 
 @dataclass
 class _ToolCall:
-    """One call, as middleware sees it."""
+    """One call as middleware sees it. Mutable arguments, so a layer can rewrite a path without rebuilding it."""
 
     name: str
     arguments: dict
@@ -443,21 +443,21 @@ class _ToolCall:
 
 @dataclass
 class _ResolvedToolDecision:
-    """The verdict a batch runner hands each tool: run it, deny it (with the exact error the gate would have produced), or — for ``ask_user`` — the answers to return."""
+    """The verdict a batch runner hands each tool: run it, deny it, or return the ``ask_user`` answers."""
 
     tool_call_id: str
     approved: bool = True
     denial: Optional[dict] = None  # {"code", "message", "denied_injection", "raw_command", "reason"}
     answers: Any = None  # ask_user: the answers list, or the decline sentinel
-    # Whether a screen script may call the primitives that change something.
+    # Whether a screen script may change something. False unless a rule or an answer said otherwise.
     screen_mutations: bool = False
-    # The widening a second run of this command was approved to use, when the first was refused by the operating system.
+    # The widening an approved second run uses.
     retry_grant: Any = None
-    # The outcome of a call that already ran before the turn suspended.
+    # A finished call's outcome, replayed rather than re-run, so a suspension repeats no side effects.
     completed: Optional[dict] = None
 
 
-# How a turn-loop phase tells the driver what to do next.
+# How a turn phase tells the driver what to do next: a generator cannot return through ``async for``.
 _PROCEED = "proceed"    # fall through to the rest of the iteration
 _CONTINUE = "continue"  # the phase already advanced loop bookkeeping; loop again
 _STOP = "stop"          # the turn is over (a terminal event was already yielded); return
@@ -465,7 +465,7 @@ _STOP = "stop"          # the turn is over (a terminal event was already yielded
 
 @dataclass
 class _ModelCallOutcome:
-    """What one streamed model call produced: the assembled response, or a terminal condition the turn loop must act on instead."""
+    """What one streamed model call produced: the response, or the terminal condition the loop must act on."""
 
     response: Optional[AIMessageChunk] = None
     aborted_for_steering: bool = False

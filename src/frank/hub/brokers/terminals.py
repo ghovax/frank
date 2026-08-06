@@ -1,4 +1,5 @@
-"""Terminal domain: the PTY-backed TerminalSession and its manager, plus terminal-state persistence."""
+"""Terminal domain: the PTY-backed TerminalSession and its manager, plus terminal-state
+persistence."""
 
 from __future__ import annotations
 
@@ -44,7 +45,9 @@ def _terminal_directory(session_id: str, working_directory: str) -> Path:
 
 
 def _shell_command() -> list[str]:
-    # The user's real login shell comes from the passwd database — the same source `login` uses — not from $SHELL, which reflects whatever shell happened to launch this server and would be wrong on a remote/shared host.
+    # The user's real login shell comes from the passwd database — the same source
+    # `login` uses — not from $SHELL, which reflects whatever shell happened to launch
+    # this server and would be wrong on a remote/shared host.
     try:
         shell = pwd.getpwuid(os.getuid()).pw_shell
     except (KeyError, OSError):
@@ -70,7 +73,8 @@ def _login_base_environment() -> dict[str, str]:
     except (KeyError, OSError):
         # No passwd entry (unusual): fall back to the interpreter's notion of $HOME.
         environment["HOME"] = str(Path.home())
-    # The default PATH `login` seeds; the login shell and its rc files (e.g. macOS path_helper, home-manager) immediately rebuild the real one on top of it.
+    # The default PATH `login` seeds; the login shell and its rc files (e.g. macOS
+    # path_helper, home-manager) immediately rebuild the real one on top of it.
     environment["PATH"] = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     # The PTY is an xterm-compatible emulator, so advertise it as one.
     environment["TERM"] = "xterm-256color"
@@ -152,7 +156,8 @@ def _save_terminal_state(terminal_context: str, terminal_key: str, directory: Pa
 
 
 def _list_terminal_states(terminal_context: str) -> list[dict[str, str]]:
-    """Persisted terminals for a context, ordered by creation so the client can rebuild a stable set of tabs."""
+    """Persisted terminals for a context, ordered by creation so the client can rebuild
+    a stable set of tabs. Runs off the event loop (synchronous history.db read)."""
     if state.session_factory is None:
         return []
     database_session = state.session_factory()
@@ -208,7 +213,8 @@ class TerminalSession:
         self.terminal_context = terminal_context
         self.terminal_key = terminal_key
         self.directory = directory
-        # When set, the terminal is an interactive login shell on this remote host (over multiplexed SSH), in `directory` on that machine, rather than a local PTY.
+        # When set, the terminal is an interactive login shell on this remote host (over
+        # multiplexed SSH), in `directory` on that machine, rather than a local PTY.
         self.remote_host_alias = remote_host_alias
         self.master_fd = -1
         self.pid = -1
@@ -239,7 +245,8 @@ class TerminalSession:
             return
         environment = _login_base_environment()
         if self.remote_host_alias:
-            # Remote terminal: ssh to the host and start an interactive login shell in the location's base dir.
+            # Remote terminal: ssh to the host and start an interactive login shell in the
+            # location's base dir. The `cd` happens on the remote (never locally).
             command = SshExecutor(self.remote_host_alias).terminal_argv(str(self.directory))
         else:
             command = _shell_command()
@@ -427,7 +434,10 @@ class TerminalSessionManager:
 
 
 async def _terminal_context_for_request(session_id: str, working_directory: str) -> str:
-    """Resolve the identifier a context's terminals are stored under."""
+    """Resolve the identifier a context's terminals are stored under. For a persisted
+    session the identifier is the context id itself, so we can answer even when the
+    working directory no longer exists; otherwise it is derived from the resolved
+    directory (which must exist)."""
     try:
         directory = await asyncio.to_thread(_terminal_directory, session_id, working_directory)
     except ValueError:
