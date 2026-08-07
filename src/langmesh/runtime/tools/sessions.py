@@ -153,6 +153,7 @@ def build_create_session_tool(agent_names: list[str]) -> BaseTool:
     names = tuple(sorted(agent_names))
     arguments = create_model(
         "CreateSessionArguments",
+        explanation=(str, Field(description=EXPLANATION)),
         agent=(
             Literal[names],  # type: ignore[valid-type]
             Field(description="The agent profile the peer runs."),
@@ -162,7 +163,6 @@ def build_create_session_tool(agent_names: list[str]) -> BaseTool:
             Optional[str],
             Field(default=None, description="Where the peer works. Omit to use your working directory."),
         ),
-        explanation=(str, Field(description=EXPLANATION)),
     )
     return StructuredTool.from_function(
         coroutine=_create_session,
@@ -178,9 +178,9 @@ message_session_tool = StructuredTool.from_function(
     description=_description("message_session"),
     args_schema=create_model(
         "MessageSessionArguments",
+        explanation=(str, Field(description=EXPLANATION)),
         session=(str, Field(description="The recipient session id.")),
         message=(str, Field(description="The message to send.")),
-        explanation=(str, Field(description=EXPLANATION)),
     ),
 )
 
@@ -191,8 +191,8 @@ read_session_tool = StructuredTool.from_function(
     description=_description("read_session"),
     args_schema=create_model(
         "ReadSessionArguments",
-        session=(str, Field(description="The session id.")),
         explanation=(str, Field(description=EXPLANATION)),
+        session=(str, Field(description="The session id.")),
     ),
 )
 
@@ -223,9 +223,9 @@ message_remote_agent_tool = StructuredTool.from_function(
     description=_description("message_remote_agent"),
     args_schema=create_model(
         "MessageRemoteAgentArguments",
+        explanation=(str, Field(description=EXPLANATION)),
         name=(str, Field(description="The registered remote agent's name.")),
         message=(str, Field(description="The message to send.")),
-        explanation=(str, Field(description=EXPLANATION)),
     ),
 )
 

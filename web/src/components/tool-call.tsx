@@ -7,7 +7,7 @@ import { getToolCallDisplay, requestedAccess, type ToolDisplayTranslator } from 
 import { callMayMutate } from "@shared/tools";
 import { ToolCallLabel } from "./tool-label";
 import type { ToolEvent, ToolEventStatus } from "@/lib/tool-event";
-import { hasBackgroundJobId } from "@/lib/tool-event";
+import { hasBackgroundJobId, toolSettled } from "@/lib/tool-event";
 import { ToolCallView, ToolResultView } from "./tool-views";
 import { FieldScope } from "./ui/display";
 import { Pill } from "./ui/pill";
@@ -151,7 +151,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, actio
       icon={<Box color={iconColor} display="flex" alignItems="center"><Icon /></Box>}
       title={
         <DisclosureLabel shimmer={status === "running"}>
-          <ToolCallLabel name={name} args={toolArguments} />
+          <ToolCallLabel name={name} args={toolArguments} settled={toolSettled({ result, status })} />
         </DisclosureLabel>
       }
       badges={

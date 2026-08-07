@@ -21,8 +21,9 @@ export function getToolCallDisplay(
   name: string,
   args: Record<string, unknown> | undefined,
   translation: ToolDisplayTranslator,
+  settled: boolean = true,
 ): ToolDisplayInfo {
-  const display = toolCallDisplay(name, args, translation);
+  const display = toolCallDisplay(name, args, translation, settled);
   return {
     icon: glyph(display.glyph),
     iconColor: display.tint,

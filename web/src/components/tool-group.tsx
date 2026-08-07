@@ -14,7 +14,7 @@ import { Pill } from "./ui/pill";
 import { DisclosureRow } from "./ui/disclosure-row";
 import { ActivityIcon } from "./ui/activity-icon";
 import type { ToolEvent } from "@/lib/tool-event";
-import { hasBackgroundJobId, toolStatus } from "@/lib/tool-event";
+import { hasBackgroundJobId, toolSettled, toolStatus } from "@/lib/tool-event";
 import { ToolCall, ToolCallDetail, ToolLocationBadge, ToolAccessBadges, collapsedHeadingLocation, toolCallDetail } from "./tool-call";
 
 // The grouped, collapsible run of contiguous tool calls, and the single source of truth for how a batch reads.
@@ -123,12 +123,12 @@ export const ToolGroup = memo(function ToolGroup({
   const tally = useMemo(() => tallyTools(tools.slice(0, -1)), [tools]);
   // The status line shows the latest tool's own label, which says more than a static "working".
   const latestTool = tools[tools.length - 1];
-  const headingDisplay = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments, tDisplay) : null;
+  const headingDisplay = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments, tDisplay, toolSettled(latestTool)) : null;
   const HeadingIcon = headingDisplay?.icon ?? LuBrain;
   const headingIconColor = headingDisplay?.iconColor ?? "purple.fg";
   // Badge the collapsed heading when the batch touched a single remote place, since local is the implied default.
   const groupLocation = useMemo(() => collapsedHeadingLocation(tools.map((tool) => tool.arguments)), [tools]);
-  const latestLabel = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments, tDisplay).label : "";
+  const latestLabel = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments, tDisplay, toolSettled(latestTool)).label : "";
   // A tools-less group is a "thinking before acting" phase and owns the leading brain icon.
   const thinkingOnly = tools.length === 0;
   const headingText = latestLabel || (thinkingOnly ? translation("thinking") : active ? translation("working") : translation("actionsTaken"));
@@ -164,7 +164,7 @@ export const ToolGroup = memo(function ToolGroup({
           overflow="hidden"
           textOverflow="ellipsis"
         >
-          {latestTool ? <ToolCallLabel name={latestTool.name} args={latestTool.arguments} /> : headingText}
+          {latestTool ? <ToolCallLabel name={latestTool.name} args={latestTool.arguments} settled={toolSettled(latestTool)} /> : headingText}
         </Text>
       </Box>
     </Box>

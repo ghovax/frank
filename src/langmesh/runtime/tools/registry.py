@@ -79,10 +79,11 @@ def _require_mcp_client_manager():
 
 @tool
 async def bash(
+    *,
+    explanation: str = Field(..., description=EXPLANATION),
     command: str,
     location: str = "",
     access_request: dict[str, Any] | None = Field(None, description=ACCESS_REQUEST),
-    explanation: str = Field(..., description=EXPLANATION),
     background: bool = False,
     timeout: float = Tunable.bash_sync_window_seconds.default,
 ) -> str:
@@ -243,8 +244,9 @@ async def bash(
 
 @tool
 async def search_web(
-    query: str,
+    *,
     explanation: str = Field(..., description=EXPLANATION),
+    query: str,
     result_count: int = 5,
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/search_web.md."""
@@ -311,7 +313,7 @@ async def search_web(
 
 
 @tool
-async def list_mcp_tools(server: str = "", explanation: str = Field(..., description=EXPLANATION)) -> str:
+async def list_mcp_tools(*, explanation: str = Field(..., description=EXPLANATION), server: str = "") -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/list_mcp_tools.md."""
     try:
         result = await _require_mcp_client_manager().list_tools(server)
@@ -322,11 +324,12 @@ async def list_mcp_tools(server: str = "", explanation: str = Field(..., descrip
 
 @tool
 async def call_mcp_tool(
+    *,
+    explanation: str = Field(..., description=EXPLANATION),
     server: str,
     tool_name: str,
     arguments: dict[str, Any] | None = None,
     access_request: dict[str, Any] | None = Field(None, description=ACCESS_REQUEST),
-    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/call_mcp_tool.md."""
     try:
@@ -351,7 +354,7 @@ async def call_mcp_tool_with_events(
 
 
 @tool
-async def list_mcp_resources(server: str = "", explanation: str = Field(..., description=EXPLANATION)) -> str:
+async def list_mcp_resources(*, explanation: str = Field(..., description=EXPLANATION), server: str = "") -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/list_mcp_resources.md."""
     try:
         result = await _require_mcp_client_manager().list_resources(server)
@@ -361,7 +364,7 @@ async def list_mcp_resources(server: str = "", explanation: str = Field(..., des
 
 
 @tool
-async def read_mcp_resource(server: str, uri: str, explanation: str = Field(..., description=EXPLANATION)) -> str:
+async def read_mcp_resource(*, explanation: str = Field(..., description=EXPLANATION), server: str, uri: str) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/read_mcp_resource.md."""
     try:
         result = await _require_mcp_client_manager().read_resource(server, uri)
@@ -372,39 +375,41 @@ async def read_mcp_resource(server: str, uri: str, explanation: str = Field(...,
 
 @tool
 async def wait_for(
-    seconds: float,
+    *,
     explanation: str = Field(..., description=EXPLANATION),
+    seconds: float,
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/wait_for.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
-def read_turn(turn_id: str = "", explanation: str = Field(..., description=EXPLANATION)) -> str:
+def read_turn(*, explanation: str = Field(..., description=EXPLANATION), turn_id: str = "") -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/read_turn.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
-def set_tasks(tasks: list[dict], explanation: str = Field(..., description=EXPLANATION)) -> str:
+def set_tasks(*, explanation: str = Field(..., description=EXPLANATION), tasks: list[dict]) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/set_tasks.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
-def update_tasks(updates: list[dict], explanation: str = Field(..., description=EXPLANATION)) -> str:
+def update_tasks(*, explanation: str = Field(..., description=EXPLANATION), updates: list[dict]) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/update_tasks.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
 def update_goal(
+    *,
+    explanation: str = Field(..., description=EXPLANATION),
     status: Literal["active", "satisfied", "blocked", "cleared"] = "active",
     goal: str = "",
     requirements: list[str] | None = None,
     evidence: list[str] | None = None,
     blocker: str = "",
-    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/update_goal.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -412,11 +417,12 @@ def update_goal(
 
 @tool
 def read_file(
+    *,
+    explanation: str = Field(..., description=EXPLANATION),
     file_path: str,
     location: str = "",
     offset: int = 1,
     limit: int | None = 2048,
-    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/read_file.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -424,10 +430,11 @@ def read_file(
 
 @tool
 def search_code(
+    *,
+    explanation: str = Field(..., description=EXPLANATION),
     query: str,
     top_k: int = 10,
     reindex: bool = False,
-    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/search_code.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -435,12 +442,13 @@ def search_code(
 
 @tool
 def edit_file(
+    *,
+    explanation: str = Field(..., description=EXPLANATION),
     file_path: str,
     find: str,
     replace_with: str,
     location: str = "",
     replace_all: bool = False,
-    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/edit_file.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -448,10 +456,11 @@ def edit_file(
 
 @tool
 def write_file(
+    *,
+    explanation: str = Field(..., description=EXPLANATION),
     file_path: str,
     content: str,
     location: str = "",
-    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/write_file.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -459,12 +468,13 @@ def write_file(
 
 @tool
 async def fetch_url(
+    *,
+    explanation: str = Field(..., description=EXPLANATION),
     url: str,
     format: Literal["markdown", "text", "html"] = "markdown",
     timeout: float = Tunable.slow_tool_sync_window_seconds.default,
     hard_deadline: float = 30,
     background: bool = False,
-    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/fetch_url.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -472,13 +482,14 @@ async def fetch_url(
 
 @tool
 async def download_file(
+    *,
+    explanation: str = Field(..., description=EXPLANATION),
     url: str,
     path: str,
     location: str = "",
     timeout: float = Tunable.slow_tool_sync_window_seconds.default,
     hard_deadline: float = 120,
     background: bool = False,
-    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/download_file.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -486,9 +497,10 @@ async def download_file(
 
 @tool
 async def control_screen(
+    *,
+    explanation: str = Field(..., description=EXPLANATION),
     script: str,
     target: str = "",
-    explanation: str = Field(..., description=EXPLANATION),
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/control_screen.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -496,15 +508,16 @@ async def control_screen(
 
 @tool
 def ask_user(
-    questions: list[dict],
+    *,
     explanation: str = Field(..., description=EXPLANATION),
+    questions: list[dict],
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/ask_user.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
-def load_skill(name: str, explanation: str = Field(..., description=EXPLANATION)) -> str:
+def load_skill(*, explanation: str = Field(..., description=EXPLANATION), name: str) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/load_skill.md."""
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 

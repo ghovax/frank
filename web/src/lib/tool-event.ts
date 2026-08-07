@@ -97,3 +97,10 @@ export function permissionReasonText(
 export function permissionReasonPaths(reason: PermissionReason | undefined): string[] {
   return (reason?.paths ?? []).filter(Boolean);
 }
+
+/** Whether a call has stopped changing, so a label may be built from its arguments. */
+export function toolSettled(event: { result?: unknown; status?: ToolEventStatus }): boolean {
+  // A result is the definitive end. Before that, `running` covers both arguments still streaming
+  // and the call executing, and neither is a moment to derive a label from what has arrived.
+  return event.result !== undefined || (event.status !== undefined && event.status !== "running");
+}
