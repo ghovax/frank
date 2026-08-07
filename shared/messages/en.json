@@ -2,12 +2,8 @@
   "AgentSkills": {
     "skillsAvailable": "Skills available",
     "skillsDescription": "Capabilities available to assist with your tasks.",
-    "skillsAvailableGlobally": "Skills available globally",
-    "skillsAvailableInWorkspace": "Skills available in this environment",
     "toolsAvailable": "Tools available",
     "toolsDescription": "External tools the agent can call, exposed by the configured MCP servers and grouped by server.",
-    "toolsAvailableGlobally": "Tools available globally",
-    "toolsAvailableInWorkspace": "Tools available in this environment",
     "disabled": "Disabled",
     "examples": "Examples",
     "toolCount": "{count, plural, one {# tool} other {# tools}}"
@@ -169,7 +165,6 @@
     "settings": "Settings",
     "showConversations": "Show conversations",
     "showConversationsSidebar": "Show conversations sidebar",
-    "steeringNextOpening": "Steering next opening",
     "terminalAndBackground": "Terminal and background processes",
     "thisFolder": "this folder",
     "unknown": "Unknown",
@@ -199,81 +194,20 @@
     "saveChanges": "Save changes",
     "savingChanges": "Saving changes…"
   },
-  "ConnectionGate": {
-    "connecting": "Connecting…",
-    "connectingTo": "Connecting to {name}…",
-    "couldntConnect": "Couldn't connect",
-    "couldntReach": "Couldn't reach {name}",
-    "noLocalDaemon": "No daemon is running on this machine.",
-    "noLocalDaemonHint": "Nothing is listening at {url}. Start one with <code>langmeshd</code>, or connect to another machine.",
-    "noResponseFrom": "No response from {url}.",
-    "reopeningLast": "Reopening last connection…"
-  },
   "ConnectionSettings": {
-    "accessToken": "Access token",
-    "accessTokenHelper": "Run <code>langmesh daemon endpoint</code> on that host: it reports the port and the token this connection needs.",
-    "accessTokenPlaceholder": "Paste the token from that host",
-    "addedOn": "Added {date}",
     "connect": "Connect",
     "connected": "Connected",
-    "connectingTo": "Connecting to {name}…",
     "couldNotConnect": "Couldn't connect",
     "couldNotReach": "Couldn't reach {name}",
     "deleteConnection": "Delete {url}",
-    "hostAlias": "Host alias",
-    "hostAliasHelper": "We resolve this with ssh -G and open a local tunnel to the remote server.",
-    "hostNotes": "Host notes",
-    "hostNotesPlaceholder": "Scheduler, modules, environment rules, preferred scratch paths...",
-    "identityFileOverride": "Identity file override",
-    "identityFilePlaceholder": "Use ssh-agent or ~/.ssh/config IdentityFile",
-    "localTunnelPort": "Local tunnel port",
-    "localTunnelPortPlaceholder": "Pick an open local port",
-    "lookingForLocalDaemon": "Looking for a local daemon…",
-    "newRemoteConnection": "New remote connection",
-    "noLocalDaemon": "No daemon is running on this machine.",
-    "noLocalDaemonHint": "Nothing is listening at {url}. Start one with <code>langmeshd</code>, or connect to another machine.",
-    "noResponse": "No response from {url}.",
     "noSavedConnections": "No saved connections",
     "noSavedConnectionsHint": "Add a server address below to reach it later",
-    "openMachine": "Open {name}",
     "pairingLink": "Pairing link",
     "pairingLinkHelper": "Run <code>langmesh reach</code> on that machine and paste the link it prints. It carries the address and a token, and both stay on this machine.",
     "pairingLinkPlaceholder": "langmesh://pair#…",
-    "reloadHosts": "Reload hosts",
     "retry": "Retry",
     "saveConnection": "Save connection",
-    "saveSshConnection": "Save SSH connection",
-    "savedConnections": "Saved connections",
-    "selectEnvironment": "Select the environment to establish a connection with",
-    "serverPortOnHost": "Server port on host",
-    "serverPortOnHostPlaceholder": "from langmesh daemon endpoint",
-    "serverUrl": "Server URL",
-    "serverUrlHelper": "Use this for an already reachable LangMesh server or an existing tunnel.",
-    "serverUrlSubtitle": "Direct HTTP endpoint",
-    "sshHost": "SSH host",
-    "sshHostSubtitle": "From ~/.ssh/config",
-    "sshPort": "SSH port",
-    "thisMachine": "This machine",
-    "userOverride": "User override",
-    "userOverridePlaceholder": "Use ~/.ssh/config user"
-  },
-  "ConnectionSwitcher": {
-    "localServer": "Local server",
-    "connected": "Connected",
-    "status": {
-      "checking": "Checking",
-      "online": "Connected",
-      "offline": "Disconnected"
-    },
-    "couldNotReach": "Couldn't reach {name}",
-    "noResponse": "No response from {url}.",
-    "switchConnection": "Switch connection",
-    "type": "Type",
-    "url": "URL",
-    "sshTunnel": "SSH tunnel",
-    "remoteServer": "Remote server",
-    "openConnectionSettings": "Open connection settings…",
-    "connecting": "Connecting"
+    "savedConnections": "Saved connections"
   },
   "CursorAuthControl": {
     "signInError": "Could not start sign-in.",
@@ -313,24 +247,6 @@
     "blocker": "In the way",
     "stop": "Stop"
   },
-  "InterfaceScreen": {
-    "daemonRefused": "The daemon refused.",
-    "lookingFor": "Looking for {machine}…",
-    "microphoneRefused": "LangMesh was not allowed to use the microphone. Grant it in Settings and try again.",
-    "noLongerPaired": "This device is no longer paired.",
-    "notAnswering": "{machine} is not answering. It may be asleep, or off this network.",
-    "notPaired": "Not paired with a LangMesh yet.",
-    "openLangMesh": "Open LangMesh",
-    "otherMachines": "Other machines",
-    "pairedWith": "LangMesh is paired with {machine}.",
-    "thisMachine": "your Mac",
-    "transcriptionFailed": "Transcription failed ({status}).",
-    "tried": "Tried {address}",
-    "tryAgain": "Try again",
-    "wouldNotLoad": "The interface would not load",
-    "wouldNotLoadBody": "{machine} answered, but did not serve the screens — it may be running a build that was never made.",
-    "wrongSampleRate": "This phone recorded at {recorded} Hz and the model needs {expected} Hz."
-  },
   "LocationForm": {
     "local": "Local",
     "remote": "Remote (SSH)",
@@ -349,16 +265,6 @@
   "LocationStatus": {
     "uri": "URI",
     "hostNotFound": "Host not found in ~/.ssh/config"
-  },
-  "MachinesScreen": {
-    "title": "Machines",
-    "noneTitle": "No machines yet",
-    "noneBody": "Run langmesh reach on a Mac and pair with the link it prints.",
-    "pairAnother": "Pair a machine",
-    "forgetTitle": "Forget {machine}?",
-    "forgetBody": "This phone will lose its token for that machine. Pairing again needs a new link from it.",
-    "forget": "Forget",
-    "cancel": "Cancel"
   },
   "ModelSelect": {
     "visionBadge": "Vision — accepts image input",
@@ -385,24 +291,6 @@
     "environments": "Environments",
     "create": "Create workspace",
     "createError": "Could not create workspace"
-  },
-  "PairScreen": {
-    "title": "Pair with LangMesh",
-    "instructions": "On the Mac running LangMesh, run {command} and point this phone at the code it prints.",
-    "scan": "Scan",
-    "pasteLink": "Paste link",
-    "paste": "Paste",
-    "connect": "Connect",
-    "noCameraHere": "Scanning needs a camera. Paste the link instead.",
-    "cameraRefused": "The camera is turned off for LangMesh. Turn it on in Settings, or paste the link instead.",
-    "openSettings": "Open Settings",
-    "waitingForCamera": "Waiting for camera access…",
-    "linkPlaceholder": "langmesh://pair#…",
-    "clipboardUnavailable": "LangMesh could not read the clipboard here. Paste the link into the box above instead.",
-    "tokenWarning": "The code carries a token with full control of that machine. LangMesh keeps it in this phone's keychain and sends it to nowhere but the machine it came from.",
-    "notAPairingCode": "That is not a LangMesh pairing code.",
-    "missingTokenOrAddress": "That pairing code is missing its token or its address.",
-    "noAddress": "That pairing code carries no address — the machine could not find one to offer."
   },
   "PermissionOverlay": {
     "approvalNeeded": "Approval needed",
@@ -451,7 +339,6 @@
     "presetDaily": "Daily at 9",
     "presetWeekdays": "Weekdays at 9",
     "presetWeekly": "Mondays at 9",
-    "cronInvalid": "That is not five values. A schedule needs the minute, the hour, the day of the month, the month, then the day of the week, separated by spaces.",
     "timezonePlaceholder": "Search for a city or region",
     "timezoneCurrent": "Current"
   },
@@ -1006,7 +893,6 @@
     "computerControlBody": "Computer control needs Accessibility access to read and drive other apps on this Mac.",
     "computerControlHint": "Let the assistant control apps on this Mac — click, type, and navigate — for things that have no API. Needs Accessibility access; each action stays contained to one app.",
     "configuredModel": "Configured model",
-    "currentConnection": "Current connection",
     "defaults": "Defaults",
     "deleteRule": "Delete {pattern}",
     "dictation": "Dictation",
@@ -1097,8 +983,6 @@
   },
   "ToolCall": {
     "background": "Background",
-    "highRisk": "high risk",
-    "mediumRisk": "medium risk",
     "write": "write"
   },
   "ToolCard": {
@@ -1106,8 +990,6 @@
     "failed": "Failed",
     "running": "Running",
     "write": "Write",
-    "highRisk": "High risk",
-    "mediumRisk": "Medium risk",
     "accessRequested": "Access"
   },
   "ToolDisplay": {
@@ -1229,7 +1111,6 @@
     "goalEvidence": "Checked",
     "goalRequirements": "Done when",
     "goalSatisfied": "Satisfied",
-    "goalUpdateError": "Could not be updated",
     "include": "Include",
     "language": "Language",
     "limit": "Limit",

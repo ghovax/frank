@@ -2,12 +2,8 @@
   "AgentSkills": {
     "skillsAvailable": "利用可能なスキル",
     "skillsDescription": "タスクの支援に利用できる機能です。",
-    "skillsAvailableGlobally": "グローバルに利用可能なスキル",
-    "skillsAvailableInWorkspace": "この環境で利用可能なスキル",
     "toolsAvailable": "利用可能なツール",
     "toolsDescription": "エージェントが呼び出せる外部ツールで、設定された MCP サーバーが公開し、サーバーごとにグループ化されています。",
-    "toolsAvailableGlobally": "グローバルに利用可能なツール",
-    "toolsAvailableInWorkspace": "この環境で利用可能なツール",
     "disabled": "無効",
     "examples": "例",
     "toolCount": "{count, plural, other {# 個のツール}}"
@@ -169,7 +165,6 @@
     "settings": "設定",
     "showConversations": "会話を表示",
     "showConversationsSidebar": "会話サイドバーを表示",
-    "steeringNextOpening": "次の応答を誘導",
     "terminalAndBackground": "ターミナルとバックグラウンド処理",
     "thisFolder": "このフォルダ",
     "unknown": "不明",
@@ -199,81 +194,20 @@
     "saveChanges": "変更を保存",
     "savingChanges": "変更を保存しています…"
   },
-  "ConnectionGate": {
-    "connecting": "接続中…",
-    "connectingTo": "{name} に接続中…",
-    "couldntConnect": "接続できませんでした",
-    "couldntReach": "{name} に接続できませんでした",
-    "noLocalDaemon": "このマシンでデーモンが実行されていません。",
-    "noLocalDaemonHint": "{url} で応答がありません。<code>langmeshd</code> で起動するか、別のマシンに接続してください。",
-    "noResponseFrom": "{url} から応答がありません。",
-    "reopeningLast": "前回の接続を再開しています…"
-  },
   "ConnectionSettings": {
-    "accessToken": "アクセストークン",
-    "accessTokenHelper": "対象ホストで <code>langmesh daemon endpoint</code> を実行すると、この接続に必要なポートとトークンが表示されます。",
-    "accessTokenPlaceholder": "そのホストのトークンを貼り付け",
-    "addedOn": "追加日 {date}",
     "connect": "接続",
     "connected": "接続済み",
-    "connectingTo": "{name} に接続中…",
     "couldNotConnect": "接続できませんでした",
     "couldNotReach": "{name} に到達できませんでした",
     "deleteConnection": "{url} を削除",
-    "hostAlias": "ホストエイリアス",
-    "hostAliasHelper": "ssh -G で解決し、リモートサーバーへのローカルトンネルを開きます。",
-    "hostNotes": "ホストのメモ",
-    "hostNotesPlaceholder": "スケジューラ、モジュール、環境ルール、優先スクラッチパスなど...",
-    "identityFileOverride": "認証鍵ファイルの上書き",
-    "identityFilePlaceholder": "ssh-agent または ~/.ssh/config の IdentityFile を使用",
-    "localTunnelPort": "ローカルトンネルポート",
-    "localTunnelPortPlaceholder": "空いているローカルポートを選択",
-    "lookingForLocalDaemon": "ローカルデーモンを探しています…",
-    "newRemoteConnection": "新しいリモート接続",
-    "noLocalDaemon": "このマシンでデーモンが実行されていません。",
-    "noLocalDaemonHint": "{url} で応答がありません。<code>langmeshd</code> で起動するか、別のマシンに接続してください。",
-    "noResponse": "{url} から応答がありません。",
     "noSavedConnections": "保存済みの接続はありません",
     "noSavedConnectionsHint": "後で接続できるよう、下にサーバーアドレスを追加してください",
-    "openMachine": "{name} を開く",
     "pairingLink": "ペアリングリンク",
     "pairingLinkHelper": "そのマシンで <code>langmesh reach</code> を実行し、表示されたリンクを貼り付けてください。アドレスとトークンが含まれ、どちらもこのマシンから出ません。",
     "pairingLinkPlaceholder": "langmesh://pair#…",
-    "reloadHosts": "ホストを再読み込み",
     "retry": "再試行",
     "saveConnection": "接続を保存",
-    "saveSshConnection": "SSH 接続を保存",
-    "savedConnections": "保存済みの接続",
-    "selectEnvironment": "接続する環境を選択してください",
-    "serverPortOnHost": "ホスト上のサーバーポート",
-    "serverPortOnHostPlaceholder": "langmesh daemon endpoint の値",
-    "serverUrl": "サーバー URL",
-    "serverUrlHelper": "すでに到達可能な LangMesh サーバーまたは既存のトンネルに使用します。",
-    "serverUrlSubtitle": "直接の HTTP エンドポイント",
-    "sshHost": "SSH ホスト",
-    "sshHostSubtitle": "~/.ssh/config から",
-    "sshPort": "SSH ポート",
-    "thisMachine": "このマシン",
-    "userOverride": "ユーザーの上書き",
-    "userOverridePlaceholder": "~/.ssh/config のユーザーを使用"
-  },
-  "ConnectionSwitcher": {
-    "localServer": "ローカルサーバー",
-    "connected": "接続済み",
-    "status": {
-      "checking": "確認中",
-      "online": "接続済み",
-      "offline": "切断"
-    },
-    "couldNotReach": "{name} に到達できませんでした",
-    "noResponse": "{url} から応答がありません。",
-    "switchConnection": "接続を切り替え",
-    "type": "種類",
-    "url": "URL",
-    "sshTunnel": "SSH トンネル",
-    "remoteServer": "リモートサーバー",
-    "openConnectionSettings": "接続設定を開く…",
-    "connecting": "接続中"
+    "savedConnections": "保存済みの接続"
   },
   "CursorAuthControl": {
     "signInError": "サインインを開始できませんでした。",
@@ -313,24 +247,6 @@
     "blocker": "障害",
     "stop": "中止"
   },
-  "InterfaceScreen": {
-    "daemonRefused": "デーモンが拒否しました。",
-    "lookingFor": "{machine} を探しています…",
-    "microphoneRefused": "LangMesh はマイクの使用を許可されていません。設定で許可してから再試行してください。",
-    "noLongerPaired": "この端末のペアリングは解除されています。",
-    "notAnswering": "{machine} が応答しません。スリープ中か、このネットワークにいない可能性があります。",
-    "notPaired": "まだ LangMesh とペアリングしていません。",
-    "openLangMesh": "LangMesh を開く",
-    "otherMachines": "ほかのマシン",
-    "pairedWith": "LangMesh は {machine} とペアリングされています。",
-    "thisMachine": "お使いの Mac",
-    "transcriptionFailed": "文字起こしに失敗しました ({status})。",
-    "tried": "試行したアドレス: {address}",
-    "tryAgain": "再試行",
-    "wouldNotLoad": "画面を読み込めませんでした",
-    "wouldNotLoadBody": "{machine} は応答しましたが画面を返しませんでした。ビルドされていない可能性があります。",
-    "wrongSampleRate": "このスマートフォンは {recorded} Hz で録音しましたが、モデルには {expected} Hz が必要です。"
-  },
   "LocationForm": {
     "local": "ローカル",
     "remote": "リモート（SSH）",
@@ -349,16 +265,6 @@
   "LocationStatus": {
     "uri": "URI",
     "hostNotFound": "~/.ssh/config にホストが見つかりません"
-  },
-  "MachinesScreen": {
-    "title": "マシン",
-    "noneTitle": "マシンがまだありません",
-    "noneBody": "Mac で langmesh reach を実行し、表示されたリンクでペアリングしてください。",
-    "pairAnother": "マシンをペアリング",
-    "forgetTitle": "{machine} を削除しますか？",
-    "forgetBody": "このスマートフォンからそのマシンのトークンが失われます。再度ペアリングするには新しいリンクが必要です。",
-    "forget": "削除",
-    "cancel": "キャンセル"
   },
   "ModelSelect": {
     "visionBadge": "ビジョン — 画像入力に対応",
@@ -385,24 +291,6 @@
     "environments": "環境",
     "create": "ワークスペースを作成",
     "createError": "ワークスペースを作成できませんでした"
-  },
-  "PairScreen": {
-    "title": "LangMesh とペアリング",
-    "instructions": "LangMesh を実行している Mac で {command} を実行し、表示されたコードにこのスマートフォンを向けてください。",
-    "scan": "スキャン",
-    "pasteLink": "リンクを貼り付け",
-    "paste": "貼り付け",
-    "connect": "接続",
-    "noCameraHere": "スキャンにはカメラが必要です。代わりにリンクを貼り付けてください。",
-    "cameraRefused": "LangMesh のカメラがオフになっています。設定でオンにするか、リンクを貼り付けてください。",
-    "openSettings": "設定を開く",
-    "waitingForCamera": "カメラの許可を待っています…",
-    "linkPlaceholder": "langmesh://pair#…",
-    "clipboardUnavailable": "ここではクリップボードを読み取れませんでした。上の入力欄にリンクを貼り付けてください。",
-    "tokenWarning": "このコードにはその Mac を完全に操作できるトークンが含まれます。LangMesh はこのスマートフォンのキーチェーンに保管し、発行元の Mac 以外には送信しません。",
-    "notAPairingCode": "これは LangMesh のペアリングコードではありません。",
-    "missingTokenOrAddress": "このペアリングコードにはトークンまたはアドレスがありません。",
-    "noAddress": "このペアリングコードにはアドレスがありません。Mac が提示できるアドレスを見つけられませんでした。"
   },
   "PermissionOverlay": {
     "approvalNeeded": "承認が必要です",
@@ -451,7 +339,6 @@
     "presetDaily": "毎日 9 時",
     "presetWeekdays": "平日 9 時",
     "presetWeekly": "毎週月曜 9 時",
-    "cronInvalid": "値が 5 つではありません。分、時、日、月、曜日の順に、スペースで区切って入力してください。",
     "timezonePlaceholder": "都市名や地域名で検索",
     "timezoneCurrent": "現在"
   },
@@ -1006,7 +893,6 @@
     "computerControlBody": "コンピュータ操作には、このMac上の他のアプリを読み取り・操作するためのアクセシビリティ権限が必要です。",
     "computerControlHint": "このMac上のアプリをアシスタントが操作（クリック・入力・移動）できるようにし、APIのない操作も行えます。アクセシビリティ権限が必要で、各操作は1つのアプリ内に限定されます。",
     "configuredModel": "設定済みモデル",
-    "currentConnection": "現在の接続",
     "defaults": "デフォルト",
     "deleteRule": "{pattern} を削除",
     "dictation": "音声入力",
@@ -1097,8 +983,6 @@
   },
   "ToolCall": {
     "background": "バックグラウンド",
-    "highRisk": "高リスク",
-    "mediumRisk": "中リスク",
     "write": "書き込み"
   },
   "ToolCard": {
@@ -1106,8 +990,6 @@
     "failed": "失敗",
     "running": "実行中",
     "write": "書き込み",
-    "highRisk": "高リスク",
-    "mediumRisk": "中リスク",
     "accessRequested": "アクセス"
   },
   "ToolDisplay": {
@@ -1229,7 +1111,6 @@
     "goalEvidence": "確認した内容",
     "goalRequirements": "完了条件",
     "goalSatisfied": "達成",
-    "goalUpdateError": "更新できませんでした",
     "include": "対象",
     "language": "言語",
     "limit": "上限",
