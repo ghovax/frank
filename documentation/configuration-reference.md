@@ -220,7 +220,7 @@ How large, how many, and how patient the tools are.
 | `tuning.context_share.text` | number | `0.25` | Share one result's text may fill — output, fetched pages. |
 | `tuning.context_share.results` | number | `0.15` | Share a set of results may fill — matches, lines, records. |
 | `tuning.timeout_multiplier` | number | `1.0` | Multiplier on every wait. 2.0 doubles them for a slow machine; 1.0 is neutral. |
-| `tuning.defaults` | section | — | Override one tunable by its own name, in its own unit — see langmesh configure --all. An override replaces the shipped default, so context_share and timeout_multiplier still apply on top. |
+| `tuning.defaults` | section | — | Override one tunable by its own name — see langmesh configure --all. Every duration is in seconds. An override replaces the shipped default, so context_share and timeout_multiplier still apply on top. |
 | `tuning.defaults.output_tokens` | integer | `16000` | Tokens of inline output one tool may return before the rest overflows to a file. |
 | `tuning.defaults.fetch_tokens` | integer | `24000` | Tokens of a fetched web page's text kept inline. |
 | `tuning.defaults.maximum_line_chars` | integer | `2048` | Characters of a single over-long line kept before it is clipped, so one minified blob cannot fill a result on its own. |
@@ -234,48 +234,49 @@ How large, how many, and how patient the tools are.
 | `tuning.defaults.web_exchanges` | integer | `250` | Recent request/response pairs a browser session keeps, so a search can surface the API behind a rendered view. |
 | `tuning.defaults.web_websockets` | integer | `32` | Live websockets a browser session tracks at once. |
 | `tuning.defaults.web_websocket_frames` | integer | `200` | Frames retained per tracked websocket. |
-| `tuning.defaults.action_timeout_ms` | integer | `5000` | How long one browser action (click, type, hover) waits for its element. |
-| `tuning.defaults.navigation_timeout_ms` | integer | `20000` | How long a page load or navigation waits. |
-| `tuning.defaults.snapshot_timeout_ms` | integer | `10000` | How long an accessibility snapshot of a page waits. |
-| `tuning.defaults.connect_timeout_ms` | integer | `10000` | How long attaching to a browser waits. |
-| `tuning.defaults.browser_authorization_ms` | integer | `90000` | How long attaching waits for the user to approve Chrome's prompt. |
-| `tuning.defaults.drag_timeout_ms` | integer | `8000` | How long a drag between two elements waits. |
-| `tuning.defaults.screenshot_timeout_ms` | integer | `20000` | How long capturing a page screenshot waits. |
-| `tuning.defaults.read_text_timeout_ms` | integer | `10000` | How long reading a page's text waits. |
-| `tuning.defaults.frame_resolve_timeout_ms` | integer | `2000` | How long resolving a frame reference waits. Deliberately well below the action timeout: a frame that has gone waits out its budget rather than erroring, and listing every frame would otherwise stall on the one that left. |
-| `tuning.defaults.sigterm_grace_seconds` | number | `3.0` | How long a cancelled command or a reaped session has after SIGTERM before SIGKILL. |
-| `tuning.defaults.ripgrep_seconds` | number | `30.0` | How long one content search may run. |
-| `tuning.defaults.bash_sync_window_seconds` | number | `60.0` | How long a shell command runs inline before it moves to the background. It is not killed at this point, only handed off, and the model can override it per call. |
-| `tuning.defaults.slow_tool_sync_window_seconds` | number | `10.0` | The same inline window for fetching a URL or downloading a file. |
-| `tuning.defaults.web_search_sync_window_seconds` | number | `10.0` | The same inline window for a web search. |
-| `tuning.defaults.accessibility_messaging_seconds` | number | `2.0` | How long one accessibility message to an application waits, so a hung application costs a moment rather than the whole action. |
+| `tuning.defaults.action_timeout` | integer | `5000` | How long one browser action (click, type, hover) waits for its element. |
+| `tuning.defaults.navigation_timeout` | integer | `20000` | How long a page load or navigation waits. |
+| `tuning.defaults.snapshot_timeout` | integer | `10000` | How long an accessibility snapshot of a page waits. |
+| `tuning.defaults.connect_timeout` | integer | `10000` | How long attaching to a browser waits. |
+| `tuning.defaults.browser_authorization` | integer | `90000` | How long attaching waits for the user to approve Chrome's prompt. |
+| `tuning.defaults.drag_timeout` | integer | `8000` | How long a drag between two elements waits. |
+| `tuning.defaults.screenshot_timeout` | integer | `20000` | How long capturing a page screenshot waits. |
+| `tuning.defaults.read_text_timeout` | integer | `10000` | How long reading a page's text waits. |
+| `tuning.defaults.frame_resolve_timeout` | integer | `2000` | How long resolving a frame reference waits. Deliberately well below the action timeout: a frame that has gone waits out its budget rather than erroring, and listing every frame would otherwise stall on the one that left. |
+| `tuning.defaults.sigterm_grace` | number | `3.0` | How long a cancelled command or a reaped session has after SIGTERM before SIGKILL. |
+| `tuning.defaults.ripgrep` | number | `30.0` | How long one content search may run. |
+| `tuning.defaults.bash_sync_window` | number | `60.0` | How long a shell command runs inline before it moves to the background. It is not killed at this point, only handed off, and the model can override it per call. |
+| `tuning.defaults.slow_tool_sync_window` | number | `10.0` | The same inline window for fetching a URL or downloading a file. |
+| `tuning.defaults.web_search_sync_window` | number | `10.0` | The same inline window for a web search. |
+| `tuning.defaults.accessibility_messaging` | number | `2.0` | How long one accessibility message to an application waits, so a hung application costs a moment rather than the whole action. |
 | `tuning.defaults.goal_continuation_turns` | integer | `12` | How many turns in a row a session may open for its own goal before it stops and waits for the person. |
 | `tuning.defaults.goal_blocked_turns` | integer | `3` | How many times the same condition must stop a goal before the agent may report it blocked. One failure is not an impasse, and a goal abandoned on the first refusal is one nobody asked to abandon. |
 | `tuning.defaults.attach_snapshot_rows` | integer | `400` | How much of a conversation is sent when you open it. The rest is fetched as you scroll back, so a long history opens as fast as a short one. |
 | `tuning.defaults.session_title_attempts` | integer | `3` | How many times a session asks the model to name itself before giving up. |
 | `tuning.defaults.permission_reviewer_attempts` | integer | `3` | How many times the permission reviewer is asked before its silence counts as a refusal. |
-| `tuning.defaults.session_idle_sleep_seconds` | number | `18000.0` | How long a session keeps its process after its last turn before it sleeps. |
-| `tuning.defaults.daemon_startup_seconds` | number | `45.0` | How long a command waits for a daemon it just started to become reachable. |
-| `tuning.defaults.control_plane_call_seconds` | number | `60.0` | How long one call to the daemon waits. |
-| `tuning.defaults.model_catalogue_ttl_seconds` | number | `60.0` | How long the list of available models is cached. |
-| `tuning.defaults.credential_refresh_leeway_seconds` | number | `300.0` | How far ahead of its expiry an access token is refreshed. |
-| `tuning.defaults.daemon_probe_interval_seconds` | number | `0.05` | Pause between asks of whether another process's daemon socket answers yet, or whether a daemon being replaced has finally exited. |
-| `tuning.defaults.daemon_probe_connect_seconds` | number | `0.5` | How long one connect to a daemon socket waits before it counts as unanswered. |
-| `tuning.defaults.oauth_poll_interval_seconds` | number | `1.0` | First pause between asks of whether a browser sign-in has completed; it widens from here. |
-| `tuning.defaults.oauth_poll_ceiling_seconds` | number | `10.0` | Ceiling on the widening pause between sign-in polls, so a slow sign-in is not asked about every second for minutes. |
-| `tuning.defaults.oauth_poll_give_up_seconds` | number | `300.0` | How long a browser sign-in is waited for before it is abandoned — a person's whole trip through a consent screen, not a network round trip. |
-| `tuning.defaults.subscription_resume_ttl_seconds` | number | `1800.0` | How long a subscription provider's server-side conversation state stays worth resuming from before the whole conversation is resent instead. |
-| `tuning.defaults.model_silence_give_up_seconds` | number | `180.0` | How long a model may hold a stream open saying nothing at all before the turn is ended. Long, because a model weighing a hard problem is silent and still working. |
-| `tuning.defaults.file_url_ttl_seconds` | number | `600.0` | How long a signed file URL stays valid. |
-| `tuning.defaults.mcp_connect_seconds` | number | `20.0` | How long connecting to one MCP server waits. |
-| `tuning.defaults.card_resolve_seconds` | number | `20.0` | How long fetching a remote agent's card waits. |
-| `tuning.defaults.remote_command_seconds` | number | `120.0` | How long a command on another machine may run. |
-| `tuning.defaults.remote_connect_seconds` | number | `16.0` | How long opening an SSH connection waits. |
-| `tuning.defaults.remote_control_persist_seconds` | number | `120.0` | How long a shared SSH connection lingers after its last use, so the next command reuses it. |
-| `tuning.defaults.control_script_seconds` | number | `120.0` | How long one screen-control script may run. |
-| `tuning.defaults.surface_guard_margin_seconds` | number | `30.0` | How far above the script's own limit the machinery waiting on it sits, so raising that limit can never make the guard fire first and leave the surface half-dead. |
-| `tuning.defaults.screencapture_seconds` | number | `15.0` | How long capturing the screen waits. |
-| `tuning.defaults.open_url_seconds` | number | `5.0` | How long handing a URL to the system browser waits. |
+| `tuning.defaults.compaction_attempts` | integer | `3` | How many times compaction asks the model to record its observations before folding without them. |
+| `tuning.defaults.session_idle_sleep` | number | `18000.0` | How long a session keeps its process after its last turn before it sleeps. |
+| `tuning.defaults.daemon_startup` | number | `45.0` | How long a command waits for a daemon it just started to become reachable. |
+| `tuning.defaults.control_plane_call` | number | `60.0` | How long one call to the daemon waits. |
+| `tuning.defaults.model_catalogue_ttl` | number | `60.0` | How long the list of available models is cached. |
+| `tuning.defaults.credential_refresh_leeway` | number | `300.0` | How far ahead of its expiry an access token is refreshed. |
+| `tuning.defaults.daemon_probe_interval` | number | `0.05` | Pause between asks of whether another process's daemon socket answers yet, or whether a daemon being replaced has finally exited. |
+| `tuning.defaults.daemon_probe_connect` | number | `0.5` | How long one connect to a daemon socket waits before it counts as unanswered. |
+| `tuning.defaults.oauth_poll_interval` | number | `1.0` | First pause between asks of whether a browser sign-in has completed; it widens from here. |
+| `tuning.defaults.oauth_poll_ceiling` | number | `10.0` | Ceiling on the widening pause between sign-in polls, so a slow sign-in is not asked about every second for minutes. |
+| `tuning.defaults.oauth_poll_give_up` | number | `300.0` | How long a browser sign-in is waited for before it is abandoned — a person's whole trip through a consent screen, not a network round trip. |
+| `tuning.defaults.subscription_resume_ttl` | number | `1800.0` | How long a subscription provider's server-side conversation state stays worth resuming from before the whole conversation is resent instead. |
+| `tuning.defaults.model_silence_give_up` | number | `180.0` | How long a model may hold a stream open saying nothing at all before the turn is ended. Long, because a model weighing a hard problem is silent and still working. |
+| `tuning.defaults.file_url_ttl` | number | `600.0` | How long a signed file URL stays valid. |
+| `tuning.defaults.mcp_connect` | number | `20.0` | How long connecting to one MCP server waits. |
+| `tuning.defaults.card_resolve` | number | `20.0` | How long fetching a remote agent's card waits. |
+| `tuning.defaults.remote_command` | number | `120.0` | How long a command on another machine may run. |
+| `tuning.defaults.remote_connect` | number | `16.0` | How long opening an SSH connection waits. |
+| `tuning.defaults.remote_control_persist` | number | `120.0` | How long a shared SSH connection lingers after its last use, so the next command reuses it. |
+| `tuning.defaults.control_script` | number | `120.0` | How long one screen-control script may run. |
+| `tuning.defaults.surface_guard_margin` | number | `30.0` | How far above the script's own limit the machinery waiting on it sits, so raising that limit can never make the guard fire first and leave the surface half-dead. |
+| `tuning.defaults.screencapture` | number | `15.0` | How long capturing the screen waits. |
+| `tuning.defaults.open_url` | number | `5.0` | How long handing a URL to the system browser waits. |
 | `tuning.defaults.type_chunk_size` | integer | `20` | Characters sent per synthesized keyboard event. |
 | `tuning.defaults.drag_steps` | integer | `12` | Segments a drag is split into, so it looks like a hand moved it. |
 | `tuning.defaults.scroll_amount_pixels` | integer | `300` | Pixels one scroll step moves a native window. |
@@ -287,22 +288,22 @@ How large, how many, and how patient the tools are.
 | `tuning.defaults.find_one_margin` | number | `0.2` | How far ahead of the runner-up find_one's best match must score, in units of the shortlist's own spread, before it answers with one element instead of asking which was meant. |
 | `tuning.defaults.find_many_ceiling` | integer | `50` | Elements find_many will return however many are asked for. |
 | `tuning.defaults.find_relevance_floor` | number | `0.25` | How well an element must match, as a cosine against the query, before find_many will return it at all. It cuts the noise band and nothing more. |
-| `tuning.defaults.click_interval_seconds` | number | `0.01` | Pause between successive synthesized clicks. |
-| `tuning.defaults.drag_step_interval_seconds` | number | `0.01` | Pause between the interpolated steps of a drag. |
-| `tuning.defaults.type_chunk_interval_seconds` | number | `0.005` | Pause between typed chunks. |
-| `tuning.defaults.focus_settle_seconds` | number | `0.03` | Pause after focusing a field, before typing into it. |
+| `tuning.defaults.click_interval` | number | `0.01` | Pause between successive synthesized clicks. |
+| `tuning.defaults.drag_step_interval` | number | `0.01` | Pause between the interpolated steps of a drag. |
+| `tuning.defaults.type_chunk_interval` | number | `0.005` | Pause between typed chunks. |
+| `tuning.defaults.focus_settle` | number | `0.03` | Pause after focusing a field, before typing into it. |
 | `tuning.defaults.stamped_image_side` | integer | `2048` | Longest side, in pixels, of a screenshot annotated with element labels. |
-| `tuning.defaults.accessibility_walk_budget_seconds` | number | `3.0` | How long one read of an app's accessibility tree may take. |
-| `tuning.defaults.accessibility_ready_probe_seconds` | number | `0.4` | How long the readiness poll may spend deciding whether an app's tree has built yet. Short on purpose: it runs repeatedly while an app is still starting, and it only has to see past the window chrome. |
-| `tuning.defaults.accessibility_prewarm_interval_seconds` | number | `0.4` | Pause between pre-warming the frontmost application's accessibility tree. |
-| `tuning.defaults.accessibility_ready_backoff_seconds` | number | `0.2` | Ceiling on the widening pause between accessibility readiness probes. |
+| `tuning.defaults.accessibility_walk_budget` | number | `3.0` | How long one read of an app's accessibility tree may take. |
+| `tuning.defaults.accessibility_ready_probe` | number | `0.4` | How long the readiness poll may spend deciding whether an app's tree has built yet. Short on purpose: it runs repeatedly while an app is still starting, and it only has to see past the window chrome. |
+| `tuning.defaults.accessibility_prewarm_interval` | number | `0.4` | Pause between pre-warming the frontmost application's accessibility tree. |
+| `tuning.defaults.accessibility_ready_backoff` | number | `0.2` | Ceiling on the widening pause between accessibility readiness probes. |
 
 
 ## Notes on individual tunables
 
 Eleven of them carry more reasoning than a table row holds. This is where it is written down.
 
-### `tuning.defaults.accessibility_walk_budget_seconds`
+### `tuning.defaults.accessibility_walk_budget`
 
 How long one read of an app's accessibility tree may take. It replaces a depth limit, which guarded the wrong quantity: a window six levels deep can take twice as long as one thirty-five levels deep, because the cost is how quickly the app answers, not how far down the answer is. Anything unread when this expires is reported as a region, so a short read says it is short.
 
@@ -342,12 +343,12 @@ It stays a cosine against the query, deliberately, now that the ranking is a fus
 
 How alike two screen queries must be, as a cosine in the retrieval model's own space, before a second one landing on the same element counts as the first asked again. Both halves are required: across 127 rephrasing sequences and 113 legitimate ones, likeness alone caught everything and cried wolf on 76% of honest work, while the same element reached from three wordings never cried wolf but missed 12% and noticed a call and a half later. Together: everything caught, 4% false, and noticed by the second query.
 
-### `tuning.defaults.frame_resolve_timeout_ms`
+### `tuning.defaults.frame_resolve_timeout`
 
 How long resolving a frame reference waits. Deliberately well below the action timeout: a frame that has gone waits out its budget rather than erroring, and listing every frame would otherwise stall on the one that left.
 
 
-### `tuning.defaults.session_idle_sleep_seconds`
+### `tuning.defaults.session_idle_sleep`
 
 How long a session keeps its process after its last turn before it sleeps. Five hours by default: long enough that a working day of on-and-off use never pays a wake, short enough that a machine left overnight is not holding interpreters for conversations nobody returned to.
 

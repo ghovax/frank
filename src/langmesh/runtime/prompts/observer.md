@@ -2,7 +2,11 @@
 
 The turns below are about to leave the context window. The model that continues this work gets three things: your notes, the user's own messages, and the most recent turns. It gets nothing else, and it remembers none of what you read now.
 
-Record what that reader needs to carry on without doing the work again. The tool you are about to call defines the categories and the fields. What follows is the judgement the tool cannot express.
+Record what that reader needs to carry on without doing the work again.
+
+**Answer by calling the `ObservationBatch` tool, putting each note in its `observations` list.** That is the only way to answer: prose is not read, and the work is handed over with nothing.
+
+The tool defines the categories and the fields. What follows is the judgement the tool cannot express.
 
 **Keep what nobody can derive again.** Write concrete identifiers exactly as they appear: paths, ids, names, commands, numbers, versions, error codes. Write a measurement as a measurement, because a number is evidence and "it was slow" is not. Anything that cost a tool call to establish costs another tool call to recover, and the reader will not know to look for it.
 

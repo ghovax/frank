@@ -2,6 +2,8 @@
 
 The memory below grew large enough to deserve a rewrite. Write a smaller version. A model that resumes this work must not be able to tell it from the original.
 
+**Answer by calling the `ObservationBatch` tool, putting the rewritten memory in its `observations` list.** That is the only way to answer: prose is not read, and the memory stays as it was.
+
 - **Collapse superseded state into its final form.** Three entries that track a value which changed twice become one entry that states the value now. Keep the history only where how it got there is itself the finding.
 - **Merge entries that say one thing between them.** Keep the merged entry as specific as its most specific part. To merge is not to generalise: two exact paths do not become "several files".
 - **Drop what no longer bears on the work.** A detail that mattered to a settled question, and cannot come up again, is finished.

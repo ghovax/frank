@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 
 from langmesh.base.message_content import forget_carried_reasoning
-from langmesh.base.tuning import count_tokens
+from langmesh.base.tuning import Tunable, active_tuning, count_tokens
 from langmesh.runtime.internals import ObservationBatch, conversation_tokens, message_tokens
 from langmesh.runtime.turn_events import CompactionDone, CompactionStarted, TurnEvent
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
@@ -34,16 +34,26 @@ class _CompactsContext:
         return None
 
     async def _emit_observations(self, request: list) -> list[dict]:
-        """Run one Observer or Reflector call and read its structured output from the tool call it was forced to make."""
-        model = self._llm.bind_tools([ObservationBatch], tool_choice="required")
-        response = await model.ainvoke(request)
-        if response is None or not response.tool_calls:
-            return []
-        try:
-            batch = ObservationBatch.model_validate(response.tool_calls[0]["args"])
-        except ValidationError:
-            return []
-        return [observation.model_dump() for observation in batch.observations]
+        """Run one Observer or Reflector call and read its structured output from the tool call it makes."""
+        # The tool is offered and the prompt insists on it: forcing it, a thinking model behind a gateway refuses.
+        model = self._llm.bind_tools([ObservationBatch], tool_choice="auto")
+        attempts = active_tuning().amount(Tunable.compaction_attempts)
+        for attempt in range(1, attempts + 1):
+            try:
+                response = await model.ainvoke(request)
+            except Exception:  # noqa: BLE001 — one dropped call is not the end of the fold
+                logger.warning("the observer could not be reached (attempt %d of %d)", attempt, attempts, exc_info=True)
+                continue
+            if response is None or not response.tool_calls:
+                logger.warning("the observer answered without recording anything (attempt %d of %d)", attempt, attempts)
+                continue
+            try:
+                batch = ObservationBatch.model_validate(response.tool_calls[0]["args"])
+            except ValidationError:
+                logger.warning("the observer's record did not fit its schema (attempt %d of %d)", attempt, attempts, exc_info=True)
+                continue
+            return [observation.model_dump() for observation in batch.observations]
+        return []
 
     def _observations_of(self, message: SystemMessage | None) -> list[dict]:
         raw = message.additional_kwargs.get("observations") if message else None
@@ -63,14 +73,20 @@ class _CompactsContext:
             return 0
         return max(0, window - int(window * self._global_configuration.compaction.output_reserve_fraction))
 
-    def _recent_working_set(self) -> int:
+    def _recent_working_set(self, reason: str = "automatic") -> int:
         """The tail kept verbatim rather than folded, as a share of the usable window so it scales with the model."""
-        return int(self._usable_context() * self._global_configuration.compaction.recent_working_set_fraction)
+        fraction = self._global_configuration.compaction.recent_working_set_fraction
+        budget = int(self._usable_context() * fraction)
+        if reason != "manual":
+            return budget
+        # Asked for deliberately, so the tail is a share of what is actually there: a conversation far
+        # short of the window still has something to fold, and the request does not quietly do nothing.
+        return min(budget, int(conversation_tokens(self._conversation) * fraction))
 
-    def _observer_boundary(self) -> int:
+    def _observer_boundary(self, reason: str = "automatic") -> int:
         """Index splitting the conversation into what is folded and what is kept, chosen by size rather than by turn count."""
         messages = self._conversation
-        budget = self._recent_working_set()
+        budget = self._recent_working_set(reason)
         start = len(messages)
         carried = 0
         for index in range(len(messages) - 1, -1, -1):
@@ -182,8 +198,16 @@ class _CompactsContext:
                 tokens_before=tokens_before, tokens_after=self._latest_context_tokens,
             )
             return
-        boundary = self._observer_boundary()
+        boundary = self._observer_boundary(reason)
         if boundary <= 0:
+            # Said rather than done in silence, so a deliberate request is answered either way.
+            held = len(self._conversation)
+            tokens = self._latest_context_tokens
+            yield CompactionStarted(reason=reason, messages_before=held, tokens_before=tokens)
+            yield CompactionDone(
+                reason=reason, ok=False, messages_before=held, messages_after=held,
+                tokens_before=tokens, tokens_after=tokens, log_tokens=0,
+            )
             return
         observation_message = self._observation_message()
         existing = self._observations_of(observation_message)
@@ -193,6 +217,14 @@ class _CompactsContext:
         recent = [message for message in self._conversation[boundary:] if message is not observation_message]
         if not older:
             # The boundary landed just past the log with nothing behind it, so there is nothing to fold.
+            # Said rather than done in silence, so a deliberate request is answered either way.
+            held = len(self._conversation)
+            tokens = self._latest_context_tokens
+            yield CompactionStarted(reason=reason, messages_before=held, tokens_before=tokens)
+            yield CompactionDone(
+                reason=reason, ok=False, messages_before=held, messages_after=held,
+                tokens_before=tokens, tokens_after=tokens, log_tokens=0,
+            )
             return
         tokens_before = self._latest_context_tokens
         messages_before = len(self._conversation)
