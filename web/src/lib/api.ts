@@ -687,6 +687,11 @@ export interface ProviderCredential {
   base_url: string;
 }
 
+export interface AttachmentSettings {
+  // The ceiling on an image inlined into a conversation, since a huge one rides in it forever.
+  inline_image_megabytes: number;
+}
+
 export interface CompactionSettings {
   // Reclaiming context on its own as it fills (manual compaction always works).
   automatic: boolean;
@@ -719,6 +724,7 @@ export interface Settings {
   dictation_enabled: boolean;
   worktree_strategy: "none" | "branch" | "worktree";
   compaction: CompactionSettings;
+  attachments: AttachmentSettings;
   providers: Record<string, ProviderCredential>;
 }
 
@@ -732,6 +738,8 @@ const DEFAULT_SANDBOX: SandboxSettings = {
   nice: 0,
 };
 
+const DEFAULT_ATTACHMENTS: AttachmentSettings = { inline_image_megabytes: 20 };
+
 const DEFAULT_COMPACTION: CompactionSettings = {
   automatic: false,
   reclaim_at_fraction: 0.85,
@@ -743,6 +751,15 @@ const DEFAULT_COMPACTION: CompactionSettings = {
 // Persist the context-reclaiming settings (automatic on/off, pruning, and the thresholds).
 export async function updateCompactionSettings(changes: Partial<CompactionSettings>): Promise<void> {
   await apiFetch(`/settings/compaction`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
+}
+
+// Persist the attachment limits, which each turn reads live.
+export async function updateAttachmentSettings(changes: Partial<AttachmentSettings>): Promise<void> {
+  await apiFetch(`/settings/attachments`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(changes),
@@ -999,7 +1016,7 @@ export async function savePreferences(changes: Partial<InterfacePreferences>): P
 export async function fetchSettings(): Promise<Settings> {
   const response = await apiFetch(`/settings`);
   if (!response.ok) {
-    return { permission_mode: "ask", exa_api_key: "", composio_api_key: "", jina_api_key: "", firecrawl_api_key: "", web_fetch_proxy_url: "", sandbox: DEFAULT_SANDBOX, sandbox_backend: { backend: "", detail: "" }, user_context_enabled: false, computer_control_enabled: false, toolbox_enabled: false, toolbox_available: false, dictation_enabled: false, worktree_strategy: "none", compaction: DEFAULT_COMPACTION, providers: {} };
+    return { permission_mode: "ask", exa_api_key: "", composio_api_key: "", jina_api_key: "", firecrawl_api_key: "", web_fetch_proxy_url: "", sandbox: DEFAULT_SANDBOX, sandbox_backend: { backend: "", detail: "" }, user_context_enabled: false, computer_control_enabled: false, toolbox_enabled: false, toolbox_available: false, dictation_enabled: false, worktree_strategy: "none", compaction: DEFAULT_COMPACTION, attachments: DEFAULT_ATTACHMENTS, providers: {} };
   }
   return (await response.json()) as Settings;
 }

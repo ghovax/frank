@@ -475,6 +475,7 @@ class _TurnRunner:
             model_identifier = runtime.effective_model_identifier if runtime is not None else ""
             self._turn_input, images_not_inlined = compose_turn_input(
                 self._user_text, self._structured_payloads, model_identifier,
+                runtime.inline_image_bytes if runtime is not None else 0,
             )
             self._turn_has_images = isinstance(self._turn_input, list)
             if images_not_inlined:

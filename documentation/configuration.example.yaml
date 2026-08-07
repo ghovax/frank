@@ -47,6 +47,12 @@ firecrawl:
 web_fetch:
   # Route page fetches through a proxy — for a site that refuses this machine's address.
   proxy_url: ""
+  # How long one reader engine is given before the cascade moves on to the next.
+  timeout_seconds: 30
+  # How long a download is given, which is longer because it carries the whole file.
+  download_timeout_seconds: 120
+  # Below this a page is a wall or a stub rather than the content, so the next engine is tried.
+  minimum_useful_characters: 64
 
 
 # What a session may do
@@ -121,14 +127,18 @@ compaction:
   # When to fold. Late on purpose: a fold rewrites the conversation, which throws away the prompt
   # cache the provider was holding, and held context is cheap by comparison while that cache lasts.
   reclaim_at_fraction: 0.85
-  # When the observation log has itself grown large enough to be worth condensing.
-  condense_log_at_fraction: 0.3
   # Held back for the answer the model is about to write. Every other fraction here is a share of
   # what is left after it.
   output_reserve_fraction: 0.1
   # How much recent conversation stays verbatim. Tokens rather than turns, because an unattended
   # run is one instruction and several hundred tool results.
   recent_working_set_fraction: 0.25
+
+# What a file the person attaches may cost the conversation it rides in
+attachments:
+  # The ceiling on an image inlined for a vision model. Above it the path and metadata still reach
+  # the model, but the pixels do not — a huge image would otherwise ride in the conversation forever.
+  inline_image_megabytes: 20
 
 # An opt-in snapshot of this machine and its habits, offered to the agent at the start of a
 # session. Off by default: it is about you, not about the code.

@@ -1,0 +1,1 @@
+There are {{ count }} attached images to this message, but the model {{ model }} does not advertise vision support, so the file metadata and path reached the model but the pixels were not inlined. Configure a vision-capable model for this agent if it needs to look at the image itself, or find some other way.

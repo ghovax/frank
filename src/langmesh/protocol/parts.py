@@ -8,6 +8,7 @@ from typing import Optional
 
 from a2a.types import DataPart, FilePart, Part, TextPart
 
+from langmesh.base.configuration import PromptLoader
 from langmesh.base.message_content import content_block_metadata
 from langmesh.base.models import find_model
 from langmesh.base.paths import uploads_directory
@@ -64,8 +65,6 @@ def _structured_data_payloads(message) -> list[dict]:
 
 # Attachments with this mime prefix are viewable by a vision model and so are inlined as image blocks.
 _INLINE_IMAGE_MIME_PREFIX = "image/"
-# A generous ceiling on an inlined image, since a huge one would blow up the persisted conversation.
-_MAXIMUM_INLINE_IMAGE_BYTES = 20 * 1024 * 1024
 
 
 def _image_attachments(structured_payloads: list[dict]) -> list[dict]:
@@ -103,20 +102,21 @@ def _model_supports_vision(model_identifier: str) -> bool:
     return model.vision
 
 
+#: What a notice says, read from `notices/*.md` so the wording is edited as prose rather than as code.
+_NOTICES = PromptLoader(Path(__file__).parent / "notices")
+
+
 def _attachment_warning_event(image_count: int, model_identifier: str) -> WarningEvent:
-    plural = "s" if image_count != 1 else ""
+    """The notice a person reads when their image could not be shown to the model, worded in its own files."""
+    said = {"count": str(image_count), "model": model_identifier or "The session model"}
     return WarningEvent(
         code="image_metadata_only",
-        title="Image attached as metadata only",
-        message=(
-            f"{image_count} image{plural} attached, but {model_identifier or 'the session model'} "
-            "does not advertise vision support. The file metadata and path were provided to the model, "
-            "but the image pixels were not inlined. Configure a vision-capable model for this agent if it needs to inspect the image directly."
-        ),
+        title=_NOTICES.load("image_metadata_only_title", said).strip(),
+        message=_NOTICES.load("image_metadata_only", said).strip(),
     )
 
 
-def _image_content_block(attachment: dict) -> Optional[dict]:
+def _image_content_block(attachment: dict, inline_image_bytes: int) -> Optional[dict]:
     """An image content block built from a stored attachment, or `None` when it is missing or too large."""
     path = str(attachment.get("path") or "")
     if not path:
@@ -126,7 +126,7 @@ def _image_content_block(attachment: dict) -> Optional[dict]:
         raw = Path(path).read_bytes()
     except OSError:
         return None
-    if len(raw) > _MAXIMUM_INLINE_IMAGE_BYTES:
+    if len(raw) > inline_image_bytes:
         return None
     encoded = base64.b64encode(raw).decode("ascii")
     return {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{encoded}"}}
@@ -135,7 +135,7 @@ def _image_content_block(attachment: dict) -> Optional[dict]:
 
 
 def compose_turn_input(
-    user_text: str, structured_payloads: list[dict], model_identifier: str,
+    user_text: str, structured_payloads: list[dict], model_identifier: str, inline_image_bytes: int,
 ) -> tuple[object, int]:
     """What the model reads for a turn carrying attachments, and how many images were left out."""
     # The metadata always rides along as text, so the model can act on the files whether or not it can see them.
@@ -145,7 +145,7 @@ def compose_turn_input(
         return text_payload, 0
     if not _model_supports_vision(model_identifier):
         return text_payload, len(images)
-    blocks = [block for image in images if (block := _image_content_block(image)) is not None]
+    blocks = [block for image in images if (block := _image_content_block(image, inline_image_bytes)) is not None]
     if not blocks:
         return text_payload, 0
     return [{"type": "text", "text": text_payload}, *blocks], 0
@@ -190,32 +190,14 @@ def _work_habits_acknowledgement_parts(job_id: str) -> tuple[Part, Part]:
     )
 
 
-# Fields addressed to the model rather than to the transcript, stripped from what the client renders.
-_MODEL_ONLY_RESULT_KEYS = frozenset({"hint", "note"})
-
-# Per-tool heavy payloads the interface summarizes, which the model still reads from the conversation.
-_HEAVY_RESULT_KEYS: dict[str, frozenset[str]] = {
-    "search_code": frozenset({"matches"}),
-    "read_file": frozenset({"content"}),
-}
-
-
-def _project_display(tool_name: str, result: object) -> object:
-    """Trim a tool result down to the view the client renders."""
-    if not isinstance(result, dict):
-        return result
-    drop = _MODEL_ONLY_RESULT_KEYS | _HEAVY_RESULT_KEYS.get(tool_name, frozenset())
-    return {key: value for key, value in result.items() if key not in drop}
-
-
 def _tool_result_part(tool_name: str, tool_call_id: str, result: object, status: str) -> Part:
-    """The unified tool-result wire event, whose `display` is the projected payload the interface renders."""
+    """The unified tool-result wire event, whose `display` is the result the interface renders."""
     record = result if isinstance(result, dict) else {}
     return _event_part(ToolResultEvent(
         tool_name=tool_name,
         tool_call_id=tool_call_id,
         status=ToolStatus(status),
         code=record.get("code"),
-        display=_project_display(tool_name, result),
+        display=result,
         metadata=ToolMetadata(tool_name=tool_name, tool_call_id=tool_call_id),
     ))

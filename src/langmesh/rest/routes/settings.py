@@ -25,6 +25,7 @@ from langmesh.base.subscription import (
 from langmesh.base.providers import PROVIDERS
 import asyncio
 from langmesh.protocol.dtos import (
+    AttachmentsUpdateRequest,
     CompactionUpdateRequest,
     ComputerControlUpdateRequest,
     SettingValueRequest,
@@ -300,6 +301,7 @@ async def get_settings():
         "sandbox_backend": _confinement.probe(),
         "worktree_strategy": state.global_configuration.workspace.strategy,
         "compaction": state.global_configuration.compaction.model_dump(),
+        "attachments": state.global_configuration.attachments.model_dump(),
         "user_context_enabled": state.global_configuration.user_context.enabled,
         "computer_control_enabled": state.global_configuration.computer_control.enabled,
         "toolbox_enabled": state.global_configuration.toolbox.enabled,
@@ -508,6 +510,19 @@ async def update_toolbox(request: ToolboxUpdateRequest):
         await state.reset_runtimes()
     _publish_broadcast({"type": "settings_changed"})
     return {"status": "saved", "toolbox_enabled": state.global_configuration.toolbox.enabled}
+
+
+@router.post("/settings/attachments")
+async def update_attachments(request: AttachmentsUpdateRequest):
+    """Persist and apply the attachment limits, which each turn reads live and so needs no runtime reset."""
+    assert state.global_configuration is not None
+    changes = request.model_dump(exclude_none=True)
+    if changes:
+        async with state.configuration_lock:
+            await _persist_configuration(attachments=changes)
+            state.global_configuration.attachments = state.global_configuration.attachments.model_copy(update=changes)
+    _publish_broadcast({"type": "settings_changed"})
+    return {"status": "saved", "attachments": state.global_configuration.attachments.model_dump()}
 
 
 @router.post("/settings/compaction")

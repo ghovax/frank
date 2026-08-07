@@ -188,9 +188,14 @@ class FirecrawlConfiguration(Section):
 
 
 class WebFetchConfiguration(Section):
-    """Fetching a page directly, for sites that refuse the reader engines."""
+    """Fetching a page, through the reader engines and then directly for sites that refuse them."""
 
     proxy_url: str = Field("")
+    # How long one engine is given before the cascade moves on, and how long a download is given.
+    timeout_seconds: int = Field(30)
+    download_timeout_seconds: int = Field(120)
+    # Below this a page is a wall or a stub rather than the content, so the next engine is tried.
+    minimum_useful_characters: int = Field(64)
 
     @property
     def effective_proxy_url(self) -> str:
@@ -296,6 +301,17 @@ class CompactionConfiguration(Section):
     output_reserve_fraction: float = Field(0.1)
     recent_working_set_fraction: float = Field(0.25)
     verbatim_user_fraction: float = Field(0.1)
+
+
+class AttachmentsConfiguration(Section):
+    """What a file the person attaches may cost the conversation it rides in."""
+
+    # A generous ceiling, since a huge image would blow up the persisted conversation it is inlined into.
+    inline_image_megabytes: float = Field(20.0)
+
+    @property
+    def inline_image_bytes(self) -> int:
+        return max(0, int(self.inline_image_megabytes * 1024 * 1024))
 
 
 class ContextShareConfiguration(Section):
@@ -552,6 +568,7 @@ class Configuration(Section):
     sandbox: SandboxConfiguration = Field(default_factory=SandboxConfiguration)
     workspace: WorkspaceConfiguration = Field(default_factory=WorkspaceConfiguration)
     compaction: CompactionConfiguration = Field(default_factory=CompactionConfiguration)
+    attachments: AttachmentsConfiguration = Field(default_factory=AttachmentsConfiguration)
     user_context: UserContextConfiguration = Field(default_factory=UserContextConfiguration)
     computer_control: ComputerControlConfiguration = Field(default_factory=ComputerControlConfiguration)
     toolbox: ToolboxConfiguration = Field(default_factory=ToolboxConfiguration)

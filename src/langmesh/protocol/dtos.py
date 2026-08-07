@@ -131,6 +131,10 @@ class DictationUpdateRequest(BaseModel):
     enabled: bool
 
 
+class AttachmentsUpdateRequest(BaseModel):
+    inline_image_megabytes: float | None = None
+
+
 class CompactionUpdateRequest(BaseModel):
     """Observational-memory compaction settings. Only provided fields are changed."""
     automatic: bool | None = None
