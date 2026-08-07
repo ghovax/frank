@@ -1,3 +1,3 @@
-Every finding worth carrying out of these turns.
+Every finding worth carrying out of these turns, and nothing else.
 
-Dozens is normal for a long stretch of work, not excessive. One entry per finding, not one per subject.
+What decides the number is how many distinct things were established, not the length of the exchange: one entry per finding, never one per subject and never one per turn. An exchange that established nothing durable contributes none, and one that established several contributes several.

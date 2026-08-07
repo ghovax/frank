@@ -4,48 +4,56 @@ The exchange below has just finished. Record what it established, now, while its
 
 **Answer by calling the `ObservationBatch` tool, putting each finding in its `observations` list.** That is the only way to answer: prose is not read, and the work is handed over with nothing.
 
-## The record is append-only
+Each field's own description says what belongs in it. This says what the task is.
 
-Entries already in it are immutable. You never edit one and you never delete one. Where a prior entry is now wrong, incomplete, or overtaken by what these turns established, write a **new** entry and name the old one's id in `supersedes`. The next reader sees only what nothing supersedes, but the whole chain is kept, so a correction has to be stated as one rather than made quietly.
+## What the record is
 
-Do not repeat an entry that already holds. Add what these turns added, and revise what these turns changed.
+Append-only. Nothing is edited and nothing is deleted; an entry these turns proved wrong, incomplete or finished is replaced by a new one naming it, so a correction has to be stated as a correction rather than made quietly. The next reader sees only what nothing supersedes, and the chain is kept behind that.
 
-## How much to write
+So: add what these turns added, revise what these turns changed, leave alone what still holds. An entry repeating one that already holds adds nothing. An entry contradicting one without naming it leaves two live entries disagreeing, which is worse than either alone.
 
-**Dozens of entries is normal.** A long stretch of work establishes many things, and one entry per subject loses most of them. Write one entry per finding.
+## What counts as a finding
 
-**Every `detail` is two to three full sentences, never one clause.** Say what the thing is, how it came to be known, and what it means for whoever continues. An entry whose `detail` is as short as its `claim` has failed this task.
+Write one entry per finding. What decides the number is how many distinct things these turns established — not how long they were, not how many turns they took, and not a count you are aiming for. One entry per subject loses most of them; one entry per turn invents them.
 
-**`claim` is judged alone.** A later pass sees only the claim line when deciding whether an entry still holds, so it must stand without its detail.
+**One finding is one entry.** A result and the command that produced it are one entry, not a `fact` and an `artifact`. A failure and the fact that it is unresolved are one entry, not a `failure` and an `open`. Split them and the record holds half-findings whose parts have to be reassembled by somebody who never saw the turns.
 
-**`standing` is a fact about your knowledge, not decoration.** `verified` means you saw the proof. `reported` means something claimed it and you did not check. `inferred` means you concluded it. Something that ran without an error is `reported`, and a number you did not watch being measured is `reported`.
+Keep:
 
-**`evidence` names the proof**: the path, the command, the output, the message. Leave it empty only where genuinely nothing establishes the entry.
-
-## What to keep
-
-- Concrete identifiers exactly as they appear: paths, ids, names, commands, numbers, versions, error codes. A measurement stays a measurement, because a number is evidence and "it was slow" is not.
-- What was ruled out and how it failed. A failure costs as much to establish as a success, and without it the next reader tries it again and reads the second failure as new information.
+- Concrete identifiers exactly as they appear: paths, ids, names, commands, numbers, versions, error codes.
+- What was ruled out and how it failed, because a failure costs as much to establish as a success and without it the next reader tries it again.
 - The reasoning that led to a decision, not only the decision itself.
 - What is still open, and the next concrete step it implies.
 
-Write state, not narration: "The port is read from `runtime_directory()/port`" beats "I looked for where the port comes from".
+Write state, not narration: "The port is read from `runtime_directory()/port`" beats "I looked for where the port comes from". Write in English whatever language the conversation was held in, because a record in two languages cannot be checked against itself for what it already holds.
 
 ## What is not a finding
 
-The record is append-only, so an entry written needlessly is carried for the rest of the conversation. Before writing one, ask whether somebody resuming this work would be worse off without it. These never pass that test:
+An entry written needlessly is carried for the rest of the conversation. Before writing one, ask whether somebody resuming this work would be worse off without it. These never pass that test:
 
-- **Anything about yourself.** That you answered, complied, followed an instruction, chose a tool, or read a reminder. Your own conduct is not a finding about the work.
-- **Furniture you happened to see.** A file you did not act on, a directory listing, a size or a timestamp that nothing turned on. Noticing something is not establishing it.
-- **The obvious restated.** That a file exists because you just read it, or that a command ran because you just ran it. The finding is what it *said*, not that it happened.
-- **What the person asked for.** Their instructions are kept in their own record, and duplicating them here lets the two drift apart.
+- **Anything about yourself** — that you answered, complied, followed an instruction, chose a tool or read a reminder — because your own conduct is not a finding about the work.
+- **Furniture you happened to see** — a file you did not act on, a directory listing, a size or timestamp nothing turned on — because noticing something is not establishing it.
+- **The obvious restated**, such as that a file exists because you just read it, since the finding is what it *said* rather than that it happened.
+- **What the person asked for**, since a rule they stated — a language to write in, a library not to use, a file not to touch — belongs in their own record below, however much it reads like a constraint, while what belongs here is a limit the environment imposes rather than one they imposed.
+- **The content of an answer** — what a search returned, what a page said, the figures in a report you summarised — because that is the work's output, which they have already read, rather than knowledge about the work.
+- **The record itself** — that a request was fulfilled, that an earlier entry no longer applies, that something is resolved — so supersede the entry instead, because an entry about the ledger tells the next reader nothing about the work.
 
-An exchange that established nothing durable deserves no entries at all, and returning none is the right answer. Where a real detail is borderline, keep it: a redundant finding costs one entry, and a lost one costs the work that produced it.
+Record instead what the *doing* established: that a source is reachable, that a tool behaves a certain way, that a number had to be derived rather than looked up. A headline is not a finding, though the fact that it could be fetched at all may be.
+
+An exchange that established nothing durable deserves no entries, and returning none is the right answer. Where a real detail is borderline, keep it: a redundant finding costs one entry, and a lost one costs the work that produced it.
 
 ## The record so far
 
-Each entry is shown by its id, its claim, and `learned` — when it was recorded. The time is given to you; never write one yourself. Name an id in `supersedes` to revise it.
+Read it before you write. `learned` is when each entry was recorded; that time is given to you, and you never write one yourself.
 
 ```jsonl
 {{ existing_observations }}
+```
+
+## What they have already asked for
+
+Held in the other record and not yours to restate. Shown so you can tell an instruction of theirs from a finding of the work's.
+
+```jsonl
+{{ existing_directives }}
 ```

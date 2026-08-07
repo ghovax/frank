@@ -52,7 +52,7 @@ class _CompactsContext:
         return None
 
     async def _emit_observations(self, request: list) -> list:
-        """Run one Observer or Reflector call and read its entries from the tool call it makes."""
+        """Run one observer call and read its entries from the tool call it makes."""
         batch = await self._emit_batch(ObservationBatch, request, "observer")
         return list(batch.observations) if batch else []
 
@@ -188,9 +188,10 @@ class _CompactsContext:
         recorded = await self._ledger("observations")
         if any(entry.get("exchange") == tag for entry in recorded):
             return                          # already observed: a turn can end more than once
+        asked = await self._ledger("directives")
         observations, directives = await asyncio.gather(
-            self._fold_into_observations(exchange, recorded),
-            self._fold_into_directives(exchange, await self._ledger("directives")),
+            self._fold_into_observations(exchange, recorded, asked),
+            self._fold_into_directives(exchange, asked),
         )
         await self._append_to_ledgers(
             [{**entry, "exchange": tag} for entry in observations],
@@ -233,10 +234,13 @@ class _CompactsContext:
             except Exception:  # noqa: BLE001 — the fold has already happened; losing the durable copy must not undo it
                 logger.warning("could not append to the %s ledger", ledger, exc_info=True)
 
-    async def _fold_into_observations(self, older: list, existing: list[dict]) -> list[dict]:
-        """New entries from these messages, with the record shown so it does not write what it already holds.""",
-        shown = lines(self._claims(self._live(existing)))
-        instructions = self._prompt_loader.load("observer", {"existing_observations": shown})
+    async def _fold_into_observations(self, older: list, existing: list[dict], asked: list[dict]) -> list[dict]:
+        """New entries from these messages, with both records shown so it writes neither what it nor the other holds."""
+        instructions = self._prompt_loader.load("observer", {
+            "existing_observations": lines(self._claims(self._live(existing))),
+            # The other ledger too: an entry cannot be left to a record it was never shown.
+            "existing_directives": lines(self._claims(self._live(asked))),
+        })
         entries = await self._emit_observations([
             SystemMessage(content=instructions),
             *older,
@@ -261,21 +265,9 @@ class _CompactsContext:
         )
         return self._identified(getattr(entries, "directives", []) if entries else [])
 
-    async def _reflect(self, observations: list[dict]) -> list[dict]:
-        """Merge and condense the structured memory, keeping the originals if reflection returns nothing."""
-        goals = [entry for entry in observations if entry.get("category") == "goal"]
-        rest = [entry for entry in observations if entry.get("category") != "goal"]
-        if not rest:
-            return observations
-        reflected = await self._emit_observations([
-            SystemMessage(content=self._prompt_loader.load("reflector", {"observations": lines(rest)})),
-            HumanMessage(content=self._prompt_loader.load("reflect_now", {})),
-        ])
-        return [*goals, *reflected] if reflected else observations
-
     async def compact(self, reason: str = "manual") -> AsyncIterator[TurnEvent]:
         """Reclaim the window by dropping what is past the tail, which the exchange records have already captured."""
-        # A supplied strategy replaces the Observer and Reflector pass entirely, while the events around it stay the runtime's.
+        # A supplied strategy replaces the recording entirely, while the events around it stay the runtime's.
         if self._compaction is not None:
             state = self._compaction_state(reason)
             messages_before = len(self._conversation)

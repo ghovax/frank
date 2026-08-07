@@ -11,7 +11,7 @@ from langmesh.base.providers import resolve_api_key
 from langmesh.base.tuning import active_tuning, clip_to_tokens, count_tokens, Tunable
 from langchain_core.messages import AIMessageChunk
 from pathlib import Path
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Any, AsyncIterator, Literal, Optional
 import json
 from langmesh.base.serialization import compact, content_address
@@ -21,6 +21,8 @@ from langmesh.base.serialization import compact, content_address
 ENTRY_CATEGORY = Literal["fact", "decision", "constraint", "failure", "artifact", "open"]
 #: How well an entry is established, stated rather than left for the reader to guess.
 ENTRY_STANDING = Literal["verified", "reported", "inferred"]
+#: What a superseding entry does to what it supersedes, so a chain reads as changes and not as a pile of claims.
+ENTRY_REVISION = Literal["", "correction", "refinement", "merge", "retraction"]
 
 #: What each field means, written where prose belongs rather than wedged into the model.
 _FIELDS = PromptLoader(Path(__file__).parent / "descriptions")
@@ -43,10 +45,22 @@ class Observation(BaseModel):
     evidence: str = Field(default="", description=_says("observation_evidence"))
     standing: ENTRY_STANDING = Field(description=_says("observation_standing"))
     supersedes: list[str] = Field(default_factory=list, description=_says("observation_supersedes"))
+    revision: ENTRY_REVISION = Field(default="", description=_says("entry_revision"))
+
+    @model_validator(mode="after")
+    def _drop_a_dangling_revision(self):
+        return _only_with_a_parent(self)
 
     def identity(self) -> str:
         """Addressed by what it says, not by when it was written, so the same finding twice is one entry."""
-        return content_address(self.model_dump(exclude={"supersedes"}))
+        return content_address(self.model_dump(exclude={"supersedes", "revision"}))
+
+
+def _only_with_a_parent(entry):
+    """A revision kind names what an entry does to another; with nothing superseded there is no such relation."""
+    if not entry.supersedes:
+        entry.revision = ""
+    return entry
 
 
 class ObservationBatch(BaseModel):
@@ -58,14 +72,21 @@ class ObservationBatch(BaseModel):
 class Directive(BaseModel):
     """Something the person asked for, kept because an instruction outlives the turn that carried it."""
 
-    kind: Literal["requirement", "correction", "preference"] = Field(description=_says("directive_kind"))
+    kind: Literal["requirement", "preference"] = Field(description=_says("directive_kind"))
     summary: str = Field(description=_says("directive_summary"))
+    detail: str = Field(default="", description=_says("directive_detail"))
+    occasion: str = Field(default="", description=_says("directive_occasion"))
     still_binding: bool = Field(default=True, description=_says("directive_still_binding"))
     supersedes: list[str] = Field(default_factory=list, description=_says("directive_supersedes"))
+    revision: ENTRY_REVISION = Field(default="", description=_says("entry_revision"))
+
+    @model_validator(mode="after")
+    def _drop_a_dangling_revision(self):
+        return _only_with_a_parent(self)
 
     def identity(self) -> str:
         """Addressed by the instruction itself; whether it still binds is state, and state is not identity."""
-        return content_address(self.model_dump(exclude={"supersedes", "still_binding"}))
+        return content_address(self.model_dump(exclude={"supersedes", "still_binding", "revision"}))
 
 
 class DirectiveBatch(BaseModel):
