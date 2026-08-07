@@ -3,11 +3,12 @@
 import { Box, Flex } from "@chakra-ui/react";
 import type { ReactNode } from "react";
 import { useTranslations } from "next-intl";
-import { getToolCallDisplay, requestedAccess, type ToolDisplayTranslator } from "@/lib/tool-display";
+import { getToolCallDisplay } from "@/lib/glyphs";
+import { requestedAccess } from "@shared/tools";
 import { callMayMutate } from "@shared/tools";
 import { ToolCallLabel } from "./tool-label";
 import type { ToolEvent, ToolEventStatus } from "@/lib/tool-event";
-import { hasBackgroundJobId, toolSettled } from "@/lib/tool-event";
+import { hasBackgroundJobId } from "@/lib/tool-event";
 import { ToolCallView, ToolResultView } from "./tool-views";
 import { FieldScope } from "./ui/display";
 import { Pill } from "./ui/pill";
@@ -140,8 +141,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, actio
   const { collapsible } = toolCallDetail(name, toolArguments, result, status);
   // A running call whose interim result says the work moved to the background.
   const background = status === "running" && hasBackgroundJobId(result);
-  const toolDisplayTranslation = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
-  const { icon: Icon, iconColor } = getToolCallDisplay(name, toolArguments, toolDisplayTranslation);
+  const { icon: Icon, iconColor } = getToolCallDisplay(name, toolArguments);
 
   return (
     <DisclosureRow
@@ -151,7 +151,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, actio
       icon={<Box color={iconColor} display="flex" alignItems="center"><Icon /></Box>}
       title={
         <DisclosureLabel shimmer={status === "running"}>
-          <ToolCallLabel name={name} args={toolArguments} settled={toolSettled({ result, status })} />
+          <ToolCallLabel name={name} args={toolArguments} />
         </DisclosureLabel>
       }
       badges={

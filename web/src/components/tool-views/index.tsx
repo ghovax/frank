@@ -2,30 +2,16 @@
 
 import { PERMISSION_MODES } from "@shared/controls";
 import { useAgentName } from "@/lib/agent-names";
-import { Alert, Box, Button, Flex, IconButton, Image, Link, Text, Textarea } from "@chakra-ui/react";
-import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
+import { Alert, Box, Button, Flex, Link, Text } from "@chakra-ui/react";
+import { useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
-import { LuAppWindow, LuCheck, LuExternalLink, LuImageOff, LuRotateCw, LuTrash2 } from "react-icons/lu";
+import { LuExternalLink } from "react-icons/lu";
 import { openAccessibilitySettings, openBrowserRemoteDebugging } from "@/lib/api";
 import { MarkdownContent } from "../markdown-content";
-import { Tooltip } from "../ui/tooltip";
-import { Frame } from "../ui/semantic";
-import { CenteredNumber } from "../ui/centered-number";
-import { PanelEmptyState } from "../ui/panel";
 import { RelativeTime } from "../ui/relative-time";
-import {
-  Card,
-  EmptyHint,
-  Field,
-  FieldList,
-  InlineField,
-  Mono,
-  MonoBlock,
-  MonoList,
-  ProseList,
-} from "../ui/display";
+import { Card, EmptyHint, Field, FieldList, InlineField, Mono, MonoBlock, MonoList, ProseList } from "../ui/display";
 import { asArray, asRecord, asString } from "@/lib/coerce";
-import { declaredNonMutating, requestedAccess } from "@/lib/tool-display";
+import { declaredNonMutating, requestedAccess } from "@shared/tools";
 import { Pill } from "../ui/pill";
 import { STATUS_PALETTE, taskLifecycleKind } from "@/lib/status";
 import { hasBackgroundJobId, type ToolEventStatus } from "@/lib/tool-event";
@@ -84,18 +70,6 @@ function SearchWebCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-function SearchCodeCallView({ args }: { args: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  return (
-    <FieldList>
-      <Field label={translation("query")}>
-        <Text fontSize="xs">{asString(args.query)}</Text>
-      </Field>
-    </FieldList>
-  );
-}
-
-// `control_screen` runs a script against a surface, so the script gets a full code block with the surface above it.
 function ControlScreenCallView({ args }: { args: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   return (
@@ -285,44 +259,6 @@ const FIELD_LABEL_KEYS: Record<string, string> = {
   answers: "answers",
 };
 
-function ReadFileCallView({ args }: { args: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  return (
-    <FieldList>
-      <InlineField label={translation("filePath")}>
-        <Mono>{asString(args.file_path)}</Mono>
-      </InlineField>
-      {args.offset != null && <InlineField label={translation("offset")}>{asString(args.offset)}</InlineField>}
-      {args.limit != null && <InlineField label={translation("limit")}>{asString(args.limit)}</InlineField>}
-    </FieldList>
-  );
-}
-
-function EditFileCallView({ args }: { args: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  return (
-    <FieldList>
-      <InlineField label={translation("filePath")}>
-        <Mono>{asString(args.file_path)}</Mono>
-      </InlineField>
-    </FieldList>
-  );
-}
-
-function WriteFileCallView({ args }: { args: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  return (
-    <FieldList>
-      <InlineField label={translation("filePath")}>
-        <Mono>{asString(args.file_path)}</Mono>
-      </InlineField>
-      <Field label={translation("content")}>
-        <MonoBlock>{asString(args.content)}</MonoBlock>
-      </Field>
-    </FieldList>
-  );
-}
-
 function FetchUrlCallView({ args }: { args: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   return (
@@ -382,63 +318,6 @@ function AskUserCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-function ReadFileResultView({ data }: { data: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  // The call already shows the file path, so the result only confirms the line range that was read.
-  const range = [asString(data.start_line), asString(data.end_line)].filter(Boolean).join("–");
-  const total = asString(data.total_lines);
-  if (!range) return null;
-  return (
-    <FieldList>
-      <InlineField label={translation("lines")}>
-        {total ? translation("linesOfTotal", { range, total }) : range}
-      </InlineField>
-    </FieldList>
-  );
-}
-
-// One code match: file and line range with language and score alongside, over the matched snippet.
-function CodeMatchCard({ match }: { match: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  const file = asString(match.file);
-  const range = [asString(match.start_line), asString(match.end_line)].filter(Boolean).join("–");
-  const language = asString(match.language);
-  const score = asString(match.score);
-  const snippet = asString(match.snippet);
-  return (
-    <Card>
-      <Flex align="center" gap={2}>
-        <Mono flex={1} minW={0} truncate>{range ? `${file}:${range}` : file}</Mono>
-        {language && <Text fontSize="2xs" color="fg.subtle" flexShrink={0}>{language}</Text>}
-        {score && <Text fontSize="2xs" color="fg.subtle" flexShrink={0}>{translation("searchScore")} {score}</Text>}
-      </Flex>
-      {snippet && (
-        <Box mt={1}>
-          <MonoBlock>{snippet}</MonoBlock>
-        </Box>
-      )}
-    </Card>
-  );
-}
-
-// The query is already on the call card, so the result surfaces only the match count and the snippets.
-function SearchCodeResultView({ data }: { data: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  const matches = asArray(data.matches).map(asRecord);
-  if (matches.length === 0) return <EmptyHint>{translation("noResults")}</EmptyHint>;
-  return (
-    <FieldList>
-      <InlineField label={translation("count")}>{asString(data.count) || String(matches.length)}</InlineField>
-      <Field label={translation("matches")}>
-        <Flex direction="column" gap={1.5}>
-          {matches.map((match, index) => <CodeMatchCard key={index} match={match} />)}
-        </Flex>
-      </Field>
-    </FieldList>
-  );
-}
-
-// One line describing what an action changed: where it landed, then what moved, as elements rather than a sentence.
 function ChangeRow({ entry }: { entry: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   const where = asString(entry.name) || asString(entry.role) || asString(entry.id);
@@ -511,63 +390,6 @@ function ControlScreenResultView({ data }: { data: Record<string, unknown> }) {
       )}
     </FieldList>
   );
-}
-
-function FileEditResultView({ data }: { data: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  // Shared by edit_file and write_file. Path is on the call card.
-  const code = asString(data.code);
-  const diagnostic = asRecord(data.diagnostic);
-  const message = asString(data.message);
-
-  if (code === "edit_find_not_found" || code === "edit_find_near_miss" || code === "edit_find_not_unique") {
-    const occurrences = asString(data.occurrences);
-    return (
-      <FieldList>
-        <InlineField label={translation("match")}>
-          <Pill colorPalette="red">{code === "edit_find_not_unique" ? translation("notUnique") : translation("notFound")}</Pill>
-        </InlineField>
-        {code === "edit_find_not_unique" && occurrences && (
-          <InlineField label={translation("occurrences")}>{occurrences}</InlineField>
-        )}
-        {message && (
-          <Field label={translation("reason")}>
-            <Text fontSize="xs" color="fg.subtle">{message}</Text>
-          </Field>
-        )}
-      </FieldList>
-    );
-  }
-
-  if (code === "edit_failed_validation" && diagnostic.origin) {
-    const contextLines = asArray(diagnostic.context_snapshot).map(asString);
-    return (
-      <FieldList>
-        <InlineField label={translation("validation")}>
-          <Pill colorPalette="red">{translation("failed")}</Pill>
-        </InlineField>
-        <InlineField label={translation("origin")}>{asString(diagnostic.origin)}</InlineField>
-        <InlineField label={translation("language")}>{asString(diagnostic.language)}</InlineField>
-        {asString(diagnostic.line) && (
-          <InlineField label={translation("line")}>{asString(diagnostic.line)}:{asString(diagnostic.column)}</InlineField>
-        )}
-        <InlineField label={translation("error")}>{asString(diagnostic.message)}</InlineField>
-        {contextLines.length > 0 && (
-          <Field label={translation("context")}>
-            <MonoBlock maxH={32}>{contextLines.join("\n")}</MonoBlock>
-          </Field>
-        )}
-        {message && (
-          <Field label={translation("recovery")}>
-            <Text fontSize="xs" color="fg.subtle">{message}</Text>
-          </Field>
-        )}
-      </FieldList>
-    );
-  }
-
-  // Successful edit details stay collapsed, since the group's counters already carry the useful summary.
-  return null;
 }
 
 function FetchUrlResultView({ data }: { data: Record<string, unknown> }) {
@@ -878,14 +700,6 @@ export function ToolCallView({ name, args }: { name: string; args?: Record<strin
         return <WriteTasksCallView args={args} />;
       case "update_tasks":
         return <UpdateTasksCallView args={args} />;
-      case "read_file":
-        return <ReadFileCallView args={args} />;
-      case "edit_file":
-        return <EditFileCallView args={args} />;
-      case "write_file":
-        return <WriteFileCallView args={args} />;
-      case "search_code":
-        return <SearchCodeCallView args={args} />;
       case "control_screen":
         return <ControlScreenCallView args={args} />;
       case "fetch_url":
@@ -1093,40 +907,6 @@ function PermissionGrantAlert() {
   );
 }
 
-const IFRAME_SANDBOX_TOKENS = new Set([
-  "allow-downloads",
-  "allow-forms",
-  "allow-modals",
-  "allow-popups",
-  "allow-popups-to-escape-sandbox",
-  "allow-presentation",
-  "allow-same-origin",
-  "allow-scripts",
-]);
-
-function safeWebUrl(value: string): string {
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : "";
-  } catch {
-    // Not JSON. Returning null is this function's answer, not a failure.
-    return "";
-  }
-}
-
-function safeImageSource(value: string): string {
-  if (value.startsWith("data:image/")) return value;
-  return safeWebUrl(value);
-}
-
-function clamp(value: number, lower: number, upper: number): number {
-  return Math.min(upper, Math.max(lower, value));
-}
-
-// Zoom is relative to the fitted scale, so the floor is 1 and the image can never shrink below fitting.
-const MINIMUM_RELATIVE_IMAGE_ZOOM = 1;
-const MAXIMUM_RELATIVE_IMAGE_ZOOM = 5;
-
 function compactMcpContent(content: unknown): unknown {
   return asArray(content).map((entry) => {
     const record = asRecord(entry);
@@ -1203,10 +983,7 @@ export function ToolResultView({
       const message = asString(data.message);
       return message ? <EmptyHint>{message}</EmptyHint> : null;
     }
-    if (name === "read_file") return <ReadFileResultView data={data} />;
-    if (name === "search_code") return <SearchCodeResultView data={data} />;
     if (name === "control_screen") return <ControlScreenResultView data={data} />;
-    if (name === "edit_file" || name === "write_file") return <FileEditResultView data={data} />;
     if (name === "fetch_url") return <FetchUrlResultView data={data} />;
     if (name === "load_skill") return <LoadSkillResultView data={data} />;
     if (name === "ask_user") return <AskUserResultView data={data} />;

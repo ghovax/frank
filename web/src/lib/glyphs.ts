@@ -1,22 +1,20 @@
 import type { IconType } from "react-icons";
+
+import { toolCallDisplay, type GlyphName } from "@shared/tools";
 import {
-  LuBadgeCheck, LuBox, LuCircleAlert, LuCircleSlash, LuClock, LuCircleX, LuCopy, LuDownload, LuEye,
-  LuFilePen, LuFilePlus, LuFileText, LuFolder, LuGitBranch, LuGlobe, LuHand, LuHistory, LuListChecks,
-  LuMessageCircleQuestion, LuMic, LuMicOff, LuMoon, LuMousePointerClick, LuPlug, LuSearchCode,
+  LuBadgeCheck, LuBox, LuCircleAlert, LuCircleSlash, LuClock, LuCircleX, LuCopy, LuDownload,
+  LuFolder, LuGitBranch, LuGlobe, LuHand, LuHistory, LuListChecks,
+  LuMessageCircleQuestion, LuMic, LuMicOff, LuMoon, LuMousePointerClick, LuPlug,
   LuRadioTower, LuServer, LuSparkles, LuTarget, LuTerminal, LuUserRoundX, LuUsers, LuUserSearch,
   LuWrench, LuZap, LuUserPlus, LuSend, LuList, LuPlugZap, LuBoxes, LuBookOpen,
   LuSatelliteDish, LuSquareCheck, LuHardDriveDownload,
 } from "react-icons/lu";
 
 /** The one table turning a shared glyph name into something this client can draw. */
-export const GLYPHS: Record<string, IconType> = {
+export const GLYPHS: Record<GlyphName, IconType> = {
   "globe": LuGlobe,
   "terminal": LuTerminal,
-  "file-text": LuFileText,
-  "search-code": LuSearchCode,
   "mouse-pointer-click": LuMousePointerClick,
-  "file-pen": LuFilePen,
-  "file-plus": LuFilePlus,
   "download": LuDownload,
   "message-circle-question": LuMessageCircleQuestion,
   "target": LuTarget,
@@ -44,7 +42,6 @@ export const GLYPHS: Record<string, IconType> = {
   "moon": LuMoon,
   "hand": LuHand,
   "badge-check": LuBadgeCheck,
-  "eye": LuEye,
   "box": LuBox,
   "folder": LuFolder,
   "git-branch": LuGitBranch,
@@ -56,7 +53,29 @@ export const GLYPHS: Record<string, IconType> = {
   "mic-off": LuMicOff,
 };
 
-/** A glyph by name, falling back to the one that means "not a tool I know". */
-export function glyph(name: string | undefined): IconType {
+/** A glyph by name, falling back to the one that stands for a tool with no glyph of its own. */
+export function glyph(name: GlyphName | undefined): IconType {
   return (name && GLYPHS[name]) || LuWrench;
+}
+
+// One icon per concept for the whole interface, so two surfaces cannot pick different ones.
+export const CONCEPT_ICONS = {
+  /** A skill: something the agent knows how to do. */
+  skill: glyph("sparkles"),
+  /** MCP — a configured server, its tools, and every call into one. */
+  mcp: glyph("plug"),
+  /** A place this workspace can work in — a folder here, or one on an SSH host. */
+  environment: glyph("server"),
+} satisfies Record<string, IconType>;
+
+interface ToolDisplayInfo {
+  icon: IconType;
+  iconColor: string;
+  label: string;
+}
+
+/** What a tool call is called and which icon stands for it, for this client, over the shared deciding. */
+export function getToolCallDisplay(name: string, args: Record<string, unknown> | undefined): ToolDisplayInfo {
+  const display = toolCallDisplay(name, args);
+  return { icon: glyph(display.glyph), iconColor: display.tint, label: display.label };
 }

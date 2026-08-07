@@ -5,16 +5,14 @@ import { memo, useMemo, useState, type ReactNode } from "react";
 import { LuBrain } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { useTranslations } from "next-intl";
-import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-display";
-import { iconForFilePath } from "@/lib/file-icons";
+import { getToolCallDisplay } from "@/lib/glyphs";
 import { STATUS_ICON, STATUS_PALETTE, type StatusKind } from "@/lib/status";
-import { DiffStatBadge, RollingNumber } from "./rolling-number";
+import { RollingNumber } from "./rolling-number";
 import { ToolCallLabel } from "./tool-label";
 import { Pill } from "./ui/pill";
 import { DisclosureRow } from "./ui/disclosure-row";
-import { ActivityIcon } from "./ui/activity-icon";
 import type { ToolEvent } from "@/lib/tool-event";
-import { hasBackgroundJobId, toolSettled, toolStatus } from "@/lib/tool-event";
+import { hasBackgroundJobId, toolStatus } from "@/lib/tool-event";
 import { ToolCall, ToolCallDetail, ToolLocationBadge, ToolAccessBadges, collapsedHeadingLocation, toolCallDetail } from "./tool-call";
 
 // The grouped, collapsible run of contiguous tool calls, and the single source of truth for how a batch reads.
@@ -57,41 +55,6 @@ function paletteFromIconColor(iconColor: string): string {
   return iconColor.endsWith(".fg") ? iconColor.slice(0, -3) : "gray";
 }
 
-interface FileChange {
-  path: string;
-  additions: number;
-  deletions: number;
-}
-
-// File paths and diff stats from tool arguments, accumulated per file across a group's edits.
-function extractFileChanges(tools: ToolEvent[]): FileChange[] {
-  const changes = new Map<string, FileChange>();
-  for (const tool of tools) {
-    const filePath = tool.arguments?.file_path as string | undefined;
-    if (!filePath) continue;
-    const existing = changes.get(filePath) ?? {
-      path: filePath,
-      additions: 0,
-      deletions: 0,
-    };
-    if (tool.name === "edit_file") {
-      const oldStr = (tool.arguments?.old_string as string) ?? "";
-      const newStr = (tool.arguments?.new_string as string) ?? "";
-      const oldLines = oldStr.split("\n");
-      const newLines = newStr.split("\n");
-      const oldSet = new Set(oldLines);
-      const newSet = new Set(newLines);
-      existing.deletions += oldLines.filter((line) => !newSet.has(line)).length;
-      existing.additions += newLines.filter((line) => !oldSet.has(line)).length;
-    } else if (tool.name === "write_file") {
-      const content = (tool.arguments?.content as string) ?? "";
-      existing.additions += content.split("\n").length;
-    }
-    changes.set(filePath, existing);
-  }
-  return [...changes.values()];
-}
-
 interface ToolGroupProps {
   tools: ToolEvent[];
   // Keeps the group expanded after its calls complete, so the latest one stays open until the answer arrives.
@@ -103,7 +66,6 @@ export const ToolGroup = memo(function ToolGroup({
   keepOpen = false,
 }: ToolGroupProps) {
   const translation = useTranslations("ToolGroup");
-  const toolDisplayTranslation = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
   const backgroundCount = tools.filter(
     (tool) => toolStatus(tool.status) === "running" && hasBackgroundJobId(tool.result),
   ).length;
@@ -116,24 +78,21 @@ export const ToolGroup = memo(function ToolGroup({
   const [manualOverride, setManualOverride] = useState<boolean | null>(null);
   const bodyOpen = manualOverride ?? false;
 
-  // File changes for the heading, so a group of edits shows the changed file with its diff stat.
-  const fileChanges = useMemo(() => extractFileChanges(tools), [tools]);
-  const hasFileChanges = fileChanges.length > 0;
   // The left icon owns the latest call, so the tally counts only the earlier ones.
   const tally = useMemo(() => tallyTools(tools.slice(0, -1)), [tools]);
   // The status line shows the latest tool's own label, which says more than a static "working".
   const latestTool = tools[tools.length - 1];
   // The newest call has nothing to say yet, so the line follows the newest one that does and never empties.
   const labelledTool = useMemo(
-    () => [...tools].reverse().find((tool) => getToolCallDisplay(tool.name, tool.arguments, toolDisplayTranslation, toolSettled(tool)).label),
-    [tools, toolDisplayTranslation],
+    () => [...tools].reverse().find((tool) => getToolCallDisplay(tool.name, tool.arguments).label),
+    [tools],
   );
-  const headingDisplay = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments, toolDisplayTranslation, toolSettled(latestTool)) : null;
+  const headingDisplay = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments) : null;
   const HeadingIcon = headingDisplay?.icon ?? LuBrain;
   const headingIconColor = headingDisplay?.iconColor ?? "purple.fg";
   // Badge the collapsed heading when the batch touched a single remote place, since local is the implied default.
   const groupLocation = useMemo(() => collapsedHeadingLocation(tools.map((tool) => tool.arguments)), [tools]);
-  const latestLabel = labelledTool ? getToolCallDisplay(labelledTool.name, labelledTool.arguments, toolDisplayTranslation, toolSettled(labelledTool)).label : "";
+  const latestLabel = labelledTool ? getToolCallDisplay(labelledTool.name, labelledTool.arguments).label : "";
   // A tools-less group is a "thinking before acting" phase and owns the leading brain icon.
   const thinkingOnly = tools.length === 0;
   const headingText = latestLabel || (thinkingOnly ? translation("thinking") : active ? translation("working") : translation("actionsTaken"));
@@ -169,7 +128,7 @@ export const ToolGroup = memo(function ToolGroup({
           overflow="hidden"
           textOverflow="ellipsis"
         >
-          {labelledTool ? <ToolCallLabel name={labelledTool.name} args={labelledTool.arguments} settled={toolSettled(labelledTool)} /> : headingText}
+          {labelledTool ? <ToolCallLabel name={labelledTool.name} args={labelledTool.arguments} /> : headingText}
         </Text>
       </Box>
     </Box>
@@ -177,14 +136,14 @@ export const ToolGroup = memo(function ToolGroup({
 
   // The heading's chip cluster: tallies, file changes, the remote badge and status chips, all animated.
   const hasBadges = tally.order.length > 0 || statusChips.length > 0
-    || fileChanges.length > 0 || !!groupLocation || !!soleTool;
+    || !!groupLocation || !!soleTool;
   const badgeSlot = (
     <>
       {/* The write and access markers of a lone call move up to the heading rather than disappearing with its line. */}
       {soleTool ? <ToolAccessBadges name={soleTool.name} arguments={soleTool.arguments} /> : null}
       <AnimatePresence initial={false}>
         {tally.order.map((name) => {
-          const display = getToolCallDisplay(name, undefined, toolDisplayTranslation);
+          const display = getToolCallDisplay(name, undefined);
           const ToolIcon = display.icon;
           const count = tally.counts.get(name) ?? 0;
           return (
@@ -201,24 +160,6 @@ export const ToolGroup = memo(function ToolGroup({
           );
         })}
       </AnimatePresence>
-      {hasFileChanges && fileChanges.length > 0 && (
-        fileChanges.length === 1 ? fileChanges.map((file) => {
-          const FileIcon = iconForFilePath(file.path).icon;
-          return (
-            <Flex key={file.path} align="center" gap={1.5} minW={0} maxW="180px">
-              <Box color="fg.muted" display="flex" alignItems="center" flexShrink={0}>
-                <ActivityIcon><FileIcon /></ActivityIcon>
-              </Box>
-              <Text textStyle="fieldLabel" truncate>
-                {file.path.split("/").pop() ?? file.path}
-              </Text>
-              <DiffStatBadge additions={file.additions} deletions={file.deletions} />
-            </Flex>
-          );
-        }) : (
-          <Pill colorPalette="gray">{translation("filesCount", { count: fileChanges.length })}</Pill>
-        )
-      )}
       <ToolLocationBadge arguments={groupLocation} />
       <AnimatePresence initial={false}>
         {statusChips.map(({ kind, count, title }) => {

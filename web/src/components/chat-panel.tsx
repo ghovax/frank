@@ -35,7 +35,7 @@ import { GitStatusBar } from "./git-status-bar";
 import { GoalBar } from "./goal-bar";
 import { LocationChip } from "./location-status";
 import { SectionHeader } from "./ui/section-header";
-import { CONCEPT_ICONS } from "@/lib/concept-icons";
+import { CONCEPT_ICONS } from "@/lib/glyphs";
 import { useDirectoryStatus } from "@/lib/use-directory-status";
 import { Tooltip } from "./ui/tooltip";
 import { ToolbarAction } from "@/components/ui/toolbar";
@@ -43,7 +43,7 @@ import { AgentNamesProvider } from "@/lib/agent-names";
 import { DropdownMenu } from "@/components/ui/menu";
 import { PermissionOverlay } from "./permission-overlay";
 import { AgentSkills } from "./agent-skills";
-import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-display";
+import { getToolCallDisplay } from "@/lib/glyphs";
 import { permissionReasonPaths, permissionReasonText, type ToolPermission, type ToolQuestion } from "@/lib/tool-event";
 
 import { clearSessionGoal, fetchSettings, getWorkspace, revealInFinder, saveSessionDraft, saveAgentConfiguration, saveSettings, setSessionPermissionMode, subscribeEvents, type AgentCard, type AgentSummary, type Location, type PermissionMode, type SandboxEnforce, type WorktreeStrategy } from "@/lib/api";
@@ -239,7 +239,6 @@ export function ChatPanel({
   onAgentModelChange,
 }: ChatPanelProps) {
   const translation = useTranslations("ChatPanel");
-  const toolDisplayTranslation = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(initialPermissionMode);
   const { messages, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, abort, dequeueMessage, outboxHold, deliveringMessage, grantedPermissionMode, retryOutbox, handlePermission, handleQuestion, declineQuestion, compact } =
     useChat(agent, initialSessionId, workingDirectory, worktreeStrategy, permissionMode, sessionRunning, workspaceId);
@@ -606,7 +605,7 @@ export function ChatPanel({
           kind: "permission",
           permission,
           // The title says what the agent is trying to do, and the detail says what made this stop for approval.
-          title: getToolCallDisplay(name, args, toolDisplayTranslation).label,
+          title: getToolCallDisplay(name, args).label,
           // The structured reason wins, because it is the only one this interface can say in the reader's language.
           detail: permissionReasonText(permission.reason, translation) || permission.explanation || undefined,
           // The paths travel as data so the overlay lists them, rather than being joined into a sentence.

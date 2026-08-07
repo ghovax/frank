@@ -1,6 +1,6 @@
 "use client";
 
-import { Flex, Span } from "@chakra-ui/react";
+import { Span } from "@chakra-ui/react";
 import { motion, useReducedMotion } from "motion/react";
 import { memo, useEffect, useRef, useState } from "react";
 
@@ -119,42 +119,3 @@ export const RollingNumber = memo(function RollingNumber({
     </Span>
   );
 });
-
-interface DiffStatBadgeProps {
-  additions: number;
-  deletions: number;
-}
-
-export function DiffStatBadge({
-  additions,
-  deletions,
-}: DiffStatBadgeProps) {
-  return (
-    <Flex align="center" gap={1} flexShrink={0} fontVariantNumeric="tabular-nums">
-      {additions > 0 && (
-        <Span
-          gap={1}
-          color="green.fg"
-          textStyle="fieldLabel"
-          display="inline-flex"
-          alignItems="center"
-        >
-          <Span>+</Span>
-          <RollingNumber value={additions} />
-        </Span>
-      )}
-      {deletions > 0 && (
-        <Span
-          gap={1}
-          color="red.fg"
-          textStyle="fieldLabel"
-          display="inline-flex"
-          alignItems="center"
-        >
-          <Span>-</Span>
-          <RollingNumber value={deletions} />
-        </Span>
-      )}
-    </Flex>
-  );
-}

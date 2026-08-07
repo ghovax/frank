@@ -3,8 +3,36 @@
 // Every instant the reader sees, worded as distance from now, since "2 hours ago" is what they actually wanted to know.
 
 import { Span, type SpanProps } from "@chakra-ui/react";
+import { useEffect, useState } from "react";
 import { useFormatter } from "next-intl";
-import { useClock } from "@/lib/use-clock";
+
+// One timer for the window rather than one per caller, since a transcript holds hundreds of these.
+const listeners = new Set<(now: Date) => void>();
+let ticker: number | null = null;
+
+function subscribe(listener: (now: Date) => void): () => void {
+  listeners.add(listener);
+  if (ticker === null) {
+    ticker = window.setInterval(() => {
+      const now = new Date();
+      for (const each of listeners) each(now);
+    }, 60_000);
+  }
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0 && ticker !== null) {
+      window.clearInterval(ticker);
+      ticker = null;
+    }
+  };
+}
+
+/** A client clock that keeps ticking, since the provider's is frozen at mount and drifts into the past. */
+export function useClock(): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => subscribe(setNow), []);
+  return now;
+}
 
 // Spelled out in full, since a tooltip is opened by somebody who wants the exact instant.
 const EXACT = { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" } as const;

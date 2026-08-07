@@ -1,3 +1,5 @@
+import type { GlyphName } from "./tools";
+
 /** What a turn's state is called and in which colour, shared by every surface that shows one. */
 
 /** The normalised lifecycle status every source enum maps into, so a colour is decided once. */
@@ -25,7 +27,7 @@ export const STATUS_PALETTE: Record<StatusKind, string> = {
 };
 
 /** The glyph for the statuses that render as icon chips. Prose surfaces show a label instead. */
-export const STATUS_GLYPH: Partial<Record<StatusKind, string>> = {
+export const STATUS_GLYPH: Partial<Record<StatusKind, GlyphName>> = {
   input_required: "circle-alert",
   failed: "circle-x",
   background: "moon",
@@ -37,25 +39,4 @@ export function toolStatusKind(status: string | undefined, background = false): 
   if (status === "failed" || status === "error") return "failed";
   if (status === "input_required") return "input_required";
   return "completed";
-}
-
-/** An A2A task state as a kind. */
-export function taskStateKind(state: string): StatusKind {
-  switch (state) {
-    case "completed":
-      return "completed";
-    case "failed":
-    case "rejected":
-      return "failed";
-    case "canceled":
-      return "canceled";
-    case "input-required":
-    case "input_required":
-      return "input_required";
-    case "working":
-    case "submitted":
-      return "running";
-    default:
-      return "unknown";
-  }
 }

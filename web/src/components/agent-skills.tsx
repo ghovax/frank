@@ -4,8 +4,8 @@ import { Box, Flex, Span, Text } from "@chakra-ui/react";
 import { swallowed } from "@/lib/swallowed";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-// The same glyphs the transcript uses for these things — see `concept-icons.ts`.
-import { CONCEPT_ICONS } from "@/lib/concept-icons";
+// The same glyphs the transcript uses for these things.
+import { CONCEPT_ICONS } from "@/lib/glyphs";
 import { fetchMcpTools, fetchSkills, subscribeEvents, type AgentCard, type AgentSkill, type McpServerTools, type McpTool } from "@/lib/api";
 import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
 import { SectionHeader } from "./ui/section-header";
@@ -21,7 +21,7 @@ function CapabilityTitle({ title, identifier }: { title?: string | null; identif
 }
 
 // Tool descriptions come from docstrings whose sections duplicate the input schema, so only the summary is shown.
-const DOCSTRING_SECTION = /\n[ \t]*(Arguments|Parameters|Params|Returns|Yields|Raises|Examples?|Notes?|See Also|References|Todo|Warnings?)(\s*\([^)]*\))?\s*:/i;
+const DOCSTRING_SECTION = /\n[ \t]*(Arguments|Args|Parameters|Params|Returns|Yields|Raises|Examples?|Notes?|See Also|References|Todo|Warnings?)(\s*\([^)]*\))?\s*:/i;
 
 function docstringSummary(description: string): string {
   const match = description.match(DOCSTRING_SECTION);
