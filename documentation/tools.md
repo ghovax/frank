@@ -11,10 +11,6 @@ There is no delegation tool and no in-process sub-agent. A session that needs a 
 | Tool | What it does |
 |------|--------------|
 | `bash` | Run shell commands. Sandboxed to the workspace by default; per-command rules per agent. |
-| `read_file` | Read a file (with line ranges and image support). |
-| `write_file` | Create or overwrite a file. |
-| `edit_file` | Make a targeted edit to an existing file. |
-| `search_code` | Semantic code search over the repository. |
 | `download_file` | Download a file from a URL to disk. |
 
 There are no dedicated `find_files`/`search_content` tools; for literal file-name and content search, use `bash` with ripgrep (`rg`) and `fd`.

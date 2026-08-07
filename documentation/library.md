@@ -165,7 +165,7 @@ reviewer = AgentConfiguration(
     model="claude-sonnet-4",
     system_prompt="You review code. Be terse.",
     sandbox=SandboxConfiguration(filesystem=FilesystemConfiguration(writable=[])),
-    tools_enabled=["read_file", "search_code"],
+    tools_enabled=["bash", "fetch_url"],
     tools=ToolsConfiguration(
         disabled=["fetch_url"],
         bash=BashToolConfiguration(enabled=False, background_allowed=False),
@@ -194,12 +194,12 @@ The roster decides what the model is offered. The gate decides what it may run. 
 `Checkpoints` answers "resume this conversation". `Transcript` answers "what has this session done", with one entry per completed turn. Each entry records what was asked, what came back, how it ended, and what it cost:
 
 ```python
-nightly = "session-8f9c724a-ce51-41b3-83a9-f5969b22a9e2"
+session_id = "session-8f9c724a-ce51-41b3-83a9-f5969b22a9e2"
 
-async with Session(reviewer, directory="/srv/checkout", session_id=nightly) as session:
+async with Session(reviewer, directory="/srv/checkout", session_id) as session:
     await session.ask("Audit the dependency tree and flag anything unmaintained.")
 
-for turn in await session.transcript.turns(nightly):
+for turn in await session.transcript.turns(session_id):
     print(turn.outcome, turn.tools_called, turn.input_tokens + turn.output_tokens)
 ```
 
@@ -213,7 +213,7 @@ A library whose only way to be given an API key is a YAML file in the user's hom
 session = Session(
         reviewer,
     directory="/srv/checkout",
-    providers={"anthropic": os.environ["MY_APP_ANTHROPIC_KEY"]},
+    providers={"anthropic": os.environ["ANTHROPIC_API_KEY"]},
     model_identifier="anthropic/claude-opus-4-5",
 )
 ```
@@ -244,9 +244,8 @@ catalogue = Catalogue(
             name="migration-safety",
             description="Check whether a schema change can be rolled back.",
             body=(
-                "A migration is safe to ship when it can be reversed without data loss. "
-                "Adding a nullable column is safe. Dropping a column is not, until a release "
-                "has shipped that no longer reads it. Renaming is a drop and an add."
+                "A migration is safe to ship only when it can be reversed without data loss."
+                ...
             ),
         ),
     ],
@@ -416,7 +415,7 @@ async for event in session.stream("Refactor the parser to use the streaming read
         case TextChunk(text=text):
             print(text, end="", flush=True)
         case ToolCall(tool_name=name):
-            print(f"\n[{name}]")
+            ...
         case Suspended(interactions=gates):
             ...
 ```
@@ -429,12 +428,12 @@ Resuming is giving a new `Session` the same id and the same store:
 
 ```python
 store = MemoryCheckpoints()
-review = "session-3d965dfe-21c4-4f2c-9040-290e77bea0b1"
+review_id = "session-3d965dfe-21c4-4f2c-9040-290e77bea0b1"
 
-async with Session(reviewer, directory="/srv/checkout", session_id=review, checkpoints=store) as first:
+async with Session(reviewer, directory="/srv/checkout", session_id=review_id, checkpoints=store) as first:
     await first.ask("Read src/parser.py and tell me what it assumes about its input.")
 
-async with Session(reviewer, directory="/srv/checkout", session_id=review, checkpoints=store) as second:
+async with Session(reviewer, directory="/srv/checkout", session_id=review_id, checkpoints=store) as second:
     await second.ask("Now what would you change?")
 ```
 

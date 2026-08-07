@@ -50,7 +50,7 @@ class CallExecutionPolicy:
 
 
 # The tools that act on a location's filesystem or shell, and so resolve against one.
-_LOCATION_TOOLS = frozenset({"bash", "read_file", "write_file", "edit_file", "search_code", "download_file"})
+_LOCATION_TOOLS = frozenset({"bash", "download_file"})
 
 
 class PermissionDecision(BaseModel):

@@ -5,7 +5,6 @@ import logging
 import re
 import statistics
 
-from dataclasses import replace
 from datetime import datetime, timezone
 from langmesh.base import telemetry as _telemetry
 from langmesh.base import confinement as _confinement
@@ -23,7 +22,7 @@ from langmesh.runtime.internals import (
     _tool_timing_metadata,
     _utc_timestamp,
 )
-from langmesh.runtime.tools import context as tool_context, file_operations as file_tools
+from langmesh.runtime.tools import context as tool_context, fetching
 from langmesh.runtime.background import (
     bind_background_jobs,
     bind_tool_call_id,
@@ -125,21 +124,11 @@ class _DispatchesTools:
         result_content: str = ""
         background_job_id: str | None = None
         denied_commands: list[str] = []
-        image_followups: list[dict[str, str]] = []
         tool_failed = False
 
         tool_span = _telemetry.start_span("tool.execute", {"tool.name": tool_name})
         try:
             async for event in self._execute_tool(tool_name, tool_arguments, tool_call_identifier, decision):
-                # An image read carries its pixels on a side channel; strip it so the base64 never reaches the UI.
-                if isinstance(event, ToolResult) and "model_image" in event.extra:
-                    result_payload = event.result
-                    image_followups.append({
-                        "path": str((result_payload or {}).get("path", "")) if isinstance(result_payload, dict) else "",
-                        "data_uri": str(event.extra["model_image"]),
-                    })
-                    # Strip the model-facing image before the event goes downstream.
-                    event = replace(event, extra={key: value for key, value in event.extra.items() if key != "model_image"})
                 yield event
                 if isinstance(event, ToolResult):
                     result_str = event.result
@@ -200,7 +189,6 @@ class _DispatchesTools:
             "ok": not tool_failed,
             "background_job_id": background_job_id,
             "denied_commands": denied_commands,
-            "image_followups": image_followups,
             "metadata": timing_metadata,
         }
 
@@ -362,7 +350,6 @@ class _DispatchesTools:
     def _append_tool_results(self, response, outcomes: dict[str, dict]) -> None:
         """A ToolMessage per tool_call, contiguous, since providers require every result in the block that follows."""
         denied_command_notes: list[str] = []
-        image_followup_notes: list[dict[str, str]] = []
         for tool_call_data in cast(list[dict], response.tool_calls):
             tool_call_identifier = tool_call_data["id"]
             outcome = outcomes.get(tool_call_identifier, {})
@@ -400,14 +387,6 @@ class _DispatchesTools:
                 denied_command_notes.append(
                     self._prompt_loader.load("command_denied", {"commands": commands_list})
                 )
-            image_followup_notes.extend(outcome.get("image_followups") or [])
-        # Images attach right after the tool block, the append-only way a vision model sees them.
-        for followup in image_followup_notes:
-            note_text = self._prompt_loader.load("image_read_note", {"path": followup.get("path", "")})
-            self._conversation.append(self._reminder_message(
-                note_text,
-                image_blocks=[{"type": "image_url", "image_url": {"url": followup["data_uri"]}}],
-            ))
         for denied_message in denied_command_notes:
             self._conversation.append(self._reminder_message(denied_message))
 
@@ -706,106 +685,19 @@ class _DispatchesTools:
             "action": "write" if writing else "read",
         })
 
-    async def _tool_read_file(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
-        resolved_location: ResolvedLocation | None,
-    ) -> AsyncIterator[TurnEvent]:
-        assert resolved_location is not None
-        file_path = str(tool_arguments.get("file_path", ""))
-        resolved_target = await asyncio.to_thread(
-            resolved_location.executor.resolve, resolved_location.base_directory, file_path,
-        )
-        refusal = self._confinement_refusal(resolved_target, policy, writing=False)
-        if refusal:
-            yield Error(id=tool_call_identifier, code="outside_confinement", message=refusal, tool=tool_name)
-            return
-        # Images are ingested natively, their pixels riding a side channel the UI never sees.
-        if Path(file_path).suffix.lower() in file_tools.IMAGE_FILE_SUFFIXES:
-            result, image_data_uri = await asyncio.to_thread(
-                file_tools.read_image_file,
-                resolved_location.executor,
-                resolved_location.base_directory,
-                file_path,
-                attach_pixels=self._model_supports_vision(),
-            )
-            extra = {"model_image": image_data_uri} if image_data_uri else {}
-            yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(result), extra=extra,
-            )
-            return
-        offset = tool_arguments.get("offset", 1) or 1
-        limit_raw = tool_arguments.get("limit")
-        limit = int(limit_raw) if limit_raw not in (None, "") else None
-        result = await asyncio.to_thread(
-            file_tools.read_file,
-            resolved_location.executor,
-            resolved_location.base_directory,
-            file_path,
-            int(offset),
-            limit,
-        )
-        result_data = _maybe_json(result)
-        # Record path and hash, keyed by location, so an edit against a stale read is rejected.
-        if isinstance(result_data, dict):
-            sha256 = result_data.get("sha256")
-            resolved_path = result_data.get("path")
-            if isinstance(sha256, str) and isinstance(resolved_path, str):
-                self._read_files[(resolved_location.uri, resolved_path)] = sha256
-        yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data,
-        )
-
-
-    async def _tool_search_code(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
-        resolved_location: ResolvedLocation | None,
-    ) -> AsyncIterator[TurnEvent]:
-        from langmesh.runtime.tools.code_search import search_code
-
-        query = str(tool_arguments.get("query", ""))
-        top_k = int(tool_arguments.get("top_k", 10) or 10)
-        reindex = bool(tool_arguments.get("reindex", False))
-        # search_code indexes a local directory, so a remote location reports that rather than pretending.
-        root = resolved_location.base_directory if resolved_location is not None else "."
-        if resolved_location is not None and resolved_location.is_remote:
-            result: dict = {"ok": False, "error": "search_code runs only on the local codebase; use bash with ripgrep on a remote location."}
-        else:
-            result = await asyncio.to_thread(search_code, query, root, top_k=top_k, reindex=reindex)
-        yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
-
-
-    async def _run_backgroundable_tool(
-        self, tool_name: str, tool_call_identifier: str, coroutine, *, started_code: str,
-        sync_window: float, background: bool,
-    ) -> AsyncIterator[TurnEvent]:
-        """Run a slow tool as a background job with a synchronous window, so the fast case returns inline."""
-        job_id = self._background.spawn(
-            tool_name, coroutine, tool_call_identifier=tool_call_identifier,
-        )
-        settled = None
-        if not background:
-            settled = await self._background.settle_inline(
-                job_id, active_tuning().scale_timeout(sync_window)
-            )
-        if settled is not None:
-            yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(settled.result))
-        else:
-            yield ToolResult(id=tool_call_identifier, name=tool_name, result={
-                "code": started_code, "status": "running", "job_id": job_id,
-            })
-
     async def _tool_fetch_url(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
         decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         url = str(tool_arguments.get("url", ""))
-        fmt = str(tool_arguments.get("format", "markdown") or "markdown")
+        output_format = str(tool_arguments.get("format", "markdown") or "markdown")
         sync_window = float(tool_arguments.get("timeout", Tunable.slow_tool_sync_window.default) or Tunable.slow_tool_sync_window.default)
-        hard_deadline = int(tool_arguments.get("hard_deadline", 30) or 30)
+        configured = tool_context.current().fetch_timeout_seconds
+        hard_deadline = int(tool_arguments.get("hard_deadline", configured) or configured)
         background = bool(tool_arguments.get("background", False))
         async for event in self._run_backgroundable_tool(
-            tool_name, tool_call_identifier, file_tools.fetch_url(url, fmt, hard_deadline),
+            tool_name, tool_call_identifier, fetching.fetch_url(url, output_format, hard_deadline),
             started_code="fetch_url_started", sync_window=sync_window, background=background,
         ):
             yield event
@@ -821,7 +713,8 @@ class _DispatchesTools:
         url = str(tool_arguments.get("url", ""))
         destination = str(tool_arguments.get("path", ""))
         sync_window = float(tool_arguments.get("timeout", Tunable.slow_tool_sync_window.default) or Tunable.slow_tool_sync_window.default)
-        hard_deadline = int(tool_arguments.get("hard_deadline", 120) or 120)
+        configured = tool_context.current().download_timeout_seconds
+        hard_deadline = int(tool_arguments.get("hard_deadline", configured) or configured)
         background = bool(tool_arguments.get("background", False))
         resolved = await asyncio.to_thread(executor.resolve, resolved_location.base_directory, destination)
         refusal = self._confinement_refusal(resolved, policy, writing=True)
@@ -844,7 +737,7 @@ class _DispatchesTools:
         try:
             backgrounded_job_id = ""
             async for event in self._run_backgroundable_tool(
-                tool_name, tool_call_identifier, file_tools.download_file(executor, url, resolved, hard_deadline),
+                tool_name, tool_call_identifier, fetching.download_file(executor, url, resolved, hard_deadline),
                 started_code="download_file_started", sync_window=sync_window, background=background,
             ):
                 if (
@@ -858,86 +751,6 @@ class _DispatchesTools:
                 lambda _identifier, token=lease_token: self._release_filesystem_lease(token),
             ):
                 lease_token = ""
-        finally:
-            self._release_filesystem_lease(lease_token)
-
-
-    async def _tool_edit_or_write(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
-        resolved_location: ResolvedLocation | None,
-    ) -> AsyncIterator[TurnEvent]:
-        assert resolved_location is not None
-        executor = resolved_location.executor
-        file_path = str(tool_arguments.get("file_path", ""))
-        resolved = await asyncio.to_thread(executor.resolve, resolved_location.base_directory, file_path)
-        refusal = self._confinement_refusal(resolved, policy, writing=True)
-        if refusal:
-            yield Error(id=tool_call_identifier, code="outside_confinement", message=refusal, tool=tool_name)
-            return
-        file_key = (resolved_location.uri, resolved)
-        lease_token = ""
-        # Leases guard this machine's files, so a remote edit takes none.
-        if not policy.is_remote:
-            try:
-                lease_token = await self._acquire_filesystem_lease(
-                    scope="file",
-                    path=resolved,
-                    description=f"{tool_name}: {resolved}",
-                    working_directory=policy.working_directory,
-                )
-            except FileLeaseConflict as exception:
-                yield Error(id=tool_call_identifier,
-                    code="filesystem_lease_conflict",
-                    message=str(exception),
-                    tool=tool_name,
-                )
-                return
-        try:
-            expected_sha256 = self._read_files.get(file_key)
-            if tool_name == "edit_file":
-                find = str(tool_arguments.get("find", ""))
-                replace_with = str(tool_arguments.get("replace_with", ""))
-                replace_all = bool(tool_arguments.get("replace_all", False))
-                result = await asyncio.to_thread(
-                    file_tools.edit_file,
-                    executor,
-                    resolved_location.base_directory,
-                    file_path,
-                    find,
-                    replace_with,
-                    expected_sha256=expected_sha256,
-                    replace_all=replace_all,
-                )
-            else:
-                content = tool_arguments.get("content", "")
-                if not isinstance(content, str):
-                    content = compact(content)
-                result = await asyncio.to_thread(
-                    file_tools.write_file,
-                    executor,
-                    resolved_location.base_directory,
-                    file_path,
-                    content,
-                    expected_sha256=expected_sha256,
-                )
-            result_data = _maybe_json(result)
-            if isinstance(result_data, dict):
-                result_code = result_data.get("code", "")
-                if result_code == "edit_completed":
-                    sha256 = result_data.get("sha256")
-                    if isinstance(sha256, str):
-                        self._read_files[file_key] = sha256
-                    else:
-                        self._read_files.pop(file_key, None)
-                elif result_code == "write_completed":
-                    content = tool_arguments.get("content", "")
-                    if isinstance(content, str):
-                        self._read_files[file_key] = file_tools.content_sha256(content)
-                else:
-                    # Not a commit: discard the stale hash so the model must re-read before editing again.
-                    self._read_files.pop(file_key, None)
-            yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
         finally:
             self._release_filesystem_lease(lease_token)
 

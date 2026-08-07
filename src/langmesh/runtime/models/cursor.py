@@ -9,6 +9,8 @@ import json
 import os
 import platform
 import shlex
+
+from langmesh.base.identifiers import new_id
 import time
 import uuid
 from dataclasses import dataclass
@@ -73,14 +75,24 @@ def _shell_arguments(values: list[str]) -> Optional[dict[str, Any]]:
 
 
 def _read_arguments(values: list[str]) -> Optional[dict[str, Any]]:
-    """``ReadArgs{path}`` becomes ``read_file``."""
-    return {"file_path": values[0]} if values and values[0] else None
+    """``ReadArgs{path}`` becomes a read-only `bash` listing of the file, numbered as the agent expects."""
+    path = values[0] if values else ""
+    if not path:
+        return None
+    return {"command": f"cat -n {shlex.quote(path)}", "access_request": {"mutates": False}}
 
 
 def _write_arguments(values: list[str]) -> Optional[dict[str, Any]]:
-    """`WriteArgs` becomes `write_file`, and only a missing path disqualifies it since an empty body is a real write."""
+    """`WriteArgs` becomes a `bash` heredoc, since only a missing path disqualifies it and an empty body is a real write."""
     path, content = (values + ["", ""])[:2]
-    return {"file_path": path, "content": content} if path else None
+    if not path:
+        return None
+    # A quoted delimiter that cannot occur in the body, so the content reaches the file exactly as written.
+    marker = f"LANGMESH_{new_id('heredoc').upper().replace('-', '_')}"
+    return {
+        "command": f"cat > {shlex.quote(path)} <<'{marker}'\n{content}\n{marker}",
+        "access_request": {"mutates": True},
+    }
 
 
 def _list_arguments(values: list[str]) -> Optional[dict[str, Any]]:
@@ -121,8 +133,8 @@ def _read_resource_arguments(values: list[str]) -> Optional[dict[str, Any]]:
 _BUILTIN_TRANSLATIONS: dict[str, tuple[str, Callable[[list[str]], Optional[dict[str, Any]]]]] = {
     "shell": ("bash", _shell_arguments),
     "background_shell": ("bash", _background_shell_arguments),
-    "read": ("read_file", _read_arguments),
-    "write": ("write_file", _write_arguments),
+    "read": ("bash", _read_arguments),
+    "write": ("bash", _write_arguments),
     "ls": ("bash", _list_arguments),
     "fetch": ("fetch_url", _fetch_arguments),
     "list_mcp_resources": ("list_mcp_resources", _list_resources_arguments),

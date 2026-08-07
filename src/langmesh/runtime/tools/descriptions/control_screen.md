@@ -91,7 +91,7 @@ Two directories hold workflows, and both import as `workflows`. `.agents/workflo
 
 A **skill** can carry screen work the same way, and for anything larger than a single function that is the better home. A skill's `scripts/` directory is a real Python package with its own `pyproject.toml`, and it sits on your import path, so `from <package> import <function>` reaches it from a script. Read the skill's own `SKILL.md` for what it offers, before you write what it already does.
 
-Whatever exists arrives in your context under `workflows`, with the import line, the call, and what each one does. When you work something out that is worth having again, save it with `write_file`. The `ran` trace is exactly what happened, so you record rather than reconstruct.
+Whatever exists arrives in your context under `workflows`, with the import line, the call, and what each one does. When you work something out that is worth having again, save it to a file. The `ran` trace is exactly what happened, so you record rather than reconstruct.
 
 The harness reads what you import along with your script, when it decides whether to ask the user. A workflow or skill package that only reads keeps your script read-only. A module that cannot be read from here, such as a third-party library, means the user is asked once.
 

@@ -37,10 +37,6 @@ from langmesh.runtime.tools.registry import (
     call_mcp_tool as call_mcp_tool_tool,
     list_mcp_resources as list_mcp_resources_tool,
     read_mcp_resource as read_mcp_resource_tool,
-    read_file as read_file_tool,
-    search_code as search_code_tool,
-    edit_file as edit_file_tool,
-    write_file as write_file_tool,
     fetch_url as fetch_url_tool,
     download_file as download_file_tool,
     control_screen as control_screen_tool,
@@ -218,10 +214,6 @@ def _all_available_tools(
 ) -> list[BaseTool]:
     available = [
         bash_tool,
-        read_file_tool,
-        search_code_tool,
-        edit_file_tool,
-        write_file_tool,
         fetch_url_tool,
         download_file_tool,
         load_skill_tool,
@@ -333,6 +325,9 @@ def _build_tool_context(
         firecrawl_client=firecrawl_client,
         jina_api_key=global_configuration.jina.effective_api_key,
         proxy_url=global_configuration.web_fetch.effective_proxy_url,
+        fetch_timeout_seconds=global_configuration.web_fetch.timeout_seconds,
+        download_timeout_seconds=global_configuration.web_fetch.download_timeout_seconds,
+        minimum_useful_characters=global_configuration.web_fetch.minimum_useful_characters,
         session_access=session_access,
         conversation_snapshot=conversation_snapshot,
         session_id=session_id,
@@ -435,12 +430,8 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
     # Tool name to handler. `_execute_tool` resolves the shared preamble once, then dispatches here.
     _TOOL_HANDLERS = {
         "bash": "_tool_bash",
-        "read_file": "_tool_read_file",
-        "search_code": "_tool_search_code",
         "fetch_url": "_tool_fetch_url",
         "download_file": "_tool_download_file",
-        "edit_file": "_tool_edit_or_write",
-        "write_file": "_tool_edit_or_write",
         "load_skill": "_tool_load_skill",
         "wait_for": "_tool_wait_for",
         "ask_user": "_tool_ask_user",
@@ -577,7 +568,6 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         self._conversation: list = conversation if conversation is not None else []
         self._system_prompt = agent_configuration.system_prompt
         # Files read this session, by location and path with their hash, so a stale edit is rejected.
-        self._read_files: dict[tuple[str, str], str] = {}
         self._abort_event = asyncio.Event()
         # Running token totals, summed from the usage each model call reports.
         self._token_usage: dict[str, int] = {
@@ -836,6 +826,11 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
     @property
     def agent_name(self) -> str:
         return self._agent_configuration.identifier
+
+    @property
+    def inline_image_bytes(self) -> int:
+        """The ceiling on an image inlined into this conversation, as the person configured it."""
+        return self._global_configuration.attachments.inline_image_bytes
 
     @property
     def effective_model_identifier(self) -> str:

@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
-import tempfile
 from pathlib import Path
 from typing import Any, Literal
 
@@ -24,55 +23,9 @@ _DESCRIPTIONS = PromptLoader(Path(__file__).parent / "descriptions")
 EXPLANATION = _DESCRIPTIONS.load("explanation", {}).strip()
 
 #: What a call reaches for beyond its confinement. A difference against the profile, not an inventory.
-ACCESS_REQUEST = (
-    "What this call needs beyond what the session already holds — a difference against the "
-    "confinement listed in your context, not a list of everything the call touches. Omit it "
-    "entirely when the call works inside paths already writable or readable, which is the usual "
-    "case. When present it must set `mutates`. Use `writes`/`reads` for paths outside the "
-    "confinement and `network` only where the confinement denies the network. A granted path "
-    "stays granted for the rest of the session; ask for the narrowest thing that does the work, "
-    "and never use a path granted for one purpose to do something else. The paths your context "
-    "lists as refused are refused outright: no request opens one, and asking again in other words "
-    "is not a different question."
-)
+ACCESS_REQUEST = _DESCRIPTIONS.load("access_request", {}).strip()
 
 #: bash is synchronous by default: the model chooses whether a command backgrounds, so it is never a surprise.
-
-
-#: What a kernel refusal looks like through a shell. Matched on the message, since the errno never arrives.
-_SANDBOX_REFUSAL_PHRASES = (
-    "operation not permitted",
-    "permission denied",
-    "read-only file system",
-)
-
-
-def _sandbox_refusal_note(return_code: int, output: str, profile, workspace: str) -> dict:
-    """What to say when a command died on the confinement rather than its own work, since `EPERM` names no path."""
-    if return_code == 0 or not output:
-        return {}
-    lowered = output.lower()
-    if not any(phrase in lowered for phrase in _SANDBOX_REFUSAL_PHRASES):
-        return {}
-    from langmesh.base import confinement as _confinement
-
-    writable = [
-        resolved for entry in profile.filesystem.writable
-        if (resolved := _confinement.expand(entry, workspace=workspace))
-    ]
-    return {
-        "note": (
-            "This may be the sandbox rather than the command. A path outside the confinement is "
-            "refused by the operating system, which reports it as a permission error without "
-            "naming the path."
-        ),
-        "writable": writable,
-        "network": profile.network,
-        "remedy": (
-            "Write somewhere already listed, or re-issue the call with an access_request naming "
-            "the path you need."
-        ),
-    }
 
 
 def _require_mcp_client_manager():
@@ -97,9 +50,7 @@ async def bash(
 
     active = tool_context.current()
     profile, workspace = active.sandbox, active.workspace
-    # The tool's log lands where the profile permits, and never in the tree the session is working in.
-    _scratch = _confinement.temporary_directory(profile, workspace=workspace)
-    output_path = Path(_scratch or tempfile.gettempdir()) / f"{new_id('bash')}.log"
+    output_path = active.spill_path("bash")
     process_holder: dict[str, Any] = {}
 
     def cancel_process() -> None:
@@ -214,9 +165,6 @@ async def bash(
             "size": len(output),
             "returncode": return_code,
         }
-        refusal = _sandbox_refusal_note(return_code, inline_output, profile, workspace)
-        if refusal:
-            result["sandbox"] = refusal
         return compact(result)
 
     jobs = current_background_jobs()
@@ -261,7 +209,7 @@ async def search_web(
 
     # Mint the id up front, so a delivered result can be matched to the search that started it.
     job_id = new_id("search")
-    output_path = Path("/tmp") / f"{job_id}.log"
+    output_path = tool_context.current().spill_path("search")
 
     async def run() -> str:
         try:
@@ -421,57 +369,6 @@ def update_goal(
 
 
 @tool
-def read_file(
-    *,
-    explanation: str = Field(..., description=EXPLANATION),
-    file_path: str,
-    location: str = "",
-    offset: int = 1,
-    limit: int | None = 2048,
-) -> str:
-    """Dispatched by AgentRuntime._execute_tool; described in descriptions/read_file.md."""
-    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
-
-
-@tool
-def search_code(
-    *,
-    explanation: str = Field(..., description=EXPLANATION),
-    query: str,
-    top_k: int = 10,
-    reindex: bool = False,
-) -> str:
-    """Dispatched by AgentRuntime._execute_tool; described in descriptions/search_code.md."""
-    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
-
-
-@tool
-def edit_file(
-    *,
-    explanation: str = Field(..., description=EXPLANATION),
-    file_path: str,
-    find: str,
-    replace_with: str,
-    location: str = "",
-    replace_all: bool = False,
-) -> str:
-    """Dispatched by AgentRuntime._execute_tool; described in descriptions/edit_file.md."""
-    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
-
-
-@tool
-def write_file(
-    *,
-    explanation: str = Field(..., description=EXPLANATION),
-    file_path: str,
-    content: str,
-    location: str = "",
-) -> str:
-    """Dispatched by AgentRuntime._execute_tool; described in descriptions/write_file.md."""
-    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
-
-
-@tool
 async def fetch_url(
     *,
     explanation: str = Field(..., description=EXPLANATION),
@@ -539,8 +436,8 @@ def tool_description(tool_name: str) -> str:
 
 _DESCRIBED = (
     bash, search_web, list_mcp_tools, call_mcp_tool, list_mcp_resources, read_mcp_resource,
-    wait_for, read_turn, set_tasks, update_tasks, update_goal, read_file, search_code,
-    edit_file, write_file, fetch_url, download_file, control_screen, ask_user, load_skill,
+    wait_for, read_turn, set_tasks, update_tasks, update_goal,
+    fetch_url, download_file, control_screen, ask_user, load_skill,
 )
 
 
