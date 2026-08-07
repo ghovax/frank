@@ -1271,6 +1271,12 @@ export function useChat(
         );
       };
 
+      // Drawn now, in the same tick the outbox stopped drawing its card, so the message is in exactly one
+      // place at every instant: never twice — once plainly and once wearing a queue's affordances — and
+      // never in neither list while a session is being created. It also lands above anything the session
+      // goes on to say, because nothing of the session's has been asked for yet.
+      showOptimistically();
+
       // A turn is two calls: ensure a session, then send. `send` carries no settings and cannot change them.
       void (async () => {
         try {
@@ -1291,10 +1297,6 @@ export function useChat(
               setGrantedPermissionMode(created.permission_mode);
             }
           }
-          // Drawn before the stream is attached, and therefore before anything the session says can arrive.
-          // The queued card and the transcript are two lists, and the transcript is drawn first, so a row
-          // that reached the transcript while this message was still only queued would sit above it.
-          showOptimistically();
           // Attach before sending, or the opening frames are missed.
           observe(sessionIdentifier);
           const outcome = await sessionSend(sessionIdentifier, messageParts(text, dataParts), { messageId: userMessageId });

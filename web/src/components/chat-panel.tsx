@@ -892,13 +892,15 @@ export function ChatPanel({
                           </FadeIn>
                         );
                     })}
-                    {/* A message the session has not taken yet, drawn as the message it is, with its footer naming the wait. */}
-                    {queuedMessages.map((message, index) => (
+                    {/* A message the session has not taken yet, drawn as the message it is, with its footer naming the wait.
+                        The one being handed over is skipped: it is already a transcript row above, and drawing it
+                        here as well would show the message twice, the second time wearing a queue's affordances. */}
+                    {queuedMessages.map((message, index) => message.id === deliveringMessage ? null : (
                       <UserMessageCard
                         key={message.id}
                         message={{ id: message.id, role: "user", content: message.text, timestamp: "" }}
                         queued={{
-                          status: message.id === deliveringMessage ? "" : translation(
+                          status: translation(
                             outboxHold === "unreachable" ? "queuedUnreachable"
                               : outboxHold === "decision" ? "queuedForDecision"
                                 : "queued"
