@@ -257,12 +257,10 @@ export function toolCallDisplay(
   const translation = translate ?? labels("ToolDisplay");
   const known = KNOWN_TOOL_NAMES.has(name);
   const explanation = args?.explanation ? String(args.explanation) : "";
-  // While a call is still arriving, a label built from its half-written arguments would be replaced
-  // the instant the explanation lands — the command, then a flash, then the reason. The bare label
-  // names the same act and does not change under the reader, so only one change is ever seen.
+  // Any provisional wording is wording the explanation then replaces, so until it settles there is none.
   return {
     ...glyphForTool(name),
-    label: explanation || fallbackLabel(name, settled ? args : undefined, translation),
+    label: explanation || (settled ? fallbackLabel(name, args, translation) : ""),
     known,
     // A bare, unrecognised tool name reads as code, because it *is* an identifier.
     mono: !known && !explanation,
