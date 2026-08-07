@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, Button, Flex, Separator, Span, Text } from "@chakra-ui/react";
-import { useFormatter, useTranslations } from "next-intl";
+import { useFormatter, useNow, useTranslations } from "next-intl";
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { LuCheck, LuClock, LuCopy, LuFoldVertical, LuMessagesSquare, LuRotateCw, LuTrash2, LuTriangleAlert } from "react-icons/lu";
 import { swallowed } from "@/lib/swallowed";
@@ -142,6 +142,8 @@ export interface QueuedMessageState {
 function MessageFooter({ content, sentAt, queued }: { content: string; sentAt: string; queued?: QueuedMessageState }) {
   const translation = useTranslations("ChatMessage");
   const format = useFormatter();
+  // A minute is the finest step the wording has, so re-reading the clock more often would change nothing.
+  const now = useNow({ updateInterval: 60 * 1000 });
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<number | null>(null);
 
@@ -182,13 +184,13 @@ function MessageFooter({ content, sentAt, queued }: { content: string; sentAt: s
           </Flex>
         ) : null
       ) : dated ? (
-        // Day and time both: a transcript is read long after the day it was written, when a bare clock says nothing.
+        // How long ago, worded by the reader's locale and re-read as it ages; the exact instant is on the title.
         <Text
           textStyle="fieldLabel"
           pe={1}
           title={format.dateTime(dated, { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}
         >
-          {format.dateTime(dated, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "numeric" })}
+          {format.relativeTime(dated, now)}
         </Text>
       ) : null}
       {queued?.onRetry && queued.retryLabel && (
