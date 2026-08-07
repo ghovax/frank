@@ -78,6 +78,8 @@ class _RunsTurns:
 
     #: The checklist for this turn, cleared as soon as the one request that carries it is built.
     _pending_checklist: Optional[HumanMessage] = None
+    #: What earlier exchanges established, read once a turn and carried with the request rather than stored.
+    _carried_record: Optional[HumanMessage] = None
 
     def _locations_summary(self) -> list[dict]:
         """The locations as the model sees them: the URI to pass, and enough to choose the right one."""
@@ -428,6 +430,8 @@ class _RunsTurns:
             recorded_user_message = message_text(turn_message)
         # After the turn's message, so the freshest picture is read last, and once per turn rather than per hop.
         self._append_turn_context()
+        # Read once a turn: what earlier exchanges established, minus anything still visible in the conversation.
+        self._carried_record = await self.carried_record()
         self._turn_started_at = datetime.now(timezone.utc)
 
         while True:
@@ -515,6 +519,9 @@ class _RunsTurns:
     def _build_turn_messages(self) -> list:
         """This iteration's messages: the static prompt, the conversation, and the turn context appended once."""
         messages = [SystemMessage(content=self._build_static_system_prompt())] + self._conversation
+        # Both of these are carried by the request and never by the conversation, so they go last and only
+        # last: anywhere else, their absence on the next request would rewrite the prefix from that point.
+        messages = messages + ([self._carried_record] if self._carried_record is not None else [])
         if self._pending_checklist is None:
             return messages
         # Last, and only ever last: it never joins the conversation, so anywhere else its absence next time rewrites the prefix.
@@ -684,6 +691,9 @@ class _RunsTurns:
         await self._record_transcript_turn(
             recorded_user_message, final_text, "completed", turn_tool_calls_log,
         )
+        # The exchange is complete, so it is recorded now, while its turns are whole. Off the turn's path,
+        # because the person is waiting on the answer and not on the note taken about it.
+        asyncio.create_task(self.observe_exchange())
         yield Done(text=final_text, stop_reason="completed")
         step.directive = _STOP
 

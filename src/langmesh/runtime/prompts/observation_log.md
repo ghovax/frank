@@ -1,6 +1,6 @@
 # Conversation memory
 
-Earlier turns of this conversation were folded into the records below, to keep the working context small. Those turns are gone. This is what remains of them.
+These records were written as the conversation went, one exchange at a time, and they are all that remains of the turns you can no longer see. Nothing here duplicates what is still in front of you: an exchange still visible is not recorded here twice.
 
 **Build on these records. Do not build around them.**
 

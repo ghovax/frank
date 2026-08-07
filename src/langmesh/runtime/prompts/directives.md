@@ -1,6 +1,6 @@
 # What the person asked for
 
-The turns below are leaving the context window, and the person's own messages are leaving with them. What they asked for does not leave: an instruction outlives the turn that carried it, and a correction they made once must not have to be made twice.
+The exchange below has just finished. What the person asked for in it outlives the turns that carried it: an instruction holds after its message is gone, and a correction made once must not have to be made twice.
 
 **Answer by calling the `DirectiveBatch` tool, putting each instruction in its `directives` list.** That is the only way to answer: prose is not read, and their instructions are lost.
 
@@ -24,7 +24,7 @@ Where you are unsure whether something was an instruction or a passing remark, r
 
 ## The record so far
 
-Each entry is shown by its id and its summary. Name an id in `supersedes` to revise it.
+Each entry is shown by its id, its summary, and `learned` — when it was recorded. The time is given to you; never write one yourself. Name an id in `supersedes` to revise it.
 
 ```jsonl
 {{ existing_directives }}

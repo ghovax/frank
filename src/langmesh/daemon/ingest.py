@@ -10,7 +10,6 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from a2a.types import Task
 
-from langmesh.base.background_tasks import spawn_background_task
 from langmesh.base.tuning import Tunable, active_tuning
 from langmesh.daemon import state
 
@@ -130,7 +129,7 @@ def _sleep_when_idle(session_id: str) -> None:
         return
     cancel_idle_sleep(session_id)
     delay = active_tuning().duration(Tunable.session_idle_sleep)
-    _IDLE_TIMERS[session_id] = spawn_background_task(_sleep_after_idle(session_id, delay))
+    _IDLE_TIMERS[session_id] = asyncio.create_task(_sleep_after_idle(session_id, delay))
 
 
 async def _session_claim_work_habits(params: dict) -> dict:

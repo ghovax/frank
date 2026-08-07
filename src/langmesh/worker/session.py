@@ -17,7 +17,6 @@ from a2a.server.tasks import TaskUpdater
 from a2a.types import Message, MessageSendParams, Role, Task, TaskState
 from langchain_core.messages import messages_from_dict
 
-from langmesh.base.background_tasks import spawn_background_task
 from langmesh.base.catalogue import machine_catalogue
 from langmesh.base.tuning import Tunable, active_tuning
 from langmesh.base.file_leases import FileLeaseManager
@@ -131,11 +130,11 @@ class SessionExecutor(AgentExecutor):
     def _publish_stream_event(self, session_id: str, part) -> None:
         """Forward a turn part to the daemon for fan-out. Fire-and-forget: the turn must not wait on a watcher."""
         payload = part.model_dump(by_alias=True, exclude_none=True, mode="json") if hasattr(part, "model_dump") else part
-        spawn_background_task(self._turn_store.publish_event({"session_id": session_id, "part": payload}))
+        asyncio.create_task(self._turn_store.publish_event({"session_id": session_id, "part": payload}))
 
     def _notify_turn_state(self, session_id: str, running: bool) -> None:
         """Tell the daemon whether a turn is in flight, and whether anything still holds this process."""
-        spawn_background_task(self._turn_store.publish_event({
+        asyncio.create_task(self._turn_store.publish_event({
             "session_id": session_id,
             "running": running,
             "retains": self._has_live_background_work(),
@@ -153,7 +152,7 @@ class SessionExecutor(AgentExecutor):
 
     def _notify_permission_state(self, session_id: str, awaiting: bool) -> None:
         """Tell the daemon this session is parked on a human, so `ps` shows waiting rather than working."""
-        spawn_background_task(
+        asyncio.create_task(
             self._turn_store.publish_event({"session_id": session_id, "awaiting_input": awaiting})
         )
 
@@ -214,7 +213,7 @@ class SessionExecutor(AgentExecutor):
         if runtime is None or runtime.goal is None:
             return False
         runtime.write_goal(None)
-        spawn_background_task(self._persist_session_state(session_id, runtime))
+        asyncio.create_task(self._persist_session_state(session_id, runtime))
         return True
 
     async def _persist_session_state(self, session_id: str, runtime: AgentRuntime) -> None:
@@ -231,7 +230,7 @@ class SessionExecutor(AgentExecutor):
 
     def _notify_goal_state(self, session_id: str, goal) -> None:
         """Tell the daemon what the goal is now, so the interface can show it and offer to call it off."""
-        spawn_background_task(self._turn_store.publish_event({
+        asyncio.create_task(self._turn_store.publish_event({
             "session_id": session_id,
             "goal": goal.public() if goal is not None else None,
         }))
@@ -723,7 +722,7 @@ class SessionExecutor(AgentExecutor):
         ).strip()
         if not prose:
             return
-        spawn_background_task(self._generate_title(prose))
+        asyncio.create_task(self._generate_title(prose))
 
     async def _generate_title(self, first_message: str) -> None:
         """Ask the model for a short title and hand it to the daemon, with the schema bound as a tool."""
@@ -809,7 +808,7 @@ class SessionExecutor(AgentExecutor):
                 task_id=task.id,
                 context_id=self._session_id,
             )
-            spawn_background_task(self._drive_input_response(handler, message))
+            asyncio.create_task(self._drive_input_response(handler, message))
             return True
         return False
 

@@ -897,19 +897,22 @@ class AppendOnlyTaskStore(TaskStore):
         async with self._engine.connect() as connection:
             rows = (
                 await connection.execute(
-                    select(self._ledger.c.entry_id, self._ledger.c.entry, self._ledger.c.supersedes)
+                    select(self._ledger.c.entry_id, self._ledger.c.entry, self._ledger.c.supersedes,
+                           self._ledger.c.written_at)
                     .where(self._ledger.c.session_id == session_id, self._ledger.c.ledger == ledger)
                     .order_by(self._ledger.c.row_id)
                 )
             ).all()
         entries: list[dict] = []
         replaced: set[str] = set()
-        for entry_id, payload, supersedes in rows:
+        for entry_id, payload, supersedes, written_at in rows:
             try:
                 entry = json.loads(payload)
             except ValueError:
                 continue
             entry["id"] = str(entry_id)
+            # When it was learned, which a record spanning months is unreadable without.
+            entry["written_at"] = str(written_at or "")
             entries.append(entry)
             try:
                 replaced.update(json.loads(supersedes or "[]"))

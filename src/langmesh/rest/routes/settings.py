@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException
-from langmesh.base.background_tasks import spawn_background_task
 import langmesh.base.confinement as _confinement
 import langmesh.base.toolbox as _toolbox
 import langmesh.base.configuration as _configuration
@@ -215,7 +214,7 @@ async def chatgpt_auth_start():
             if state.chatgpt_login_flow is flow:
                 state.chatgpt_login_flow = None
 
-    spawn_background_task(_await_completion())
+    asyncio.create_task(_await_completion())
     return {"authorize_url": flow.authorize_url}
 
 
@@ -262,7 +261,7 @@ async def cursor_auth_start():
             if state.cursor_login_flow is flow:
                 state.cursor_login_flow = None
 
-    spawn_background_task(_await_completion())
+    asyncio.create_task(_await_completion())
     return {"authorize_url": flow.authorize_url}
 
 

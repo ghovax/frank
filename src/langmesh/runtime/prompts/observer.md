@@ -1,6 +1,6 @@
 # Hand this work over
 
-The turns below are about to leave the context window. The model that continues this work gets your record, the person's own standing instructions, and the most recent turns. It gets nothing else of what you are reading now.
+The exchange below has just finished. Record what it established, now, while its turns are whole — not because the context is full, but because this is the moment the work is freshest and nothing is rushed. What you write is kept; the turns themselves will not be.
 
 **Answer by calling the `ObservationBatch` tool, putting each finding in its `observations` list.** That is the only way to answer: prose is not read, and the work is handed over with nothing.
 
@@ -31,11 +31,20 @@ Do not repeat an entry that already holds. Add what these turns added, and revis
 
 Write state, not narration: "The port is read from `runtime_directory()/port`" beats "I looked for where the port comes from".
 
-Do not record what the person asked for — their instructions are kept in their own record, and duplicating them here lets the two drift apart. Where a detail is borderline, keep it: a redundant entry costs one entry, and a lost one costs the work that produced it.
+## What is not a finding
+
+The record is append-only, so an entry written needlessly is carried for the rest of the conversation. Before writing one, ask whether somebody resuming this work would be worse off without it. These never pass that test:
+
+- **Anything about yourself.** That you answered, complied, followed an instruction, chose a tool, or read a reminder. Your own conduct is not a finding about the work.
+- **Furniture you happened to see.** A file you did not act on, a directory listing, a size or a timestamp that nothing turned on. Noticing something is not establishing it.
+- **The obvious restated.** That a file exists because you just read it, or that a command ran because you just ran it. The finding is what it *said*, not that it happened.
+- **What the person asked for.** Their instructions are kept in their own record, and duplicating them here lets the two drift apart.
+
+An exchange that established nothing durable deserves no entries at all, and returning none is the right answer. Where a real detail is borderline, keep it: a redundant finding costs one entry, and a lost one costs the work that produced it.
 
 ## The record so far
 
-Each entry is shown by its id and its claim. Name an id in `supersedes` to revise it.
+Each entry is shown by its id, its claim, and `learned` — when it was recorded. The time is given to you; never write one yourself. Name an id in `supersedes` to revise it.
 
 ```jsonl
 {{ existing_observations }}

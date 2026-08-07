@@ -18,7 +18,6 @@ from a2a.utils import new_task
 from langchain_core.messages import messages_to_dict
 
 from langmesh.base import telemetry as _telemetry
-from langmesh.base.background_tasks import spawn_background_task
 from langmesh.base.configuration import PromptLoader
 from langmesh.base.serialization import conversation_snapshot_id
 from langmesh.base.tuning import Tunable, active_tuning
@@ -583,7 +582,7 @@ class _TurnRunner:
             runtime.park_goal()
             await self._executor._persist_session_state(self._task.context_id, runtime)
             return
-        spawn_background_task(self._executor.continue_goal(self._task.context_id))
+        asyncio.create_task(self._executor.continue_goal(self._task.context_id))
 
     def _maybe_nudge_to_report(self) -> None:
         """Remind the session once if a completed turn left its creator with no answer. A nudge, not a gate."""
@@ -596,4 +595,4 @@ class _TurnRunner:
             return
         if self._executor._nudged_to_report:
             return
-        spawn_background_task(self._executor.nudge_to_report(self._task.context_id))
+        asyncio.create_task(self._executor.nudge_to_report(self._task.context_id))
