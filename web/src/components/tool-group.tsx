@@ -103,7 +103,7 @@ export const ToolGroup = memo(function ToolGroup({
   keepOpen = false,
 }: ToolGroupProps) {
   const translation = useTranslations("ToolGroup");
-  const tDisplay = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
+  const toolDisplayTranslation = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
   const backgroundCount = tools.filter(
     (tool) => toolStatus(tool.status) === "running" && hasBackgroundJobId(tool.result),
   ).length;
@@ -123,12 +123,17 @@ export const ToolGroup = memo(function ToolGroup({
   const tally = useMemo(() => tallyTools(tools.slice(0, -1)), [tools]);
   // The status line shows the latest tool's own label, which says more than a static "working".
   const latestTool = tools[tools.length - 1];
-  const headingDisplay = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments, tDisplay, toolSettled(latestTool)) : null;
+  // The newest call has nothing to say yet, so the line follows the newest one that does and never empties.
+  const labelledTool = useMemo(
+    () => [...tools].reverse().find((tool) => getToolCallDisplay(tool.name, tool.arguments, toolDisplayTranslation, toolSettled(tool)).label),
+    [tools, toolDisplayTranslation],
+  );
+  const headingDisplay = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments, toolDisplayTranslation, toolSettled(latestTool)) : null;
   const HeadingIcon = headingDisplay?.icon ?? LuBrain;
   const headingIconColor = headingDisplay?.iconColor ?? "purple.fg";
   // Badge the collapsed heading when the batch touched a single remote place, since local is the implied default.
   const groupLocation = useMemo(() => collapsedHeadingLocation(tools.map((tool) => tool.arguments)), [tools]);
-  const latestLabel = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments, tDisplay, toolSettled(latestTool)).label : "";
+  const latestLabel = labelledTool ? getToolCallDisplay(labelledTool.name, labelledTool.arguments, toolDisplayTranslation, toolSettled(labelledTool)).label : "";
   // A tools-less group is a "thinking before acting" phase and owns the leading brain icon.
   const thinkingOnly = tools.length === 0;
   const headingText = latestLabel || (thinkingOnly ? translation("thinking") : active ? translation("working") : translation("actionsTaken"));
@@ -164,7 +169,7 @@ export const ToolGroup = memo(function ToolGroup({
           overflow="hidden"
           textOverflow="ellipsis"
         >
-          {latestTool ? <ToolCallLabel name={latestTool.name} args={latestTool.arguments} settled={toolSettled(latestTool)} /> : headingText}
+          {labelledTool ? <ToolCallLabel name={labelledTool.name} args={labelledTool.arguments} settled={toolSettled(labelledTool)} /> : headingText}
         </Text>
       </Box>
     </Box>
@@ -179,7 +184,7 @@ export const ToolGroup = memo(function ToolGroup({
       {soleTool ? <ToolAccessBadges name={soleTool.name} arguments={soleTool.arguments} /> : null}
       <AnimatePresence initial={false}>
         {tally.order.map((name) => {
-          const display = getToolCallDisplay(name, undefined, tDisplay);
+          const display = getToolCallDisplay(name, undefined, toolDisplayTranslation);
           const ToolIcon = display.icon;
           const count = tally.counts.get(name) ?? 0;
           return (
