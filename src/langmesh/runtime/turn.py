@@ -56,12 +56,24 @@ from pathlib import Path
 from typing import Any, AsyncIterator, cast, Optional
 import asyncio
 import platform
+import re
 import time
 import uuid
 from langmesh.base.serialization import compact
 
 
 logger = logging.getLogger(__name__)
+
+#: A finished `explanation` in a half-written argument object: its string closed, and a delimiter after it.
+_SETTLED_EXPLANATION = re.compile(r'"explanation"\s*:\s*"(?:[^"\\]|\\.)*"\s*[,}]')
+
+
+def _without_unfinished_explanation(settled: dict, raw: str) -> dict:
+    """The arguments so far, minus an explanation still being written, which the interface renders as prose."""
+    if "explanation" not in settled or _SETTLED_EXPLANATION.search(raw):
+        return settled
+    return {key: value for key, value in settled.items() if key != "explanation"}
+
 
 class _RunsTurns:
     """The turn itself: what the model is told, what comes back, and when it is over."""
@@ -587,6 +599,10 @@ class _RunsTurns:
                         continue
                     streaming_call_args[identifier] = streaming_call_args.get(identifier, "") + fragment
                     settled = parse_partial_json(streaming_call_args[identifier]) or {}
+                    if isinstance(settled, dict):
+                        # Held back until its closing quote: a reason revealed letter by letter reads as prose
+                        # being written, which is what the model is doing but not what the row is for.
+                        settled = _without_unfinished_explanation(settled, streaming_call_args[identifier])
                     if isinstance(settled, dict) and settled and settled != streaming_call_shown.get(identifier):
                         # Redrawn on the same clock the text uses, since both end as one row on one screen.
                         drawn = time.monotonic()
