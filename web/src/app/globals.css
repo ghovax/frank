@@ -420,28 +420,6 @@ samp {
   padding-inline-end: var(--fit-arrow-column);
 }
 
-/* The utilities under a message you sent — the time it was sent, and a button to copy it.
-   They are always laid out, so revealing them moves nothing; only the ink changes.
-
-   Hidden at rest on a pointer only, and that polarity is the point: a device with no hover has
-   no way to ask for them, so it keeps them. The same reason the sidebar's row actions are gated
-   this way — WebKit gives the first tap on an element whose `:hover` changes what is rendered to
-   the hover state, so a hidden-until-hover control costs a phone two taps.
-
-   A queued message opts out (it carries no `.message-actions`), because one of its buttons
-   deletes it and a destructive control you cannot see is a trap rather than a tidy default. */
-@media (hover: hover) {
-  .message-actions {
-    opacity: 0;
-    transition: opacity 0.12s ease-out;
-  }
-
-  .message-row:hover .message-actions,
-  .message-row:focus-within .message-actions {
-    opacity: 1;
-  }
-}
-
 /* Everything below is what a *pointer* does, and none of it is what a finger does.
 
    Gated on `hover: hover`, and this is a correctness fix rather than a tidy-up. WebKit gives the

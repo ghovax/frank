@@ -166,7 +166,6 @@ function MessageFooter({ content, sentAt, queued }: { content: string; sentAt: s
 
   return (
     <Flex
-      className={queued ? undefined : "message-actions"}
       align="center"
       gap={1}
       color="fg.subtle"
@@ -183,13 +182,13 @@ function MessageFooter({ content, sentAt, queued }: { content: string; sentAt: s
           </Flex>
         ) : null
       ) : dated ? (
-        // The time of day with the whole instant behind it, since a transcript is almost always read the same day.
+        // Day and time both: a transcript is read long after the day it was written, when a bare clock says nothing.
         <Text
           textStyle="fieldLabel"
           pe={1}
-          title={format.dateTime(dated, { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+          title={format.dateTime(dated, { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}
         >
-          {format.dateTime(dated, { hour: "numeric", minute: "numeric" })}
+          {format.dateTime(dated, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "numeric" })}
         </Text>
       ) : null}
       {queued?.onRetry && queued.retryLabel && (
