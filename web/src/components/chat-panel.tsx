@@ -117,7 +117,6 @@ interface ChatPanelProps {
   recentModels?: { id: string; name: string; provider: string }[];
   agentModel?: string;
   onAgentModelChange: (modelIdentifier: string) => void | Promise<void>;
-  compactionReclaimAtFraction: number;
 }
 
 type TimelineItem =
@@ -236,7 +235,6 @@ export function ChatPanel({
   recentModels = [],
   agentModel = "",
   onAgentModelChange,
-  compactionReclaimAtFraction,
 }: ChatPanelProps) {
   const translation = useTranslations("ChatPanel");
   const toolDisplayTranslation = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
@@ -1005,7 +1003,6 @@ export function ChatPanel({
           tokenUsage={tokenUsage}
           onCompact={compact}
           isCompacting={isCompacting}
-          compactionReclaimAtFraction={compactionReclaimAtFraction}
         />
         </Box>
         </Box>

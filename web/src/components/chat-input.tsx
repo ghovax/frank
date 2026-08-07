@@ -66,12 +66,11 @@ interface ChatInputProps {
   onSandboxEnforceChange?: (enforce: SandboxEnforce) => void;
   // Running token totals for the session, null until the first turn reports usage.
   tokenUsage?: TokenUsage | null;
-  // Compact the conversation now, shown once a session has real context to compact.
+  // Compact the conversation now, offered whenever there is one.
   onCompact?: () => void;
   // True while a compaction pass is running, so the control shows progress rather than inviting another click.
   isCompacting?: boolean;
   // The share of the window at which the server reclaims on its own; the manual button appears at half of it.
-  compactionReclaimAtFraction: number;
 }
 
 // What the selectors row gives up, and in what order, when it cannot hold everything.
@@ -271,7 +270,6 @@ export function ChatInput({
   tokenUsage,
   onCompact,
   isCompacting = false,
-  compactionReclaimAtFraction,
 }: ChatInputProps) {
   const translation = useTranslations("ChatInput");
   const chatgptUsage = useChatGPTUsage(agentModel, isStreaming);
@@ -859,10 +857,8 @@ export function ChatInput({
         />
         {/* What the turn has spent, pushed to the far end by a margin rather than by a spacer the fit would have to ignore. */}
         <Flex ms="auto" align="center" gap={2} flexShrink={0}>
-          {/* Offered from half the threshold the server reclaims at, measured against how full the context actually is. */}
-          {onCompact && !!sessionId && !!tokenUsage && tokenUsage.contextWindow > 0
-            && (isCompacting
-              || tokenUsage.contextTokens / tokenUsage.contextWindow >= compactionReclaimAtFraction / 2) && (
+          {/* Offered whenever there is a conversation to compact: when to do it is the reader's judgement, not a threshold's. */}
+          {onCompact && !!sessionId && (
             <Button
               data-fit-control="compact"
               {...(hiddenLabels.has("compact") ? { "data-fit-collapsed": "" } : {})}

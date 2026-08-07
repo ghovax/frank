@@ -140,7 +140,6 @@ function Workspace() {
   const [modelProviders, setModelProviders] = useState<ProviderOption[]>([]);
   const [recentModels, setRecentModels] = useState<{ id: string; name: string; provider: string }[]>([]);
   const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionMode>("ask");
-  const [compactionReclaimAtFraction, setCompactionReclaimAtFraction] = useState(0.85);
   const [historyOpen, setHistoryOpen] = useState(true);
   // The right-hand panels, held here because ChatPanel remounts on every conversation switch.
   const [openSidePanels, setOpenSidePanels] = useState<SidePanelKey[]>([]);
@@ -294,7 +293,6 @@ function Workspace() {
           setSandboxEnforceState(settings.sandbox.enforce);
           setSandboxBackend(settings.sandbox_backend);
           setWorktreeStrategy(settings.worktree_strategy);
-          setCompactionReclaimAtFraction(settings.compaction?.reclaim_at_fraction ?? 0.85);
         })
         .catch((caught) => swallowed({ component: "workspace-page", operation: "list the agents" }, caught));
     };
@@ -775,7 +773,6 @@ function Workspace() {
           recentModels={recentModels}
           agentModel={agentModel}
           onAgentModelChange={handleAgentModelChange}
-          compactionReclaimAtFraction={compactionReclaimAtFraction}
         />
       </Box>
     </Flex>
