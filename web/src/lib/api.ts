@@ -1456,6 +1456,37 @@ export async function saveSessionDraft(sessionId: string, inputDraft: string): P
   });
 }
 
+/** One entry in a session's memory: a finding the work established, or an instruction the person gave. */
+export interface RecordEntry {
+  id: string;
+  category?: string;
+  claim?: string;
+  detail?: string;
+  evidence?: string;
+  standing?: "verified" | "reported" | "inferred";
+  kind?: string;
+  summary?: string;
+  still_binding?: boolean;
+  supersedes?: string[];
+  written_at?: string;
+}
+
+/** A session's memory, live entries only unless the whole chain is asked for. */
+export async function fetchSessionRecord(
+  sessionId: string,
+  ledger: "observations" | "directives",
+  signal?: AbortSignal,
+  liveOnly = true,
+): Promise<RecordEntry[]> {
+  const response = await apiFetch(
+    `/sessions/${encodeURIComponent(sessionId)}/record?ledger=${ledger}&live_only=${liveOnly}`,
+    { signal },
+  );
+  if (!response.ok) throw new Error(`record request failed: ${response.status}`);
+  const data = (await response.json()) as { entries?: RecordEntry[] };
+  return data.entries ?? [];
+}
+
 export async function fetchSessionTurnsPage(
   sessionId: string,
   beforeRowId?: number | null,

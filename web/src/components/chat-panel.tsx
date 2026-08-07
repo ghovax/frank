@@ -12,7 +12,7 @@ import {
   Text,
   VStack,
 } from "@chakra-ui/react";
-import { LuArrowDown, LuEllipsis, LuFolderOpen, LuGitBranch, LuMessageSquare, LuMoon, LuPanelLeftClose, LuPanelLeftOpen, LuPlugZap, LuSettings, LuSun, LuTerminal, LuTrash2, LuTriangleAlert } from "react-icons/lu";
+import { LuArrowDown, LuBookMarked, LuEllipsis, LuFolderOpen, LuGitBranch, LuMessageSquare, LuMoon, LuPanelLeftClose, LuPanelLeftOpen, LuPlugZap, LuSettings, LuSun, LuTerminal, LuTrash2, LuTriangleAlert } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { FadeIn } from "@/components/ui/fade-in";
 import { useTranslations } from "next-intl";
@@ -27,6 +27,8 @@ import { ChatInput } from "./chat-input";
 import { QuestionOverlay } from "./question-overlay";
 import { SettingsDialog, type SettingsSection } from "./settings-dialog";
 import { BackgroundJobsPanel } from "./background-jobs-panel";
+import { MemoryPanel } from "./memory-panel";
+import { CONTROL_ICON_SIZE } from "./session-controls";
 import { DelegatedWorkPanel } from "./delegated-work-panel";
 import type { SessionEntry } from "./session-row";
 import { GitStatusBar } from "./git-status-bar";
@@ -56,7 +58,7 @@ import { errorMessage } from "@/lib/errors";
 const MotionBox = motion.create(Box);
 
 // The panels that can share the right-hand region: the terminal and background pair, and delegated work.
-export type SidePanelKey = "background" | "delegated";
+export type SidePanelKey = "background" | "delegated" | "memory";
 
 const MAXIMUM_OPEN_SIDE_PANELS = 2;
 
@@ -247,7 +249,10 @@ export function ChatPanel({
   // Whether the chat body has resolved enough to render without flashing, so opening a workspace does not flicker.
   const trimmedWorkingDirectory = (workingDirectory ?? "").trim();
   const directoryPending = !!trimmedWorkingDirectory && (directoryStatus.checking || directoryStatus.path !== trimmedWorkingDirectory);
-  const chatReady = isConnected && !directoryPending;
+  // The composer stays mounted whenever there is a daemon: a directory check runs on every conversation
+  // switch, and unmounting on it made the composer vanish and come back, remounting its whole subtree.
+  // Not being ready is a disabled composer, which is a state, rather than an absent one, which is a jump.
+  const chatReady = isConnected;
   // The one condition under which the transcript is in the DOM, read by the render and by everything touching scroll.
   const transcriptVisible = chatReady && !isHistoryLoading;
 
@@ -288,6 +293,7 @@ export function ChatPanel({
   const scrollMetricsRef = useRef({ scrollHeight: 0, firstKey: "", count: 0 });
   const notifiedSessionIdRef = useRef<string | null>(null);
   const backgroundPanelOpen = openSidePanels.includes("background");
+  const memoryPanelOpen = openSidePanels.includes("memory");
   const delegatedPanelOpen = openSidePanels.includes("delegated");
   const { colorMode, toggleColorMode } = useColorMode();
   // Whether the transcript is near the bottom, driving the jump-to-latest affordance.
@@ -717,6 +723,14 @@ export function ChatPanel({
               indicator={delegatedSessionCount > 0}
               onClick={() => setSidePanelOpen("delegated", !delegatedPanelOpen)}
             />
+            {/* What this conversation remembers of the turns that have left its window. */}
+            <ToolbarAction
+              label={translation("memory")}
+              icon={<LuBookMarked size={CONTROL_ICON_SIZE} />}
+              active={memoryPanelOpen}
+              colorPalette="orange"
+              onClick={() => setSidePanelOpen("memory", !memoryPanelOpen)}
+            />
             <ToolbarAction
               label={translation("terminalAndBackground")}
               icon={<LuTerminal size={14} />}
@@ -970,6 +984,9 @@ export function ChatPanel({
           px={4}
           pb="var(--safe-bottom, 0px)"
           overflowY="hidden"
+          // Never gives up its height: the transcript above shrinks instead, so a growing composer
+          // cannot push itself past the bottom of the window when a side panel narrows the column.
+          flexShrink={0}
           style={{ scrollbarGutter: "stable both-edges" }}
         >
         <Box w="full" maxW="80rem" mx="auto">
@@ -980,7 +997,7 @@ export function ChatPanel({
           onAbort={abort}
           isStreaming={isStreaming}
           // Two reasons the composer is closed, kept apart because they read as different things to the person looking at it.
-          disabled={!isConnected}
+          disabled={!isConnected || directoryPending}
           awaitingDecision={!!pendingPrompt}
           sessionId={sessionId}
           initialDraft={initialInputDraft}
@@ -1057,6 +1074,16 @@ export function ChatPanel({
                       sessionId={sessionId}
                       workingDirectory={workingDirectory || homeDirectory || ""}
                       locations={workspaceLocations}
+                    />
+                  ),
+                },
+                memoryPanelOpen && !!sessionId && {
+                  key: "memory",
+                  onActivate: () => markSidePanelActive("memory"),
+                  content: (
+                    <MemoryPanel
+                      sessionId={sessionId}
+                      onClose={() => setSidePanelOpen("memory", false)}
                     />
                   ),
                 },

@@ -31,6 +31,14 @@ async def update_session_draft(session_id: str, request: SessionDraftRequest):
     return {"ok": True}
 
 
+@router.get("/sessions/{session_id}/record")
+async def session_record(session_id: str, ledger: str = "observations", live_only: bool = True):
+    """A session's memory: what the work established, or what the person asked for, as the record holds it."""
+    assert state.turn_store is not None
+    entries = await state.turn_store.ledger_entries(session_id, ledger, live_only=live_only)
+    return {"entries": entries}
+
+
 @router.get("/sessions/{session_id}/turns")
 async def session_turns(session_id: str):
     """Every turn a session has had, with its history and artifacts, for replay."""
