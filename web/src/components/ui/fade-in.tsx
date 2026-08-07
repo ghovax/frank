@@ -11,20 +11,17 @@ export interface FadeInProps {
   animate?: boolean;
   seconds?: number;
   style?: CSSProperties;
-  // For arriving text inside a line, where a block would break the line it belongs to.
-  inline?: boolean;
 }
 
-export function FadeIn({ children, animate = true, seconds = 0.18, style, inline = false }: FadeInProps) {
-  const Element = inline ? motion.span : motion.div;
+export function FadeIn({ children, animate = true, seconds = 0.18, style }: FadeInProps) {
   return (
-    <Element
+    <motion.div
       initial={animate ? { opacity: 0 } : false}
       animate={{ opacity: 1 }}
       transition={{ duration: seconds, ease: "easeOut" }}
       style={style}
     >
       {children}
-    </Element>
+    </motion.div>
   );
 }

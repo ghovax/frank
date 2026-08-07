@@ -803,12 +803,14 @@ class AppendOnlyTaskStore(TaskStore):
             ).all()
 
         histories: dict[str, list[tuple[int, str]]] = {turn_id: [] for turn_id in page_turn_ids}
-        include_status_message: dict[str, bool] = {turn_id: False for turn_id in page_turn_ids}
+        # A turn's tail — its trailing status message and its artifacts — belongs to whichever page holds
+        # its last row. Repeating either on every page would deliver the same final answer once per page.
+        holds_turn_tail: dict[str, bool] = {turn_id: False for turn_id in page_turn_ids}
         for row in sorted(page_rows, key=lambda value: value.row_id):
             turn_id = str(row.turn_id)
             histories[turn_id].append((int(row.row_id), row.message))
             if int(row.row_id) == maximum_row_by_turn.get(turn_id):
-                include_status_message[turn_id] = True
+                holds_turn_tail[turn_id] = True
 
         artifacts: dict[str, list[str]] = {turn_id: [] for turn_id in page_turn_ids}
         for turn_id, artifact in artifact_rows:
@@ -818,7 +820,7 @@ class AppendOnlyTaskStore(TaskStore):
         for turn_id in page_turn_ids:
             head_row = head_by_id[turn_id]
             status = json.loads(head_row["status"])
-            if not include_status_message[turn_id] and isinstance(status, dict):
+            if not holds_turn_tail[turn_id] and isinstance(status, dict):
                 status = {key: value for key, value in status.items() if key != "message"}
             data = {
                 "id": turn_id,
@@ -827,7 +829,8 @@ class AppendOnlyTaskStore(TaskStore):
                 "status": status,
                 "metadata": json.loads(head_row["turn_metadata"]) if head_row["turn_metadata"] else None,
                 "history": _compact_history([json.loads(message) for _, message in histories[turn_id]]),
-                "artifacts": [json.loads(artifact) for artifact in artifacts[turn_id]] or None,
+                "artifacts": ([json.loads(artifact) for artifact in artifacts[turn_id]] or None)
+                if holds_turn_tail[turn_id] else None,
             }
             tasks.append(Task.model_validate(data))
 

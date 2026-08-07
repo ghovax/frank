@@ -827,14 +827,42 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
 }
 
 // Rebuild messages from persisted tasks, already compacted server-side, so no client pass is needed.
-function replayTurns(turns: A2ATurn[]): {
+/** The pages of a turn, joined back into it: history in the order given, and each artifact kept once. */
+function coalesceTurnPages(turns: A2ATurn[]): A2ATurn[] {
+  const byIdentifier = new Map<string, A2ATurn>();
+  const ordered: A2ATurn[] = [];
+  for (const turn of turns) {
+    const identifier = String(turn.id ?? "");
+    const held = identifier ? byIdentifier.get(identifier) : undefined;
+    if (!held) {
+      const copy = { ...turn, history: [...(turn.history ?? [])], artifacts: [...(turn.artifacts ?? [])] };
+      if (identifier) byIdentifier.set(identifier, copy);
+      ordered.push(copy);
+      continue;
+    }
+    held.history = [...(held.history ?? []), ...(turn.history ?? [])];
+    const seen = new Set((held.artifacts ?? []).map((artifact) => artifact.artifactId));
+    for (const artifact of turn.artifacts ?? []) {
+      if (seen.has(artifact.artifactId)) continue;
+      seen.add(artifact.artifactId);
+      held.artifacts = [...(held.artifacts ?? []), artifact];
+    }
+    // The later page is the newer one, so its status carries the turn's real ending.
+    if (turn.status) held.status = turn.status;
+  }
+  return ordered;
+}
+
+export function replayTurns(turns: A2ATurn[]): {
   messages: ChatMessage[];
   tasks: ChatTask[];
   tokenUsage: TokenUsage | null;
   keyCounts: Map<string, number>;
 } {
   // Left in the order the server sent them, which is the order they began — the append order is the chronology.
-  const mainTurns = turns.filter((turn) => !(turnState(turn).referenceTurnIds ?? []).length);
+  // Pages of one turn are joined back into that turn first: every decision below is about a whole turn, and
+  // a page is only a slice of one, so judging a slice would answer a question the slice cannot answer.
+  const mainTurns = coalesceTurnPages(turns.filter((turn) => !(turnState(turn).referenceTurnIds ?? []).length));
   const state: ReduceState = newReduceState();
   for (const turn of mainTurns) {
     // A turn's stream is its history plus its trailing status message, which A2A folds in only on the next update.
