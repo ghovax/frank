@@ -32,16 +32,31 @@ export function useScrollEdgeFade() {
   const measure = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
-    setHiddenAbove(container.scrollTop > 0);
+    // A tolerance either side, because the mask this drives can move the metrics by a fraction of a pixel,
+    // and an edge decided on that fraction flips back and forth instead of settling.
+    setHiddenAbove(container.scrollTop > 2);
     setHiddenBelow(container.scrollHeight - (container.scrollTop + container.clientHeight) > 8);
   }, []);
-  useEffect(measure);
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const observer = new ResizeObserver(measure);
+    // Measured from the element, never from a render: measuring on every render fed the state that
+    // decides the mask, and the mask fed the observer that measured again — a cycle with no exit.
+    let scheduled = 0;
+    const settle = () => {
+      window.cancelAnimationFrame(scheduled);
+      scheduled = window.requestAnimationFrame(measure);
+    };
+    settle();
+    const observer = new ResizeObserver(settle);
     observer.observe(container);
-    return () => observer.disconnect();
+    const watcher = new MutationObserver(settle);
+    watcher.observe(container, { childList: true, subtree: true, characterData: true });
+    return () => {
+      window.cancelAnimationFrame(scheduled);
+      observer.disconnect();
+      watcher.disconnect();
+    };
   }, [measure]);
   const fade = hiddenAbove
     ? (hiddenBelow ? scrollFadeTopBottom : scrollFade)
