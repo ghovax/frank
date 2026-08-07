@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import contextvars
+import tempfile
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Any, Callable, Optional, Sequence
 
 from langmesh.base import environment_variables
@@ -25,6 +27,11 @@ class ToolContext:
     jina_api_key: str = ""
     proxy_url: str = ""
 
+    # What a fetch is given and what it must return to count, as the person configured them.
+    fetch_timeout_seconds: int = 30
+    download_timeout_seconds: int = 120
+    minimum_useful_characters: int = 64
+
     # How this session reaches its peers, supplied by the worker; the runtime holds no identity.
     session_access: Any = None
     conversation_snapshot: Optional[Callable[[], list[dict[str, Any]]]] = None
@@ -37,6 +44,15 @@ class ToolContext:
 
     # Whether this is a second run: the only thing that can make a command run wider than its session.
     retrying: bool = False
+
+    def spill_path(self, prefix: str) -> "Path":
+        """Where a tool's overflow output lands: somewhere this profile permits, never in the tree being worked in."""
+        from pathlib import Path
+        from langmesh.base import confinement as _confinement
+        from langmesh.base.identifiers import new_id
+
+        scratch = _confinement.temporary_directory(self.sandbox, workspace=self.workspace)
+        return Path(scratch or tempfile.gettempdir()) / f"{new_id(prefix)}.log"
 
     def child_environment(self, inherited: Optional[dict] = None) -> dict:
         """What a child needs beyond the confinement's environment: who it belongs to, and its toolbox."""

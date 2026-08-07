@@ -45,9 +45,9 @@ def _unavailable(code: str) -> str:
 
 
 async def _create_session(
+    explanation: str,
     agent: str,
     working_directory: Optional[str] = None,
-    explanation: str = "",
 ) -> str:
     """Make a peer, and nothing else, so the call cannot half succeed."""
     access = tool_context.current().session_access
@@ -71,7 +71,7 @@ async def _create_session(
     })
 
 
-async def _message_session(session: str, message: str, explanation: str = "") -> str:
+async def _message_session(session: str, message: str, explanation: str) -> str:
     """Hand a session a message, reporting a peer parked on a decision as an error rather than a delivery."""
     access = tool_context.current().session_access
     if access is None:
@@ -94,7 +94,7 @@ async def _message_session(session: str, message: str, explanation: str = "") ->
     return compact({"code": "message_sent", "status": "ok", "session": session})
 
 
-async def _read_session(session: str, explanation: str = "") -> str:
+async def _read_session(session: str, explanation: str) -> str:
     """One session's record as it stands, for orienting rather than for waiting on."""
     access = tool_context.current().session_access
     if access is None:
@@ -109,7 +109,7 @@ async def _read_session(session: str, explanation: str = "") -> str:
     return compact({"code": "session", "status": "ok", **record})
 
 
-async def _list_sessions(explanation: str = "") -> str:
+async def _list_sessions(explanation: str) -> str:
     """This session's own subtree, which is the only part of the machine it is answerable for."""
     access = tool_context.current().session_access
     if access is None:
@@ -121,7 +121,7 @@ async def _list_sessions(explanation: str = "") -> str:
     return compact({"code": "sessions", "status": "ok", "sessions": records})
 
 
-async def _list_remote_agents(explanation: str = "") -> str:
+async def _list_remote_agents(explanation: str) -> str:
     """The agents registered on other hosts, with the health of each, since an unreachable one is not a choice."""
     access = tool_context.current().session_access
     if access is None:
@@ -133,7 +133,7 @@ async def _list_remote_agents(explanation: str = "") -> str:
     return compact({"code": "remote_agents", "status": "ok", "agents": agents})
 
 
-async def _message_remote_agent(name: str, message: str, explanation: str = "") -> str:
+async def _message_remote_agent(name: str, message: str, explanation: str) -> str:
     """One exchange with an agent on another host, whose reply is the whole of what comes back."""
     access = tool_context.current().session_access
     if access is None:

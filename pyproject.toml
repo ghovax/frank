@@ -25,7 +25,9 @@ dependencies = [
     "greenlet>=3.5.2",
     "watchfiles>=1.2.0",
     "mcp[cli]>=1.27,<2",
+    "beautifulsoup4>=4.13",
     "markdownify>=1.2.2",
+    "minify-html>=0.15",
     "firecrawl-py>=2.0.0",
     "curl-cffi>=0.15.0",
     "pillow>=11.0",
@@ -55,7 +57,6 @@ dependencies = [
     "pyobjc-framework-ApplicationServices>=11.0; sys_platform == 'darwin'",
     "playwright>=1.61.0",
     "model2vec>=0.8.2",
-    "semble>=0.1.10",
     "croniter>=6.2.4",
     # `langmesh reach pair` prints its pairing link as a QR code, because the alternative is asking
     # somebody to type a 43-character token into a phone. Pure Python and dependency-free, which

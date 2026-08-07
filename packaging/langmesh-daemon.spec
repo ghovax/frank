@@ -1,17 +1,6 @@
-# PyInstaller spec that freezes LangMesh into one self-contained binary you install. It is a
-# single image with two entry points — `langmesh` (the CLI) and `langmeshd` (the daemon) —
-# selected by the first argument. Every session runs inside the daemon, so the whole fleet is
-# one signed binary and one TCC row, and macOS keeps a single Accessibility grant covering it.
-#
-# The desktop app used to bundle the result of this as a resource and spawn it. It no longer
-# does: the app is a client of a daemon it neither contains nor starts, so this produces the
-# daemon's own installable artifact.
-#
-# The dependency tree is heavy and full of *dynamic* imports (litellm loads
-# providers by name, uvicorn[standard] picks loops/protocols at runtime, langchain
-# and a2a pull submodules lazily), so PyInstaller's static analysis misses them.
-# `collect_all` pulls each package's submodules + data files + binaries, and
-# `copy_metadata` keeps the importlib.metadata version lookups those libraries do.
+# PyInstaller spec freezing LangMesh into one signed binary whose first argument selects `langmesh` or `langmeshd`, so the fleet is one TCC row.
+# The desktop app neither contains nor starts the daemon, so this produces the daemon's own installable artifact.
+# `collect_all` and `copy_metadata` are used throughout, because litellm, uvicorn, langchain and a2a import dynamically and static analysis misses it.
 from PyInstaller.utils.hooks import collect_all, copy_metadata
 
 datas = []
@@ -33,6 +22,8 @@ _collect = [
     "aiosqlite",
     "greenlet",
     "markdownify",
+    "minify_html",
+    "bs4",
     "tiktoken",
     "tiktoken_ext",
     "uvicorn",
@@ -52,23 +43,15 @@ _collect = [
     "dotenv",
     "certifi",
     "charset_normalizer",
-    # Screen-search retrieval (search_screen) and code search (search_code): static embeddings
-    # plus BM25 and their data/model plumbing. collect_all pulls each package's data files and
-    # dynamic submodules PyInstaller would otherwise miss; any not installed are skipped above.
+    # Screen-search retrieval: static embeddings whose data files and dynamic submodules `collect_all` pulls in; any not installed are skipped.
     "model2vec",
-    "semble",
     "tokenizers",
     "safetensors",
-    "bm25s",
     "vicinity",
     "tree_sitter_language_pack",
     "joblib",
     "numpy",
-    # Dictation: the on-device speech model and the array framework under it. Absent from this
-    # list, `import mlx.core` inside the worker failed on `mlx._reprlib_fix` — a submodule
-    # nothing references by name, so nothing collected it, so the extension could not
-    # initialise. Dictation therefore worked from a checkout and had never once worked in the
-    # packaged app, which is a difference no amount of reading either would show.
+    # Dictation's speech model and array framework: `mlx._reprlib_fix` is named by nothing, and without it `import mlx.core` failed in the packaged app alone.
     "mlx",
     "parakeet_mlx",
 ]
@@ -82,18 +65,11 @@ for package in _collect:
     except Exception as error:  # noqa: BLE001 - a missing optional package must not abort the freeze
         print(f"[langmesh-daemon.spec] skipping {package}: {error}")
 
-# The shipped agents/skills/MCP defaults live in the repo-root `.agents/` — a SIBLING of
-# the `harness` package, so `collect_all("langmesh")` never sees them. Bundle them at the
-# frozen root as `.agents/...` so `_bundled_dotagents_root()` (frozen-aware, sys._MEIPASS)
-# finds them: this is the harness-shipped base layer of agents the app always has, and the
-# source the app seeds editable copies from on first run. `memories` is user data — not shipped.
+# The shipped `.agents/` defaults sit beside the package where `collect_all` never looks, so they are bundled at the frozen root; `memories` is user data.
 import os as _os
 _repo_root = _os.path.dirname(SPECPATH)  # SPECPATH is the packaging/ dir holding this spec
 
-# Regenerable runtime artifacts a skill may leave in its source tree — a per-skill uv devshell
-# (`.venv`), byte-cache, VCS, or node deps. They are recreated on demand where the skill runs and
-# must NOT ride into the freeze: the literature-search skill's committed `.venv` alone is ~145 MB
-# (pymupdf/libmupdf, lxml, numpy), which is what bloated the shipped `.agents` from ~10 MB to 80 MB.
+# Regenerable per-skill artifacts, recreated where the skill runs: one committed `.venv` alone took the shipped `.agents` from ~10 MB to 80 MB.
 _skip_directory_names = {".venv", "venv", "__pycache__", ".git", "node_modules", ".mypy_cache", ".pytest_cache", ".ruff_cache"}
 
 
@@ -124,11 +100,7 @@ _mcp = _os.path.join(_repo_root, ".agents", "mcp.json")
 if _os.path.isfile(_mcp):
     datas.append((_mcp, ".agents"))
 
-# The built interface, so `langmesh web` works from an installed binary and not only from a
-# checkout. ~15 MB against a ~228 MB image, for the difference between "the desktop app is the
-# only way to see this" and "any browser is". Flattened from `web/out` to `web/` because the
-# `out` is Next.js's build directory name, not part of the layout the server expects. Absent
-# when the UI has not been built: the freeze still succeeds and `langmesh web` says what to run.
+# The built interface, flattened from `web/out` to the layout the server expects, so `langmesh web` works installed; absent, the freeze still succeeds.
 _interface = _os.path.join(_repo_root, "web", "out")
 if _os.path.isdir(_interface):
     for _directory, _subdirectories, _filenames in _os.walk(_interface):
@@ -140,9 +112,7 @@ if _os.path.isdir(_interface):
 else:
     print("[langmesh-daemon.spec] web/out is absent; `langmesh web` will not work from this build")
 
-# The automation tools' runtime-loaded assets: the message templates (.md), one folder per
-# surface (messages/browser, messages/computer), and the browser selection script (scripts/*.js).
-# The tools degrade without them, so bundle every file, preserving its folder, to be certain.
+# The automation tools' runtime assets — per-surface message templates and browser scripts — bundled whole, since the tools degrade without them.
 for _asset_subdir in ("messages", "scripts"):
     _asset_source = _os.path.join(_repo_root, "src", "langmesh", "computer", _asset_subdir)
     for _dirpath, _dirnames, _filenames in _os.walk(_asset_source):
@@ -152,15 +122,7 @@ for _asset_subdir in ("messages", "scripts"):
                 _destination = _os.path.join("langmesh", "computer", _asset_subdir, _relative)
                 datas.append((_os.path.join(_dirpath, _asset_name), _destination))
 
-# The tokenizer's vocabulary, fetched once at build time and carried in the image.
-#
-# `tiktoken` is a hard dependency but ships no vocabulary: `get_encoding` downloads
-# `o200k_base` from a blob store on first use and caches it under a sha1 of that URL. So a
-# frozen build that had never run was one network failure away from having no tokenizer, and
-# the tokenizer is what every size cap in the harness is measured with. Downloading it here
-# — where the network is a given and a failure stops the build — puts the file in the bundle
-# and makes the runtime path offline by construction. `langmesh.base.tuning` points
-# `TIKTOKEN_CACHE_DIR` at it.
+# The tokenizer's vocabulary, fetched at build time because `tiktoken` downloads it on first use, which left a frozen build offline with no tokenizer.
 _VOCABULARY_URL = "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"
 import hashlib as _hashlib
 import urllib.request as _urllib_request
@@ -242,15 +204,7 @@ collection = COLLECT(
     name="langmesh",
 )
 
-# Wrap the frozen image as a background .app. A session process — not the desktop app — is the
-# process that calls the macOS Accessibility API for the computer-use tool, and TCC lists
-# whichever process actually exercises the permission. As a bare executable it would show only
-# its filename; as a bundle, macOS resolves it to this Info.plist. It carries the *same*
-# CFBundleName and bundle identifier as the desktop app, so the two fold into a single "LangMesh"
-# Accessibility entry rather than adding a second one — which is why this survives the app no
-# longer bundling it, and why both are signed with the same certificate. The bundle file is
-# named "LangMesh Computer Use.app" for clarity on disk. LSUIElement, so running the daemon never
-# puts an icon in the Dock.
+# Wrapped as a background .app under the desktop app's bundle identifier, so Accessibility is one TCC entry; LSUIElement keeps it out of the Dock.
 app = BUNDLE(
     collection,
     name="LangMesh Computer Use.app",

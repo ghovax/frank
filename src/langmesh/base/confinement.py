@@ -27,6 +27,10 @@ _BASE_ENVIRONMENT_KEYS = (
     "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_RUNTIME_DIR",
 )
 
+# The agent is told to recognise a refusal by its wording, and `strerror` is translated, so the message
+# locale is pinned while `LC_CTYPE` keeps the encoding a person's own text needs.
+_MESSAGE_LOCALE = {"LC_MESSAGES": "C"}
+
 
 class ConfinementUnavailable(RuntimeError):
     """No backend can enforce a profile on this machine, and the policy says that is fatal."""
@@ -468,6 +472,7 @@ def _apply_posix(profile: Profile) -> None:
 def child_environment(profile: Profile, *, workspace: str = "", extra: Optional[dict] = None) -> dict[str, str]:
     """A confined child's environment: what makes a process usable, plus the profile's own, and nothing else."""
     environment = {key: os.environ[key] for key in _BASE_ENVIRONMENT_KEYS if key in os.environ}
+    environment.update(_MESSAGE_LOCALE)
     if workspace:
         environment["PWD"] = workspace
     environment.update(profile.environment)
