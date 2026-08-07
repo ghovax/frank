@@ -20,8 +20,7 @@ from pydantic import AnyUrl
 
 from langmesh.base.configuration import MCPServerConfiguration
 from langmesh.base.tuning import Tunable, active_tuning
-from langmesh.base.errors import describe
-from langmesh.base.serialization import compact
+from langmesh.base.errors import log_fields
 
 logger = logging.getLogger(__name__)
 
@@ -71,8 +70,8 @@ class MCPClientManager:
                         connection = _StatefulStreamableHTTPSession(name, configuration)
                         self._streamable_sessions[name] = connection
                     await asyncio.wait_for(connection._connect(), timeout=active_tuning().duration(Tunable.mcp_connect_seconds))
-            except (Exception, asyncio.TimeoutError) as exception:
-                logger.warning("MCP server %r failed to start; skipping it: %s", name, exception)
+            except (Exception, asyncio.TimeoutError):
+                logger.warning("MCP server %r failed to start; skipping it", name, exc_info=True)
                 self._stdio_sessions.pop(name, None)
                 self._streamable_sessions.pop(name, None)
 
@@ -102,7 +101,7 @@ class MCPClientManager:
             except Exception as error:  # noqa: BLE001 — an unreachable server is a fact, not a failure
                 if server:
                     raise
-                logger.warning("MCP server tools unavailable %s", compact({"server": name, **describe(error)}))
+                logger.warning("MCP server tools unavailable", extra=log_fields(error, server=name))
                 result["servers"].append({"name": name, "tools": [], "error": str(error)})
                 continue
             result["servers"].append({
@@ -171,7 +170,7 @@ class MCPClientManager:
             except Exception as error:  # noqa: BLE001
                 if server:
                     raise
-                logger.warning("MCP server resources unavailable %s", compact({"server": name, **describe(error)}))
+                logger.warning("MCP server resources unavailable", extra=log_fields(error, server=name))
                 result["servers"].append({"name": name, "resources": [], "error": str(error)})
                 continue
             result["servers"].append({

@@ -23,6 +23,7 @@ from langmesh.daemon import state
 from langmesh.daemon.registry import SessionRecord
 from langmesh.protocol.turn_record import TurnRecord
 from langmesh.base.serialization import compact
+from langmesh.base.errors import log_fields
 
 logger = logging.getLogger(__name__)
 
@@ -718,8 +719,14 @@ async def telemetry_faults(request: Request) -> JSONResponse:
     error_stack = str(payload.get("errorStack") or "")
     url = str(payload.get("url") or "")
     session_id = str(payload.get("sessionId") or "")
-    # Logged whether or not telemetry is on, since this is the single answer to where a fault went.
-    logger.warning("interface fault %s", compact({
+    # What the site knew beyond the error itself, as scalars, since an attribute cannot hold a structure.
+    reported = payload.get("detail")
+    detail = {
+        str(name): value
+        for name, value in (reported.items() if isinstance(reported, dict) else ())
+        if isinstance(value, (str, int, float, bool))
+    }
+    fields = {
         "component": component,
         "operation": operation,
         "error": error_name,
@@ -727,7 +734,11 @@ async def telemetry_faults(request: Request) -> JSONResponse:
         "url": url,
         "session": session_id,
         "stack": error_stack,
-    }))
+    }
+    # The site's own facts never displace the report's, so a stray key cannot rename what this handler means.
+    fields.update({name: value for name, value in detail.items() if name not in fields})
+    # Logged whether or not telemetry is on, since this is the single answer to where a fault went.
+    logger.warning("interface fault", extra=log_fields(**fields))
     telemetry.record_client_fault(
         component,
         operation,
@@ -737,6 +748,7 @@ async def telemetry_faults(request: Request) -> JSONResponse:
             "langmesh.client.error.stack": error_stack,
             "langmesh.client.url": url,
             "langmesh.client.session_id": session_id,
+            **{f"langmesh.client.detail.{name}": value for name, value in detail.items()},
         },
     )
     return JSONResponse({"accepted": True}, status_code=202)

@@ -6,8 +6,7 @@ import asyncio
 import logging
 
 from langmesh.commons.services import schedules as schedule_service
-from langmesh.base.errors import describe
-from langmesh.base.serialization import compact
+from langmesh.base.errors import log_fields
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +35,7 @@ async def _fire(record) -> None:
             "parts": [{"kind": "text", "text": record.prompt}],
         })
     except Exception as error:  # noqa: BLE001 — one bad schedule must not stop the rest
-        logger.warning("schedule could not run %s", compact({
-                "schedule": record.id, "name": record.name, **describe(error),
-            }))
+        logger.warning("schedule could not run", extra=log_fields(error, schedule=record.id, schedule_name=record.name))
         await asyncio.to_thread(
             schedule_service.record_run, record.id, session_id=session_id, error=str(error))
         return

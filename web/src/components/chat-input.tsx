@@ -28,7 +28,7 @@ import { ModelSelect, modelSupportsVision } from "./model-select";
 // SettingsDialog moved to ChatPanel top bar
 import type { TokenUsage } from "@/lib/use-chat";
 import { InlineField } from "./ui/display";
-import { Strong } from "./ui/semantic";
+import { richTags } from "@/lib/i18n/rich-tags";
 import { swallowed } from "@/lib/swallowed";
 import { useFittedRow } from "@/lib/use-fitted-row";
 import { errorMessage } from "@/lib/errors";
@@ -620,7 +620,7 @@ export function ChatInput({
         confirmIcon={<LuFoldVertical size={14} />}
         onConfirm={() => onCompact?.()}
       >
-        {translation.rich("compactBody", { b: (chunks) => <Strong>{chunks}</Strong> })}
+        {translation.rich("compactBody", richTags)}
       </ConfirmDialog>
 
       {/* Message input */}

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
-__all__ = ["describe", "summary"]
+__all__ = ["describe", "log_fields", "summary"]
+
+#: The attributes a record already carries, which `extra=` is forbidden to overwrite.
+_RESERVED = frozenset(logging.LogRecord("", 0, "", 0, "", (), None).__dict__) | {"message", "asctime"}
 
 
 def summary(error: BaseException) -> str:
@@ -20,3 +24,11 @@ def describe(error: BaseException) -> dict[str, Any]:
     if cause is not None:
         described["cause"] = summary(cause)
     return described
+
+
+def log_fields(error: BaseException | None = None, /, **context: Any) -> dict[str, Any]:
+    """The same fields as metadata on a record, with any name a record owns prefixed rather than refused."""
+    fields: dict[str, Any] = dict(context)
+    if error is not None:
+        fields.update(describe(error))
+    return {(f"detail_{name}" if name in _RESERVED else name): value for name, value in fields.items()}

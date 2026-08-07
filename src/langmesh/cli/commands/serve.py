@@ -76,8 +76,8 @@ def build_application(
             return False
         try:
             found_url, found_token = rediscover()
-        except Exception as error:  # noqa: BLE001 — a proxy must not die because a file was mid-write
-            logger.debug("could not re-read the daemon's endpoint: %s", error)
+        except Exception:  # noqa: BLE001 — a proxy must not die because a file was mid-write
+            logger.debug("could not re-read the daemon's endpoint", exc_info=True)
             return False
         if not found_url or (found_url == upstream_daemon["url"] and found_token == upstream_daemon["token"]):
             return False

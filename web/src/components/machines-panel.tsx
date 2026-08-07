@@ -4,6 +4,8 @@
 
 import { Box, Button, Flex, IconButton, Input, Text } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
+
+import { richTags } from "@/lib/i18n/rich-tags";
 import { useCallback, useEffect, useState } from "react";
 import { LuArrowUpRight, LuTrash2 } from "react-icons/lu";
 
@@ -139,7 +141,7 @@ export function MachinesPanel() {
             {translation("saveConnection")}
           </Button>
         </Flex>
-        <Text fontSize="xs" color="fg.subtle">{translation("pairingLinkHelper")}</Text>
+        <Text fontSize="xs" color="fg.subtle">{translation.rich("pairingLinkHelper", richTags)}</Text>
       </Flex>
     </Flex>
   );

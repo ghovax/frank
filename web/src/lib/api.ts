@@ -1860,7 +1860,11 @@ export function attachSession(
     .then(async (response) => {
       if (!response.ok || !response.body) {
         // Silence here reads exactly like a session with nothing to say, so say it.
-        console.error("[langmesh] attach stream refused:", sessionId, response.status);
+        swallowed(
+          { component: "session-stream", operation: "attach to the session" },
+          new Error("the daemon refused the attach stream"),
+          { status: response.status, session: sessionId },
+        );
         return;
       }
       await pumpEventStream(response.body, (raw) => {

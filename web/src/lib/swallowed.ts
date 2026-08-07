@@ -10,9 +10,13 @@ export interface FaultSite {
   operation: string;
 }
 
+/** Scalar facts about the fault, which become one attribute each rather than a sentence. */
+export type FaultDetail = Record<string, string | number | boolean>;
+
 export interface ClientFault {
   component: string;
   operation: string;
+  detail: FaultDetail;
   // The error as flat fields rather than one blob, because these become attributes and an attribute is a scalar.
   errorName: string;
   errorMessage: string;
@@ -31,12 +35,13 @@ export function setFaultSender(sender: FaultSender): void {
 }
 
 /** A failure this code can continue past, but which nobody chose. Reported. */
-export function swallowed(site: FaultSite, error: unknown): void {
+export function swallowed(site: FaultSite, error: unknown, detail: FaultDetail = {}): void {
   if (send === null || typeof window === "undefined") return;
   const fields = errorFields(error);
   void send({
     component: site.component,
     operation: site.operation,
+    detail,
     errorName: fields.name,
     errorMessage: fields.message,
     errorStack: fields.stack,

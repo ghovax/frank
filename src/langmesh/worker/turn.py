@@ -340,7 +340,7 @@ class _TurnRunner:
                 for acknowledgement_part in _work_habits_acknowledgement_parts(task.id):
                     await self._emit(acknowledgement_part)
             except Exception as exception:
-                logger.exception("work-habits acknowledgement failed: %s", exception)
+                logger.exception("work-habits acknowledgement failed")
                 await self._updater.failed(self._updater.new_agent_message([_event_part(ErrorEvent(**_safe_turn_error(exception)))]))
                 return self._DONE
         return None
@@ -523,7 +523,8 @@ class _TurnRunner:
     async def _fail(self, exception: Exception) -> None:
         await self._save_runtime_conversation()
         # Log the real exception, but show the user a safe category rather than raw exception text.
-        logger.exception("agent turn failed: %s", exception)
+        # The one it was handed, not the one in flight, since this is reached by a call rather than by a raise.
+        logger.error("agent turn failed", exc_info=exception)
         await self._updater.failed(self._updater.new_agent_message(
             [_event_part(ErrorEvent(**_safe_turn_error(exception, had_images=self._turn_has_images)))]
         ))

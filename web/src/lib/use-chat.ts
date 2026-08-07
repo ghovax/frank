@@ -29,7 +29,6 @@ import { swallowed } from "@/lib/swallowed";
 import { useTranslations } from "next-intl";
 import { asArray, asRecord } from "@/lib/coerce";
 import type { PrefixDivergence, WireEvent } from "@shared/generated/events";
-import { errorMessage } from "@/lib/errors";
 import { clientIdentifier } from "@/lib/identifier";
 import { Outbox, type Delivery, type OutboxHold, type OutboxMessage } from "@/lib/outbox";
 
@@ -200,6 +199,11 @@ function friendlyErrorFromPart(part: A2APart | undefined): FriendlyError | null 
   // A `tool_call_id` marks a failure belonging to one card, which renders in place.
   if (payload.kind !== "error" || payload.tool_call_id) return null;
   return friendlyErrorFromData(payload);
+}
+
+/** Take a row back out of the transcript, for a message that turned out never to have been delivered. */
+function dropMessage(state: ReduceState, id: string): void {
+  state.messages = state.messages.filter((message) => message.id !== id);
 }
 
 function pushErrorMessage(state: ReduceState, error: FriendlyError, sourceId?: string): void {
@@ -1205,6 +1209,11 @@ export function useChat(
       const meta = attachments.length > 0 ? { attachments } : {};
       // The id the composer gave this message, carried onto the wire, so the copy and the echo are one row.
       const userMessageId = input.id;
+      const withdrawOptimistic = () => {
+        // Refused, so the row goes and the queued card stays the only place it is shown.
+        dropMessage(stateRef.current, stableMessageId(stateRef.current, "user", userMessageId));
+        flushNow();
+      };
       const showOptimistically = () => {
         upsertMessage(stateRef.current, {
           id: stableMessageId(stateRef.current, "user", userMessageId),
@@ -1282,28 +1291,28 @@ export function useChat(
               setGrantedPermissionMode(created.permission_mode);
             }
           }
+          // Drawn before the stream is attached, and therefore before anything the session says can arrive.
+          // The queued card and the transcript are two lists, and the transcript is drawn first, so a row
+          // that reached the transcript while this message was still only queued would sit above it.
+          showOptimistically();
           // Attach before sending, or the opening frames are missed.
           observe(sessionIdentifier);
           const outcome = await sessionSend(sessionIdentifier, messageParts(text, dataParts), { messageId: userMessageId });
           // Refused because the session is parked: nothing was delivered, and the message stays in the queue.
           if (!outcome.accepted) {
+            withdrawOptimistic();
             notifyHeldForDecision(outcome.waitingOn);
             finishTurn();
             settleDelivery("refused");
             return;
           }
-          // Taken. Only now does it appear, because only now is it a message the session has.
-          showOptimistically();
           settleDelivery("accepted");
         } catch (caught) {
-          // The reason, not just the fact: which call and which failure, rather than advice to read a log.
-          const detail = errorMessage(caught);
-          console.error("[langmesh] could not start the turn:", caught);
-          pushErrorMessage(stateRef.current, {
-            code: "server_error",
-            title: "Server request failed",
-            message: `LangMesh could not start the turn: ${detail}`,
-          });
+          // What was thrown goes to telemetry as its own fields, where a name and a stack stay searchable.
+          swallowed({ component: "chat", operation: "start the turn" }, caught);
+          // Never delivered, so the row goes and the queued card is again the only place it is shown.
+          withdrawOptimistic();
+          pushErrorMessage(stateRef.current, friendlyErrorFromData({ code: "server_error" }));
           // One wind-down for every ending. `finishTurn` closes the stream if one was opened.
           finishTurn();
           // It never reached the session, so the message keeps its place and nothing retries it.
@@ -1322,26 +1331,34 @@ export function useChat(
   const deliver = useCallback(async (message: OutboxMessage): Promise<Delivery> => {
     const context = sessionIdRef.current;
     if (!isStreamingRef.current || !context) return startTurnRef.current(message);
+    const key = stableMessageId(stateRef.current, "user", message.id);
     try {
-      const outcome = await sessionSend(
-        context,
-        messageParts(message.text, message.dataParts),
-        { messageId: message.id },
-      );
-      if (!outcome.accepted) {
-        notifyHeldForDecision(outcome.waitingOn);
-        return "refused";
-      }
+      // Drawn before the send, for the same reason as a turn's first message: the session is already
+      // streaming, so anything it says during the round trip would otherwise land above this row.
       upsertMessage(stateRef.current, {
-        id: stableMessageId(stateRef.current, "user", message.id),
+        id: key,
         role: "user",
         content: message.text,
         timestamp: new Date().toISOString(),
       });
       // Synchronously, so the chip and the transcript row hand over as a move rather than a flicker.
       flushNow();
+      const outcome = await sessionSend(
+        context,
+        messageParts(message.text, message.dataParts),
+        { messageId: message.id },
+      );
+      if (!outcome.accepted) {
+        dropMessage(stateRef.current, key);
+        flushNow();
+        notifyHeldForDecision(outcome.waitingOn);
+        return "refused";
+      }
       return "accepted";
     } catch {
+      // Never delivered, so the row goes and the queued card is again the only place it is shown.
+      dropMessage(stateRef.current, key);
+      flushNow();
       return "failed";
     }
   }, [notifyHeldForDecision, flushNow]);

@@ -27,6 +27,7 @@ import {
 import { ChatGPTAuthControl } from "@/components/chatgpt-auth";
 import { CursorAuthControl } from "@/components/cursor-auth";
 import { swallowed } from "@/lib/swallowed";
+import { richTags } from "@/lib/i18n/rich-tags";
 
 interface ModelSelectProps {
   models: ModelOption[];
@@ -494,8 +495,8 @@ export function ModelSelect({
                       />
                       <Text fontSize="xs" color="fg.muted" mt={1.5}>
                         {translation.rich("sentToLitellm", {
+                          ...richTags,
                           model: `${selectedProvider}/${modelSuffix || "model-name"}`,
-                          code: (chunks) => <Span fontFamily="var(--app-font-mono)">{chunks}</Span>,
                         })}
                       </Text>
                     </Box>
