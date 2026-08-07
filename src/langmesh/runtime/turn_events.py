@@ -59,7 +59,7 @@ class Thinking(TurnEvent):
 @dataclass(frozen=True)
 class ThinkingDone(TurnEvent):
     TYPE = EventType.THINKING_DONE
-    duration_ms: int = 0
+    duration_milliseconds: int = 0
 
 
 @dataclass(frozen=True)

@@ -338,7 +338,7 @@ class WindowRecord:
 def application_root(pid: int) -> Any:
     """An application's accessibility root, with its messaging timeout set and its rich tree asked for."""
     root = AS.AXUIElementCreateApplication(pid)
-    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.accessibility_messaging_seconds))
+    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.accessibility_messaging))
     enable_rich_accessibility(root)
     return root
 
@@ -484,7 +484,7 @@ def enable_rich_accessibility(root: Any) -> None:
 def prime_accessibility(pid: int) -> None:
     """Switch on an app's rich tree ahead of a read, so the read meets a built tree rather than racing its construction."""
     root = AS.AXUIElementCreateApplication(pid)
-    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.accessibility_messaging_seconds))
+    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.accessibility_messaging))
     enable_rich_accessibility(root)
 
 
@@ -509,7 +509,7 @@ class _Prewarmer:
                     prime_accessibility(pid)
             except Exception:
                 pass
-            time.sleep(active_tuning().duration(Tunable.accessibility_prewarm_interval_seconds))
+            time.sleep(active_tuning().duration(Tunable.accessibility_prewarm_interval))
 
 
 _prewarmer = _Prewarmer()
@@ -688,7 +688,7 @@ def snapshot_app(
         seeds = [(node, 0, (index,)) for index, node in enumerate(roots) if node is not None]
 
     budget = budget_seconds if budget_seconds is not None else active_tuning().duration(
-        Tunable.accessibility_walk_budget_seconds)
+        Tunable.accessibility_walk_budget)
     elements, visited, exhausted = _collect(seeds, window_rect, budget)
     return Snapshot(
         pid=pid,

@@ -649,7 +649,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       applyThinking(state, event.text ?? "");
       break;
     case "thinking_done":
-      finishRunningThinkingWithDuration(state, event.duration_ms ?? 0);
+      finishRunningThinkingWithDuration(state, event.duration_milliseconds ?? 0);
       break;
     case "tool_call": {
       // Text either side of a tool call is separate prose, and the model gives each block its own identity.

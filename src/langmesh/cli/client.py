@@ -76,7 +76,7 @@ def _await_announcement(daemon: subprocess.Popen) -> Optional[dict]:
     with ThreadPoolExecutor(max_workers=1) as pool:
         pending = pool.submit(daemon.stdout.readline)
         try:
-            line = pending.result(timeout=active_tuning().duration(Tunable.daemon_startup_seconds))
+            line = pending.result(timeout=active_tuning().duration(Tunable.daemon_startup))
         except FuturesTimeout:
             return None
     if not line:

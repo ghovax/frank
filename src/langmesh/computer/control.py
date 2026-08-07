@@ -38,7 +38,7 @@ class _NotPermitted(Exception):
 
 def _script_ceiling() -> float:
     """The child's wall-clock limit, and the base of a stack the surface's guard and worker thread sit above."""
-    return active_tuning().duration(Tunable.control_script_seconds)
+    return active_tuning().duration(Tunable.control_script)
 
 Dispatch = Callable[[str, list, dict], Awaitable[Any]]
 

@@ -458,7 +458,7 @@ class ChatCursorModel(BaseChatModel):
         announced: Optional[wire.ToolCall] = None
         run_identifier = str(uuid.uuid4())
         # Cursor holds a run open with heartbeats, so what is bounded is silence since the last thing that happened.
-        silence_limit = active_tuning().duration(Tunable.model_silence_give_up_seconds)
+        silence_limit = active_tuning().duration(Tunable.model_silence_give_up)
         progressed_at = time.monotonic()
         went_quiet = False
         async for data in response.aiter_bytes():
@@ -695,7 +695,7 @@ def _digest_messages(messages: Sequence[BaseMessage]) -> str:
 
 
 def _prune_resumptions() -> None:
-    horizon = time.monotonic() - active_tuning().duration(Tunable.subscription_resume_ttl_seconds)
+    horizon = time.monotonic() - active_tuning().duration(Tunable.subscription_resume_ttl)
     for key in [key for key, entry in _resumptions.items() if entry.touched_at < horizon]:
         del _resumptions[key]
 

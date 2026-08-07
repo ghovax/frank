@@ -85,7 +85,7 @@ async def bash(
     location: str = "",
     access_request: dict[str, Any] | None = Field(None, description=ACCESS_REQUEST),
     background: bool = False,
-    timeout: float = Tunable.bash_sync_window_seconds.default,
+    timeout: float = Tunable.bash_sync_window.default,
 ) -> str:
     """Dispatched by AgentRuntime._execute_tool; described in descriptions/bash.md."""
     from langmesh.base import confinement as _confinement
@@ -160,7 +160,7 @@ async def bash(
         except asyncio.CancelledError:
             cancel_process()
             try:
-                await asyncio.wait_for(process.wait(), timeout=active_tuning().duration(Tunable.sigterm_grace_seconds))
+                await asyncio.wait_for(process.wait(), timeout=active_tuning().duration(Tunable.sigterm_grace))
             except asyncio.TimeoutError:
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
@@ -301,7 +301,7 @@ async def search_web(
         detached=True,
     )
     # A short inline window, so the common case returns results rather than a pending handle.
-    settled = await jobs.settle_inline(job_id, active_tuning().duration(Tunable.web_search_sync_window_seconds))
+    settled = await jobs.settle_inline(job_id, active_tuning().duration(Tunable.web_search_sync_window))
     if settled is not None:
         return settled.result
     # No path or fetch-looking handle in the acknowledgement: the id is the only thing the model needs.
@@ -472,7 +472,7 @@ async def fetch_url(
     explanation: str = Field(..., description=EXPLANATION),
     url: str,
     format: Literal["markdown", "text", "html"] = "markdown",
-    timeout: float = Tunable.slow_tool_sync_window_seconds.default,
+    timeout: float = Tunable.slow_tool_sync_window.default,
     hard_deadline: float = 30,
     background: bool = False,
 ) -> str:
@@ -487,7 +487,7 @@ async def download_file(
     url: str,
     path: str,
     location: str = "",
-    timeout: float = Tunable.slow_tool_sync_window_seconds.default,
+    timeout: float = Tunable.slow_tool_sync_window.default,
     hard_deadline: float = 120,
     background: bool = False,
 ) -> str:

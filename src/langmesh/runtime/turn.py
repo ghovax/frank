@@ -603,7 +603,7 @@ class _RunsTurns:
                         announced_tool_calls.add(identifier)
                         if not thinking_done_emitted:
                             thinking_done_emitted = True
-                            yield ThinkingDone(duration_ms=int((time.monotonic() - thinking_started_at) * 1000))
+                            yield ThinkingDone(duration_milliseconds=int((time.monotonic() - thinking_started_at) * 1000))
                         yield ToolCall(name=name, arguments=None, id=identifier)
                     fragment = (named or {}).get("args") or ""
                     if not fragment or identifier not in announced_tool_calls:
@@ -625,7 +625,7 @@ class _RunsTurns:
                     if content_delta.kind == "text":
                         if not thinking_done_emitted:
                             thinking_done_emitted = True
-                            yield ThinkingDone(duration_ms=int((time.monotonic() - thinking_started_at) * 1000),
+                            yield ThinkingDone(duration_milliseconds=int((time.monotonic() - thinking_started_at) * 1000),
                             )
                         yield TextChunk(text=content_delta.text,
                             block_id=content_delta.block_identifier,
@@ -644,7 +644,7 @@ class _RunsTurns:
                     await stream_closer()
         # A tool-only turn produces no answer text, so close the phase here.
         if not thinking_done_emitted:
-            yield ThinkingDone(duration_ms=int((time.monotonic() - thinking_started_at) * 1000),
+            yield ThinkingDone(duration_milliseconds=int((time.monotonic() - thinking_started_at) * 1000),
             )
         if aborted_for_steering:
             outcome.aborted_for_steering = True

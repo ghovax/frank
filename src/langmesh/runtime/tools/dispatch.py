@@ -801,7 +801,7 @@ class _DispatchesTools:
     ) -> AsyncIterator[TurnEvent]:
         url = str(tool_arguments.get("url", ""))
         fmt = str(tool_arguments.get("format", "markdown") or "markdown")
-        sync_window = float(tool_arguments.get("timeout", Tunable.slow_tool_sync_window_seconds.default) or Tunable.slow_tool_sync_window_seconds.default)
+        sync_window = float(tool_arguments.get("timeout", Tunable.slow_tool_sync_window.default) or Tunable.slow_tool_sync_window.default)
         hard_deadline = int(tool_arguments.get("hard_deadline", 30) or 30)
         background = bool(tool_arguments.get("background", False))
         async for event in self._run_backgroundable_tool(
@@ -820,7 +820,7 @@ class _DispatchesTools:
         executor = resolved_location.executor
         url = str(tool_arguments.get("url", ""))
         destination = str(tool_arguments.get("path", ""))
-        sync_window = float(tool_arguments.get("timeout", Tunable.slow_tool_sync_window_seconds.default) or Tunable.slow_tool_sync_window_seconds.default)
+        sync_window = float(tool_arguments.get("timeout", Tunable.slow_tool_sync_window.default) or Tunable.slow_tool_sync_window.default)
         hard_deadline = int(tool_arguments.get("hard_deadline", 120) or 120)
         background = bool(tool_arguments.get("background", False))
         resolved = await asyncio.to_thread(executor.resolve, resolved_location.base_directory, destination)

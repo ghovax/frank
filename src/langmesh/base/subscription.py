@@ -47,7 +47,7 @@ _models_cache_lock = asyncio.Lock()
 async def fetch_subscription_models() -> dict[str, dict[str, Any]]:
     """The account's live model catalogue, answering empty on any failure so callers fall back."""
     global _models_cache
-    ttl = active_tuning().duration(Tunable.model_catalogue_ttl_seconds)
+    ttl = active_tuning().duration(Tunable.model_catalogue_ttl)
     if _models_cache is not None and time.monotonic() - _models_cache[0] < ttl:
         return _models_cache[1]
     async with _models_cache_lock:

@@ -267,8 +267,8 @@ def _command_daemon(arguments: argparse.Namespace) -> int:
         try:
             for attempt in Retrying(
                 retry=retry_if_exception_type(_StillRunning),
-                wait=wait_fixed(tuning.duration(Tunable.daemon_probe_interval_seconds)),
-                stop=stop_after_delay(tuning.duration(Tunable.daemon_startup_seconds)),
+                wait=wait_fixed(tuning.duration(Tunable.daemon_probe_interval)),
+                stop=stop_after_delay(tuning.duration(Tunable.daemon_startup)),
             ):
                 with attempt:
                     check_exited()
@@ -427,7 +427,7 @@ def _command_open(arguments: argparse.Namespace) -> int:
         [launcher, "-b", APPLICATION_BUNDLE_ID],
         capture_output=True,
         text=True,
-        timeout=active_tuning().duration(Tunable.open_url_seconds),
+        timeout=active_tuning().duration(Tunable.open_url),
     )
     if result.returncode != 0:
         # `open -b` resolves through LaunchServices, so this failure usually means the app was built but never installed.

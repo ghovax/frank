@@ -26,4 +26,4 @@ def open_accessibility_settings() -> None:
 
 def _open(url: str) -> None:
     with suppress(OSError, subprocess.SubprocessError):
-        subprocess.run(["open", url], check=False, timeout=active_tuning().duration(Tunable.open_url_seconds))
+        subprocess.run(["open", url], check=False, timeout=active_tuning().duration(Tunable.open_url))

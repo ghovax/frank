@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 def machinery_ceiling() -> float:
     """How long the machinery around a control script waits on it, a margin above the script's own ceiling."""
     tuning = active_tuning()
-    return tuning.duration(Tunable.control_script_seconds) + tuning.duration(Tunable.surface_guard_margin_seconds)
+    return tuning.duration(Tunable.control_script) + tuning.duration(Tunable.surface_guard_margin)
 
 
 def message_loader(folder: str) -> Callable[..., str]:

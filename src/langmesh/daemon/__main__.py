@@ -91,7 +91,7 @@ async def _defer_to_running_daemon() -> int:
 
     def probe_once() -> None:
         probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        probe.settimeout(tuning.duration(Tunable.daemon_probe_connect_seconds))
+        probe.settimeout(tuning.duration(Tunable.daemon_probe_connect))
         try:
             probe.connect(str(path))
         finally:
@@ -100,8 +100,8 @@ async def _defer_to_running_daemon() -> int:
     try:
         async for attempt in AsyncRetrying(
             retry=retry_if_exception_type(OSError),
-            wait=wait_fixed(tuning.duration(Tunable.daemon_probe_interval_seconds)),
-            stop=stop_after_delay(tuning.duration(Tunable.daemon_startup_seconds)),
+            wait=wait_fixed(tuning.duration(Tunable.daemon_probe_interval)),
+            stop=stop_after_delay(tuning.duration(Tunable.daemon_startup)),
         ):
             with attempt:
                 await asyncio.to_thread(probe_once)

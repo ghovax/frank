@@ -201,7 +201,7 @@ class _TurnEventSink:
                 await self._thinking.push(event.text, (event.block_id,))
             case ThinkingDone():
                 await self.flush()
-                await self._emit(_event_part(ThinkingDoneEvent(duration_ms=event.duration_ms)))
+                await self._emit(_event_part(ThinkingDoneEvent(duration_milliseconds=event.duration_milliseconds)))
             case Status():
                 await self.flush()
                 await self._emit(_event_part(StatusEvent(code=event.code)))

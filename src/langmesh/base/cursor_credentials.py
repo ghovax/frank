@@ -57,7 +57,7 @@ class CursorTokens:
     account: str
     expires_at: float
 
-    def is_expired(self, leeway_seconds: float = active_tuning().duration(Tunable.credential_refresh_leeway_seconds)) -> bool:
+    def is_expired(self, leeway_seconds: float = active_tuning().duration(Tunable.credential_refresh_leeway)) -> bool:
         return time.time() >= (self.expires_at - leeway_seconds)
 
 
@@ -237,11 +237,11 @@ class CursorLoginFlow:
                 async for attempt in AsyncRetrying(
                     retry=retry_if_exception_type((_SignInPending, httpx.HTTPError)),
                     wait=wait_exponential(
-                        multiplier=tuning.duration(Tunable.oauth_poll_interval_seconds),
+                        multiplier=tuning.duration(Tunable.oauth_poll_interval),
                         # `max` is tenacity's parameter name for the ceiling, not ours.
-                        max=tuning.duration(Tunable.oauth_poll_ceiling_seconds),
+                        max=tuning.duration(Tunable.oauth_poll_ceiling),
                     ),
-                    stop=stop_after_delay(tuning.duration(Tunable.oauth_poll_give_up_seconds)),
+                    stop=stop_after_delay(tuning.duration(Tunable.oauth_poll_give_up)),
                 ):
                     with attempt:
                         tokens = await self._ask(client)

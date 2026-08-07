@@ -226,7 +226,7 @@
           ],
           "default": null
         },
-        "duration_ms": {
+        "duration_milliseconds": {
           "anyOf": [
             {
               "type": "integer"
@@ -478,7 +478,7 @@
     "ThinkingDoneEvent": {
       "additionalProperties": false,
       "properties": {
-        "duration_ms": {
+        "duration_milliseconds": {
           "default": 0,
           "type": "integer"
         },
@@ -642,7 +642,7 @@
           ],
           "default": null
         },
-        "duration_ms": {
+        "duration_milliseconds": {
           "anyOf": [
             {
               "type": "integer"

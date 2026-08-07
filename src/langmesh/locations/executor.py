@@ -91,7 +91,7 @@ def _prune_gitignored(base: Path, paths: list[Path]) -> list[Path]:
             input="\n".join(str(path) for path in paths),
             capture_output=True,
             text=True,
-            timeout=active_tuning().duration(Tunable.ripgrep_seconds),
+            timeout=active_tuning().duration(Tunable.ripgrep),
             check=False,
         )
     except (subprocess.SubprocessError, FileNotFoundError):
@@ -217,7 +217,7 @@ class LocalExecutor(LocationExecutor):
                 cwd=str(base),
                 capture_output=True,
                 text=True,
-                timeout=active_tuning().duration(Tunable.ripgrep_seconds),
+                timeout=active_tuning().duration(Tunable.ripgrep),
             )
             # rg exits 1 when the tree has no files, >1 on a real error (IO failure).
             if result.returncode not in (0, 1):
@@ -255,7 +255,7 @@ class LocalExecutor(LocationExecutor):
         if include:
             command += ["--glob", include]
         command += ["-e", pattern, "--", target]
-        result = subprocess.run(command, capture_output=True, text=True, timeout=active_tuning().duration(Tunable.ripgrep_seconds))
+        result = subprocess.run(command, capture_output=True, text=True, timeout=active_tuning().duration(Tunable.ripgrep))
         # rg exits 1 on "no matches", 2 on a real error (bad pattern, IO failure).
         if result.returncode not in (0, 1):
             raise ValueError((result.stderr or "").strip() or "search failed")

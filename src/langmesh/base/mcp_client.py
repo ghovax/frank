@@ -63,13 +63,13 @@ class MCPClientManager:
                     if connection is None:
                         connection = _StatefulStdioSession(name, configuration)
                         self._stdio_sessions[name] = connection
-                    await asyncio.wait_for(connection._connect(), timeout=active_tuning().duration(Tunable.mcp_connect_seconds))
+                    await asyncio.wait_for(connection._connect(), timeout=active_tuning().duration(Tunable.mcp_connect))
                 elif configuration.transport == "streamable_http":
                     connection = self._streamable_sessions.get(name)
                     if connection is None:
                         connection = _StatefulStreamableHTTPSession(name, configuration)
                         self._streamable_sessions[name] = connection
-                    await asyncio.wait_for(connection._connect(), timeout=active_tuning().duration(Tunable.mcp_connect_seconds))
+                    await asyncio.wait_for(connection._connect(), timeout=active_tuning().duration(Tunable.mcp_connect))
             except (Exception, asyncio.TimeoutError):
                 logger.warning("MCP server %r failed to start; skipping it", name, exc_info=True)
                 self._stdio_sessions.pop(name, None)
@@ -260,7 +260,7 @@ class _StatefulStdioSession:
     @asynccontextmanager
     async def session(self, event_callback: MCPEventCallback | None = None) -> AsyncIterator[ClientSession]:
         # Bounded like the startup connect, so an endpoint that never completes its handshake cannot hold the caller.
-        session = await asyncio.wait_for(self._connect(), timeout=active_tuning().duration(Tunable.mcp_connect_seconds))
+        session = await asyncio.wait_for(self._connect(), timeout=active_tuning().duration(Tunable.mcp_connect))
         async with self._operation_lock:
             if event_callback is not None:
                 self._callbacks.add(event_callback)
@@ -335,7 +335,7 @@ class _StatefulStreamableHTTPSession:
     @asynccontextmanager
     async def session(self, event_callback: MCPEventCallback | None = None) -> AsyncIterator[ClientSession]:
         # Bounded like the startup connect, so an endpoint that never completes its handshake cannot hold the caller.
-        session = await asyncio.wait_for(self._connect(), timeout=active_tuning().duration(Tunable.mcp_connect_seconds))
+        session = await asyncio.wait_for(self._connect(), timeout=active_tuning().duration(Tunable.mcp_connect))
         async with self._operation_lock:
             if event_callback is not None:
                 self._callbacks.add(event_callback)

@@ -129,7 +129,7 @@ def _sleep_when_idle(session_id: str) -> None:
     if record is None or not record.is_live or not record.hosted:
         return
     cancel_idle_sleep(session_id)
-    delay = active_tuning().duration(Tunable.session_idle_sleep_seconds)
+    delay = active_tuning().duration(Tunable.session_idle_sleep)
     _IDLE_TIMERS[session_id] = spawn_background_task(_sleep_after_idle(session_id, delay))
 
 

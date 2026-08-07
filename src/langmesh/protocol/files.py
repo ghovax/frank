@@ -161,7 +161,7 @@ class FileUrlSigner:
         return self._within_root(file_path)
 
     def sign(self, file_path: str, *, ttl_seconds: Optional[int] = None) -> str:
-        ttl_seconds = ttl_seconds if ttl_seconds is not None else active_tuning().amount(Tunable.file_url_ttl_seconds)
+        ttl_seconds = ttl_seconds if ttl_seconds is not None else active_tuning().amount(Tunable.file_url_ttl)
         if not self._within_root(file_path):
             raise PathNotServableError(f"{file_path!r} is outside the servable file root")
         token = jwt.encode(

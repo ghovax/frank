@@ -86,10 +86,10 @@ Answer it with `langmesh allow` (or in the app), then send. `--wait` does not wa
 | Field | Meaning |
 |-------|---------|
 | `lifecycle` | Does it still exist? `live` or `ended`. **Durable** — it survives a daemon restart, because a session is a record and only its process was ever transient. `--all` includes the ended ones; `outcome` (`exited`/`failed`) and `exit_reason` say how and why. |
-| `activity` | What it is doing *now*: `working` (a turn is in flight), `waiting` (parked on a decision only you can make), `idle` (has a process, doing nothing), `asleep` (**no process** — the next message forks one in about 60 ms), or `ended`. Derived on every read and never stored, because a stored "working" outlives the kill that made it false. |
+| `activity` | What it is doing *now*: `working` (a turn is in flight), `waiting` (parked on a decision only you can make), `idle` (has a process, doing nothing), `asleep` (**not hosted** — the next message builds its executor in about 60 ms), or `ended`. Derived on every read and never stored, because a stored "working" outlives the kill that made it false. |
 | `awaiting_input` | Parked on a permission request or a question. It needs *you*. |
 
-A session with no process is the normal resting state, not an error. An idle session sleeps immediately, and to wake it is a fork. Reads never wake anything. The record and the turn store answer `get`, `ps`, `tree`, `history` and `attach`. To look at a sleeping session therefore leaves it asleep.
+A session the daemon is not hosting is the normal resting state, not an error. An idle session sleeps immediately, and to wake it is to build its executor again. Reads never wake anything. The record and the turn store answer `get`, `ps`, `tree`, `history` and `attach`. To look at a sleeping session therefore leaves it asleep.
 
 ```shell
 langmesh ps | jq -r '.[] | select(.awaiting_input) | .id'

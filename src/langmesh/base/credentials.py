@@ -52,7 +52,7 @@ class ChatGPTTokens:
     email: str
     expires_at: float
 
-    def is_expired(self, leeway_seconds: float = active_tuning().duration(Tunable.credential_refresh_leeway_seconds)) -> bool:
+    def is_expired(self, leeway_seconds: float = active_tuning().duration(Tunable.credential_refresh_leeway)) -> bool:
         return time.time() >= (self.expires_at - leeway_seconds)
 
 

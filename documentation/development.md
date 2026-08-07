@@ -171,7 +171,7 @@ Two stages need a real machine and are skipped elsewhere, which is the reason to
 - Does the Accessibility grant cover the daemon that asks for it?
 - Does `sandbox-exec` still confine a tool child?
 
-It also counts threads with mach. That is the only way to see the threads that make a fork illegal.
+It also counts threads with mach, which is how a thread leak in the daemon shows itself.
 
 Confinement is only genuinely exercised where the kernel can enforce it. Without Landlock, or a working `sandbox-exec`, the battery runs with `sandbox.enforce: preferred`. The sandbox is then never applied.
 

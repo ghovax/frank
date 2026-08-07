@@ -108,7 +108,7 @@ export interface ModelToolResult {
   background_job_id?: string | null;
   code?: string | null;
   completed_at?: string | null;
-  duration_ms?: number | null;
+  duration_milliseconds?: number | null;
   kind: "tool_result" | "background_result";
   started_at?: string | null;
   status: ToolStatus;
@@ -208,7 +208,7 @@ export interface TextEvent {
  * via the `definition` "ThinkingDoneEvent".
  */
 export interface ThinkingDoneEvent {
-  duration_ms?: number;
+  duration_milliseconds?: number;
   kind: "thinking_done";
   timestamp?: string;
 }
@@ -261,7 +261,7 @@ export interface ToolCallEvent {
 export interface ToolMetadata {
   background_job_id?: string | null;
   completed_at?: string | null;
-  duration_ms?: number | null;
+  duration_milliseconds?: number | null;
   started_at?: string | null;
   tool_call_id: string;
   tool_name: string;

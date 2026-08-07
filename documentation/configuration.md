@@ -246,7 +246,7 @@ tuning:
     results: 0.15
   timeout_multiplier: 1.0
   defaults:
-    action_timeout_ms: 10000
+    action_timeout: 10000
     grep_results: 1024
 ```
 
@@ -255,9 +255,9 @@ tuning:
 | `context_share.text` | The share one result's text may fill: output, fetched pages |
 | `context_share.results` | The share a set of results may fill: matches, lines, records |
 | `timeout_multiplier` | `2.0` doubles every wait, for a slow machine. `1.0` is neutral |
-| `defaults` | Overrides one value, by its own name and in its own unit |
+| `defaults` | Overrides one value by its own name; every duration is in seconds |
 
-Those three move whole families. `defaults` is the escape hatch for a single value. Its keys are the names in `langmesh.base.tuning.Tunable`, which is the same idea as `sandbox.limits` using `setrlimit` constant names. An unknown name is an error at load. It is not a line that looks applied and is not. An override replaces the value the code *ships with*, so `context_share` and `timeout_multiplier` still apply on top: `action_timeout_ms: 10000` under `timeout_multiplier: 2.0` resolves to twenty seconds.
+Those three move whole families. `defaults` is the escape hatch for a single value. Its keys are the names in `langmesh.base.tuning.Tunable`, which is the same idea as `sandbox.limits` using `setrlimit` constant names. An unknown name is an error at load. It is not a line that looks applied and is not. An override replaces the value the code *ships with*, so `context_share` and `timeout_multiplier` still apply on top: `action_timeout: 10000` under `timeout_multiplier: 2.0` resolves to twenty seconds.
 
 The names are lowercase because they are not constants. Each one is a default the file may replace, and the casing is the first thing that says so.
 

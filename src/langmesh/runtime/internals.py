@@ -195,7 +195,7 @@ def _tool_timing_metadata(
         "tool_call_id": tool_call_identifier,
         "started_at": _utc_timestamp(started_at),
         "completed_at": _utc_timestamp(completed_at),
-        "duration_ms": duration_milliseconds,
+        "duration_milliseconds": duration_milliseconds,
     }
     if background_job_id:
         metadata["background_job_id"] = background_job_id
@@ -216,7 +216,7 @@ def _model_visible_tool_result(
         "status": status,
         "code": code,
     }
-    for key in ("started_at", "completed_at", "duration_ms", "background_job_id"):
+    for key in ("started_at", "completed_at", "duration_milliseconds", "background_job_id"):
         value = metadata.get(key)
         if value is not None:
             header[key] = value

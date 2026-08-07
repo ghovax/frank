@@ -229,7 +229,7 @@ class NativeSurface(Surface):
         delay = active_tuning().settle_poll()
         while time.monotonic() < deadline:
             time.sleep(delay)
-            delay = min(delay * 2, active_tuning().duration(Tunable.accessibility_ready_backoff_seconds))
+            delay = min(delay * 2, active_tuning().duration(Tunable.accessibility_ready_backoff))
             if self._tree_ready(pid, window):
                 return accessibility.snapshot_app(pid, **kwargs)
         return accessibility.snapshot_app(pid, **kwargs)
@@ -238,7 +238,7 @@ class NativeSurface(Surface):
         """A cheap read answering whether the real tree has built, bounded by a short time budget rather than a shallow depth."""
         probe = accessibility.snapshot_app(
             pid, window=window,
-            budget_seconds=active_tuning().duration(Tunable.accessibility_ready_probe_seconds),
+            budget_seconds=active_tuning().duration(Tunable.accessibility_ready_probe),
         )
         return not _is_incomplete(probe)
 
@@ -392,7 +392,7 @@ class NativeSurface(Surface):
             if result.get("ok") and submit:
                 # Return goes to the process rather than the element, since a form is committed by the focused control.
                 AS.AXUIElementSetAttributeValue(handle, accessibility.FOCUSED, True)
-                time.sleep(active_tuning().duration(Tunable.focus_settle_seconds))
+                time.sleep(active_tuning().duration(Tunable.focus_settle))
                 if input_synthesis.press_key(entry.pid, "return", []):
                     result["did"] = f"{result.get('did', 'Typed')}, then submitted"
                     result["submitted"] = True
@@ -409,7 +409,7 @@ class NativeSurface(Surface):
             if accessibility.set_selected_text(handle, text):
                 return {"ok": True, "did": f"Inserted {len(text)} chars", "via": "accessible"}
             AS.AXUIElementSetAttributeValue(handle, accessibility.FOCUSED, True)
-            time.sleep(active_tuning().duration(Tunable.focus_settle_seconds))
+            time.sleep(active_tuning().duration(Tunable.focus_settle))
             input_synthesis.type_text(entry.pid, text)
             return {"ok": True, "did": f"Typed {len(text)} chars", "via": "synthesized"}
         if accessibility.attribute_settable(handle, accessibility.VALUE) \
@@ -422,7 +422,7 @@ class NativeSurface(Surface):
                     result["note"] = message("type_clamped")
             return result
         AS.AXUIElementSetAttributeValue(handle, accessibility.FOCUSED, True)
-        time.sleep(active_tuning().duration(Tunable.focus_settle_seconds))
+        time.sleep(active_tuning().duration(Tunable.focus_settle))
         input_synthesis.type_text(entry.pid, text)
         return {"ok": True, "did": f"Typed into {entry.name!r}", "via": "synthesized"}
 

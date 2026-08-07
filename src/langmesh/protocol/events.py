@@ -34,7 +34,7 @@ class ToolMetadata(BaseModel):
     tool_call_id: str
     started_at: str | None = None
     completed_at: str | None = None
-    duration_ms: int | None = None
+    duration_milliseconds: int | None = None
     # Present only for work that was handed to the background runner (bash/search).
     background_job_id: str | None = None
 
@@ -62,7 +62,7 @@ class ThinkingEvent(_EventBase):
 
 class ThinkingDoneEvent(_EventBase):
     kind: Literal["thinking_done"] = "thinking_done"
-    duration_ms: int = 0
+    duration_milliseconds: int = 0
 
 
 class ToolCallEvent(_EventBase):
@@ -256,7 +256,7 @@ class ModelToolResult(BaseModel):
     code: str | None = None
     started_at: str | None = None
     completed_at: str | None = None
-    duration_ms: int | None = None
+    duration_milliseconds: int | None = None
     background_job_id: str | None = None
 
 

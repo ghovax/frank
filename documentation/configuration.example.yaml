@@ -269,68 +269,68 @@ tuning:
     web_websocket_frames: 200
 
     # Screen timeouts, in milliseconds.
-    action_timeout_ms: 5000
-    navigation_timeout_ms: 20000
-    snapshot_timeout_ms: 10000
-    connect_timeout_ms: 10000
-    browser_authorization_ms: 90000
-    drag_timeout_ms: 8000
-    screenshot_timeout_ms: 20000
-    read_text_timeout_ms: 10000
-    frame_resolve_timeout_ms: 2000
+    action_timeout: 5000
+    navigation_timeout: 20000
+    snapshot_timeout: 10000
+    connect_timeout: 10000
+    browser_authorization: 90000
+    drag_timeout: 8000
+    screenshot_timeout: 20000
+    read_text_timeout: 10000
+    frame_resolve_timeout: 2000
 
     # Tool and process timeouts, in seconds.
-    sigterm_grace_seconds: 3.0
-    ripgrep_seconds: 30.0
-    bash_sync_window_seconds: 60.0
-    slow_tool_sync_window_seconds: 10.0
-    web_search_sync_window_seconds: 10.0
-    accessibility_messaging_seconds: 2.0
-    control_script_seconds: 120.0
-    surface_guard_margin_seconds: 30.0
-    screencapture_seconds: 15.0
-    open_url_seconds: 5.0
+    sigterm_grace: 3.0
+    ripgrep: 30.0
+    bash_sync_window: 60.0
+    slow_tool_sync_window: 10.0
+    web_search_sync_window: 10.0
+    accessibility_messaging: 2.0
+    control_script: 120.0
+    surface_guard_margin: 30.0
+    screencapture: 15.0
+    open_url: 5.0
 
-    # Session and daemon lifecycle, in seconds. `session_idle_sleep_seconds` is five hours.
-    session_idle_sleep_seconds: 18000.0
-    daemon_startup_seconds: 45.0
-    control_plane_call_seconds: 60.0
-    daemon_probe_interval_seconds: 0.05
-    daemon_probe_connect_seconds: 0.5
+    # Session and daemon lifecycle, in seconds. `session_idle_sleep` is five hours.
+    session_idle_sleep: 18000.0
+    daemon_startup: 45.0
+    control_plane_call: 60.0
+    daemon_probe_interval: 0.05
+    daemon_probe_connect: 0.5
 
     # Credentials, subscriptions and links, in seconds.
-    model_catalogue_ttl_seconds: 60.0
-    credential_refresh_leeway_seconds: 300.0
-    oauth_poll_interval_seconds: 1.0
-    oauth_poll_ceiling_seconds: 10.0
-    oauth_poll_give_up_seconds: 300.0
-    subscription_resume_ttl_seconds: 1800.0
-    model_silence_give_up_seconds: 180.0
-    file_url_ttl_seconds: 600.0
-    mcp_connect_seconds: 20.0
-    card_resolve_seconds: 20.0
+    model_catalogue_ttl: 60.0
+    credential_refresh_leeway: 300.0
+    oauth_poll_interval: 1.0
+    oauth_poll_ceiling: 10.0
+    oauth_poll_give_up: 300.0
+    subscription_resume_ttl: 1800.0
+    model_silence_give_up: 180.0
+    file_url_ttl: 600.0
+    mcp_connect: 20.0
+    card_resolve: 20.0
 
     # Other machines, in seconds.
-    remote_command_seconds: 120.0
-    remote_connect_seconds: 16.0
-    remote_control_persist_seconds: 120.0
+    remote_command: 120.0
+    remote_connect: 16.0
+    remote_control_persist: 120.0
 
     # Synthesised input: how a click, a drag and a keystroke are physically paced.
     type_chunk_size: 20
-    type_chunk_interval_seconds: 0.005
+    type_chunk_interval: 0.005
     drag_steps: 12
-    drag_step_interval_seconds: 0.01
-    click_interval_seconds: 0.01
-    focus_settle_seconds: 0.03
+    drag_step_interval: 0.01
+    click_interval: 0.01
+    focus_settle: 0.03
     scroll_amount_pixels: 300
     settle_stable_reads: 2
     stamped_image_side: 2048
 
     # Reading an accessibility tree, in seconds.
-    accessibility_walk_budget_seconds: 3.0
-    accessibility_ready_probe_seconds: 0.4
-    accessibility_prewarm_interval_seconds: 0.4
-    accessibility_ready_backoff_seconds: 0.2
+    accessibility_walk_budget: 3.0
+    accessibility_ready_probe: 0.4
+    accessibility_prewarm_interval: 0.4
+    accessibility_ready_backoff: 0.2
 
     # Finding an element on a screen. `find_one_margin` is how far ahead of the runner-up the
     # best match must score, in units of the shortlist's own spread, before it answers instead of

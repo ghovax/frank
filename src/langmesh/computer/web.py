@@ -21,6 +21,11 @@ from langmesh.base.tuning import Tunable, active_tuning, settle
 
 logger = logging.getLogger(__name__)
 
+
+def _milliseconds(tunable: Tunable) -> int:
+    """A tuned wait in the milliseconds Playwright takes. Every tunable is seconds; this is the one boundary that is not."""
+    return max(1, int(active_tuning().amount(tunable) * 1000))
+
 # A window is numbered by the window server and a tab by DevTools, so the prefix tells `_page_for` which one it has.
 WINDOW_PREFIX = "win"
 TAB_PREFIX = "tab"
@@ -462,7 +467,7 @@ def _parse_snapshot(snapshot: str) -> tuple[list[Element], dict[str, str]]:
 
 def _snapshot(page) -> str:
     """The ref-carrying accessibility snapshot of the whole page (iframes inlined)."""
-    return page.locator("body").aria_snapshot(mode="ai", timeout=active_tuning().amount(Tunable.snapshot_timeout_ms))
+    return page.locator("body").aria_snapshot(mode="ai", timeout=_milliseconds(Tunable.snapshot_timeout))
 
 
 # Tooltips collected in one pass and keyed by the visible text they sit on, since the aria snapshot hides them.
@@ -576,9 +581,9 @@ def _safe_url(page) -> str:
 
 def _await_quiet(page) -> None:
     """Let the DOM parse after an action without blocking on a stalled resource, bounded and swallowed."""
-    ceiling_ms = max(1, int(active_tuning().settle_give_up() * 1000))
+    ceiling_milliseconds = max(1, int(active_tuning().settle_give_up() * 1000))
     try:
-        page.wait_for_load_state("domcontentloaded", timeout=ceiling_ms)
+        page.wait_for_load_state("domcontentloaded", timeout=ceiling_milliseconds)
     except Exception:
         pass
 
@@ -640,7 +645,7 @@ class WebSurface(Surface):
         if websocket_url is None:
             raise ToolFailure(_not_connected_payload())
         # Budgeted as a human reaction time rather than a network timeout, since the user has to find and click Allow.
-        budget = active_tuning().amount(Tunable.browser_authorization_ms)
+        budget = _milliseconds(Tunable.browser_authorization)
         try:
             connected = self._playwright.chromium.connect_over_cdp(websocket_url, timeout=budget)
         except PlaywrightTimeout:
@@ -654,8 +659,8 @@ class WebSurface(Surface):
                 "enable_url": REMOTE_DEBUGGING_URL,
             })
         context = connected.contexts[0] if connected.contexts else connected.new_context()
-        context.set_default_timeout(active_tuning().amount(Tunable.action_timeout_ms))
-        context.set_default_navigation_timeout(active_tuning().amount(Tunable.navigation_timeout_ms))
+        context.set_default_timeout(_milliseconds(Tunable.action_timeout))
+        context.set_default_navigation_timeout(_milliseconds(Tunable.navigation_timeout))
         session = _Session(connected, context)
         # Pages are adopted when something first acts in them, since the listing reads from the browser and needs no handlers.
         context.on("page", session.adopt)
@@ -791,7 +796,7 @@ class WebSurface(Surface):
         frame = None
         try:
             handle = page.locator(f"aria-ref={element_ref}").element_handle(
-                timeout=active_tuning().amount(Tunable.frame_resolve_timeout_ms)
+                timeout=_milliseconds(Tunable.frame_resolve_timeout)
             )
             frame = handle.content_frame() if handle is not None else None
         except Exception:
@@ -1010,7 +1015,7 @@ class WebSurface(Surface):
                 return {"ok": False, "error": "drag needs onto — the element to drop onto."}
             session, page = bound.session, bound.page
             try:
-                self._locator(page, element).drag_to(self._locator(page, onto), timeout=active_tuning().amount(Tunable.drag_timeout_ms))
+                self._locator(page, element).drag_to(self._locator(page, onto), timeout=_milliseconds(Tunable.drag_timeout))
             except Exception as error:
                 raise ToolFailure({"ok": False, "error": f"Could not drag {element} to {onto}: {self._why_it_failed(page, element, error)}"})
             return self._acted(session, page, f"Dragged {element} onto {onto}")
@@ -1052,7 +1057,7 @@ class WebSurface(Surface):
     def _primitive_read(self, bound: _Bound, element: Optional[str] = None, *, frame: str = "", **_: Any) -> dict:
         def run() -> dict:
             session, page = bound.session, bound.page
-            timeout = active_tuning().amount(Tunable.read_text_timeout_ms)
+            timeout = _milliseconds(Tunable.read_text_timeout)
             if element is not None:
                 # An element id already names its own frame, so `frame` adds nothing here.
                 source = self._locator(page, element).inner_text(timeout=timeout)
