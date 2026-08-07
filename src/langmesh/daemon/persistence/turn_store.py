@@ -10,6 +10,7 @@ from typing import Optional
 from sqlalchemy import (
     Column,
     DateTime,
+    Index,
     Integer,
     MetaData,
     String,
@@ -196,6 +197,23 @@ class AppendOnlyTaskStore(TaskStore):
             UniqueConstraint("turn_id", "artifact_id", name="uq_task_artifact_id"),
         )
         # The turn's durable resume checkpoint: the model-facing conversation, one row per context.
+        # Append-only, and the reason for the shape: an entry is never updated or deleted, so a correction
+        # is a later row naming the earlier one, and the whole chain stays readable after the fact.
+        self._ledger = Table(
+            "session_ledger",
+            self._metadata,
+            Column("row_id", Integer, primary_key=True, autoincrement=True),
+            Column("session_id", String),
+            Column("ledger", String),
+            Column("entry_id", String),
+            Column("entry", Text),
+            Column("supersedes", Text),
+            Column("written_at", String),
+            UniqueConstraint("session_id", "ledger", "entry_id", name="uq_session_ledger_entry"),
+            sqlite_autoincrement=True,
+        )
+        Index("idx_session_ledger_session", self._ledger.c.session_id, self._ledger.c.ledger, self._ledger.c.row_id)
+
         self._checkpoint = Table(
             "turn_checkpoint",
             self._metadata,
@@ -838,6 +856,68 @@ class AppendOnlyTaskStore(TaskStore):
 
         next_before_row_id = min(int(row.row_id) for row in page_rows)
         return {"turns": tasks, "next_before_row_id": next_before_row_id, "has_more": has_more}
+
+    async def append_ledger(self, session_id: str, ledger: str, entries: list[dict]) -> int:
+        """Add entries to a session's ledger. Nothing is updated: an id already present is the same finding."""
+        if not entries:
+            return 0
+        await self._ensure_initialized()
+        written = datetime.now(timezone.utc).isoformat()
+        rows = [
+            {
+                "session_id": session_id,
+                "ledger": ledger,
+                "entry_id": str(entry.get("id") or ""),
+                "entry": json.dumps(entry, ensure_ascii=False),
+                "supersedes": json.dumps(list(entry.get("supersedes") or []), ensure_ascii=False),
+                "written_at": written,
+            }
+            for entry in entries
+            if entry.get("id")
+        ]
+        if not rows:
+            return 0
+        write_lock = await acquire_sqlite_write_lock()
+        try:
+            async with self._engine.begin() as connection:
+                # An id seen before is the identical finding, so the first writing of it stands.
+                await connection.execute(
+                    sqlite_insert(self._ledger).on_conflict_do_nothing(
+                        index_elements=["session_id", "ledger", "entry_id"]
+                    ),
+                    rows,
+                )
+        finally:
+            release_sqlite_write_lock(write_lock)
+        return len(rows)
+
+    async def ledger_entries(self, session_id: str, ledger: str, *, live_only: bool = True) -> list[dict]:
+        """A session's ledger in the order it was written; live entries are those nothing later replaces."""
+        await self._ensure_initialized()
+        async with self._engine.connect() as connection:
+            rows = (
+                await connection.execute(
+                    select(self._ledger.c.entry_id, self._ledger.c.entry, self._ledger.c.supersedes)
+                    .where(self._ledger.c.session_id == session_id, self._ledger.c.ledger == ledger)
+                    .order_by(self._ledger.c.row_id)
+                )
+            ).all()
+        entries: list[dict] = []
+        replaced: set[str] = set()
+        for entry_id, payload, supersedes in rows:
+            try:
+                entry = json.loads(payload)
+            except ValueError:
+                continue
+            entry["id"] = str(entry_id)
+            entries.append(entry)
+            try:
+                replaced.update(json.loads(supersedes or "[]"))
+            except ValueError:
+                pass
+        if not live_only:
+            return entries
+        return [entry for entry in entries if entry["id"] not in replaced]
 
     async def delete(self, turn_id: str, context: ServerCallContext | None = None) -> None:
         await self._ensure_initialized()

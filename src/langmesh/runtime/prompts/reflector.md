@@ -1,19 +1,29 @@
-# Consolidate memory
+# Consolidate the record
 
-The memory below grew large enough to deserve a rewrite. Write a smaller version. A model that resumes this work must not be able to tell it from the original.
+The record below has grown large enough that reading it costs real context. Make it smaller — but the record is append-only, so you make it smaller by **superseding**, never by rewriting and never by deleting.
 
-**Answer by calling the `ObservationBatch` tool, putting the rewritten memory in its `observations` list.** That is the only way to answer: prose is not read, and the memory stays as it was.
+**Answer by calling the `ObservationBatch` tool, putting the consolidating entries in its `observations` list.** That is the only way to answer: prose is not read, and the record stays as it was.
 
-- **Collapse superseded state into its final form.** Three entries that track a value which changed twice become one entry that states the value now. Keep the history only where how it got there is itself the finding.
-- **Merge entries that say one thing between them.** Keep the merged entry as specific as its most specific part. To merge is not to generalise: two exact paths do not become "several files".
-- **Drop what no longer bears on the work.** A detail that mattered to a settled question, and cannot come up again, is finished.
-- **Never drop five things.** Keep every concrete identifier — a path, an id, a name, a command, a number, a version. Keep every constraint and preference the user set. Keep every approach you ruled out, and why. Keep every measurement. Keep every open thread. These entries cost real work, and no amount of thinking recovers them.
-- **Keep the order where the order carries meaning.** A decision must still follow the fact that forced it.
+## How consolidation works here
 
-Somebody rewrote this memory before, and somebody will rewrite it again. Each pass can lose something quietly. So where an entry is borderline, keep it. To carry it costs one line. To drop it costs work that somebody discovers much later, when they no longer have the turns that would explain it.
+Each entry you write names, in `supersedes`, every id it replaces. Those entries leave the live view; they stay in the store, so nothing is lost and the chain shows how the record got here.
 
-## Current memory
+- **Collapse a value that changed into its final state.** Three entries tracking a value that moved twice become one entry stating what it is now, naming all three. Keep the history only where how it got there is itself the finding.
+- **Merge entries that say one thing between them**, naming each. Keep the merged entry as specific as its most specific part: merging is not generalising, and two exact paths do not become "several files".
+- **Supersede what no longer bears on the work.** A detail that mattered to a settled question, and cannot come up again, is finished — but supersede it explicitly rather than passing over it in silence.
 
-```json
+An entry you leave alone stays live. You do not need to restate it, and restating it without superseding it puts the same finding in the record twice.
+
+## What consolidation may never cost
+
+Keep every concrete identifier — a path, an id, a name, a command, a number, a version. Keep every approach that was ruled out, and why it failed. Keep every measurement. Keep every open thread. These cost real work to establish and no amount of thinking recovers them, so an entry carrying one is merged rather than dropped.
+
+Where an entry is borderline, leave it live. Carrying it costs one entry. Losing it costs work that somebody discovers much later, when the turns that would explain it are long gone.
+
+## The record
+
+Each entry is shown by its id, its claim and its detail.
+
+```jsonl
 {{ observations }}
 ```

@@ -483,6 +483,7 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         approvals: Any = None,
         catalogue: Any = None,
         transcript: Any = None,
+        turn_store: Any = None,
         tools: Sequence[BaseTool] = (),
         supplied_tool_gate: str = "ask",
         permissions: Any = None,
@@ -567,6 +568,8 @@ class AgentRuntime(_DispatchesTools, _DecidesPermissions, _CompactsContext, _Run
         self._observer = observer
         self._approvals = approvals
         self._transcript = transcript
+        # Where a fold's entries are appended. Absent in a library run, which keeps no ledger.
+        self._turn_store = turn_store
         # When the turn now running began, for the transcript entry it will produce.
         self._turn_started_at = None
         # The conversation and the prompt this runtime runs with.

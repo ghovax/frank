@@ -205,6 +205,7 @@ class CompactionDone(TurnEvent):
     # What the fold actually reclaimed, reported by every strategy including a supplied one.
     tokens_after: int = 0
     observations_added: int = 0
+    directives_added: int = 0
     # How large the memory itself has become, on which the whole schedule of a long session turns.
     log_tokens: int = 0
 

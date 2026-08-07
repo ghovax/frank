@@ -471,6 +471,7 @@ class SessionExecutor(AgentExecutor):
                 f"Agent configuration not found: {self._agent_name} (available: {available})"
             )
         runtime = AgentRuntime(
+            turn_store=self._turn_store,
             agent_configuration=configuration,
             catalogue=catalogue,
             global_configuration=self._global_configuration,

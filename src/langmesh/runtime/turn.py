@@ -58,7 +58,7 @@ import asyncio
 import platform
 import time
 import uuid
-from langmesh.base.serialization import compact
+from langmesh.base.serialization import compact, lines
 
 
 logger = logging.getLogger(__name__)
@@ -164,8 +164,8 @@ class _RunsTurns:
                 "context": context_json,
                 "user_environment": user_environment,
                 "instructions": instructions,
-                "skills": compact(skills_payload(agent_skills)),
-                "memories": compact(memories_payload(memories)),
+                "skills": lines(skills_payload(agent_skills)),
+                "memories": lines(memories_payload(memories)),
                 "agent_context": agent_context,
                 "computer_control_guidance": computer_control_guidance,
                 "toolbox": toolbox,

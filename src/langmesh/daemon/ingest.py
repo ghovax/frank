@@ -211,6 +211,28 @@ async def _session_title(params: dict) -> dict:
     return {"saved": changed}
 
 
+async def _session_append_ledger(params: dict) -> dict:
+    """Append entries to a session's ledger. Append-only, so this neither revises nor removes."""
+    if state.turn_store is None:
+        return {"appended": 0}
+    entries = params.get("entries") or []
+    appended = await state.turn_store.append_ledger(
+        str(params.get("session_id") or ""), str(params.get("ledger") or "observations"), list(entries),
+    )
+    return {"appended": appended}
+
+
+async def _session_ledger(params: dict) -> list:
+    """Read a session's ledger, live entries only unless the whole chain is asked for."""
+    if state.turn_store is None:
+        return []
+    return await state.turn_store.ledger_entries(
+        str(params.get("session_id") or ""),
+        str(params.get("ledger") or "observations"),
+        live_only=bool(params.get("live_only", True)),
+    )
+
+
 _METHODS = {
     "turn.save": _turn_save,
     "turn.get": _turn_get,
@@ -224,6 +246,8 @@ _METHODS = {
     "session.event": _session_event,
     "session.title": _session_title,
     "session.usage": _session_usage,
+    "session.append_ledger": _session_append_ledger,
+    "session.ledger": _session_ledger,
 }
 
 

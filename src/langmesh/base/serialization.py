@@ -18,10 +18,19 @@ def compact(payload: Any, **kwargs: Any) -> str:
     return json.dumps(payload, separators=_SEPARATORS, **kwargs)
 
 
+def lines(records: list) -> str:
+    """Records as JSONL: one object per line, which is what an append-only log actually is."""
+    return "\n".join(compact(record) for record in records)
+
+
+def content_address(payload: Any) -> str:
+    """A stable content address for anything serializable: canonical JSON, so identical content is one identity."""
+    return sha256(compact(payload, sort_keys=True).encode("utf-8")).hexdigest()
+
+
 def conversation_snapshot_id(messages: list[dict[str, Any]]) -> str:
     """A stable content address for a serialized model conversation."""
-    encoded = compact(messages, sort_keys=True).encode("utf-8")
-    return sha256(encoded).hexdigest()
+    return content_address(messages)
 
 
 def upstream_detail(body: str) -> str:

@@ -86,6 +86,16 @@ class DaemonTurnStore(TaskStore):
         result = await self._call("session.claim_work_habits", session_id=session_id)
         return bool((result or {}).get("claimed"))
 
+    async def append_ledger(self, session_id: str, ledger: str, entries: list) -> None:
+        """Append a fold's entries to a session's ledger, which only the daemon may write."""
+        await self._call("session.append_ledger", session_id=session_id, ledger=ledger, entries=entries)
+
+    async def ledger_entries(self, session_id: str, ledger: str, live_only: bool = True) -> list:
+        """A session's ledger, live entries only unless the whole chain is asked for."""
+        return await self._call(
+            "session.ledger", session_id=session_id, ledger=ledger, live_only=live_only
+        ) or []
+
     async def publish_event(self, event: dict) -> None:
         """Hand a live turn event to the daemon, so whoever is attached sees it now."""
         await self._call("session.event", event=event)

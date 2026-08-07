@@ -14,37 +14,64 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import Any, AsyncIterator, Literal, Optional
 import json
-from langmesh.base.serialization import compact
+from langmesh.base.serialization import compact, content_address
+
+
+#: The kinds an entry can be, each answering a different question the next reader will have.
+ENTRY_CATEGORY = Literal["fact", "decision", "constraint", "failure", "artifact", "open"]
+#: How well an entry is established, stated rather than left for the reader to guess.
+ENTRY_STANDING = Literal["verified", "reported", "inferred"]
+
+#: What each field means, written where prose belongs rather than wedged into the model.
+_FIELDS = PromptLoader(Path(__file__).parent / "descriptions")
+
+
+def _says(name: str) -> str:
+    """One field's description, from its own file, so the wording is edited as prose and not as code."""
+    text = _FIELDS.load(name, {}).strip()
+    if not text:
+        raise RuntimeError(f"No description file for {name} in runtime/descriptions.")
+    return text
 
 
 class Observation(BaseModel):
-    """One entry in the conversation-memory log (Observational Memory)."""
+    """One immutable finding in the ledger. A correction is a new entry naming the old, never an edit."""
 
-    category: Literal["decision", "fact", "artifact", "goal", "open"] = Field(
-        description=(
-            "decision — a choice that was committed to, and why it beat the alternative; "
-            "fact — something established about the codebase, system, or world, and whether it "
-            "was verified or assumed; "
-            "artifact — a file, path, command or resource created, changed, or found to matter "
-            "(record the exact identifier); "
-            "goal — an objective or constraint, and what it rules out; "
-            "open — work unfinished, agreed but not done, or blocked, with its next concrete step."
-        )
-    )
-    detail: str = Field(
-        description=(
-            "One dense note written for a model that will resume this work with no memory of "
-            "the turns behind it. State outcomes, not narration. Keep every concrete identifier "
-            "— paths, ids, names, commands, numbers, versions, error codes — exactly as written, "
-            "and keep measurements as measurements: they cannot be re-derived by thinking."
-        )
-    )
+    category: ENTRY_CATEGORY = Field(description=_says("observation_category"))
+    claim: str = Field(description=_says("observation_claim"))
+    detail: str = Field(description=_says("observation_detail"))
+    evidence: str = Field(default="", description=_says("observation_evidence"))
+    standing: ENTRY_STANDING = Field(description=_says("observation_standing"))
+    supersedes: list[str] = Field(default_factory=list, description=_says("observation_supersedes"))
+
+    def identity(self) -> str:
+        """Addressed by what it says, not by when it was written, so the same finding twice is one entry."""
+        return content_address(self.model_dump(exclude={"supersedes"}))
 
 
 class ObservationBatch(BaseModel):
-    """The structured memory the Observer emits as a tool call, so its shape is guaranteed rather than scraped."""
+    """Everything one pass appends to the ledger. Nothing is ever removed from it."""
 
-    observations: list[Observation] = Field(default_factory=list)
+    observations: list[Observation] = Field(default_factory=list, description=_says("observation_batch"))
+
+
+class Directive(BaseModel):
+    """Something the person asked for, kept because an instruction outlives the turn that carried it."""
+
+    kind: Literal["requirement", "correction", "preference"] = Field(description=_says("directive_kind"))
+    summary: str = Field(description=_says("directive_summary"))
+    still_binding: bool = Field(default=True, description=_says("directive_still_binding"))
+    supersedes: list[str] = Field(default_factory=list, description=_says("directive_supersedes"))
+
+    def identity(self) -> str:
+        """Addressed by the instruction itself; whether it still binds is state, and state is not identity."""
+        return content_address(self.model_dump(exclude={"supersedes", "still_binding"}))
+
+
+class DirectiveBatch(BaseModel):
+    """Everything one pass appends to the directive ledger."""
+
+    directives: list[Directive] = Field(default_factory=list, description=_says("directive_batch"))
 
 
 # What ``_stream_next`` returns at the end, since a StopAsyncIteration inside a Task is mishandled.
