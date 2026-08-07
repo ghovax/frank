@@ -12,7 +12,7 @@ from langmesh.runtime.internals import (
     _CONTINUE,
     _detect_workspace,
     _ModelCallOutcome,
-    _PhaseStep,
+    _StepOutcome,
     _PreflightGate,
     _STOP,
     _STREAM_EXHAUSTED,
@@ -75,6 +75,9 @@ def _settled_arguments(parsed: dict, raw: str) -> dict:
 
 class _RunsTurns:
     """The turn itself: what the model is told, what comes back, and when it is over."""
+
+    #: The checklist for this turn, cleared as soon as the one request that carries it is built.
+    _pending_checklist: Optional[HumanMessage] = None
 
     def _locations_summary(self) -> list[dict]:
         """The locations as the model sees them: the URI to pass, and enough to choose the right one."""
@@ -417,6 +420,10 @@ class _RunsTurns:
                 else HumanMessage(content=user_message)
             )
             self._conversation.append(turn_message)
+            # Only when the user speaks: a tool-result hop is the same instruction, and repeating it buys nothing.
+            self._pending_checklist = self._reminder_message(
+                self._prompt_loader.load("turn_checklist", {}), transient=True,
+            )
             # The event-log recorder only wants prose from LangChain's standard blocks.
             recorded_user_message = message_text(turn_message)
         # After the turn's message, so the freshest picture is read last, and once per turn rather than per hop.
@@ -480,9 +487,9 @@ class _RunsTurns:
                 if not invalid.get("id"):
                     invalid["id"] = f"call_invalid_{uuid.uuid4().hex[:24]}"
 
-            # Phase 2, no tool calls: retry a malformed batch, answer agents, or finish the turn.
+            # Nothing to call: retry a malformed batch, answer agents, or finish the turn.
             if not response.tool_calls:
-                step = _PhaseStep()
+                step = _StepOutcome()
                 async for event in self._finalize_no_tool_calls(
                     response, recorded_user_message, turn_tool_calls_log, turn_tool_results_log, step,
                 ):
@@ -491,8 +498,8 @@ class _RunsTurns:
                     return
                 continue
 
-            # Phase 3: run the tool batch behind its checkpoint, then honour a Stop that landed during it.
-            step = _PhaseStep()
+            # Calls to make: run the batch behind its checkpoint, then honour a Stop that landed during it.
+            step = _StepOutcome()
             async for event in self._run_tool_batch(
                 response, recorded_user_message, turn_tool_calls_log, turn_tool_results_log, step,
             ):
@@ -507,7 +514,13 @@ class _RunsTurns:
 
     def _build_turn_messages(self) -> list:
         """This iteration's messages: the static prompt, the conversation, and the turn context appended once."""
-        return [SystemMessage(content=self._build_static_system_prompt())] + self._conversation
+        messages = [SystemMessage(content=self._build_static_system_prompt())] + self._conversation
+        if self._pending_checklist is None:
+            return messages
+        # Last, and only ever last: it never joins the conversation, so anywhere else its absence next time rewrites the prefix.
+        checklist = self._pending_checklist
+        self._pending_checklist = None
+        return messages + [checklist]
 
     def _refuse_if_over_window(self, messages: list) -> None:
         """Refuse a request that cannot fit before sending it, with numbers, since the harness knows the window."""
@@ -640,7 +653,7 @@ class _RunsTurns:
 
     async def _finalize_no_tool_calls(
         self, response: AIMessageChunk, recorded_user_message: str,
-        turn_tool_calls_log: list[dict], turn_tool_results_log: list[dict], step: _PhaseStep,
+        turn_tool_calls_log: list[dict], turn_tool_results_log: list[dict], step: _StepOutcome,
     ) -> AsyncIterator[TurnEvent]:
         """Handle a response with no tool calls: retry a malformed batch, deliver agent messages, or finish."""
         if response.invalid_tool_calls:
@@ -691,7 +704,7 @@ class _RunsTurns:
 
     async def _run_tool_batch(
         self, response: AIMessageChunk, recorded_user_message: str,
-        turn_tool_calls_log: list[dict], turn_tool_results_log: list[dict], step: _PhaseStep,
+        turn_tool_calls_log: list[dict], turn_tool_results_log: list[dict], step: _StepOutcome,
     ) -> AsyncIterator[TurnEvent]:
         """Run the tool batch behind a durable checkpoint, with every permission resolved before any tool runs."""
         self._conversation.append(response)

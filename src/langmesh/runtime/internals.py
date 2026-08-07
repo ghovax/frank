@@ -473,7 +473,7 @@ class _ModelCallOutcome:
 
 
 @dataclass
-class _PhaseStep:
-    """The loop directive a turn phase hands back (see ``_PROCEED``/``_CONTINUE``/``_STOP``)."""
+class _StepOutcome:
+    """The loop directive one step of a turn hands back (see ``_PROCEED``/``_CONTINUE``/``_STOP``)."""
 
     directive: str = _PROCEED
