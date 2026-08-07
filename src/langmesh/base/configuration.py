@@ -260,18 +260,17 @@ class WorkspaceConfiguration(Section):
 _COMPACTION_RENAMED = {
     "auto": "automatic",
     "observer_context_fraction": "reclaim_at_fraction",
-    "reflector_observation_fraction": "condense_log_at_fraction",
 }
 
 #: Compaction settings that are gone with nothing standing in for them.
 _COMPACTION_REMOVED = (
     "keep_recent_turns", "preserve_recent_tokens", "prune", "prune_tool_results",
-    "pruned_result_tokens",
+    "pruned_result_tokens", "condense_log_at_fraction", "reflector_observation_fraction",
 )
 
 
 class CompactionConfiguration(Section):
-    """Conversation memory: an Observer folds older turns into a log, and a Reflector condenses that log."""
+    """Conversation memory: each exchange is recorded as it closes, and the turns behind the window are dropped."""
 
     @model_validator(mode="before")
     @classmethod
@@ -294,7 +293,6 @@ class CompactionConfiguration(Section):
 
     automatic: bool = Field(True)
     reclaim_at_fraction: float = Field(0.85)
-    condense_log_at_fraction: float = Field(0.3)
     output_reserve_fraction: float = Field(0.1)
     recent_working_set_fraction: float = Field(0.25)
     verbatim_user_fraction: float = Field(0.1)

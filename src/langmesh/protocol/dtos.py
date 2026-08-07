@@ -135,7 +135,6 @@ class CompactionUpdateRequest(BaseModel):
     """Observational-memory compaction settings. Only provided fields are changed."""
     automatic: bool | None = None
     reclaim_at_fraction: float | None = None
-    condense_log_at_fraction: float | None = None
     output_reserve_fraction: float | None = None
     recent_working_set_fraction: float | None = None
     verbatim_user_fraction: float | None = None
