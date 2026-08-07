@@ -28,6 +28,7 @@ import { ChatGPTAuthControl } from "@/components/chatgpt-auth";
 import { CursorAuthControl } from "@/components/cursor-auth";
 import { swallowed } from "@/lib/swallowed";
 import { richTags } from "@/lib/i18n/rich-tags";
+import { CONTROL_ICON_SIZE } from "./session-controls";
 
 interface ModelSelectProps {
   models: ModelOption[];
@@ -288,7 +289,7 @@ export function ModelSelect({
         flexShrink={0}
         onClick={openDialog}
       >
-        <LuBot size={compact ? 13 : 14} />
+        <LuBot size={CONTROL_ICON_SIZE} />
         {chipProviderLabel ? (
           <Span
             data-fit-label={fitted ? "model" : undefined}
@@ -338,7 +339,7 @@ export function ModelSelect({
           display="flex"
           flexShrink={0}
         >
-          <ModelCapabilityBadges model={chipModel} size={compact ? 11 : 13} />
+          <ModelCapabilityBadges model={chipModel} size={compact ? 11 : CONTROL_ICON_SIZE} />
         </Box>
         <LuChevronDown size={compact ? 13 : 15} />
       </Button>

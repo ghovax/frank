@@ -345,7 +345,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       );
     },
     hr() {
-      return <Separator borderColor="border.muted" my={1} />;
+      return <Separator borderColor="border" my={4} />;
     },
     strong({ children }) {
       return <Strong fontSize="inherit" fontWeight="bold">{renderChildren(children)}</Strong>;

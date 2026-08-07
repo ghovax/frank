@@ -29,6 +29,7 @@ import { ModelSelect, modelSupportsVision } from "./model-select";
 import type { TokenUsage } from "@/lib/use-chat";
 import { InlineField } from "./ui/display";
 import { richTags } from "@/lib/i18n/rich-tags";
+import { CONTROL_ICON_SIZE } from "./session-controls";
 import { swallowed } from "@/lib/swallowed";
 import { useFittedRow } from "@/lib/use-fitted-row";
 import { errorMessage } from "@/lib/errors";
@@ -228,11 +229,13 @@ function ContextUsageChip({
             <Text data-fit-label="context-percent" data-fit-hidden={hidden.has("context-percent") ? "" : undefined} textStyle="fieldLabel" whiteSpace="nowrap">
               {contextPercent}%
             </Text>
-            <Separator data-fit-label="context-detail" data-fit-hidden={hidden.has("context-detail") ? "" : undefined} orientation="vertical" h={3.5} flexShrink={0} />
+            {hidden.has("context-detail") ? null : (
+              <Separator orientation="vertical" h={3.5} flexShrink={0} />
+            )}
           </>
         )}
         <Box data-fit-label="context-detail" data-fit-hidden={hidden.has("context-detail") ? "" : undefined} display="flex" alignItems="center" flexShrink={0}>
-          <LuCoins size={13} />
+          <LuCoins size={CONTROL_ICON_SIZE} />
         </Box>
         <Text data-fit-label="context-detail" data-fit-hidden={hidden.has("context-detail") ? "" : undefined} textStyle="fieldLabel" whiteSpace="nowrap">
           {tokenUsage.contextTokens.toLocaleString()}
@@ -875,7 +878,9 @@ export function ChatInput({
               onClick={() => setCompactConfirmOpen(true)}
               title={isCompacting ? translation("compactingTooltip") : translation("compactTooltip")}
             >
-              {isCompacting ? <Spinner size="xs" /> : <LuFoldVertical size={13} />}
+              {isCompacting
+                ? <Spinner boxSize={`${CONTROL_ICON_SIZE}px`} borderWidth="1.5px" />
+                : <LuFoldVertical size={CONTROL_ICON_SIZE} />}
               <Text data-fit-label="compact" data-fit-hidden={hiddenLabels.has("compact") ? "" : undefined}>
                 {isCompacting ? translation("compacting") : translation("compact")}
               </Text>

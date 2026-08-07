@@ -410,7 +410,10 @@ samp {
 [data-fit-control][data-fit-collapsed] {
   width: var(--control-height);
   min-width: var(--control-height);
-  padding-inline: 0;
+  /* Overrides the padding a component sets, so a collapsed control centres its lone icon. It is done
+     here rather than in the component because the fit measures widths to decide what to collapse, and a
+     width that depends on that decision oscillates between the two states and never settles. */
+  padding-inline: 0 !important;
   justify-content: center;
 }
 

@@ -309,8 +309,9 @@ export function SessionsSidebar({
           <VStack gap={1} align="stretch">
             {visibleWorkspaces.map(({ workspace, sessions: workspaceSessions }) => {
               const label = workspaceName(workspace);
-              const workspaceOpenKey = searchQuery ? `${workspace.id}:${searchQuery}` : workspace.id;
-              const workspaceOpen = workspaceOpenOverrides[workspaceOpenKey]
+              // Keyed by the workspace alone. Keying it by the search text as well meant every keystroke
+              // wrote a new key, so a workspace you had opened fell back to the default and closed itself.
+              const workspaceOpen = workspaceOpenOverrides[workspace.id]
                 ?? (searchQuery ? workspaceSessions.length > 0 : workspace.id === currentWorkspaceId);
               const tooltipContent = (
                 <WorkspaceHoverCard label={label} workspace={workspace} sessionCount={workspaceSessions.length} />
@@ -357,7 +358,7 @@ export function SessionsSidebar({
                   disclosure={workspaceOpen ? "open" : "closed"}
                   disclosureLabel={workspaceOpen ? translation("hideWorkspace") : translation("showWorkspace")}
                   onDisclosureChange={(nextOpen) => {
-                    setWorkspaceOpenOverrides((current) => ({ ...current, [workspaceOpenKey]: nextOpen }));
+                    setWorkspaceOpenOverrides((current) => ({ ...current, [workspace.id]: nextOpen }));
                     if (nextOpen) onSwitchWorkspace(workspace.id);
                   }}
                   onActivate={() => onSwitchWorkspace(workspace.id)}

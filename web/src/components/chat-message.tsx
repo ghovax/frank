@@ -1,10 +1,11 @@
 "use client";
 
 import { Box, Button, Flex, Separator, Span, Text } from "@chakra-ui/react";
-import { useFormatter, useNow, useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { LuCheck, LuClock, LuCopy, LuFoldVertical, LuMessagesSquare, LuRotateCw, LuTrash2, LuTriangleAlert } from "react-icons/lu";
 import { swallowed } from "@/lib/swallowed";
+import { useClock } from "@/lib/use-clock";
 import type { ChatMessage, MessageAttachment } from "@/lib/use-chat";
 import type { ToolEvent, ToolPermission, ToolQuestion } from "@/lib/tool-event";
 import { toolStatus } from "@/lib/tool-event";
@@ -143,7 +144,7 @@ function MessageFooter({ content, sentAt, queued }: { content: string; sentAt: s
   const translation = useTranslations("ChatMessage");
   const format = useFormatter();
   // A minute is the finest step the wording has, so re-reading the clock more often would change nothing.
-  const now = useNow({ updateInterval: 60 * 1000 });
+  const now = useClock();
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<number | null>(null);
 

@@ -71,7 +71,7 @@ export function PanelHeader({
 export function PanelBody({ children, ...rest }: BoxProps) {
   const { containerRef, onScroll, fade } = useScrollEdgeFade();
   return (
-    <Box ref={containerRef} onScroll={onScroll} flex={1} minH={0} overflowY="auto" px={2} pb={4} pt={0} css={fade} {...rest}>
+    <Box ref={containerRef} onScroll={onScroll} flex={1} minH={0} overflowY="auto" px={2} pb={2} pt={0} css={fade} {...rest}>
       {children}
     </Box>
   );
