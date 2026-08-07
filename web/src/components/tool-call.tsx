@@ -140,8 +140,8 @@ export function ToolCall({ name, arguments: toolArguments, result, status, actio
   const { collapsible } = toolCallDetail(name, toolArguments, result, status);
   // A running call whose interim result says the work moved to the background.
   const background = status === "running" && hasBackgroundJobId(result);
-  const tDisplay = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
-  const { icon: Icon, iconColor } = getToolCallDisplay(name, toolArguments, tDisplay);
+  const toolDisplayTranslation = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
+  const { icon: Icon, iconColor } = getToolCallDisplay(name, toolArguments, toolDisplayTranslation);
 
   return (
     <DisclosureRow

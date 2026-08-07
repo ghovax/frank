@@ -239,7 +239,7 @@ export function ChatPanel({
   compactionReclaimAtFraction,
 }: ChatPanelProps) {
   const translation = useTranslations("ChatPanel");
-  const tToolDisplay = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
+  const toolDisplayTranslation = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(initialPermissionMode);
   const { messages, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, abort, dequeueMessage, outboxHold, deliveringMessage, grantedPermissionMode, retryOutbox, handlePermission, handleQuestion, declineQuestion, compact } =
     useChat(agent, initialSessionId, workingDirectory, worktreeStrategy, permissionMode, sessionRunning, workspaceId);
@@ -604,7 +604,7 @@ export function ChatPanel({
           kind: "permission",
           permission,
           // The title says what the agent is trying to do, and the detail says what made this stop for approval.
-          title: getToolCallDisplay(name, args, tToolDisplay).label,
+          title: getToolCallDisplay(name, args, toolDisplayTranslation).label,
           // The structured reason wins, because it is the only one this interface can say in the reader's language.
           detail: permissionReasonText(permission.reason, translation) || permission.explanation || undefined,
           // The paths travel as data so the overlay lists them, rather than being joined into a sentence.
@@ -617,7 +617,7 @@ export function ChatPanel({
     }
   }
   // The attention cue plays for the first prompt in a turn, and a permission prompt also raises a system notification.
-  const tPermission = useTranslations("PermissionOverlay");
+  const permissionTranslation = useTranslations("PermissionOverlay");
   const pendingPermissionId = pendingPrompt?.kind === "permission" ? pendingPrompt.permission.requestId : "";
   const pendingQuestionId = pendingPrompt?.kind === "question" ? pendingPrompt.question.requestId : "";
   const pendingPermissionBody = pendingPrompt?.kind === "permission" ? pendingPrompt.command || pendingPrompt.title : "";
@@ -648,11 +648,11 @@ export function ChatPanel({
     if (!pendingPermissionId) return;
     void notifyPermissionRequest({
       requestId: pendingPermissionId,
-      title: tPermission("approvalNeeded"),
+      title: permissionTranslation("approvalNeeded"),
       body: pendingPermissionBody,
-      actionLabel: tPermission("allowOnce"),
+      actionLabel: permissionTranslation("allowOnce"),
     });
-  }, [pendingPermissionId, pendingPermissionBody, tPermission]);
+  }, [pendingPermissionId, pendingPermissionBody, permissionTranslation]);
   // The notification's action button resolves the request exactly like the overlay's primary button.
   useEffect(() => {
     setPermissionNotificationHandler((requestId) => handlePermission(requestId, "allow_once"));
